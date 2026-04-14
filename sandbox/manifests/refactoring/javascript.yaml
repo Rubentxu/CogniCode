@@ -1,0 +1,66 @@
+# Refactoring - JavaScript: safe_refactor actions
+version: "2.0"
+language: javascript
+tier: A
+description: "Test safe_refactor actions on js-refactor fixture with behavioral preservation"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: test
+      commands:
+        - node test_refactor.js
+
+scenarios:
+  - name: safe_refactor_rename_js
+    tool: safe_refactor
+    action: rename
+    workspace: sandbox/fixtures/js-refactor
+    scenario_class: mutation
+    expected_outcome: pass
+    description: "Rename 'add' function to 'sum' in js-refactor fixture"
+    arguments:
+      action: rename
+      target: add
+      params:
+        new_name: sum
+        file_path: refactor.js
+    ground_truth:
+      pre_code: |
+        function add(a, b) {
+          return a + b;
+        }
+    metrics:
+      correctness:
+        type: behavioral_preservation
+      latency:
+        target_ms: 500
+        max_ms: 2000
+
+  - name: safe_refactor_extract_js
+    tool: safe_refactor
+    action: extract
+    workspace: sandbox/fixtures/js-refactor
+    scenario_class: mutation
+    expected_outcome: pass
+    description: "Extract a helper from SimpleCalc in js-refactor fixture"
+    arguments:
+      action: extract
+      target: SimpleCalc
+      params:
+        new_name: extracted_helper
+        file_path: refactor.js
+    ground_truth:
+      pre_code: |
+        class SimpleCalc {
+          constructor() {
+            this.value = 0;
+          }
+    metrics:
+      correctness:
+        type: behavioral_preservation
+      latency:
+        target_ms: 500
+        max_ms: 2000

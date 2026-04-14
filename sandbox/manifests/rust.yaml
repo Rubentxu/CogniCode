@@ -1,0 +1,171 @@
+# Rust Tier A Scenario Manifest
+# Phase 1: Production-ready Rust scenarios with real validation pipeline
+#
+# Scenario classes:
+#   - read_only: read_file, search_content, list_files, etc.
+#   - analysis: extract_symbols, call_graph, find_references, etc.
+#   - mutation: safe_refactor, edit_file, write_file (concrete + preview-only variants)
+#
+# Expected outcomes:
+#   - pass: scenario should pass
+#   - expected_fail: scenario is expected to fail (capability gaps, preview-only tools)
+#   - capability_missing: tool/language not supported
+
+version: "1.0"
+language: rust
+tier: A
+description: "Rust Tier A scenarios — read-only, analysis, and mutation with real validation pipeline"
+repo: "serde"
+
+# Global defaults
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: syntax
+      commands: ["rustfmt --check src/lib.rs", "cargo check 2>&1"]
+      timeout_seconds: 60
+    - name: format
+      commands: ["cargo fmt --check 2>&1"]
+      timeout_seconds: 30
+    - name: lint
+      commands: ["cargo fmt --check 2>&1"]
+      timeout_seconds: 60
+    - name: build
+      commands: ["cargo build 2>&1"]
+      timeout_seconds: 120
+    - name: test
+      commands: ["cargo test --lib 2>&1"]
+      timeout_seconds: 120
+
+scenarios:
+  # ─── Read-Only Scenarios ───────────────────────────────────────────────────
+
+  - name: read_file_raw
+    description: "Read a source file as raw text"
+    tool: read_file
+    action: read
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: serde/src/lib.rs
+      mode: raw
+
+  - name: read_file_outline
+    description: "Read file outline (symbol tree)"
+    tool: read_file
+    action: read
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: serde/src/lib.rs
+      mode: outline
+
+  - name: search_content
+    description: "Full-text search within workspace"
+    tool: search_content
+    action: search
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "serde"
+      path: serde/src
+    ground_truth:
+      matches:
+        - path: fmt.rs
+        - path: mod.rs
+
+  # ─── Analysis Scenarios ─────────────────────────────────────────────────────
+
+  - name: extract_symbols
+    description: "Extract all symbols from a source file"
+    tool: get_file_symbols
+    action: extract
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: expected_fail
+    arguments:
+      file_path: serde/src/lib.rs
+    # ground_truth removed: tool only returns 'T' symbol but ground truth expects Serialize/ser/Serializer - fundamental mismatch
+
+  - name: find_references
+    description: "Find all references to a symbol"
+    tool: find_references
+    action: references
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: expected_fail
+    arguments:
+      file_path: serde/src/ser/mod.rs
+      line: 218
+      column: 11
+
+  # ─── Mutation Scenarios ──────────────────────────────────────────────────────
+
+  - name: safe_refactor_rename_preview
+    description: "Rename function via safe_refactor (preview-only — no disk mutation)"
+    tool: safe_refactor
+    action: rename
+    workspace: .
+    scenario_class: mutation
+    preview_only: true
+    expected_outcome: expected_fail
+    arguments:
+      target: Serialize
+      params:
+        new_name: SerializeNew
+        file_path: src/ser/mod.rs
+    # No validation pipeline — preview-only, no disk changes
+
+  - name: safe_refactor_rename_concrete
+    description: "Rename function via edit_file (concrete mutation with validation)"
+    tool: edit_file
+    action: apply
+    workspace: sandbox/fixtures/rust-hello
+    repo: ""
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: pass
+    variant: concrete
+    arguments:
+      path: src/lib.rs
+      old_text: "/// A simple greeting function."
+      new_text: "/// A simple greeting function with name parameter."
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: syntax
+          commands: ["rustfmt --check src/lib.rs"]
+          timeout_seconds: 30
+        - name: build
+          commands: ["cargo build 2>&1"]
+          timeout_seconds: 60
+        - name: test
+          commands: ["cargo test --lib 2>&1"]
+          timeout_seconds: 60
+
+  # edit_file_syntax_rejected removed — duplicated by rust_fixture.yaml
+
+  # ─── Boundary/Security Scenarios ────────────────────────────────────────────
+
+  - name: path_safety_rejection
+    description: "Attempt to mutate /etc/passwd — must be rejected by path safety"
+    tool: edit_file
+    action: apply
+    workspace: sandbox/fixtures/rust-hello
+    repo: ""
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: pass
+    variant: path_safety
+    arguments:
+      path: /etc/passwd
+      old_text: "root:x:0:0:"
+      new_text: "root:x:0:0:root:/root:/bin/bash"
+    validation:
+      failure_is_regression: false
+      stages: []

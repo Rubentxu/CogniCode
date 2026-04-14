@@ -1,0 +1,41 @@
+{
+  "scenario_id": "rust_baseline_pass_test_concrete",
+  "language": "rust",
+  "tier": "B",
+  "repo": "anyhow",
+  "commit": "unknown",
+  "tool": "edit_file",
+  "action": "apply",
+  "expected_outcome": "pass",
+  "outcome": "preexisting_fail",
+  "failure_class": "preexisting_repo_failure",
+  "timing_ms": {
+    "setup_ms": 0,
+    "server_startup_ms": 0,
+    "tool_call_ms": 0,
+    "validation_ms": 0,
+    "teardown_ms": 0,
+    "total_ms": 21
+  },
+  "resource_usage": {
+    "peak_rss_mb": 0.0,
+    "cpu_time_s": 0.0
+  },
+  "validation": {
+    "stages": [
+      {
+        "stage": "build",
+        "status": "fail",
+        "exit_code": -1,
+        "stderr_excerpt": "No such file or directory (os error 2)",
+        "duration_ms": 0
+      }
+    ],
+    "passed": false
+  },
+  "artifacts": [],
+  "container_image": "docker.io/library/rust:1.82-slim",
+  "workspace_snapshot_id": "pending",
+  "started_at": "2026-04-09T12:49:05Z",
+  "completed_at": "2026-04-09T12:49:05Z"
+}

@@ -1,0 +1,15 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "edits": [
+        {
+          "new_string": "function greet(name) {\n  // missing closing brace",
+          "old_string": "function greet(name) {\n  return `Hello, ${name}!`;\n}"
+        }
+      ],
+      "path": "hello.js"
+    },
+    "name": "edit_file"
+  }
+}

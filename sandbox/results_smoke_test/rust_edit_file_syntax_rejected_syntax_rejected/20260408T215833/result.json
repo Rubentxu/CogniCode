@@ -1,0 +1,42 @@
+{
+  "scenario_id": "rust_edit_file_syntax_rejected_syntax_rejected",
+  "language": "rust",
+  "tier": "A",
+  "repo": "serde",
+  "commit": "unknown",
+  "tool": "edit_file",
+  "action": "apply",
+  "expected_outcome": "expected_fail",
+  "outcome": "expected_fail",
+  "failure_class": "expected_fail",
+  "timing_ms": {
+    "setup_ms": 0,
+    "server_startup_ms": 15,
+    "tool_call_ms": 0,
+    "validation_ms": 175,
+    "teardown_ms": 3,
+    "total_ms": 360
+  },
+  "resource_usage": {
+    "peak_rss_mb": 0.0,
+    "cpu_time_s": 0.0
+  },
+  "validation": {
+    "stages": [
+      {
+        "stage": "syntax",
+        "status": "fail",
+        "exit_code": 101,
+        "stdout_excerpt": "    Checking rust-hello v0.1.0 (/tmp/.tmpQd8C6h)\nerror: expected one of `!`, `(`, `+`, `::`, `<`, `where`, or `{`, found doc comment `/// Adds two numbers.`\n --> src/lib.rs:4:1\n  |\n2 | pub fn greet(name: &str) -> String // SYNTAX ERROR - missing body\n  |                                   - expected one of 7 possible tokens\n3 |\n4 | /// Adds two numbers.\n  | ^^^^^^^^^^^^^^^^^^^^^ unexpected token\n  |\nhelp: add a space before the last `/` to write a regular comment\n  |\n4 | // / Adds two numbers.\n  |   +\n\nerror: could not compile `rust-hello` (lib) due to 1 previous error\n",
+        "stderr_excerpt": "",
+        "duration_ms": 175
+      }
+    ],
+    "passed": false
+  },
+  "artifacts": [],
+  "container_image": "docker.io/library/rust:1.82-slim",
+  "workspace_snapshot_id": "pending",
+  "started_at": "2026-04-08T21:58:32Z",
+  "completed_at": "2026-04-08T21:58:33Z"
+}

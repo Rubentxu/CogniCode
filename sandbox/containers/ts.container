@@ -1,0 +1,57 @@
+# CogniCode TypeScript Sandbox — Hardened Quadlet
+# Phase 2: TS container with Node.js 22 + TypeScript, hardened isolation + tool pre-install
+#
+# TOOL PRE-INSTALLATION:
+# Tools (typescript, eslint, jest, ts-jest) are installed at BUILD time via a derived
+# Dockerfile, NOT at runtime. This avoids flakiness in rootless Podman.
+#
+# To update the digest pin:
+#   podman pull docker.io/library/node:22-slim
+#   podman inspect docker.io/library/node:22-slim --format '{{.Digest}}'
+#   Then replace the Image line with the pinned digest.
+#
+# To build a derived image with tools pre-installed:
+#   podman build -t cognicode-ts-tools -f - . <<'EOF'
+#   FROM docker.io/library/node:22-slim
+#   RUN npm install -g typescript@5 eslint@9 jest@29 ts-jest@29 @types/node@20
+#   EOF
+#   podman inspect cognicode-ts-tools --format '{{.Digest}}'
+#
+[Unit]
+Description=CogniCode TypeScript Sandbox (Hardened)
+RequiresMountsFor=%t/containers
+
+[Container]
+# PROVISIONAL — Update sha256: prefix with actual digest from `podman inspect`
+# Floating tag for development; MUST be pinned before production use.
+# Example: Image=docker.io/library/node:22-slim@sha256:a3f4...
+Image=docker.io/library/node:22-slim
+ContainerName=cognicode-ts
+Volume=%t/containers/cognicode-ts-workspace:/workspace:z
+Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
+Environment=COGNICODE_WORKSPACE=/workspace
+# Isolation: no host network
+Network=none
+# Resource limits
+MemoryMax=1g
+MemorySwap=1g
+PidsLimit=64
+CPUWeight=50
+# Read-only root filesystem
+ReadOnly=yes
+# Tmpfs for /tmp (writable but ephemeral)
+Tmpfs=/tmp:rw,noexec,nosuid,size=64m
+# Security: no new privileges
+NoNewPrivileges=yes
+SupplementaryGroups=
+# Cache volumes for node_modules (mount read-write only to cache dirs)
+# Volume=%t/containers/cognicode-ts-npm-cache:/root/.npm:z
+
+[Service]
+Restart=on-failure
+# AutoUpdate disabled — must pin digest before enabling
+AutoUpdate=no
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

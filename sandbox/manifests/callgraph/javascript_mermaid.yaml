@@ -1,0 +1,36 @@
+# Call Graph Export Mermaid - JavaScript
+version: "2.0"
+language: javascript
+tier: A
+description: "Test export_mermaid tool for JavaScript"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: export_mermaid_js
+    tool: export_mermaid
+    action: export
+    workspace: sandbox/fixtures/javascript/js-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Export full call graph as mermaid for JS fixture"
+    arguments:
+      format: code
+      max_depth: 3
+    ground_truth:
+      min_node_count: 3
+      min_edge_count: 0
+      mermaid_contains:
+        - "flowchart TD"
+        - "greet[greet]"
+        - "add[add]"
+    metrics:
+      correctness:
+        type: recall
+      latency:
+        target_ms: 500
+        max_ms: 2000

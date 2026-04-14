@@ -1,0 +1,67 @@
+# Call Graph Impact Analysis - analyze_impact
+version: "2.0"
+language: rust
+tier: A
+description: "Test analyze_impact tool"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: analyze_impact_helper_rust
+    tool: analyze_impact
+    action: analyze
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Analyze impact of helper function"
+    arguments:
+      symbol_name: helper
+    ground_truth:
+      impacted_files:
+        - src/main.rs
+    metrics:
+      correctness:
+        type: recall
+      latency:
+        target_ms: 500
+        max_ms: 2000
+
+  - name: analyze_impact_main_rust
+    tool: analyze_impact
+    action: analyze
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Analyze impact of main function"
+    arguments:
+      symbol_name: main
+    ground_truth:
+      impacted_files: []
+    metrics:
+      correctness:
+        type: recall
+      latency:
+        target_ms: 500
+        max_ms: 2000
+
+  - name: analyze_impact_compute_rust
+    tool: analyze_impact
+    action: analyze
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Analyze impact of compute function (leaf)"
+    arguments:
+      symbol_name: compute
+    ground_truth:
+      impacted_files: []
+    metrics:
+      correctness:
+        type: recall
+      latency:
+        target_ms: 500
+        max_ms: 2000

@@ -1,0 +1,72 @@
+# Code Intelligence - TypeScript: semantic_search
+version: "2.0"
+language: typescript
+tier: A
+description: "Test semantic_search on ts-hello fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: semantic_search_greet
+    tool: semantic_search
+    action: search
+    workspace: sandbox/fixtures/typescript/ts-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Search for 'greet' symbol"
+    arguments:
+      query: greet
+      max_results: 5
+    ground_truth:
+      search_results: []
+    metrics:
+      correctness:
+        type: recall_at_k
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: semantic_search_add
+    tool: semantic_search
+    action: search
+    workspace: sandbox/fixtures/typescript/ts-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Search for 'add' symbol"
+    arguments:
+      query: add
+      max_results: 5
+    ground_truth:
+      search_results: []
+    metrics:
+      correctness:
+        type: recall_at_k
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: semantic_search_subtract
+    tool: semantic_search
+    action: search
+    workspace: sandbox/fixtures/typescript/ts-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Search for 'subtract' symbol"
+    arguments:
+      query: subtract
+      max_results: 5
+    ground_truth:
+      search_results: []
+    metrics:
+      correctness:
+        type: recall_at_k
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500

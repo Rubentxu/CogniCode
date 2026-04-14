@@ -1,0 +1,42 @@
+{
+  "scenario_id": "javascript_edit_file_syntax_rejected_syntax_rejected",
+  "language": "javascript",
+  "tier": "A",
+  "repo": "fixture",
+  "commit": "unknown",
+  "tool": "edit_file",
+  "action": "apply",
+  "expected_outcome": "expected_fail",
+  "outcome": "preexisting_fail",
+  "failure_class": "preexisting_repo_failure",
+  "timing_ms": {
+    "setup_ms": 0,
+    "server_startup_ms": 10,
+    "tool_call_ms": 0,
+    "validation_ms": 0,
+    "teardown_ms": 2,
+    "total_ms": 2191
+  },
+  "resource_usage": {
+    "peak_rss_mb": 0.0,
+    "cpu_time_s": 0.0
+  },
+  "validation": {
+    "stages": [
+      {
+        "stage": "syntax",
+        "status": "fail",
+        "exit_code": 1,
+        "stdout_excerpt": "",
+        "stderr_excerpt": "/tmp/.tmpnDcuwc/js-hello/hello.js:22\n\n\n\nSyntaxError: Unexpected end of input\n    at wrapSafe (node:internal/modules/cjs/loader:1691:18)\n    at checkSyntax (node:internal/main/check_syntax:76:3)\n\nNode.js v25.2.1\n",
+        "duration_ms": 65
+      }
+    ],
+    "passed": false
+  },
+  "artifacts": [],
+  "container_image": "docker.io/library/node:22-slim",
+  "workspace_snapshot_id": "pending",
+  "started_at": "2026-04-08T21:58:48Z",
+  "completed_at": "2026-04-08T21:58:50Z"
+}

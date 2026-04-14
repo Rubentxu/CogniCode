@@ -1,0 +1,81 @@
+# Code Intelligence - JavaScript: get_complexity
+version: "2.0"
+language: javascript
+tier: A
+description: "Test get_complexity on js-intelligence fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: complexity_greet
+    tool: get_complexity
+    action: analyze
+    workspace: sandbox/fixtures/js-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Get complexity for greet function"
+    arguments:
+      file_path: example.js
+      function_name: greet
+    ground_truth:
+      complexity:
+        cyclomatic: 1
+        cognitive: 1
+        nesting: 0
+    metrics:
+      correctness:
+        type: within_tolerance
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: complexity_add
+    tool: get_complexity
+    action: analyze
+    workspace: sandbox/fixtures/js-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Get complexity for add function"
+    arguments:
+      file_path: example.js
+      function_name: add
+    ground_truth:
+      complexity:
+        cyclomatic: 1
+        cognitive: 1
+        nesting: 0
+    metrics:
+      correctness:
+        type: within_tolerance
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: complexity_calculator_add
+    tool: get_complexity
+    action: analyze
+    workspace: sandbox/fixtures/js-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Get complexity for Calculator.add method"
+    arguments:
+      file_path: example.js
+      function_name: Calculator.add
+    ground_truth:
+      complexity:
+        cyclomatic: 1
+        cognitive: 1
+        nesting: 0
+    metrics:
+      correctness:
+        type: within_tolerance
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500

@@ -1,0 +1,12 @@
+{
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "{\"content\":\"/**\\n * A simple greeting module (TypeScript).\\n */\\n\\nexport function greet(name: string): string {\\n  return `Hello, ${name}!`;\\n}\\n\\nexport function add(a: number, b: number): number {\\n  return a + b;\\n}\\n\\nexport function subtract(a: number, b: number): number {\\n  return a - b;\\n}\\n\\nif (require.main === module) {\\n  console.log(greet('CogniCode'));\\n  console.log(`2 + 3 = ${add(2, 3)}`);\\n}\",\"total_lines\":20,\"truncated\":false,\"metadata\":{\"path\":\"/tmp/.tmpv904Hq/ts-hello/hello.ts\",\"size\":382,\"modified\":1775685845,\"language\":\"typescript\"},\"mode\":\"raw\",\"start_line\":1,\"end_line\":500,\"has_more\":false,\"next_token\":null,\"suggested_chunk_size\":null}",
+        "type": "text"
+      }
+    ]
+  }
+}

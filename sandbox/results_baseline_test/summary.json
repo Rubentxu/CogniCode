@@ -1,0 +1,41 @@
+{
+  "total": 2,
+  "passed": 0,
+  "failed": 0,
+  "expected_failures": 2,
+  "unexpected_passes": 0,
+  "pass_rate": 0.0,
+  "by_language": {
+    "rust": {
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "pass_rate": 1.0,
+      "timing_p50_ms": 21,
+      "timing_p95_ms": 21,
+      "timing_p99_ms": 21
+    }
+  },
+  "by_tool": {
+    "edit_file": {
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "pass_rate": 1.0,
+      "timing_p50_ms": 21,
+      "timing_p95_ms": 21,
+      "timing_p99_ms": 21
+    }
+  },
+  "failure_distribution": {
+    "preexisting_repo_failure": 2
+  },
+  "duration_p50_ms": 21,
+  "duration_p95_ms": 21,
+  "duration_p99_ms": 21,
+  "ci_blocking": 0,
+  "regressions_vs_baseline": [],
+  "run_started_at": "2026-04-09T12:49:05Z",
+  "run_completed_at": "2026-04-09T12:49:05Z",
+  "orchestrator_version": "0.1.0"
+}

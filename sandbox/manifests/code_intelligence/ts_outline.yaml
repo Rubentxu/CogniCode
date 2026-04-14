@@ -1,0 +1,44 @@
+# Code Intelligence - TypeScript: get_outline
+version: "2.0"
+language: typescript
+tier: A
+description: "Test get_outline on ts-hello fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: outline_hello
+    tool: get_outline
+    action: analyze
+    workspace: sandbox/fixtures/typescript/ts-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Extract outline from hello.ts"
+    arguments:
+      file_path: hello.ts
+    ground_truth:
+      outline:
+        nodes:
+          - name: greet
+            kind: function
+            line: 5
+            col: 0
+          - name: add
+            kind: function
+            line: 9
+            col: 0
+          - name: subtract
+            kind: function
+            line: 13
+            col: 0
+    metrics:
+      correctness:
+        type: structure_match
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500

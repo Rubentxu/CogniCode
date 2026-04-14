@@ -1,0 +1,13 @@
+{
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "Application error: Internal error: Invalid parameter: Directory not found: /tmp/.tmpaxiV73/ts-hello/ts-hello",
+        "type": "text"
+      }
+    ],
+    "isError": true
+  }
+}

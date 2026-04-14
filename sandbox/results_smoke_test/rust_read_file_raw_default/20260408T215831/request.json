@@ -1,0 +1,11 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "action": "read",
+      "mode": "raw",
+      "path": "src/lib.rs"
+    },
+    "name": "read_file"
+  }
+}

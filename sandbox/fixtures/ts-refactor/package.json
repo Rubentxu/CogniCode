@@ -1,0 +1,6 @@
+{
+  "name": "ts-refactor-fixture",
+  "version": "1.0.0",
+  "description": "Refactoring test fixture for CogniCode sandbox",
+  "private": true
+}

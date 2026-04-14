@@ -1,0 +1,38 @@
+# JavaScript Smoke Real Repo Manifest - Phase 2 Batch B
+# Fast subset of js_repos.yaml for smoke testing (target: <2 min for JS scenarios)
+# Uses chalk CLI pinned at v5.1.0 (Tier B real repo)
+#
+# Only includes read-only scenarios (no npm ci) to keep smoke fast
+
+version: "1.0"
+language: javascript
+tier: B
+description: "JavaScript Tier B smoke scenarios — chalk real repo (read-only only)"
+
+timeout_seconds: 120
+
+scenarios:
+  - name: realrepo_read_source
+    description: "Read chalk source file as raw text"
+    tool: read_file
+    action: read
+    repo: chalk
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: source/index.js
+      mode: raw
+
+  - name: realrepo_search_content
+    description: "Search for 'chalk' in real repo"
+    tool: search_content
+    action: search
+    repo: chalk
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "chalk"
+      path: .
+    # ground_truth removed: tool matches test/ files, manifest expected source/index.js

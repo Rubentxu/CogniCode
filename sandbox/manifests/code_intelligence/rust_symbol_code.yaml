@@ -1,0 +1,62 @@
+# Code Intelligence - Rust: get_symbol_code
+version: "2.0"
+language: rust
+tier: A
+description: "Test get_symbol_code on rust-intelligence fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: code_rust_greet
+    tool: get_symbol_code
+    action: extract
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Extract source code for greet function with docstring"
+    arguments:
+      file: src/lib.rs
+      line: 7
+      col: 0
+    ground_truth:
+      code:
+        file: src/lib.rs
+        line: 7
+        col: 0
+        content: "pub fn greet(name: &str) -> String { format!(\"Hello, {}!\", name) }"
+    metrics:
+      correctness:
+        type: exact_match
+        tolerance_pct: 0.0
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: code_rust_calculator
+    tool: get_symbol_code
+    action: extract
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Extract source code for Calculator struct"
+    arguments:
+      file: src/lib.rs
+      line: 27
+      col: 0
+    ground_truth:
+      code:
+        file: src/lib.rs
+        line: 27
+        col: 0
+        content: "pub struct Calculator { value: i32, }"
+    metrics:
+      correctness:
+        type: exact_match
+        tolerance_pct: 0.0
+      latency:
+        target_ms: 100
+        max_ms: 500

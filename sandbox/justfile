@@ -1,0 +1,186 @@
+project_root := justfile_directory() / ".."
+binary       := project_root / "target/release/cognicode-mcp"
+orchestrator := project_root / "target/release/sandbox-orchestrator"
+results_dir  := justfile_directory() / "results"
+reports_dir  := justfile_directory() / "reports"
+repos_dir    := justfile_directory() / "repos"
+fixtures_dir := justfile_directory() / "fixtures"
+manifests_dir := justfile_directory() / "manifests"
+
+# Build the MCP binary and the test client
+build:
+    cd {{project_root}} && cargo build --release --bin cognicode-mcp --bin mcp-client
+
+# Build the sandbox orchestrator binary
+build-orchestrator:
+    cd {{project_root}} && cargo build --release --bin sandbox-orchestrator
+
+# Plan: expand manifests and list scenarios without executing
+sandbox-plan: build-orchestrator
+    {{orchestrator}} plan {{manifests_dir}}/*.yaml
+
+# Run all sandbox scenarios via orchestrator (manifest-driven)
+sandbox-run-orchestrator: build-orchestrator
+    mkdir -p {{results_dir}}
+    {{orchestrator}} run \
+        {{manifests_dir}}/*.yaml \
+        --results-dir {{results_dir}} \
+        --repos-dir {{repos_dir}} \
+        --fixtures-dir {{fixtures_dir}}
+
+# Legacy: run shell scenarios (backward compatible)
+sandbox-run: build
+    mkdir -p {{results_dir}}
+    bash -c 'for script in {{justfile_directory()}}/scenarios/*.sh; do bash {{justfile_directory()}}/scripts/run_scenario.sh "$script"; done'
+
+# Run the existing test suite + all sandbox scenarios
+test-all: sandbox-run
+    cd {{project_root}} && cargo test
+
+# Pull images, clone repos, start containers
+# NOTE: Digest pins must be updated manually when images change
+# Run: just sandbox-pull  to refresh images
+sandbox-pull:
+    # Rust — pinned digest (update sha256:... when image changes)
+    podman pull docker.io/library/rust@sha256:16b31a5e2b37d0e1c9c0e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
+    # Python — pinned digest
+    podman pull docker.io/library/python@sha256:17a7e2e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
+    # Java — pinned digest
+    podman pull docker.io/library/eclipse-temurin@sha256:8a3a3e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
+    # JS/TS — PROVISIONAL (no digest pin yet — Phase 2 containers are hardened but image is floating tag)
+    podman pull docker.io/library/node:22-slim || true
+    # Go — provisional
+    podman pull docker.io/library/golang:1.23-alpine || true
+
+sandbox-setup: sandbox-pull
+    bash {{justfile_directory()}}/scripts/clone_repos.sh
+    cp {{justfile_directory()}}/containers/rust.container \
+       {{justfile_directory()}}/containers/python.container \
+       {{justfile_directory()}}/containers/java.container \
+       ~/.config/containers/systemd/ 2>/dev/null || true
+    systemctl --user daemon-reload 2>/dev/null || true
+    systemctl --user start cognicode-rust cognicode-python cognicode-java 2>/dev/null || true
+
+# Setup JS/TS containers (Phase 2)
+sandbox-setup-js-ts:
+    cp {{justfile_directory()}}/containers/js.container \
+       {{justfile_directory()}}/containers/ts.container \
+       ~/.config/containers/systemd/ 2>/dev/null || true
+    systemctl --user daemon-reload 2>/dev/null || true
+    systemctl --user start cognicode-js cognicode-ts 2>/dev/null || true
+
+# ─── CI SMOKE LANE ────────────────────────────────────────────────────────────
+# Fast fixture-based validation (target: <5 min)
+# Exit 0 = all pass/fail as expected, Exit 1 = unexpected failure, Exit 2 = infra failure
+# Includes: Rust + Python + JS Tier A fixtures + 1-2 JS real-repo read-only scenarios
+sandbox-ci-smoke: build-orchestrator
+    mkdir -p {{results_dir}}
+    # Run Tier A fixtures: Rust, Python, JavaScript + JS real repo smoke
+    {{orchestrator}} run \
+        {{manifests_dir}}/rust_fixture.yaml \
+        {{manifests_dir}}/python_fixture.yaml \
+        {{manifests_dir}}/js.yaml \
+        {{manifests_dir}}/js_smoke.yaml \
+        --results-dir {{results_dir}} \
+        --repos-dir {{repos_dir}} \
+        --fixtures-dir {{fixtures_dir}} \
+        --server-binary {{binary}}
+    # Generate machine-readable summary for CI consumption
+    {{orchestrator}} report {{results_dir}}
+
+# ─── CI PROBE LANE (Phase 3) ─────────────────────────────────────────────────
+# Java/Go expected-fail capability probes — exit 0 if all classify as capability_missing
+sandbox-ci-probe: build-orchestrator
+    mkdir -p {{results_dir}}/probe
+    {{orchestrator}} run \
+        {{manifests_dir}}/java.yaml \
+        {{manifests_dir}}/go.yaml \
+        --results-dir {{results_dir}}/probe \
+        --repos-dir {{repos_dir}} \
+        --fixtures-dir {{fixtures_dir}}
+    {{orchestrator}} report {{results_dir}}/probe
+    # Probe passes if all results are expected_fails (capability_missing)
+    # The orchestrator exits 1 on unexpected failures, 0 on all expected
+
+# ─── CI FULL LANE (Nightly) ──────────────────────────────────────────────────
+# Full matrix: all languages (Rust, Python, JS, TS) + all tiers + real repos
+# Produces JSONL diff vs baseline, artifact uploads
+sandbox-ci-full: build-orchestrator
+    mkdir -p {{results_dir}}/full
+    {{orchestrator}} run \
+        {{manifests_dir}}/rust.yaml \
+        {{manifests_dir}}/python.yaml \
+        {{manifests_dir}}/js.yaml \
+        {{manifests_dir}}/ts.yaml \
+        {{manifests_dir}}/js_repos.yaml \
+        {{manifests_dir}}/ts_repos.yaml \
+        {{manifests_dir}}/rust_repos.yaml \
+        {{manifests_dir}}/python_repos.yaml \
+        --results-dir {{results_dir}}/full \
+        --repos-dir {{repos_dir}} \
+        --fixtures-dir {{fixtures_dir}} \
+        --server-binary {{binary}} \
+        --jsonl
+    {{orchestrator}} report {{results_dir}}/full --output {{results_dir}}/full/summary.json --baseline {{results_dir}}/baseline/summary.json
+    # Show regressions if any
+    @if [ -f {{results_dir}}/full/summary.json ]; then \
+        regressions=$$(jq -r '.regressions_vs_baseline[] // empty' {{results_dir}}/full/summary.json); \
+        if [ -n "$$regressions" ]; then \
+            echo "=== Regressions vs Baseline ==="; \
+            echo "$$regressions"; \
+        else \
+            echo "No regressions detected vs baseline"; \
+        fi; \
+    fi
+
+# Plan CI: expand manifests and print scenario list (no execution)
+sandbox-plan-ci: build-orchestrator
+    {{orchestrator}} plan {{manifests_dir}}/rust.yaml {{manifests_dir}}/python.yaml
+
+# Plan JS/TS: expand JS and TS manifests and print scenario list
+sandbox-plan-js-ts: build-orchestrator
+    {{orchestrator}} plan {{manifests_dir}}/js.yaml {{manifests_dir}}/ts.yaml {{manifests_dir}}/js_repos.yaml {{manifests_dir}}/ts_repos.yaml
+
+# Aggregate results into Markdown (consumed by CI)
+sandbox-report:
+    mkdir -p {{reports_dir}}
+    bash {{justfile_directory()}}/scripts/generate_report.sh {{results_dir}} {{reports_dir}}
+
+# Orchestrator report: generate summary from existing results
+sandbox-report-summary: build-orchestrator
+    {{orchestrator}} report {{results_dir}}
+
+# Snapshot current results as baseline for future diffs
+sandbox-ci-baseline-save: build-orchestrator
+    mkdir -p {{results_dir}}/baseline
+    # Run full matrix and save as baseline
+    {{orchestrator}} run \
+        {{manifests_dir}}/rust.yaml \
+        {{manifests_dir}}/python.yaml \
+        {{manifests_dir}}/js.yaml \
+        {{manifests_dir}}/ts.yaml \
+        {{manifests_dir}}/js_repos.yaml \
+        {{manifests_dir}}/ts_repos.yaml \
+        {{manifests_dir}}/rust_repos.yaml \
+        {{manifests_dir}}/python_repos.yaml \
+        --results-dir {{results_dir}}/baseline \
+        --repos-dir {{repos_dir}} \
+        --fixtures-dir {{fixtures_dir}} \
+        --server-binary {{binary}} \
+        --jsonl
+    {{orchestrator}} report {{results_dir}}/baseline --output {{results_dir}}/baseline/summary.json
+    @echo "Baseline saved to {{results_dir}}/baseline/summary.json"
+
+# Alias for backward compatibility
+sandbox-baseline-snapshot:
+    @echo "Use 'just sandbox-ci-baseline-save' instead"
+
+# Full CI run: smoke + probe + report
+sandbox-ci: sandbox-ci-smoke sandbox-report
+    echo "CI run complete"
+
+# Destroy containers and ephemeral data
+sandbox-clean:
+    -systemctl --user stop cognicode-rust cognicode-python cognicode-java cognicode-js cognicode-ts 2>/dev/null || true
+    -podman rm -f cognicode-rust cognicode-python cognicode-java cognicode-js cognicode-ts 2>/dev/null || true
+    rm -rf {{repos_dir}} {{results_dir}} {{reports_dir}}

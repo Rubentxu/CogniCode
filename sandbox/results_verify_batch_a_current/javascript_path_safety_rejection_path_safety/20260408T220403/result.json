@@ -1,0 +1,48 @@
+{
+  "scenario_id": "javascript_path_safety_rejection_path_safety",
+  "language": "javascript",
+  "tier": "A",
+  "repo": "fixture",
+  "commit": "unknown",
+  "tool": "edit_file",
+  "action": "apply",
+  "expected_outcome": "expected_fail",
+  "outcome": "preexisting_fail",
+  "failure_class": "preexisting_repo_failure",
+  "timing_ms": {
+    "setup_ms": 0,
+    "server_startup_ms": 15,
+    "tool_call_ms": 0,
+    "validation_ms": 0,
+    "teardown_ms": 2,
+    "total_ms": 2210
+  },
+  "resource_usage": {
+    "peak_rss_mb": 0.0,
+    "cpu_time_s": 0.0
+  },
+  "validation": {
+    "stages": [
+      {
+        "stage": "syntax",
+        "status": "pass",
+        "exit_code": 0,
+        "duration_ms": 95
+      },
+      {
+        "stage": "test",
+        "status": "fail",
+        "exit_code": 2,
+        "stdout_excerpt": "",
+        "stderr_excerpt": "sh: 1: cd: can't cd to /workspace\n",
+        "duration_ms": 3
+      }
+    ],
+    "passed": false
+  },
+  "artifacts": [],
+  "container_image": "docker.io/library/node:22-slim",
+  "workspace_snapshot_id": "pending",
+  "started_at": "2026-04-08T22:04:01Z",
+  "completed_at": "2026-04-08T22:04:03Z"
+}

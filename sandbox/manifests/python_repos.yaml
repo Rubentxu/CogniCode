@@ -1,0 +1,126 @@
+# Python Real Repo Scenario Manifest - Phase 2 Batch D
+# Uses urllib3 (v2.1.0) and requests (v2.32.3) as Tier B real repos
+#
+# Tier B scenarios are NOT included in the fast smoke lane.
+# They run in the full nightly matrix.
+
+version: "1.0"
+language: python
+tier: B
+description: "Python Tier B scenarios — urllib3 and requests real repos"
+
+timeout_seconds: 300
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: syntax
+      commands: ["python -m py_compile src/ 2>&1 || true"]
+      timeout_seconds: 60
+
+scenarios:
+  # ─── urllib3 scenarios ─────────────────────────────────────────────────────
+
+  - name: realrepo_read_source_urllib3
+    description: "Read urllib3 source file as raw text"
+    tool: read_file
+    action: read
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: preexisting_fail
+    arguments:
+      path: src/urllib3/__init__.py
+      mode: raw
+
+  - name: realrepo_search_content_urllib3
+    description: "Search for 'import' in urllib3 source"
+    tool: search_content
+    action: search
+    repo: urllib3
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: preexisting_fail
+    arguments:
+      pattern: "import"
+      path: src/urllib3
+    ground_truth:
+      matches:
+        - path: _collections.py
+        - path: poolmanager.py
+        - path: response.py
+
+  - name: realrepo_edit_file_urllib3
+    description: "Apply edit in urllib3 real repo with syntax check"
+    tool: edit_file
+    action: apply
+    repo: urllib3
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: preexisting_fail
+    variant: concrete
+    arguments:
+      path: src/urllib3/__init__.py
+      old_text: "# TODO:"
+      new_text: "# FIXED:"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: syntax
+          commands: ["python -m py_compile src/urllib3/__init__.py 2>&1"]
+          timeout_seconds: 30
+
+  # ─── requests scenarios ────────────────────────────────────────────────────
+
+  - name: realrepo_read_source_requests
+    description: "Read requests source file as raw text"
+    tool: read_file
+    action: read
+    repo: requests
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: preexisting_fail
+    arguments:
+      path: src/requests/__init__.py
+      mode: raw
+
+  - name: realrepo_search_content_requests
+    description: "Search for 'class' in requests source"
+    tool: search_content
+    action: search
+    repo: requests
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: preexisting_fail
+    arguments:
+      pattern: "class"
+      path: src/requests
+    ground_truth:
+      matches:
+        - path: api.py
+        - path: auth.py
+        - path: cookies.py
+        - path: models.py
+        - path: structures.py
+
+  - name: realrepo_edit_file_requests
+    description: "Apply edit in requests real repo with syntax check"
+    tool: edit_file
+    action: apply
+    repo: requests
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: preexisting_fail
+    variant: concrete
+    arguments:
+      path: src/requests/__init__.py
+      old_text: "# TODO:"
+      new_text: "# FIXED:"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: syntax
+          commands: ["python -m py_compile src/requests/__init__.py 2>&1"]
+          timeout_seconds: 30

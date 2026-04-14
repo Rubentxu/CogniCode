@@ -1,0 +1,156 @@
+version: '2.0'
+language: rust
+tier: A
+description: Test find_usages on rust-intelligence fixture with ground truth
+timeout_seconds: 30
+validation:
+  failure_is_regression: true
+  stages: []
+scenarios:
+- name: find_usages_greet
+  tool: find_usages
+  action: search
+  workspace: sandbox/fixtures/rust-intelligence
+  scenario_class: read_only
+  expected_outcome: pass
+  description: Find usages of greet function
+  arguments:
+    file_path: src/lib.rs
+    symbol_name: greet
+  ground_truth:
+    usages:
+    - file: src/lib.rs
+      line: 7
+      col: 7
+      context: "pub fn greet(name: &str) -> String {"
+    - file: src/lib.rs
+      line: 54
+      col: 19
+      context: "assert_eq!(greet(\"World\"), \"Hello, World!\");"
+  metrics:
+    correctness:
+      type: precision_recall
+      tolerance_pct: 0.05
+    latency:
+      target_ms: 100
+      max_ms: 500
+- name: find_usages_add
+  tool: find_usages
+  action: search
+  workspace: sandbox/fixtures/rust-intelligence
+  scenario_class: read_only
+  expected_outcome: pass
+  description: Find usages of add function
+  arguments:
+    file_path: src/lib.rs
+    symbol_name: add
+  ground_truth:
+    usages:
+    - file: src/lib.rs
+      line: 12
+      col: 7
+      context: "pub fn add(a: i32, b: i32) -> i32 {"
+    - file: src/lib.rs
+      line: 38
+      col: 11
+      context: "pub fn add(&mut self, amount: i32) {"
+    - file: src/lib.rs
+      line: 59
+      col: 19
+      context: "assert_eq!(add(2, 3), 5);"
+  metrics:
+    correctness:
+      type: precision_recall
+      tolerance_pct: 0.05
+    latency:
+      target_ms: 100
+      max_ms: 500
+- name: find_usages_calculator
+  tool: find_usages
+  action: search
+  workspace: sandbox/fixtures/rust-intelligence
+  scenario_class: read_only
+  expected_outcome: pass
+  description: Find usages of Calculator struct
+  arguments:
+    file_path: src/lib.rs
+    symbol_name: Calculator
+  ground_truth:
+    usages:
+    - file: src/lib.rs
+      line: 27
+      col: 11
+      context: "pub struct Calculator {"
+    - file: src/lib.rs
+      line: 31
+      col: 5
+      context: "impl Calculator {"
+    - file: src/lib.rs
+      line: 34
+      col: 8
+      context: "Calculator { value: initial }"
+  metrics:
+    correctness:
+      type: precision_recall
+      tolerance_pct: 0.05
+    latency:
+      target_ms: 100
+      max_ms: 500
+- name: find_usages_with_context_greet
+  tool: find_usages_with_context
+  action: search
+  workspace: sandbox/fixtures/rust-intelligence
+  scenario_class: read_only
+  expected_outcome: pass
+  description: Find usages of greet function with context
+  arguments:
+    symbol: greet
+    context_lines: 2
+  ground_truth:
+    usages:
+    - file: src/lib.rs
+      line: 7
+      col: 7
+      context: "pub fn greet(name: &str) -> String {"
+    - file: src/lib.rs
+      line: 54
+      col: 19
+      context: "assert_eq!(greet(\"World\"), \"Hello, World!\");"
+  metrics:
+    correctness:
+      type: precision_recall
+      tolerance_pct: 0.05
+    latency:
+      target_ms: 100
+      max_ms: 500
+- name: find_usages_with_context_add
+  tool: find_usages_with_context
+  action: search
+  workspace: sandbox/fixtures/rust-intelligence
+  scenario_class: read_only
+  expected_outcome: pass
+  description: Find usages of add function with context
+  arguments:
+    symbol: add
+    context_lines: 2
+  ground_truth:
+    usages:
+    - file: src/lib.rs
+      line: 12
+      col: 7
+      context: "pub fn add(a: i32, b: i32) -> i32 {"
+    - file: src/lib.rs
+      line: 38
+      col: 11
+      context: "pub fn add(&mut self, amount: i32) {"
+    - file: src/lib.rs
+      line: 59
+      col: 19
+      context: "assert_eq!(add(2, 3), 5);"
+  metrics:
+    correctness:
+      type: precision_recall
+      tolerance_pct: 0.05
+    latency:
+      target_ms: 100
+      max_ms: 500

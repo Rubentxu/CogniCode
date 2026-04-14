@@ -1,0 +1,49 @@
+# Call Graph Impact Analysis - analyze_impact (Python)
+version: "2.0"
+language: python
+tier: A
+description: "Test analyze_impact tool for Python"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: analyze_impact_greet_python
+    tool: analyze_impact
+    action: analyze
+    workspace: sandbox/fixtures/python
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Analyze impact of greet function (called by test_greet)"
+    arguments:
+      symbol_name: greet
+    ground_truth:
+      impacted_files:
+        - test_hello.py
+    metrics:
+      correctness:
+        type: recall
+      latency:
+        target_ms: 500
+        max_ms: 2000
+
+  - name: analyze_impact_add_python
+    tool: analyze_impact
+    action: analyze
+    workspace: sandbox/fixtures/python
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Analyze impact of add function"
+    arguments:
+      symbol_name: add
+    ground_truth:
+      impacted_files: []
+    metrics:
+      correctness:
+        type: recall
+      latency:
+        target_ms: 500
+        max_ms: 2000

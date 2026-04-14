@@ -1,0 +1,15 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "edits": [
+        {
+          "new_string": "root:x:0:0:root:/root:/bin/bash",
+          "old_string": "root:x:0:0:"
+        }
+      ],
+      "path": "/etc/passwd"
+    },
+    "name": "edit_file"
+  }
+}

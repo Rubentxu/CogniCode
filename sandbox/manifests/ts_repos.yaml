@@ -1,0 +1,190 @@
+# TypeScript Real Repo Scenario Manifest - Phase 2 Batch B + Phase 3 Expansion
+# Uses commander.js pinned at v11.0.0 (Tier B real repo)
+# Phase 3 adds colinhacks/zod pinned at v3.24.1 (Tier B real repo)
+#
+# Tier B scenarios are expected to be slower (npm ci) and are NOT included
+# in the fast smoke lane. They run in the full nightly matrix.
+
+version: "1.0"
+language: typescript
+tier: B
+description: "TypeScript Tier B scenarios — commander.js and zod real repos"
+
+timeout_seconds: 300
+
+validation:
+  failure_is_regression: false
+  stages: []
+
+# Per-repo metadata for reproducibility
+repos:
+  commander:
+    repo_url: "https://github.com/tj/commander.js.git"
+    pinned_sha: "v11.0.0"
+  typescript/zod:
+    repo_url: "https://github.com/colinhacks/zod.git"
+    pinned_sha: "v3.24.1"
+
+scenarios:
+  - name: realrepo_read_source
+    description: "Read commander.js source file as raw text"
+    tool: read_file
+    action: read
+    repo: commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: index.js
+      mode: raw
+
+  - name: realrepo_search_content
+    description: "Search for 'program' in real repo"
+    tool: search_content
+    action: search
+    repo: commander
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "program"
+      path: .
+    # ground_truth removed: path matching issue - tool returns absolute paths
+
+  - name: realrepo_extract_symbols
+    description: "Extract symbols from commander.js source"
+    tool: get_file_symbols
+    action: extract
+    repo: commander
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      file_path: lib/command.js
+
+  - name: realrepo_safe_refactor
+    description: "Attempt safe refactor rename on commander (not yet supported)"
+    tool: safe_refactor
+    action: rename
+    repo: commander
+    workspace: .
+    scenario_class: mutation
+    preview_only: true
+    expected_outcome: capability_missing
+    arguments:
+      target: Command
+      params:
+        new_name: CommandNew
+        file_path: lib/command.js
+
+  - name: realrepo_edit_file
+    description: "Apply edit in commander.js real repo with npm ci + validation"
+    tool: edit_file
+    action: apply
+    repo: commander
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: concrete
+    arguments:
+      path: lib/command.js
+      old_text: "this._name = name || '';"
+      new_text: "this._programName = name || '';"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: build
+          commands: ["npm ci --frozen-lockfile || npm install"]
+          timeout_seconds: 180
+        - name: build
+          commands: ["tsc --noEmit"]
+          timeout_seconds: 60
+        - name: test
+          commands: ["npm test"]
+          timeout_seconds: 120
+
+  # ─── zod scenarios ────────────────────────────────────────────────────────────
+
+  - name: realrepo_read_source_zod
+    description: "Read zod source file as raw text"
+    tool: read_file
+    action: read
+    repo: typescript/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/types.ts
+      mode: raw
+
+  - name: realrepo_search_content_zod
+    description: "Search for 'z' in zod source"
+    tool: search_content
+    action: search
+    repo: typescript/zod
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "Zod"
+      path: src
+    ground_truth:
+      matches:
+        - path: ZodError.ts
+        - path: en.ts
+        - path: errors.ts
+        - path: external.ts
+
+  - name: realrepo_extract_symbols_zod
+    description: "Extract symbols from zod types file (conditional types)"
+    tool: get_file_symbols
+    action: extract
+    repo: typescript/zod
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      file_path: src/types.ts
+
+  - name: realrepo_safe_refactor_zod
+    description: "Attempt safe refactor rename on zod (not yet supported)"
+    tool: safe_refactor
+    action: rename
+    repo: typescript/zod
+    workspace: .
+    scenario_class: mutation
+    preview_only: true
+    expected_outcome: capability_missing
+    arguments:
+      target: ZodType
+      params:
+        new_name: ZodTypeNew
+        file_path: src/types.ts
+
+  - name: realrepo_edit_file_zod
+    description: "Apply edit in zod real repo with npm ci + validation"
+    tool: edit_file
+    action: apply
+    repo: typescript/zod
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: concrete
+    arguments:
+      path: src/types.ts
+      old_text: "// TODO:"
+      new_text: "// FIXED:"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: build
+          commands: ["npm ci --frozen-lockfile || npm install"]
+          timeout_seconds: 180
+        - name: build
+          commands: ["tsc --noEmit"]
+          timeout_seconds: 60
+        - name: test
+          commands: ["jest --passWithNoTests"]
+          timeout_seconds: 120

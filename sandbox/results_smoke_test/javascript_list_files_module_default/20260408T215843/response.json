@@ -1,0 +1,12 @@
+{
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "{\"files\":[{\"path\":\"/tmp/.tmpmRg3I4/js-hello\",\"size\":4096,\"modified\":1775685521,\"is_dir\":true,\"language\":null},{\"path\":\"/tmp/.tmpmRg3I4/js-hello/hello.js\",\"size\":325,\"modified\":1775685521,\"is_dir\":false,\"language\":\"javascript\"},{\"path\":\"/tmp/.tmpmRg3I4/js-hello/jest.config.js\",\"size\":223,\"modified\":1775685521,\"is_dir\":false,\"language\":\"javascript\"},{\"path\":\"/tmp/.tmpmRg3I4/js-hello/package-lock.json\",\"size\":131689,\"modified\":1775685521,\"is_dir\":false,\"language\":\"json\"},{\"path\":\"/tmp/.tmpmRg3I4/js-hello/package.json\",\"size\":266,\"modified\":1775685521,\"is_dir\":false,\"language\":\"json\"},{\"path\":\"/tmp/.tmpmRg3I4/js-hello/test_hello.js\",\"size\":345,\"modified\":1775685521,\"is_dir\":false,\"language\":\"javascript\"}],\"total\":6,\"depth_traversed\":1}",
+        "type": "text"
+      }
+    ]
+  }
+}

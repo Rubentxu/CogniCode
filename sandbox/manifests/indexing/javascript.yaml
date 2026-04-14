@@ -1,0 +1,118 @@
+# Indexing - JavaScript: build_lightweight_index, query_symbol_index
+version: "2.0"
+language: javascript
+tier: A
+description: "Test indexing tools on js-indexing fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: build_lightweight_index_js
+    tool: build_lightweight_index
+    action: build
+    workspace: sandbox/fixtures/js-indexing
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Build lightweight index for js-indexing fixture"
+    arguments:
+      directory: .
+      strategy: lightweight
+    ground_truth:
+      indexed_symbols:
+        - name: greet
+          kind: function
+          location:
+            file: index.js
+            line: 13
+            col: 0
+        - name: farewell
+          kind: function
+          location:
+            file: index.js
+            line: 17
+            col: 0
+        - name: Calculator
+          kind: class
+          location:
+            file: index.js
+            line: 21
+            col: 0
+        - name: process
+          kind: function
+          location:
+            file: index.js
+            line: 35
+            col: 0
+        - name: formatResult
+          kind: function
+          location:
+            file: utils.js
+            line: 9
+            col: 0
+        - name: validateInput
+          kind: function
+          location:
+            file: utils.js
+            line: 13
+            col: 0
+    metrics:
+      correctness:
+        type: index_completeness
+        tolerance_pct: 0.1
+      latency:
+        target_ms: 200
+        max_ms: 1000
+
+  - name: query_symbol_index_js_greet
+    tool: query_symbol_index
+    action: query
+    workspace: sandbox/fixtures/js-indexing
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Query for 'greet' symbol in js-indexing fixture"
+    arguments:
+      symbol_name: greet
+      directory: .
+    ground_truth:
+      query_results:
+        - symbol_name: greet
+          locations:
+            - file: index.js
+              line: 13
+              col: 0
+    metrics:
+      correctness:
+        type: recall@k
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 50
+        max_ms: 200
+
+  - name: query_symbol_index_js_calculator
+    tool: query_symbol_index
+    action: query
+    workspace: sandbox/fixtures/js-indexing
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Query for 'Calculator' class in js-indexing fixture"
+    arguments:
+      symbol_name: Calculator
+      directory: .
+    ground_truth:
+      query_results:
+        - symbol_name: Calculator
+          locations:
+            - file: index.js
+              line: 21
+              col: 0
+    metrics:
+      correctness:
+        type: recall@k
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 50
+        max_ms: 200

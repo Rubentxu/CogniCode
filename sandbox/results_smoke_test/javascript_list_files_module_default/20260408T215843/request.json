@@ -1,0 +1,10 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "action": "list",
+      "path": "."
+    },
+    "name": "list_files"
+  }
+}

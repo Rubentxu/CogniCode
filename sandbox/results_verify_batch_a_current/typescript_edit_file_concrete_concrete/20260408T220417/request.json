@@ -1,0 +1,15 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "edits": [
+        {
+          "new_string": "export function calculateRectangleArea(width: number, height: number): number",
+          "old_string": "export function calculateArea(width: number, height: number): number"
+        }
+      ],
+      "path": "index.ts"
+    },
+    "name": "edit_file"
+  }
+}

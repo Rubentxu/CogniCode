@@ -1,0 +1,11 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "action": "search",
+      "path": "js-hello",
+      "pattern": "function"
+    },
+    "name": "search_content"
+  }
+}

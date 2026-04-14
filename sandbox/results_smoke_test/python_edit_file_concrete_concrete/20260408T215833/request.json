@@ -1,0 +1,15 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "edits": [
+        {
+          "new_string": "def multiply_numbers(a: int, b: int) -> int:",
+          "old_string": "def multiply(a: int, b: int) -> int:"
+        }
+      ],
+      "path": "hello.py"
+    },
+    "name": "edit_file"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "action": "list",
+      "path": "ts-hello"
+    },
+    "name": "list_files"
+  }
+}

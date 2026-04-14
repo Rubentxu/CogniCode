@@ -1,0 +1,15 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "edits": [
+        {
+          "new_string": "def greet(name: str) -> str",
+          "old_string": "def greet(name: str) -> str:\n"
+        }
+      ],
+      "path": "hello.py"
+    },
+    "name": "edit_file"
+  }
+}

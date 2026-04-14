@@ -1,0 +1,8 @@
+{
+  "name": "ts-analysis-fixture",
+  "version": "1.0.0",
+  "description": "TS analysis fixture for sandbox testing",
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  }
+}

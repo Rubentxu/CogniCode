@@ -1,0 +1,40 @@
+# Refactoring - TypeScript: safe_refactor actions
+version: "2.0"
+language: typescript
+tier: A
+description: "Test safe_refactor actions on ts-refactor fixture with behavioral preservation"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: test
+      commands:
+        - npx ts-node test_refactor.ts
+
+scenarios:
+  - name: safe_refactor_rename_ts
+    tool: safe_refactor
+    action: rename
+    workspace: sandbox/fixtures/ts-refactor
+    scenario_class: mutation
+    expected_outcome: pass
+    description: "Rename 'add' function to 'sum' in ts-refactor fixture"
+    arguments:
+      action: rename
+      target: add
+      params:
+        new_name: sum
+        file_path: refactor.ts
+    ground_truth:
+      pre_code: |
+        export function add(a: number, b: number): number {
+          return a + b;
+        }
+    metrics:
+      correctness:
+        type: behavioral_preservation
+      latency:
+        target_ms: 500
+        max_ms: 2000

@@ -1,0 +1,15 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "edits": [
+        {
+          "new_string": "function computeRectangleArea(width, height) {",
+          "old_string": "function calculateArea(width, height) {"
+        }
+      ],
+      "path": "index.js"
+    },
+    "name": "edit_file"
+  }
+}

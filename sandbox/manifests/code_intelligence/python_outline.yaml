@@ -1,0 +1,48 @@
+# Code Intelligence - Python: get_outline
+version: "2.0"
+language: python
+tier: A
+description: "Test get_outline on python fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: outline_hello
+    tool: get_outline
+    action: analyze
+    workspace: sandbox/fixtures/python
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Extract outline from hello.py"
+    arguments:
+      file_path: hello.py
+    ground_truth:
+      outline:
+        nodes:
+          - name: greet
+            kind: function
+            line: 4
+            col: 0
+          - name: add
+            kind: function
+            line: 9
+            col: 0
+          - name: subtract
+            kind: function
+            line: 14
+            col: 0
+          - name: multiply
+            kind: function
+            line: 19
+            col: 0
+    metrics:
+      correctness:
+        type: structure_match
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500

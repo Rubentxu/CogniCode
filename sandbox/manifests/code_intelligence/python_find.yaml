@@ -1,0 +1,113 @@
+version: '2.0'
+language: python
+tier: A
+description: Test find_usages on python-intelligence fixture with ground truth
+timeout_seconds: 30
+validation:
+  failure_is_regression: true
+  stages: []
+scenarios:
+- name: find_usages_greet
+  tool: find_usages
+  action: search
+  workspace: sandbox/fixtures/python-intelligence
+  scenario_class: read_only
+  expected_outcome: pass
+  description: Find usages of greet function
+  arguments:
+    file_path: example.py
+    symbol_name: greet
+  ground_truth:
+    usages:
+    - file: example.py
+      line: 8
+      col: 4
+      context: "def greet(name: str) -> str:"
+  metrics:
+    correctness:
+      type: precision_recall
+      tolerance_pct: 0.05
+    latency:
+      target_ms: 100
+      max_ms: 500
+- name: find_usages_add
+  tool: find_usages
+  action: search
+  workspace: sandbox/fixtures/python-intelligence
+  scenario_class: read_only
+  expected_outcome: pass
+  description: Find usages of add function
+  arguments:
+    file_path: example.py
+    symbol_name: add
+  ground_truth:
+    usages:
+    - file: example.py
+      line: 13
+      col: 4
+      context: "def add(a: int, b: int) -> int:"
+    - file: example.py
+      line: 35
+      col: 8
+      context: "def add(self, amount: int) -> None:"
+    - file: example.py
+      line: 47
+      col: 9
+      context: "calc.add(10)"
+  metrics:
+    correctness:
+      type: precision_recall
+      tolerance_pct: 0.05
+    latency:
+      target_ms: 100
+      max_ms: 500
+- name: find_usages_calculator
+  tool: find_usages
+  action: search
+  workspace: sandbox/fixtures/python-intelligence
+  scenario_class: read_only
+  expected_outcome: pass
+  description: Find usages of Calculator class
+  arguments:
+    file_path: example.py
+    symbol_name: Calculator
+  ground_truth:
+    usages:
+    - file: example.py
+      line: 28
+      col: 6
+      context: "class Calculator:"
+    - file: example.py
+      line: 46
+      col: 11
+      context: "calc = Calculator()"
+  metrics:
+    correctness:
+      type: precision_recall
+      tolerance_pct: 0.05
+    latency:
+      target_ms: 100
+      max_ms: 500
+- name: find_usages_with_context_greet
+  tool: find_usages_with_context
+  action: search
+  workspace: sandbox/fixtures/python-intelligence
+  scenario_class: read_only
+  expected_outcome: pass
+  description: Find usages of greet function with context
+  arguments:
+    symbol: greet
+    context_lines: 2
+  ground_truth:
+    usages:
+    - file: example.py
+      line: 8
+      col: 4
+      context: "def greet(name: str) -> str:"
+  metrics:
+    correctness:
+      type: precision_recall
+      tolerance_pct: 0.05
+    latency:
+      target_ms: 100
+      max_ms: 500

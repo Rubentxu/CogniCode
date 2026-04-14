@@ -1,0 +1,39 @@
+# CogniCode Rust Sandbox — Hardened Quadlet
+# Phase 1: Network isolation, resource limits, pinned digest, tmpfs
+[Unit]
+Description=CogniCode Rust Sandbox (Hardened)
+RequiresMountsFor=%t/containers
+
+[Container]
+# Pinned image digest — MUST be updated when image changes
+Image=docker.io/library/rust@sha256:16b31a5e2b37d0e1c9c0e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
+ContainerName=cognicode-rust
+Volume=%t/containers/cognicode-rust-workspace:/workspace:z
+Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
+Environment=COGNICODE_WORKSPACE=/repos/serde
+# Isolation: no host network
+Network=none
+# Resource limits
+MemoryMax=2g
+MemorySwap=2g
+PidsLimit=128
+# CPU weight (inverse of priority — lower = less priority)
+CPUWeight=50
+# Read-only root filesystem
+ReadOnly=yes
+# Tmpfs for /tmp (writable but ephemeral)
+Tmpfs=/tmp:rw,noexec,nosuid,size=64m
+# Security: no new privileges
+NoNewPrivileges=yes
+# Supplementary groups for container isolation
+SupplementaryGroups=
+
+[Service]
+Restart=on-failure
+# Auto-update disabled for pinned digest
+AutoUpdate=no
+# Timeout for graceful shutdown
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

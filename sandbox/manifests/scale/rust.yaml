@@ -1,0 +1,606 @@
+# Scalability Benchmarks — Graduated Workspace Sizes
+# Phase B1: Test MCP tools across 1KB → 1MB workspaces
+version: "2.0"
+language: rust
+tier: A
+description: "Scalability benchmarks — graduated workspace sizes for Rust MCP tools"
+
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  # ─── File Ops: read_file ───────────────────────────────────────────────
+  - name: read_file_1kb
+    tool: read_file
+    action: read
+    workspace: sandbox/fixtures/scale/rust/scale_1kb
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Read 1KB workspace"
+    arguments:
+      path: "src/lib.rs"
+    metrics:
+      latency:
+        target_ms: 20
+        max_ms: 100
+      scalability:
+        classification: constant
+        breakpoint_kb: 1
+        memory_breakpoint_kb: 512
+
+  - name: read_file_10kb
+    tool: read_file
+    action: read
+    workspace: sandbox/fixtures/scale/rust/scale_10kb
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Read 10KB workspace"
+    arguments:
+      path: "src/lib.rs"
+    metrics:
+      latency:
+        target_ms: 30
+        max_ms: 150
+      scalability:
+        classification: constant
+        breakpoint_kb: 10
+        memory_breakpoint_kb: 2048
+
+  - name: read_file_100kb
+    tool: read_file
+    action: read
+    workspace: sandbox/fixtures/scale/rust/scale_100kb
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Read 100KB workspace"
+    arguments:
+      path: "src/lib.rs"
+    metrics:
+      latency:
+        target_ms: 50
+        max_ms: 300
+      scalability:
+        classification: linear
+        breakpoint_kb: 1024
+        memory_breakpoint_kb: 16384
+
+  # ─── File Ops: search_content ─────────────────────────────────────────
+  - name: search_content_1kb
+    tool: search_content
+    action: search
+    workspace: sandbox/fixtures/scale/rust/scale_1kb
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Search 1KB workspace"
+    arguments:
+      pattern: "compute"
+      path: "src/"
+    metrics:
+      latency:
+        target_ms: 30
+        max_ms: 200
+      scalability:
+        classification: linear
+        breakpoint_kb: 1
+        memory_breakpoint_kb: 256
+
+  - name: search_content_10kb
+    tool: search_content
+    action: search
+    workspace: sandbox/fixtures/scale/rust/scale_10kb
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Search 10KB workspace"
+    arguments:
+      pattern: "compute"
+      path: "src/"
+    metrics:
+      latency:
+        target_ms: 50
+        max_ms: 300
+      scalability:
+        classification: linear
+        breakpoint_kb: 10
+        memory_breakpoint_kb: 1024
+
+  - name: search_content_100kb
+    tool: search_content
+    action: search
+    workspace: sandbox/fixtures/scale/rust/scale_100kb
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Search 100KB workspace"
+    arguments:
+      pattern: "compute"
+      path: "src/"
+    metrics:
+      latency:
+        target_ms: 100
+        max_ms: 500
+      scalability:
+        classification: linear
+        breakpoint_kb: 100
+        memory_breakpoint_kb: 4096
+
+  - name: search_content_1mb
+    tool: search_content
+    action: search
+    workspace: sandbox/fixtures/scale/rust/scale_1mb
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Search 1MB workspace"
+    arguments:
+      pattern: "compute"
+      path: "src/"
+    metrics:
+      latency:
+        target_ms: 200
+        max_ms: 1000
+      scalability:
+        classification: linear
+        breakpoint_kb: 1024
+        memory_breakpoint_kb: 16384
+
+  # ─── Code Intelligence: get_file_symbols ───────────────────────────────
+  - name: get_file_symbols_1kb
+    tool: get_file_symbols
+    action: extract
+    workspace: sandbox/fixtures/scale/rust/scale_1kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Extract symbols from 1KB workspace"
+    arguments:
+      file_path: "src/lib.rs"
+      compressed: false
+    ground_truth:
+      symbols:
+        - name: compute_all
+          kind: function
+          location:
+            file: src/lib.rs
+            line: 7
+            col: 0
+        - name: Item1
+          kind: struct
+          location:
+            file: src/module_1.rs
+            line: 5
+            col: 0
+        - name: Config1
+          kind: struct
+          location:
+            file: src/module_1.rs
+            line: 32
+            col: 0
+        - name: Stats1
+          kind: struct
+          location:
+            file: src/module_1.rs
+            line: 53
+            col: 0
+        - name: compute_1
+          kind: function
+          location:
+            file: src/module_1.rs
+            line: 83
+            col: 0
+        - name: process_batch_1
+          kind: function
+          location:
+            file: src/module_1.rs
+            line: 100
+            col: 0
+        - name: Processor1
+          kind: trait
+          location:
+            file: src/module_1.rs
+            line: 111
+            col: 0
+        - name: State1
+          kind: enum
+          location:
+            file: src/module_1.rs
+            line: 127
+            col: 0
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 50
+        max_ms: 300
+      scalability:
+        classification: sub_linear
+        breakpoint_kb: 1
+        memory_breakpoint_kb: 256
+
+  - name: get_file_symbols_10kb
+    tool: get_file_symbols
+    action: extract
+    workspace: sandbox/fixtures/scale/rust/scale_10kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Extract symbols from 10KB workspace"
+    arguments:
+      file_path: "src/lib.rs"
+      compressed: false
+    metrics:
+      latency:
+        target_ms: 80
+        max_ms: 400
+      scalability:
+        classification: sub_linear
+        breakpoint_kb: 10
+        memory_breakpoint_kb: 1024
+
+  - name: get_file_symbols_100kb
+    tool: get_file_symbols
+    action: extract
+    workspace: sandbox/fixtures/scale/rust/scale_100kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Extract symbols from 100KB workspace"
+    arguments:
+      file_path: "src/lib.rs"
+      compressed: false
+    metrics:
+      latency:
+        target_ms: 150
+        max_ms: 800
+      scalability:
+        classification: sub_linear
+        breakpoint_kb: 100
+        memory_breakpoint_kb: 4096
+
+  - name: get_file_symbols_1mb
+    tool: get_file_symbols
+    action: extract
+    workspace: sandbox/fixtures/scale/rust/scale_1mb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Extract symbols from 1MB workspace"
+    arguments:
+      file_path: "src/lib.rs"
+      compressed: false
+    metrics:
+      latency:
+        target_ms: 300
+        max_ms: 2000
+      scalability:
+        classification: sub_linear
+        breakpoint_kb: 1024
+        memory_breakpoint_kb: 16384
+
+  # ─── Code Intelligence: get_complexity ───────────────────────────────
+  - name: get_complexity_1kb
+    tool: get_complexity
+    action: analyze
+    workspace: sandbox/fixtures/scale/rust/scale_1kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Analyze complexity in 1KB workspace"
+    arguments:
+      file_path: "src/module_1.rs"
+      function_name: "compute_1"
+    ground_truth:
+      complexity:
+        cyclomatic: 3
+        cognitive: 2
+        nesting: 1
+    metrics:
+      correctness:
+        type: structure_match
+        tolerance_pct: 0.1
+      latency:
+        target_ms: 50
+        max_ms: 300
+      scalability:
+        classification: constant
+        breakpoint_kb: 1
+        memory_breakpoint_kb: 256
+
+  - name: get_complexity_10kb
+    tool: get_complexity
+    action: analyze
+    workspace: sandbox/fixtures/scale/rust/scale_10kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Analyze complexity in 10KB workspace"
+    arguments:
+      file_path: "src/module_1.rs"
+      function_name: "compute_1"
+    metrics:
+      latency:
+        target_ms: 60
+        max_ms: 350
+      scalability:
+        classification: constant
+        breakpoint_kb: 10
+        memory_breakpoint_kb: 512
+
+  - name: get_complexity_100kb
+    tool: get_complexity
+    action: analyze
+    workspace: sandbox/fixtures/scale/rust/scale_100kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Analyze complexity in 100KB workspace"
+    arguments:
+      file_path: "src/module_1.rs"
+      function_name: "compute_1"
+    metrics:
+      latency:
+        target_ms: 80
+        max_ms: 400
+      scalability:
+        classification: constant
+        breakpoint_kb: 100
+        memory_breakpoint_kb: 1024
+
+  - name: get_complexity_1mb
+    tool: get_complexity
+    action: analyze
+    workspace: sandbox/fixtures/scale/rust/scale_1mb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Analyze complexity in 1MB workspace"
+    arguments:
+      file_path: "src/module_1.rs"
+      function_name: "compute_1"
+    metrics:
+      latency:
+        target_ms: 100
+        max_ms: 500
+      scalability:
+        classification: constant
+        breakpoint_kb: 1024
+        memory_breakpoint_kb: 4096
+
+  # ─── Call Graph: build_graph ─────────────────────────────────────────
+  - name: build_graph_1kb
+    tool: build_graph
+    action: build
+    workspace: sandbox/fixtures/scale/rust/scale_1kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Build call graph for 1KB workspace"
+    arguments:
+      directory: "."
+    ground_truth:
+      edges:
+        - from: compute_all
+          to: compute_1
+        - from: compute_1
+          to: helper_a_1
+        - from: helper_a_1
+          to: helper_b_1
+    metrics:
+      correctness:
+        type: precision_recall
+      latency:
+        target_ms: 100
+        max_ms: 500
+      scalability:
+        classification: linear
+        breakpoint_kb: 1
+        memory_breakpoint_kb: 512
+
+  - name: build_graph_10kb
+    tool: build_graph
+    action: build
+    workspace: sandbox/fixtures/scale/rust/scale_10kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Build call graph for 10KB workspace"
+    arguments:
+      directory: "."
+    metrics:
+      latency:
+        target_ms: 200
+        max_ms: 1000
+      scalability:
+        classification: linear
+        breakpoint_kb: 10
+        memory_breakpoint_kb: 2048
+
+  - name: build_graph_100kb
+    tool: build_graph
+    action: build
+    workspace: sandbox/fixtures/scale/rust/scale_100kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Build call graph for 100KB workspace"
+    arguments:
+      directory: "."
+    metrics:
+      latency:
+        target_ms: 500
+        max_ms: 3000
+      scalability:
+        classification: linear
+        breakpoint_kb: 100
+        memory_breakpoint_kb: 8192
+
+  - name: build_graph_1mb
+    tool: build_graph
+    action: build
+    workspace: sandbox/fixtures/scale/rust/scale_1mb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Build call graph for 1MB workspace"
+    arguments:
+      directory: "."
+    metrics:
+      latency:
+        target_ms: 2000
+        max_ms: 10000
+      scalability:
+        classification: linear
+        breakpoint_kb: 1024
+        memory_breakpoint_kb: 16384
+
+  # ─── Call Graph: get_call_hierarchy ────────────────────────────────
+  - name: get_call_hierarchy_1kb
+    tool: get_call_hierarchy
+    action: trace
+    workspace: sandbox/fixtures/scale/rust/scale_1kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Get call hierarchy for 1KB workspace"
+    arguments:
+      symbol_name: "compute_all"
+      direction: "outgoing"
+      depth: 3
+    metrics:
+      latency:
+        target_ms: 50
+        max_ms: 300
+      scalability:
+        classification: linear
+        breakpoint_kb: 1
+        memory_breakpoint_kb: 512
+
+  - name: get_call_hierarchy_10kb
+    tool: get_call_hierarchy
+    action: trace
+    workspace: sandbox/fixtures/scale/rust/scale_10kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Get call hierarchy for 10KB workspace"
+    arguments:
+      symbol_name: "compute_all"
+      direction: "outgoing"
+      depth: 3
+    metrics:
+      latency:
+        target_ms: 100
+        max_ms: 500
+      scalability:
+        classification: linear
+        breakpoint_kb: 10
+        memory_breakpoint_kb: 2048
+
+  - name: get_call_hierarchy_100kb
+    tool: get_call_hierarchy
+    action: trace
+    workspace: sandbox/fixtures/scale/rust/scale_100kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Get call hierarchy for 100KB workspace"
+    arguments:
+      symbol_name: "compute_all"
+      direction: "outgoing"
+      depth: 3
+    metrics:
+      latency:
+        target_ms: 200
+        max_ms: 1000
+      scalability:
+        classification: linear
+        breakpoint_kb: 100
+        memory_breakpoint_kb: 8192
+
+  - name: get_call_hierarchy_1mb
+    tool: get_call_hierarchy
+    action: trace
+    workspace: sandbox/fixtures/scale/rust/scale_1mb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Get call hierarchy for 1MB workspace"
+    arguments:
+      symbol_name: "compute_all"
+      direction: "outgoing"
+      depth: 3
+    metrics:
+      latency:
+        target_ms: 500
+        max_ms: 3000
+      scalability:
+        classification: linear
+        breakpoint_kb: 1024
+        memory_breakpoint_kb: 16384
+
+  # ─── Indexing: build_lightweight_index ──────────────────────────────
+  - name: build_lightweight_index_1kb
+    tool: build_lightweight_index
+    action: index
+    workspace: sandbox/fixtures/scale/rust/scale_1kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Build lightweight index for 1KB workspace"
+    arguments:
+      directory: "."
+    ground_truth:
+      indexed_symbols:
+        - name: compute_all
+          kind: function
+        - name: compute_1
+          kind: function
+        - name: Item1
+          kind: struct
+    metrics:
+      correctness:
+        type: precision_recall
+      latency:
+        target_ms: 100
+        max_ms: 500
+      scalability:
+        classification: linear
+        breakpoint_kb: 1
+        memory_breakpoint_kb: 512
+
+  - name: build_lightweight_index_10kb
+    tool: build_lightweight_index
+    action: index
+    workspace: sandbox/fixtures/scale/rust/scale_10kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Build lightweight index for 10KB workspace"
+    arguments:
+      directory: "."
+    metrics:
+      latency:
+        target_ms: 300
+        max_ms: 1500
+      scalability:
+        classification: linear
+        breakpoint_kb: 10
+        memory_breakpoint_kb: 2048
+
+  - name: build_lightweight_index_100kb
+    tool: build_lightweight_index
+    action: index
+    workspace: sandbox/fixtures/scale/rust/scale_100kb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Build lightweight index for 100KB workspace"
+    arguments:
+      directory: "."
+    metrics:
+      latency:
+        target_ms: 1000
+        max_ms: 5000
+      scalability:
+        classification: linear
+        breakpoint_kb: 100
+        memory_breakpoint_kb: 8192
+
+  - name: build_lightweight_index_1mb
+    tool: build_lightweight_index
+    action: index
+    workspace: sandbox/fixtures/scale/rust/scale_1mb
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Build lightweight index for 1MB workspace"
+    arguments:
+      directory: "."
+    metrics:
+      latency:
+        target_ms: 5000
+        max_ms: 20000
+      scalability:
+        classification: linear
+        breakpoint_kb: 1024

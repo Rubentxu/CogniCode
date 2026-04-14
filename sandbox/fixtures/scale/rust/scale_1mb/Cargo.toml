@@ -1,0 +1,10 @@
+[package]
+name = "scale_1mb"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "scale_1mb"
+path = "src/lib.rs"
+
+[dependencies]

@@ -1,0 +1,6 @@
+{
+  "name": "ts-indexing-fixture",
+  "version": "1.0.0",
+  "description": "Indexing test fixture for CogniCode sandbox",
+  "private": true
+}

@@ -1,0 +1,76 @@
+{
+  "total": 18,
+  "passed": 8,
+  "failed": 1,
+  "expected_failures": 9,
+  "unexpected_passes": 0,
+  "pass_rate": 0.4444444444444444,
+  "by_language": {
+    "typescript": {
+      "total": 9,
+      "passed": 8,
+      "failed": 1,
+      "pass_rate": 0.8888888888888888,
+      "timing_p50_ms": 2353,
+      "timing_p95_ms": 2436,
+      "timing_p99_ms": 2436
+    },
+    "javascript": {
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "pass_rate": 1.0,
+      "timing_p50_ms": 2157,
+      "timing_p95_ms": 2401,
+      "timing_p99_ms": 2401
+    }
+  },
+  "by_tool": {
+    "search_content": {
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "pass_rate": 1.0,
+      "timing_p50_ms": 2413,
+      "timing_p95_ms": 2413
+    },
+    "list_files": {
+      "total": 2,
+      "passed": 1,
+      "failed": 1,
+      "pass_rate": 0.5,
+      "timing_p50_ms": 2365,
+      "timing_p95_ms": 2365
+    },
+    "edit_file": {
+      "total": 8,
+      "passed": 8,
+      "failed": 0,
+      "pass_rate": 1.0,
+      "timing_p50_ms": 2345,
+      "timing_p95_ms": 2436
+    },
+    "read_file": {
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "pass_rate": 1.0,
+      "timing_p50_ms": 2302,
+      "timing_p95_ms": 2359
+    }
+  },
+  "failure_distribution": {
+    "preexisting_repo_failure": 7,
+    "pass": 8,
+    "protocol_violation": 1,
+    "expected_fail": 2
+  },
+  "duration_p50_ms": 2324,
+  "duration_p95_ms": 2436,
+  "duration_p99_ms": 2436,
+  "ci_blocking": 1,
+  "regressions_vs_baseline": [],
+  "run_started_at": "2026-04-08T22:04:27Z",
+  "run_completed_at": "2026-04-08T22:04:27Z",
+  "orchestrator_version": "0.1.0"
+}

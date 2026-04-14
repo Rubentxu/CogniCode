@@ -1,0 +1,154 @@
+# Call Graph - Python: build_graph, get_entry_points, get_leaf_functions
+version: "2.0"
+language: python
+tier: A
+description: "Test call graph tools on python fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: build_graph_python
+    tool: build_graph
+    action: build
+    workspace: sandbox/fixtures/python
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Build call graph for python fixture"
+    arguments:
+      directory: .
+    ground_truth:
+      edges:
+        - from: test_greet
+          to: greet
+        - from: test_add
+          to: add
+        - from: test_subtract
+          to: subtract
+    metrics:
+      correctness:
+        type: edge_accuracy
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 500
+        max_ms: 5000
+
+  - name: entry_points_python
+    tool: get_entry_points
+    action: find
+    workspace: sandbox/fixtures/python
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Find entry points in python fixture"
+    arguments: {}
+    ground_truth:
+      entry_points:
+        - name: test_greet
+          kind: function
+        - name: test_add
+          kind: function
+        - name: test_subtract
+          kind: function
+        - name: multiply
+          kind: function
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: leaf_functions_python
+    tool: get_leaf_functions
+    action: find
+    workspace: sandbox/fixtures/python
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Find leaf functions in python fixture"
+    arguments: {}
+    ground_truth:
+      leaf_functions:
+        - name: greet
+          kind: function
+        - name: add
+          kind: function
+        - name: subtract
+          kind: function
+        - name: multiply
+          kind: function
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: check_architecture_python
+    tool: check_architecture
+    action: analyze
+    workspace: sandbox/fixtures/python
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Check architecture for cycles in python fixture"
+    arguments: {}
+    ground_truth:
+      cycles: []
+    metrics:
+      correctness:
+        type: structure_match
+      latency:
+        target_ms: 200
+        max_ms: 1000
+
+  - name: trace_path_python
+    tool: trace_path
+    action: find
+    workspace: sandbox/fixtures/python
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Trace path from test_greet to greet"
+    arguments:
+      source: test_greet
+      target: greet
+      max_depth: 5
+    ground_truth:
+      paths:
+        - source: test_greet
+          target: greet
+          intermediates: []
+    metrics:
+      correctness:
+        type: structure_match
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: hot_paths_python
+    tool: get_hot_paths
+    action: find
+    workspace: sandbox/fixtures/python
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Find hot paths in python fixture"
+    arguments:
+      limit: 10
+      min_fan_in: 1
+    ground_truth:
+      hot_functions:
+        - name: greet
+          min_fan_in: 1
+        - name: add
+          min_fan_in: 1
+        - name: subtract
+          min_fan_in: 1
+    metrics:
+      correctness:
+        type: recall@k
+      latency:
+        target_ms: 100
+        max_ms: 500

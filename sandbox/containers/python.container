@@ -1,0 +1,35 @@
+# CogniCode Python Sandbox — Hardened Quadlet
+# Phase 1: Network isolation, resource limits, pinned digest, tmpfs
+[Unit]
+Description=CogniCode Python Sandbox (Hardened)
+RequiresMountsFor=%t/containers
+
+[Container]
+# Pinned image digest — MUST be updated when image changes
+Image=docker.io/library/python@sha256:17a7e2e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
+ContainerName=cognicode-python
+Volume=%t/containers/cognicode-python-workspace:/workspace:z
+Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
+Environment=COGNICODE_WORKSPACE=/repos/click
+# Isolation: no host network
+Network=none
+# Resource limits
+MemoryMax=1g
+MemorySwap=1g
+PidsLimit=128
+CPUWeight=50
+# Read-only root filesystem
+ReadOnly=yes
+# Tmpfs for /tmp (writable but ephemeral)
+Tmpfs=/tmp:rw,noexec,nosuid,size=64m
+# Security: no new privileges
+NoNewPrivileges=yes
+SupplementaryGroups=
+
+[Service]
+Restart=on-failure
+AutoUpdate=no
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

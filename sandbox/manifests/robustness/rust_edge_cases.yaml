@@ -1,0 +1,122 @@
+# Robustness Edge Cases — test how MCP handles malformed/unusual inputs
+version: "2.0"
+language: rust
+tier: A
+description: "Edge case tests for MCP tool robustness"
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: false
+  stages: []
+
+scenarios:
+  # ROB-01: Read non-existent file
+  - name: read_file_nonexistent
+    tool: read_file
+    action: read
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Read a file that doesn't exist — should fail gracefully"
+    arguments:
+      path: "src/nonexistent_file.rs"
+
+  # ROB-02: Read with empty path
+  - name: read_file_empty_path
+    tool: read_file
+    action: read
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Empty path should be rejected"
+    arguments:
+      path: ""
+
+  # ROB-03: Path traversal attempt
+  - name: read_file_path_traversal
+    tool: read_file
+    action: read
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Path traversal attempt should be blocked"
+    arguments:
+      path: "../../../etc/passwd"
+
+  # ROB-04: Search with empty pattern
+  - name: search_empty_pattern
+    tool: search_content
+    action: search
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Empty search pattern returns empty or all results — acceptable behavior"
+    arguments:
+      path: "src/"
+      pattern: ""
+
+  # ROB-05: Symbols on non-existent file
+  - name: symbols_nonexistent_file
+    tool: get_file_symbols
+    action: extract
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Extract symbols from non-existent file"
+    arguments:
+      file_path: "src/does_not_exist.rs"
+
+  # ROB-06: Find usages of non-existent symbol
+  - name: find_usages_nonexistent_symbol
+    tool: find_usages
+    action: search
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Find usages of a symbol that doesn't exist — should return empty results"
+    arguments:
+      symbol_name: "xyzzy_nonexistent_12345"
+
+  # ROB-07: Semantic search with garbage query
+  - name: semantic_search_garbage
+    tool: semantic_search
+    action: search
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Nonsensical query should return empty results gracefully"
+    arguments:
+      query: "zzzzzzzzzzzzzzzzzzz999999999"
+
+  # ROB-08: Read file with Unicode path
+  - name: read_file_unicode_name
+    tool: read_file
+    action: read
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "File with Unicode characters in path"
+    arguments:
+      path: "src/ñoño_café.rs"
+
+  # ROB-09: Very long path
+  - name: read_file_long_path
+    tool: read_file
+    action: read
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Path exceeding maximum depth"
+    arguments:
+      path: "a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/w/x/y/z/file.rs"
+
+  # ROB-10: Complexity on directory (not file)
+  - name: complexity_on_directory
+    tool: get_complexity
+    action: analyze
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Get complexity of a directory instead of a file"
+    arguments:
+      file_path: "src/"

@@ -1,0 +1,15 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "edits": [
+        {
+          "new_string": "pub fn multiply_numbers(a: i32, b: i32) -> i32",
+          "old_string": "pub fn multiply(a: i32, b: i32) -> i32"
+        }
+      ],
+      "path": "src/lib.rs"
+    },
+    "name": "edit_file"
+  }
+}

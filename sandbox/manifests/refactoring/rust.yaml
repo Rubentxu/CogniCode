@@ -1,0 +1,127 @@
+# Refactoring - Rust: safe_refactor actions (extract, inline, move, change_signature)
+version: "2.0"
+language: rust
+tier: A
+description: "Test safe_refactor actions on rust-refactor fixture with behavioral preservation"
+
+timeout_seconds: 60
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: test
+      commands:
+        - cargo test --lib -- --test-threads=1
+
+scenarios:
+  - name: safe_refactor_rename_rust
+    tool: safe_refactor
+    action: rename
+    workspace: sandbox/fixtures/rust-refactor
+    scenario_class: mutation
+    expected_outcome: pass
+    description: "Rename 'add' function to 'sum' in rust-refactor fixture"
+    arguments:
+      action: rename
+      target: add
+      params:
+        new_name: sum
+        file_path: src/lib.rs
+    ground_truth:
+      pre_code: |
+        /// Calculates the sum of two numbers.
+        pub fn add(a: i32, b: i32) -> i32 {
+            a + b
+        }
+    metrics:
+      correctness:
+        type: behavioral_preservation
+      latency:
+        target_ms: 500
+        max_ms: 2000
+
+  - name: safe_refactor_extract_rust
+    tool: safe_refactor
+    action: extract
+    workspace: sandbox/fixtures/rust-refactor
+    scenario_class: mutation
+    expected_outcome: pass
+    description: "Extract a helper function from main logic in rust-refactor fixture"
+    arguments:
+      action: extract
+      target: SimpleCalc
+      params:
+        new_name: extracted_helper
+        file_path: src/lib.rs
+    ground_truth:
+      pre_code: |
+        impl SimpleCalc {
+            pub fn new() -> Self {
+                Self { value: 0 }
+            }
+            pub fn set_value(&mut self, val: i32) {
+                self.value = val;
+            }
+        }
+    metrics:
+      correctness:
+        type: behavioral_preservation
+      latency:
+        target_ms: 500
+        max_ms: 2000
+
+  - name: safe_refactor_inline_rust
+    tool: safe_refactor
+    action: inline
+    workspace: sandbox/fixtures/rust-refactor
+    scenario_class: mutation
+    expected_outcome: pass
+    description: "Inline a simple helper function in rust-refactor fixture"
+    arguments:
+      action: inline
+      target: helper_internal
+      params:
+        file_path: src/lib.rs
+    ground_truth:
+      pre_code: |
+        /// Internal helper.
+        fn helper_internal(x: i32) -> i32 {
+            x + 1
+        }
+    metrics:
+      correctness:
+        type: behavioral_preservation
+      latency:
+        target_ms: 500
+        max_ms: 2000
+
+  - name: safe_refactor_change_signature_rust
+    tool: safe_refactor
+    action: change_signature
+    workspace: sandbox/fixtures/rust-refactor
+    scenario_class: mutation
+    expected_outcome: pass
+    description: "Change signature of add function in rust-refactor fixture"
+    arguments:
+      action: change_signature
+      target: add
+      params:
+        file_path: src/lib.rs
+        new_parameters:
+          - name: a
+            param_type: i32
+          - name: b
+            param_type: i32
+          - name: debug
+            param_type: bool
+    ground_truth:
+      pre_code: |
+        pub fn add(a: i32, b: i32) -> i32 {
+            a + b
+        }
+    metrics:
+      correctness:
+        type: behavioral_preservation
+      latency:
+        target_ms: 500
+        max_ms: 2000

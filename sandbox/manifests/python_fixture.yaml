@@ -1,0 +1,123 @@
+# Python Fixture Scenario Manifest - Uses python-hello micro-fixture
+# For real execution via orchestrator run command
+#
+# Scenario classes:
+#   - read_only: read_file, search_content, list_files, etc.
+#   - mutation: edit_file (concrete + syntax-rejected variants)
+#
+# Expected outcomes:
+#   - pass: scenario should pass
+#   - expected_fail: scenario is expected to fail
+
+version: "1.0"
+language: python
+tier: A
+description: "Python Tier A scenarios using python-hello micro-fixture"
+
+# Global defaults
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: syntax
+      commands: ["python -m py_compile src/ 2>&1 || python -m py_compile hello.py 2>&1 || true"]
+      timeout_seconds: 30
+    - name: format
+      commands: ["ruff format --check src/ 2>&1 || true"]
+      timeout_seconds: 30
+    - name: lint
+      commands: ["ruff check src/ 2>&1 || true"]
+      timeout_seconds: 60
+    - name: build
+      commands: ["python -m py_compile src/ 2>&1 || python -m py_compile hello.py 2>&1 || true"]
+      timeout_seconds: 30
+    - name: test
+      commands: ["python -m pytest tests/ 2>&1 || true"]
+      timeout_seconds: 60
+
+scenarios:
+  # ─── Read-Only Scenarios ───────────────────────────────────────────────────
+
+  - name: read_file_raw
+    description: "Read a source file as raw text"
+    tool: read_file
+    action: read
+    workspace: hello.py
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: hello.py
+      mode: raw
+
+  - name: read_file_outline
+    description: "Read file outline (top-level definitions)"
+    tool: read_file
+    action: read
+    workspace: hello.py
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: hello.py
+      mode: outline
+
+  # ─── Mutation Scenarios ──────────────────────────────────────────────────────
+
+  - name: edit_file_concrete
+    description: "Apply edit to a Python file (concrete mutation with validation)"
+    tool: edit_file
+    action: apply
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: pass
+    variant: concrete
+    arguments:
+      path: hello.py
+      old_text: "def multiply(a: int, b: int) -> int:"
+      new_text: "def multiply_numbers(a: int, b: int) -> int:"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: syntax
+          commands: ["python -m py_compile hello.py"]
+          timeout_seconds: 30
+        - name: lint
+          commands: ["ruff check hello.py 2>&1 || true"]
+          timeout_seconds: 30
+
+  - name: edit_file_syntax_rejected
+    description: "Attempt edit that produces syntax error — should be rejected"
+    tool: edit_file
+    action: apply
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: syntax_rejected
+    arguments:
+      path: hello.py
+      old_text: "def greet(name: str) -> str:\n    \"\"\"Return a greeting string.\"\"\"\n    return f\"Hello, {name}!\""
+      new_text: "def greet(name: str) -> str\n    \"\"\"Return a greeting string.\"\"\"\n    return f\"Hello, {name}!\""
+    validation:
+      failure_is_regression: false
+      stages:
+        - name: syntax
+          commands: ["python -m py_compile hello.py 2>&1"]
+          timeout_seconds: 30
+
+  # ─── Boundary/Security Scenarios ────────────────────────────────────────────
+
+  - name: path_safety_rejection
+    description: "Attempt to mutate /etc/passwd — must be rejected by path safety"
+    tool: edit_file
+    action: apply
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: path_safety
+    arguments:
+      path: /etc/passwd
+      old_text: "root:x:0:0:"
+      new_text: "root:x:0:0:root:/root:/bin/bash"

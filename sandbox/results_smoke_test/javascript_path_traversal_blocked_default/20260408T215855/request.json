@@ -1,0 +1,11 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "action": "read",
+      "mode": "raw",
+      "path": "../../../etc/passwd"
+    },
+    "name": "read_file"
+  }
+}

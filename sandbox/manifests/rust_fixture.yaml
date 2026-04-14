@@ -1,0 +1,127 @@
+# Rust Fixture Scenario Manifest - Uses rust-hello micro-fixture
+# For real execution via orchestrator run command
+#
+# Scenario classes:
+#   - read_only: read_file, search_content, list_files, etc.
+#   - analysis: extract_symbols, call_graph, etc.
+#   - mutation: edit_file (concrete + preview-only variants)
+#
+# Expected outcomes:
+#   - pass: scenario should pass
+#   - expected_fail: scenario is expected to fail (preview-only, capability gaps)
+
+version: "1.0"
+language: rust
+tier: A
+description: "Rust Tier A scenarios using rust-hello micro-fixture"
+
+# Global defaults
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: syntax
+      commands: ["rustfmt --check src/", "cargo check 2>&1"]
+      timeout_seconds: 60
+    - name: format
+      commands: ["cargo fmt --check 2>&1"]
+      timeout_seconds: 30
+    - name: lint
+      commands: ["cargo clippy -- -D warnings 2>&1 || true"]
+      timeout_seconds: 60
+    - name: build
+      commands: ["cargo build 2>&1"]
+      timeout_seconds: 120
+    - name: test
+      commands: ["cargo test --lib 2>&1"]
+      timeout_seconds: 120
+
+scenarios:
+  # ─── Read-Only Scenarios ───────────────────────────────────────────────────
+
+  - name: read_file_raw
+    description: "Read a source file as raw text"
+    tool: read_file
+    action: read
+    workspace: src/lib.rs
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/lib.rs
+      mode: raw
+
+  - name: read_file_outline
+    description: "Read file outline (symbol tree)"
+    tool: read_file
+    action: read
+    workspace: src/lib.rs
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/lib.rs
+      mode: outline
+
+  # ─── Mutation Scenarios ──────────────────────────────────────────────────────
+
+  - name: edit_file_concrete
+    description: "Apply edit to a Rust file (concrete mutation with validation)"
+    tool: edit_file
+    action: apply
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: pass
+    variant: concrete
+    arguments:
+      path: src/lib.rs
+      old_text: "pub fn multiply(a: i32, b: i32) -> i32"
+      new_text: "pub fn multiply_numbers(a: i32, b: i32) -> i32"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: syntax
+          commands: ["rustfmt --check src/lib.rs"]
+          timeout_seconds: 30
+        - name: build
+          commands: ["cargo build 2>&1"]
+          timeout_seconds: 60
+        - name: test
+          commands: ["cargo test --lib 2>&1"]
+          timeout_seconds: 60
+
+  - name: edit_file_syntax_rejected
+    description: "Attempt edit that produces syntax error — should be rejected"
+    tool: edit_file
+    action: apply
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: syntax_rejected
+    arguments:
+      path: src/lib.rs
+      old_text: "pub fn greet(name: &str) -> String {\n    format!(\"Hello, {}!\", name)\n}"
+      new_text: "pub fn greet(name: &str) -> String // SYNTAX ERROR - missing body"
+    validation:
+      failure_is_regression: false
+      stages:
+        - name: syntax
+          commands: ["cargo check 2>&1"]
+          timeout_seconds: 30
+
+  # ─── Boundary/Security Scenarios ────────────────────────────────────────────
+
+  - name: path_safety_rejection
+    description: "Attempt to mutate /etc/passwd — must be rejected by path safety"
+    tool: edit_file
+    action: apply
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: path_safety
+    arguments:
+      path: /etc/passwd
+      old_text: "root:x:0:0:"
+      new_text: "root:x:0:0:root:/root:/bin/bash"

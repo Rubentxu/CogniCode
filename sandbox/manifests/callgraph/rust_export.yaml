@@ -1,0 +1,57 @@
+# Call Graph Visualization - export_mermaid and build_call_subgraph
+version: "2.0"
+language: rust
+tier: A
+description: "Test call graph visualization tools"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: export_mermaid_rust
+    tool: export_mermaid
+    action: export
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Export call graph as Mermaid diagram"
+    arguments:
+      format: code
+      theme: default
+      max_depth: 3
+    ground_truth:
+      edges:
+        - from: main
+          to: helper
+        - from: helper
+          to: compute
+    metrics:
+      correctness:
+        type: structure_match
+      latency:
+        target_ms: 1000
+        max_ms: 5000
+
+  - name: build_call_subgraph_rust
+    tool: build_call_subgraph
+    action: build
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Build call subgraph around helper function"
+    arguments:
+      symbol_name: helper
+      direction: both
+      depth: 2
+    ground_truth:
+      impacted_files:
+        - src/main.rs
+    metrics:
+      correctness:
+        type: structure_match
+      latency:
+        target_ms: 1000
+        max_ms: 5000

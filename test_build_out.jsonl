@@ -1,0 +1,7 @@
+[2m2026-04-10T07:38:46.629730Z[0m [32m INFO[0m  [3mname[0m[2m=[0m"MeterProvider.Built"
+[2m2026-04-10T07:38:46.629796Z[0m [32m INFO[0m  [3mname[0m[2m=[0m"MeterProvider.GlobalSet" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().
+[2m2026-04-10T07:38:46.630129Z[0m [32m INFO[0m Starting CogniCode MCP Server v0.1.0
+[2m2026-04-10T07:38:46.630138Z[0m [32m INFO[0m MCP server starting...
+{"jsonrpc":"2.0","error":{"code":-32002,"message":"Server not initialized","data":null},"id":1}
+[2m2026-04-10T07:38:46.630480Z[0m [32m INFO[0m MCP server stdin closed
+[2m2026-04-10T07:38:46.630487Z[0m [32m INFO[0m MCP server stopped

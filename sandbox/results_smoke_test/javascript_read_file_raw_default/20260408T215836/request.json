@@ -1,0 +1,11 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "action": "read",
+      "mode": "raw",
+      "path": "hello.js"
+    },
+    "name": "read_file"
+  }
+}

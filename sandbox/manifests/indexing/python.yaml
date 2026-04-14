@@ -1,0 +1,136 @@
+# Indexing - Python: build_lightweight_index, query_symbol_index
+version: "2.0"
+language: python
+tier: A
+description: "Test indexing tools on python-indexing fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: build_lightweight_index_python
+    tool: build_lightweight_index
+    action: build
+    workspace: sandbox/fixtures/python-indexing
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Build lightweight index for python-indexing fixture"
+    arguments:
+      directory: .
+      strategy: lightweight
+    ground_truth:
+      indexed_symbols:
+        - name: greet
+          kind: function
+          location:
+            file: main.py
+            line: 16
+            col: 0
+        - name: farewell
+          kind: function
+          location:
+            file: main.py
+            line: 20
+            col: 0
+        - name: Calculator
+          kind: class
+          location:
+            file: main.py
+            line: 24
+            col: 0
+        - name: __init__
+          kind: method
+          location:
+            file: main.py
+            line: 25
+            col: 4
+        - name: add
+          kind: method
+          location:
+            file: main.py
+            line: 28
+            col: 4
+        - name: result
+          kind: method
+          location:
+            file: main.py
+            line: 31
+            col: 4
+        - name: process
+          kind: function
+          location:
+            file: main.py
+            line: 35
+            col: 0
+        - name: format_result
+          kind: function
+          location:
+            file: utils.py
+            line: 10
+            col: 0
+        - name: validate_input
+          kind: function
+          location:
+            file: utils.py
+            line: 14
+            col: 0
+    metrics:
+      correctness:
+        type: index_completeness
+        tolerance_pct: 0.1
+      latency:
+        target_ms: 200
+        max_ms: 1000
+
+  - name: query_symbol_index_python_greet
+    tool: query_symbol_index
+    action: query
+    workspace: sandbox/fixtures/python-indexing
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Query for 'greet' symbol in python-indexing fixture"
+    arguments:
+      symbol_name: greet
+      directory: .
+    ground_truth:
+      query_results:
+        - symbol_name: greet
+          locations:
+            - file: main.py
+              line: 16
+              col: 0
+    metrics:
+      correctness:
+        type: recall@k
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 50
+        max_ms: 200
+
+  - name: query_symbol_index_python_calculator
+    tool: query_symbol_index
+    action: query
+    workspace: sandbox/fixtures/python-indexing
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Query for 'Calculator' class in python-indexing fixture"
+    arguments:
+      symbol_name: Calculator
+      directory: .
+    ground_truth:
+      query_results:
+        - symbol_name: Calculator
+          locations:
+            - file: main.py
+              line: 24
+              col: 0
+    metrics:
+      correctness:
+        type: recall@k
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 50
+        max_ms: 200

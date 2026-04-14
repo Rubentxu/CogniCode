@@ -1,0 +1,92 @@
+# Code Intelligence - Rust: get_file_symbols
+version: "2.0"
+language: rust
+tier: A
+description: "Test get_file_symbols on rust-intelligence fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: symbols_rust_lib
+    tool: get_file_symbols
+    action: extract
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Extract symbols from rust-intelligence fixture"
+    arguments:
+      file_path: src/lib.rs
+      compressed: false
+    ground_truth:
+      symbols:
+        - name: greet
+          kind: function
+          location:
+            file: src/lib.rs
+            line: 7
+            col: 0
+        - name: add
+          kind: function
+          location:
+            file: src/lib.rs
+            line: 12
+            col: 0
+        - name: multiply
+          kind: function
+          location:
+            file: src/lib.rs
+            line: 17
+            col: 0
+        - name: helper_internal
+          kind: function
+          location:
+            file: src/lib.rs
+            line: 22
+            col: 0
+        - name: new
+          kind: function
+          location:
+            file: src/lib.rs
+            line: 33
+            col: 0
+        - name: add
+          kind: function
+          location:
+            file: src/lib.rs
+            line: 38
+            col: 0
+        - name: value
+          kind: function
+          location:
+            file: src/lib.rs
+            line: 43
+            col: 0
+        - name: test_greet
+          kind: function
+          location:
+            file: src/lib.rs
+            line: 53
+            col: 0
+        - name: test_add
+          kind: function
+          location:
+            file: src/lib.rs
+            line: 58
+            col: 0
+        - name: Calculator
+          kind: class
+          location:
+            file: src/lib.rs
+            line: 27
+            col: 0
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500

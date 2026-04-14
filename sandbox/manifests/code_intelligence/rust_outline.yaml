@@ -1,0 +1,63 @@
+# Code Intelligence - Rust: get_outline
+version: "2.0"
+language: rust
+tier: A
+description: "Test get_outline on rust-intelligence fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: outline_rust_lib
+    tool: get_outline
+    action: extract
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Extract hierarchical outline from rust-intelligence fixture"
+    arguments:
+      file_path: src/lib.rs
+      include_private: true
+      include_tests: true
+    ground_truth:
+      outline:
+        - name: greet
+          kind: function
+          children: []
+        - name: add
+          kind: function
+          children: []
+        - name: multiply
+          kind: function
+          children: []
+        - name: helper_internal
+          kind: function
+          children: []
+        - name: Calculator
+          kind: trait
+          children:
+            - name: new
+              kind: function
+              children: []
+            - name: add
+              kind: function
+              children: []
+            - name: value
+              kind: function
+              children: []
+        - name: test_greet
+          kind: function
+          children: []
+        - name: test_add
+          kind: function
+          children: []
+    metrics:
+      correctness:
+        type: structure_match
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500

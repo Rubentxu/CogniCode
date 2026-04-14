@@ -1,0 +1,15 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "edits": [
+        {
+          "new_string": "pub fn greet(name: &str) -> String // SYNTAX ERROR - missing body",
+          "old_string": "pub fn greet(name: &str) -> String {\n    format!(\"Hello, {}!\", name)\n}"
+        }
+      ],
+      "path": "src/lib.rs"
+    },
+    "name": "edit_file"
+  }
+}

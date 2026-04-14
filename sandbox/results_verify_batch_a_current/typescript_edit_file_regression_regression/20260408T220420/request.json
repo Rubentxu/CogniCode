@@ -1,0 +1,15 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "edits": [
+        {
+          "new_string": "return width + height; // BUG: should be *",
+          "old_string": "return width * height;"
+        }
+      ],
+      "path": "index.ts"
+    },
+    "name": "edit_file"
+  }
+}

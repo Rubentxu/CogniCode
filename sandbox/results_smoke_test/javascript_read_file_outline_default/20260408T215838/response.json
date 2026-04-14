@@ -1,0 +1,12 @@
+{
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "{\"content\":\"7:0:function:add:source\\n11:0:function:subtract:source\\n\",\"total_lines\":21,\"truncated\":false,\"metadata\":{\"path\":\"/tmp/.tmpS0iJqc/js-hello/hello.js\",\"size\":325,\"modified\":1775685516,\"language\":\"javascript\"},\"mode\":\"outline\",\"start_line\":1,\"end_line\":21,\"has_more\":false,\"next_token\":null,\"suggested_chunk_size\":null}",
+        "type": "text"
+      }
+    ]
+  }
+}

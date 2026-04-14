@@ -1,0 +1,12 @@
+{
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "{\"content\":\"4:7:function:greet:source\\n8:7:function:add:source\\n12:7:function:subtract:source\\n\",\"total_lines\":20,\"truncated\":false,\"metadata\":{\"path\":\"/tmp/.tmpeH8pGy/ts-hello/hello.ts\",\"size\":382,\"modified\":1775685848,\"language\":\"typescript\"},\"mode\":\"outline\",\"start_line\":1,\"end_line\":20,\"has_more\":false,\"next_token\":null,\"suggested_chunk_size\":null}",
+        "type": "text"
+      }
+    ]
+  }
+}

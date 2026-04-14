@@ -1,0 +1,130 @@
+# Rust Real Repo Scenario Manifest - Phase 2 Batch D
+# Uses ripgrep (v14.1.1) and anyhow (1.0.86) as Tier B real repos
+#
+# Tier B scenarios are NOT included in the fast smoke lane.
+# They run in the full nightly matrix.
+
+version: "1.0"
+language: rust
+tier: B
+description: "Rust Tier B scenarios — ripgrep and anyhow real repos"
+
+timeout_seconds: 300
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: build
+      commands: ["cargo build 2>&1"]
+      timeout_seconds: 180
+    - name: test
+      commands: ["cargo test --lib 2>&1"]
+      timeout_seconds: 180
+
+scenarios:
+  # ─── ripgrep scenarios ───────────────────────────────────────────────────────
+
+  - name: realrepo_read_source_ripgrep
+    description: "Read ripgrep source file as raw text"
+    tool: read_file
+    action: read
+    repo: ripgrep
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: crates/cli/src/lib.rs
+      mode: raw
+
+  - name: realrepo_search_content_ripgrep
+    description: "Search for 'match' in ripgrep source"
+    tool: search_content
+    action: search
+    repo: ripgrep
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "match"
+      path: crates/cli/src
+    ground_truth:
+      matches:
+        - path: decompress.rs
+        - path: process.rs
+
+  - name: realrepo_edit_file_ripgrep
+    description: "Apply edit in ripgrep real repo with cargo build + test"
+    tool: edit_file
+    action: apply
+    repo: ripgrep
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: preexisting_fail
+    variant: concrete
+    arguments:
+      path: crates/cli/src/lib.rs
+      old_text: "// TODO:"
+      new_text: "// FIXED:"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: build
+          commands: ["cargo build 2>&1"]
+          timeout_seconds: 180
+        - name: test
+          commands: ["cargo test --lib 2>&1"]
+          timeout_seconds: 180
+
+  # ─── anyhow scenarios ───────────────────────────────────────────────────────
+
+  - name: realrepo_read_source_anyhow
+    description: "Read anyhow source file as raw text"
+    tool: read_file
+    action: read
+    repo: anyhow
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: preexisting_fail
+    arguments:
+      path: src/lib.rs
+      mode: raw
+
+  - name: realrepo_search_content_anyhow
+    description: "Search for 'Error' in anyhow source"
+    tool: search_content
+    action: search
+    repo: anyhow
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "Error"
+      path: src
+    ground_truth:
+      matches:
+        - path: error.rs
+
+  - name: realrepo_edit_file_anyhow
+    description: "Apply edit in anyhow real repo with cargo build + test"
+    tool: edit_file
+    action: apply
+    repo: anyhow
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: preexisting_fail
+    variant: concrete
+    arguments:
+      path: src/lib.rs
+      old_text: "//!"  # Comment at top of file
+      new_text: "//! anyhow - Rust error handling"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: build
+          commands: ["cargo build 2>&1"]
+          timeout_seconds: 120
+        - name: test
+          commands: ["cargo test 2>&1"]
+          timeout_seconds: 120

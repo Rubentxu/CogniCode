@@ -1,0 +1,12 @@
+{
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "{\"content\":\"3:0:function:greet:source\\n8:0:function:add:source\\n13:0:function:subtract:source\\n18:0:function:multiply:source\\n\",\"total_lines\":26,\"truncated\":false,\"metadata\":{\"path\":\"/tmp/.tmpWD4cll/hello.py\",\"size\":508,\"modified\":1775685513,\"language\":\"python\"},\"mode\":\"outline\",\"start_line\":1,\"end_line\":26,\"has_more\":false,\"next_token\":null,\"suggested_chunk_size\":null}",
+        "type": "text"
+      }
+    ]
+  }
+}

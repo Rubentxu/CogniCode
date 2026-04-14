@@ -1,0 +1,37 @@
+# Code Intelligence - TypeScript: get_file_symbols
+version: "2.0"
+language: typescript
+tier: A
+description: "Test get_file_symbols on ts-hello fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: symbols_hello
+    tool: get_file_symbols
+    action: analyze
+    workspace: sandbox/fixtures/typescript/ts-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Extract symbols from hello.ts"
+    arguments:
+      file_path: hello.ts
+    ground_truth:
+      symbols:
+        - name: greet
+          kind: function
+        - name: add
+          kind: function
+        - name: subtract
+          kind: function
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500

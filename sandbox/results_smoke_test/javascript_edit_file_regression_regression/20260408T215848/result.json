@@ -1,0 +1,48 @@
+{
+  "scenario_id": "javascript_edit_file_regression_regression",
+  "language": "javascript",
+  "tier": "A",
+  "repo": "fixture",
+  "commit": "unknown",
+  "tool": "edit_file",
+  "action": "apply",
+  "expected_outcome": "expected_fail",
+  "outcome": "preexisting_fail",
+  "failure_class": "preexisting_repo_failure",
+  "timing_ms": {
+    "setup_ms": 0,
+    "server_startup_ms": 9,
+    "tool_call_ms": 0,
+    "validation_ms": 0,
+    "teardown_ms": 3,
+    "total_ms": 2247
+  },
+  "resource_usage": {
+    "peak_rss_mb": 0.0,
+    "cpu_time_s": 0.0
+  },
+  "validation": {
+    "stages": [
+      {
+        "stage": "syntax",
+        "status": "pass",
+        "exit_code": 0,
+        "duration_ms": 53
+      },
+      {
+        "stage": "test",
+        "status": "fail",
+        "exit_code": 1,
+        "stdout_excerpt": "",
+        "stderr_excerpt": "node:internal/modules/cjs/loader:1423\n  throw err;\n  ^\n\nError: Cannot find module '/tmp/.tmpPcRysG/js-mutation/node_modules/.bin/jest'\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1420:15)\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1058:19)\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1063:22)\n    at Module._load (node:internal/modules/cjs/loader:1226:37)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:245:24)\n    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)\n    at node:internal/main/run_main_module:33:47 {\n  code: 'MODULE_NOT_FOUND',\n  requireStack: []\n}\n\nNode.js v25.2.1\n",
+        "duration_ms": 55
+      }
+    ],
+    "passed": false
+  },
+  "artifacts": [],
+  "container_image": "docker.io/library/node:22-slim",
+  "workspace_snapshot_id": "pending",
+  "started_at": "2026-04-08T21:58:46Z",
+  "completed_at": "2026-04-08T21:58:48Z"
+}

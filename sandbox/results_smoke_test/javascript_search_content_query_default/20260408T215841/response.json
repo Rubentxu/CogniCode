@@ -1,0 +1,12 @@
+{
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "{\"matches\":[],\"total\":0,\"files_scanned\":0}",
+        "type": "text"
+      }
+    ]
+  }
+}

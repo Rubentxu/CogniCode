@@ -1,0 +1,252 @@
+# Go Real Repo Scenario Manifest - Phase 3 Coverage Expansion
+# Uses cobra (v1.8.1), bubbletea (v1.3.9), and lo (v1.43.0) as Tier B real repos
+#
+# Tier B scenarios are NOT included in the fast smoke lane.
+# They run in the full nightly matrix.
+
+version: "1.0"
+language: go
+tier: B
+description: "Go Tier B scenarios — cobra, bubbletea, and lo real repos"
+
+timeout_seconds: 300
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: build
+      commands: ["go build ./..."]
+      timeout_seconds: 60
+    - name: lint
+      commands: ["go vet ./..."]
+      timeout_seconds: 60
+    - name: test
+      commands: ["go test ./..."]
+      timeout_seconds: 180
+
+# Per-repo metadata for reproducibility
+repos:
+  cobra:
+    repo_url: "https://github.com/spf13/cobra.git"
+    pinned_sha: "v1.8.1"
+  bubbletea:
+    repo_url: "https://github.com/charmbracelet/bubbletea.git"
+    pinned_sha: "v1.3.9"
+  lo:
+    repo_url: "https://github.com/samber/lo.git"
+    pinned_sha: "v1.43.0"
+
+scenarios:
+  # ─── cobra scenarios ─────────────────────────────────────────────────────────
+
+  - name: realrepo_read_source_cobra
+    description: "Read cobra source file as raw text"
+    tool: read_file
+    action: read
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: active_help.go
+      mode: raw
+
+  - name: realrepo_search_content_cobra
+    description: "Search for 'Command' in cobra source"
+    tool: search_content
+    action: search
+    repo: go/cobra
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "Command"
+      path: .
+    ground_truth:
+      matches:
+        - path: cobra.go
+        - path: completions_test.go
+        - path: fish_completions_test.go
+        - path: flag_groups_test.go
+
+  - name: realrepo_extract_symbols_cobra
+    description: "Extract symbols from cobra source file"
+    tool: get_file_symbols
+    action: extract
+    repo: go/cobra
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      file_path: cobra.go
+
+  - name: realrepo_safe_refactor_cobra
+    description: "Attempt safe refactor rename on cobra (not yet supported)"
+    tool: safe_refactor
+    action: rename
+    repo: go/cobra
+    workspace: .
+    scenario_class: mutation
+    preview_only: true
+    expected_outcome: capability_missing
+    arguments:
+      target: Execute
+      params:
+        new_name: ExecuteNew
+        file_path: cobra.go
+
+  - name: realrepo_edit_file_cobra
+    description: "Apply edit in cobra real repo with go build + test"
+    tool: edit_file
+    action: apply
+    repo: go/cobra
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: concrete
+    arguments:
+      path: active_help.go
+      old_text: "// TODO:"
+      new_text: "// FIXED:"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: build
+          commands: ["go build ./..."]
+          timeout_seconds: 60
+        - name: test
+          commands: ["go test ./..."]
+          timeout_seconds: 180
+
+  # ─── bubbletea scenarios ──────────────────────────────────────────────────────
+
+  - name: realrepo_read_source_bubbletea
+    description: "Read bubbletea source file as raw text"
+    tool: read_file
+    action: read
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: commands.go
+      mode: raw
+
+  - name: realrepo_search_content_bubbletea
+    description: "Search for 'Model' in bubbletea source"
+    tool: search_content
+    action: search
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "Model"
+      path: .
+    ground_truth:
+      matches:
+        - path: delegate.go
+        - path: exec_test.go
+        - path: main.go
+        - path: main_test.go
+
+  - name: realrepo_extract_symbols_bubbletea
+    description: "Extract symbols from bubbletea source file"
+    tool: get_file_symbols
+    action: extract
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      file_path: commands.go
+
+  - name: realrepo_edit_file_bubbletea
+    description: "Apply edit in bubbletea real repo with go build + test"
+    tool: edit_file
+    action: apply
+    repo: go/bubbletea
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: concrete
+    arguments:
+      path: commands.go
+      old_text: "// TODO:"
+      new_text: "// FIXED:"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: build
+          commands: ["go build ./..."]
+          timeout_seconds: 60
+        - name: test
+          commands: ["go test ./..."]
+          timeout_seconds: 180
+
+  # ─── lo scenarios ─────────────────────────────────────────────────────────────
+
+  - name: realrepo_read_source_lo
+    description: "Read lo source file as raw text"
+    tool: read_file
+    action: read
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: channel.go
+      mode: raw
+
+  - name: realrepo_search_content_lo
+    description: "Search for 'func' in lo source"
+    tool: search_content
+    action: search
+    repo: go/lo
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "func"
+      path: .
+    ground_truth:
+      matches:
+        - path: func.go
+        - path: time.go
+
+  - name: realrepo_extract_symbols_lo
+    description: "Extract symbols from lo source file (generic functions)"
+    tool: get_file_symbols
+    action: extract
+    repo: go/lo
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      file_path: func.go
+
+  - name: realrepo_edit_file_lo
+    description: "Apply edit in lo real repo with go build + test"
+    tool: edit_file
+    action: apply
+    repo: go/lo
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: concrete
+    arguments:
+      path: channel.go
+      old_text: "// TODO:"
+      new_text: "// FIXED:"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: build
+          commands: ["go build ./..."]
+          timeout_seconds: 60
+        - name: test
+          commands: ["go test ./..."]
+          timeout_seconds: 180

@@ -1,0 +1,40 @@
+# Refactoring - Python: safe_refactor actions
+version: "2.0"
+language: python
+tier: A
+description: "Test safe_refactor actions on python-refactor fixture with behavioral preservation"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: test
+      commands:
+        - python3 test_refactor.py
+
+scenarios:
+  - name: safe_refactor_rename_python
+    tool: safe_refactor
+    action: rename
+    workspace: sandbox/fixtures/python-refactor
+    scenario_class: mutation
+    expected_outcome: pass
+    description: "Rename 'add' function to 'sum' in python-refactor fixture"
+    arguments:
+      action: rename
+      target: add
+      params:
+        new_name: sum
+        file_path: refactor.py
+    ground_truth:
+      pre_code: |
+        def add(a: int, b: int) -> int:
+            """Calculates the sum of two numbers."""
+            return a + b
+    metrics:
+      correctness:
+        type: behavioral_preservation
+      latency:
+        target_ms: 500
+        max_ms: 2000

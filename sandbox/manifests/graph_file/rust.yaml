@@ -1,0 +1,62 @@
+# Graph/File Tools - Rust: get_per_file_graph, merge_file_graphs
+version: "2.0"
+language: rust
+tier: A
+description: "Test per-file and merged graph tools on rust-multifile fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: get_per_file_graph_rust_main
+    tool: get_per_file_graph
+    action: analyze
+    workspace: sandbox/fixtures/rust-multifile
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Get per-file graph for main.rs in rust-multifile fixture"
+    arguments:
+      file_path: src/main.rs
+    ground_truth:
+      per_file_edges:
+        - file: src/main.rs
+          edges:
+            - from: main
+              to: compute
+            - from: compute
+              to: format_message
+    metrics:
+      correctness:
+        type: edge_accuracy
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: merge_file_graphs_rust
+    tool: merge_file_graphs
+    action: merge
+    workspace: sandbox/fixtures/rust-multifile
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Merge graphs from main.rs and helper.rs"
+    arguments:
+      file_paths:
+        - src/main.rs
+        - src/helper.rs
+    ground_truth:
+      merged_edges:
+        - from: main
+          to: compute
+        - from: compute
+          to: format_message
+    metrics:
+      correctness:
+        type: merge_accuracy
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 200
+        max_ms: 1000

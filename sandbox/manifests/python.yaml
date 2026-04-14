@@ -1,0 +1,182 @@
+# Python Tier A Scenario Manifest
+# Phase 1: Production-ready Python scenarios with real validation pipeline
+#
+# Scenario classes:
+#   - read_only: read_file, search_content, list_files, etc.
+#   - analysis: extract_symbols, call_graph, find_references, etc.
+#   - mutation: edit_file, write_file (concrete + preview-only variants)
+#
+# Expected outcomes:
+#   - pass: scenario should pass
+#   - expected_fail: scenario is expected to fail
+#   - capability_missing: tool/language not supported
+
+version: "1.0"
+language: python
+tier: A
+description: "Python Tier A scenarios — read-only, analysis, and mutation with real validation pipeline"
+repo: "click"
+
+# Global defaults
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: syntax
+      commands: ["python -m py_compile src/click/decorators.py"]
+      timeout_seconds: 30
+    - name: format
+      commands: ["ruff format --check . 2>&1 || python -m black --check . 2>&1 || true"]
+      timeout_seconds: 30
+    - name: lint
+      commands: ["ruff check . 2>&1 || python -m mypy . 2>&1 || true"]
+      timeout_seconds: 60
+    - name: build
+      commands: ["python -m py_compile src/click/decorators.py"]
+      timeout_seconds: 30
+    - name: test
+      commands: ["python -m pytest tests/ 2>&1 || true"]
+      timeout_seconds: 60
+
+scenarios:
+  # ─── Read-Only Scenarios ───────────────────────────────────────────────────
+
+  - name: read_file_raw
+    description: "Read a source file as raw text"
+    tool: read_file
+    action: read
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/click/__init__.py
+      mode: raw
+
+  - name: read_file_outline
+    description: "Read file outline (top-level definitions)"
+    tool: read_file
+    action: read
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: src/click/__init__.py
+      mode: outline
+
+  - name: search_content
+    description: "Full-text search within workspace"
+    tool: search_content
+    action: search
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "Command"
+      path: src/click
+    ground_truth:
+      matches:
+        - path: src/click/core.py
+        - path: src/click/decorators.py
+        - path: src/click/exceptions.py
+        - path: src/click/__init__.py
+        - path: src/click/shell_completion.py
+        - path: src/click/testing.py
+        - path: src/click/_winconsole.py
+
+  # ─── Analysis Scenarios ─────────────────────────────────────────────────────
+
+  - name: extract_symbols
+    description: "Extract all symbols from a source file"
+    tool: get_file_symbols
+    action: extract
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      file_path: src/click/decorators.py
+    ground_truth:
+      symbols:
+        - name: command
+          kind: function
+        - name: group
+          kind: function
+        - name: pass_context
+          kind: function
+    metrics:
+      correctness:
+        recall_only: true
+
+  # ─── Mutation Scenarios ─────────────────────────────────────────────────────
+
+  - name: safe_refactor_rename_preview
+    description: "Rename function via safe_refactor (preview-only — no disk mutation)"
+    tool: safe_refactor
+    action: rename
+    workspace: .
+    scenario_class: mutation
+    preview_only: true
+    expected_outcome: pass
+    arguments:
+      target: command
+      params:
+        new_name: command_new
+        file_path: src/click/decorators.py
+    # No validation pipeline — preview-only, no disk changes
+
+  - name: edit_file_concrete
+    description: "Apply edit to a Python file (concrete mutation with validation)"
+    tool: edit_file
+    action: apply
+    workspace: sandbox/fixtures/python
+    repo: ""
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: pass
+    variant: concrete
+    arguments:
+      path: hello.py
+      old_text: '"""A simple greeting module."""'
+      new_text: '"""A simple greeting module for CogniCode sandbox."""'
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: syntax
+          commands: ["python -m py_compile hello.py"]
+          timeout_seconds: 30
+
+  - name: edit_file_syntax_rejected
+    description: "Attempt edit that produces syntax error — should be rejected"
+    tool: edit_file
+    action: apply
+    workspace: sandbox/fixtures/python
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: syntax_rejected
+    arguments:
+      path: hello.py
+      old_text: '"""A simple greeting module for CogniCode sandbox."""'
+      new_text: '"""A simple greeting module for CogniCode sandbox. {'
+    validation:
+      failure_is_regression: false
+      stages:
+        - name: syntax
+          commands: ["python -m py_compile hello.py 2>&1 || true"]
+          timeout_seconds: 30
+
+  # ─── Boundary/Security Scenarios ────────────────────────────────────────────
+
+  - name: path_safety_rejection
+    description: "Attempt to mutate /etc/passwd — must be rejected by path safety"
+    tool: edit_file
+    action: apply
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: pass
+    variant: path_safety
+    arguments:
+      path: /etc/passwd
+      old_text: "root:x:0:0:"
+      new_text: "root:x:0:0:root:/root:/bin/bash"

@@ -1,0 +1,84 @@
+# Code Intelligence - TypeScript: find_usages
+version: "2.0"
+language: typescript
+tier: A
+description: "Test find_usages on ts-hello fixture with ground truth"
+
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: find_usages_greet
+    tool: find_usages
+    action: search
+    workspace: sandbox/fixtures/typescript/ts-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Find usages of greet function"
+    arguments:
+      file_path: hello.ts
+      symbol_name: greet
+    ground_truth:
+      usages:
+        - file: hello.ts
+          line: 5
+          col: 16
+          context: "export function greet(name: string): string {"
+        - file: hello.ts
+          line: 18
+          col: 14
+          context: "console.log(greet('CogniCode'));"
+        - file: test_hello.ts
+          line: 3
+          col: 9
+          context: "import { greet, add, subtract } from './hello';"
+        - file: test_hello.ts
+          line: 6
+          col: 9
+          context: "expect(greet('World')).toBe('Hello, World!');"
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 30000
+        max_ms: 60000
+
+  - name: find_usages_add
+    tool: find_usages
+    action: search
+    workspace: sandbox/fixtures/typescript/ts-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Find usages of add function"
+    arguments:
+      file_path: hello.ts
+      symbol_name: add
+    ground_truth:
+      usages:
+        - file: hello.ts
+          line: 9
+          col: 16
+          context: "export function add(a: number, b: number): number {"
+        - file: hello.ts
+          line: 19
+          col: 25
+          context: "console.log(`2 + 3 = ${add(2, 3)}`);"
+        - file: test_hello.ts
+          line: 3
+          col: 16
+          context: "import { greet, add, subtract } from './hello';"
+        - file: test_hello.ts
+          line: 10
+          col: 9
+          context: "expect(add(2, 3)).toBe(5);"
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 30000
+        max_ms: 60000

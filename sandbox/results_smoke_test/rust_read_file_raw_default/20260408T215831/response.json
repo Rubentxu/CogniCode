@@ -1,0 +1,12 @@
+{
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "{\"content\":\"/// A simple greeting function.\\npub fn greet(name: &str) -> String {\\n    format!(\\\"Hello, {}!\\\", name)\\n}\\n\\n/// Adds two numbers.\\npub fn add(a: i32, b: i32) -> i32 {\\n    a + b\\n}\\n\\n/// Multiplies two numbers (used for mutation testing only).\\npub fn multiply(a: i32, b: i32) -> i32 {\\n    a * b\\n}\\n\\n#[cfg(test)]\\nmod tests {\\n    use super::*;\\n\\n    #[test]\\n    fn test_greet() {\\n        assert_eq!(greet(\\\"World\\\"), \\\"Hello, World!\\\");\\n    }\\n\\n    #[test]\\n    fn test_add() {\\n        assert_eq!(add(2, 3), 5);\\n    }\\n}\",\"total_lines\":29,\"truncated\":false,\"metadata\":{\"path\":\"/tmp/.tmpHnJbAJ/src/lib.rs\",\"size\":502,\"modified\":1775685511,\"language\":\"rust\"},\"mode\":\"raw\",\"start_line\":1,\"end_line\":500,\"has_more\":false,\"next_token\":null,\"suggested_chunk_size\":null}",
+        "type": "text"
+      }
+    ]
+  }
+}

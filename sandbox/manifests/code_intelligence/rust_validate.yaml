@@ -1,0 +1,45 @@
+version: '2.0'
+language: rust
+tier: A
+description: Test validate_syntax on rust-intelligence fixture with ground truth
+timeout_seconds: 30
+validation:
+  failure_is_regression: true
+  stages: []
+scenarios:
+- name: validate_syntax_valid
+  tool: validate_syntax
+  action: check
+  workspace: sandbox/fixtures/rust-intelligence
+  scenario_class: capability_missing
+  expected_outcome: expected_fail
+  description: Validate syntax of rust-intelligence fixture
+  arguments:
+    file_path: src/lib.rs
+  ground_truth:
+    symbols: []
+  metrics:
+    correctness:
+      type: exact_match
+      tolerance_pct: 0.0
+    latency:
+      target_ms: 100
+      max_ms: 500
+- name: validate_syntax_invalid
+  tool: validate_syntax
+  action: check
+  workspace: sandbox/fixtures/rust-intelligence
+  scenario_class: capability_missing
+  expected_outcome: expected_fail
+  description: Validate syntax of invalid file should fail
+  arguments:
+    file_path: src/invalid_syntax.rs
+  ground_truth:
+    symbols: []
+  metrics:
+    correctness:
+      type: exact_match
+      tolerance_pct: 0.0
+    latency:
+      target_ms: 100
+      max_ms: 500

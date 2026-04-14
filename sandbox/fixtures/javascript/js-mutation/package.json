@@ -1,0 +1,13 @@
+{
+  "name": "js-mutation-fixture",
+  "version": "1.0.0",
+  "description": "JS mutation fixture for sandbox testing",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}

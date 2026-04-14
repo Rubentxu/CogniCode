@@ -1,0 +1,113 @@
+# Java Real Repo Scenario Manifest - Phase 3 Coverage Expansion
+# Uses spring-petclinic (main) as Tier B real repo
+#
+# Tier B scenarios are NOT included in the fast smoke lane.
+# They run in the full nightly matrix.
+
+version: "1.0"
+language: java
+tier: B
+description: "Java Tier B scenarios — spring-petclinic real repo"
+
+timeout_seconds: 600
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: syntax
+      commands: ["javac --version"]
+      timeout_seconds: 30
+    - name: build
+      commands: ["./gradlew compileJava -q"]
+      timeout_seconds: 300
+    - name: test
+      commands: ["./gradlew test -q"]
+      timeout_seconds: 300
+
+# Per-repo metadata for reproducibility
+repos:
+  spring-petclinic:
+    repo_url: "https://github.com/spring-projects/spring-petclinic.git"
+    pinned_sha: "edf4db28affcc4741c79850a3d95bc3f177b5ff9"
+
+scenarios:
+  # ─── spring-petclinic scenarios ──────────────────────────────────────────────
+
+  - name: realrepo_read_source_petclinic
+    description: "Read spring-petclinic source file as raw text"
+    tool: read_file
+    action: read
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: pom.xml
+      mode: raw
+
+  - name: realrepo_search_content_petclinic
+    description: "Search for 'Spring' in spring-petclinic source"
+    tool: search_content
+    action: search
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "Spring"
+      path: .
+    ground_truth:
+      matches:
+        - path: PetClinicApplication.java
+        - path: ClinicServiceTests.java
+        - path: OwnerRepository.java
+
+  - name: realrepo_extract_symbols_petclinic
+    description: "Extract symbols from petclinic Java file"
+    tool: get_file_symbols
+    action: extract
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: capability_missing
+    arguments:
+      path: src/main/java/org/springframework/samples/petclinic/owner/Owner.java
+
+  - name: realrepo_safe_refactor_petclinic
+    description: "Attempt safe refactor rename on petclinic (not yet supported)"
+    tool: safe_refactor
+    action: rename
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: mutation
+    preview_only: true
+    expected_outcome: capability_missing
+    arguments:
+      target: Owner
+      params:
+        new_name: OwnerNew
+        file_path: src/main/java/org/springframework/samples/petclinic/owner/Owner.java
+
+  - name: realrepo_edit_file_petclinic
+    description: "Apply edit in spring-petclinic real repo with gradle build"
+    tool: edit_file
+    action: apply
+    repo: java/spring-petclinic
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: concrete
+    arguments:
+      path: pom.xml
+      old_text: "<!-- TODO -->"
+      new_text: "<!-- FIXED -->"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: build
+          commands: ["./gradlew compileJava -q"]
+          timeout_seconds: 300
+        - name: test
+          commands: ["./gradlew test -q"]
+          timeout_seconds: 300

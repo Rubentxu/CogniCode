@@ -1,0 +1,161 @@
+# Indexing - Rust: build_lightweight_index, query_symbol_index
+version: "2.0"
+language: rust
+tier: A
+description: "Test indexing tools on rust-indexing fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: build_lightweight_index_rust
+    tool: build_lightweight_index
+    action: build
+    workspace: sandbox/fixtures/rust-indexing
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Build lightweight index for rust-indexing fixture"
+    arguments:
+      directory: .
+      strategy: lightweight
+    ground_truth:
+      indexed_symbols:
+        - name: greet
+          kind: function
+          location:
+            file: src/lib.rs
+            line: 19
+            col: 0
+        - name: add
+          kind: function
+          location:
+            file: src/lib.rs
+            line: 24
+            col: 0
+        - name: multiply
+          kind: function
+          location:
+            file: src/lib.rs
+            line: 29
+            col: 0
+        - name: Calculator
+          kind: struct
+          location:
+            file: src/lib.rs
+            line: 39
+            col: 0
+        - name: new
+          kind: method
+          location:
+            file: src/lib.rs
+            line: 45
+            col: 4
+        - name: add
+          kind: method
+          location:
+            file: src/lib.rs
+            line: 50
+            col: 4
+        - name: value
+          kind: method
+          location:
+            file: src/lib.rs
+            line: 55
+            col: 4
+        - name: process
+          kind: function
+          location:
+            file: src/utils.rs
+            line: 6
+            col: 0
+        - name: format_result
+          kind: function
+          location:
+            file: src/utils.rs
+            line: 11
+            col: 0
+    metrics:
+      correctness:
+        type: index_completeness
+        tolerance_pct: 0.1
+      latency:
+        target_ms: 200
+        max_ms: 1000
+
+  - name: query_symbol_index_rust_greet
+    tool: query_symbol_index
+    action: query
+    workspace: sandbox/fixtures/rust-indexing
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Query for 'greet' symbol in rust-indexing fixture"
+    arguments:
+      symbol_name: greet
+      directory: .
+    ground_truth:
+      query_results:
+        - symbol_name: greet
+          locations:
+            - file: src/lib.rs
+              line: 19
+              col: 0
+    metrics:
+      correctness:
+        type: recall@k
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 50
+        max_ms: 200
+
+  - name: query_symbol_index_rust_add
+    tool: query_symbol_index
+    action: query
+    workspace: sandbox/fixtures/rust-indexing
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Query for 'add' symbol in rust-indexing fixture"
+    arguments:
+      symbol_name: add
+      directory: .
+    ground_truth:
+      query_results:
+        - symbol_name: add
+          locations:
+            - file: src/lib.rs
+              line: 24
+              col: 0
+    metrics:
+      correctness:
+        type: recall@k
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 50
+        max_ms: 200
+
+  - name: query_symbol_index_rust_calculator
+    tool: query_symbol_index
+    action: query
+    workspace: sandbox/fixtures/rust-indexing
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Query for 'Calculator' struct in rust-indexing fixture"
+    arguments:
+      symbol_name: Calculator
+      directory: .
+    ground_truth:
+      query_results:
+        - symbol_name: Calculator
+          locations:
+            - file: src/lib.rs
+              line: 39
+              col: 0
+    metrics:
+      correctness:
+        type: recall@k
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 50
+        max_ms: 200

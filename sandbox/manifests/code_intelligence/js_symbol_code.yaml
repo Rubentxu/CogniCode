@@ -1,0 +1,56 @@
+# Code Intelligence - JavaScript: get_symbol_code
+version: "2.0"
+language: javascript
+tier: A
+description: "Test get_symbol_code on js-hello fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: symbol_code_greet
+    tool: get_symbol_code
+    action: read
+    workspace: sandbox/fixtures/javascript/js-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Get source code for greet function"
+    arguments:
+      file: hello.js
+      line: 5
+      col: 0
+    ground_truth:
+      code:
+        contains: "greet"
+    metrics:
+      correctness:
+        type: code_match
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: symbol_code_add
+    tool: get_symbol_code
+    action: read
+    workspace: sandbox/fixtures/javascript/js-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Get source code for add function"
+    arguments:
+      file: hello.js
+      line: 9
+      col: 0
+    ground_truth:
+      code:
+        contains: "add"
+    metrics:
+      correctness:
+        type: code_match
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500

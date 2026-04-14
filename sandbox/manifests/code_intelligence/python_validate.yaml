@@ -1,0 +1,45 @@
+version: '2.0'
+language: python
+tier: A
+description: Test validate_syntax on python-intelligence fixture with ground truth
+timeout_seconds: 30
+validation:
+  failure_is_regression: true
+  stages: []
+scenarios:
+- name: validate_syntax_valid
+  tool: validate_syntax
+  action: check
+  workspace: sandbox/fixtures/python-intelligence
+  scenario_class: capability_missing
+  expected_outcome: expected_fail
+  description: Validate syntax of python-intelligence fixture
+  arguments:
+    file_path: example.py
+  ground_truth:
+    symbols: []
+  metrics:
+    correctness:
+      type: exact_match
+      tolerance_pct: 0.0
+    latency:
+      target_ms: 100
+      max_ms: 500
+- name: validate_syntax_invalid
+  tool: validate_syntax
+  action: check
+  workspace: sandbox/fixtures/python-intelligence
+  scenario_class: capability_missing
+  expected_outcome: expected_fail
+  description: Validate syntax of invalid file should fail
+  arguments:
+    file_path: invalid_syntax.py
+  ground_truth:
+    symbols: []
+  metrics:
+    correctness:
+      type: exact_match
+      tolerance_pct: 0.0
+    latency:
+      target_ms: 100
+      max_ms: 500

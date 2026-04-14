@@ -1,0 +1,81 @@
+# Code Intelligence - TypeScript: get_complexity
+version: "2.0"
+language: typescript
+tier: A
+description: "Test get_complexity on ts-hello fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: complexity_greet
+    tool: get_complexity
+    action: analyze
+    workspace: sandbox/fixtures/typescript/ts-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Get complexity for greet function"
+    arguments:
+      file_path: hello.ts
+      function_name: greet
+    ground_truth:
+      complexity:
+        cyclomatic: 1
+        cognitive: 1
+        nesting: 0
+    metrics:
+      correctness:
+        type: within_tolerance
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: complexity_add
+    tool: get_complexity
+    action: analyze
+    workspace: sandbox/fixtures/typescript/ts-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Get complexity for add function"
+    arguments:
+      file_path: hello.ts
+      function_name: add
+    ground_truth:
+      complexity:
+        cyclomatic: 1
+        cognitive: 1
+        nesting: 0
+    metrics:
+      correctness:
+        type: within_tolerance
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: complexity_subtract
+    tool: get_complexity
+    action: analyze
+    workspace: sandbox/fixtures/typescript/ts-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Get complexity for subtract function"
+    arguments:
+      file_path: hello.ts
+      function_name: subtract
+    ground_truth:
+      complexity:
+        cyclomatic: 1
+        cognitive: 1
+        nesting: 0
+    metrics:
+      correctness:
+        type: within_tolerance
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500

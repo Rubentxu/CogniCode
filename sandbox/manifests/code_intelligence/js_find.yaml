@@ -1,0 +1,105 @@
+version: '2.0'
+language: javascript
+tier: A
+description: Test find_usages on js-intelligence fixture with ground truth
+timeout_seconds: 30
+validation:
+  failure_is_regression: true
+  stages: []
+scenarios:
+- name: find_usages_greet
+  tool: find_usages
+  action: search
+  workspace: sandbox/fixtures/js-intelligence
+  scenario_class: read_only
+  expected_outcome: pass
+  description: Find usages of greet function
+  arguments:
+    file_path: example.js
+    symbol_name: greet
+  ground_truth:
+    usages:
+    - file: example.js
+      line: 13
+      col: 9
+      context: "function greet(name) {"
+  metrics:
+    correctness:
+      type: precision_recall
+      tolerance_pct: 0.05
+    latency:
+      target_ms: 100
+      max_ms: 500
+- name: find_usages_add
+  tool: find_usages
+  action: search
+  workspace: sandbox/fixtures/js-intelligence
+  scenario_class: read_only
+  expected_outcome: pass
+  description: Find usages of add function
+  arguments:
+    file_path: example.js
+    symbol_name: add
+  ground_truth:
+    usages:
+    - file: example.js
+      line: 23
+      col: 9
+      context: "function add(a, b) {"
+  metrics:
+    correctness:
+      type: precision_recall
+      tolerance_pct: 0.05
+    latency:
+      target_ms: 100
+      max_ms: 500
+- name: find_usages_calculator
+  tool: find_usages
+  action: search
+  workspace: sandbox/fixtures/js-intelligence
+  scenario_class: read_only
+  expected_outcome: pass
+  description: Find usages of Calculator class
+  arguments:
+    file_path: example.js
+    symbol_name: Calculator
+  ground_truth:
+    usages:
+    - file: example.js
+      line: 49
+      col: 6
+      context: "class Calculator {"
+    - file: example.js
+      line: 79
+      col: 21
+      context: "const calc = new Calculator();"
+  metrics:
+    correctness:
+      type: precision_recall
+      tolerance_pct: 0.05
+    latency:
+      target_ms: 100
+      max_ms: 500
+- name: find_usages_with_context_greet
+  tool: find_usages_with_context
+  action: search
+  workspace: sandbox/fixtures/js-intelligence
+  scenario_class: read_only
+  expected_outcome: pass
+  description: Find usages of greet function with context
+  arguments:
+    symbol: greet
+    context_lines: 2
+  ground_truth:
+    usages:
+    - file: example.js
+      line: 13
+      col: 9
+      context: "function greet(name) {"
+  metrics:
+    correctness:
+      type: precision_recall
+      tolerance_pct: 0.05
+    latency:
+      target_ms: 100
+      max_ms: 500

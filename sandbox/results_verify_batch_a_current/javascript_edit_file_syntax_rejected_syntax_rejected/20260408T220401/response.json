@@ -1,0 +1,12 @@
+{
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "{\"applied\":false,\"validation\":{\"passed\":false,\"syntax_errors\":[]},\"preview\":\"No matches found for old_string: function greet(name) {\\n  return `Hello, ${name}!`;...\",\"bytes_changed\":0}",
+        "type": "text"
+      }
+    ]
+  }
+}

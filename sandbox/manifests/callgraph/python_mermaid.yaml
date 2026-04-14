@@ -1,0 +1,36 @@
+# Call Graph Export Mermaid - Python
+version: "2.0"
+language: python
+tier: A
+description: "Test export_mermaid tool for Python"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: export_mermaid_python
+    tool: export_mermaid
+    action: export
+    workspace: sandbox/fixtures/python
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Export full call graph as mermaid for Python fixture"
+    arguments:
+      format: code
+      max_depth: 3
+    ground_truth:
+      min_node_count: 5
+      min_edge_count: 3
+      mermaid_contains:
+        - "flowchart TD"
+        - "test_greet --> greet"
+        - "test_add --> add"
+    metrics:
+      correctness:
+        type: recall
+      latency:
+        target_ms: 500
+        max_ms: 2000

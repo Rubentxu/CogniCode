@@ -1,0 +1,48 @@
+# Call Graph Impact Analysis - analyze_impact (TypeScript)
+version: "2.0"
+language: typescript
+tier: A
+description: "Test analyze_impact tool for TypeScript"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: analyze_impact_greet_ts
+    tool: analyze_impact
+    action: analyze
+    workspace: sandbox/fixtures/typescript/ts-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Analyze impact of greet function (no callers in simple fixture)"
+    arguments:
+      symbol_name: greet
+    ground_truth:
+      impacted_files: []
+    metrics:
+      correctness:
+        type: recall
+      latency:
+        target_ms: 500
+        max_ms: 2000
+
+  - name: analyze_impact_add_ts
+    tool: analyze_impact
+    action: analyze
+    workspace: sandbox/fixtures/typescript/ts-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Analyze impact of add function (no callers in simple fixture)"
+    arguments:
+      symbol_name: add
+    ground_truth:
+      impacted_files: []
+    metrics:
+      correctness:
+        type: recall
+      latency:
+        target_ms: 500
+        max_ms: 2000

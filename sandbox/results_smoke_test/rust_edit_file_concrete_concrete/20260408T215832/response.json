@@ -1,0 +1,12 @@
+{
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "{\"applied\":true,\"validation\":{\"passed\":true,\"syntax_errors\":[]},\"preview\":\"Changed 8 bytes\",\"bytes_changed\":8}",
+        "type": "text"
+      }
+    ]
+  }
+}

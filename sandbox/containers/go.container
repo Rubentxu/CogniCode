@@ -1,0 +1,31 @@
+# CogniCode Go Sandbox — Placeholder Quadlet
+# Phase 3: Go expected-fail probes (capability_missing classification)
+# Currently: placeholder only — NOT YET HARDENED
+[Unit]
+Description=CogniCode Go Sandbox (Placeholder)
+RequiresMountsFor=%t/containers
+
+[Container]
+# TODO: Pin golang:1.23-alpine digest in Phase 3
+Image=docker.io/library/golang:1.23-alpine
+ContainerName=cognicode-go
+Volume=%t/containers/cognicode-go-workspace:/workspace:z
+Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
+Environment=COGNICODE_WORKSPACE=/workspace
+# PROVISIONAL — Network=host used here because isolation not yet verified
+Network=host
+# Resource limits (provisional)
+MemoryMax=1g
+PidsLimit=64
+CPUWeight=50
+# Alpine uses read-only root by default
+ReadOnly=yes
+Tmpfs=/tmp:rw,noexec,nosuid,size=64m
+NoNewPrivileges=yes
+
+[Service]
+Restart=on-failure
+AutoUpdate=registry
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,48 @@
+# Call Graph Impact Analysis - analyze_impact (JavaScript)
+version: "2.0"
+language: javascript
+tier: A
+description: "Test analyze_impact tool for JavaScript"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: analyze_impact_greet_js
+    tool: analyze_impact
+    action: analyze
+    workspace: sandbox/fixtures/javascript/js-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Analyze impact of greet function (no callers in simple fixture)"
+    arguments:
+      symbol_name: greet
+    ground_truth:
+      impacted_files: []
+    metrics:
+      correctness:
+        type: recall
+      latency:
+        target_ms: 500
+        max_ms: 2000
+
+  - name: analyze_impact_add_js
+    tool: analyze_impact
+    action: analyze
+    workspace: sandbox/fixtures/javascript/js-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Analyze impact of add function (no callers in simple fixture)"
+    arguments:
+      symbol_name: add
+    ground_truth:
+      impacted_files: []
+    metrics:
+      correctness:
+        type: recall
+      latency:
+        target_ms: 500
+        max_ms: 2000

@@ -1,0 +1,42 @@
+{
+  "scenario_id": "typescript_edit_file_concrete_concrete",
+  "language": "typescript",
+  "tier": "A",
+  "repo": "fixture",
+  "commit": "unknown",
+  "tool": "edit_file",
+  "action": "apply",
+  "expected_outcome": "pass",
+  "outcome": "preexisting_fail",
+  "failure_class": "preexisting_repo_failure",
+  "timing_ms": {
+    "setup_ms": 0,
+    "server_startup_ms": 13,
+    "tool_call_ms": 1,
+    "validation_ms": 0,
+    "teardown_ms": 0,
+    "total_ms": 2324
+  },
+  "resource_usage": {
+    "peak_rss_mb": 0.0,
+    "cpu_time_s": 0.0
+  },
+  "validation": {
+    "stages": [
+      {
+        "stage": "typecheck",
+        "status": "fail",
+        "exit_code": 127,
+        "stdout_excerpt": "",
+        "stderr_excerpt": "sh: 1: node_modules/.bin/tsc: not found\n",
+        "duration_ms": 4
+      }
+    ],
+    "passed": false
+  },
+  "artifacts": [],
+  "container_image": "docker.io/library/node:22-slim",
+  "workspace_snapshot_id": "pending",
+  "started_at": "2026-04-08T22:04:15Z",
+  "completed_at": "2026-04-08T22:04:17Z"
+}

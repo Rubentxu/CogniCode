@@ -1,0 +1,60 @@
+# Baseline Validation Test Manifest
+# Tests that pre-existing repo failures are caught before mutation
+version: "1.0"
+language: rust
+tier: B
+repo: anyhow
+description: "Test baseline validation with intentional pre-existing failure"
+
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: build
+      commands: ["cargo build 2>&1"]
+      timeout_seconds: 120
+
+scenarios:
+  # This scenario should PASS - baseline validation succeeds
+  - name: baseline_pass_test
+    description: "Verify baseline validation passes for healthy repo"
+    tool: edit_file
+    action: apply
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: pass
+    variant: concrete
+    arguments:
+      path: src/lib.rs
+      old_text: "//! anyhow"
+      new_text: "//! anyhow - Rust error handling"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: build
+          commands: ["cargo build 2>&1"]
+          timeout_seconds: 120
+
+  # This scenario should produce preexisting_fail - baseline validation fails
+  # because we use a command that will fail
+  - name: baseline_fail_test
+    description: "Verify baseline validation catches pre-existing failures"
+    tool: edit_file
+    action: apply
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: preexisting_fail
+    variant: concrete
+    arguments:
+      path: src/lib.rs
+      old_text: "//! anyhow"
+      new_text: "//! anyhow - TEST"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: build
+          commands: ["cargo build --nonexistent-flag 2>&1 || exit 1"]
+          timeout_seconds: 30

@@ -1,0 +1,52 @@
+{
+  "scenario_id": "rust_edit_file_concrete_concrete",
+  "language": "rust",
+  "tier": "A",
+  "repo": "serde",
+  "commit": "unknown",
+  "tool": "edit_file",
+  "action": "apply",
+  "expected_outcome": "pass",
+  "outcome": "pass",
+  "failure_class": "pass",
+  "timing_ms": {
+    "setup_ms": 0,
+    "server_startup_ms": 10,
+    "tool_call_ms": 1,
+    "validation_ms": 558,
+    "teardown_ms": 2,
+    "total_ms": 1181
+  },
+  "resource_usage": {
+    "peak_rss_mb": 0.0,
+    "cpu_time_s": 0.0
+  },
+  "validation": {
+    "stages": [
+      {
+        "stage": "syntax",
+        "status": "pass",
+        "exit_code": 0,
+        "duration_ms": 100
+      },
+      {
+        "stage": "build",
+        "status": "pass",
+        "exit_code": 0,
+        "duration_ms": 169
+      },
+      {
+        "stage": "test",
+        "status": "pass",
+        "exit_code": 0,
+        "duration_ms": 288
+      }
+    ],
+    "passed": true
+  },
+  "artifacts": [],
+  "container_image": "docker.io/library/rust:1.82-slim",
+  "workspace_snapshot_id": "pending",
+  "started_at": "2026-04-08T21:58:31Z",
+  "completed_at": "2026-04-08T21:58:32Z"
+}

@@ -1,0 +1,12 @@
+{
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "{\"content\":\"/**\\n * A simple greeting module.\\n */\\n\\nfunction greet(name) {\\n  // missing closing brace\\n\\nfunction add(a, b) {\\n  return a + b;\\n}\\n\\nfunction subtract(a, b) {\\n  return a - b;\\n}\\n\\nmodule.exports = { greet, add, subtract };\\n\\nif (require.main === module) {\\n  console.log(greet('CogniCode'));\\n  console.log(`2 + 3 = ${add(2, 3)}`);\\n}\",\"total_lines\":21,\"truncated\":false,\"metadata\":{\"path\":\"/tmp/.tmpoCVLxZ/js-hello/hello.js\",\"size\":325,\"modified\":1775685514,\"language\":\"javascript\"},\"mode\":\"raw\",\"start_line\":1,\"end_line\":500,\"has_more\":false,\"next_token\":null,\"suggested_chunk_size\":null}",
+        "type": "text"
+      }
+    ]
+  }
+}

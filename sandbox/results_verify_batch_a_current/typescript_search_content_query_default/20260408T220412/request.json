@@ -1,0 +1,11 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "action": "search",
+      "path": "ts-hello",
+      "pattern": "function"
+    },
+    "name": "search_content"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "js-hello",
+  "version": "0.1.0",
+  "description": "JavaScript micro-fixture for sandbox validation",
+  "main": "hello.js",
+  "scripts": {
+    "test": "jest",
+    "test:coverage": "jest --coverage"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}

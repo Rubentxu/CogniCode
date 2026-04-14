@@ -1,0 +1,25 @@
+# Rust Fixture Scenario Manifest - Minimal smoke test using real MCP tools
+version: "1.0"
+language: rust
+tier: A
+description: "Rust minimal smoke test using cognicode-mcp tool"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: build
+      commands: ["cargo build 2>&1"]
+      timeout_seconds: 30
+
+scenarios:
+  - name: build_graph_rust_hello
+    description: "Build call graph for rust-hello fixture"
+    tool: build_graph
+    action: build
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      directory: .

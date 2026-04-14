@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CogniCode Sandbox Scenario Manifest",
+  "description": "Schema for CogniCode sandbox scenario manifests. Declares scenario matrix, validation pipeline, and expected outcomes.",
+  "type": "object",
+  "required": ["version", "language", "tier", "scenarios"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Manifest schema version (e.g., '1.0')",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "language": {
+      "type": "string",
+      "description": "Target programming language",
+      "enum": ["rust", "python", "javascript", "typescript", "java", "go"]
+    },
+    "tier": {
+      "type": "string",
+      "description": "Scenario tier: A = functional, B = expected-fail probe",
+      "enum": ["A", "B"]
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of this manifest"
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "description": "Default scenario timeout in seconds",
+      "default": 120,
+      "minimum": 10,
+      "maximum": 600
+    },
+    "validation": {
+      "$ref": "#/definitions/validation_pipeline"
+    },
+    "retry_policy": {
+      "$ref": "#/definitions/retry_policy"
+    },
+    "scenarios": {
+      "type": "array",
+      "description": "List of scenario definitions",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/scenario_def"
+      }
+    }
+  },
+  "definitions": {
+    "validation_pipeline": {
+      "type": "object",
+      "properties": {
+        "failure_is_regression": {
+          "type": "boolean",
+          "description": "Whether stage failures are considered regressions (true) or expected (false)",
+          "default": true
+        },
+        "stages": {
+          "type": "array",
+          "description": "Ordered list of validation stages",
+          "items": {
+            "$ref": "#/definitions/stage_def"
+          }
+        }
+      }
+    },
+    "stage_def": {
+      "type": "object",
+      "required": ["name", "commands"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Stage name",
+          "enum": ["syntax", "format", "lint", "build", "test"]
+        },
+        "commands": {
+          "type": "array",
+          "description": "Shell commands to run; first non-zero exit stops the stage",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "expected_exit_range": {
+          "type": "array",
+          "description": "[min, max] acceptable exit codes",
+          "default": [0, 0],
+          "items": { "type": "integer" },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 5,
+          "maximum": 300
+        }
+      }
+    },
+    "retry_policy": {
+      "type": "object",
+      "required": ["max_attempts", "on"],
+      "properties": {
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "on": {
+          "type": "array",
+          "description": "Failure classes that trigger retry",
+          "items": {
+            "type": "string",
+            "enum": [
+              "timeout",
+              "sandbox_infra_failure",
+              "resource_limit_exceeded",
+              "nondeterministic"
+            ]
+          }
+        }
+      }
+    },
+    "scenario_def": {
+      "type": "object",
+      "required": ["name", "tool", "action", "workspace"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique scenario name within this manifest",
+          "pattern": "^[a-z_][a-z0-9_]*$"
+        },
+        "description": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string",
+          "description": "MCP tool name",
+          "enum": [
+            "read_file",
+            "search_content",
+            "list_files",
+            "extract_symbols",
+            "find_references",
+            "safe_refactor",
+            "edit_file",
+            "write_file",
+            "get_call_graph",
+            "get_symbol_code",
+            "go_to_definition",
+            "hover"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "description": "Tool action/sub-action"
+        },
+        "arguments": {
+          "type": "object",
+          "description": "Tool-specific arguments (arbitrary JSON)"
+        },
+        "workspace": {
+          "type": "string",
+          "description": "Workspace path relative to repo root"
+        },
+        "expected_outcome": {
+          "type": "string",
+          "default": "pass",
+          "enum": ["pass", "expected_fail", "unexpected_fail", "unexpected_pass", "capability_missing"]
+        },
+        "scenario_class": {
+          "type": "string",
+          "default": "read_only",
+          "enum": ["read_only", "analysis", "mutation"]
+        },
+        "preview_only": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, tool is expected to return a preview without disk mutation"
+        },
+        "variant": {
+          "type": "string",
+          "description": "Scenario variant label (e.g., 'concrete', 'syntax_rejected', 'regression')"
+        },
+        "validation": {
+          "$ref": "#/definitions/validation_pipeline"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 600
+        }
+      }
+    }
+  }
+}

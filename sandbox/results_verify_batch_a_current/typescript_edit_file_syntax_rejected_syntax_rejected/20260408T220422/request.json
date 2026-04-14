@@ -1,0 +1,15 @@
+{
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "edits": [
+        {
+          "new_string": "export function greet(name: string) {\n  // missing closing brace",
+          "old_string": "export function greet(name: string): string {\n  return `Hello, ${name}!`;\n}"
+        }
+      ],
+      "path": "hello.ts"
+    },
+    "name": "edit_file"
+  }
+}

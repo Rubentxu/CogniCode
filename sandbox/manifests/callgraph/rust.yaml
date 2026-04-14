@@ -1,0 +1,170 @@
+# Call Graph - Rust: build_graph, get_entry_points, get_leaf_functions
+version: "2.0"
+language: rust
+tier: A
+description: "Test call graph tools on rust-callgraph fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: build_graph_rust
+    tool: build_graph
+    action: build
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Build call graph for rust-callgraph fixture"
+    arguments:
+      directory: .
+    ground_truth:
+      edges:
+        - from: main
+          to: helper
+        - from: main
+          to: process
+        - from: helper
+          to: compute
+        - from: helper
+          to: helper_internal
+        - from: test_main
+          to: main
+    metrics:
+      correctness:
+        type: edge_accuracy
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 500
+        max_ms: 5000
+
+  - name: entry_points_rust
+    tool: get_entry_points
+    action: find
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Find entry points in rust-callgraph fixture"
+    arguments: {}
+    ground_truth:
+      entry_points:
+        - name: test_main
+          kind: function
+        - name: test_helper
+          kind: function
+        - name: test_compute
+          kind: function
+        - name: a
+          kind: variable
+        - name: result
+          kind: variable
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: leaf_functions_rust
+    tool: get_leaf_functions
+    action: find
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Find leaf functions in rust-callgraph fixture"
+    arguments: {}
+    ground_truth:
+      leaf_functions:
+        - name: compute
+          kind: function
+        - name: process
+          kind: function
+        - name: helper_internal
+          kind: function
+        - name: test_helper
+          kind: function
+        - name: test_compute
+          kind: function
+        - name: a
+          kind: variable
+        - name: result
+          kind: variable
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: check_architecture_rust
+    tool: check_architecture
+    action: analyze
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Check architecture for cycles in rust-callgraph fixture"
+    arguments: {}
+    ground_truth:
+      cycles: []
+    metrics:
+      correctness:
+        type: structure_match
+      latency:
+        target_ms: 200
+        max_ms: 1000
+
+  - name: trace_path_rust
+    tool: trace_path
+    action: find
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Trace path from main to compute"
+    arguments:
+      source: main
+      target: compute
+      max_depth: 5
+    ground_truth:
+      paths:
+        - source: main
+          target: compute
+          intermediates: []
+    metrics:
+      correctness:
+        type: structure_match
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: hot_paths_rust
+    tool: get_hot_paths
+    action: find
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Find hot paths in rust-callgraph fixture"
+    arguments:
+      limit: 10
+      min_fan_in: 1
+    ground_truth:
+      hot_functions:
+        - name: main
+          min_fan_in: 0
+        - name: helper
+          min_fan_in: 1
+        - name: compute
+          min_fan_in: 1
+        - name: process
+          min_fan_in: 1
+        - name: helper_internal
+          min_fan_in: 1
+    metrics:
+      correctness:
+        type: recall@k
+      latency:
+        target_ms: 100
+        max_ms: 500

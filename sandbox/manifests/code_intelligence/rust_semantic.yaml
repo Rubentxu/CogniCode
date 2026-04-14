@@ -1,0 +1,72 @@
+# Code Intelligence - Rust: semantic_search
+version: "2.0"
+language: rust
+tier: A
+description: "Test semantic_search on rust-intelligence fixture with ground truth"
+
+timeout_seconds: 30
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  - name: semantic_search_greet
+    tool: semantic_search
+    action: search
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Search for 'greet' symbol"
+    arguments:
+      query: greet
+      max_results: 5
+    ground_truth:
+      search_results: []
+    metrics:
+      correctness:
+        type: recall_at_k
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: semantic_search_calculator
+    tool: semantic_search
+    action: search
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Search for 'Calculator' symbol"
+    arguments:
+      query: Calculator
+      max_results: 5
+    ground_truth:
+      search_results: []
+    metrics:
+      correctness:
+        type: recall_at_k
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  - name: semantic_search_add
+    tool: semantic_search
+    action: search
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Search for 'add' symbol (should find both add function and Calculator::add method)"
+    arguments:
+      query: add
+      max_results: 5
+    ground_truth:
+      search_results: []
+    metrics:
+      correctness:
+        type: recall_at_k
+        tolerance_pct: 0.05
+      latency:
+        target_ms: 100
+        max_ms: 500

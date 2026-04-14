@@ -1,0 +1,12 @@
+{
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "{\"content\":\"1:0:function:greet:source\\n6:0:function:add:source\\n11:0:function:multiply:source\\n20:4:function:test_greet:source\\n25:4:function:test_add:source\\n\",\"total_lines\":29,\"truncated\":false,\"metadata\":{\"path\":\"/tmp/.tmpLj4weP/src/lib.rs\",\"size\":502,\"modified\":1775685511,\"language\":\"rust\"},\"mode\":\"outline\",\"start_line\":1,\"end_line\":29,\"has_more\":false,\"next_token\":null,\"suggested_chunk_size\":null}",
+        "type": "text"
+      }
+    ]
+  }
+}

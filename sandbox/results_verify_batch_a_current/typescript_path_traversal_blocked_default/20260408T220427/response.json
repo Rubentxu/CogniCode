@@ -1,0 +1,13 @@
+{
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "Application error: Internal error: Invalid parameter: Path outside workspace",
+        "type": "text"
+      }
+    ],
+    "isError": true
+  }
+}

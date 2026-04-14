@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# Generate a Markdown report from orchestrator scenario result JSON files.
+# Consumes the new ScenarioResult JSON format (outcome, failure_class, timing_ms).
+set -euo pipefail
+
+RESULTS_DIR="${1:-sandbox/results}"
+REPORTS_DIR="${2:-sandbox/reports}"
+timestamp=$(date +%Y%m%dT%H%M%S)
+report_file="${REPORTS_DIR}/summary_${timestamp}.md"
+mkdir -p "$REPORTS_DIR"
+
+# Count scenarios
+total=$(ls "$RESULTS_DIR"/*.json 2>/dev/null | wc -l | tr -d ' ')
+if [ "$total" -eq 0 ] || [ ! -d "$RESULTS_DIR" ]; then
+    echo "# CogniCode Benchmark Validation Report" > "$report_file"
+    echo "" >> "$report_file"
+    echo "**Date**: $(date -Iseconds)" >> "$report_file"
+    echo "**Total scenarios**: 0" >> "$report_file"
+    echo "**Note**: No result files found in $RESULTS_DIR" >> "$report_file"
+    echo "Report generated: $report_file"
+    exit 0
+fi
+
+# Aggregate counts using jq (fallback to 0 if jq unavailable)
+count_outcome() {
+    local value="$1"
+    cat "$RESULTS_DIR"/*.json 2>/dev/null \
+        | jq -s "[.[] | select(.outcome==\"$value\")] | length" 2>/dev/null \
+        | tr -d ' '
+}
+
+passed=$(count_outcome "pass")
+expected_fail=$(count_outcome "expected_fail")
+unexpected_fail=$(count_outcome "unexpected_fail")
+unexpected_pass=$(count_outcome "unexpected_pass")
+failed=${unexpected_fail:-0}
+
+# Count by failure class
+capability_missing=$(count_outcome "capability_missing") || capability_missing=0
+
+# Collect scenario details
+{
+    echo "# CogniCode Benchmark Validation Report"
+    echo ""
+    echo "**Date**: $(date -Iseconds)"
+    echo "**Report**: $report_file"
+    echo "**Total scenarios**: $total"
+    echo "**Passed**: ${passed:-0}"
+    echo "**Expected failures**: ${expected_fail:-0}"
+    echo "**Unexpected failures**: ${unexpected_fail:-0}"
+    echo "**Unexpected passes**: ${unexpected_pass:-0}"
+    echo ""
+    echo "## Summary"
+    echo ""
+    echo "| Outcome | Count |"
+    echo "|---------|-------|"
+    echo "| pass | ${passed:-0} |"
+    echo "| expected_fail | ${expected_fail:-0} |"
+    echo "| unexpected_fail | ${unexpected_fail:-0} |"
+    echo "| unexpected_pass | ${unexpected_pass:-0} |"
+    echo ""
+    echo "## Failure Classes"
+    echo ""
+    echo "| Failure Class | Count | CI Blocking |"
+    echo "|--------------|-------|-------------|"
+    echo "| capability_missing | ${capability_missing:-0} | no |"
+
+    # List failure classes present in results
+    for fc in $(cat "$RESULTS_DIR"/*.json 2>/dev/null | jq -r '.failure_class // "none"' 2>/dev/null | sort -u); do
+        [ "$fc" = "none" ] && continue
+        [ "$fc" = "capability_missing" ] && continue  # already shown
+        cnt=$(cat "$RESULTS_DIR"/*.json 2>/dev/null | jq -s "[.[] | select(.failure_class==\"$fc\")] | length" 2>/dev/null | tr -d ' ' || echo "0")
+        blocking="yes"
+        case "$fc" in
+            pass|expected_fail|preexisting_repo_failure|capability_missing)
+                blocking="no"
+                ;;
+        esac
+        echo "| $fc | $cnt | $blocking |"
+    done
+
+    echo ""
+    echo "## Scenario Results"
+    echo ""
+    echo "| Scenario ID | Language | Tool | Action | Outcome | Failure Class | Duration (ms) |"
+    echo "|-------------|----------|------|--------|---------|---------------|---------------|"
+
+    for f in "$RESULTS_DIR"/*.json; do
+        [ -f "$f" ] || continue
+        scenario_id=$(jq -r '.scenario_id // "unknown"' "$f" 2>/dev/null || echo "unknown")
+        language=$(jq -r '.language // "unknown"' "$f" 2>/dev/null || echo "unknown")
+        tool=$(jq -r '.tool // "unknown"' "$f" 2>/dev/null || echo "unknown")
+        action=$(jq -r '.action // "unknown"' "$f" 2>/dev/null || echo "unknown")
+        outcome=$(jq -r '.outcome // "unknown"' "$f" 2>/dev/null || echo "unknown")
+        failure_class=$(jq -r '.failure_class // "none"' "$f" 2>/dev/null || echo "none")
+        duration=$(jq -r '.timing_ms.total_ms // 0' "$f" 2>/dev/null || echo "0")
+        echo "| $scenario_id | $language | $tool | $action | $outcome | $failure_class | $duration |"
+    done
+
+    echo ""
+    echo "## Validation Stages"
+    echo ""
+    echo "Per-stage results for scenarios with validation pipeline:"
+    echo ""
+
+    for f in "$RESULTS_DIR"/*.json; do
+        [ -f "$f" ] || continue
+        scenario_id=$(jq -r '.scenario_id // "unknown"' "$f" 2>/dev/null || echo "unknown")
+        has_validation=$(jq '.validation != null' "$f" 2>/dev/null || echo "false")
+        if [ "$has_validation" = "true" ]; then
+            echo "### $scenario_id"
+            echo ""
+            echo "| Stage | Status | Exit Code | Duration (ms) |"
+            echo "|-------|--------|-----------|---------------|"
+            jq -r '.validation.stages[] | "| \(.stage) | \(.status) | \(.exit_code // "N/A") | \(.duration_ms) |"' "$f" 2>/dev/null || true
+            echo ""
+        fi
+    done
+
+    echo ""
+    echo "---"
+    echo "*Report generated by CogniCode sandbox-orchestrator*"
+
+} > "$report_file"
+
+echo "Report generated: $report_file"
+echo ""
+echo "Summary:"
+echo "  Total: $total"
+echo "  Passed: ${passed:-0}"
+echo "  Expected failures: ${expected_fail:-0}"
+echo "  Unexpected failures: ${failed:-0}"

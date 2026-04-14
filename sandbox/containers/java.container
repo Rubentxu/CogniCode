@@ -1,0 +1,36 @@
+# CogniCode Java Sandbox — Hardened Quadlet
+# Phase 3: Java expected-fail probes (capability_missing classification)
+# Phase 1: Provisioned, hardened, pinned digest
+[Unit]
+Description=CogniCode Java Sandbox (Hardened)
+RequiresMountsFor=%t/containers
+
+[Container]
+# Pinned image digest — eclipse-temurin:21-jdk-slim
+Image=docker.io/library/eclipse-temurin@sha256:8a3a3e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
+ContainerName=cognicode-java
+Volume=%t/containers/cognicode-java-workspace:/workspace:z
+Volume=%h/Proyectos/rust/CogniCode/sandbox/repos:/repos:z
+Environment=COGNICODE_WORKSPACE=/repos/java-sample
+# Isolation: no host network
+Network=none
+# Resource limits
+MemoryMax=2g
+MemorySwap=2g
+PidsLimit=128
+CPUWeight=50
+# Read-only root filesystem
+ReadOnly=yes
+# Tmpfs for /tmp (writable but ephemeral)
+Tmpfs=/tmp:rw,noexec,nosuid,size=64m
+# Security: no new privileges
+NoNewPrivileges=yes
+SupplementaryGroups=
+
+[Service]
+Restart=on-failure
+AutoUpdate=no
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

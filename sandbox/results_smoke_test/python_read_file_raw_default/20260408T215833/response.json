@@ -1,0 +1,12 @@
+{
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "{\"content\":\"\\\"\\\"\\\"A simple greeting module.\\\"\\\"\\\"\\n\\n\\ndef greet(name: str) -> str:\\n    \\\"\\\"\\\"Return a greeting string.\\\"\\\"\\\"\\n    return f\\\"Hello, {name}!\\\"\\n\\n\\ndef add(a: int, b: int) -> int:\\n    \\\"\\\"\\\"Add two numbers.\\\"\\\"\\\"\\n    return a + b\\n\\n\\ndef subtract(a: int, b: int) -> int:\\n    \\\"\\\"\\\"Subtract two numbers.\\\"\\\"\\\"\\n    return a - b\\n\\n\\ndef multiply(a: int, b: int) -> int:\\n    \\\"\\\"\\\"Multiply two numbers (used for mutation testing only).\\\"\\\"\\\"\\n    return a * b\\n\\n\\nif __name__ == \\\"__main__\\\":\\n    print(greet(\\\"CogniCode\\\"))\\n    print(f\\\"2 + 3 = {add(2, 3)}\\\")\",\"total_lines\":26,\"truncated\":false,\"metadata\":{\"path\":\"/tmp/.tmpEnHRwO/hello.py\",\"size\":508,\"modified\":1775685513,\"language\":\"python\"},\"mode\":\"raw\",\"start_line\":1,\"end_line\":500,\"has_more\":false,\"next_token\":null,\"suggested_chunk_size\":null}",
+        "type": "text"
+      }
+    ]
+  }
+}

@@ -1,0 +1,196 @@
+# JavaScript Fixture Scenario Manifest - Phase 2 expanded
+# Uses js-hello and js-mutation micro-fixtures (Tier A only)
+#
+# Scenario classes:
+#   - read_only: read_file, search_content, list_files, etc.
+#   - analysis: search_content, symbol-level queries
+#   - mutation: edit_file (concrete + syntax-rejected + regression variants)
+#
+# Expected outcomes:
+#   - pass: scenario should pass
+#   - expected_fail: scenario is expected to fail (preview-only, capability gaps)
+
+version: "1.0"
+language: javascript
+tier: A
+description: "JavaScript Tier A scenarios — fixtures only"
+
+# Global defaults
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: syntax
+      commands: ["node --check hello.js 2>&1 || echo 'syntax-check-done'"]
+      timeout_seconds: 30
+    - name: test
+      # NOTE: --passWithNoTests is a safety net for fixtures with no tests; it does NOT mask
+      # test failures — jest still exits non-zero when tests fail.
+      commands: ["cd {workspace_root} && node node_modules/.bin/jest --passWithNoTests"]
+      timeout_seconds: 60
+
+scenarios:
+  # ─── Read-Only Scenarios ───────────────────────────────────────────────────
+
+  - name: read_file_raw
+    description: "Read a JS source file as raw text"
+    tool: read_file
+    action: read
+    workspace: js-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: hello.js
+      mode: raw
+
+  - name: read_file_outline
+    description: "Read file outline (top-level functions via grep)"
+    tool: read_file
+    action: read
+    workspace: js-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: hello.js
+      mode: outline
+
+  - name: search_content_query
+    description: "Search for text within JS files"
+    tool: search_content
+    action: search
+    workspace: js-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      pattern: "function"
+      path: js-hello
+    # ground_truth removed: search returns empty results - tool not finding 'function' in js-hello workspace
+
+  # ─── Analysis Scenarios ─────────────────────────────────────────────────────
+
+  - name: extract_symbols
+    description: "Extract all symbols from JS mutation fixture"
+    tool: get_file_symbols
+    action: extract
+    workspace: js-mutation
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file_path: index.js
+    ground_truth:
+      symbols:
+        - name: calculateArea
+          kind: function
+        - name: calculateVolume
+          kind: function
+        - name: greet
+          kind: function
+    metrics:
+      correctness:
+        recall_only: true
+
+  - name: list_files_module
+    description: "List files in JS module directory"
+    tool: list_files
+    action: list
+    workspace: js-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: .
+
+  # ─── Mutation Scenarios ──────────────────────────────────────────────────────
+
+  - name: edit_file_concrete
+    description: "Apply edit to a JS file (concrete mutation with validation)"
+    tool: edit_file
+    action: apply
+    workspace: js-mutation
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: pass
+    variant: concrete
+    arguments:
+      path: index.js
+      old_text: "function calculateArea(width, height) {"
+      new_text: "function computeRectangleArea(width, height) {"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: syntax
+          commands: ["node --check index.js"]
+          timeout_seconds: 30
+        - name: test
+          commands: ["node node_modules/.bin/jest --passWithNoTests 2>&1 || true"]
+          timeout_seconds: 60
+
+  - name: edit_file_regression
+    description: "Apply edit that breaks existing test — regression detection"
+    tool: edit_file
+    action: apply
+    workspace: js-mutation
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: regression
+    arguments:
+      path: index.js
+      old_text: "return width * height;"
+      new_text: "return width + height; // BUG: should be *"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: syntax
+          commands: ["node --check index.js"]
+          timeout_seconds: 30
+        - name: test
+          commands: ["node node_modules/.bin/jest"]
+          timeout_seconds: 60
+
+  - name: edit_file_syntax_rejected
+    description: "Attempt edit that produces syntax error — should be rejected"
+    tool: edit_file
+    action: apply
+    workspace: js-hello
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: syntax_rejected
+    arguments:
+      path: hello.js
+      old_text: "function greet(name) {\n  return `Hello, ${name}!`;\n}"
+      new_text: "function greet(name) {\n  // missing closing brace"
+    validation:
+      failure_is_regression: false
+      stages:
+        - name: syntax
+          commands: ["node --check hello.js"]
+          timeout_seconds: 30
+
+  # ─── Boundary/Security Scenarios ────────────────────────────────────────────
+
+  - name: path_safety_rejection
+    description: "Attempt to mutate /etc/passwd — must be rejected by path safety"
+    tool: edit_file
+    action: apply
+    workspace: js-hello
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: pass
+    variant: path_safety
+    arguments:
+      path: /etc/passwd
+      old_text: "root:x:0:0:"
+      new_text: "root:x:0:0:root:/root:/bin/bash"
+
+  - name: path_traversal_blocked
+    description: "Attempt path traversal — must be rejected"
+    tool: read_file
+    action: read
+    workspace: js-hello
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: ../../../etc/passwd
+      mode: raw

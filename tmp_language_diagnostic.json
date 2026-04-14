@@ -1,0 +1,2513 @@
+{
+  "metadata": {
+    "bin": "/home/rubentxu/Proyectos/rust/CogniCode/target/debug/cognicode-mcp"
+  },
+  "languages": {
+    "typescript": {
+      "workspace": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello",
+      "tools": {
+        "get_file_symbols": {
+          "args": {
+            "file_path": "hello.ts"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"file_path\\\":\\\"hello.ts\\\",\\\"symbols\\\":[{\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"column\\\":8,\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"line\\\":5},\\\"name\\\":\\\"greet\\\",\\\"signature\\\":null},{\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"column\\\":8,\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"line\\\":9},\\\"name\\\":\\\"add\\\",\\\"signature\\\":null},{\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"column\\\":8,\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"line\\\":13},\\\"name\\\":\\\"subtract\\\",\\\"signature\\\":null}]}\",\"type\":\"text\"}]},\"id\":2}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"file_path\":\"hello.ts\",\"symbols\":[{\"kind\":\"function\",\"location\":{\"column\":8,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":5},\"name\":\"greet\",\"signature\":null},{\"kind\":\"function\",\"location\":{\"column\":8,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":9},\"name\":\"add\",\"signature\":null},{\"kind\":\"function\",\"location\":{\"column\":8,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":13},\"name\":\"subtract\",\"signature\":null}]}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 2
+            },
+            "ok": true,
+            "text": "{\"file_path\":\"hello.ts\",\"symbols\":[{\"kind\":\"function\",\"location\":{\"column\":8,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":5},\"name\":\"greet\",\"signature\":null},{\"kind\":\"function\",\"location\":{\"column\":8,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":9},\"name\":\"add\",\"signature\":null},{\"kind\":\"function\",\"location\":{\"column\":8,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":13},\"name\":\"subtract\",\"signature\":null}]}",
+            "parsed_text": {
+              "file_path": "hello.ts",
+              "symbols": [
+                {
+                  "kind": "function",
+                  "location": {
+                    "column": 8,
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                    "line": 5
+                  },
+                  "name": "greet",
+                  "signature": null
+                },
+                {
+                  "kind": "function",
+                  "location": {
+                    "column": 8,
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                    "line": 9
+                  },
+                  "name": "add",
+                  "signature": null
+                },
+                {
+                  "kind": "function",
+                  "location": {
+                    "column": 8,
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                    "line": 13
+                  },
+                  "name": "subtract",
+                  "signature": null
+                }
+              ]
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:45:47.483870Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:45:47.483934Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:45:47.489880Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:45:47.489907Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:45:47.489926Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "get_complexity": {
+          "args": {
+            "file_path": "hello.ts",
+            "function_name": "greet"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"file_path\\\":\\\"hello.ts\\\",\\\"complexity\\\":{\\\"cyclomatic\\\":1,\\\"cognitive\\\":1,\\\"lines_of_code\\\":2,\\\"parameter_count\\\":1,\\\"nesting_depth\\\":0,\\\"function_name\\\":\\\"greet\\\"}}\",\"type\":\"text\"}]},\"id\":3}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"file_path\":\"hello.ts\",\"complexity\":{\"cyclomatic\":1,\"cognitive\":1,\"lines_of_code\":2,\"parameter_count\":1,\"nesting_depth\":0,\"function_name\":\"greet\"}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 3
+            },
+            "ok": true,
+            "text": "{\"file_path\":\"hello.ts\",\"complexity\":{\"cyclomatic\":1,\"cognitive\":1,\"lines_of_code\":2,\"parameter_count\":1,\"nesting_depth\":0,\"function_name\":\"greet\"}}",
+            "parsed_text": {
+              "file_path": "hello.ts",
+              "complexity": {
+                "cyclomatic": 1,
+                "cognitive": 1,
+                "lines_of_code": 2,
+                "parameter_count": 1,
+                "nesting_depth": 0,
+                "function_name": "greet"
+              }
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:45:47.505892Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:45:47.505947Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:45:47.511352Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:45:47.511375Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:45:47.511392Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "find_usages": {
+          "args": {
+            "file_path": "hello.ts",
+            "symbol_name": "greet"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"symbol\\\":\\\"greet\\\",\\\"usages\\\":[{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"line\\\":5,\\\"column\\\":16,\\\"context\\\":\\\"export function greet(name: string): string {\\\",\\\"is_definition\\\":true},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"line\\\":18,\\\"column\\\":14,\\\"context\\\":\\\"  console.log(greet('CogniCode'));\\\",\\\"is_definition\\\":false},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/test_hello.ts\\\",\\\"line\\\":3,\\\"column\\\":9,\\\"context\\\":\\\"import { greet, add, subtract } from './hello';\\\",\\\"is_definition\\\":false},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/test_hello.ts\\\",\\\"line\\\":6,\\\"column\\\":9,\\\"context\\\":\\\"  expect(greet('World')).toBe('Hello, World!');\\\",\\\"is_definition\\\":false}],\\\"total\\\":4}\",\"type\":\"text\"}]},\"id\":4}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"symbol\":\"greet\",\"usages\":[{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":5,\"column\":16,\"context\":\"export function greet(name: string): string {\",\"is_definition\":true},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":18,\"column\":14,\"context\":\"  console.log(greet('CogniCode'));\",\"is_definition\":false},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/test_hello.ts\",\"line\":3,\"column\":9,\"context\":\"import { greet, add, subtract } from './hello';\",\"is_definition\":false},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/test_hello.ts\",\"line\":6,\"column\":9,\"context\":\"  expect(greet('World')).toBe('Hello, World!');\",\"is_definition\":false}],\"total\":4}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 4
+            },
+            "ok": true,
+            "text": "{\"symbol\":\"greet\",\"usages\":[{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":5,\"column\":16,\"context\":\"export function greet(name: string): string {\",\"is_definition\":true},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":18,\"column\":14,\"context\":\"  console.log(greet('CogniCode'));\",\"is_definition\":false},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/test_hello.ts\",\"line\":3,\"column\":9,\"context\":\"import { greet, add, subtract } from './hello';\",\"is_definition\":false},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/test_hello.ts\",\"line\":6,\"column\":9,\"context\":\"  expect(greet('World')).toBe('Hello, World!');\",\"is_definition\":false}],\"total\":4}",
+            "parsed_text": {
+              "symbol": "greet",
+              "usages": [
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                  "line": 5,
+                  "column": 16,
+                  "context": "export function greet(name: string): string {",
+                  "is_definition": true
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                  "line": 18,
+                  "column": 14,
+                  "context": "  console.log(greet('CogniCode'));",
+                  "is_definition": false
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/test_hello.ts",
+                  "line": 3,
+                  "column": 9,
+                  "context": "import { greet, add, subtract } from './hello';",
+                  "is_definition": false
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/test_hello.ts",
+                  "line": 6,
+                  "column": 9,
+                  "context": "  expect(greet('World')).toBe('Hello, World!');",
+                  "is_definition": false
+                }
+              ],
+              "total": 4
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:45:47.527225Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:45:47.527282Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:45:47.532594Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:45:47.532642Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:45:47.532660Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "semantic_search": {
+          "args": {
+            "query": "greet",
+            "max_results": 5
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"query\\\":\\\"greet\\\",\\\"results\\\":[],\\\"total\\\":0,\\\"search_time_ms\\\":0}\",\"type\":\"text\"}]},\"id\":5}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"query\":\"greet\",\"results\":[],\"total\":0,\"search_time_ms\":0}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 5
+            },
+            "ok": true,
+            "text": "{\"query\":\"greet\",\"results\":[],\"total\":0,\"search_time_ms\":0}",
+            "parsed_text": {
+              "query": "greet",
+              "results": [],
+              "total": 0,
+              "search_time_ms": 0
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:09.295535Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:09.295599Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:09.301928Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:09.301965Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:09.301984Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "get_outline": {
+          "args": {
+            "file_path": "hello.ts"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"file_path\\\":\\\"hello.ts\\\",\\\"nodes\\\":[{\\\"name\\\":\\\"greet\\\",\\\"kind\\\":\\\"function\\\",\\\"line\\\":5,\\\"column\\\":7,\\\"signature\\\":\\\"()\\\",\\\"children\\\":[],\\\"is_private\\\":false},{\\\"name\\\":\\\"add\\\",\\\"kind\\\":\\\"function\\\",\\\"line\\\":9,\\\"column\\\":7,\\\"signature\\\":\\\"()\\\",\\\"children\\\":[],\\\"is_private\\\":false},{\\\"name\\\":\\\"subtract\\\",\\\"kind\\\":\\\"function\\\",\\\"line\\\":13,\\\"column\\\":7,\\\"signature\\\":\\\"()\\\",\\\"children\\\":[],\\\"is_private\\\":false}],\\\"total_nodes\\\":3,\\\"generation_time_ms\\\":0}\",\"type\":\"text\"}]},\"id\":6}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"file_path\":\"hello.ts\",\"nodes\":[{\"name\":\"greet\",\"kind\":\"function\",\"line\":5,\"column\":7,\"signature\":\"()\",\"children\":[],\"is_private\":false},{\"name\":\"add\",\"kind\":\"function\",\"line\":9,\"column\":7,\"signature\":\"()\",\"children\":[],\"is_private\":false},{\"name\":\"subtract\",\"kind\":\"function\",\"line\":13,\"column\":7,\"signature\":\"()\",\"children\":[],\"is_private\":false}],\"total_nodes\":3,\"generation_time_ms\":0}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 6
+            },
+            "ok": true,
+            "text": "{\"file_path\":\"hello.ts\",\"nodes\":[{\"name\":\"greet\",\"kind\":\"function\",\"line\":5,\"column\":7,\"signature\":\"()\",\"children\":[],\"is_private\":false},{\"name\":\"add\",\"kind\":\"function\",\"line\":9,\"column\":7,\"signature\":\"()\",\"children\":[],\"is_private\":false},{\"name\":\"subtract\",\"kind\":\"function\",\"line\":13,\"column\":7,\"signature\":\"()\",\"children\":[],\"is_private\":false}],\"total_nodes\":3,\"generation_time_ms\":0}",
+            "parsed_text": {
+              "file_path": "hello.ts",
+              "nodes": [
+                {
+                  "name": "greet",
+                  "kind": "function",
+                  "line": 5,
+                  "column": 7,
+                  "signature": "()",
+                  "children": [],
+                  "is_private": false
+                },
+                {
+                  "name": "add",
+                  "kind": "function",
+                  "line": 9,
+                  "column": 7,
+                  "signature": "()",
+                  "children": [],
+                  "is_private": false
+                },
+                {
+                  "name": "subtract",
+                  "kind": "function",
+                  "line": 13,
+                  "column": 7,
+                  "signature": "()",
+                  "children": [],
+                  "is_private": false
+                }
+              ],
+              "total_nodes": 3,
+              "generation_time_ms": 0
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:09.316292Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:09.316343Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:09.321535Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:09.321559Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:09.321576Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "search_content_requested": {
+          "args": {
+            "query": "greet",
+            "path": "hello.ts"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"Invalid input: Invalid search_content input: missing field `pattern`\",\"type\":\"text\"}],\"isError\":true},\"id\":7}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "Invalid input: Invalid search_content input: missing field `pattern`",
+                    "type": "text"
+                  }
+                ],
+                "isError": true
+              },
+              "id": 7
+            },
+            "ok": true,
+            "text": "Invalid input: Invalid search_content input: missing field `pattern`",
+            "parsed_text": "Invalid input: Invalid search_content input: missing field `pattern`"
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:09.337205Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:09.337268Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:09.342894Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:09.342932Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:09.342952Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "search_content_corrected": {
+          "args": {
+            "pattern": "greet",
+            "path": "hello.ts"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"matches\\\":[{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"line\\\":2,\\\"col\\\":13,\\\"text\\\":\\\"greet\\\",\\\"context\\\":[\\\"/**\\\",\\\" */\\\",\\\"\\\"]},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"line\\\":5,\\\"col\\\":17,\\\"text\\\":\\\"greet\\\",\\\"context\\\":[\\\" */\\\",\\\"\\\",\\\"  return `Hello, ${name}!`;\\\",\\\"}\\\"]},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"line\\\":18,\\\"col\\\":15,\\\"text\\\":\\\"greet\\\",\\\"context\\\":[\\\"\\\",\\\"if (require.main === module) {\\\",\\\"  console.log(`2 + 3 = ${add(2, 3)}`);\\\",\\\"}\\\"]}],\\\"total\\\":3,\\\"files_scanned\\\":1}\",\"type\":\"text\"}]},\"id\":8}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"matches\":[{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":2,\"col\":13,\"text\":\"greet\",\"context\":[\"/**\",\" */\",\"\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":5,\"col\":17,\"text\":\"greet\",\"context\":[\" */\",\"\",\"  return `Hello, ${name}!`;\",\"}\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":18,\"col\":15,\"text\":\"greet\",\"context\":[\"\",\"if (require.main === module) {\",\"  console.log(`2 + 3 = ${add(2, 3)}`);\",\"}\"]}],\"total\":3,\"files_scanned\":1}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 8
+            },
+            "ok": true,
+            "text": "{\"matches\":[{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":2,\"col\":13,\"text\":\"greet\",\"context\":[\"/**\",\" */\",\"\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":5,\"col\":17,\"text\":\"greet\",\"context\":[\" */\",\"\",\"  return `Hello, ${name}!`;\",\"}\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":18,\"col\":15,\"text\":\"greet\",\"context\":[\"\",\"if (require.main === module) {\",\"  console.log(`2 + 3 = ${add(2, 3)}`);\",\"}\"]}],\"total\":3,\"files_scanned\":1}",
+            "parsed_text": {
+              "matches": [
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                  "line": 2,
+                  "col": 13,
+                  "text": "greet",
+                  "context": [
+                    "/**",
+                    " */",
+                    ""
+                  ]
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                  "line": 5,
+                  "col": 17,
+                  "text": "greet",
+                  "context": [
+                    " */",
+                    "",
+                    "  return `Hello, ${name}!`;",
+                    "}"
+                  ]
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                  "line": 18,
+                  "col": 15,
+                  "text": "greet",
+                  "context": [
+                    "",
+                    "if (require.main === module) {",
+                    "  console.log(`2 + 3 = ${add(2, 3)}`);",
+                    "}"
+                  ]
+                }
+              ],
+              "total": 3,
+              "files_scanned": 1
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:09.357081Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:09.357135Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:09.362419Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:09.362443Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:09.362461Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "read_file": {
+          "args": {
+            "path": "hello.ts",
+            "mode": "raw"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"content\\\":\\\"/**\\\\n * A simple greeting module (TypeScript).\\\\n */\\\\n\\\\nexport function greet(name: string): string {\\\\n  return `Hello, ${name}!`;\\\\n}\\\\n\\\\nexport function add(a: number, b: number): number {\\\\n  return a + b;\\\\n}\\\\n\\\\nexport function subtract(a: number, b: number): number {\\\\n  return a - b;\\\\n}\\\\n\\\\nif (require.main === module) {\\\\n  console.log(greet('CogniCode'));\\\\n  console.log(`2 + 3 = ${add(2, 3)}`);\\\\n}\\\",\\\"total_lines\\\":20,\\\"truncated\\\":false,\\\"metadata\\\":{\\\"path\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"size\\\":382,\\\"modified\\\":1775680135,\\\"language\\\":\\\"typescript\\\"},\\\"mode\\\":\\\"raw\\\",\\\"start_line\\\":1,\\\"end_line\\\":500,\\\"has_more\\\":false,\\\"next_token\\\":null,\\\"suggested_chunk_size\\\":null}\",\"type\":\"text\"}]},\"id\":9}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"content\":\"/**\\n * A simple greeting module (TypeScript).\\n */\\n\\nexport function greet(name: string): string {\\n  return `Hello, ${name}!`;\\n}\\n\\nexport function add(a: number, b: number): number {\\n  return a + b;\\n}\\n\\nexport function subtract(a: number, b: number): number {\\n  return a - b;\\n}\\n\\nif (require.main === module) {\\n  console.log(greet('CogniCode'));\\n  console.log(`2 + 3 = ${add(2, 3)}`);\\n}\",\"total_lines\":20,\"truncated\":false,\"metadata\":{\"path\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"size\":382,\"modified\":1775680135,\"language\":\"typescript\"},\"mode\":\"raw\",\"start_line\":1,\"end_line\":500,\"has_more\":false,\"next_token\":null,\"suggested_chunk_size\":null}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 9
+            },
+            "ok": true,
+            "text": "{\"content\":\"/**\\n * A simple greeting module (TypeScript).\\n */\\n\\nexport function greet(name: string): string {\\n  return `Hello, ${name}!`;\\n}\\n\\nexport function add(a: number, b: number): number {\\n  return a + b;\\n}\\n\\nexport function subtract(a: number, b: number): number {\\n  return a - b;\\n}\\n\\nif (require.main === module) {\\n  console.log(greet('CogniCode'));\\n  console.log(`2 + 3 = ${add(2, 3)}`);\\n}\",\"total_lines\":20,\"truncated\":false,\"metadata\":{\"path\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"size\":382,\"modified\":1775680135,\"language\":\"typescript\"},\"mode\":\"raw\",\"start_line\":1,\"end_line\":500,\"has_more\":false,\"next_token\":null,\"suggested_chunk_size\":null}",
+            "parsed_text": {
+              "content": "/**\n * A simple greeting module (TypeScript).\n */\n\nexport function greet(name: string): string {\n  return `Hello, ${name}!`;\n}\n\nexport function add(a: number, b: number): number {\n  return a + b;\n}\n\nexport function subtract(a: number, b: number): number {\n  return a - b;\n}\n\nif (require.main === module) {\n  console.log(greet('CogniCode'));\n  console.log(`2 + 3 = ${add(2, 3)}`);\n}",
+              "total_lines": 20,
+              "truncated": false,
+              "metadata": {
+                "path": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                "size": 382,
+                "modified": 1775680135,
+                "language": "typescript"
+              },
+              "mode": "raw",
+              "start_line": 1,
+              "end_line": 500,
+              "has_more": false,
+              "next_token": null,
+              "suggested_chunk_size": null
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:09.382289Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:09.382338Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:09.387537Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:09.387559Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:09.387575Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "get_symbol_code": {
+          "args": {
+            "file": "hello.ts",
+            "line": 5,
+            "col": 8
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"file\\\":\\\"hello.ts\\\",\\\"code\\\":\\\"function\\\",\\\"docstring\\\":null,\\\"start_line\\\":5,\\\"end_line\\\":5,\\\"cached\\\":false}\",\"type\":\"text\"}]},\"id\":10}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"file\":\"hello.ts\",\"code\":\"function\",\"docstring\":null,\"start_line\":5,\"end_line\":5,\"cached\":false}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 10
+            },
+            "ok": true,
+            "text": "{\"file\":\"hello.ts\",\"code\":\"function\",\"docstring\":null,\"start_line\":5,\"end_line\":5,\"cached\":false}",
+            "parsed_text": {
+              "file": "hello.ts",
+              "code": "function",
+              "docstring": null,
+              "start_line": 5,
+              "end_line": 5,
+              "cached": false
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:09.403118Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:09.403168Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:09.408734Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:09.408757Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:09.408774Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        }
+      },
+      "graph_tools": {
+        "build_graph": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"symbols_found\\\":3,\\\"relationships_found\\\":0,\\\"message\\\":\\\"Graph built successfully: 3 symbols, 0 relationships in 90ms\\\"}\",\"type\":\"text\"}]},\"id\":100}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"success\":true,\"symbols_found\":3,\"relationships_found\":0,\"message\":\"Graph built successfully: 3 symbols, 0 relationships in 90ms\"}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 100
+            },
+            "ok": true,
+            "text": "{\"success\":true,\"symbols_found\":3,\"relationships_found\":0,\"message\":\"Graph built successfully: 3 symbols, 0 relationships in 90ms\"}",
+            "parsed_text": {
+              "success": true,
+              "symbols_found": 3,
+              "relationships_found": 0,
+              "message": "Graph built successfully: 3 symbols, 0 relationships in 90ms"
+            }
+          }
+        },
+        "get_entry_points": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"entry_points\\\":[{\\\"name\\\":\\\"greet\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"line\\\":4,\\\"column\\\":7},\\\"signature\\\":null},{\\\"name\\\":\\\"add\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"line\\\":8,\\\"column\\\":7},\\\"signature\\\":null},{\\\"name\\\":\\\"subtract\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"line\\\":12,\\\"column\\\":7},\\\"signature\\\":null}],\\\"total\\\":3,\\\"metadata\\\":{\\\"total_calls\\\":3,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":101}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"entry_points\":[{\"name\":\"greet\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":4,\"column\":7},\"signature\":null},{\"name\":\"add\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":8,\"column\":7},\"signature\":null},{\"name\":\"subtract\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":12,\"column\":7},\"signature\":null}],\"total\":3,\"metadata\":{\"total_calls\":3,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 101
+            },
+            "ok": true,
+            "text": "{\"entry_points\":[{\"name\":\"greet\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":4,\"column\":7},\"signature\":null},{\"name\":\"add\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":8,\"column\":7},\"signature\":null},{\"name\":\"subtract\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":12,\"column\":7},\"signature\":null}],\"total\":3,\"metadata\":{\"total_calls\":3,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "entry_points": [
+                {
+                  "name": "greet",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                    "line": 4,
+                    "column": 7
+                  },
+                  "signature": null
+                },
+                {
+                  "name": "add",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                    "line": 8,
+                    "column": 7
+                  },
+                  "signature": null
+                },
+                {
+                  "name": "subtract",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                    "line": 12,
+                    "column": 7
+                  },
+                  "signature": null
+                }
+              ],
+              "total": 3,
+              "metadata": {
+                "total_calls": 3,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        },
+        "trace_path": {
+          "args": {
+            "source": "greet",
+            "target": "add"
+          },
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"source\\\":\\\"greet\\\",\\\"target\\\":\\\"add\\\",\\\"path_found\\\":false,\\\"path\\\":[],\\\"path_length\\\":0,\\\"metadata\\\":{\\\"total_calls\\\":0,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":102}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"source\":\"greet\",\"target\":\"add\",\"path_found\":false,\"path\":[],\"path_length\":0,\"metadata\":{\"total_calls\":0,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 102
+            },
+            "ok": true,
+            "text": "{\"source\":\"greet\",\"target\":\"add\",\"path_found\":false,\"path\":[],\"path_length\":0,\"metadata\":{\"total_calls\":0,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "source": "greet",
+              "target": "add",
+              "path_found": false,
+              "path": [],
+              "path_length": 0,
+              "metadata": {
+                "total_calls": 0,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        },
+        "check_architecture": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"cycles\\\":[],\\\"violations\\\":[],\\\"score\\\":100.0,\\\"summary\\\":\\\"Architecture check completed in 0ms - 0 cycles detected, 0 symbols involved\\\"}\",\"type\":\"text\"}]},\"id\":103}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"cycles\":[],\"violations\":[],\"score\":100.0,\"summary\":\"Architecture check completed in 0ms - 0 cycles detected, 0 symbols involved\"}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 103
+            },
+            "ok": true,
+            "text": "{\"cycles\":[],\"violations\":[],\"score\":100.0,\"summary\":\"Architecture check completed in 0ms - 0 cycles detected, 0 symbols involved\"}",
+            "parsed_text": {
+              "cycles": [],
+              "violations": [],
+              "score": 100.0,
+              "summary": "Architecture check completed in 0ms - 0 cycles detected, 0 symbols involved"
+            }
+          }
+        },
+        "get_hot_paths": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"hot_paths\\\":[],\\\"total\\\":0,\\\"metadata\\\":{\\\"total_calls\\\":0,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":104}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"hot_paths\":[],\"total\":0,\"metadata\":{\"total_calls\":0,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 104
+            },
+            "ok": true,
+            "text": "{\"hot_paths\":[],\"total\":0,\"metadata\":{\"total_calls\":0,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "hot_paths": [],
+              "total": 0,
+              "metadata": {
+                "total_calls": 0,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        },
+        "get_leaf_functions": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"leaf_functions\\\":[{\\\"name\\\":\\\"greet\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"line\\\":4,\\\"column\\\":7},\\\"signature\\\":null},{\\\"name\\\":\\\"add\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"line\\\":8,\\\"column\\\":7},\\\"signature\\\":null},{\\\"name\\\":\\\"subtract\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\\\",\\\"line\\\":12,\\\"column\\\":7},\\\"signature\\\":null}],\\\"total\\\":3,\\\"metadata\\\":{\\\"total_calls\\\":3,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":105}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"leaf_functions\":[{\"name\":\"greet\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":4,\"column\":7},\"signature\":null},{\"name\":\"add\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":8,\"column\":7},\"signature\":null},{\"name\":\"subtract\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":12,\"column\":7},\"signature\":null}],\"total\":3,\"metadata\":{\"total_calls\":3,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 105
+            },
+            "ok": true,
+            "text": "{\"leaf_functions\":[{\"name\":\"greet\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":4,\"column\":7},\"signature\":null},{\"name\":\"add\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":8,\"column\":7},\"signature\":null},{\"name\":\"subtract\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts\",\"line\":12,\"column\":7},\"signature\":null}],\"total\":3,\"metadata\":{\"total_calls\":3,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "leaf_functions": [
+                {
+                  "name": "greet",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                    "line": 4,
+                    "column": 7
+                  },
+                  "signature": null
+                },
+                {
+                  "name": "add",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                    "line": 8,
+                    "column": 7
+                  },
+                  "signature": null
+                },
+                {
+                  "name": "subtract",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/typescript/ts-hello/hello.ts",
+                    "line": 12,
+                    "column": 7
+                  },
+                  "signature": null
+                }
+              ],
+              "total": 3,
+              "metadata": {
+                "total_calls": 3,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        },
+        "analyze_impact": {
+          "args": {
+            "symbol_name": "greet"
+          },
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"symbol\\\":\\\"greet\\\",\\\"impacted_files\\\":[],\\\"impacted_symbols\\\":[],\\\"risk_level\\\":\\\"low\\\",\\\"summary\\\":\\\"Impact analysis completed in 0ms. 0 symbols across 0 files would be affected.\\\"}\",\"type\":\"text\"}]},\"id\":106}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"symbol\":\"greet\",\"impacted_files\":[],\"impacted_symbols\":[],\"risk_level\":\"low\",\"summary\":\"Impact analysis completed in 0ms. 0 symbols across 0 files would be affected.\"}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 106
+            },
+            "ok": true,
+            "text": "{\"symbol\":\"greet\",\"impacted_files\":[],\"impacted_symbols\":[],\"risk_level\":\"low\",\"summary\":\"Impact analysis completed in 0ms. 0 symbols across 0 files would be affected.\"}",
+            "parsed_text": {
+              "symbol": "greet",
+              "impacted_files": [],
+              "impacted_symbols": [],
+              "risk_level": "low",
+              "summary": "Impact analysis completed in 0ms. 0 symbols across 0 files would be affected."
+            }
+          }
+        },
+        "export_mermaid": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"mermaid_code\\\":\\\"flowchart TD\\\\n    greet[greet]\\\\n    add[add]\\\\n    subtract[subtract]\\\",\\\"node_count\\\":3,\\\"edge_count\\\":0,\\\"metadata\\\":{\\\"total_calls\\\":3,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":107}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"mermaid_code\":\"flowchart TD\\n    greet[greet]\\n    add[add]\\n    subtract[subtract]\",\"node_count\":3,\"edge_count\":0,\"metadata\":{\"total_calls\":3,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 107
+            },
+            "ok": true,
+            "text": "{\"mermaid_code\":\"flowchart TD\\n    greet[greet]\\n    add[add]\\n    subtract[subtract]\",\"node_count\":3,\"edge_count\":0,\"metadata\":{\"total_calls\":3,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "mermaid_code": "flowchart TD\n    greet[greet]\n    add[add]\n    subtract[subtract]",
+              "node_count": 3,
+              "edge_count": 0,
+              "metadata": {
+                "total_calls": 3,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        }
+      },
+      "mutation_tools": {
+        "edit_file": {
+          "workspace": "/tmp/cognicode-typescript-ehwj8mtk",
+          "args": {
+            "path": "hello.ts",
+            "edits": [
+              {
+                "old_string": "`Hello, ${name}!`",
+                "new_string": "`Hi, ${name}!`"
+              }
+            ]
+          },
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"applied\\\":true,\\\"validation\\\":{\\\"passed\\\":true,\\\"syntax_errors\\\":[]},\\\"preview\\\":\\\"Changed 3 bytes\\\",\\\"bytes_changed\\\":3}\",\"type\":\"text\"}]},\"id\":200}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"applied\":true,\"validation\":{\"passed\":true,\"syntax_errors\":[]},\"preview\":\"Changed 3 bytes\",\"bytes_changed\":3}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 200
+            },
+            "ok": true,
+            "text": "{\"applied\":true,\"validation\":{\"passed\":true,\"syntax_errors\":[]},\"preview\":\"Changed 3 bytes\",\"bytes_changed\":3}",
+            "parsed_text": {
+              "applied": true,
+              "validation": {
+                "passed": true,
+                "syntax_errors": []
+              },
+              "preview": "Changed 3 bytes",
+              "bytes_changed": 3
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:09.540294Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:09.540353Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:09.547430Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:09.547458Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:09.547477Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n",
+          "file_after": "/**\n * A simple greeting module (TypeScript).\n */\n\nexport function greet(name: string): string {\n  return `Hi, ${name}!`;\n}\n\nexport function add(a: number, b: number): number {\n  return a + b;\n}\n\nexport function subtract(a: number, b: number): number {\n  return a - b;\n}\n\nif (require.main === module) {\n  console.log(greet('CogniCode'));\n  console.log(`2 + 3 = ${add(2, 3)}`);\n}\n"
+        },
+        "safe_refactor": {
+          "workspace": "/tmp/cognicode-typescript-refactor-oeuny_d2",
+          "args": {
+            "action": "rename",
+            "target": "greet",
+            "params": {
+              "new_name": "greet_renamed",
+              "file_path": "hello.ts"
+            }
+          },
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"action\\\":\\\"rename\\\",\\\"success\\\":true,\\\"changes\\\":[{\\\"file\\\":\\\"/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts\\\",\\\"old_text\\\":\\\"greet\\\",\\\"new_text\\\":\\\"greet_renamed\\\",\\\"location\\\":{\\\"file\\\":\\\"/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts\\\",\\\"line\\\":4,\\\"column\\\":16}},{\\\"file\\\":\\\"/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts\\\",\\\"old_text\\\":\\\"greet\\\",\\\"new_text\\\":\\\"greet_renamed\\\",\\\"location\\\":{\\\"file\\\":\\\"/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts\\\",\\\"line\\\":17,\\\"column\\\":14}}],\\\"validation_result\\\":{\\\"is_valid\\\":true,\\\"warnings\\\":[\\\"Impact: 1 symbols affected\\\"],\\\"errors\\\":[]},\\\"error_message\\\":null}\",\"type\":\"text\"}]},\"id\":201}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"action\":\"rename\",\"success\":true,\"changes\":[{\"file\":\"/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts\",\"old_text\":\"greet\",\"new_text\":\"greet_renamed\",\"location\":{\"file\":\"/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts\",\"line\":4,\"column\":16}},{\"file\":\"/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts\",\"old_text\":\"greet\",\"new_text\":\"greet_renamed\",\"location\":{\"file\":\"/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts\",\"line\":17,\"column\":14}}],\"validation_result\":{\"is_valid\":true,\"warnings\":[\"Impact: 1 symbols affected\"],\"errors\":[]},\"error_message\":null}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 201
+            },
+            "ok": true,
+            "text": "{\"action\":\"rename\",\"success\":true,\"changes\":[{\"file\":\"/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts\",\"old_text\":\"greet\",\"new_text\":\"greet_renamed\",\"location\":{\"file\":\"/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts\",\"line\":4,\"column\":16}},{\"file\":\"/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts\",\"old_text\":\"greet\",\"new_text\":\"greet_renamed\",\"location\":{\"file\":\"/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts\",\"line\":17,\"column\":14}}],\"validation_result\":{\"is_valid\":true,\"warnings\":[\"Impact: 1 symbols affected\"],\"errors\":[]},\"error_message\":null}",
+            "parsed_text": {
+              "action": "rename",
+              "success": true,
+              "changes": [
+                {
+                  "file": "/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts",
+                  "old_text": "greet",
+                  "new_text": "greet_renamed",
+                  "location": {
+                    "file": "/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts",
+                    "line": 4,
+                    "column": 16
+                  }
+                },
+                {
+                  "file": "/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts",
+                  "old_text": "greet",
+                  "new_text": "greet_renamed",
+                  "location": {
+                    "file": "/tmp/cognicode-typescript-refactor-oeuny_d2/hello.ts",
+                    "line": 17,
+                    "column": 14
+                  }
+                }
+              ],
+              "validation_result": {
+                "is_valid": true,
+                "warnings": [
+                  "Impact: 1 symbols affected"
+                ],
+                "errors": []
+              },
+              "error_message": null
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:09.565324Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:09.565395Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:09.571047Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:09.571084Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:09.571104Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n",
+          "file_after": "/**\n * A simple greeting module (TypeScript).\n */\n\nexport function greet(name: string): string {\n  return `Hello, ${name}!`;\n}\n\nexport function add(a: number, b: number): number {\n  return a + b;\n}\n\nexport function subtract(a: number, b: number): number {\n  return a - b;\n}\n\nif (require.main === module) {\n  console.log(greet('CogniCode'));\n  console.log(`2 + 3 = ${add(2, 3)}`);\n}\n"
+        }
+      },
+      "graph_stderr_tail": "\u001b[2m2026-04-11T10:46:09.422570Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:09.422651Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:09.427938Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:09.427966Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:09.427990Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+    },
+    "javascript": {
+      "workspace": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello",
+      "tools": {
+        "get_file_symbols": {
+          "args": {
+            "file_path": "hello.js"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"file_path\\\":\\\"hello.js\\\",\\\"symbols\\\":[{\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"column\\\":1,\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":5},\\\"name\\\":\\\"greet\\\",\\\"signature\\\":null},{\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"column\\\":1,\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":9},\\\"name\\\":\\\"add\\\",\\\"signature\\\":null},{\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"column\\\":1,\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":13},\\\"name\\\":\\\"subtract\\\",\\\"signature\\\":null}]}\",\"type\":\"text\"}]},\"id\":2}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"file_path\":\"hello.js\",\"symbols\":[{\"kind\":\"function\",\"location\":{\"column\":1,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":5},\"name\":\"greet\",\"signature\":null},{\"kind\":\"function\",\"location\":{\"column\":1,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":9},\"name\":\"add\",\"signature\":null},{\"kind\":\"function\",\"location\":{\"column\":1,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":13},\"name\":\"subtract\",\"signature\":null}]}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 2
+            },
+            "ok": true,
+            "text": "{\"file_path\":\"hello.js\",\"symbols\":[{\"kind\":\"function\",\"location\":{\"column\":1,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":5},\"name\":\"greet\",\"signature\":null},{\"kind\":\"function\",\"location\":{\"column\":1,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":9},\"name\":\"add\",\"signature\":null},{\"kind\":\"function\",\"location\":{\"column\":1,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":13},\"name\":\"subtract\",\"signature\":null}]}",
+            "parsed_text": {
+              "file_path": "hello.js",
+              "symbols": [
+                {
+                  "kind": "function",
+                  "location": {
+                    "column": 1,
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                    "line": 5
+                  },
+                  "name": "greet",
+                  "signature": null
+                },
+                {
+                  "kind": "function",
+                  "location": {
+                    "column": 1,
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                    "line": 9
+                  },
+                  "name": "add",
+                  "signature": null
+                },
+                {
+                  "kind": "function",
+                  "location": {
+                    "column": 1,
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                    "line": 13
+                  },
+                  "name": "subtract",
+                  "signature": null
+                }
+              ]
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:09.589186Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:09.589252Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:09.594694Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:09.594720Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:09.594738Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "get_complexity": {
+          "args": {
+            "file_path": "hello.js",
+            "function_name": "greet"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"file_path\\\":\\\"hello.js\\\",\\\"complexity\\\":{\\\"cyclomatic\\\":1,\\\"cognitive\\\":1,\\\"lines_of_code\\\":2,\\\"parameter_count\\\":1,\\\"nesting_depth\\\":0,\\\"function_name\\\":\\\"greet\\\"}}\",\"type\":\"text\"}]},\"id\":3}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"file_path\":\"hello.js\",\"complexity\":{\"cyclomatic\":1,\"cognitive\":1,\"lines_of_code\":2,\"parameter_count\":1,\"nesting_depth\":0,\"function_name\":\"greet\"}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 3
+            },
+            "ok": true,
+            "text": "{\"file_path\":\"hello.js\",\"complexity\":{\"cyclomatic\":1,\"cognitive\":1,\"lines_of_code\":2,\"parameter_count\":1,\"nesting_depth\":0,\"function_name\":\"greet\"}}",
+            "parsed_text": {
+              "file_path": "hello.js",
+              "complexity": {
+                "cyclomatic": 1,
+                "cognitive": 1,
+                "lines_of_code": 2,
+                "parameter_count": 1,
+                "nesting_depth": 0,
+                "function_name": "greet"
+              }
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:09.610067Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:09.610117Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:09.615393Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:09.615415Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:09.615432Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "find_usages": {
+          "args": {
+            "file_path": "hello.js",
+            "symbol_name": "greet"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"symbol\\\":\\\"greet\\\",\\\"usages\\\":[{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":5,\\\"column\\\":9,\\\"context\\\":\\\"function greet(name) {\\\",\\\"is_definition\\\":true},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":20,\\\"column\\\":14,\\\"context\\\":\\\"  console.log(greet('CogniCode'));\\\",\\\"is_definition\\\":false},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/test_hello.js\\\",\\\"line\\\":6,\\\"column\\\":9,\\\"context\\\":\\\"  expect(greet('World')).toBe('Hello, World!');\\\",\\\"is_definition\\\":false}],\\\"total\\\":3}\",\"type\":\"text\"}]},\"id\":4}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"symbol\":\"greet\",\"usages\":[{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":5,\"column\":9,\"context\":\"function greet(name) {\",\"is_definition\":true},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":20,\"column\":14,\"context\":\"  console.log(greet('CogniCode'));\",\"is_definition\":false},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/test_hello.js\",\"line\":6,\"column\":9,\"context\":\"  expect(greet('World')).toBe('Hello, World!');\",\"is_definition\":false}],\"total\":3}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 4
+            },
+            "ok": true,
+            "text": "{\"symbol\":\"greet\",\"usages\":[{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":5,\"column\":9,\"context\":\"function greet(name) {\",\"is_definition\":true},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":20,\"column\":14,\"context\":\"  console.log(greet('CogniCode'));\",\"is_definition\":false},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/test_hello.js\",\"line\":6,\"column\":9,\"context\":\"  expect(greet('World')).toBe('Hello, World!');\",\"is_definition\":false}],\"total\":3}",
+            "parsed_text": {
+              "symbol": "greet",
+              "usages": [
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                  "line": 5,
+                  "column": 9,
+                  "context": "function greet(name) {",
+                  "is_definition": true
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                  "line": 20,
+                  "column": 14,
+                  "context": "  console.log(greet('CogniCode'));",
+                  "is_definition": false
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/test_hello.js",
+                  "line": 6,
+                  "column": 9,
+                  "context": "  expect(greet('World')).toBe('Hello, World!');",
+                  "is_definition": false
+                }
+              ],
+              "total": 3
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:09.631172Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:09.631234Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:09.636646Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:09.636675Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:09.636693Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "semantic_search": {
+          "args": {
+            "query": "greet",
+            "max_results": 5
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"query\\\":\\\"greet\\\",\\\"results\\\":[],\\\"total\\\":0,\\\"search_time_ms\\\":0}\",\"type\":\"text\"}]},\"id\":5}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"query\":\"greet\",\"results\":[],\"total\":0,\"search_time_ms\":0}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 5
+            },
+            "ok": true,
+            "text": "{\"query\":\"greet\",\"results\":[],\"total\":0,\"search_time_ms\":0}",
+            "parsed_text": {
+              "query": "greet",
+              "results": [],
+              "total": 0,
+              "search_time_ms": 0
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.477819Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.477893Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.483854Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.483887Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.483919Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "get_outline": {
+          "args": {
+            "file_path": "hello.js"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"file_path\\\":\\\"hello.js\\\",\\\"nodes\\\":[{\\\"name\\\":\\\"greet\\\",\\\"kind\\\":\\\"function\\\",\\\"line\\\":5,\\\"column\\\":0,\\\"signature\\\":\\\"(name)\\\",\\\"children\\\":[],\\\"is_private\\\":false},{\\\"name\\\":\\\"add\\\",\\\"kind\\\":\\\"function\\\",\\\"line\\\":9,\\\"column\\\":0,\\\"signature\\\":\\\"(a, b)\\\",\\\"children\\\":[],\\\"is_private\\\":false},{\\\"name\\\":\\\"subtract\\\",\\\"kind\\\":\\\"function\\\",\\\"line\\\":13,\\\"column\\\":0,\\\"signature\\\":\\\"(a, b)\\\",\\\"children\\\":[],\\\"is_private\\\":false}],\\\"total_nodes\\\":3,\\\"generation_time_ms\\\":0}\",\"type\":\"text\"}]},\"id\":6}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"file_path\":\"hello.js\",\"nodes\":[{\"name\":\"greet\",\"kind\":\"function\",\"line\":5,\"column\":0,\"signature\":\"(name)\",\"children\":[],\"is_private\":false},{\"name\":\"add\",\"kind\":\"function\",\"line\":9,\"column\":0,\"signature\":\"(a, b)\",\"children\":[],\"is_private\":false},{\"name\":\"subtract\",\"kind\":\"function\",\"line\":13,\"column\":0,\"signature\":\"(a, b)\",\"children\":[],\"is_private\":false}],\"total_nodes\":3,\"generation_time_ms\":0}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 6
+            },
+            "ok": true,
+            "text": "{\"file_path\":\"hello.js\",\"nodes\":[{\"name\":\"greet\",\"kind\":\"function\",\"line\":5,\"column\":0,\"signature\":\"(name)\",\"children\":[],\"is_private\":false},{\"name\":\"add\",\"kind\":\"function\",\"line\":9,\"column\":0,\"signature\":\"(a, b)\",\"children\":[],\"is_private\":false},{\"name\":\"subtract\",\"kind\":\"function\",\"line\":13,\"column\":0,\"signature\":\"(a, b)\",\"children\":[],\"is_private\":false}],\"total_nodes\":3,\"generation_time_ms\":0}",
+            "parsed_text": {
+              "file_path": "hello.js",
+              "nodes": [
+                {
+                  "name": "greet",
+                  "kind": "function",
+                  "line": 5,
+                  "column": 0,
+                  "signature": "(name)",
+                  "children": [],
+                  "is_private": false
+                },
+                {
+                  "name": "add",
+                  "kind": "function",
+                  "line": 9,
+                  "column": 0,
+                  "signature": "(a, b)",
+                  "children": [],
+                  "is_private": false
+                },
+                {
+                  "name": "subtract",
+                  "kind": "function",
+                  "line": 13,
+                  "column": 0,
+                  "signature": "(a, b)",
+                  "children": [],
+                  "is_private": false
+                }
+              ],
+              "total_nodes": 3,
+              "generation_time_ms": 0
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.499418Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.499485Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.505439Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.505465Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.505484Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "search_content_requested": {
+          "args": {
+            "query": "greet",
+            "path": "hello.js"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"Invalid input: Invalid search_content input: missing field `pattern`\",\"type\":\"text\"}],\"isError\":true},\"id\":7}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "Invalid input: Invalid search_content input: missing field `pattern`",
+                    "type": "text"
+                  }
+                ],
+                "isError": true
+              },
+              "id": 7
+            },
+            "ok": true,
+            "text": "Invalid input: Invalid search_content input: missing field `pattern`",
+            "parsed_text": "Invalid input: Invalid search_content input: missing field `pattern`"
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.521214Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.521268Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.526730Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.526768Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.526787Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "search_content_corrected": {
+          "args": {
+            "pattern": "greet",
+            "path": "hello.js"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"matches\\\":[{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":2,\\\"col\\\":13,\\\"text\\\":\\\"greet\\\",\\\"context\\\":[\\\"/**\\\",\\\" */\\\",\\\"\\\"]},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":5,\\\"col\\\":10,\\\"text\\\":\\\"greet\\\",\\\"context\\\":[\\\" */\\\",\\\"\\\",\\\"  return `Hello, ${name}!`;\\\",\\\"}\\\"]},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":17,\\\"col\\\":20,\\\"text\\\":\\\"greet\\\",\\\"context\\\":[\\\"}\\\",\\\"\\\",\\\"\\\",\\\"if (require.main === module) {\\\"]},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":20,\\\"col\\\":15,\\\"text\\\":\\\"greet\\\",\\\"context\\\":[\\\"\\\",\\\"if (require.main === module) {\\\",\\\"  console.log(`2 + 3 = ${add(2, 3)}`);\\\",\\\"}\\\"]}],\\\"total\\\":4,\\\"files_scanned\\\":1}\",\"type\":\"text\"}]},\"id\":8}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"matches\":[{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":2,\"col\":13,\"text\":\"greet\",\"context\":[\"/**\",\" */\",\"\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":5,\"col\":10,\"text\":\"greet\",\"context\":[\" */\",\"\",\"  return `Hello, ${name}!`;\",\"}\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":17,\"col\":20,\"text\":\"greet\",\"context\":[\"}\",\"\",\"\",\"if (require.main === module) {\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":20,\"col\":15,\"text\":\"greet\",\"context\":[\"\",\"if (require.main === module) {\",\"  console.log(`2 + 3 = ${add(2, 3)}`);\",\"}\"]}],\"total\":4,\"files_scanned\":1}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 8
+            },
+            "ok": true,
+            "text": "{\"matches\":[{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":2,\"col\":13,\"text\":\"greet\",\"context\":[\"/**\",\" */\",\"\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":5,\"col\":10,\"text\":\"greet\",\"context\":[\" */\",\"\",\"  return `Hello, ${name}!`;\",\"}\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":17,\"col\":20,\"text\":\"greet\",\"context\":[\"}\",\"\",\"\",\"if (require.main === module) {\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":20,\"col\":15,\"text\":\"greet\",\"context\":[\"\",\"if (require.main === module) {\",\"  console.log(`2 + 3 = ${add(2, 3)}`);\",\"}\"]}],\"total\":4,\"files_scanned\":1}",
+            "parsed_text": {
+              "matches": [
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                  "line": 2,
+                  "col": 13,
+                  "text": "greet",
+                  "context": [
+                    "/**",
+                    " */",
+                    ""
+                  ]
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                  "line": 5,
+                  "col": 10,
+                  "text": "greet",
+                  "context": [
+                    " */",
+                    "",
+                    "  return `Hello, ${name}!`;",
+                    "}"
+                  ]
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                  "line": 17,
+                  "col": 20,
+                  "text": "greet",
+                  "context": [
+                    "}",
+                    "",
+                    "",
+                    "if (require.main === module) {"
+                  ]
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                  "line": 20,
+                  "col": 15,
+                  "text": "greet",
+                  "context": [
+                    "",
+                    "if (require.main === module) {",
+                    "  console.log(`2 + 3 = ${add(2, 3)}`);",
+                    "}"
+                  ]
+                }
+              ],
+              "total": 4,
+              "files_scanned": 1
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.541468Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.541531Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.546914Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.546944Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.546962Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "read_file": {
+          "args": {
+            "path": "hello.js",
+            "mode": "raw"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"content\\\":\\\"/**\\\\n * A simple greeting module.\\\\n */\\\\n\\\\nfunction greet(name) {\\\\n  return `Hello, ${name}!`;\\\\n}\\\\n\\\\nfunction add(a, b) {\\\\n  return a + b;\\\\n}\\\\n\\\\nfunction subtract(a, b) {\\\\n  return a - b;\\\\n}\\\\n\\\\nmodule.exports = { greet, add, subtract };\\\\n\\\\nif (require.main === module) {\\\\n  console.log(greet('CogniCode'));\\\\n  console.log(`2 + 3 = ${add(2, 3)}`);\\\\n}\\\",\\\"total_lines\\\":22,\\\"truncated\\\":false,\\\"metadata\\\":{\\\"path\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"size\\\":328,\\\"modified\\\":1775838227,\\\"language\\\":\\\"javascript\\\"},\\\"mode\\\":\\\"raw\\\",\\\"start_line\\\":1,\\\"end_line\\\":500,\\\"has_more\\\":false,\\\"next_token\\\":null,\\\"suggested_chunk_size\\\":null}\",\"type\":\"text\"}]},\"id\":9}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"content\":\"/**\\n * A simple greeting module.\\n */\\n\\nfunction greet(name) {\\n  return `Hello, ${name}!`;\\n}\\n\\nfunction add(a, b) {\\n  return a + b;\\n}\\n\\nfunction subtract(a, b) {\\n  return a - b;\\n}\\n\\nmodule.exports = { greet, add, subtract };\\n\\nif (require.main === module) {\\n  console.log(greet('CogniCode'));\\n  console.log(`2 + 3 = ${add(2, 3)}`);\\n}\",\"total_lines\":22,\"truncated\":false,\"metadata\":{\"path\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"size\":328,\"modified\":1775838227,\"language\":\"javascript\"},\"mode\":\"raw\",\"start_line\":1,\"end_line\":500,\"has_more\":false,\"next_token\":null,\"suggested_chunk_size\":null}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 9
+            },
+            "ok": true,
+            "text": "{\"content\":\"/**\\n * A simple greeting module.\\n */\\n\\nfunction greet(name) {\\n  return `Hello, ${name}!`;\\n}\\n\\nfunction add(a, b) {\\n  return a + b;\\n}\\n\\nfunction subtract(a, b) {\\n  return a - b;\\n}\\n\\nmodule.exports = { greet, add, subtract };\\n\\nif (require.main === module) {\\n  console.log(greet('CogniCode'));\\n  console.log(`2 + 3 = ${add(2, 3)}`);\\n}\",\"total_lines\":22,\"truncated\":false,\"metadata\":{\"path\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"size\":328,\"modified\":1775838227,\"language\":\"javascript\"},\"mode\":\"raw\",\"start_line\":1,\"end_line\":500,\"has_more\":false,\"next_token\":null,\"suggested_chunk_size\":null}",
+            "parsed_text": {
+              "content": "/**\n * A simple greeting module.\n */\n\nfunction greet(name) {\n  return `Hello, ${name}!`;\n}\n\nfunction add(a, b) {\n  return a + b;\n}\n\nfunction subtract(a, b) {\n  return a - b;\n}\n\nmodule.exports = { greet, add, subtract };\n\nif (require.main === module) {\n  console.log(greet('CogniCode'));\n  console.log(`2 + 3 = ${add(2, 3)}`);\n}",
+              "total_lines": 22,
+              "truncated": false,
+              "metadata": {
+                "path": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                "size": 328,
+                "modified": 1775838227,
+                "language": "javascript"
+              },
+              "mode": "raw",
+              "start_line": 1,
+              "end_line": 500,
+              "has_more": false,
+              "next_token": null,
+              "suggested_chunk_size": null
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.566742Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.566803Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.572119Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.572141Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.572157Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "get_symbol_code": {
+          "args": {
+            "file": "hello.js",
+            "line": 5,
+            "col": 9
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"file\\\":\\\"hello.js\\\",\\\"code\\\":\\\"greet\\\",\\\"docstring\\\":null,\\\"start_line\\\":5,\\\"end_line\\\":5,\\\"cached\\\":false}\",\"type\":\"text\"}]},\"id\":10}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"file\":\"hello.js\",\"code\":\"greet\",\"docstring\":null,\"start_line\":5,\"end_line\":5,\"cached\":false}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 10
+            },
+            "ok": true,
+            "text": "{\"file\":\"hello.js\",\"code\":\"greet\",\"docstring\":null,\"start_line\":5,\"end_line\":5,\"cached\":false}",
+            "parsed_text": {
+              "file": "hello.js",
+              "code": "greet",
+              "docstring": null,
+              "start_line": 5,
+              "end_line": 5,
+              "cached": false
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.586402Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.586446Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.591754Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.591777Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.591794Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        }
+      },
+      "graph_tools": {
+        "build_graph": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"symbols_found\\\":3,\\\"relationships_found\\\":0,\\\"message\\\":\\\"Graph built successfully: 3 symbols, 0 relationships in 75ms\\\"}\",\"type\":\"text\"}]},\"id\":100}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"success\":true,\"symbols_found\":3,\"relationships_found\":0,\"message\":\"Graph built successfully: 3 symbols, 0 relationships in 75ms\"}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 100
+            },
+            "ok": true,
+            "text": "{\"success\":true,\"symbols_found\":3,\"relationships_found\":0,\"message\":\"Graph built successfully: 3 symbols, 0 relationships in 75ms\"}",
+            "parsed_text": {
+              "success": true,
+              "symbols_found": 3,
+              "relationships_found": 0,
+              "message": "Graph built successfully: 3 symbols, 0 relationships in 75ms"
+            }
+          }
+        },
+        "get_entry_points": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"entry_points\\\":[{\\\"name\\\":\\\"subtract\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":12,\\\"column\\\":0},\\\"signature\\\":null},{\\\"name\\\":\\\"greet\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":4,\\\"column\\\":0},\\\"signature\\\":null},{\\\"name\\\":\\\"add\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":8,\\\"column\\\":0},\\\"signature\\\":null}],\\\"total\\\":3,\\\"metadata\\\":{\\\"total_calls\\\":3,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":101}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"entry_points\":[{\"name\":\"subtract\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":12,\"column\":0},\"signature\":null},{\"name\":\"greet\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":4,\"column\":0},\"signature\":null},{\"name\":\"add\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":8,\"column\":0},\"signature\":null}],\"total\":3,\"metadata\":{\"total_calls\":3,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 101
+            },
+            "ok": true,
+            "text": "{\"entry_points\":[{\"name\":\"subtract\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":12,\"column\":0},\"signature\":null},{\"name\":\"greet\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":4,\"column\":0},\"signature\":null},{\"name\":\"add\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":8,\"column\":0},\"signature\":null}],\"total\":3,\"metadata\":{\"total_calls\":3,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "entry_points": [
+                {
+                  "name": "subtract",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                    "line": 12,
+                    "column": 0
+                  },
+                  "signature": null
+                },
+                {
+                  "name": "greet",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                    "line": 4,
+                    "column": 0
+                  },
+                  "signature": null
+                },
+                {
+                  "name": "add",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                    "line": 8,
+                    "column": 0
+                  },
+                  "signature": null
+                }
+              ],
+              "total": 3,
+              "metadata": {
+                "total_calls": 3,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        },
+        "trace_path": {
+          "args": {
+            "source": "greet",
+            "target": "add"
+          },
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"source\\\":\\\"greet\\\",\\\"target\\\":\\\"add\\\",\\\"path_found\\\":false,\\\"path\\\":[],\\\"path_length\\\":0,\\\"metadata\\\":{\\\"total_calls\\\":0,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":102}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"source\":\"greet\",\"target\":\"add\",\"path_found\":false,\"path\":[],\"path_length\":0,\"metadata\":{\"total_calls\":0,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 102
+            },
+            "ok": true,
+            "text": "{\"source\":\"greet\",\"target\":\"add\",\"path_found\":false,\"path\":[],\"path_length\":0,\"metadata\":{\"total_calls\":0,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "source": "greet",
+              "target": "add",
+              "path_found": false,
+              "path": [],
+              "path_length": 0,
+              "metadata": {
+                "total_calls": 0,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        },
+        "check_architecture": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"cycles\\\":[],\\\"violations\\\":[],\\\"score\\\":100.0,\\\"summary\\\":\\\"Architecture check completed in 0ms - 0 cycles detected, 0 symbols involved\\\"}\",\"type\":\"text\"}]},\"id\":103}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"cycles\":[],\"violations\":[],\"score\":100.0,\"summary\":\"Architecture check completed in 0ms - 0 cycles detected, 0 symbols involved\"}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 103
+            },
+            "ok": true,
+            "text": "{\"cycles\":[],\"violations\":[],\"score\":100.0,\"summary\":\"Architecture check completed in 0ms - 0 cycles detected, 0 symbols involved\"}",
+            "parsed_text": {
+              "cycles": [],
+              "violations": [],
+              "score": 100.0,
+              "summary": "Architecture check completed in 0ms - 0 cycles detected, 0 symbols involved"
+            }
+          }
+        },
+        "get_hot_paths": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"hot_paths\\\":[],\\\"total\\\":0,\\\"metadata\\\":{\\\"total_calls\\\":0,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":104}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"hot_paths\":[],\"total\":0,\"metadata\":{\"total_calls\":0,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 104
+            },
+            "ok": true,
+            "text": "{\"hot_paths\":[],\"total\":0,\"metadata\":{\"total_calls\":0,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "hot_paths": [],
+              "total": 0,
+              "metadata": {
+                "total_calls": 0,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        },
+        "get_leaf_functions": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"leaf_functions\\\":[{\\\"name\\\":\\\"subtract\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":12,\\\"column\\\":0},\\\"signature\\\":null},{\\\"name\\\":\\\"greet\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":4,\\\"column\\\":0},\\\"signature\\\":null},{\\\"name\\\":\\\"add\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\\\",\\\"line\\\":8,\\\"column\\\":0},\\\"signature\\\":null}],\\\"total\\\":3,\\\"metadata\\\":{\\\"total_calls\\\":3,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":105}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"leaf_functions\":[{\"name\":\"subtract\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":12,\"column\":0},\"signature\":null},{\"name\":\"greet\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":4,\"column\":0},\"signature\":null},{\"name\":\"add\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":8,\"column\":0},\"signature\":null}],\"total\":3,\"metadata\":{\"total_calls\":3,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 105
+            },
+            "ok": true,
+            "text": "{\"leaf_functions\":[{\"name\":\"subtract\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":12,\"column\":0},\"signature\":null},{\"name\":\"greet\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":4,\"column\":0},\"signature\":null},{\"name\":\"add\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js\",\"line\":8,\"column\":0},\"signature\":null}],\"total\":3,\"metadata\":{\"total_calls\":3,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "leaf_functions": [
+                {
+                  "name": "subtract",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                    "line": 12,
+                    "column": 0
+                  },
+                  "signature": null
+                },
+                {
+                  "name": "greet",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                    "line": 4,
+                    "column": 0
+                  },
+                  "signature": null
+                },
+                {
+                  "name": "add",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/javascript/js-hello/hello.js",
+                    "line": 8,
+                    "column": 0
+                  },
+                  "signature": null
+                }
+              ],
+              "total": 3,
+              "metadata": {
+                "total_calls": 3,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        },
+        "analyze_impact": {
+          "args": {
+            "symbol_name": "greet"
+          },
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"symbol\\\":\\\"greet\\\",\\\"impacted_files\\\":[],\\\"impacted_symbols\\\":[],\\\"risk_level\\\":\\\"low\\\",\\\"summary\\\":\\\"Impact analysis completed in 0ms. 0 symbols across 0 files would be affected.\\\"}\",\"type\":\"text\"}]},\"id\":106}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"symbol\":\"greet\",\"impacted_files\":[],\"impacted_symbols\":[],\"risk_level\":\"low\",\"summary\":\"Impact analysis completed in 0ms. 0 symbols across 0 files would be affected.\"}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 106
+            },
+            "ok": true,
+            "text": "{\"symbol\":\"greet\",\"impacted_files\":[],\"impacted_symbols\":[],\"risk_level\":\"low\",\"summary\":\"Impact analysis completed in 0ms. 0 symbols across 0 files would be affected.\"}",
+            "parsed_text": {
+              "symbol": "greet",
+              "impacted_files": [],
+              "impacted_symbols": [],
+              "risk_level": "low",
+              "summary": "Impact analysis completed in 0ms. 0 symbols across 0 files would be affected."
+            }
+          }
+        },
+        "export_mermaid": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"mermaid_code\\\":\\\"flowchart TD\\\\n    subtract[subtract]\\\\n    greet[greet]\\\\n    add[add]\\\",\\\"node_count\\\":3,\\\"edge_count\\\":0,\\\"metadata\\\":{\\\"total_calls\\\":3,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":107}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"mermaid_code\":\"flowchart TD\\n    subtract[subtract]\\n    greet[greet]\\n    add[add]\",\"node_count\":3,\"edge_count\":0,\"metadata\":{\"total_calls\":3,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 107
+            },
+            "ok": true,
+            "text": "{\"mermaid_code\":\"flowchart TD\\n    subtract[subtract]\\n    greet[greet]\\n    add[add]\",\"node_count\":3,\"edge_count\":0,\"metadata\":{\"total_calls\":3,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "mermaid_code": "flowchart TD\n    subtract[subtract]\n    greet[greet]\n    add[add]",
+              "node_count": 3,
+              "edge_count": 0,
+              "metadata": {
+                "total_calls": 3,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        }
+      },
+      "mutation_tools": {
+        "edit_file": {
+          "workspace": "/tmp/cognicode-javascript-0jq46x5m",
+          "args": {
+            "path": "hello.js",
+            "edits": [
+              {
+                "old_string": "`Hello, ${name}!`",
+                "new_string": "`Hi, ${name}!`"
+              }
+            ]
+          },
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"applied\\\":true,\\\"validation\\\":{\\\"passed\\\":true,\\\"syntax_errors\\\":[]},\\\"preview\\\":\\\"Changed 3 bytes\\\",\\\"bytes_changed\\\":3}\",\"type\":\"text\"}]},\"id\":200}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"applied\":true,\"validation\":{\"passed\":true,\"syntax_errors\":[]},\"preview\":\"Changed 3 bytes\",\"bytes_changed\":3}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 200
+            },
+            "ok": true,
+            "text": "{\"applied\":true,\"validation\":{\"passed\":true,\"syntax_errors\":[]},\"preview\":\"Changed 3 bytes\",\"bytes_changed\":3}",
+            "parsed_text": {
+              "applied": true,
+              "validation": {
+                "passed": true,
+                "syntax_errors": []
+              },
+              "preview": "Changed 3 bytes",
+              "bytes_changed": 3
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.711727Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.711795Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.723976Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.724035Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.724066Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n",
+          "file_after": "/**\n * A simple greeting module.\n */\n\nfunction greet(name) {\n  return `Hi, ${name}!`;\n}\n\nfunction add(a, b) {\n  return a + b;\n}\n\nfunction subtract(a, b) {\n  return a - b;\n}\n\nmodule.exports = { greet, add, subtract };\n\nif (require.main === module) {\n  console.log(greet('CogniCode'));\n  console.log(`2 + 3 = ${add(2, 3)}`);\n}\n"
+        },
+        "safe_refactor": {
+          "workspace": "/tmp/cognicode-javascript-refactor-p3aywj76",
+          "args": {
+            "action": "rename",
+            "target": "greet",
+            "params": {
+              "new_name": "greet_renamed",
+              "file_path": "hello.js"
+            }
+          },
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"action\\\":\\\"rename\\\",\\\"success\\\":true,\\\"changes\\\":[{\\\"file\\\":\\\"/tmp/cognicode-javascript-refactor-p3aywj76/hello.js\\\",\\\"old_text\\\":\\\"greet\\\",\\\"new_text\\\":\\\"greet_renamed\\\",\\\"location\\\":{\\\"file\\\":\\\"/tmp/cognicode-javascript-refactor-p3aywj76/hello.js\\\",\\\"line\\\":4,\\\"column\\\":9}},{\\\"file\\\":\\\"/tmp/cognicode-javascript-refactor-p3aywj76/hello.js\\\",\\\"old_text\\\":\\\"greet\\\",\\\"new_text\\\":\\\"greet_renamed\\\",\\\"location\\\":{\\\"file\\\":\\\"/tmp/cognicode-javascript-refactor-p3aywj76/hello.js\\\",\\\"line\\\":19,\\\"column\\\":14}}],\\\"validation_result\\\":{\\\"is_valid\\\":true,\\\"warnings\\\":[\\\"Impact: 1 symbols affected\\\"],\\\"errors\\\":[]},\\\"error_message\\\":null}\",\"type\":\"text\"}]},\"id\":201}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"action\":\"rename\",\"success\":true,\"changes\":[{\"file\":\"/tmp/cognicode-javascript-refactor-p3aywj76/hello.js\",\"old_text\":\"greet\",\"new_text\":\"greet_renamed\",\"location\":{\"file\":\"/tmp/cognicode-javascript-refactor-p3aywj76/hello.js\",\"line\":4,\"column\":9}},{\"file\":\"/tmp/cognicode-javascript-refactor-p3aywj76/hello.js\",\"old_text\":\"greet\",\"new_text\":\"greet_renamed\",\"location\":{\"file\":\"/tmp/cognicode-javascript-refactor-p3aywj76/hello.js\",\"line\":19,\"column\":14}}],\"validation_result\":{\"is_valid\":true,\"warnings\":[\"Impact: 1 symbols affected\"],\"errors\":[]},\"error_message\":null}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 201
+            },
+            "ok": true,
+            "text": "{\"action\":\"rename\",\"success\":true,\"changes\":[{\"file\":\"/tmp/cognicode-javascript-refactor-p3aywj76/hello.js\",\"old_text\":\"greet\",\"new_text\":\"greet_renamed\",\"location\":{\"file\":\"/tmp/cognicode-javascript-refactor-p3aywj76/hello.js\",\"line\":4,\"column\":9}},{\"file\":\"/tmp/cognicode-javascript-refactor-p3aywj76/hello.js\",\"old_text\":\"greet\",\"new_text\":\"greet_renamed\",\"location\":{\"file\":\"/tmp/cognicode-javascript-refactor-p3aywj76/hello.js\",\"line\":19,\"column\":14}}],\"validation_result\":{\"is_valid\":true,\"warnings\":[\"Impact: 1 symbols affected\"],\"errors\":[]},\"error_message\":null}",
+            "parsed_text": {
+              "action": "rename",
+              "success": true,
+              "changes": [
+                {
+                  "file": "/tmp/cognicode-javascript-refactor-p3aywj76/hello.js",
+                  "old_text": "greet",
+                  "new_text": "greet_renamed",
+                  "location": {
+                    "file": "/tmp/cognicode-javascript-refactor-p3aywj76/hello.js",
+                    "line": 4,
+                    "column": 9
+                  }
+                },
+                {
+                  "file": "/tmp/cognicode-javascript-refactor-p3aywj76/hello.js",
+                  "old_text": "greet",
+                  "new_text": "greet_renamed",
+                  "location": {
+                    "file": "/tmp/cognicode-javascript-refactor-p3aywj76/hello.js",
+                    "line": 19,
+                    "column": 14
+                  }
+                }
+              ],
+              "validation_result": {
+                "is_valid": true,
+                "warnings": [
+                  "Impact: 1 symbols affected"
+                ],
+                "errors": []
+              },
+              "error_message": null
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.740240Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.740295Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.745411Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.745438Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.745455Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n",
+          "file_after": "/**\n * A simple greeting module.\n */\n\nfunction greet(name) {\n  return `Hello, ${name}!`;\n}\n\nfunction add(a, b) {\n  return a + b;\n}\n\nfunction subtract(a, b) {\n  return a - b;\n}\n\nmodule.exports = { greet, add, subtract };\n\nif (require.main === module) {\n  console.log(greet('CogniCode'));\n  console.log(`2 + 3 = ${add(2, 3)}`);\n}\n"
+        }
+      },
+      "graph_stderr_tail": "\u001b[2m2026-04-11T10:46:18.607257Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.607329Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.612487Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.612516Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.612538Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+    },
+    "python": {
+      "workspace": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python",
+      "tools": {
+        "get_file_symbols": {
+          "args": {
+            "file_path": "hello.py"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"file_path\\\":\\\"hello.py\\\",\\\"symbols\\\":[{\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"column\\\":1,\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":4},\\\"name\\\":\\\"greet\\\",\\\"signature\\\":null},{\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"column\\\":1,\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":9},\\\"name\\\":\\\"add\\\",\\\"signature\\\":null},{\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"column\\\":1,\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":14},\\\"name\\\":\\\"subtract\\\",\\\"signature\\\":null},{\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"column\\\":1,\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":19},\\\"name\\\":\\\"multiply\\\",\\\"signature\\\":null}]}\",\"type\":\"text\"}]},\"id\":2}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"file_path\":\"hello.py\",\"symbols\":[{\"kind\":\"function\",\"location\":{\"column\":1,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":4},\"name\":\"greet\",\"signature\":null},{\"kind\":\"function\",\"location\":{\"column\":1,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":9},\"name\":\"add\",\"signature\":null},{\"kind\":\"function\",\"location\":{\"column\":1,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":14},\"name\":\"subtract\",\"signature\":null},{\"kind\":\"function\",\"location\":{\"column\":1,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":19},\"name\":\"multiply\",\"signature\":null}]}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 2
+            },
+            "ok": true,
+            "text": "{\"file_path\":\"hello.py\",\"symbols\":[{\"kind\":\"function\",\"location\":{\"column\":1,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":4},\"name\":\"greet\",\"signature\":null},{\"kind\":\"function\",\"location\":{\"column\":1,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":9},\"name\":\"add\",\"signature\":null},{\"kind\":\"function\",\"location\":{\"column\":1,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":14},\"name\":\"subtract\",\"signature\":null},{\"kind\":\"function\",\"location\":{\"column\":1,\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":19},\"name\":\"multiply\",\"signature\":null}]}",
+            "parsed_text": {
+              "file_path": "hello.py",
+              "symbols": [
+                {
+                  "kind": "function",
+                  "location": {
+                    "column": 1,
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                    "line": 4
+                  },
+                  "name": "greet",
+                  "signature": null
+                },
+                {
+                  "kind": "function",
+                  "location": {
+                    "column": 1,
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                    "line": 9
+                  },
+                  "name": "add",
+                  "signature": null
+                },
+                {
+                  "kind": "function",
+                  "location": {
+                    "column": 1,
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                    "line": 14
+                  },
+                  "name": "subtract",
+                  "signature": null
+                },
+                {
+                  "kind": "function",
+                  "location": {
+                    "column": 1,
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                    "line": 19
+                  },
+                  "name": "multiply",
+                  "signature": null
+                }
+              ]
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.762386Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.762441Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.767638Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.767660Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.767678Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "get_complexity": {
+          "args": {
+            "file_path": "hello.py",
+            "function_name": "greet"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"file_path\\\":\\\"hello.py\\\",\\\"complexity\\\":{\\\"cyclomatic\\\":1,\\\"cognitive\\\":1,\\\"lines_of_code\\\":2,\\\"parameter_count\\\":1,\\\"nesting_depth\\\":0,\\\"function_name\\\":\\\"greet\\\"}}\",\"type\":\"text\"}]},\"id\":3}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"file_path\":\"hello.py\",\"complexity\":{\"cyclomatic\":1,\"cognitive\":1,\"lines_of_code\":2,\"parameter_count\":1,\"nesting_depth\":0,\"function_name\":\"greet\"}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 3
+            },
+            "ok": true,
+            "text": "{\"file_path\":\"hello.py\",\"complexity\":{\"cyclomatic\":1,\"cognitive\":1,\"lines_of_code\":2,\"parameter_count\":1,\"nesting_depth\":0,\"function_name\":\"greet\"}}",
+            "parsed_text": {
+              "file_path": "hello.py",
+              "complexity": {
+                "cyclomatic": 1,
+                "cognitive": 1,
+                "lines_of_code": 2,
+                "parameter_count": 1,
+                "nesting_depth": 0,
+                "function_name": "greet"
+              }
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.782062Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.782108Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.787288Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.787309Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.787324Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "find_usages": {
+          "args": {
+            "file_path": "hello.py",
+            "symbol_name": "greet"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"symbol\\\":\\\"greet\\\",\\\"usages\\\":[{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":4,\\\"column\\\":4,\\\"context\\\":\\\"def greet(name: str) -> str:\\\",\\\"is_definition\\\":true},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":25,\\\"column\\\":10,\\\"context\\\":\\\"    print(greet(\\\\\\\"CogniCode\\\\\\\"))\\\",\\\"is_definition\\\":false},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\\\",\\\"line\\\":4,\\\"column\\\":18,\\\"context\\\":\\\"from hello import greet, add, subtract\\\",\\\"is_definition\\\":false},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\\\",\\\"line\\\":8,\\\"column\\\":11,\\\"context\\\":\\\"    assert greet(\\\\\\\"World\\\\\\\") == \\\\\\\"Hello, World!\\\\\\\"\\\",\\\"is_definition\\\":false}],\\\"total\\\":4}\",\"type\":\"text\"}]},\"id\":4}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"symbol\":\"greet\",\"usages\":[{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":4,\"column\":4,\"context\":\"def greet(name: str) -> str:\",\"is_definition\":true},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":25,\"column\":10,\"context\":\"    print(greet(\\\"CogniCode\\\"))\",\"is_definition\":false},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\",\"line\":4,\"column\":18,\"context\":\"from hello import greet, add, subtract\",\"is_definition\":false},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\",\"line\":8,\"column\":11,\"context\":\"    assert greet(\\\"World\\\") == \\\"Hello, World!\\\"\",\"is_definition\":false}],\"total\":4}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 4
+            },
+            "ok": true,
+            "text": "{\"symbol\":\"greet\",\"usages\":[{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":4,\"column\":4,\"context\":\"def greet(name: str) -> str:\",\"is_definition\":true},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":25,\"column\":10,\"context\":\"    print(greet(\\\"CogniCode\\\"))\",\"is_definition\":false},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\",\"line\":4,\"column\":18,\"context\":\"from hello import greet, add, subtract\",\"is_definition\":false},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\",\"line\":8,\"column\":11,\"context\":\"    assert greet(\\\"World\\\") == \\\"Hello, World!\\\"\",\"is_definition\":false}],\"total\":4}",
+            "parsed_text": {
+              "symbol": "greet",
+              "usages": [
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                  "line": 4,
+                  "column": 4,
+                  "context": "def greet(name: str) -> str:",
+                  "is_definition": true
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                  "line": 25,
+                  "column": 10,
+                  "context": "    print(greet(\"CogniCode\"))",
+                  "is_definition": false
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py",
+                  "line": 4,
+                  "column": 18,
+                  "context": "from hello import greet, add, subtract",
+                  "is_definition": false
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py",
+                  "line": 8,
+                  "column": 11,
+                  "context": "    assert greet(\"World\") == \"Hello, World!\"",
+                  "is_definition": false
+                }
+              ],
+              "total": 4
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.800919Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.800960Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.806034Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.806055Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.806072Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "semantic_search": {
+          "args": {
+            "query": "greet",
+            "max_results": 5
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"query\\\":\\\"greet\\\",\\\"results\\\":[],\\\"total\\\":0,\\\"search_time_ms\\\":0}\",\"type\":\"text\"}]},\"id\":5}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"query\":\"greet\",\"results\":[],\"total\":0,\"search_time_ms\":0}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 5
+            },
+            "ok": true,
+            "text": "{\"query\":\"greet\",\"results\":[],\"total\":0,\"search_time_ms\":0}",
+            "parsed_text": {
+              "query": "greet",
+              "results": [],
+              "total": 0,
+              "search_time_ms": 0
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.819813Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.819861Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.825701Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.825723Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.825739Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "get_outline": {
+          "args": {
+            "file_path": "hello.py"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"file_path\\\":\\\"hello.py\\\",\\\"nodes\\\":[{\\\"name\\\":\\\"greet\\\",\\\"kind\\\":\\\"function\\\",\\\"line\\\":4,\\\"column\\\":0,\\\"signature\\\":\\\"()\\\",\\\"children\\\":[],\\\"is_private\\\":false},{\\\"name\\\":\\\"add\\\",\\\"kind\\\":\\\"function\\\",\\\"line\\\":9,\\\"column\\\":0,\\\"signature\\\":\\\"()\\\",\\\"children\\\":[],\\\"is_private\\\":false},{\\\"name\\\":\\\"subtract\\\",\\\"kind\\\":\\\"function\\\",\\\"line\\\":14,\\\"column\\\":0,\\\"signature\\\":\\\"()\\\",\\\"children\\\":[],\\\"is_private\\\":false},{\\\"name\\\":\\\"multiply\\\",\\\"kind\\\":\\\"function\\\",\\\"line\\\":19,\\\"column\\\":0,\\\"signature\\\":\\\"()\\\",\\\"children\\\":[],\\\"is_private\\\":false}],\\\"total_nodes\\\":4,\\\"generation_time_ms\\\":0}\",\"type\":\"text\"}]},\"id\":6}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"file_path\":\"hello.py\",\"nodes\":[{\"name\":\"greet\",\"kind\":\"function\",\"line\":4,\"column\":0,\"signature\":\"()\",\"children\":[],\"is_private\":false},{\"name\":\"add\",\"kind\":\"function\",\"line\":9,\"column\":0,\"signature\":\"()\",\"children\":[],\"is_private\":false},{\"name\":\"subtract\",\"kind\":\"function\",\"line\":14,\"column\":0,\"signature\":\"()\",\"children\":[],\"is_private\":false},{\"name\":\"multiply\",\"kind\":\"function\",\"line\":19,\"column\":0,\"signature\":\"()\",\"children\":[],\"is_private\":false}],\"total_nodes\":4,\"generation_time_ms\":0}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 6
+            },
+            "ok": true,
+            "text": "{\"file_path\":\"hello.py\",\"nodes\":[{\"name\":\"greet\",\"kind\":\"function\",\"line\":4,\"column\":0,\"signature\":\"()\",\"children\":[],\"is_private\":false},{\"name\":\"add\",\"kind\":\"function\",\"line\":9,\"column\":0,\"signature\":\"()\",\"children\":[],\"is_private\":false},{\"name\":\"subtract\",\"kind\":\"function\",\"line\":14,\"column\":0,\"signature\":\"()\",\"children\":[],\"is_private\":false},{\"name\":\"multiply\",\"kind\":\"function\",\"line\":19,\"column\":0,\"signature\":\"()\",\"children\":[],\"is_private\":false}],\"total_nodes\":4,\"generation_time_ms\":0}",
+            "parsed_text": {
+              "file_path": "hello.py",
+              "nodes": [
+                {
+                  "name": "greet",
+                  "kind": "function",
+                  "line": 4,
+                  "column": 0,
+                  "signature": "()",
+                  "children": [],
+                  "is_private": false
+                },
+                {
+                  "name": "add",
+                  "kind": "function",
+                  "line": 9,
+                  "column": 0,
+                  "signature": "()",
+                  "children": [],
+                  "is_private": false
+                },
+                {
+                  "name": "subtract",
+                  "kind": "function",
+                  "line": 14,
+                  "column": 0,
+                  "signature": "()",
+                  "children": [],
+                  "is_private": false
+                },
+                {
+                  "name": "multiply",
+                  "kind": "function",
+                  "line": 19,
+                  "column": 0,
+                  "signature": "()",
+                  "children": [],
+                  "is_private": false
+                }
+              ],
+              "total_nodes": 4,
+              "generation_time_ms": 0
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.839923Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.839968Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.845434Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.845466Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.845485Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "search_content_requested": {
+          "args": {
+            "query": "greet",
+            "path": "hello.py"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"Invalid input: Invalid search_content input: missing field `pattern`\",\"type\":\"text\"}],\"isError\":true},\"id\":7}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "Invalid input: Invalid search_content input: missing field `pattern`",
+                    "type": "text"
+                  }
+                ],
+                "isError": true
+              },
+              "id": 7
+            },
+            "ok": true,
+            "text": "Invalid input: Invalid search_content input: missing field `pattern`",
+            "parsed_text": "Invalid input: Invalid search_content input: missing field `pattern`"
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.860818Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.860878Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.865786Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.865808Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.865825Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "search_content_corrected": {
+          "args": {
+            "pattern": "greet",
+            "path": "hello.py"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"matches\\\":[{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":1,\\\"col\\\":13,\\\"text\\\":\\\"greet\\\",\\\"context\\\":[\\\"\\\",\\\"\\\"]},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":4,\\\"col\\\":5,\\\"text\\\":\\\"greet\\\",\\\"context\\\":[\\\"\\\",\\\"\\\",\\\"    \\\\\\\"\\\\\\\"\\\\\\\"Return a greeting string.\\\\\\\"\\\\\\\"\\\\\\\"\\\",\\\"    return f\\\\\\\"Hello, {name}!\\\\\\\"\\\"]},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":5,\\\"col\\\":17,\\\"text\\\":\\\"greet\\\",\\\"context\\\":[\\\"\\\",\\\"def greet(name: str) -> str:\\\",\\\"    return f\\\\\\\"Hello, {name}!\\\\\\\"\\\",\\\"\\\"]},{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":25,\\\"col\\\":11,\\\"text\\\":\\\"greet\\\",\\\"context\\\":[\\\"\\\",\\\"if __name__ == \\\\\\\"__main__\\\\\\\":\\\",\\\"    print(f\\\\\\\"2 + 3 = {add(2, 3)}\\\\\\\")\\\"]}],\\\"total\\\":4,\\\"files_scanned\\\":1}\",\"type\":\"text\"}]},\"id\":8}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"matches\":[{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":1,\"col\":13,\"text\":\"greet\",\"context\":[\"\",\"\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":4,\"col\":5,\"text\":\"greet\",\"context\":[\"\",\"\",\"    \\\"\\\"\\\"Return a greeting string.\\\"\\\"\\\"\",\"    return f\\\"Hello, {name}!\\\"\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":5,\"col\":17,\"text\":\"greet\",\"context\":[\"\",\"def greet(name: str) -> str:\",\"    return f\\\"Hello, {name}!\\\"\",\"\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":25,\"col\":11,\"text\":\"greet\",\"context\":[\"\",\"if __name__ == \\\"__main__\\\":\",\"    print(f\\\"2 + 3 = {add(2, 3)}\\\")\"]}],\"total\":4,\"files_scanned\":1}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 8
+            },
+            "ok": true,
+            "text": "{\"matches\":[{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":1,\"col\":13,\"text\":\"greet\",\"context\":[\"\",\"\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":4,\"col\":5,\"text\":\"greet\",\"context\":[\"\",\"\",\"    \\\"\\\"\\\"Return a greeting string.\\\"\\\"\\\"\",\"    return f\\\"Hello, {name}!\\\"\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":5,\"col\":17,\"text\":\"greet\",\"context\":[\"\",\"def greet(name: str) -> str:\",\"    return f\\\"Hello, {name}!\\\"\",\"\"]},{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":25,\"col\":11,\"text\":\"greet\",\"context\":[\"\",\"if __name__ == \\\"__main__\\\":\",\"    print(f\\\"2 + 3 = {add(2, 3)}\\\")\"]}],\"total\":4,\"files_scanned\":1}",
+            "parsed_text": {
+              "matches": [
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                  "line": 1,
+                  "col": 13,
+                  "text": "greet",
+                  "context": [
+                    "",
+                    ""
+                  ]
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                  "line": 4,
+                  "col": 5,
+                  "text": "greet",
+                  "context": [
+                    "",
+                    "",
+                    "    \"\"\"Return a greeting string.\"\"\"",
+                    "    return f\"Hello, {name}!\""
+                  ]
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                  "line": 5,
+                  "col": 17,
+                  "text": "greet",
+                  "context": [
+                    "",
+                    "def greet(name: str) -> str:",
+                    "    return f\"Hello, {name}!\"",
+                    ""
+                  ]
+                },
+                {
+                  "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                  "line": 25,
+                  "col": 11,
+                  "text": "greet",
+                  "context": [
+                    "",
+                    "if __name__ == \"__main__\":",
+                    "    print(f\"2 + 3 = {add(2, 3)}\")"
+                  ]
+                }
+              ],
+              "total": 4,
+              "files_scanned": 1
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.878848Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.878899Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.884077Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.884101Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.884118Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "read_file": {
+          "args": {
+            "path": "hello.py",
+            "mode": "raw"
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"content\\\":\\\"\\\\\\\"\\\\\\\"\\\\\\\"A simple greeting module.\\\\\\\"\\\\\\\"\\\\\\\"\\\\n\\\\n\\\\ndef greet(name: str) -> str:\\\\n    \\\\\\\"\\\\\\\"\\\\\\\"Return a greeting string.\\\\\\\"\\\\\\\"\\\\\\\"\\\\n    return f\\\\\\\"Hello, {name}!\\\\\\\"\\\\n\\\\n\\\\ndef add(a: int, b: int) -> int:\\\\n    \\\\\\\"\\\\\\\"\\\\\\\"Add two numbers.\\\\\\\"\\\\\\\"\\\\\\\"\\\\n    return a + b\\\\n\\\\n\\\\ndef subtract(a: int, b: int) -> int:\\\\n    \\\\\\\"\\\\\\\"\\\\\\\"Subtract two numbers.\\\\\\\"\\\\\\\"\\\\\\\"\\\\n    return a - b\\\\n\\\\n\\\\ndef multiply(a: int, b: int) -> int:\\\\n    \\\\\\\"\\\\\\\"\\\\\\\"Multiply two numbers (used for mutation testing only).\\\\\\\"\\\\\\\"\\\\\\\"\\\\n    return a * b\\\\n\\\\n\\\\nif __name__ == \\\\\\\"__main__\\\\\\\":\\\\n    print(greet(\\\\\\\"CogniCode\\\\\\\"))\\\\n    print(f\\\\\\\"2 + 3 = {add(2, 3)}\\\\\\\")\\\",\\\"total_lines\\\":26,\\\"truncated\\\":false,\\\"metadata\\\":{\\\"path\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"size\\\":508,\\\"modified\\\":1775738248,\\\"language\\\":\\\"python\\\"},\\\"mode\\\":\\\"raw\\\",\\\"start_line\\\":1,\\\"end_line\\\":500,\\\"has_more\\\":false,\\\"next_token\\\":null,\\\"suggested_chunk_size\\\":null}\",\"type\":\"text\"}]},\"id\":9}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"content\":\"\\\"\\\"\\\"A simple greeting module.\\\"\\\"\\\"\\n\\n\\ndef greet(name: str) -> str:\\n    \\\"\\\"\\\"Return a greeting string.\\\"\\\"\\\"\\n    return f\\\"Hello, {name}!\\\"\\n\\n\\ndef add(a: int, b: int) -> int:\\n    \\\"\\\"\\\"Add two numbers.\\\"\\\"\\\"\\n    return a + b\\n\\n\\ndef subtract(a: int, b: int) -> int:\\n    \\\"\\\"\\\"Subtract two numbers.\\\"\\\"\\\"\\n    return a - b\\n\\n\\ndef multiply(a: int, b: int) -> int:\\n    \\\"\\\"\\\"Multiply two numbers (used for mutation testing only).\\\"\\\"\\\"\\n    return a * b\\n\\n\\nif __name__ == \\\"__main__\\\":\\n    print(greet(\\\"CogniCode\\\"))\\n    print(f\\\"2 + 3 = {add(2, 3)}\\\")\",\"total_lines\":26,\"truncated\":false,\"metadata\":{\"path\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"size\":508,\"modified\":1775738248,\"language\":\"python\"},\"mode\":\"raw\",\"start_line\":1,\"end_line\":500,\"has_more\":false,\"next_token\":null,\"suggested_chunk_size\":null}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 9
+            },
+            "ok": true,
+            "text": "{\"content\":\"\\\"\\\"\\\"A simple greeting module.\\\"\\\"\\\"\\n\\n\\ndef greet(name: str) -> str:\\n    \\\"\\\"\\\"Return a greeting string.\\\"\\\"\\\"\\n    return f\\\"Hello, {name}!\\\"\\n\\n\\ndef add(a: int, b: int) -> int:\\n    \\\"\\\"\\\"Add two numbers.\\\"\\\"\\\"\\n    return a + b\\n\\n\\ndef subtract(a: int, b: int) -> int:\\n    \\\"\\\"\\\"Subtract two numbers.\\\"\\\"\\\"\\n    return a - b\\n\\n\\ndef multiply(a: int, b: int) -> int:\\n    \\\"\\\"\\\"Multiply two numbers (used for mutation testing only).\\\"\\\"\\\"\\n    return a * b\\n\\n\\nif __name__ == \\\"__main__\\\":\\n    print(greet(\\\"CogniCode\\\"))\\n    print(f\\\"2 + 3 = {add(2, 3)}\\\")\",\"total_lines\":26,\"truncated\":false,\"metadata\":{\"path\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"size\":508,\"modified\":1775738248,\"language\":\"python\"},\"mode\":\"raw\",\"start_line\":1,\"end_line\":500,\"has_more\":false,\"next_token\":null,\"suggested_chunk_size\":null}",
+            "parsed_text": {
+              "content": "\"\"\"A simple greeting module.\"\"\"\n\n\ndef greet(name: str) -> str:\n    \"\"\"Return a greeting string.\"\"\"\n    return f\"Hello, {name}!\"\n\n\ndef add(a: int, b: int) -> int:\n    \"\"\"Add two numbers.\"\"\"\n    return a + b\n\n\ndef subtract(a: int, b: int) -> int:\n    \"\"\"Subtract two numbers.\"\"\"\n    return a - b\n\n\ndef multiply(a: int, b: int) -> int:\n    \"\"\"Multiply two numbers (used for mutation testing only).\"\"\"\n    return a * b\n\n\nif __name__ == \"__main__\":\n    print(greet(\"CogniCode\"))\n    print(f\"2 + 3 = {add(2, 3)}\")",
+              "total_lines": 26,
+              "truncated": false,
+              "metadata": {
+                "path": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                "size": 508,
+                "modified": 1775738248,
+                "language": "python"
+              },
+              "mode": "raw",
+              "start_line": 1,
+              "end_line": 500,
+              "has_more": false,
+              "next_token": null,
+              "suggested_chunk_size": null
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.904426Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.904481Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.909767Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.909797Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.909816Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        },
+        "get_symbol_code": {
+          "args": {
+            "file": "hello.py",
+            "line": 4,
+            "col": 4
+          },
+          "init_response": "{\"jsonrpc\":\"2.0\",\"result\":{\"capabilities\":{\"logging\":{},\"prompts\":{\"listChanged\":true},\"resources\":{\"listChanged\":true,\"subscribe\":false},\"tools\":{\"listChanged\":true}},\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"cognicode\",\"version\":\"0.1.0\"}},\"id\":1}",
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"file\\\":\\\"hello.py\\\",\\\"code\\\":\\\"greet\\\",\\\"docstring\\\":null,\\\"start_line\\\":4,\\\"end_line\\\":4,\\\"cached\\\":false}\",\"type\":\"text\"}]},\"id\":10}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"file\":\"hello.py\",\"code\":\"greet\",\"docstring\":null,\"start_line\":4,\"end_line\":4,\"cached\":false}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 10
+            },
+            "ok": true,
+            "text": "{\"file\":\"hello.py\",\"code\":\"greet\",\"docstring\":null,\"start_line\":4,\"end_line\":4,\"cached\":false}",
+            "parsed_text": {
+              "file": "hello.py",
+              "code": "greet",
+              "docstring": null,
+              "start_line": 4,
+              "end_line": 4,
+              "cached": false
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.924049Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.924098Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.929453Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.929480Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.929498Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+        }
+      },
+      "graph_tools": {
+        "build_graph": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"success\\\":true,\\\"symbols_found\\\":7,\\\"relationships_found\\\":3,\\\"message\\\":\\\"Graph built successfully: 7 symbols, 3 relationships in 9ms\\\"}\",\"type\":\"text\"}]},\"id\":100}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"success\":true,\"symbols_found\":7,\"relationships_found\":3,\"message\":\"Graph built successfully: 7 symbols, 3 relationships in 9ms\"}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 100
+            },
+            "ok": true,
+            "text": "{\"success\":true,\"symbols_found\":7,\"relationships_found\":3,\"message\":\"Graph built successfully: 7 symbols, 3 relationships in 9ms\"}",
+            "parsed_text": {
+              "success": true,
+              "symbols_found": 7,
+              "relationships_found": 3,
+              "message": "Graph built successfully: 7 symbols, 3 relationships in 9ms"
+            }
+          }
+        },
+        "get_entry_points": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"entry_points\\\":[{\\\"name\\\":\\\"multiply\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":18,\\\"column\\\":0},\\\"signature\\\":null},{\\\"name\\\":\\\"test_add\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\\\",\\\"line\\\":10,\\\"column\\\":0},\\\"signature\\\":null},{\\\"name\\\":\\\"test_subtract\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\\\",\\\"line\\\":14,\\\"column\\\":0},\\\"signature\\\":null},{\\\"name\\\":\\\"test_greet\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\\\",\\\"line\\\":6,\\\"column\\\":0},\\\"signature\\\":null}],\\\"total\\\":4,\\\"metadata\\\":{\\\"total_calls\\\":4,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":101}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"entry_points\":[{\"name\":\"multiply\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":18,\"column\":0},\"signature\":null},{\"name\":\"test_add\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\",\"line\":10,\"column\":0},\"signature\":null},{\"name\":\"test_subtract\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\",\"line\":14,\"column\":0},\"signature\":null},{\"name\":\"test_greet\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\",\"line\":6,\"column\":0},\"signature\":null}],\"total\":4,\"metadata\":{\"total_calls\":4,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 101
+            },
+            "ok": true,
+            "text": "{\"entry_points\":[{\"name\":\"multiply\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":18,\"column\":0},\"signature\":null},{\"name\":\"test_add\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\",\"line\":10,\"column\":0},\"signature\":null},{\"name\":\"test_subtract\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\",\"line\":14,\"column\":0},\"signature\":null},{\"name\":\"test_greet\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\",\"line\":6,\"column\":0},\"signature\":null}],\"total\":4,\"metadata\":{\"total_calls\":4,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "entry_points": [
+                {
+                  "name": "multiply",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                    "line": 18,
+                    "column": 0
+                  },
+                  "signature": null
+                },
+                {
+                  "name": "test_add",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py",
+                    "line": 10,
+                    "column": 0
+                  },
+                  "signature": null
+                },
+                {
+                  "name": "test_subtract",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py",
+                    "line": 14,
+                    "column": 0
+                  },
+                  "signature": null
+                },
+                {
+                  "name": "test_greet",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py",
+                    "line": 6,
+                    "column": 0
+                  },
+                  "signature": null
+                }
+              ],
+              "total": 4,
+              "metadata": {
+                "total_calls": 4,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        },
+        "trace_path": {
+          "args": {
+            "source": "greet",
+            "target": "add"
+          },
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"source\\\":\\\"greet\\\",\\\"target\\\":\\\"add\\\",\\\"path_found\\\":false,\\\"path\\\":[],\\\"path_length\\\":0,\\\"metadata\\\":{\\\"total_calls\\\":0,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":102}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"source\":\"greet\",\"target\":\"add\",\"path_found\":false,\"path\":[],\"path_length\":0,\"metadata\":{\"total_calls\":0,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 102
+            },
+            "ok": true,
+            "text": "{\"source\":\"greet\",\"target\":\"add\",\"path_found\":false,\"path\":[],\"path_length\":0,\"metadata\":{\"total_calls\":0,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "source": "greet",
+              "target": "add",
+              "path_found": false,
+              "path": [],
+              "path_length": 0,
+              "metadata": {
+                "total_calls": 0,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        },
+        "check_architecture": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"cycles\\\":[],\\\"violations\\\":[],\\\"score\\\":100.0,\\\"summary\\\":\\\"Architecture check completed in 0ms - 0 cycles detected, 0 symbols involved\\\"}\",\"type\":\"text\"}]},\"id\":103}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"cycles\":[],\"violations\":[],\"score\":100.0,\"summary\":\"Architecture check completed in 0ms - 0 cycles detected, 0 symbols involved\"}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 103
+            },
+            "ok": true,
+            "text": "{\"cycles\":[],\"violations\":[],\"score\":100.0,\"summary\":\"Architecture check completed in 0ms - 0 cycles detected, 0 symbols involved\"}",
+            "parsed_text": {
+              "cycles": [],
+              "violations": [],
+              "score": 100.0,
+              "summary": "Architecture check completed in 0ms - 0 cycles detected, 0 symbols involved"
+            }
+          }
+        },
+        "get_hot_paths": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"hot_paths\\\":[],\\\"total\\\":0,\\\"metadata\\\":{\\\"total_calls\\\":0,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":104}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"hot_paths\":[],\"total\":0,\"metadata\":{\"total_calls\":0,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 104
+            },
+            "ok": true,
+            "text": "{\"hot_paths\":[],\"total\":0,\"metadata\":{\"total_calls\":0,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "hot_paths": [],
+              "total": 0,
+              "metadata": {
+                "total_calls": 0,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        },
+        "get_leaf_functions": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"leaf_functions\\\":[{\\\"name\\\":\\\"multiply\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":18,\\\"column\\\":0},\\\"signature\\\":null},{\\\"name\\\":\\\"subtract\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":13,\\\"column\\\":0},\\\"signature\\\":null},{\\\"name\\\":\\\"add\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":8,\\\"column\\\":0},\\\"signature\\\":null},{\\\"name\\\":\\\"greet\\\",\\\"kind\\\":\\\"function\\\",\\\"location\\\":{\\\"file\\\":\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\\\",\\\"line\\\":3,\\\"column\\\":0},\\\"signature\\\":null}],\\\"total\\\":4,\\\"metadata\\\":{\\\"total_calls\\\":4,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":105}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"leaf_functions\":[{\"name\":\"multiply\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":18,\"column\":0},\"signature\":null},{\"name\":\"subtract\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":13,\"column\":0},\"signature\":null},{\"name\":\"add\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":8,\"column\":0},\"signature\":null},{\"name\":\"greet\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":3,\"column\":0},\"signature\":null}],\"total\":4,\"metadata\":{\"total_calls\":4,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 105
+            },
+            "ok": true,
+            "text": "{\"leaf_functions\":[{\"name\":\"multiply\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":18,\"column\":0},\"signature\":null},{\"name\":\"subtract\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":13,\"column\":0},\"signature\":null},{\"name\":\"add\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":8,\"column\":0},\"signature\":null},{\"name\":\"greet\",\"kind\":\"function\",\"location\":{\"file\":\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py\",\"line\":3,\"column\":0},\"signature\":null}],\"total\":4,\"metadata\":{\"total_calls\":4,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "leaf_functions": [
+                {
+                  "name": "multiply",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                    "line": 18,
+                    "column": 0
+                  },
+                  "signature": null
+                },
+                {
+                  "name": "subtract",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                    "line": 13,
+                    "column": 0
+                  },
+                  "signature": null
+                },
+                {
+                  "name": "add",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                    "line": 8,
+                    "column": 0
+                  },
+                  "signature": null
+                },
+                {
+                  "name": "greet",
+                  "kind": "function",
+                  "location": {
+                    "file": "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/hello.py",
+                    "line": 3,
+                    "column": 0
+                  },
+                  "signature": null
+                }
+              ],
+              "total": 4,
+              "metadata": {
+                "total_calls": 4,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        },
+        "analyze_impact": {
+          "args": {
+            "symbol_name": "greet"
+          },
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"symbol\\\":\\\"greet\\\",\\\"impacted_files\\\":[\\\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\\\"],\\\"impacted_symbols\\\":[\\\"test_greet\\\"],\\\"risk_level\\\":\\\"low\\\",\\\"summary\\\":\\\"Impact analysis completed in 0ms. 1 symbols across 1 files would be affected.\\\"}\",\"type\":\"text\"}]},\"id\":106}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"symbol\":\"greet\",\"impacted_files\":[\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\"],\"impacted_symbols\":[\"test_greet\"],\"risk_level\":\"low\",\"summary\":\"Impact analysis completed in 0ms. 1 symbols across 1 files would be affected.\"}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 106
+            },
+            "ok": true,
+            "text": "{\"symbol\":\"greet\",\"impacted_files\":[\"/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py\"],\"impacted_symbols\":[\"test_greet\"],\"risk_level\":\"low\",\"summary\":\"Impact analysis completed in 0ms. 1 symbols across 1 files would be affected.\"}",
+            "parsed_text": {
+              "symbol": "greet",
+              "impacted_files": [
+                "/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/python/test_hello.py"
+              ],
+              "impacted_symbols": [
+                "test_greet"
+              ],
+              "risk_level": "low",
+              "summary": "Impact analysis completed in 0ms. 1 symbols across 1 files would be affected."
+            }
+          }
+        },
+        "export_mermaid": {
+          "args": {},
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"mermaid_code\\\":\\\"flowchart TD\\\\n    multiply[multiply]\\\\n    subtract[subtract]\\\\n    test_add[test_add]\\\\n    test_subtract[test_subtract]\\\\n    add[add]\\\\n    test_greet[test_greet]\\\\n    greet[greet]\\\\n    test_add --> add\\\\n    test_subtract --> subtract\\\\n    test_greet --> greet\\\",\\\"node_count\\\":7,\\\"edge_count\\\":3,\\\"metadata\\\":{\\\"total_calls\\\":7,\\\"analysis_time_ms\\\":0}}\",\"type\":\"text\"}]},\"id\":107}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"mermaid_code\":\"flowchart TD\\n    multiply[multiply]\\n    subtract[subtract]\\n    test_add[test_add]\\n    test_subtract[test_subtract]\\n    add[add]\\n    test_greet[test_greet]\\n    greet[greet]\\n    test_add --> add\\n    test_subtract --> subtract\\n    test_greet --> greet\",\"node_count\":7,\"edge_count\":3,\"metadata\":{\"total_calls\":7,\"analysis_time_ms\":0}}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 107
+            },
+            "ok": true,
+            "text": "{\"mermaid_code\":\"flowchart TD\\n    multiply[multiply]\\n    subtract[subtract]\\n    test_add[test_add]\\n    test_subtract[test_subtract]\\n    add[add]\\n    test_greet[test_greet]\\n    greet[greet]\\n    test_add --> add\\n    test_subtract --> subtract\\n    test_greet --> greet\",\"node_count\":7,\"edge_count\":3,\"metadata\":{\"total_calls\":7,\"analysis_time_ms\":0}}",
+            "parsed_text": {
+              "mermaid_code": "flowchart TD\n    multiply[multiply]\n    subtract[subtract]\n    test_add[test_add]\n    test_subtract[test_subtract]\n    add[add]\n    test_greet[test_greet]\n    greet[greet]\n    test_add --> add\n    test_subtract --> subtract\n    test_greet --> greet",
+              "node_count": 7,
+              "edge_count": 3,
+              "metadata": {
+                "total_calls": 7,
+                "analysis_time_ms": 0
+              }
+            }
+          }
+        }
+      },
+      "mutation_tools": {
+        "edit_file": {
+          "workspace": "/tmp/cognicode-python-iil4t7ft",
+          "args": {
+            "path": "hello.py",
+            "edits": [
+              {
+                "old_string": "return f\"Hello, {name}!\"",
+                "new_string": "return f\"Hi, {name}!\""
+              }
+            ]
+          },
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"applied\\\":true,\\\"validation\\\":{\\\"passed\\\":true,\\\"syntax_errors\\\":[]},\\\"preview\\\":\\\"Changed 3 bytes\\\",\\\"bytes_changed\\\":3}\",\"type\":\"text\"}]},\"id\":200}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"applied\":true,\"validation\":{\"passed\":true,\"syntax_errors\":[]},\"preview\":\"Changed 3 bytes\",\"bytes_changed\":3}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 200
+            },
+            "ok": true,
+            "text": "{\"applied\":true,\"validation\":{\"passed\":true,\"syntax_errors\":[]},\"preview\":\"Changed 3 bytes\",\"bytes_changed\":3}",
+            "parsed_text": {
+              "applied": true,
+              "validation": {
+                "passed": true,
+                "syntax_errors": []
+              },
+              "preview": "Changed 3 bytes",
+              "bytes_changed": 3
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:18.982321Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.982411Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.990401Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.990450Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.990494Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n",
+          "file_after": "\"\"\"A simple greeting module.\"\"\"\n\n\ndef greet(name: str) -> str:\n    \"\"\"Return a greeting string.\"\"\"\n    return f\"Hi, {name}!\"\n\n\ndef add(a: int, b: int) -> int:\n    \"\"\"Add two numbers.\"\"\"\n    return a + b\n\n\ndef subtract(a: int, b: int) -> int:\n    \"\"\"Subtract two numbers.\"\"\"\n    return a - b\n\n\ndef multiply(a: int, b: int) -> int:\n    \"\"\"Multiply two numbers (used for mutation testing only).\"\"\"\n    return a * b\n\n\nif __name__ == \"__main__\":\n    print(greet(\"CogniCode\"))\n    print(f\"2 + 3 = {add(2, 3)}\")\n"
+        },
+        "safe_refactor": {
+          "workspace": "/tmp/cognicode-python-refactor-_224oq4z",
+          "args": {
+            "action": "rename",
+            "target": "greet",
+            "params": {
+              "new_name": "greet_renamed",
+              "file_path": "hello.py"
+            }
+          },
+          "response_line": "{\"jsonrpc\":\"2.0\",\"result\":{\"content\":[{\"text\":\"{\\\"action\\\":\\\"rename\\\",\\\"success\\\":true,\\\"changes\\\":[{\\\"file\\\":\\\"/tmp/cognicode-python-refactor-_224oq4z/hello.py\\\",\\\"old_text\\\":\\\"greet\\\",\\\"new_text\\\":\\\"greet_renamed\\\",\\\"location\\\":{\\\"file\\\":\\\"/tmp/cognicode-python-refactor-_224oq4z/hello.py\\\",\\\"line\\\":3,\\\"column\\\":4}},{\\\"file\\\":\\\"/tmp/cognicode-python-refactor-_224oq4z/hello.py\\\",\\\"old_text\\\":\\\"greet\\\",\\\"new_text\\\":\\\"greet_renamed\\\",\\\"location\\\":{\\\"file\\\":\\\"/tmp/cognicode-python-refactor-_224oq4z/hello.py\\\",\\\"line\\\":24,\\\"column\\\":10}}],\\\"validation_result\\\":{\\\"is_valid\\\":true,\\\"warnings\\\":[\\\"Impact: 1 symbols affected\\\"],\\\"errors\\\":[]},\\\"error_message\\\":null}\",\"type\":\"text\"}]},\"id\":201}",
+          "parsed": {
+            "raw": {
+              "jsonrpc": "2.0",
+              "result": {
+                "content": [
+                  {
+                    "text": "{\"action\":\"rename\",\"success\":true,\"changes\":[{\"file\":\"/tmp/cognicode-python-refactor-_224oq4z/hello.py\",\"old_text\":\"greet\",\"new_text\":\"greet_renamed\",\"location\":{\"file\":\"/tmp/cognicode-python-refactor-_224oq4z/hello.py\",\"line\":3,\"column\":4}},{\"file\":\"/tmp/cognicode-python-refactor-_224oq4z/hello.py\",\"old_text\":\"greet\",\"new_text\":\"greet_renamed\",\"location\":{\"file\":\"/tmp/cognicode-python-refactor-_224oq4z/hello.py\",\"line\":24,\"column\":10}}],\"validation_result\":{\"is_valid\":true,\"warnings\":[\"Impact: 1 symbols affected\"],\"errors\":[]},\"error_message\":null}",
+                    "type": "text"
+                  }
+                ]
+              },
+              "id": 201
+            },
+            "ok": true,
+            "text": "{\"action\":\"rename\",\"success\":true,\"changes\":[{\"file\":\"/tmp/cognicode-python-refactor-_224oq4z/hello.py\",\"old_text\":\"greet\",\"new_text\":\"greet_renamed\",\"location\":{\"file\":\"/tmp/cognicode-python-refactor-_224oq4z/hello.py\",\"line\":3,\"column\":4}},{\"file\":\"/tmp/cognicode-python-refactor-_224oq4z/hello.py\",\"old_text\":\"greet\",\"new_text\":\"greet_renamed\",\"location\":{\"file\":\"/tmp/cognicode-python-refactor-_224oq4z/hello.py\",\"line\":24,\"column\":10}}],\"validation_result\":{\"is_valid\":true,\"warnings\":[\"Impact: 1 symbols affected\"],\"errors\":[]},\"error_message\":null}",
+            "parsed_text": {
+              "action": "rename",
+              "success": true,
+              "changes": [
+                {
+                  "file": "/tmp/cognicode-python-refactor-_224oq4z/hello.py",
+                  "old_text": "greet",
+                  "new_text": "greet_renamed",
+                  "location": {
+                    "file": "/tmp/cognicode-python-refactor-_224oq4z/hello.py",
+                    "line": 3,
+                    "column": 4
+                  }
+                },
+                {
+                  "file": "/tmp/cognicode-python-refactor-_224oq4z/hello.py",
+                  "old_text": "greet",
+                  "new_text": "greet_renamed",
+                  "location": {
+                    "file": "/tmp/cognicode-python-refactor-_224oq4z/hello.py",
+                    "line": 24,
+                    "column": 10
+                  }
+                }
+              ],
+              "validation_result": {
+                "is_valid": true,
+                "warnings": [
+                  "Impact: 1 symbols affected"
+                ],
+                "errors": []
+              },
+              "error_message": null
+            }
+          },
+          "stderr_tail": "\u001b[2m2026-04-11T10:46:19.011796Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:19.011863Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:19.017280Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:19.017303Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:19.017322Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n",
+          "file_after": "\"\"\"A simple greeting module.\"\"\"\n\n\ndef greet(name: str) -> str:\n    \"\"\"Return a greeting string.\"\"\"\n    return f\"Hello, {name}!\"\n\n\ndef add(a: int, b: int) -> int:\n    \"\"\"Add two numbers.\"\"\"\n    return a + b\n\n\ndef subtract(a: int, b: int) -> int:\n    \"\"\"Subtract two numbers.\"\"\"\n    return a - b\n\n\ndef multiply(a: int, b: int) -> int:\n    \"\"\"Multiply two numbers (used for mutation testing only).\"\"\"\n    return a * b\n\n\nif __name__ == \"__main__\":\n    print(greet(\"CogniCode\"))\n    print(f\"2 + 3 = {add(2, 3)}\")\n"
+        }
+      },
+      "graph_stderr_tail": "\u001b[2m2026-04-11T10:46:18.944430Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.Built\"\n\u001b[2m2026-04-11T10:46:18.944487Z\u001b[0m \u001b[32m INFO\u001b[0m  \u001b[3mname\u001b[0m\u001b[2m=\u001b[0m\"MeterProvider.GlobalSet\" Global meter provider is set. Meters can now be created using global::meter() or global::meter_with_scope().\n\u001b[2m2026-04-11T10:46:18.949771Z\u001b[0m \u001b[32m INFO\u001b[0m Rayon global thread pool initialized with 8 MB stack size\n\u001b[2m2026-04-11T10:46:18.949797Z\u001b[0m \u001b[32m INFO\u001b[0m Starting CogniCode MCP Server v0.1.0\n\u001b[2m2026-04-11T10:46:18.949814Z\u001b[0m \u001b[32m INFO\u001b[0m MCP server starting...\n"
+    }
+  }
+}
