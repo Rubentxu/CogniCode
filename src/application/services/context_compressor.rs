@@ -3,11 +3,11 @@
 //! Transforms verbose JSON responses into compressed natural language summaries
 //! to reduce token usage while preserving critical information.
 
-use crate::domain::aggregates::call_graph::CallGraph;
-use crate::interface::mcp::schemas::{
-    AnalyzeImpactOutput, CallEntry, GetCallHierarchyOutput, GetFileSymbolsOutput, RiskLevel,
-    SymbolInfo, SymbolKind,
+use crate::application::dto::{
+    AnalyzeImpactResult, CallHierarchyEntry, GetCallHierarchyResult, GetFileSymbolsResult,
+    RiskLevel, SymbolKind, SymbolSummary,
 };
+use crate::domain::aggregates::call_graph::CallGraph;
 
 /// Service for compressing JSON responses into natural language summaries
 pub struct ContextCompressorService;
@@ -25,7 +25,7 @@ impl ContextCompressorService {
     ///  process_order calls validate + compute_total. No external deps."
     pub fn compress_symbols(
         &self,
-        output: &GetFileSymbolsOutput,
+        output: &GetFileSymbolsResult,
         graph: Option<&CallGraph>,
     ) -> String {
         let file_path = &output.file_path;
@@ -130,7 +130,7 @@ impl ContextCompressorService {
     }
 
     /// Compresses call hierarchy into a natural language summary
-    pub fn compress_call_hierarchy(&self, output: &GetCallHierarchyOutput) -> String {
+    pub fn compress_call_hierarchy(&self, output: &GetCallHierarchyResult) -> String {
         let symbol = &output.symbol;
         let calls = &output.calls;
         let metadata = &output.metadata;
@@ -148,7 +148,7 @@ impl ContextCompressorService {
         );
 
         // Group by file
-        let mut by_file: std::collections::HashMap<String, Vec<&CallEntry>> =
+        let mut by_file: std::collections::HashMap<String, Vec<&CallHierarchyEntry>> =
             std::collections::HashMap::new();
         for call in calls {
             by_file.entry(call.file.clone()).or_default().push(call);
@@ -166,7 +166,7 @@ impl ContextCompressorService {
     }
 
     /// Compresses impact analysis into a natural language summary
-    pub fn compress_impact(&self, output: &AnalyzeImpactOutput) -> String {
+    pub fn compress_impact(&self, output: &AnalyzeImpactResult) -> String {
         let symbol = &output.symbol;
         let risk = &output.risk_level;
         let files = &output.impacted_files;
@@ -231,16 +231,13 @@ impl ContextCompressorService {
     }
 
     /// Extracts call relationships between symbols
-    fn extract_call_relationships(&self, symbols: &[SymbolInfo], graph: &CallGraph) -> String {
+    fn extract_call_relationships(&self, symbols: &[SymbolSummary], graph: &CallGraph) -> String {
         let mut relationships = Vec::new();
 
-        for symbol in symbols.iter().filter(|s| {
-            matches!(
-                s.kind,
-                crate::interface::mcp::schemas::SymbolKind::Function
-                    | crate::interface::mcp::schemas::SymbolKind::Method
-            )
-        }) {
+        for symbol in symbols
+            .iter()
+            .filter(|s| matches!(s.kind, SymbolKind::Function | SymbolKind::Method))
+        {
             // Find what this symbol calls
             let symbol_id = crate::domain::aggregates::call_graph::SymbolId::new(format!(
                 "{}:{}:{}",
@@ -297,12 +294,12 @@ fn extract_type_name(file_path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interface::mcp::schemas::{SourceLocation, SymbolKind};
+    use crate::application::dto::{AnalysisMetadata, SourceLocation, SymbolKind};
 
     #[test]
     fn test_compress_empty_symbols() {
         let service = ContextCompressorService::new();
-        let output = GetFileSymbolsOutput {
+        let output = GetFileSymbolsResult {
             file_path: "test.rs".to_string(),
             symbols: vec![],
         };
@@ -314,10 +311,10 @@ mod tests {
     #[test]
     fn test_compress_functions_only() {
         let service = ContextCompressorService::new();
-        let output = GetFileSymbolsOutput {
+        let output = GetFileSymbolsResult {
             file_path: "order_service.rs".to_string(),
             symbols: vec![
-                SymbolInfo {
+                SymbolSummary {
                     name: "process_order".to_string(),
                     kind: SymbolKind::Function,
                     location: SourceLocation {
@@ -327,7 +324,7 @@ mod tests {
                     },
                     signature: Some("fn process_order(id: i32)".to_string()),
                 },
-                SymbolInfo {
+                SymbolSummary {
                     name: "validate".to_string(),
                     kind: SymbolKind::Function,
                     location: SourceLocation {
@@ -350,17 +347,17 @@ mod tests {
     #[test]
     fn test_compress_call_hierarchy() {
         let service = ContextCompressorService::new();
-        let output = GetCallHierarchyOutput {
+        let output = GetCallHierarchyResult {
             symbol: "process_order".to_string(),
             calls: vec![
-                CallEntry {
+                CallHierarchyEntry {
                     symbol: "validate".to_string(),
                     file: "order_service.rs".to_string(),
                     line: 58,
                     column: 0,
                     confidence: 1.0,
                 },
-                CallEntry {
+                CallHierarchyEntry {
                     symbol: "compute_total".to_string(),
                     file: "order_service.rs".to_string(),
                     line: 72,
@@ -368,7 +365,7 @@ mod tests {
                     confidence: 1.0,
                 },
             ],
-            metadata: crate::interface::mcp::schemas::AnalysisMetadata {
+            metadata: AnalysisMetadata {
                 total_calls: 2,
                 analysis_time_ms: 15,
             },
@@ -384,7 +381,7 @@ mod tests {
     #[test]
     fn test_compress_impact_low_risk() {
         let service = ContextCompressorService::new();
-        let output = AnalyzeImpactOutput {
+        let output = AnalyzeImpactResult {
             symbol: "helper_func".to_string(),
             impacted_files: vec!["main.rs".to_string()],
             impacted_symbols: vec!["main".to_string()],
@@ -400,7 +397,7 @@ mod tests {
     #[test]
     fn test_compress_impact_high_risk() {
         let service = ContextCompressorService::new();
-        let output = AnalyzeImpactOutput {
+        let output = AnalyzeImpactResult {
             symbol: "Config".to_string(),
             impacted_files: vec![
                 "main.rs".to_string(),
@@ -436,10 +433,10 @@ mod tests {
         let service = ContextCompressorService::new();
 
         // Real Python code with many symbols
-        let output = GetFileSymbolsOutput {
+        let output = GetFileSymbolsResult {
             file_path: "order_service.py".to_string(),
             symbols: vec![
-                SymbolInfo {
+                SymbolSummary {
                     name: "process_order".to_string(),
                     kind: SymbolKind::Function,
                     location: SourceLocation {
@@ -451,7 +448,7 @@ mod tests {
                         "def process_order(order_id: int, items: list) -> dict:".to_string(),
                     ),
                 },
-                SymbolInfo {
+                SymbolSummary {
                     name: "validate_order".to_string(),
                     kind: SymbolKind::Function,
                     location: SourceLocation {
@@ -461,7 +458,7 @@ mod tests {
                     },
                     signature: Some("def validate_order(order: dict) -> bool:".to_string()),
                 },
-                SymbolInfo {
+                SymbolSummary {
                     name: "compute_total".to_string(),
                     kind: SymbolKind::Function,
                     location: SourceLocation {
@@ -471,7 +468,7 @@ mod tests {
                     },
                     signature: Some("def compute_total(items: list) -> float:".to_string()),
                 },
-                SymbolInfo {
+                SymbolSummary {
                     name: "save_order".to_string(),
                     kind: SymbolKind::Function,
                     location: SourceLocation {
@@ -481,7 +478,7 @@ mod tests {
                     },
                     signature: Some("def save_order(order: dict) -> int:".to_string()),
                 },
-                SymbolInfo {
+                SymbolSummary {
                     name: "send_confirmation".to_string(),
                     kind: SymbolKind::Function,
                     location: SourceLocation {
@@ -521,10 +518,10 @@ mod tests {
         let service = ContextCompressorService::new();
 
         // Real Rust code with structs and impl blocks
-        let output = GetFileSymbolsOutput {
+        let output = GetFileSymbolsResult {
             file_path: "order_service.rs".to_string(),
             symbols: vec![
-                SymbolInfo {
+                SymbolSummary {
                     name: "Order".to_string(),
                     kind: SymbolKind::Struct,
                     location: SourceLocation {
@@ -534,7 +531,7 @@ mod tests {
                     },
                     signature: Some("struct Order { id, items, total }".to_string()),
                 },
-                SymbolInfo {
+                SymbolSummary {
                     name: "OrderService".to_string(),
                     kind: SymbolKind::Struct,
                     location: SourceLocation {
@@ -544,7 +541,7 @@ mod tests {
                     },
                     signature: Some("struct OrderService { database, queue }".to_string()),
                 },
-                SymbolInfo {
+                SymbolSummary {
                     name: "process".to_string(),
                     kind: SymbolKind::Method,
                     location: SourceLocation {
@@ -554,7 +551,7 @@ mod tests {
                     },
                     signature: Some("fn process(&self, order: Order) -> Result<()>".to_string()),
                 },
-                SymbolInfo {
+                SymbolSummary {
                     name: "validate".to_string(),
                     kind: SymbolKind::Method,
                     location: SourceLocation {
@@ -564,7 +561,7 @@ mod tests {
                     },
                     signature: Some("fn validate(&self, order: &Order) -> bool".to_string()),
                 },
-                SymbolInfo {
+                SymbolSummary {
                     name: "calculate_total".to_string(),
                     kind: SymbolKind::Method,
                     location: SourceLocation {
@@ -603,18 +600,18 @@ mod tests {
         let service = ContextCompressorService::new();
 
         // Multi-level call hierarchy
-        let output = GetCallHierarchyOutput {
+        let output = GetCallHierarchyResult {
             symbol: "main".to_string(),
             calls: vec![
                 // Level 1 callers
-                CallEntry {
+                CallHierarchyEntry {
                     symbol: "init".to_string(),
                     file: "main.rs".to_string(),
                     line: 10,
                     column: 0,
                     confidence: 1.0,
                 },
-                CallEntry {
+                CallHierarchyEntry {
                     symbol: "process".to_string(),
                     file: "main.rs".to_string(),
                     line: 15,
@@ -622,7 +619,7 @@ mod tests {
                     confidence: 1.0,
                 },
                 // Level 2 callers (from different file)
-                CallEntry {
+                CallHierarchyEntry {
                     symbol: "cleanup".to_string(),
                     file: "utils.rs".to_string(),
                     line: 50,
@@ -630,7 +627,7 @@ mod tests {
                     confidence: 0.95,
                 },
             ],
-            metadata: crate::interface::mcp::schemas::AnalysisMetadata {
+            metadata: AnalysisMetadata {
                 total_calls: 3,
                 analysis_time_ms: 25,
             },
@@ -650,7 +647,7 @@ mod tests {
         let service = ContextCompressorService::new();
 
         // Critical risk with many impacted files
-        let output = AnalyzeImpactOutput {
+        let output = AnalyzeImpactResult {
             symbol: "DatabaseConnection".to_string(),
             impacted_files: vec![
                 "main.rs".to_string(),
@@ -684,7 +681,7 @@ mod tests {
     fn test_compress_impact_no_impacted_files() {
         let service = ContextCompressorService::new();
 
-        let output = AnalyzeImpactOutput {
+        let output = AnalyzeImpactResult {
             symbol: "unused_helper".to_string(),
             impacted_files: vec![],
             impacted_symbols: vec![],
@@ -702,10 +699,10 @@ mod tests {
     fn test_compress_symbols_mixed_kinds() {
         let service = ContextCompressorService::new();
 
-        let output = GetFileSymbolsOutput {
+        let output = GetFileSymbolsResult {
             file_path: "mixed.rs".to_string(),
             symbols: vec![
-                SymbolInfo {
+                SymbolSummary {
                     name: "Config".to_string(),
                     kind: SymbolKind::Struct,
                     location: SourceLocation {
@@ -715,7 +712,7 @@ mod tests {
                     },
                     signature: None,
                 },
-                SymbolInfo {
+                SymbolSummary {
                     name: "init".to_string(),
                     kind: SymbolKind::Function,
                     location: SourceLocation {
@@ -725,7 +722,7 @@ mod tests {
                     },
                     signature: None,
                 },
-                SymbolInfo {
+                SymbolSummary {
                     name: "process".to_string(),
                     kind: SymbolKind::Method,
                     location: SourceLocation {
@@ -735,7 +732,7 @@ mod tests {
                     },
                     signature: None,
                 },
-                SymbolInfo {
+                SymbolSummary {
                     name: "Handler".to_string(),
                     kind: SymbolKind::Class,
                     location: SourceLocation {

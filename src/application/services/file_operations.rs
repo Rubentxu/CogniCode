@@ -7,17 +7,16 @@
 //! - search_content: Regex/literal search with .gitignore awareness
 //! - list_files: Directory listing with .gitignore filtering
 
+use crate::application::dto::{
+    ContentMatch, EditFileRequest, EditFileResult, EditValidation, FileEdit, FileEntry,
+    FileMetadata, ListFilesRequest, ListFilesResult, ReadFileRequest, ReadFileResult,
+    SearchContentRequest, SearchContentResult, WriteFileRequest, WriteFileResult,
+};
 use crate::application::error::{AppError, AppResult};
 use crate::domain::traits::Parser;
 use crate::domain::value_objects::SymbolKind;
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use crate::infrastructure::vfs::VirtualFileSystem;
-#[allow(unused_imports)]
-use crate::interface::mcp::schemas::{
-    ContentMatch, EditFileInput, EditFileOutput, EditValidation, FileEdit, FileEntry, FileMetadata,
-    ListFilesInput, ListFilesOutput, ReadFileInput, ReadFileOutput, SearchContentInput,
-    SearchContentOutput, WriteFileInput, WriteFileOutput,
-};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use ignore::WalkBuilder;
 use regex::Regex;
@@ -152,7 +151,7 @@ impl FileOperationsService {
     /// - If continuation_token is provided, decode it to resume from offset
     /// - If chunk_size is provided, read that many bytes (extend to line boundary)
     /// - has_more and next_token indicate if there's more content
-    pub fn read_file(&self, input: ReadFileInput) -> AppResult<ReadFileOutput> {
+    pub fn read_file(&self, input: ReadFileRequest) -> AppResult<ReadFileResult> {
         // Reject empty path
         if input.path.trim().is_empty() || input.path == "." {
             return Err(AppError::InvalidParameter(
@@ -285,7 +284,7 @@ impl FileOperationsService {
         // Handle large file truncation warning
         let truncated = content.len() > 100_000;
 
-        Ok(ReadFileOutput {
+        Ok(ReadFileResult {
             content,
             total_lines,
             truncated,
@@ -300,7 +299,7 @@ impl FileOperationsService {
     }
 
     /// Reads file in outline mode - returns hierarchical structure
-    fn read_file_outline(&self, path: &str, input: &ReadFileInput) -> AppResult<String> {
+    fn read_file_outline(&self, path: &str, input: &ReadFileRequest) -> AppResult<String> {
         let content = fs::read_to_string(path)
             .map_err(|e| AppError::InvalidParameter(format!("Failed to read file: {}", e)))?;
 
@@ -352,7 +351,7 @@ impl FileOperationsService {
     }
 
     /// Reads file in symbols mode - extracts function/class signatures only
-    fn read_file_symbols(&self, path: &str, input: &ReadFileInput) -> AppResult<String> {
+    fn read_file_symbols(&self, path: &str, input: &ReadFileRequest) -> AppResult<String> {
         let content = fs::read_to_string(path)
             .map_err(|e| AppError::InvalidParameter(format!("Failed to read file: {}", e)))?;
 
@@ -409,7 +408,7 @@ impl FileOperationsService {
     /// - Removing import/use statements
     /// - Showing only first/last N symbols with ellipsis for omitted
     /// - Using tree-sitter for signature extraction when available
-    fn read_file_compressed(&self, path: &str, input: &ReadFileInput) -> AppResult<String> {
+    fn read_file_compressed(&self, path: &str, input: &ReadFileRequest) -> AppResult<String> {
         let content = fs::read_to_string(path)
             .map_err(|e| AppError::InvalidParameter(format!("Failed to read file: {}", e)))?;
 
@@ -781,7 +780,7 @@ impl FileOperationsService {
     ///
     /// Uses a temporary file and rename to ensure atomic writes.
     /// If create_dirs is true, creates parent directories if they don't exist.
-    pub fn write_file(&self, input: WriteFileInput) -> AppResult<WriteFileOutput> {
+    pub fn write_file(&self, input: WriteFileRequest) -> AppResult<WriteFileResult> {
         // For new files with create_dirs=true, create parent directories BEFORE validation
         // This is necessary because validate_path checks parent exists for new files
         let path_for_validation = if input.create_dirs.unwrap_or(false) {
@@ -841,7 +840,7 @@ impl FileOperationsService {
             AppError::InvalidParameter(format!("Failed to write file atomically: {}", e))
         })?;
 
-        Ok(WriteFileOutput {
+        Ok(WriteFileResult {
             bytes_written,
             metadata: self.build_file_metadata(&validated_path)?,
         })
@@ -851,7 +850,7 @@ impl FileOperationsService {
     ///
     /// Each edit must match exactly one occurrence. After applying all edits,
     /// the modified content is validated with tree-sitter for syntax errors.
-    pub fn edit_file(&self, input: EditFileInput) -> AppResult<EditFileOutput> {
+    pub fn edit_file(&self, input: EditFileRequest) -> AppResult<EditFileResult> {
         let validated_path = self.validate_path(&input.path)?;
 
         // Read current content
@@ -862,7 +861,7 @@ impl FileOperationsService {
         for edit in &input.edits {
             let matches: Vec<_> = original_content.match_indices(&edit.old_string).collect();
             if matches.is_empty() {
-                return Ok(EditFileOutput {
+                return Ok(EditFileResult {
                     applied: false,
                     validation: EditValidation {
                         passed: false,
@@ -877,7 +876,7 @@ impl FileOperationsService {
                 });
             }
             if matches.len() > 1 {
-                return Ok(EditFileOutput {
+                return Ok(EditFileResult {
                     applied: false,
                     validation: EditValidation {
                         passed: false,
@@ -905,7 +904,7 @@ impl FileOperationsService {
 
         // If content unchanged, return early
         if new_content == original_content {
-            return Ok(EditFileOutput {
+            return Ok(EditFileResult {
                 applied: false,
                 validation: EditValidation {
                     passed: true,
@@ -1004,7 +1003,7 @@ impl FileOperationsService {
             Some("syntax_rejected".to_string())
         };
 
-        Ok(EditFileOutput {
+        Ok(EditFileResult {
             applied,
             validation,
             preview: Some(format!("Changed {} bytes", bytes_changed)),
@@ -1026,7 +1025,7 @@ impl FileOperationsService {
     ///
     /// Supports literal and regex patterns, case-insensitive search,
     /// and returns matches with surrounding context lines.
-    pub fn search_content(&self, input: SearchContentInput) -> AppResult<SearchContentOutput> {
+    pub fn search_content(&self, input: SearchContentRequest) -> AppResult<SearchContentResult> {
         let search_path = input
             .path
             .as_ref()
@@ -1118,7 +1117,7 @@ impl FileOperationsService {
 
         let total = matches.len();
 
-        Ok(SearchContentOutput {
+        Ok(SearchContentResult {
             matches,
             total,
             files_scanned,
@@ -1319,7 +1318,7 @@ impl FileOperationsService {
     /// Lists files in a directory with .gitignore-aware traversal
     ///
     /// Returns file entries with metadata, supporting pagination and glob filtering.
-    pub fn list_files(&self, input: ListFilesInput) -> AppResult<ListFilesOutput> {
+    pub fn list_files(&self, input: ListFilesRequest) -> AppResult<ListFilesResult> {
         let search_path = input
             .path
             .as_ref()
@@ -1428,7 +1427,7 @@ impl FileOperationsService {
         entries.truncate(offset.saturating_add(limit));
         let files = entries.into_iter().skip(offset).take(limit).collect();
 
-        Ok(ListFilesOutput {
+        Ok(ListFilesResult {
             files,
             total,
             depth_traversed: Some(max_depth_reached),
@@ -1457,7 +1456,7 @@ mod tests {
 
         let service =
             FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
-        let input = ReadFileInput {
+        let input = ReadFileRequest {
             path: file.path().to_str().unwrap().to_string(),
             start_line: None,
             end_line: None,
@@ -1486,7 +1485,7 @@ mod tests {
 
         let service =
             FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
-        let input = ReadFileInput {
+        let input = ReadFileRequest {
             path: file.path().to_str().unwrap().to_string(),
             start_line: Some(2),
             end_line: Some(3),
@@ -1511,7 +1510,7 @@ mod tests {
 
         let service =
             FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
-        let input = ReadFileInput {
+        let input = ReadFileRequest {
             path: file.path().to_str().unwrap().to_string(),
             start_line: None,
             end_line: None,
@@ -1536,7 +1535,7 @@ mod tests {
         std::fs::write(&binary_path, &[0x89, 0x50, 0x4E, 0x47]).unwrap();
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
-        let input = ReadFileInput {
+        let input = ReadFileRequest {
             path: binary_path.to_string_lossy().to_string(),
             start_line: None,
             end_line: None,
@@ -1600,7 +1599,7 @@ mod tests {
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
 
         // Try to access a path outside workspace
-        let input = ReadFileInput {
+        let input = ReadFileRequest {
             path: "/etc/passwd".to_string(),
             start_line: None,
             end_line: None,
@@ -1788,7 +1787,7 @@ mod tests {
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
 
         // Get first 5
-        let input = ListFilesInput {
+        let input = ListFilesRequest {
             path: None,
             glob: Some("*.txt".to_string()),
             offset: Some(0),
@@ -1817,7 +1816,7 @@ mod tests {
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
 
-        let input = ListFilesInput {
+        let input = ListFilesRequest {
             path: None,
             glob: Some("*.rs".to_string()),
             offset: None,
@@ -1884,7 +1883,7 @@ mod tests {
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
 
-        let input = ListFilesInput {
+        let input = ListFilesRequest {
             path: None,
             glob: None,
             offset: None,
@@ -1930,7 +1929,7 @@ mod tests {
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
 
-        let input = ListFilesInput {
+        let input = ListFilesRequest {
             path: None,
             glob: None,
             offset: None,
@@ -1978,7 +1977,7 @@ mod tests {
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
 
-        let input = ListFilesInput {
+        let input = ListFilesRequest {
             path: None,
             glob: None,
             offset: None,
@@ -2019,7 +2018,7 @@ mod tests {
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
 
         // Default: no recursive or max_depth specified
-        let input = ListFilesInput {
+        let input = ListFilesRequest {
             path: None,
             glob: Some("*.txt".to_string()),
             offset: None,
@@ -2245,7 +2244,7 @@ mod tests {
         fs::write(&file_path, &content).unwrap();
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
-        let input = ReadFileInput {
+        let input = ReadFileRequest {
             path: file_path.to_str().unwrap().to_string(),
             start_line: None,
             end_line: None,
@@ -2274,7 +2273,7 @@ mod tests {
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
 
         // First read with small chunk
-        let input1 = ReadFileInput {
+        let input1 = ReadFileRequest {
             path: file_path.to_str().unwrap().to_string(),
             start_line: None,
             end_line: None,
@@ -2288,7 +2287,7 @@ mod tests {
 
         // If there's more content, use the continuation token
         if let Some(token) = &result1.next_token {
-            let input2 = ReadFileInput {
+            let input2 = ReadFileRequest {
                 path: file_path.to_str().unwrap().to_string(),
                 start_line: None,
                 end_line: None,
@@ -2316,7 +2315,7 @@ mod tests {
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
 
         // Request a chunk size that would cut a line (but not at newline boundary)
-        let input = ReadFileInput {
+        let input = ReadFileRequest {
             path: file_path.to_str().unwrap().to_string(),
             start_line: None,
             end_line: None,
@@ -2350,7 +2349,7 @@ mod tests {
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
 
         // Even with chunk_size, outline mode should ignore it and return full outline
-        let input = ReadFileInput {
+        let input = ReadFileRequest {
             path: file_path.to_str().unwrap().to_string(),
             start_line: None,
             end_line: None,

@@ -1,7 +1,7 @@
 //! MCP Handlers - Implementation of MCP tool handlers
 
 use crate::application::commands::{ChangeSignatureCommand, MoveSymbolCommand, ParameterDefinition, RenameSymbolCommand};
-use crate::application::dto::SymbolDto;
+use crate::application::dto::{GetFileSymbolsResult, SymbolDto};
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::context_compressor::ContextCompressorService;
 use crate::application::services::refactor_service::RefactorService;
@@ -420,7 +420,9 @@ pub async fn handle_get_file_symbols(
     if input.compressed {
         let graph_cache = ctx.analysis_service.graph_cache();
         let graph = graph_cache.get_ref();
-        let summary = ctx.compressor.compress_symbols(&output, Some(graph));
+        // Convert to DTO for compression
+        let output_dto: GetFileSymbolsResult = output.into();
+        let summary = ctx.compressor.compress_symbols(&output_dto, Some(graph));
         Ok(serde_json::json!({
             "compressed": true,
             "summary": summary,

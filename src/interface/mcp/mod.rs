@@ -1,6 +1,7 @@
 //! MCP Interface - Model Context Protocol implementation
 
 pub mod completion;
+pub mod dto_mapping;
 pub mod file_ops_handlers;
 pub mod handlers;
 pub mod prompts;

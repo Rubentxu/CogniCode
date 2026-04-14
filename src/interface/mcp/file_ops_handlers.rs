@@ -12,6 +12,7 @@
 use crate::application::services::file_operations::FileOperationsService;
 use crate::application::error::AppError;
 use crate::infrastructure::telemetry::{get_global_metrics, instrument_tool, ToolError};
+use crate::interface::mcp::dto_mapping::*;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::mcp::schemas::{
     EditFileInput, EditFileOutput, ListFilesInput, ListFilesOutput, ReadFileInput,
@@ -39,16 +40,17 @@ pub async fn handle_read_file(
         None => {
             // No metrics available, call service directly
             let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
-            return service
-                .read_file(input)
-                .map_err(HandlerError::App);
+            let dto_input: crate::application::dto::ReadFileRequest = input.into();
+            let dto_result = service.read_file(dto_input).map_err(HandlerError::App)?;
+            return Ok(dto_result.into());
         }
     };
     let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
     let mode = input.mode.clone();
+    let dto_input: crate::application::dto::ReadFileRequest = input.into();
 
     let result = instrument_tool(&metrics, "read_file", async {
-        match service.read_file(input) {
+        match service.read_file(dto_input) {
             Ok(output) => Ok(output),
             Err(e) => Err(app_error_to_tool_error(e)),
         }
@@ -57,8 +59,9 @@ pub async fn handle_read_file(
 
     match result {
         Ok(output) => {
-            metrics.record_bytes_read(output.metadata.size as f64, mode.as_deref().unwrap_or("raw"));
-            Ok(output)
+            let mcp_output: ReadFileOutput = output.into();
+            metrics.record_bytes_read(mcp_output.metadata.size as f64, mode.as_deref().unwrap_or("raw"));
+            Ok(mcp_output)
         }
         Err(e) => Err(HandlerError::App(AppError::InternalError(e.message))),
     }
@@ -76,15 +79,16 @@ pub async fn handle_write_file(
         Some(m) => m,
         None => {
             let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
-            return service
-                .write_file(input)
-                .map_err(HandlerError::App);
+            let dto_input: crate::application::dto::WriteFileRequest = input.into();
+            let dto_result = service.write_file(dto_input).map_err(HandlerError::App)?;
+            return Ok(dto_result.into());
         }
     };
     let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
+    let dto_input: crate::application::dto::WriteFileRequest = input.into();
 
     let result = instrument_tool(&metrics, "write_file", async {
-        match service.write_file(input) {
+        match service.write_file(dto_input) {
             Ok(output) => Ok(output),
             Err(e) => Err(app_error_to_tool_error(e)),
         }
@@ -93,8 +97,9 @@ pub async fn handle_write_file(
 
     match result {
         Ok(output) => {
-            metrics.record_bytes_written(output.bytes_written as f64);
-            Ok(output)
+            let mcp_output: WriteFileOutput = output.into();
+            metrics.record_bytes_written(mcp_output.bytes_written as f64);
+            Ok(mcp_output)
         }
         Err(e) => Err(HandlerError::App(AppError::InternalError(e.message))),
     }
@@ -114,15 +119,16 @@ pub async fn handle_edit_file(
         Some(m) => m,
         None => {
             let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
-            return service
-                .edit_file(input)
-                .map_err(HandlerError::App);
+            let dto_input: crate::application::dto::EditFileRequest = input.into();
+            let dto_result = service.edit_file(dto_input).map_err(HandlerError::App)?;
+            return Ok(dto_result.into());
         }
     };
     let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
+    let dto_input: crate::application::dto::EditFileRequest = input.into();
 
     let result = instrument_tool(&metrics, "edit_file", async {
-        match service.edit_file(input) {
+        match service.edit_file(dto_input) {
             Ok(output) => Ok(output),
             Err(e) => Err(app_error_to_tool_error(e)),
         }
@@ -131,13 +137,14 @@ pub async fn handle_edit_file(
 
     match result {
         Ok(output) => {
-            if !output.validation.passed {
+            let mcp_output: EditFileOutput = output.into();
+            if !mcp_output.validation.passed {
                 metrics.record_edit_rejected("syntax_error");
             }
-            if output.applied {
-                metrics.record_bytes_written(output.bytes_changed as f64);
+            if mcp_output.applied {
+                metrics.record_bytes_written(mcp_output.bytes_changed as f64);
             }
-            Ok(output)
+            Ok(mcp_output)
         }
         Err(e) => Err(HandlerError::App(AppError::InternalError(e.message))),
     }
@@ -157,15 +164,16 @@ pub async fn handle_search_content(
         Some(m) => m,
         None => {
             let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
-            return service
-                .search_content(input)
-                .map_err(HandlerError::App);
+            let dto_input: crate::application::dto::SearchContentRequest = input.into();
+            let dto_result = service.search_content(dto_input).map_err(HandlerError::App)?;
+            return Ok(dto_result.into());
         }
     };
     let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
+    let dto_input: crate::application::dto::SearchContentRequest = input.into();
 
     let result = instrument_tool(&metrics, "search_content", async {
-        match service.search_content(input) {
+        match service.search_content(dto_input) {
             Ok(output) => Ok(output),
             Err(e) => Err(app_error_to_tool_error(e)),
         }
@@ -174,9 +182,10 @@ pub async fn handle_search_content(
 
     match result {
         Ok(output) => {
-            metrics.record_search_matches(output.total as f64, "mixed");
-            metrics.record_files_scanned(output.files_scanned as f64);
-            Ok(output)
+            let mcp_output: SearchContentOutput = output.into();
+            metrics.record_search_matches(mcp_output.total as f64, "mixed");
+            metrics.record_files_scanned(mcp_output.files_scanned as f64);
+            Ok(mcp_output)
         }
         Err(e) => Err(HandlerError::App(AppError::InternalError(e.message))),
     }
@@ -196,15 +205,16 @@ pub async fn handle_list_files(
         Some(m) => m,
         None => {
             let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
-            return service
-                .list_files(input)
-                .map_err(HandlerError::App);
+            let dto_input: crate::application::dto::ListFilesRequest = input.into();
+            let dto_result = service.list_files(dto_input).map_err(HandlerError::App)?;
+            return Ok(dto_result.into());
         }
     };
     let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
+    let dto_input: crate::application::dto::ListFilesRequest = input.into();
 
     let result = instrument_tool(&metrics, "list_files", async {
-        match service.list_files(input) {
+        match service.list_files(dto_input) {
             Ok(output) => Ok(output),
             Err(e) => Err(app_error_to_tool_error(e)),
         }
@@ -213,8 +223,9 @@ pub async fn handle_list_files(
 
     match result {
         Ok(output) => {
-            metrics.record_files_scanned(output.total as f64);
-            Ok(output)
+            let mcp_output: ListFilesOutput = output.into();
+            metrics.record_files_scanned(mcp_output.total as f64);
+            Ok(mcp_output)
         }
         Err(e) => Err(HandlerError::App(AppError::InternalError(e.message))),
     }

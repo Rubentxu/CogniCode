@@ -7,6 +7,8 @@ pub mod commands;
 pub mod dto;
 pub mod error;
 pub mod services;
+pub mod workspace_session;
 
 // Re-export error types for convenience
 pub use error::{AppError, AppResult};
+pub use workspace_session::{WorkspaceSession, WorkspaceError, WorkspaceResult};
