@@ -72,6 +72,9 @@ pub enum CliCommand {
         /// Output format: text or json
         #[arg(long, default_value = "text")]
         format: String,
+        /// Workspace directory to detect languages and prioritize tools
+        #[arg(short, long, default_value = ".")]
+        cwd: String,
     },
 }
 
@@ -307,8 +310,8 @@ impl CommandExecutor {
                     eprintln!("Navigate command failed: {}", e);
                 }
             }
-            Some(CliCommand::Doctor { format }) => {
-                if let Err(e) = Self::execute_doctor(format).await {
+            Some(CliCommand::Doctor { format, cwd }) => {
+                if let Err(e) = Self::execute_doctor(format, cwd).await {
                     eprintln!("Doctor command failed: {}", e);
                 }
             }
@@ -932,59 +935,38 @@ impl CommandExecutor {
     }
 
     /// Execute doctor subcommand — check LSP server availability
-    async fn execute_doctor(format: &str) -> Result<(), Box<dyn std::error::Error>> {
-        use crate::infrastructure::lsp::tool_checker::ToolAvailabilityChecker;
+    async fn execute_doctor(format: &str, cwd: &str) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::interface::cli::doctor::{
+            format_doctor_json, format_doctor_text, run_doctor_checks,
+        };
 
-        let report = ToolAvailabilityChecker::doctor_report();
+        let workspace_path = std::path::Path::new(cwd);
+        let workspace_path = if workspace_path.exists() && workspace_path.is_dir() {
+            Some(workspace_path)
+        } else {
+            None
+        };
+
+        let report = run_doctor_checks(workspace_path);
 
         match format {
             "json" => {
-                println!("[");
-                let last = report.len().saturating_sub(1);
-                for (i, (lang, status)) in report.iter().enumerate() {
-                    let comma = if i < last { "," } else { "" };
-                    let path_str = status.binary_path.as_ref()
-                        .map(|p| p.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    let version_str = status.version.as_deref().unwrap_or("");
-                    println!(
-                        "  {{\"language\":\"{}\",\"lsp\":\"{}\",\"available\":{},\"path\":\"{}\",\"version\":\"{}\",\"install_command\":\"{}\"}}{}",
-                        lang.name(), lang.lsp_server_name(),
-                        status.available, path_str, version_str,
-                        status.install_command, comma
-                    );
-                }
-                println!("]");
+                println!("{}", format_doctor_json(&report));
             }
             _ => {
-                println!("LSP Server Availability Report");
-                println!("{}", "=".repeat(60));
-                println!("{:<12} {:<20} {:<10} {}", "Language", "LSP Server", "Status", "Path / Install");
-                println!("{}", "-".repeat(60));
-                for (lang, status) in &report {
-                    let detail = if status.available {
-                        status.binary_path.as_ref()
-                            .map(|p| p.to_string_lossy().into_owned())
-                            .unwrap_or_default()
-                    } else {
-                        format!("Install: {}", status.install_command)
-                    };
-                    let status_str = if status.available { "OK" } else { "MISSING" };
-                    println!("{:<12} {:<20} {:<10} {}",
-                        lang.name(), lang.lsp_server_name(), status_str, detail);
-                    if status.available {
-                        if let Some(v) = &status.version {
-                            println!("{:<12} {:<20} {:<10} version: {}",
-                                "", "", "", v);
-                        }
-                    }
-                }
-                println!("{}", "-".repeat(60));
-                let available = report.iter().filter(|(_, s)| s.available).count();
-                println!("  {}/{} LSP servers available", available, report.len());
+                println!("{}", format_doctor_text(&report));
             }
         }
-        Ok(())
+
+        // Set exit code based on overall status
+        let exit_code = match report.overall_status() {
+            crate::interface::cli::doctor::DoctorStatus::Missing => 1,
+            crate::interface::cli::doctor::DoctorStatus::Ok
+            | crate::interface::cli::doctor::DoctorStatus::Warn
+            | crate::interface::cli::doctor::DoctorStatus::Info => 0,
+        };
+
+        std::process::exit(exit_code);
     }
 }
 

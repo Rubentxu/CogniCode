@@ -168,6 +168,18 @@ impl Language {
             Language::Go | Language::Java => "",
         }
     }
+
+    /// Returns all supported languages
+    pub fn all_languages() -> &'static [Self] {
+        &[
+            Language::Rust,
+            Language::Python,
+            Language::JavaScript,
+            Language::TypeScript,
+            Language::Go,
+            Language::Java,
+        ]
+    }
 }
 
 /// Tree-sitter based parser implementation
