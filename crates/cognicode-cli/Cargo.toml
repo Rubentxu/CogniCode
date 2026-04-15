@@ -1,0 +1,21 @@
+[package]
+name = "cognicode-cli"
+description = "CogniCode CLI"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "cognicode"
+path = "src/main.rs"
+
+[dependencies]
+cognicode-core.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+rayon.workspace = true

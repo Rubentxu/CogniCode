@@ -1,17 +1,20 @@
-[package]
-name = "cognicode"
+[workspace]
+resolver = "2"
+members = [
+    "crates/cognicode-core",
+    "crates/cognicode-mcp",
+    "crates/cognicode-cli",
+    "crates/cognicode-sandbox",
+]
+
+[workspace.package]
 version = "0.2.0"
 edition = "2021"
 authors = ["CogniCode Team"]
-description = "Premium LSP server in Rust for AI agents with code analysis and refactoring capabilities"
 
-[features]
-default = []
-rig = ["dep:rig-core"]
-
-[dependencies]
-# LSP Protocol
-lsp-types = "0.93"
+[workspace.dependencies]
+# Internal
+cognicode-core = { path = "crates/cognicode-core" }
 
 # Parsing
 tree-sitter = "0.24"
@@ -25,87 +28,70 @@ tree-sitter-java = "0.23"
 # Grafos
 petgraph = "0.6"
 
-# Async Runtime
+# Async
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "signal", "process", "io-util"] }
+async-trait = "0.1"
+futures-util = "0.3"
 
-# Serialización
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-
-# Async Utils
-futures-util = "0.3"
+serde_yaml = "0.9"
 
 # Error Handling
 anyhow = "1.0"
 thiserror = "1.0"
 
-# Additional
-async-trait = "0.1"
+# Collections
 arc-swap = "1.0"
 dashmap = "5"
-ignore = "0.4"
 indexmap = "2"
 parking_lot = "0.12"
-time = "0.3"
+
+# Filesystem
+ignore = "0.4"
 walkdir = "2"
+tempfile = "3.8"
+glob = "0.3"
+
+# Time
+chrono = { version = "0.4", features = ["clock"] }
+time = "0.3"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Regex
+regex = "1"
+
+# Base64
+base64 = "0.22"
+
+# Parallelism
+rayon = "1.11.0"
+
+# LSP
+lsp-types = "0.93"
 
 # OpenTelemetry
 opentelemetry = "0.27"
 opentelemetry_sdk = { version = "0.27", features = ["metrics", "rt-tokio"] }
 opentelemetry-otlp = { version = "0.27", features = ["metrics", "grpc-tonic"] }
 
-# Logging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Mermaid Rendering (pure Rust)
+# Mermaid
 mermaid-rs-renderer = { version = "0.2", default-features = false }
 
 # CLI
 clap = { version = "4.4", features = ["derive"] }
 
-# Temp directories for workspace isolation
-tempfile = "3.8"
-
-# Serialization for sandbox orchestrator
-serde_yaml = "0.9"
-glob = "0.3"
-chrono = { version = "0.4", features = ["clock"] }
-
-# Regex for search_content
-regex = "1"
-
-# Base64 for continuation tokens
-base64 = "0.22"
-rayon = "1.11.0"
-
-# Rig-core for agent framework (optional)
-rig-core = { version = "0.35", default-features = false, features = ["rustls"], optional = true }
-
-# MCP SDK (Model Context Protocol)
+# MCP
 rmcp = { version = "1.4", features = ["server", "transport-io", "client", "transport-child-process", "which-command"] }
 process-wrap = "9.1"
 
-[dev-dependencies]
+# Rig-core (optional)
+rig-core = { version = "0.35", default-features = false, features = ["rustls"] }
+
+# Dev deps
 tokio-test = "0.4"
 mockall = "0.11"
-tempfile = "3.8"
-
-[[bin]]
-name = "cognicode"
-path = "src/main.rs"
-
-[[bin]]
-name = "cognicode-mcp"
-path = "src/bin/mcp_server.rs"
-
-[[bin]]
-name = "mcp-client"
-path = "src/bin/mcp_client.rs"
-
-[[bin]]
-name = "sandbox-orchestrator"
-path = "src/bin/sandbox_orchestrator.rs"
-
-
-

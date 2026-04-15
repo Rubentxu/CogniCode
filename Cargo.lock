@@ -354,7 +354,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "cognicode"
+name = "cognicode-cli"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "cognicode-core",
+ "rayon",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "cognicode-core"
 version = "0.2.0"
 dependencies = [
  "anyhow",
@@ -398,6 +413,46 @@ dependencies = [
  "tree-sitter-python",
  "tree-sitter-rust",
  "tree-sitter-typescript",
+ "walkdir",
+]
+
+[[package]]
+name = "cognicode-mcp"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "cognicode-core",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "process-wrap",
+ "rayon",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "cognicode-sandbox"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "cognicode-core",
+ "glob",
+ "rayon",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
  "walkdir",
 ]
 

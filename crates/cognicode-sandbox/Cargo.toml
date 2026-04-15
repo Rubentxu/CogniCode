@@ -1,0 +1,26 @@
+[package]
+name = "cognicode-sandbox"
+description = "CogniCode Sandbox Orchestrator"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "sandbox-orchestrator"
+path = "src/main.rs"
+
+[dependencies]
+cognicode-core.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+chrono.workspace = true
+walkdir.workspace = true
+tempfile.workspace = true
+glob.workspace = true
+rayon.workspace = true
+clap.workspace = true

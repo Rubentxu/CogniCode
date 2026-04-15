@@ -1,0 +1,92 @@
+[package]
+name = "cognicode-core"
+description = "Code intelligence library for AI agents"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[features]
+default = []
+rig = ["dep:rig-core"]
+
+[dependencies]
+# Parsing
+tree-sitter.workspace = true
+tree-sitter-python.workspace = true
+tree-sitter-rust.workspace = true
+tree-sitter-javascript.workspace = true
+tree-sitter-typescript.workspace = true
+tree-sitter-go.workspace = true
+tree-sitter-java.workspace = true
+
+# Grafos
+petgraph.workspace = true
+
+# Async
+tokio.workspace = true
+async-trait.workspace = true
+futures-util.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+
+# Error Handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Collections
+arc-swap.workspace = true
+dashmap.workspace = true
+indexmap.workspace = true
+parking_lot.workspace = true
+
+# Filesystem
+ignore.workspace = true
+walkdir.workspace = true
+tempfile.workspace = true
+glob.workspace = true
+
+# Time
+chrono.workspace = true
+time.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Regex
+regex.workspace = true
+
+# Base64
+base64.workspace = true
+
+# Parallelism
+rayon.workspace = true
+
+# LSP
+lsp-types.workspace = true
+
+# OpenTelemetry
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-otlp.workspace = true
+
+# Mermaid
+mermaid-rs-renderer.workspace = true
+
+# CLI
+clap.workspace = true
+
+# MCP
+rmcp.workspace = true
+process-wrap.workspace = true
+
+# Rig-core (optional)
+rig-core = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio-test.workspace = true
+mockall.workspace = true
+tempfile.workspace = true

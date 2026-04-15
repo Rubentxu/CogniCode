@@ -3,7 +3,7 @@
 //! This binary provides the command-line interface for CogniCode.
 
 use clap::Parser;
-use cognicode::{Cli, CommandExecutor};
+use cognicode_core::{Cli, CommandExecutor};
 use rayon::ThreadPoolBuilder;
 use tracing::info;
 

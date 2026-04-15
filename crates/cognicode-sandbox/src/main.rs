@@ -19,19 +19,19 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use walkdir::WalkDir;
 
-use cognicode::sandbox_core::artifacts::{
+use cognicode_core::sandbox_core::artifacts::{
     PipelineStageResult, ResourceUsage, ScenarioResult, Summary, Timing, ValidationResult,
 };
-use cognicode::sandbox_core::failure::FailureClass;
-use cognicode::sandbox_core::ground_truth::GroundTruth;
-use cognicode::sandbox_core::history::{
+use cognicode_core::sandbox_core::failure::FailureClass;
+use cognicode_core::sandbox_core::ground_truth::GroundTruth;
+use cognicode_core::sandbox_core::history::{
     append_run, compute_dimension_averages, compute_health_from_averages, compute_trends, RunEntry,
     TrendDirection,
 };
-use cognicode::sandbox_core::manifest::{ExpandedScenario, Manifest};
-use cognicode::sandbox_core::mcp_core::{CapturedCall, McpError, McpServer};
-use cognicode::sandbox_core::resource::{compute_delta, take_snapshot};
-use cognicode::sandbox_core::scoring::{
+use cognicode_core::sandbox_core::manifest::{ExpandedScenario, Manifest};
+use cognicode_core::sandbox_core::mcp_core::{CapturedCall, McpError, McpServer};
+use cognicode_core::sandbox_core::resource::{compute_delta, take_snapshot};
+use cognicode_core::sandbox_core::scoring::{
     build_benchmark_result, compute_consistency_score, compute_latency_score,
     compute_robustness_score, compute_scalability_score, score_scenario, DimensionScores,
     ExecutionMetadata, MetricsDefinition,
@@ -1432,7 +1432,7 @@ fn aggregate_summary(results: &[ScenarioResult]) -> Summary {
         let lang_entry = summary
             .by_language
             .entry(r.language.clone())
-            .or_insert_with(|| cognicode::sandbox_core::artifacts::LanguageBreakdown::new());
+            .or_insert_with(|| cognicode_core::sandbox_core::artifacts::LanguageBreakdown::new());
         lang_entry.total += 1;
         if r.outcome == "pass" || r.outcome == "expected_fail" || r.outcome == "preexisting_fail" {
             lang_entry.passed += 1;
@@ -1450,7 +1450,7 @@ fn aggregate_summary(results: &[ScenarioResult]) -> Summary {
         let tool_entry = summary
             .by_tool
             .entry(r.tool.clone())
-            .or_insert_with(|| cognicode::sandbox_core::artifacts::ToolBreakdown::new());
+            .or_insert_with(|| cognicode_core::sandbox_core::artifacts::ToolBreakdown::new());
         tool_entry.total += 1;
         if r.outcome == "pass" || r.outcome == "expected_fail" || r.outcome == "preexisting_fail" {
             tool_entry.passed += 1;
@@ -2377,8 +2377,8 @@ mod edit_file_schema_tests {
 #[cfg(test)]
 mod protocol_violation_tests {
     use super::*;
-    use cognicode::sandbox_core::artifacts::ValidationResult;
-    use cognicode::sandbox_core::manifest::{ExpandedScenario, ValidationPipeline};
+    use cognicode_core::sandbox_core::artifacts::ValidationResult;
+    use cognicode_core::sandbox_core::manifest::{ExpandedScenario, ValidationPipeline};
     use std::collections::HashMap;
 
     /// Create a minimal ExpandedScenario for testing.

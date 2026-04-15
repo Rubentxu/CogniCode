@@ -1,7 +1,7 @@
 //! CogniCode MCP Server Binary
 
 use clap::Parser;
-use cognicode::interface::mcp::CogniCodeHandler;
+use cognicode_core::interface::mcp::CogniCodeHandler;
 use opentelemetry::global;
 use opentelemetry_otlp::MetricExporter;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     global::set_meter_provider(meter_provider);
 
     // Initialize global tool metrics
-    if let Err(e) = cognicode::infrastructure::telemetry::init_global_metrics() {
+    if let Err(e) = cognicode_core::infrastructure::telemetry::init_global_metrics() {
         tracing::warn!("Failed to initialize global metrics: {}", e);
     }
 

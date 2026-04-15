@@ -1,0 +1,30 @@
+[package]
+name = "cognicode-mcp"
+description = "CogniCode MCP Server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "cognicode-mcp"
+path = "src/main.rs"
+
+[[bin]]
+name = "mcp-client"
+path = "src/mcp_client.rs"
+
+[dependencies]
+cognicode-core.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rmcp.workspace = true
+process-wrap.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-otlp.workspace = true
+clap.workspace = true
+rayon.workspace = true
