@@ -284,16 +284,20 @@ impl CommandExecutor {
 
         match &cli.command {
             Some(CliCommand::Analyze { path }) => {
-                info!("Analyzing code at: {}", path);
-                // TODO: Implement analyze command
+                if let Err(e) = Self::execute_analyze(path).await {
+                    eprintln!("Analyze command failed: {}", e);
+                }
             }
             Some(CliCommand::Serve { port }) => {
-                info!("Starting MCP server on port: {}", port);
-                // TODO: Implement serve command
+                eprintln!("Use 'cognicode-mcp' binary to start the MCP server.");
+                eprintln!("The MCP server uses stdio transport, not TCP ports.");
+                eprintln!("Run: cognicode-mcp --cwd <workspace>");
+                let _ = port;
             }
             Some(CliCommand::Refactor { operation, symbol, new_name }) => {
-                info!("Refactoring: {:?} - {} -> {:?}", operation, symbol, new_name);
-                // TODO: Implement refactor command
+                if let Err(e) = Self::execute_refactor(operation, symbol, new_name.as_deref()).await {
+                    eprintln!("Refactor command failed: {}", e);
+                }
             }
             Some(CliCommand::Index { command }) => {
                 if let Err(e) = Self::execute_index(command).await {
@@ -376,7 +380,9 @@ impl CommandExecutor {
                 println!("Getting outline for: {}", file);
 
                 let source = std::fs::read_to_string(file)?;
-                let language = Language::Rust; // TODO: detect from file extension
+                let language = Language::from_extension(
+                    std::path::Path::new(file).extension()
+                ).unwrap_or(Language::Rust);
 
                 let outline = crate::infrastructure::semantic::build_outline(
                     &source, file, language, *include_private, *include_tests
@@ -967,6 +973,106 @@ impl CommandExecutor {
         };
 
         std::process::exit(exit_code);
+    }
+
+    /// Execute analyze subcommand
+    async fn execute_analyze(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::WorkspaceSession;
+
+        println!("Analyzing code at: {}", path);
+
+        let session = WorkspaceSession::new(path).await
+            .map_err(|e| anyhow::anyhow!("Failed to create session: {}", e))?;
+
+        // Architecture check
+        println!("\n=== Architecture Check ===");
+        match session.check_architecture(None).await {
+            Ok(result) => {
+                println!("  Score: {:.1}/100", result.score);
+                println!("  Summary: {}", result.summary);
+                println!("  Cycles: {}", result.cycles.len());
+                println!("  Violations: {}", result.violations.len());
+            }
+            Err(e) => {
+                eprintln!("  Architecture check failed: {}", e);
+            }
+        }
+
+        // Complexity check on key files
+        println!("\n=== Complexity Analysis ===");
+        let session_ref = &session;
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.filter_map(Result::ok).take(5) {
+                let p = entry.path();
+                if p.extension().and_then(|s| s.to_str()) == Some("rs") {
+                    if let Some(name) = p.file_name().and_then(|s| s.to_str()) {
+                        match session_ref.get_complexity(name, None).await {
+                            Ok(c) => {
+                                println!("  {}: cyclomatic={}, cognitive={}, loc={}",
+                                    name, c.cyclomatic, c.cognitive, c.lines_of_code);
+                            }
+                            Err(_) => {}
+                        }
+                    }
+                }
+            }
+        }
+
+        println!("\nAnalysis complete.");
+        Ok(())
+    }
+
+    /// Execute refactor subcommand
+    async fn execute_refactor(
+        operation: &RefactorOperation,
+        symbol: &str,
+        new_name: Option<&str>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::WorkspaceSession;
+
+        let path = ".";
+
+        let session = WorkspaceSession::new(path).await
+            .map_err(|e| anyhow::anyhow!("Failed to create session: {}", e))?;
+
+        match operation {
+            RefactorOperation::Rename => {
+                let new_name = new_name.ok_or_else(|| anyhow::anyhow!("Rename requires a new name"))?;
+                println!("Renaming '{}' to '{}'...", symbol, new_name);
+                match session.rename_symbol(symbol, new_name, "<unknown>").await {
+                    Ok(result) => {
+                        if result.success {
+                            println!("  Success: {} change(s) made", result.changes.len());
+                        } else {
+                            println!("  Failed: {}", result.error_message.as_deref().unwrap_or("unknown error"));
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("  Error: {}", e);
+                    }
+                }
+            }
+            RefactorOperation::Inline => {
+                println!("Inlining '{}'...", symbol);
+                match session.inline_symbol(symbol, "<unknown>").await {
+                    Ok(result) => {
+                        if result.success {
+                            println!("  Success");
+                        } else {
+                            println!("  Failed: {}", result.error_message.as_deref().unwrap_or("unknown error"));
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("  Error: {}", e);
+                    }
+                }
+            }
+            other => {
+                eprintln!("Operation {:?} not yet implemented via CLI. Use the MCP interface.", other);
+            }
+        }
+
+        Ok(())
     }
 }
 

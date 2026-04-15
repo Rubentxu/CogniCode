@@ -9,8 +9,8 @@ use tokio::sync::RwLock;
 
 use crate::application::dto::{
     AnalyzeImpactResult, ArchitectureResult, BuildIndexResult, CallHierarchyEntry,
-    ComplexityResult, GetCallHierarchyResult, RefactorResult, RiskLevel, SourceLocation,
-    SymbolDto, ChangeEntry, ValidationResult,
+    ComplexityResult, GetCallHierarchyResult, RefactorPreviewDto, RefactorResult, RiskLevel,
+    SourceLocation, SymbolDto, ChangeEntry, ValidationResult,
 };
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::file_operations::FileOperationsService;
@@ -780,6 +780,37 @@ impl WorkspaceSession {
                 success: false,
                 changes: Vec::new(),
                 validation_result: crate::application::dto::ValidationResult {
+                    is_valid: false,
+                    warnings: Vec::new(),
+                    errors: vec![e.to_string()],
+                },
+                error_message: Some(e.to_string()),
+            }),
+        }
+    }
+
+    /// Inline a symbol (replace usages with its definition)
+    pub async fn inline_symbol(&self, symbol: &str, file: &str) -> WorkspaceResult<RefactorResult> {
+        let path = self.resolve_path(file)?;
+        let path_str = path.to_string_lossy().into_owned();
+
+        match self.refactor.inline_symbol(&path_str, symbol) {
+            Ok(preview) => Ok(RefactorResult {
+                action: crate::application::dto::RefactorAction::Inline,
+                success: true,
+                changes: Vec::new(),
+                validation_result: ValidationResult {
+                    is_valid: true,
+                    warnings: vec![format!("Inline: {} symbols affected", preview.symbols_affected.len())],
+                    errors: Vec::new(),
+                },
+                error_message: None,
+            }),
+            Err(e) => Ok(RefactorResult {
+                action: crate::application::dto::RefactorAction::Inline,
+                success: false,
+                changes: Vec::new(),
+                validation_result: ValidationResult {
                     is_valid: false,
                     warnings: Vec::new(),
                     errors: vec![e.to_string()],
