@@ -13,6 +13,7 @@ use crate::application::dto::{
     ChangeEntry, ValidationResult,
 };
 use crate::application::services::analysis_service::AnalysisService;
+use crate::application::services::file_operations::FileOperationsService;
 use crate::application::services::refactor_service::RefactorService;
 use crate::domain::aggregates::CallGraph;
 use crate::infrastructure::semantic::{SearchQuery, SemanticSearchService, SymbolCodeService};
@@ -56,19 +57,14 @@ pub struct WorkspaceSession {
     analysis: Arc<AnalysisService>,
     /// Refactor service for rename, extract, inline operations
     refactor: Arc<RefactorService>,
-    /// File operations service (lazy - depends on DTO refactor completion)
-    file_ops: Arc<tokio::sync::RwLock<Option<FileOperationsServiceWrapper>>>,
+    /// File operations service
+    file_ops: Arc<FileOperationsService>,
     /// Semantic search service (lazy initialized)
     semantic_search: Arc<RwLock<Option<SemanticSearchService>>>,
     /// Symbol code extraction service
     symbol_code: Arc<SymbolCodeService>,
     /// Cached call graph (built on demand)
     graph: Arc<RwLock<Option<Arc<CallGraph>>>>,
-}
-
-/// Wrapper for file operations since the service is being refactored
-struct FileOperationsServiceWrapper {
-    // Placeholder - actual implementation depends on DTO refactor completion
 }
 
 impl WorkspaceSession {
@@ -87,7 +83,7 @@ impl WorkspaceSession {
         // Initialize services
         let analysis = Arc::new(AnalysisService::new());
         let refactor = Arc::new(RefactorService::new());
-        let file_ops = Arc::new(tokio::sync::RwLock::new(None));
+        let file_ops = Arc::new(FileOperationsService::new(root.display().to_string()));
         let semantic_search = Arc::new(RwLock::new(None));
         let symbol_code = Arc::new(SymbolCodeService::new());
         let graph = Arc::new(RwLock::new(None));
@@ -140,33 +136,38 @@ impl WorkspaceSession {
     /// Read a file with optional line range and mode
     ///
     /// Mode can be: "raw", "outline", "symbols", "compressed"
-    pub async fn read_file(&self, _request: crate::application::dto::ReadFileRequest) -> WorkspaceResult<crate::application::dto::ReadFileResult> {
-        // TODO: FileOperationsService is being refactored to use new DTOs
-        Err(WorkspaceError::NotImplemented("File operations pending DTO refactor".to_string()))
+    pub async fn read_file(&self, request: crate::application::dto::ReadFileRequest) -> WorkspaceResult<crate::application::dto::ReadFileResult> {
+        self.file_ops
+            .read_file(request)
+            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("{}", e)))
     }
 
     /// Write content to a file atomically
-    pub async fn write_file(&self, _request: crate::application::dto::WriteFileRequest) -> WorkspaceResult<crate::application::dto::WriteFileResult> {
-        // TODO: FileOperationsService is being refactored to use new DTOs
-        Err(WorkspaceError::NotImplemented("File operations pending DTO refactor".to_string()))
+    pub async fn write_file(&self, request: crate::application::dto::WriteFileRequest) -> WorkspaceResult<crate::application::dto::WriteFileResult> {
+        self.file_ops
+            .write_file(request)
+            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("{}", e)))
     }
 
     /// Apply string-replacement edits to a file
-    pub async fn edit_file(&self, _request: crate::application::dto::EditFileRequest) -> WorkspaceResult<crate::application::dto::EditFileResult> {
-        // TODO: FileOperationsService is being refactored to use new DTOs
-        Err(WorkspaceError::NotImplemented("File operations pending DTO refactor".to_string()))
+    pub async fn edit_file(&self, request: crate::application::dto::EditFileRequest) -> WorkspaceResult<crate::application::dto::EditFileResult> {
+        self.file_ops
+            .edit_file(request)
+            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("{}", e)))
     }
 
     /// Search for content within files
-    pub async fn search_content(&self, _request: crate::application::dto::SearchContentRequest) -> WorkspaceResult<crate::application::dto::SearchContentResult> {
-        // TODO: FileOperationsService is being refactored to use new DTOs
-        Err(WorkspaceError::NotImplemented("File operations pending DTO refactor".to_string()))
+    pub async fn search_content(&self, request: crate::application::dto::SearchContentRequest) -> WorkspaceResult<crate::application::dto::SearchContentResult> {
+        self.file_ops
+            .search_content(request)
+            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("{}", e)))
     }
 
     /// List files in a directory with optional filtering
-    pub async fn list_files(&self, _request: crate::application::dto::ListFilesRequest) -> WorkspaceResult<crate::application::dto::ListFilesResult> {
-        // TODO: FileOperationsService is being refactored to use new DTOs
-        Err(WorkspaceError::NotImplemented("File operations pending DTO refactor".to_string()))
+    pub async fn list_files(&self, request: crate::application::dto::ListFilesRequest) -> WorkspaceResult<crate::application::dto::ListFilesResult> {
+        self.file_ops
+            .list_files(request)
+            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("{}", e)))
     }
 
     // =========================================================================

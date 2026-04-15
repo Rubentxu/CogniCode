@@ -51,6 +51,19 @@ pub struct ReadFileRequest {
     pub continuation_token: Option<String>,
 }
 
+impl ReadFileRequest {
+    pub fn new(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            start_line: None,
+            end_line: None,
+            mode: None,
+            chunk_size: None,
+            continuation_token: None,
+        }
+    }
+}
+
 /// File metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileMetadata {
@@ -91,6 +104,16 @@ pub struct WriteFileRequest {
     pub create_dirs: Option<bool>,
 }
 
+impl WriteFileRequest {
+    pub fn new(path: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            content: content.into(),
+            create_dirs: None,
+        }
+    }
+}
+
 /// Result of writing a file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WriteFileResult {
@@ -116,6 +139,15 @@ pub struct FileEdit {
 pub struct EditFileRequest {
     pub path: String,
     pub edits: Vec<FileEdit>,
+}
+
+impl EditFileRequest {
+    pub fn new(path: impl Into<String>, edits: Vec<FileEdit>) -> Self {
+        Self {
+            path: path.into(),
+            edits,
+        }
+    }
 }
 
 /// Syntax error in a file
@@ -169,6 +201,20 @@ pub struct SearchContentRequest {
     pub context_lines: Option<u32>,
 }
 
+impl SearchContentRequest {
+    pub fn new(pattern: impl Into<String>) -> Self {
+        Self {
+            pattern: pattern.into(),
+            path: None,
+            file_glob: None,
+            regex: None,
+            case_insensitive: None,
+            max_results: None,
+            context_lines: None,
+        }
+    }
+}
+
 /// A single content match
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentMatch {
@@ -193,7 +239,7 @@ pub struct SearchContentResult {
 // ============================================================================
 
 /// Request for listing files
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ListFilesRequest {
     #[serde(default)]
     pub path: Option<String>,

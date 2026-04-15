@@ -2140,7 +2140,7 @@ mod tests {
     fn make_sample_metrics() -> MetricsDefinition {
         MetricsDefinition {
             correctness: Some(CorrectnessMetrics {
-                metric_type: "precision_recall".to_string(),
+                metric_type: Some("precision_recall".to_string()),
                 min_score: Some(80.0),
                 tolerance_pct: Some(0.05),
                 recall_only: None,

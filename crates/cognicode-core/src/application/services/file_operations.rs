@@ -1554,7 +1554,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.txt");
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
-        let input = WriteFileInput {
+        let input = WriteFileRequest {
             path: file_path.to_str().unwrap().to_string(),
             content: "Hello, atomic world!".to_string(),
             create_dirs: Some(false),
@@ -1582,7 +1582,7 @@ mod tests {
             .join("test.txt");
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
-        let input = WriteFileInput {
+        let input = WriteFileRequest {
             path: nested_path.to_str().unwrap().to_string(),
             content: "nested content".to_string(),
             create_dirs: Some(true),
@@ -1620,7 +1620,7 @@ mod tests {
 
         let service =
             FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
-        let input = EditFileInput {
+        let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
                 old_string: "old_name".to_string(),
@@ -1650,7 +1650,7 @@ mod tests {
 
         let service =
             FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
-        let input = EditFileInput {
+        let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
                 old_string: "foo".to_string(),
@@ -1678,7 +1678,7 @@ mod tests {
 
         let service =
             FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
-        let input = EditFileInput {
+        let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
                 old_string: "nonexistent".to_string(),
@@ -1704,7 +1704,7 @@ mod tests {
         fs::write(&file2_path, "fn world() {\n    println!(\"bye\");\n}").unwrap();
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
-        let input = SearchContentInput {
+        let input = SearchContentRequest {
             pattern: "println".to_string(),
             path: None,
             file_glob: Some("*.rs".to_string()),
@@ -1733,7 +1733,7 @@ mod tests {
         .unwrap();
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
-        let input = SearchContentInput {
+        let input = SearchContentRequest {
             pattern: r"\w+_handler".to_string(),
             path: None,
             file_glob: Some("*.py".to_string()),
@@ -1757,7 +1757,7 @@ mod tests {
         fs::write(&file_path, "fn HELLO() {}\nfn hello() {}").unwrap();
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
-        let input = SearchContentInput {
+        let input = SearchContentRequest {
             pattern: "hello".to_string(),
             path: None,
             file_glob: None,
@@ -2052,7 +2052,7 @@ mod tests {
 
         let service =
             FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
-        let input = EditFileInput {
+        let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
                 old_string: "World".to_string(),
@@ -2079,7 +2079,7 @@ mod tests {
             FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
 
         // Try to edit something that doesn't exist
-        let input = EditFileInput {
+        let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
                 old_string: "NonExistent".to_string(),
@@ -2109,7 +2109,7 @@ mod tests {
         fs::write(&file_path, "fn foo() {}\nfn bar() {}\n  fn indented() {}").unwrap();
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
-        let input = SearchContentInput {
+        let input = SearchContentRequest {
             pattern: r"^fn".to_string(),
             path: None,
             file_glob: Some("*.rs".to_string()),
@@ -2141,7 +2141,7 @@ mod tests {
         fs::write(&file_path, "foo bar baz\nfoo qux foo").unwrap();
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
-        let input = SearchContentInput {
+        let input = SearchContentRequest {
             pattern: r"(foo|bar)".to_string(),
             path: None,
             file_glob: Some("*.txt".to_string()),
@@ -2170,7 +2170,7 @@ mod tests {
         fs::write(&file_path, "  hello world\nanother line").unwrap();
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
-        let input = SearchContentInput {
+        let input = SearchContentRequest {
             pattern: r"hello".to_string(),
             path: None,
             file_glob: Some("*.txt".to_string()),
@@ -2198,7 +2198,7 @@ mod tests {
         fs::write(&file_path, "Hello World\nanother word\n123 Numbers").unwrap();
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
-        let input = SearchContentInput {
+        let input = SearchContentRequest {
             pattern: r"[A-Z][a-z]+".to_string(),
             path: None,
             file_glob: Some("*.txt".to_string()),
