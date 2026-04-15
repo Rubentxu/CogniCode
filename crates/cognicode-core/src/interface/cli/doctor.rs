@@ -166,7 +166,6 @@ pub struct DoctorSections {
     pub core: DoctorSection,
     pub lsp: DoctorSection,
     pub parsers: DoctorSection,
-    pub tools: DoctorSection,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,17 +173,11 @@ pub struct DoctorSummary {
     pub core: String,
     pub lsp: String,
     pub parsers: String,
-    pub tools: String,
 }
 
 impl DoctorReport {
     pub fn overall_status(&self) -> DoctorStatus {
-        let statuses = [
-            &self.summary.core,
-            &self.summary.lsp,
-            &self.summary.parsers,
-            &self.summary.tools,
-        ];
+        let statuses = [&self.summary.core, &self.summary.lsp, &self.summary.parsers];
 
         if statuses.iter().any(|s| *s == "missing") {
             DoctorStatus::Missing
@@ -309,110 +302,6 @@ fn check_parsers_section() -> DoctorSection {
     section
 }
 
-/// Sandbox/validation tool definition
-struct ToolDef {
-    name: &'static str,
-    install_hint: &'static str,
-    languages: &'static [Language], // Empty means universal
-}
-
-/// Check the sandbox/validation tools section
-fn check_tools_section(detected_languages: &[Language]) -> DoctorSection {
-    let mut section = DoctorSection::new("Sandbox / Validation Tools");
-
-    // Universal tools
-    let universal_tools = vec![ToolDef {
-        name: "git",
-        install_hint: "apt install git / brew install git",
-        languages: &[],
-    }];
-
-    // Language-specific tools
-    let language_tools = vec![
-        // Rust
-        ToolDef {
-            name: "cargo",
-            install_hint: "rustup install stable",
-            languages: &[Language::Rust],
-        },
-        ToolDef {
-            name: "rustfmt",
-            install_hint: "rustup component add rustfmt",
-            languages: &[Language::Rust],
-        },
-        // Python
-        ToolDef {
-            name: "python3",
-            install_hint: "apt install python3 / brew install python3",
-            languages: &[Language::Python],
-        },
-        ToolDef {
-            name: "pytest",
-            install_hint: "pip install pytest",
-            languages: &[Language::Python],
-        },
-        // JavaScript/TypeScript
-        ToolDef {
-            name: "node",
-            install_hint: "apt install nodejs / brew install node",
-            languages: &[Language::JavaScript, Language::TypeScript],
-        },
-        ToolDef {
-            name: "npm",
-            install_hint: "apt install npm / brew install npm",
-            languages: &[Language::JavaScript, Language::TypeScript],
-        },
-        ToolDef {
-            name: "jest",
-            install_hint: "npm install -g jest",
-            languages: &[Language::JavaScript, Language::TypeScript],
-        },
-        // Go
-        ToolDef {
-            name: "go",
-            install_hint: "apt install golang / brew install go",
-            languages: &[Language::Go],
-        },
-        // Java
-        ToolDef {
-            name: "javac",
-            install_hint: "apt install default-jdk",
-            languages: &[Language::Java],
-        },
-    ];
-
-    // Check universal tools first
-    for tool in universal_tools {
-        let (found, version, _path) = check_binary(tool.name, &["--version"]);
-        if found {
-            let version_str = version.unwrap_or_else(|| "found".to_string());
-            section.add_check(DoctorCheck::ok(tool.name, &version_str));
-        } else {
-            section.add_check(DoctorCheck::missing(tool.name, tool.install_hint));
-        }
-    }
-
-    // Check language-specific tools
-    let detected_set: HashSet<Language> = detected_languages.iter().cloned().collect();
-
-    for tool in language_tools {
-        // Skip if tool is not relevant to detected languages
-        if !tool.languages.is_empty() && !tool.languages.iter().any(|l| detected_set.contains(l)) {
-            continue;
-        }
-
-        let (found, version, _path) = check_binary(tool.name, &["--version"]);
-        if found {
-            let version_str = version.unwrap_or_else(|| "found".to_string());
-            section.add_check(DoctorCheck::ok(tool.name, &version_str));
-        } else {
-            section.add_check(DoctorCheck::missing(tool.name, tool.install_hint));
-        }
-    }
-
-    section
-}
-
 /// Detect languages in a workspace by scanning for markers
 fn detect_workspace_languages(workspace_path: &Path) -> Vec<Language> {
     let mut languages = Vec::new();
@@ -490,23 +379,16 @@ pub fn run_doctor_checks(workspace_path: Option<&Path>) -> DoctorReport {
     let core = check_core_section();
     let lsp = check_lsp_section(&detected_languages);
     let parsers = check_parsers_section();
-    let tools = check_tools_section(&detected_languages);
 
     let summary = DoctorSummary {
         core: core.status.as_str().to_string(),
         lsp: lsp.status.as_str().to_string(),
         parsers: parsers.status.as_str().to_string(),
-        tools: tools.status.as_str().to_string(),
     };
 
     DoctorReport {
         version,
-        sections: DoctorSections {
-            core,
-            lsp,
-            parsers,
-            tools,
-        },
+        sections: DoctorSections { core, lsp, parsers },
         summary,
         workspace: workspace_info,
     }
@@ -567,9 +449,6 @@ pub fn format_doctor_text(report: &DoctorReport) -> String {
     // Parsers section
     output.push_str(&format_section_text(&report.sections.parsers));
 
-    // Tools section
-    output.push_str(&format_section_text(&report.sections.tools));
-
     // Workspace info
     if let Some(ref ws) = report.workspace {
         if !ws.languages.is_empty() {
@@ -597,13 +476,6 @@ pub fn format_doctor_text(report: &DoctorReport) -> String {
         "  Parse:  {} {}\n",
         status_icon(report.sections.parsers.status),
         report.summary.parsers
-    ));
-    output.push_str(&format!(
-        "  Tools:  {} {} ({}/{})\n",
-        status_icon(report.sections.tools.status),
-        report.summary.tools,
-        report.sections.tools.count_found(),
-        report.sections.tools.count_total()
     ));
     output.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 
