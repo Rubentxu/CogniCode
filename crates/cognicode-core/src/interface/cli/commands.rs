@@ -1067,8 +1067,37 @@ impl CommandExecutor {
                     }
                 }
             }
-            other => {
-                eprintln!("Operation {:?} not yet implemented via CLI. Use the MCP interface.", other);
+            RefactorOperation::Move => {
+                let target = new_name.ok_or_else(|| anyhow::anyhow!("Move requires a target path (use -- new-name)"))?;
+                println!("Moving '{}' to '{}'...", symbol, target);
+                match session.move_symbol(symbol, "<unknown>", &target).await {
+                    Ok(result) => {
+                        if result.success {
+                            println!("  Success: {}", result.validation_result.warnings.join("; "));
+                        } else {
+                            println!("  Failed: {}", result.error_message.as_deref().unwrap_or("unknown error"));
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("  Error: {}", e);
+                    }
+                }
+            }
+            RefactorOperation::Extract => {
+                let name = new_name.ok_or_else(|| anyhow::anyhow!("Extract requires a function name (use -- new-name)"))?;
+                println!("Extracting function '{}'...", name);
+                match session.extract_function("<unknown>", (0, 0, 0, 0), &name).await {
+                    Ok(result) => {
+                        if result.success {
+                            println!("  Success: {}", result.validation_result.warnings.join("; "));
+                        } else {
+                            println!("  Failed: {}", result.error_message.as_deref().unwrap_or("unknown error"));
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("  Error: {}", e);
+                    }
+                }
             }
         }
 

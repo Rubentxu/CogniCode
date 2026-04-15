@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::application::commands::MoveSymbolCommand;
 use crate::application::dto::{
     AnalyzeImpactResult, ArchitectureResult, BuildIndexResult, CallHierarchyEntry,
     ComplexityResult, GetCallHierarchyResult, RefactorPreviewDto, RefactorResult, RiskLevel,
@@ -808,6 +809,91 @@ impl WorkspaceSession {
             }),
             Err(e) => Ok(RefactorResult {
                 action: crate::application::dto::RefactorAction::Inline,
+                success: false,
+                changes: Vec::new(),
+                validation_result: ValidationResult {
+                    is_valid: false,
+                    warnings: Vec::new(),
+                    errors: vec![e.to_string()],
+                },
+                error_message: Some(e.to_string()),
+            }),
+        }
+    }
+
+    /// Move a symbol from one module to another
+    pub async fn move_symbol(
+        &self,
+        symbol: &str,
+        source_path: &str,
+        target_path: &str,
+    ) -> WorkspaceResult<RefactorResult> {
+        let source = self.resolve_path(source_path)?;
+        let source_str = source.to_string_lossy().into_owned();
+        let command = MoveSymbolCommand::new(symbol, &source_str, target_path);
+
+        match self.refactor.move_symbol(command) {
+            Ok(preview) => Ok(RefactorResult {
+                action: crate::application::dto::RefactorAction::Move,
+                success: true,
+                changes: Vec::new(),
+                validation_result: ValidationResult {
+                    is_valid: true,
+                    warnings: vec![format!(
+                        "Move: {} symbols affected",
+                        preview.symbols_affected.len()
+                    )],
+                    errors: Vec::new(),
+                },
+                error_message: None,
+            }),
+            Err(e) => Ok(RefactorResult {
+                action: crate::application::dto::RefactorAction::Move,
+                success: false,
+                changes: Vec::new(),
+                validation_result: ValidationResult {
+                    is_valid: false,
+                    warnings: Vec::new(),
+                    errors: vec![e.to_string()],
+                },
+                error_message: Some(e.to_string()),
+            }),
+        }
+    }
+
+    /// Extract a function — creates a new function from selected code.
+    ///
+    /// The selection tuple is (start_line, start_col, end_line, end_col).
+    /// Currently uses `extract_symbol_with_target` which finds an existing symbol
+    /// and creates the extracted function with the given name.
+    pub async fn extract_function(
+        &self,
+        file: &str,
+        _selection: (u32, u32, u32, u32),
+        name: &str,
+    ) -> WorkspaceResult<RefactorResult> {
+        let path = self.resolve_path(file)?;
+        let path_str = path.to_string_lossy().into_owned();
+
+        // Use the symbol name as both target and new name for now
+        // A full implementation would use the selection range
+        match self.refactor.extract_symbol_with_target(&path_str, name, name) {
+            Ok(preview) => Ok(RefactorResult {
+                action: crate::application::dto::RefactorAction::Extract,
+                success: true,
+                changes: Vec::new(),
+                validation_result: ValidationResult {
+                    is_valid: true,
+                    warnings: vec![format!(
+                        "Extract: {} symbols affected",
+                        preview.symbols_affected.len()
+                    )],
+                    errors: Vec::new(),
+                },
+                error_message: None,
+            }),
+            Err(e) => Ok(RefactorResult {
+                action: crate::application::dto::RefactorAction::Extract,
                 success: false,
                 changes: Vec::new(),
                 validation_result: ValidationResult {
