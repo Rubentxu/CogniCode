@@ -545,7 +545,7 @@ impl RefactorService {
             AppError::InvalidParameter(format!("Failed to read {}: {}", file_path, e))
         })?;
 
-        let func_def = strategy
+        let _func_def = strategy
             .find_function_definition(&source, symbol_name)
             .map_err(|e| AppError::AnalysisError(format!("Failed to find function: {}", e)))?;
 

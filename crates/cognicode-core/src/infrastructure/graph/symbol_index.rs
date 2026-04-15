@@ -150,7 +150,7 @@ impl SymbolIndex {
     /// Invalidates a specific cached query result
     pub fn invalidate_symbol(&self, symbol_name: &str) {
         if let Ok(mut cache) = self.query_cache.write() {
-            cache.remove(&symbol_name.to_lowercase());
+            cache.shift_remove(&symbol_name.to_lowercase());
         }
     }
 
@@ -175,7 +175,7 @@ impl SymbolIndex {
 
                 if cache.len() >= self.config.max_entries {
                     if let Some(oldest_key) = cache.keys().next().cloned() {
-                        cache.remove(&oldest_key);
+                        cache.shift_remove(&oldest_key);
                     }
                 }
             }

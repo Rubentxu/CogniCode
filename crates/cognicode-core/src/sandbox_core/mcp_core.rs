@@ -6,7 +6,7 @@
 //! Handles: server spawn, initialize handshake, request/response correlation,
 //! notification separation, stdout contamination filtering, and timeouts.
 
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};

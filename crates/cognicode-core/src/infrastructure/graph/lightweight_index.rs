@@ -6,7 +6,7 @@
 
 use crate::domain::value_objects::{Location, SymbolKind};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use walkdir::WalkDir;
 
@@ -92,6 +92,7 @@ impl LightweightIndex {
     /// and extracts symbol definitions.
     pub fn build_index<P: AsRef<Path>>(&mut self, project_dir: P) -> std::io::Result<()> {
         let mut parser_cache: HashMap<Language, TreeSitterParser> = HashMap::new();
+        let mut file_name_set: HashSet<String> = HashSet::new();
 
         // Directories to skip during indexing — these contain no relevant source code
         // and can contain thousands of files that slow down indexing.
@@ -167,7 +168,7 @@ impl LightweightIndex {
                         SymbolLocation::from_location(symbol.location(), symbol.kind().clone());
 
                     if let Some(file_names) = self.file_index.get_mut(&file_path) {
-                        if !file_names.contains(&name_lower) {
+                        if file_name_set.insert(name_lower.clone()) {
                             file_names.push(name_lower.clone());
                         }
                     }

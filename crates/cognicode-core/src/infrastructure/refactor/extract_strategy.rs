@@ -156,26 +156,6 @@ impl ExtractStrategy {
         (free, local)
     }
 
-    /// Finds variables that are used but not defined within the block (free variables)
-    fn find_free_variables(&self, block_node: tree_sitter::Node, source: &str) -> Vec<String> {
-        let mut used_vars = std::collections::HashSet::new();
-        let mut defined_vars = std::collections::HashSet::new();
-
-        self.collect_identifiers(block_node, source, &mut used_vars, &mut defined_vars);
-
-        used_vars.difference(&defined_vars).cloned().collect()
-    }
-
-    /// Finds variables that are defined within the block (local variables)
-    fn find_local_variables(&self, block_node: tree_sitter::Node, source: &str) -> Vec<String> {
-        let mut defined_vars = std::collections::HashSet::new();
-        let mut used_vars = std::collections::HashSet::new();
-
-        self.collect_identifiers(block_node, source, &mut used_vars, &mut defined_vars);
-
-        defined_vars.into_iter().collect()
-    }
-
     /// Collects all identifier usages and definitions in a node tree
     fn collect_identifiers(
         &self,
@@ -479,83 +459,6 @@ impl ExtractStrategy {
         } else {
             format!("{}({});", name, args_str)
         }
-    }
-
-    /// Finds the insertion point after a function definition
-    fn find_function_insertion_point(
-        &self,
-        source: &str,
-        target_symbol: &crate::domain::aggregates::Symbol,
-    ) -> Result<Location, RefactorError> {
-        let tree = self
-            .parser
-            .parse_tree(source)
-            .map_err(|e| RefactorError::PreparationFailed(format!("Parse failed: {}", e)))?;
-
-        let function_type = self.parser.language().function_node_type();
-
-        // Find the function node containing our target
-        let mut insertion_point: Option<Location> = None;
-        self.find_function_end(
-            tree.root_node(),
-            source,
-            function_type,
-            target_symbol.name(),
-            &mut insertion_point,
-        );
-
-        insertion_point.ok_or_else(|| {
-            RefactorError::PreparationFailed("Could not find insertion point".to_string())
-        })
-    }
-
-    /// Finds the end position of a function and returns the location after it
-    fn find_function_end(
-        &self,
-        node: tree_sitter::Node,
-        source: &str,
-        function_type: &str,
-        target_name: &str,
-        insertion_point: &mut Option<Location>,
-    ) {
-        if node.kind() == function_type {
-            // Check if this is the function containing our target
-            if let Some(name) = self.find_identifier_name(node, source) {
-                if name == target_name {
-                    let end = node.end_position();
-                    *insertion_point = Some(Location::new(source, end.row as u32 + 1, 0));
-                    return;
-                }
-            }
-        }
-
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                self.find_function_end(child, source, function_type, target_name, insertion_point);
-            }
-        }
-    }
-
-    /// Finds identifier name in a node
-    fn find_identifier_name(&self, node: tree_sitter::Node, source: &str) -> Option<String> {
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                if child.kind() == "identifier" || child.kind() == "type_identifier" {
-                    return child
-                        .utf8_text(source.as_bytes())
-                        .ok()
-                        .map(|s| s.to_string());
-                }
-            }
-        }
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                if let Some(name) = self.find_identifier_name(child, source) {
-                    return Some(name);
-                }
-            }
-        }
-        None
     }
 
     /// Generates the complete function snippet for insertion

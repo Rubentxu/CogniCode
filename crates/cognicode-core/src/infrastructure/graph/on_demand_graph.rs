@@ -711,14 +711,6 @@ impl OnDemandGraphBuilder {
             .insert(file_path.to_string(), (symbols, relationships));
     }
 
-    /// Gets symbols from the cache
-    fn get_file_symbols(&self, file_path: &str) -> &[Symbol] {
-        self.file_cache
-            .get(file_path)
-            .map(|(s, _)| s.as_slice())
-            .unwrap_or(&[])
-    }
-
     /// Gets relationships from the cache
     fn get_file_relationships(&self, file_path: &str) -> &[(Symbol, String)] {
         self.file_cache

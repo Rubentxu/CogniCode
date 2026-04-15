@@ -84,6 +84,7 @@ impl LspProcess {
         let mut params = InitializeParams {
             process_id: Some(std::process::id()),
             root_uri: Some(lsp_types::Url::parse(&root_uri).unwrap()),
+            #[allow(deprecated)]
             root_path: None,
             initialization_options: None,
             capabilities: lsp_types::ClientCapabilities::default(),

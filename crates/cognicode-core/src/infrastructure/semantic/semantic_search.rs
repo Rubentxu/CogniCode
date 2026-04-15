@@ -143,7 +143,6 @@ struct IndexedSymbol {
     name_lower: String,
     kind: SymbolKind,
     location: Location,
-    file_path: String,
 }
 
 impl SearchIndex {
@@ -171,7 +170,6 @@ impl SearchIndex {
                     name_lower: s.name().to_lowercase(),
                     kind: s.kind().clone(),
                     location: s.location().clone(),
-                    file_path: file_path.to_string(),
                 };
                 self.all_symbols.insert(key, indexed.clone());
                 indexed

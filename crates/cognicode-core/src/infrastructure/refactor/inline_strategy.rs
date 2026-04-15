@@ -341,7 +341,6 @@ impl InlineStrategy {
             let mut last_end = 0;
             let body_bytes = result.as_bytes();
 
-            let mut search_pos = 0;
             while let Some(start) = result[last_end..].find(param.as_str()) {
                 let abs_start = last_end + start;
                 let abs_end = abs_start + param.len();
@@ -363,10 +362,6 @@ impl InlineStrategy {
                     new_result.push_str(&result[last_end..abs_end]);
                 }
                 last_end = abs_end;
-                search_pos = abs_end;
-                if search_pos >= result.len() {
-                    break;
-                }
             }
             new_result.push_str(&result[last_end..]);
             result = new_result;

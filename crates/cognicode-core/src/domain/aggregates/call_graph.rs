@@ -8,9 +8,6 @@ use super::symbol::Symbol;
 use crate::domain::events::GraphEvent;
 use crate::domain::value_objects::DependencyType;
 
-/// Maximum depth for traversal methods
-const MAX_DEPTH: u8 = 10;
-
 /// Represents a call entry in traversal results
 #[derive(Debug, Clone)]
 pub struct CallEntry {
