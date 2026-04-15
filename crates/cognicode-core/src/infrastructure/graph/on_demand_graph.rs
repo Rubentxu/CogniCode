@@ -12,6 +12,7 @@ use crate::infrastructure::graph::lightweight_index::{LightweightIndex, SymbolLo
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::Arc;
 
 /// Direction for call hierarchy traversal
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,40 +197,51 @@ impl TreeNode {
 /// This builder is designed for lazy evaluation - it only parses and builds
 /// the graph portions needed to answer a specific query.
 pub struct OnDemandGraphBuilder {
-    /// Index for fast symbol lookup
-    index: LightweightIndex,
+    /// Index for fast symbol lookup (Arc so multiple builders can share)
+    index: Arc<LightweightIndex>,
     /// Cache of parsed files to avoid re-parsing
     file_cache: HashMap<String, (Vec<Symbol>, Vec<(Symbol, String)>)>, // (symbols, relationships)
 }
 
 impl OnDemandGraphBuilder {
-    /// Creates a new OnDemandGraphBuilder
+    /// Creates a new OnDemandGraphBuilder with an empty index
     pub fn new() -> Self {
         Self {
-            index: LightweightIndex::new(),
+            index: Arc::new(LightweightIndex::new()),
             file_cache: HashMap::new(),
         }
     }
 
-    /// Creates a new OnDemandGraphBuilder with an existing index
-    pub fn with_index(index: LightweightIndex) -> Self {
+    /// Creates a new OnDemandGraphBuilder with a shared index
+    pub fn with_index(index: Arc<LightweightIndex>) -> Self {
         Self {
             index,
             file_cache: HashMap::new(),
         }
     }
 
-    /// Sets the index from a directory scan
+    /// Sets the index from a directory scan (only works on uniquely-owned index)
     pub fn set_index<P: AsRef<Path>>(&mut self, project_dir: P) -> std::io::Result<()> {
-        self.index.build_index(project_dir)
+        // Only possible if we have unique ownership (Arc::get_mut succeeds)
+        if let Some(idx) = Arc::get_mut(&mut self.index) {
+            idx.build_index(project_dir)
+        } else {
+            // Arc is shared — cannot mutate. Caller must use Arc::new() index.
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Cannot set_index on a shared index. Create with LightweightIndex::new() first.",
+            ))
+        }
     }
 
-    /// Builds the index from in-memory sources
+    /// Builds the index from in-memory sources (only works on uniquely-owned index)
     pub fn build_index_from_sources<'a, I>(&mut self, sources: I)
     where
         I: IntoIterator<Item = (&'a str, &'a str)>,
     {
-        self.index.build_from_sources(sources);
+        if let Some(idx) = Arc::get_mut(&mut self.index) {
+            idx.build_from_sources(sources);
+        }
     }
 
     /// Builds a subgraph centered on a specific symbol

@@ -136,7 +136,7 @@ impl GraphStrategy for LightweightStrategy {
 /// portions of the graph for each query.
 pub struct OnDemandStrategy {
     builder: OnDemandGraphBuilder,
-    index: LightweightIndex,
+    index: Arc<LightweightIndex>,
 }
 
 impl OnDemandStrategy {
@@ -144,7 +144,7 @@ impl OnDemandStrategy {
     pub fn new() -> Self {
         Self {
             builder: OnDemandGraphBuilder::new(),
-            index: LightweightIndex::new(),
+            index: Arc::new(LightweightIndex::new()),
         }
     }
 }
@@ -157,7 +157,11 @@ impl Default for OnDemandStrategy {
 
 impl GraphStrategy for OnDemandStrategy {
     fn build_index(&mut self, project_dir: &Path) -> std::io::Result<()> {
-        self.index.build_index(project_dir)?;
+        // Build the strategy's own index
+        if let Some(idx) = Arc::get_mut(&mut self.index) {
+            idx.build_index(project_dir)?;
+        }
+        // Also build the builder's index (it has unique ownership when created with new())
         self.builder.set_index(project_dir)
     }
 
@@ -420,7 +424,7 @@ impl GraphStrategy for FullGraphStrategy {
     ) -> CallHierarchyResult {
         let mut builder = OnDemandGraphBuilder::new();
         if let Some(ref idx) = self.symbol_index {
-            builder = OnDemandGraphBuilder::with_index(idx.underlying_index().clone());
+            builder = OnDemandGraphBuilder::with_index(Arc::new(idx.underlying_index().clone()));
         }
         builder.build_for_symbol(symbol_name, depth, direction)
     }
