@@ -81,7 +81,7 @@ impl LspProcess {
 
         let root_uri = format!("file://{}", workspace_root.display());
 
-        let params = InitializeParams {
+        let mut params = InitializeParams {
             process_id: Some(std::process::id()),
             root_uri: Some(lsp_types::Url::parse(&root_uri).unwrap()),
             root_path: None,
@@ -92,6 +92,18 @@ impl LspProcess {
             client_info: None,
             locale: None,
         };
+
+        // jdtls requires workspaceFolders in initializationOptions
+        if self.language == Language::Java {
+            params.initialization_options = Some(serde_json::json!({
+                "workspaceFolders": [
+                    {
+                        "uri": root_uri,
+                        "name": workspace_root.display().to_string()
+                    }
+                ]
+            }));
+        }
 
         let result = timeout(
             Duration::from_secs(REQUEST_TIMEOUT_SECS),

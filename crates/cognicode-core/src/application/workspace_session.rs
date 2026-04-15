@@ -590,11 +590,13 @@ impl WorkspaceSession {
     }
 
     /// Check architecture for cycles and violations
+    ///
+    /// Note: scope parameter is not yet supported by the underlying infrastructure.
     pub async fn check_architecture(&self, _scope: Option<&str>) -> WorkspaceResult<crate::application::dto::ArchitectureResult> {
         use crate::domain::services::CycleDetector;
-        
+
         self.ensure_graph_built().await?;
-        
+
         let graph_guard = self.graph.read().await;
         let graph = graph_guard.as_ref()
             .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
@@ -639,17 +641,13 @@ impl WorkspaceSession {
     }
 
     /// Trace execution path between two symbols
-    pub async fn trace_path(&self, source: &str, target: &str, _max_depth: usize) -> WorkspaceResult<Vec<String>> {
+    pub async fn trace_path(&self, source: &str, target: &str, max_depth: usize) -> WorkspaceResult<Vec<String>> {
         self.ensure_graph_built().await?;
-        
-        let graph_guard = self.graph.read().await;
-        let graph = graph_guard.as_ref()
-            .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
-        
+
         let path = self.analysis
-            .trace_path(source, target)
+            .trace_path(source, target, max_depth)
             .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
-        
+
         match path {
             Some(symbols) => Ok(symbols.into_iter().map(|s| s.name).collect()),
             None => Ok(Vec::new()),
@@ -669,14 +667,21 @@ impl WorkspaceSession {
     }
 
     /// Export the call graph as Mermaid diagram
-    pub async fn export_mermaid(&self, _format: &str, _theme: Option<&str>, _root: Option<&str>) -> WorkspaceResult<String> {
+    pub async fn export_mermaid(&self, _format: &str, theme: Option<&str>, root: Option<&str>) -> WorkspaceResult<String> {
         self.ensure_graph_built().await?;
-        
+
         let graph_guard = self.graph.read().await;
         let graph = graph_guard.as_ref()
             .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
-        
-        Ok(graph.to_mermaid("Call Graph"))
+
+        let options = crate::domain::aggregates::call_graph::MermaidOptions {
+            root: root.map(|s| s.to_string()),
+            max_depth: 3, // default depth
+            theme: theme.map(|s| s.to_string()),
+            format: Some(_format.to_string()),
+        };
+
+        Ok(graph.to_mermaid_with_options("Call Graph", &options))
     }
 
     /// Build a lightweight symbol index

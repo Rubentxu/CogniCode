@@ -688,6 +688,26 @@ impl ChangeSignatureStrategy {
             Language::JavaScript | Language::TypeScript => {
                 format!("function {}({}) {{", function_name, params_str)
             }
+            Language::Go => {
+                // Convert "name: type" to "name type" for Go syntax
+                let go_params: Vec<String> = new_params
+                    .iter()
+                    .map(|(name, type_hint)| match type_hint {
+                        Some(ty) => format!("{} {}", name, ty),
+                        None => name.clone(),
+                    })
+                    .collect::<Vec<_>>();
+                format!(
+                    "func {}({}) /* returnType */",
+                    function_name,
+                    go_params.join(", ")
+                )
+            }
+            Language::Java => {
+                // Java uses "ReturnType name(Type1 param1, Type2 param2)"
+                // Return type not available in params, use placeholder
+                format!("/* ReturnType */ {}({})", function_name, params_str)
+            }
             _ => {
                 // Default fallback
                 format!("{}({})", function_name, params_str)

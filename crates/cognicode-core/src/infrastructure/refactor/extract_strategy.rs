@@ -418,9 +418,34 @@ impl ExtractStrategy {
                     format!("function {}() {{\n    // body\n}}", name)
                 }
             }
-            Language::Go | Language::Java => {
-                // Extract refactoring not yet fully supported for Go/Java
-                "/* extraction not supported for Go/Java */".to_string()
+            Language::Go => {
+                let return_type = if has_return { " /* return type */" } else { "" };
+                if params_str.is_empty() {
+                    format!(
+                        "func {}({}){} {{\n    // body\n}}",
+                        name, params_str, return_type
+                    )
+                } else {
+                    format!(
+                        "func {}({}){} {{\n    // body\n}}",
+                        name, params_str, return_type
+                    )
+                }
+            }
+            Language::Java => {
+                let return_type = if has_return {
+                    " /* ReturnType */"
+                } else {
+                    "void"
+                };
+                if params_str.is_empty() {
+                    format!("{} {}({{\n    // body\n}}", return_type, name)
+                } else {
+                    format!(
+                        "{} {}({}) {{\n    // body\n}}",
+                        return_type, name, params_str
+                    )
+                }
             }
         }
     }
@@ -587,10 +612,41 @@ impl ExtractStrategy {
                     )
                 }
             }
-            Language::Go | Language::Java => {
-                // Extract refactoring not yet fully supported for Go/Java
-                // Return a placeholder - this code path won't be reached for now
-                "/* extraction not supported for Go/Java */".to_string()
+            Language::Go => {
+                let return_type = if has_return { " /* return type */" } else { "" };
+                let body_str = if body.is_empty() {
+                    "    /* body */".to_string()
+                } else {
+                    let indented: Vec<String> =
+                        body.lines().map(|line| format!("    {}", line)).collect();
+                    indented.join("\n")
+                };
+                format!(
+                    "\n\nfunc {}({}){} {{\n{}\n}}\n",
+                    name, params_str, return_type, body_str
+                )
+            }
+            Language::Java => {
+                let return_type = if has_return {
+                    " /* ReturnType */"
+                } else {
+                    "void"
+                };
+                let body_str = if body.is_empty() {
+                    "    /* body */".to_string()
+                } else {
+                    let indented: Vec<String> =
+                        body.lines().map(|line| format!("    {}", line)).collect();
+                    indented.join("\n")
+                };
+                if params_str.is_empty() {
+                    format!("\n\n{} {}() {{\n{}\n}}\n", return_type, name, body_str)
+                } else {
+                    format!(
+                        "\n\n{} {}({}) {{\n{}\n}}\n",
+                        return_type, name, params_str, body_str
+                    )
+                }
             }
         }
     }

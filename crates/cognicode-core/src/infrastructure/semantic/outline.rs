@@ -322,8 +322,7 @@ impl OutlineBuilder {
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i) {
                         if child.kind() == "parameters" {
-                            // For now, return a generic placeholder - Go outline not fully implemented
-                            return Some("(params)".to_string());
+                            return Some(self.format_go_params(child));
                         }
                     }
                 }
@@ -333,8 +332,7 @@ impl OutlineBuilder {
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i) {
                         if child.kind() == "formal_parameters" {
-                            // For now, return a generic placeholder - Java outline not fully implemented
-                            return Some("(params)".to_string());
+                            return Some(self.format_java_params(child));
                         }
                     }
                 }
@@ -383,6 +381,34 @@ impl OutlineBuilder {
                 if child.kind() == "identifier" {
                     if let Some(name) = child.utf8_text(self.source.as_bytes()).ok() {
                         params.push(name.to_string());
+                    }
+                }
+            }
+        }
+        format!("({})", params.join(", "))
+    }
+
+    fn format_go_params(&self, params_node: Node) -> String {
+        let mut params = Vec::new();
+        for i in 0..params_node.child_count() {
+            if let Some(child) = params_node.child(i) {
+                if child.kind() == "parameter_declaration" {
+                    if let Some(identifier) = self.find_name_in_node(child, "identifier") {
+                        params.push(identifier);
+                    }
+                }
+            }
+        }
+        format!("({})", params.join(", "))
+    }
+
+    fn format_java_params(&self, params_node: Node) -> String {
+        let mut params = Vec::new();
+        for i in 0..params_node.child_count() {
+            if let Some(child) = params_node.child(i) {
+                if child.kind() == "formal_parameter" {
+                    if let Some(identifier) = self.find_name_in_node(child, "identifier") {
+                        params.push(identifier);
                     }
                 }
             }

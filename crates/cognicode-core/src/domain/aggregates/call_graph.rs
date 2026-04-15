@@ -28,6 +28,19 @@ pub struct CallEntry {
     pub depth: u8,
 }
 
+/// Options for Mermaid diagram export
+#[derive(Debug, Clone, Default)]
+pub struct MermaidOptions {
+    /// Subgraph root symbol - if provided, only exports the subgraph rooted at this symbol
+    pub root: Option<String>,
+    /// Maximum depth for traversal when root is provided (default: 3)
+    pub max_depth: u8,
+    /// Theme for SVG rendering (used when format is "svg")
+    pub theme: Option<String>,
+    /// Output format: "code" or "svg" (default: "code")
+    pub format: Option<String>,
+}
+
 /// A directed graph representing call dependencies between symbols
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallGraph {
@@ -178,15 +191,30 @@ impl CallGraph {
 
     /// Finds a path from source to target if one exists (BFS)
     pub fn find_path(&self, source: &SymbolId, target: &SymbolId) -> Option<Vec<SymbolId>> {
+        self.find_path_with_max_depth(source, target, 0)
+    }
+
+    /// Finds a path from source to target if one exists, limited by max_depth (BFS)
+    ///
+    /// If max_depth is 0, no depth limit is applied.
+    pub fn find_path_with_max_depth(
+        &self,
+        source: &SymbolId,
+        target: &SymbolId,
+        max_depth: usize,
+    ) -> Option<Vec<SymbolId>> {
         if source == target {
             return Some(vec![source.clone()]);
         }
         let mut visited = HashSet::new();
         let mut predecessor: HashMap<SymbolId, SymbolId> = HashMap::new();
-        let mut queue = vec![source.clone()];
+        let mut queue = vec![(source.clone(), 0)];
         visited.insert(source.clone());
 
-        while let Some(current) = queue.pop() {
+        while let Some((current, depth)) = queue.pop() {
+            if max_depth > 0 && depth >= max_depth {
+                continue;
+            }
             if let Some(dependencies) = self.edges.get(&current) {
                 for (next, _) in dependencies {
                     if next == target {
@@ -202,7 +230,7 @@ impl CallGraph {
                     }
                     if visited.insert(next.clone()) {
                         predecessor.insert(next.clone(), current.clone());
-                        queue.push(next.clone());
+                        queue.push((next.clone(), depth + 1));
                     }
                 }
             }
@@ -409,6 +437,163 @@ impl CallGraph {
         }
 
         mermaid
+    }
+
+    /// Exports the call graph as a Mermaid flowchart with options
+    ///
+    /// When root is provided, exports only the subgraph rooted at that symbol.
+    /// When max_depth is provided, limits the traversal depth.
+    pub fn to_mermaid_with_options(&self, title: &str, options: &MermaidOptions) -> String {
+        let mut mermaid = String::new();
+
+        // Determine which symbols to include
+        let symbols_to_export: Vec<Symbol> = if let Some(ref root_name) = options.root {
+            let root_symbols = self.find_by_name(root_name);
+            if root_symbols.is_empty() {
+                // Root not found, return empty graph
+                return "flowchart TD\n    %% Root symbol not found".to_string();
+            }
+            // Get the FQN of the root symbol to filter descendants
+            let root_fqn = root_symbols[0].fully_qualified_name().to_lowercase();
+            self.symbols
+                .values()
+                .filter(|s| {
+                    let fqn = s.fully_qualified_name().to_lowercase();
+                    fqn == root_fqn || fqn.starts_with(&format!("{}::", root_fqn))
+                })
+                .cloned()
+                .collect()
+        } else {
+            self.symbols.values().cloned().collect()
+        };
+
+        // Build node declarations
+        mermaid.push_str("flowchart TD\n");
+        mermaid.push_str(&format!("    %% {}\n", title));
+
+        // Add node declarations for selected symbols
+        for symbol in &symbols_to_export {
+            let id = SymbolId::new(symbol.fully_qualified_name());
+            let safe_id = id
+                .as_str()
+                .replace([':', '(', ')', '<', '>', '{', '}'], "_");
+            let name = symbol.name();
+            let kind = format!("{:?}", symbol.kind());
+            mermaid.push_str(&format!("    {}[{} ({})]\n", safe_id, name, kind));
+        }
+
+        // Create a set of symbol IDs for quick lookup
+        let symbol_ids: std::collections::HashSet<_> = symbols_to_export
+            .iter()
+            .map(|s| SymbolId::new(s.fully_qualified_name()))
+            .collect();
+
+        // Add edges based on whether we have a root or not
+        if options.root.is_some() {
+            // For subgraph with root, traverse up to max_depth
+            let max_depth = if options.max_depth > 0 {
+                options.max_depth
+            } else {
+                3
+            };
+            let mut visited = std::collections::HashSet::new();
+            for symbol_id in &symbol_ids {
+                self.collect_mermaid_edges_recursive(
+                    symbol_id,
+                    max_depth,
+                    0,
+                    &symbol_ids,
+                    &mut visited,
+                    &mut mermaid,
+                );
+            }
+        } else {
+            // For full graph, add all edges between exported symbols
+            for (source_id, edges) in &self.edges {
+                if !symbol_ids.contains(source_id) {
+                    continue;
+                }
+                let safe_source = source_id
+                    .as_str()
+                    .replace([':', '(', ')', '<', '>', '{', '}'], "_");
+                for (target_id, dep_type) in edges {
+                    if !symbol_ids.contains(target_id) {
+                        continue;
+                    }
+                    let safe_target = target_id
+                        .as_str()
+                        .replace([':', '(', ')', '<', '>', '{', '}'], "_");
+                    let edge_label = match dep_type {
+                        DependencyType::Calls => "calls",
+                        DependencyType::Imports => "imports",
+                        DependencyType::Inherits => "inherits",
+                        DependencyType::UsesGeneric => "uses_generic",
+                        DependencyType::References => "references",
+                        DependencyType::Defines => "defines",
+                        DependencyType::AnnotatedBy => "annotated_by",
+                        DependencyType::Contains => "contains",
+                    };
+                    mermaid.push_str(&format!(
+                        "    {} -->|{}| {}\n",
+                        safe_source, edge_label, safe_target
+                    ));
+                }
+            }
+        }
+
+        mermaid
+    }
+
+    /// Helper to collect Mermaid edges recursively for a subgraph
+    fn collect_mermaid_edges_recursive(
+        &self,
+        symbol_id: &SymbolId,
+        max_depth: u8,
+        current_depth: u8,
+        allowed_symbols: &std::collections::HashSet<SymbolId>,
+        visited: &mut std::collections::HashSet<SymbolId>,
+        mermaid: &mut String,
+    ) {
+        if current_depth >= max_depth || visited.contains(symbol_id) {
+            return;
+        }
+        visited.insert(symbol_id.clone());
+
+        if let Some(dependencies) = self.edges.get(symbol_id) {
+            let safe_source = symbol_id
+                .as_str()
+                .replace([':', '(', ')', '<', '>', '{', '}'], "_");
+            for (target_id, dep_type) in dependencies {
+                if !allowed_symbols.contains(target_id) {
+                    continue;
+                }
+                let safe_target = target_id
+                    .as_str()
+                    .replace([':', '(', ')', '<', '>', '{', '}'], "_");
+                let edge_label = match dep_type {
+                    DependencyType::Calls => "calls",
+                    DependencyType::Imports => "imports",
+                    DependencyType::Inherits => "inherits",
+                    DependencyType::UsesGeneric => "uses_generic",
+                    DependencyType::References => "references",
+                    DependencyType::Defines => "defines",
+                    DependencyType::AnnotatedBy => "annotated_by",
+                    DependencyType::Contains => "contains",
+                };
+                mermaid.push_str(&format!(
+                    "    {} -->|{}| {}\n",
+                    safe_source, edge_label, safe_target
+                ));
+                self.collect_mermaid_edges_recursive(
+                    target_id,
+                    max_depth,
+                    current_depth + 1,
+                    allowed_symbols,
+                    visited,
+                    mermaid,
+                );
+            }
+        }
     }
 
     /// Returns all root symbols (symbols with no incoming edges)

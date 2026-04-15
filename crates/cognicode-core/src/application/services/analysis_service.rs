@@ -419,10 +419,13 @@ impl AnalysisService {
     ///
     /// Returns the path from source to target if one exists, or None if no path
     /// is found. The path includes both source and target symbols.
+    ///
+    /// When max_depth is 0, no depth limit is applied.
     pub fn trace_path(
         &self,
         source_name: &str,
         target_name: &str,
+        max_depth: usize,
     ) -> AppResult<Option<Vec<SymbolDto>>> {
         let graph = self.get_project_graph();
 
@@ -430,8 +433,12 @@ impl AnalysisService {
         let source_id = self.find_symbol_id_by_name(&graph, source_name)?;
         let target_id = self.find_symbol_id_by_name(&graph, target_name)?;
 
-        // Find path using BFS
-        let path = graph.find_path(&source_id, &target_id);
+        // Find path using BFS, respecting max_depth if specified
+        let path = if max_depth > 0 {
+            graph.find_path_with_max_depth(&source_id, &target_id, max_depth)
+        } else {
+            graph.find_path(&source_id, &target_id)
+        };
 
         Ok(path.map(|symbol_ids| {
             symbol_ids
@@ -1166,7 +1173,7 @@ def d():
                     "[ENHANCED] Trying trace_path from '{}' to '{}'",
                     source, target
                 );
-                let path_result = service.trace_path(source, target);
+                let path_result = service.trace_path(source, target, 0);
                 match path_result {
                     Ok(Some(path)) => {
                         println!("[ENHANCED] Path found with {} hops", path.len());
