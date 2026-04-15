@@ -5,6 +5,10 @@ edition = "2021"
 authors = ["CogniCode Team"]
 description = "Premium LSP server in Rust for AI agents with code analysis and refactoring capabilities"
 
+[features]
+default = []
+rig = ["dep:rig-core"]
+
 [dependencies]
 # LSP Protocol
 lsp-types = "0.93"
@@ -74,6 +78,9 @@ regex = "1"
 # Base64 for continuation tokens
 base64 = "0.22"
 rayon = "1.11.0"
+
+# Rig-core for agent framework (optional)
+rig-core = { version = "0.35", default-features = false, features = ["rustls"], optional = true }
 
 # MCP SDK (Model Context Protocol)
 rmcp = { version = "1.4", features = ["server", "transport-io", "client", "transport-child-process", "which-command"] }
