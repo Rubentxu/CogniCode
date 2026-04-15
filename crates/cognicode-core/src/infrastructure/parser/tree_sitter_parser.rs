@@ -133,7 +133,8 @@ impl Language {
             Language::Rust => "rust-analyzer",
             Language::Python => "pyright-langserver",
             Language::TypeScript | Language::JavaScript => "typescript-language-server",
-            Language::Go | Language::Java => "",
+            Language::Go => "gopls",
+            Language::Java => "jdtls",
         }
     }
 
@@ -145,7 +146,8 @@ impl Language {
             Language::TypeScript | Language::JavaScript => {
                 "npm install -g typescript-language-server typescript"
             }
-            Language::Go | Language::Java => "",
+            Language::Go => "go install golang.org/x/tools/gopls@latest",
+            Language::Java => "brew install jdtls",
         }
     }
 
@@ -155,7 +157,8 @@ impl Language {
             Language::Rust => &[],
             Language::Python => &["--stdio"],
             Language::TypeScript | Language::JavaScript => &["--stdio"],
-            Language::Go | Language::Java => &[],
+            Language::Go => &["serve"],
+            Language::Java => &[],
         }
     }
 
@@ -165,7 +168,8 @@ impl Language {
             Language::Rust => "rust-analyzer",
             Language::Python => "pyright",
             Language::TypeScript | Language::JavaScript => "typescript-language-server",
-            Language::Go | Language::Java => "",
+            Language::Go => "gopls",
+            Language::Java => "eclipse-jdtls",
         }
     }
 

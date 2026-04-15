@@ -53,6 +53,8 @@ impl ToolAvailabilityChecker {
             (Language::Python, Self::check(Language::Python)),
             (Language::TypeScript, Self::check(Language::TypeScript)),
             (Language::JavaScript, Self::check(Language::JavaScript)),
+            (Language::Go, Self::check(Language::Go)),
+            (Language::Java, Self::check(Language::Java)),
         ]
     }
 

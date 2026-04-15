@@ -466,11 +466,18 @@ pub fn format_doctor_text(report: &DoctorReport) -> String {
         report.summary.core
     ));
     output.push_str(&format!(
-        "  LSP:    {} {} ({}/{})\n",
+        "  LSP:    {} {}{}\n",
         status_icon(report.sections.lsp.status),
         report.summary.lsp,
-        report.sections.lsp.count_found(),
-        report.sections.lsp.count_total()
+        if report.sections.lsp.count_found() < report.sections.lsp.count_total() {
+            format!(
+                " ({}/{})",
+                report.sections.lsp.count_found(),
+                report.sections.lsp.count_total()
+            )
+        } else {
+            String::new()
+        }
     ));
     output.push_str(&format!(
         "  Parse:  {} {}\n",
