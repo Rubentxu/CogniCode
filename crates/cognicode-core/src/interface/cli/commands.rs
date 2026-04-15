@@ -1001,20 +1001,38 @@ impl CommandExecutor {
         // Complexity check on key files
         println!("\n=== Complexity Analysis ===");
         let session_ref = &session;
-        if let Ok(entries) = std::fs::read_dir(path) {
-            for entry in entries.filter_map(Result::ok).take(5) {
-                let p = entry.path();
-                if p.extension().and_then(|s| s.to_str()) == Some("rs") {
-                    if let Some(name) = p.file_name().and_then(|s| s.to_str()) {
-                        match session_ref.get_complexity(name, None).await {
-                            Ok(c) => {
-                                println!("  {}: cyclomatic={}, cognitive={}, loc={}",
-                                    name, c.cyclomatic, c.cognitive, c.lines_of_code);
+        let path_str = path.to_string();
+
+        // Use spawn_blocking to avoid blocking the async runtime
+        let file_names: Vec<String> = tokio::task::spawn_blocking(move || {
+            std::fs::read_dir(&path_str)
+                .ok()
+                .map(|entries| {
+                    entries
+                        .filter_map(Result::ok)
+                        .filter_map(|e| {
+                            let p = e.path();
+                            if p.extension().and_then(|s| s.to_str()) == Some("rs") {
+                                p.file_name().and_then(|s| s.to_str()).map(|s| s.to_string())
+                            } else {
+                                None
                             }
-                            Err(_) => {}
-                        }
-                    }
+                        })
+                        .take(5)
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default();
+
+        for name in &file_names {
+            match session_ref.get_complexity(name, None).await {
+                Ok(c) => {
+                    println!("  {}: cyclomatic={}, cognitive={}, loc={}",
+                        name, c.cyclomatic, c.cognitive, c.lines_of_code);
                 }
+                Err(_) => {}
             }
         }
 
