@@ -224,7 +224,7 @@ impl AnalysisService {
                 }
 
                 let source = std::fs::read_to_string(&path).ok()?;
-                let parser = TreeSitterParser::new(language.clone()).ok()?;
+                let parser = TreeSitterParser::with_cache(language.clone()).ok()?;
 
                 let symbols = parser
                     .find_all_symbols_with_path(&source, &file_path)
@@ -287,8 +287,8 @@ impl AnalysisService {
             AppError::InvalidParameter(format!("Unsupported file type: {}", path.display()))
         })?;
 
-        // Create parser for the detected language
-        let parser = TreeSitterParser::new(language)
+        // Create parser for the detected language (uses thread-local cache)
+        let parser = TreeSitterParser::with_cache(language)
             .map_err(|e| AppError::AnalysisError(format!("Failed to create parser: {}", e)))?;
 
         // Parse the file and extract symbols

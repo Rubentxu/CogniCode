@@ -4,8 +4,18 @@ use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::traits::{ParseError, ParseResult, ParsedTree, Parser};
 use crate::domain::value_objects::{Location, SymbolKind};
 use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tree_sitter::Parser as TsParser;
+
+/// Thread-local cache of TreeSitterParser instances per language.
+///
+/// Each thread gets its own cache, avoiding the cost of creating
+/// a new parser (and loading the tree-sitter language) for each file.
+thread_local! {
+    static PARSER_CACHE: std::cell::RefCell<HashMap<Language, TreeSitterParser>> =
+        std::cell::RefCell::new(HashMap::new());
+}
 
 /// Represents an occurrence of an identifier in source code
 #[derive(Debug, Clone)]
@@ -212,6 +222,20 @@ impl TreeSitterParser {
         Ok(Self {
             language,
             parser: Arc::new(Mutex::new(parser)),
+        })
+    }
+
+    /// Gets a parser for the given language from the thread-local cache,
+    /// creating one if not yet cached on this thread.
+    pub fn with_cache(language: Language) -> ParseResult<Self> {
+        PARSER_CACHE.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            if let Some(parser) = cache.get(&language) {
+                return Ok(parser.clone());
+            }
+            let parser = Self::new(language)?;
+            cache.insert(language, parser.clone());
+            Ok(parser)
         })
     }
 
