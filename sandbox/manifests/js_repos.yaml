@@ -76,7 +76,7 @@ scenarios:
     workspace: .
     scenario_class: mutation
     preview_only: true
-    expected_outcome: capability_missing
+    expected_outcome: expected_fail
     arguments:
       target: chalk
       params:
@@ -156,9 +156,9 @@ scenarios:
     workspace: .
     scenario_class: mutation
     preview_only: true
-    expected_outcome: capability_missing
+    expected_outcome: expected_fail
     arguments:
-      target: express
+      target: createApplication
       params:
         new_name: expressNew
         file_path: lib/express.js

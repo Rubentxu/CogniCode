@@ -93,7 +93,7 @@ scenarios:
       target: Execute
       params:
         new_name: ExecuteNew
-        file_path: cobra.go
+        file_path: command.go
 
   - name: realrepo_edit_file_cobra
     description: "Apply edit in cobra real repo with go build + test"

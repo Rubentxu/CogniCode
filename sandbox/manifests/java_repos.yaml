@@ -71,7 +71,7 @@ scenarios:
     scenario_class: analysis
     expected_outcome: capability_missing
     arguments:
-      path: src/main/java/org/springframework/samples/petclinic/owner/Owner.java
+      file_path: src/main/java/org/springframework/samples/petclinic/owner/Owner.java
 
   - name: realrepo_safe_refactor_petclinic
     description: "Attempt safe refactor rename on petclinic (not yet supported)"
@@ -81,7 +81,7 @@ scenarios:
     workspace: .
     scenario_class: mutation
     preview_only: true
-    expected_outcome: capability_missing
+    expected_outcome: expected_fail
     arguments:
       target: Owner
       params:

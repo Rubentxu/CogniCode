@@ -70,7 +70,7 @@ scenarios:
     workspace: .
     scenario_class: mutation
     preview_only: true
-    expected_outcome: capability_missing
+    expected_outcome: expected_fail
     arguments:
       target: Command
       params:
@@ -155,7 +155,7 @@ scenarios:
     workspace: .
     scenario_class: mutation
     preview_only: true
-    expected_outcome: capability_missing
+    expected_outcome: expected_fail
     arguments:
       target: ZodType
       params:
