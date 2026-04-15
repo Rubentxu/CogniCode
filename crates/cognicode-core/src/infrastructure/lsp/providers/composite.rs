@@ -5,7 +5,7 @@ use crate::domain::traits::code_intelligence::{
 };
 use crate::domain::value_objects::Location;
 use crate::infrastructure::graph::LightweightIndex;
-use crate::infrastructure::lsp::error::{LspProcessError, ProgressCallback, ProgressUpdate};
+use crate::infrastructure::lsp::error::{LspProcessError, ProgressCallback};
 use crate::infrastructure::lsp::providers::fallback::TreesitterFallbackProvider;
 use crate::infrastructure::lsp::providers::lsp::LspIntelligenceProvider;
 use crate::infrastructure::parser::Language;
@@ -42,34 +42,31 @@ pub struct CompositeProvider {
     lsp: LspIntelligenceProvider,
     fallback: TreesitterFallbackProvider,
     wait_timeout_secs: u64,
-    progress_callback: Option<Box<dyn ProgressCallback>>,
-    index: Arc<LightweightIndex>,
 }
 
 impl CompositeProvider {
-    pub fn new(workspace_root: &Path) -> Self {
+    /// Build a LightweightIndex for the given workspace root
+    fn build_index(workspace_root: &Path) -> Arc<LightweightIndex> {
         let mut index = LightweightIndex::new();
         index.build_index(workspace_root).ok();
-        let arc_index = Arc::new(index);
+        Arc::new(index)
+    }
+
+    pub fn new(workspace_root: &Path) -> Self {
+        let arc_index = Self::build_index(workspace_root);
         Self {
             lsp: LspIntelligenceProvider::new(workspace_root),
             fallback: TreesitterFallbackProvider::with_index(arc_index.clone()),
             wait_timeout_secs: 30,
-            progress_callback: None,
-            index: arc_index,
         }
     }
 
     pub fn with_wait_timeout(workspace_root: &Path, timeout_secs: u64) -> Self {
-        let mut index = LightweightIndex::new();
-        index.build_index(workspace_root).ok();
-        let arc_index = Arc::new(index);
+        let arc_index = Self::build_index(workspace_root);
         Self {
             lsp: LspIntelligenceProvider::new(workspace_root),
             fallback: TreesitterFallbackProvider::with_index(arc_index.clone()),
             wait_timeout_secs: timeout_secs,
-            progress_callback: None,
-            index: arc_index,
         }
     }
 
@@ -77,15 +74,11 @@ impl CompositeProvider {
     where
         F: ProgressCallback,
     {
-        let mut index = LightweightIndex::new();
-        index.build_index(workspace_root).ok();
-        let arc_index = Arc::new(index);
+        let arc_index = Self::build_index(workspace_root);
         Self {
             lsp: LspIntelligenceProvider::new(workspace_root),
             fallback: TreesitterFallbackProvider::with_index(arc_index.clone()),
             wait_timeout_secs: 30,
-            progress_callback: Some(Box::new(callback)),
-            index: arc_index,
         }
     }
 

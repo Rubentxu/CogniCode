@@ -12,15 +12,11 @@ use std::collections::{HashMap, HashSet};
 
 struct NodeData {
     symbol: Symbol,
-    original_location: Location,
 }
 
 impl NodeData {
-    fn new(symbol: Symbol, original_location: Location) -> Self {
-        Self {
-            symbol,
-            original_location,
-        }
+    fn new(symbol: Symbol) -> Self {
+        Self { symbol }
     }
 }
 
@@ -52,9 +48,7 @@ impl PetGraphStore {
             return index;
         }
 
-        let index = self
-            .graph
-            .add_node(NodeData::new(symbol.clone(), symbol.location().clone()));
+        let index = self.graph.add_node(NodeData::new(symbol.clone()));
         let key = id.as_str().to_string();
         self.symbol_to_index.insert(key.clone(), index);
         self.index_to_symbol.insert(index, key);
@@ -67,14 +61,11 @@ impl PetGraphStore {
             return index;
         }
 
-        let index = self.graph.add_node(NodeData::new(
-            Symbol::new(
-                id.as_str(),
-                crate::domain::value_objects::SymbolKind::Unknown,
-                crate::domain::value_objects::Location::new("unknown", 0, 0),
-            ),
+        let index = self.graph.add_node(NodeData::new(Symbol::new(
+            id.as_str(),
+            crate::domain::value_objects::SymbolKind::Unknown,
             crate::domain::value_objects::Location::new("unknown", 0, 0),
-        ));
+        )));
         let key = id.as_str().to_string();
         self.symbol_to_index.insert(key.clone(), index);
         self.index_to_symbol.insert(index, key);
@@ -115,18 +106,6 @@ impl PetGraphStore {
         }
 
         call_graph
-    }
-
-    fn parse_location_from_id(id: &str) -> (Location, String) {
-        let parts: Vec<&str> = id.split(':').collect();
-        if parts.len() >= 3 {
-            let col = parts[parts.len() - 1].parse().unwrap_or(0);
-            let line = parts[parts.len() - 2].parse().unwrap_or(0);
-            let file = parts[..parts.len() - 2].join(":");
-            (Location::new(file, line, col), id.to_string())
-        } else {
-            (Location::new(id, 0, 0), format!("{}:0:0", id))
-        }
     }
 }
 

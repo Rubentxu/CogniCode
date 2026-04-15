@@ -297,17 +297,6 @@ fn get_refactor_suggest_prompt(
     }))
 }
 
-/// Helper to get a required string argument
-fn get_required_string_arg(
-    args: &serde_json::Map<String, serde_json::Value>,
-    name: &str,
-) -> Result<String, String> {
-    args.get(name)
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| format!("Missing required argument: {}", name))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -50,6 +50,8 @@ pub struct ExtractionPlan {
     pub has_return_value: bool,
     /// The body text of the block to extract
     pub block_body: String,
+    /// Return type hint derived from the return expression (for Go/Java)
+    pub return_type_hint: Option<String>,
 }
 
 impl ExtractStrategy {
@@ -369,7 +371,7 @@ impl ExtractStrategy {
         name: &str,
         free_variables: &[String],
         has_return: bool,
-        _source: &str,
+        return_type_hint: Option<&str>,
     ) -> String {
         let language = self.parser.language();
         let params: Vec<String> = free_variables
@@ -419,7 +421,15 @@ impl ExtractStrategy {
                 }
             }
             Language::Go => {
-                let return_type = if has_return { " /* return type */" } else { "" };
+                let return_type = if has_return {
+                    if let Some(hint) = return_type_hint {
+                        format!(" /* {} */", hint)
+                    } else {
+                        " /* return type */".to_string()
+                    }
+                } else {
+                    String::new()
+                };
                 if params_str.is_empty() {
                     format!(
                         "func {}({}){} {{\n    // body\n}}",
@@ -434,9 +444,13 @@ impl ExtractStrategy {
             }
             Language::Java => {
                 let return_type = if has_return {
-                    " /* ReturnType */"
+                    if let Some(hint) = return_type_hint {
+                        format!(" /* {} */", hint)
+                    } else {
+                        " /* ReturnType */".to_string()
+                    }
                 } else {
-                    "void"
+                    "void".to_string()
                 };
                 if params_str.is_empty() {
                     format!("{} {}({{\n    // body\n}}", return_type, name)
@@ -551,6 +565,7 @@ impl ExtractStrategy {
         params: &[String],
         body: &str,
         has_return: bool,
+        return_type_hint: Option<&str>,
     ) -> String {
         let language = self.parser.language();
         let params_str = params.join(", ");
@@ -670,6 +685,7 @@ impl ExtractStrategy {
             &plan.free_variables,
             &plan.block_body.trim(),
             plan.has_return_value,
+            plan.return_type_hint.as_deref(),
         );
 
         // Step 2: Generate the replacement call
@@ -931,6 +947,7 @@ impl RefactorStrategy for ExtractStrategy {
             &block.free_variables,
             &block.code,
             block.has_return_value,
+            block.return_expression.as_deref(),
         );
 
         // Generate the replacement call
@@ -1001,6 +1018,7 @@ impl RefactorStrategy for ExtractStrategy {
         })?;
 
         // Build the extraction plan
+        let return_type_hint = block.return_expression.clone();
         let plan = ExtractionPlan {
             block_range: block.range.clone(),
             new_function_name: extraction_target.clone(),
@@ -1008,6 +1026,7 @@ impl RefactorStrategy for ExtractStrategy {
             return_variable: block.return_expression.clone(),
             has_return_value: block.has_return_value,
             block_body: block.code.clone(),
+            return_type_hint,
         };
 
         // Apply the extraction
@@ -1118,12 +1137,11 @@ fn process_order(order_id: i32, items: Vec<f64>) {
         let safety_gate = SafetyGate::new();
         let strategy = ExtractStrategy::new(Arc::new(parser), safety_gate);
 
-        let source = "";
         let signature = strategy.generate_function_signature(
             "calculate_tax",
             &["total".to_string()],
             true,
-            source,
+            Some("result"),
         );
 
         assert!(signature.contains("calculate_tax"));

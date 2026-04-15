@@ -1060,36 +1060,6 @@ fn fit_linear_r2(data: &[(f64, f64)]) -> f64 {
     1.0 - ss_res / ss_tot
 }
 
-/// Compute R² for a quadratic fit: latency = a * size² + b * size + c
-fn fit_quadratic_r2(data: &[(f64, f64)]) -> f64 {
-    let n = data.len() as f64;
-    if n < 3.0 {
-        return fit_linear_r2(data); // Need at least 3 points for quadratic
-    }
-
-    // Use simple least squares for quadratic
-    // Build normal equations matrix
-    let sum_x: f64 = data.iter().map(|(x, _)| x).sum();
-    let sum_x2: f64 = data.iter().map(|(x, _)| x * x).sum();
-    let sum_x3: f64 = data.iter().map(|(x, _)| x.powi(3)).sum();
-    let sum_x4: f64 = data.iter().map(|(x, _)| x.powi(4)).sum();
-    let sum_y: f64 = data.iter().map(|(_, y)| y).sum();
-    let sum_xy: f64 = data.iter().map(|(x, y)| x * y).sum();
-    let sum_x2y: f64 = data.iter().map(|(x, y)| x * x * y).sum();
-
-    // Solve 3x3 system using Cramer's rule
-    let det = n * (sum_x2 * sum_x4 - sum_x3.powi(2)) - sum_x * (sum_x * sum_x4 - sum_x2 * sum_x3)
-        + sum_x2 * (sum_x * sum_x3 - sum_x2.powi(2));
-
-    if det.abs() < 1e-10 {
-        return fit_linear_r2(data); // Singular matrix
-    }
-
-    // For simplicity, use linear fit if quadratic fitting fails
-    // In practice, we'd use a proper matrix solver
-    fit_linear_r2(data)
-}
-
 /// Compute R² for a logarithmic fit: latency = a * log(size) + b
 fn fit_log_r2(data: &[(f64, f64)]) -> f64 {
     let n = data.len() as f64;

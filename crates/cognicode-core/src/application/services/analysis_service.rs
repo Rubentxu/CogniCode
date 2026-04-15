@@ -275,21 +275,6 @@ impl AnalysisService {
         self.graph_cache.get()
     }
 
-    /// Finds a symbol by name from a list of symbols
-    fn find_symbol_by_name(
-        &self,
-        name: &str,
-        symbols: Vec<crate::domain::aggregates::Symbol>,
-    ) -> Option<SymbolId> {
-        let name_lower = name.to_lowercase();
-        for symbol in symbols {
-            if symbol.name().to_lowercase() == name_lower {
-                return Some(SymbolId::new(symbol.fully_qualified_name()));
-            }
-        }
-        None
-    }
-
     /// Extracts symbols from a file
     pub fn get_file_symbols(&self, path: &Path) -> AppResult<Vec<SymbolDto>> {
         // Read the source file

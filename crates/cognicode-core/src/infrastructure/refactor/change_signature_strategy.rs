@@ -708,10 +708,6 @@ impl ChangeSignatureStrategy {
                 // Return type not available in params, use placeholder
                 format!("/* ReturnType */ {}({})", function_name, params_str)
             }
-            _ => {
-                // Default fallback
-                format!("{}({})", function_name, params_str)
-            }
         }
     }
 

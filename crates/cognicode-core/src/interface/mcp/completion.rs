@@ -71,7 +71,6 @@ fn is_enum_arg(arg_name: &str) -> bool {
             | "mode"
             | "strategy"
             | "subgraph_direction"
-            | "direction"
             | "schema"
     )
 }

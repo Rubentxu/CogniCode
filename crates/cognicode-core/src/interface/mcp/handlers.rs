@@ -1114,20 +1114,6 @@ pub async fn handle_safe_refactor(
                 }
             }
         }
-        // Other refactor actions are not yet implemented
-        _ => {
-            Ok(SafeRefactorOutput {
-                action: input.action.clone(),
-                success: false,
-                changes: Vec::new(),
-                validation_result: ValidationResult {
-                    is_valid: false,
-                    warnings: Vec::new(),
-                    errors: vec![format!("{:?} not yet implemented", input.action)],
-                },
-                error_message: Some(format!("{:?} not yet implemented", input.action)),
-            })
-        }
     }
 }
 

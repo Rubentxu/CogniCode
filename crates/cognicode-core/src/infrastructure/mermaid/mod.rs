@@ -1,8 +1,5 @@
 use mermaid_rs_renderer::{RenderOptions, Theme};
 
-const DEFAULT_TEXT_DARK: &str = "#e6edf3";
-const DEFAULT_TEXT_LIGHT: &str = "#1f2328";
-
 macro_rules! dark_theme {
     (
         primary = $primary:expr,
