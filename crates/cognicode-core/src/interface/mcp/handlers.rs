@@ -1938,6 +1938,15 @@ pub async fn handle_query_symbol_index(
         return Err(HandlerError::App(AppError::AnalysisError(e.to_string())));
     }
 
+    // Empty symbol name returns empty results
+    if input.symbol_name.is_empty() {
+        return Ok(QuerySymbolOutput {
+            symbol_name: input.symbol_name,
+            locations: Vec::new(),
+            total: 0,
+        });
+    }
+
     let locations = strategy.query_symbols(&input.symbol_name);
 
     let location_entries: Vec<SymbolLocationEntry> = locations
