@@ -4,8 +4,6 @@
 //! and are used to incrementally update the graph instead of
 //! rebuilding it from scratch.
 
-use std::collections::HashMap;
-
 use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
 
 /// Events that represent changes to symbols in the call graph

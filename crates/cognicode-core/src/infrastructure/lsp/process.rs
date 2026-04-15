@@ -1,8 +1,6 @@
 use crate::infrastructure::parser::Language;
-use crate::infrastructure::lsp::error::{
-    LspProcessError, ProgressCallback, ProgressUpdate, ServerStatus,
-};
-use crate::infrastructure::lsp::json_rpc::{JsonRpcTransport, JsonRpcTransportError};
+use crate::infrastructure::lsp::error::{LspProcessError, ServerStatus};
+use crate::infrastructure::lsp::json_rpc::JsonRpcTransport;
 use lsp_types::{InitializeParams, ServerCapabilities};
 use serde_json::Value;
 use std::path::Path;

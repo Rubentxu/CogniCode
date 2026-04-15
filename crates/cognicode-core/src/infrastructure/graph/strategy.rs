@@ -276,7 +276,7 @@ impl GraphStrategy for PerFileStrategy {
 
     fn query_symbols(
         &self,
-        symbol_name: &str,
+        _symbol_name: &str,
     ) -> Vec<crate::infrastructure::graph::lightweight_index::SymbolLocation> {
         // Would need to query each file - not efficient for this strategy
         Vec::new()
@@ -289,8 +289,8 @@ impl GraphStrategy for PerFileStrategy {
     fn build_subgraph(
         &self,
         symbol_name: &str,
-        depth: u32,
-        direction: TraversalDirection,
+        _depth: u32,
+        _direction: TraversalDirection,
     ) -> CallHierarchyResult {
         // Would need to build from file graphs - simplified version
         CallHierarchyResult {

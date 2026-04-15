@@ -6,7 +6,7 @@
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::aggregates::symbol::Symbol;
-use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+use crate::domain::value_objects::{DependencyType, Location};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::HashMap;
 use std::path::Path;

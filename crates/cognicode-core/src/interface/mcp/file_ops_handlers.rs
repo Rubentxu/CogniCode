@@ -12,7 +12,6 @@
 use crate::application::services::file_operations::FileOperationsService;
 use crate::application::error::AppError;
 use crate::infrastructure::telemetry::{get_global_metrics, instrument_tool, ToolError};
-use crate::interface::mcp::dto_mapping::*;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::mcp::schemas::{
     EditFileInput, EditFileOutput, ListFilesInput, ListFilesOutput, ReadFileInput,

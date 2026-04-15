@@ -8,10 +8,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tree_sitter::Parser as TsParser;
 
-/// Thread-local cache of TreeSitterParser instances per language.
-///
-/// Each thread gets its own cache, avoiding the cost of creating
-/// a new parser (and loading the tree-sitter language) for each file.
+// Thread-local cache of TreeSitterParser instances per language.
+//
+// Each thread gets its own cache, avoiding the cost of creating
+// a new parser (and loading the tree-sitter language) for each file.
 thread_local! {
     static PARSER_CACHE: std::cell::RefCell<HashMap<Language, TreeSitterParser>> =
         std::cell::RefCell::new(HashMap::new());

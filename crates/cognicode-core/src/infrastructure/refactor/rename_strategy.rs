@@ -122,7 +122,7 @@ pub struct Occurrence {
 impl RefactorStrategy for RenameStrategy {
     fn validate(&self, refactor: &Refactor) -> RefactorValidation {
         let mut errors = Vec::new();
-        let mut warnings: Vec<String> = Vec::new();
+        let _warnings: Vec<String> = Vec::new();
 
         // Extract parameters
         let new_name = refactor.parameters().new_name.as_ref().ok_or_else(|| {
@@ -203,7 +203,7 @@ impl RefactorStrategy for RenameStrategy {
         // Generate text edits for each occurrence
         let edits: Vec<RefactorParameters> = occurrences
             .iter()
-            .map(|occ| RefactorParameters::new().with_new_name(new_name.clone()))
+            .map(|_occ| RefactorParameters::new().with_new_name(new_name.clone()))
             .collect();
 
         let mut files_to_modify = HashMap::new();

@@ -1,6 +1,4 @@
 use crate::infrastructure::lsp::json_rpc::JsonRpcTransportError;
-use crate::infrastructure::parser::Language;
-use serde_json::Value;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LspProcessError {

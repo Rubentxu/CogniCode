@@ -6,10 +6,10 @@
 use crate::interface::mcp::handlers::HandlerContext;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, Content, EmptyObject, InitializeResult,
+    CallToolRequestParams, CallToolResult, Content,
     ListToolsResult, ServerCapabilities, ServerInfo, Tool,
 };
-use rmcp::service::{serve_server, RoleServer, ServiceError};
+use rmcp::service::RoleServer;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

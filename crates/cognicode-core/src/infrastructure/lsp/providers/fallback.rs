@@ -1,14 +1,13 @@
 use crate::domain::aggregates::Symbol;
 use crate::domain::traits::code_intelligence::{
     CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, DocumentSymbolKind,
-    HoverInfo, HoverKind, Reference, ReferenceKind, TypeHierarchy, TypeHierarchyNode,
+    HoverInfo, HoverKind, Reference, ReferenceKind, TypeHierarchy,
 };
 use crate::domain::value_objects::{Location, SymbolKind};
 use crate::infrastructure::graph::LightweightIndex;
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::path::Path;
 use std::sync::Arc;
-use tracing::warn;
 
 pub struct TreesitterFallbackProvider {
     index: Option<Arc<LightweightIndex>>,

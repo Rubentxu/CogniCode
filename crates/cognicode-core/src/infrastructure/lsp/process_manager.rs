@@ -111,7 +111,7 @@ impl LspProcessManager {
                         }
                     }
                     Err(e) => {
-                        let waited = start.elapsed().as_secs();
+                        let _waited = start.elapsed().as_secs();
                         return Err(e);
                     }
                 }

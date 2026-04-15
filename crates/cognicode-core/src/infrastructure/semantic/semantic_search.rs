@@ -156,7 +156,7 @@ impl SearchIndex {
 
     /// Indexes a file's symbols
     pub fn index_file(&self, file_path: &str, symbols: Vec<Symbol>) {
-        let mut indexed: Vec<IndexedSymbol> = symbols
+        let indexed: Vec<IndexedSymbol> = symbols
             .into_iter()
             .map(|s| {
                 let key = format!(
@@ -428,7 +428,7 @@ impl SemanticSearchService {
                 extension.as_ref().map(|s| std::ffi::OsStr::new(s)),
             );
 
-            if let Some(lang) = language {
+            if let Some(_lang) = language {
                 if let Err(_e) = self.index_file_from_path(path) {
                     // Skip files that fail to parse — non-fatal
                     continue;

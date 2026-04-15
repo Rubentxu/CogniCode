@@ -937,7 +937,7 @@ pub fn match_search_results(
 pub fn match_symbols(
     returned: &[ReturnedSymbol],
     expected: &[ExpectedSymbol],
-    recall_only: bool,
+    _recall_only: bool,
 ) -> SymbolMatchResult {
     let mut true_positives = 0u32;
     let mut matched_symbols = Vec::new();

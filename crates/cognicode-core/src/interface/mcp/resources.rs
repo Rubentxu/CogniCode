@@ -91,7 +91,7 @@ pub fn handle_resources_read(workspace: &str, uri: &str) -> Result<Value, String
         return Err(format!("File not found: {}", path.display()));
     }
 
-    let metadata =
+    let _metadata =
         std::fs::metadata(&path).map_err(|e| format!("Cannot read file metadata: {}", e))?;
 
     let is_binary = is_binary_file(&path)?;

@@ -2,7 +2,7 @@
 //!
 //! These DTOs decouple the application layer from the MCP protocol.
 
-use super::common::{AnalysisMetadata, RiskLevel, SourceLocation, SymbolKind, SymbolSummary};
+use super::common::{AnalysisMetadata, RiskLevel, SourceLocation, SymbolSummary};
 use serde::{Deserialize, Serialize};
 
 /// Refactor action type

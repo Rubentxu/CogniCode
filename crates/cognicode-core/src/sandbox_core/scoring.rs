@@ -562,7 +562,7 @@ pub fn score_mermaid(tool_response: &Value, ground_truth: &GroundTruth) -> f64 {
 pub fn score_search_content(
     tool_response: &Value,
     ground_truth: &GroundTruth,
-    recall_only: bool,
+    _recall_only: bool,
 ) -> f64 {
     let Some(expected_matches) = &ground_truth.matches else {
         return f64::NAN;
@@ -1554,7 +1554,7 @@ pub fn score_scenario(
             }
         }
         "get_outline" => {
-            if let Some(gt) = ground_truth {
+            if let Some(_gt) = ground_truth {
                 // Use outline score from compute_correctness_score if available
                 let recall_only = metrics
                     .as_ref()
@@ -2028,7 +2028,7 @@ pub fn compute_merge_accuracy(
 /// Compares pre/post code and checks if behavior is preserved.
 pub fn compute_behavioral_preservation(
     tool_response: &Value,
-    ground_truth: &GroundTruth,
+    _ground_truth: &GroundTruth,
 ) -> BehavioralPreservationResult {
     // Unwrap MCP content wrapper if present
     let tool_response = super::ground_truth::unwrap_response(tool_response);

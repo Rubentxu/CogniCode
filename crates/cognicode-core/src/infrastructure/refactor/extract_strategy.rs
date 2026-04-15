@@ -468,7 +468,7 @@ impl ExtractStrategy {
         params: &[String],
         body: &str,
         has_return: bool,
-        return_type_hint: Option<&str>,
+        _return_type_hint: Option<&str>,
     ) -> String {
         let language = self.parser.language();
         let params_str = params.join(", ");
@@ -579,7 +579,7 @@ impl ExtractStrategy {
         source: &str,
         plan: ExtractionPlan,
     ) -> Result<String, RefactorError> {
-        let language = self.parser.language();
+        let _language = self.parser.language();
         let mut result = source.to_string();
 
         // Step 1: Generate the new function body

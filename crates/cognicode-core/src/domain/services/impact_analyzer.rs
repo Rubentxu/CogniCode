@@ -2,9 +2,6 @@
 //!
 //! Calculates impact reports and safety assessments for refactoring operations.
 
-use std::collections::HashSet;
-use std::path::PathBuf;
-
 use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
 
 /// Service for analyzing the impact of symbol changes

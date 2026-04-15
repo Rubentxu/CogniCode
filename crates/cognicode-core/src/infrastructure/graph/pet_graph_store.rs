@@ -5,7 +5,7 @@ use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::services::CycleDetectionResult;
 use crate::domain::traits::dependency_repository::DependencyError;
 use crate::domain::traits::DependencyRepository;
-use crate::domain::value_objects::{DependencyType, Location};
+use crate::domain::value_objects::DependencyType;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::collections::{HashMap, HashSet};

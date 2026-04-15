@@ -70,7 +70,7 @@ impl CompositeProvider {
         }
     }
 
-    pub fn with_progress_callback<F>(workspace_root: &Path, callback: F) -> Self
+    pub fn with_progress_callback<F>(workspace_root: &Path, _callback: F) -> Self
     where
         F: ProgressCallback,
     {
@@ -188,7 +188,7 @@ impl CodeIntelligenceProvider for CompositeProvider {
         match self.lsp.get_definition(location).await {
             Ok(Some(loc)) => Ok(Some(loc)),
             Ok(None) => Ok(None),
-            Err(e) => {
+            Err(_e) => {
                 warn!("LSP get_definition failed for {}, trying tree-sitter", file);
                 self.fallback.get_definition(location).await
             }

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 /// Returns completions based on referrer context
 pub fn handle_completion(referrer: Option<Value>, argument: Value) -> Value {
     // Extract referrer information
-    let (prompt_name, arg_name) = match referrer {
+    let (_prompt_name, arg_name) = match referrer {
         Some(Value::Object(obj)) => {
             let prompt = obj.get("prompt").and_then(|v| v.as_str()).map(String::from);
             let arg = obj
@@ -93,7 +93,7 @@ fn get_file_path_completions(prefix: &str) -> Vec<String> {
     let file_name = base_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
     let mut completions = Vec::new();
-    let search_pattern = if file_name.is_empty() {
+    let _search_pattern = if file_name.is_empty() {
         "*".to_string()
     } else {
         format!("{}*", file_name)

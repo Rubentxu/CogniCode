@@ -174,7 +174,7 @@ impl TreeNode {
         let indent = "  ".repeat(level);
         let len = self.name.len().max(self.location.len() + 2);
         let top_border = format!("+-{}-+", "-".repeat(len));
-        let mid_border = format!("| {:len$} |", "");
+        let _mid_border = format!("| {:len$} |", "");
         let bot_border = format!("+-{}-+", "-".repeat(len));
 
         output.push_str(&format!("{}{}\n", indent, top_border));
@@ -862,7 +862,7 @@ impl OnDemandGraphBuilder {
         source_name: &str,
         target_name: &str,
         source_locs: &[super::lightweight_index::SymbolLocation],
-        target_locs: &[super::lightweight_index::SymbolLocation],
+        _target_locs: &[super::lightweight_index::SymbolLocation],
     ) {
         // Look for direct calls from source to target
         for source_loc in source_locs {
@@ -887,7 +887,7 @@ impl OnDemandGraphBuilder {
         source_name: &str,
         target_name: &str,
         source_locs: &[super::lightweight_index::SymbolLocation],
-        target_locs: &[super::lightweight_index::SymbolLocation],
+        _target_locs: &[super::lightweight_index::SymbolLocation],
     ) {
         // BFS through intermediate symbols
         let mut visited: HashSet<String> = HashSet::new();
