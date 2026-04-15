@@ -9,16 +9,19 @@ use tokio::sync::RwLock;
 
 use crate::application::dto::{
     AnalyzeImpactResult, ArchitectureResult, BuildIndexResult, CallHierarchyEntry,
-    ComplexityResult, GetCallHierarchyResult, RefactorResult, RiskLevel, SymbolDto,
-    ChangeEntry, ValidationResult,
+    ComplexityResult, GetCallHierarchyResult, RefactorResult, RiskLevel, SourceLocation,
+    SymbolDto, ChangeEntry, ValidationResult,
 };
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::application::services::refactor_service::RefactorService;
 use crate::domain::aggregates::CallGraph;
-use crate::infrastructure::semantic::{SearchQuery, SemanticSearchService, SymbolCodeService};
+use crate::domain::value_objects::Location;
 use crate::infrastructure::graph::TraversalDirection;
+use crate::infrastructure::lsp::CompositeProvider;
+use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
 use crate::infrastructure::parser::Language;
+use crate::infrastructure::semantic::{SearchQuery, SemanticSearchService, SymbolCodeService};
 
 /// Error type for workspace operations
 #[derive(Debug, thiserror::Error)]
@@ -65,6 +68,8 @@ pub struct WorkspaceSession {
     symbol_code: Arc<SymbolCodeService>,
     /// Cached call graph (built on demand)
     graph: Arc<RwLock<Option<Arc<CallGraph>>>>,
+    /// LSP navigation provider (lazy initialized)
+    lsp: Arc<RwLock<Option<Arc<CompositeProvider>>>>,
 }
 
 impl WorkspaceSession {
@@ -87,7 +92,8 @@ impl WorkspaceSession {
         let semantic_search = Arc::new(RwLock::new(None));
         let symbol_code = Arc::new(SymbolCodeService::new());
         let graph = Arc::new(RwLock::new(None));
-        
+        let lsp = Arc::new(RwLock::new(None));
+
         Ok(Self {
             workspace_root: root,
             analysis,
@@ -96,6 +102,7 @@ impl WorkspaceSession {
             semantic_search,
             symbol_code,
             graph,
+            lsp,
         })
     }
 
@@ -127,6 +134,16 @@ impl WorkspaceSession {
             *search_guard = Some(service);
         }
         Ok(())
+    }
+
+    /// Ensures the LSP provider is initialized
+    async fn ensure_lsp(&self) -> WorkspaceResult<Arc<CompositeProvider>> {
+        let mut lsp_guard = self.lsp.write().await;
+        if lsp_guard.is_none() {
+            let provider = CompositeProvider::new(&self.workspace_root);
+            *lsp_guard = Some(Arc::new(provider)); // Store Arc-wrapped provider
+        }
+        Ok(Arc::clone(lsp_guard.as_ref().unwrap()))
     }
 
     // =========================================================================
@@ -791,18 +808,61 @@ impl WorkspaceSession {
     // =========================================================================
 
     /// Go to definition
-    pub async fn go_to_definition(&self, _file: &str, _line: u32, _column: u32) -> WorkspaceResult<Vec<crate::application::dto::SourceLocation>> {
-        Err(WorkspaceError::LspNotAvailable("LSP not configured".to_string()))
+    pub async fn go_to_definition(&self, file: &str, line: u32, column: u32) -> WorkspaceResult<Vec<SourceLocation>> {
+        let provider = self.ensure_lsp().await?;
+        let location = Location::new(
+            self.resolve_path(file)?.to_string_lossy().to_string(),
+            line.saturating_sub(1),
+            column.saturating_sub(1),
+        );
+
+        match provider
+            .as_ref()
+            .get_definition(&location)
+            .await
+            .map_err(|e| WorkspaceError::LspNotAvailable(e.to_string()))?
+        {
+            Some(loc) => Ok(vec![SourceLocation::from(&loc)]),
+            None => Ok(vec![]),
+        }
     }
 
     /// Get hover information
-    pub async fn hover(&self, _file: &str, _line: u32, _column: u32) -> WorkspaceResult<String> {
-        Err(WorkspaceError::LspNotAvailable("LSP not configured".to_string()))
+    pub async fn hover(&self, file: &str, line: u32, column: u32) -> WorkspaceResult<String> {
+        let provider = self.ensure_lsp().await?;
+        let location = Location::new(
+            self.resolve_path(file)?.to_string_lossy().to_string(),
+            line.saturating_sub(1),
+            column.saturating_sub(1),
+        );
+
+        match provider
+            .as_ref()
+            .hover(&location)
+            .await
+            .map_err(|e| WorkspaceError::LspNotAvailable(e.to_string()))?
+        {
+            Some(info) => Ok(info.content),
+            None => Ok(String::new()),
+        }
     }
 
     /// Find references to a symbol
-    pub async fn find_references(&self, _file: &str, _line: u32, _column: u32, _include_decl: bool) -> WorkspaceResult<Vec<crate::application::dto::SourceLocation>> {
-        Err(WorkspaceError::LspNotAvailable("LSP not configured".to_string()))
+    pub async fn find_references(&self, file: &str, line: u32, column: u32, include_decl: bool) -> WorkspaceResult<Vec<SourceLocation>> {
+        let provider = self.ensure_lsp().await?;
+        let location = Location::new(
+            self.resolve_path(file)?.to_string_lossy().to_string(),
+            line.saturating_sub(1),
+            column.saturating_sub(1),
+        );
+
+        let refs = provider
+            .as_ref()
+            .find_references(&location, include_decl)
+            .await
+            .map_err(|e| WorkspaceError::LspNotAvailable(e.to_string()))?;
+
+        Ok(refs.into_iter().map(|r| SourceLocation::from(&r.location)).collect())
     }
 
     // =========================================================================

@@ -3,6 +3,7 @@
 //! These types are transport-neutral and can be used by any interface
 //! (MCP, REST, gRPC, etc.) without coupling to a specific protocol.
 
+use crate::domain::value_objects::Location;
 use serde::{Deserialize, Serialize};
 
 /// Represents a location in source code (1-indexed for display)
@@ -11,6 +12,17 @@ pub struct SourceLocation {
     pub file: String,
     pub line: u32,
     pub column: u32,
+}
+
+impl From<&Location> for SourceLocation {
+    /// Converts from domain Location (zero-indexed) to DTO SourceLocation (1-indexed for display)
+    fn from(loc: &Location) -> Self {
+        Self {
+            file: loc.file().to_string(),
+            line: loc.line() + 1,
+            column: loc.column() + 1,
+        }
+    }
 }
 
 /// Metadata for analysis operations
