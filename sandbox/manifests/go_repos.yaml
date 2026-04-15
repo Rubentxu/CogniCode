@@ -81,14 +81,14 @@ scenarios:
       file_path: cobra.go
 
   - name: realrepo_safe_refactor_cobra
-    description: "Attempt safe refactor rename on cobra (not yet supported)"
+    description: "Safe refactor rename on cobra (preview-only)"
     tool: safe_refactor
     action: rename
     repo: go/cobra
     workspace: .
     scenario_class: mutation
     preview_only: true
-    expected_outcome: capability_missing
+    expected_outcome: expected_fail
     arguments:
       target: Execute
       params:

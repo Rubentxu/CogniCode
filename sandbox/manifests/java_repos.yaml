@@ -69,7 +69,7 @@ scenarios:
     repo: java/spring-petclinic
     workspace: .
     scenario_class: analysis
-    expected_outcome: capability_missing
+    expected_outcome: pass
     arguments:
       file_path: src/main/java/org/springframework/samples/petclinic/owner/Owner.java
 
