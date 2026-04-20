@@ -279,7 +279,9 @@ impl CommandExecutor {
     /// Execute the given CLI command
     pub async fn execute(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         if cli.verbose {
-            std::env::set_var("RUST_LOG", "debug");
+            // SAFETY: Setting RUST_LOG env var during CLI verbose mode is safe
+            // as this runs in a single-threaded CLI context at startup.
+            unsafe { std::env::set_var("RUST_LOG", "debug") };
         }
 
         match &cli.command {

@@ -14,7 +14,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize logging based on verbosity
     if cli.verbose {
-        std::env::set_var("RUST_LOG", "debug");
+        // SAFETY: called before any threads are spawned
+        unsafe { std::env::set_var("RUST_LOG", "debug") };
     }
 
     let subscriber = tracing_subscriber::FmtSubscriber::builder()

@@ -3,11 +3,12 @@
 //! Represents a symbol (function, class, variable, etc.) in the codebase.
 
 use std::fmt;
+use serde::{Deserialize, Serialize};
 
 use super::super::value_objects::{Location, SymbolKind};
 
 /// Aggregate Root representing a code symbol
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Symbol {
     name: String,
     kind: SymbolKind,
@@ -93,7 +94,7 @@ impl fmt::Display for Symbol {
 }
 
 /// Represents the signature of a callable symbol (function, method, etc.)
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FunctionSignature {
     parameters: Vec<Parameter>,
     return_type: Option<String>,
@@ -157,7 +158,7 @@ impl fmt::Display for FunctionSignature {
 }
 
 /// Represents a parameter in a function signature
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Parameter {
     name: String,
     type_annotation: Option<String>,
@@ -280,5 +281,32 @@ mod tests {
         assert!(display.contains("main"));
         assert!(display.contains("function"));
         assert!(display.contains("test.rs:10:5"));
+    }
+
+    #[cfg(feature = "persistence")]
+    #[test]
+    fn test_symbol_bincode_roundtrip() {
+        use bincode::serde::{decode_from_slice, encode_to_vec};
+        use bincode::config::standard;
+
+        let location = Location::new("test.rs", 10, 5);
+        let signature = FunctionSignature::new(
+            vec![Parameter::new("x", Some("i32".to_string()))],
+            Some("i32".to_string()),
+            false,
+        );
+        let symbol = Symbol::new("add", SymbolKind::Function, location).with_signature(signature);
+
+        // Serialize
+        let bytes = encode_to_vec(&symbol, standard()).expect("Failed to serialize Symbol");
+
+        // Deserialize
+        let (deserialized_symbol, _): (Symbol, usize) =
+            decode_from_slice(&bytes, standard()).expect("Failed to deserialize Symbol");
+
+        // Assert equality
+        assert_eq!(symbol.name(), deserialized_symbol.name());
+        assert_eq!(symbol.kind(), deserialized_symbol.kind());
+        assert_eq!(symbol.fully_qualified_name(), deserialized_symbol.fully_qualified_name());
     }
 }

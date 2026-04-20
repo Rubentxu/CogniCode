@@ -3,13 +3,14 @@
 //! A call graph represents the dependencies and call relationships between symbols.
 
 use std::collections::{HashMap, HashSet};
+use serde::{Deserialize, Serialize};
 
 use super::symbol::Symbol;
 use crate::domain::events::GraphEvent;
 use crate::domain::value_objects::DependencyType;
 
 /// Represents a call entry in traversal results
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallEntry {
     /// Symbol ID of the caller/callee
     pub symbol_id: SymbolId,
@@ -26,7 +27,7 @@ pub struct CallEntry {
 }
 
 /// Options for Mermaid diagram export
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MermaidOptions {
     /// Subgraph root symbol - if provided, only exports the subgraph rooted at this symbol
     pub root: Option<String>,
@@ -39,7 +40,7 @@ pub struct MermaidOptions {
 }
 
 /// A directed graph representing call dependencies between symbols
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CallGraph {
     /// Map from symbol identifier to symbol
     symbols: HashMap<SymbolId, Symbol>,
@@ -711,6 +712,10 @@ impl CallGraph {
                         callers.remove(&source_id);
                     }
                 }
+                // Graph-level events are not applicable to symbol-level apply_events
+                GraphEvent::GraphReplaced | GraphEvent::GraphCleared | GraphEvent::GraphModified => {
+                    // No-op: these events are handled at the GraphCache level
+                }
             }
         }
         Ok(())
@@ -724,7 +729,7 @@ impl Default for CallGraph {
 }
 
 /// Unique identifier for a symbol in the call graph
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SymbolId(String);
 
 impl SymbolId {
@@ -917,5 +922,34 @@ mod tests {
 
         let leaves = graph.leaves();
         assert!(leaves.contains(&id2));
+    }
+
+    #[cfg(feature = "persistence")]
+    #[test]
+    fn test_call_graph_bincode_roundtrip() {
+        use bincode::serde::{decode_from_slice, encode_to_vec};
+        use bincode::config::standard;
+
+        let mut graph = CallGraph::new();
+        let symbol1 = Symbol::new("func_a", SymbolKind::Function, Location::new("test.rs", 10, 1));
+        let symbol2 = Symbol::new("func_b", SymbolKind::Function, Location::new("test.rs", 20, 1));
+
+        let id1 = graph.add_symbol(symbol1);
+        let id2 = graph.add_symbol(symbol2);
+
+        graph
+            .add_dependency(&id1, &id2, DependencyType::Calls)
+            .unwrap();
+
+        // Serialize
+        let bytes = encode_to_vec(&graph, standard()).expect("Failed to serialize CallGraph");
+
+        // Deserialize
+        let (deserialized_graph, _): (CallGraph, usize) =
+            decode_from_slice(&bytes, standard()).expect("Failed to deserialize CallGraph");
+
+        // Assert equality
+        assert_eq!(graph.symbol_count(), deserialized_graph.symbol_count());
+        assert_eq!(graph.edge_count(), deserialized_graph.edge_count());
     }
 }

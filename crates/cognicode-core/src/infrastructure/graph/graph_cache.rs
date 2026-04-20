@@ -3,6 +3,7 @@
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::events::GraphEvent;
 use arc_swap::ArcSwap;
+use tokio::sync::broadcast;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -10,15 +11,23 @@ use std::sync::Mutex;
 pub struct GraphCache {
     cache: ArcSwap<CallGraph>,
     pending_events: Mutex<Vec<GraphEvent>>,
+    event_sender: broadcast::Sender<GraphEvent>,
 }
 
 impl GraphCache {
     /// Creates a new empty graph cache
     pub fn new() -> Self {
+        let (event_sender, _) = broadcast::channel(16);
         Self {
             cache: ArcSwap::from_pointee(CallGraph::new()),
             pending_events: Mutex::new(Vec::new()),
+            event_sender,
         }
+    }
+
+    /// Subscribe to graph mutation events
+    pub fn subscribe(&self) -> broadcast::Receiver<GraphEvent> {
+        self.event_sender.subscribe()
     }
 
     /// Gets the current graph
@@ -36,6 +45,7 @@ impl GraphCache {
     /// Updates the cached graph
     pub fn set(&self, graph: CallGraph) {
         self.cache.store(Arc::new(graph));
+        let _ = self.event_sender.send(GraphEvent::GraphReplaced);
     }
 
     /// Updates the graph using a closure
@@ -59,6 +69,7 @@ impl GraphCache {
         let mut graph = (**self.cache.load()).clone();
         graph.apply_events(events)?;
         self.set(graph);
+        let _ = self.event_sender.send(GraphEvent::GraphModified);
         Ok(())
     }
 
@@ -83,6 +94,7 @@ impl GraphCache {
     pub fn clear(&self) {
         self.set(CallGraph::new());
         self.pending_events.lock().unwrap().clear();
+        let _ = self.event_sender.send(GraphEvent::GraphCleared);
     }
 }
 
@@ -244,5 +256,109 @@ mod tests {
         }));
         cache.flush_events().unwrap();
         assert_eq!(cache.get().symbol_count(), 1);
+    }
+
+    #[test]
+    fn test_subscribe_receives_event_on_set() {
+        let cache = GraphCache::new();
+        let mut receiver = cache.subscribe();
+
+        let mut graph = CallGraph::new();
+        let symbol = crate::domain::aggregates::symbol::Symbol::new(
+            "test_func",
+            SymbolKind::Function,
+            Location::new("test.rs", 1, 1),
+        );
+        graph.add_symbol(symbol);
+        cache.set(graph);
+
+        // Use try_recv in a loop since we don't have tokio runtime
+        let mut event_received = false;
+        for _ in 0..100 {
+            if let Ok(event) = receiver.try_recv() {
+                assert_eq!(event, GraphEvent::GraphReplaced);
+                event_received = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(event_received, "Should have received GraphReplaced event");
+    }
+
+    #[test]
+    fn test_subscribe_multiple_subscribers() {
+        let cache = GraphCache::new();
+        let mut receiver1 = cache.subscribe();
+        let mut receiver2 = cache.subscribe();
+
+        let mut graph = CallGraph::new();
+        let symbol = crate::domain::aggregates::symbol::Symbol::new(
+            "test_func",
+            SymbolKind::Function,
+            Location::new("test.rs", 1, 1),
+        );
+        graph.add_symbol(symbol);
+        cache.set(graph);
+
+        // Use try_recv in a loop since we don't have tokio runtime
+        let mut event1_received = false;
+        let mut event2_received = false;
+        for _ in 0..100 {
+            if let Ok(event) = receiver1.try_recv() {
+                assert_eq!(event, GraphEvent::GraphReplaced);
+                event1_received = true;
+            }
+            if let Ok(event) = receiver2.try_recv() {
+                assert_eq!(event, GraphEvent::GraphReplaced);
+                event2_received = true;
+            }
+            if event1_received && event2_received {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(event1_received, "Receiver1 should have received GraphReplaced event");
+        assert!(event2_received, "Receiver2 should have received GraphReplaced event");
+    }
+
+    #[test]
+    fn test_late_subscriber_misses_past_events() {
+        let cache = GraphCache::new();
+
+        let mut graph = CallGraph::new();
+        let symbol = crate::domain::aggregates::symbol::Symbol::new(
+            "test_func",
+            SymbolKind::Function,
+            Location::new("test.rs", 1, 1),
+        );
+        graph.add_symbol(symbol);
+        cache.set(graph);
+
+        // Subscribe after set was already called
+        let mut receiver = cache.subscribe();
+
+        // Should not receive the GraphReplaced event since it happened before subscription
+        let result = receiver.try_recv();
+        assert!(result.is_err());
+
+        // But clear should still be received (clear sends GraphReplaced via set, then GraphCleared)
+        cache.clear();
+
+        // Use try_recv in a loop since we don't have tokio runtime
+        let mut event1_received = false;
+        let mut event2_received = false;
+        for _ in 0..100 {
+            if let Ok(event) = receiver.try_recv() {
+                if event == GraphEvent::GraphReplaced && !event1_received {
+                    event1_received = true;
+                } else if event == GraphEvent::GraphCleared && event1_received && !event2_received {
+                    event2_received = true;
+                    break;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(event1_received, "Should have received GraphReplaced after clear");
+        assert!(event2_received, "Should have received GraphCleared after clear");
     }
 }

@@ -4,10 +4,11 @@
 //! and are used to incrementally update the graph instead of
 //! rebuilding it from scratch.
 
+use serde::{Deserialize, Serialize};
 use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
 
 /// Events that represent changes to symbols in the call graph
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GraphEvent {
     /// A new symbol was added to the codebase
     SymbolAdded(SymbolAddedEvent),
@@ -19,6 +20,12 @@ pub enum GraphEvent {
     DependencyAdded(DependencyEvent),
     /// A dependency edge was removed
     DependencyRemoved(DependencyEvent),
+    /// The entire graph was replaced (set operation)
+    GraphReplaced,
+    /// The graph was cleared
+    GraphCleared,
+    /// The graph was modified via apply_events
+    GraphModified,
 }
 
 impl GraphEvent {
@@ -30,12 +37,15 @@ impl GraphEvent {
             GraphEvent::SymbolModified(e) => Some(e.old_location.file()),
             GraphEvent::DependencyAdded(e) => Some(&e.file),
             GraphEvent::DependencyRemoved(e) => Some(&e.file),
+            GraphEvent::GraphReplaced => None,
+            GraphEvent::GraphCleared => None,
+            GraphEvent::GraphModified => None,
         }
     }
 }
 
 /// Event fired when a new symbol is added
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SymbolAddedEvent {
     /// The name of the symbol
     pub name: String,
@@ -48,7 +58,7 @@ pub struct SymbolAddedEvent {
 }
 
 /// Event fired when a symbol is removed
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SymbolRemovedEvent {
     /// The name of the symbol
     pub name: String,
@@ -57,7 +67,7 @@ pub struct SymbolRemovedEvent {
 }
 
 /// Event fired when a symbol is modified
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SymbolModifiedEvent {
     /// The name of the symbol
     pub name: String,
@@ -72,7 +82,7 @@ pub struct SymbolModifiedEvent {
 }
 
 /// Event fired when a dependency is added or removed
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DependencyEvent {
     /// The file containing the dependency
     pub file: String,

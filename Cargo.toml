@@ -8,8 +8,8 @@ members = [
 ]
 
 [workspace.package]
-version = "0.3.0"
-edition = "2021"
+version = "0.4.0"
+edition = "2024"
 authors = ["CogniCode Team"]
 
 [workspace.dependencies]
@@ -29,7 +29,7 @@ tree-sitter-java = "0.23"
 petgraph = "0.6"
 
 # Async
-tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "signal", "process", "io-util"] }
+tokio = { version = "1.45", features = ["rt-multi-thread", "net", "sync", "time", "macros", "signal", "process", "io-util"] }
 async-trait = "0.1"
 futures-util = "0.3"
 
@@ -37,10 +37,13 @@ futures-util = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
+bincode = { version = "2.0", features = ["serde"] }
+redb = "2.0"
+blake3 = "1.5"
 
 # Error Handling
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Collections
 arc-swap = "1.0"
@@ -51,7 +54,7 @@ parking_lot = "0.12"
 # Filesystem
 ignore = "0.4"
 walkdir = "2"
-tempfile = "3.8"
+tempfile = "3.27"
 glob = "0.3"
 
 # Time

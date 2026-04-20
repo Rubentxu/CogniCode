@@ -311,7 +311,18 @@ fn find_enclosing_symbol(node: tree_sitter::Node) -> tree_sitter::Node {
 }
 
 /// Extracts docstring/comments above a symbol
-fn extract_docstring(source: &str, symbol_line: u32) -> Option<String> {
+///
+/// This function searches for doc comments (`///` for Rust, `#` for Python,
+/// or `"""`/`'''` for Python docstrings) directly above the symbol's line.
+///
+/// # Arguments
+/// * `source` - The full source code of the file
+/// * `symbol_line` - The 1-indexed line number where the symbol is defined
+///
+/// # Returns
+/// * `Some(String)` - The doc comment text if found
+/// * `None` - No doc comment found above the symbol
+pub fn extract_docstring(source: &str, symbol_line: u32) -> Option<String> {
     if symbol_line <= 1 {
         return None;
     }
