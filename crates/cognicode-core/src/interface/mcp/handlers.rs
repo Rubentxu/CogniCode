@@ -40,6 +40,9 @@ use crate::infrastructure::semantic::{
 // Re-export file operations handlers
 pub use crate::interface::mcp::file_ops_handlers::*;
 
+use crate::infrastructure::persistence::RedbGraphStore;
+use crate::domain::traits::GraphStore;
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -287,47 +290,70 @@ pub async fn handle_build_graph(
     if ctx.is_cancelled() {
         return Err(HandlerError::Internal("Cancelled".into()));
     }
-    
-    // Build the project graph
-    match ctx.analysis_service.build_project_graph(&directory) {
-        Ok(()) => {
-            if ctx.is_cancelled() {
-                return Err(HandlerError::Internal("Cancelled".into()));
-            }
-            let graph = ctx.analysis_service.get_project_graph();
-            let symbols = graph.symbol_count();
-            let edges_count = graph.edge_count();
-            let elapsed = start.elapsed().as_millis() as u64;
 
-            // Collect actual edges with base names for correctness evaluation
-            let edges: Vec<EdgeInfo> = graph
-                .all_dependencies()
-                .map(|(source_id, target_id, _)| {
-                    let from = graph
-                        .get_symbol(source_id)
-                        .map(|s| s.name().to_string())
-                        .unwrap_or_else(|| source_id.to_string());
-                    let to = graph
-                        .get_symbol(target_id)
-                        .map(|s| s.name().to_string())
-                        .unwrap_or_else(|| target_id.to_string());
-                    EdgeInfo { from, to }
-                })
-                .collect();
-            
-            Ok(BuildGraphOutput {
-                success: true,
-                symbols_found: symbols,
-                relationships_found: edges_count,
-                edges,
-                message: format!(
-                    "Graph built successfully: {} symbols, {} relationships in {}ms",
-                    symbols, edges_count, elapsed
-                ),
-            })
+    // --- Persistence: try to load from redb first ---
+    let db_dir = ctx.working_dir.join(".cognicode");
+    let db_path = db_dir.join("graph.redb");
+    let mut loaded_from_cache = false;
+
+    if db_path.exists() {
+        if let Ok(store) = RedbGraphStore::open(&db_path) {
+            if let Ok(Some(graph)) = store.load_graph() {
+                ctx.analysis_service.graph_cache().set(graph);
+                loaded_from_cache = true;
+            }
         }
-        Err(e) => Err(HandlerError::App(e)),
     }
+
+    // Build from source if cache miss
+    if !loaded_from_cache {
+        if let Err(e) = ctx.analysis_service.build_project_graph(&directory) {
+            return Err(HandlerError::App(e));
+        }
+        // Persist the freshly built graph
+        let _ = std::fs::create_dir_all(&db_dir);
+        if let Ok(store) = RedbGraphStore::open(&db_path) {
+            let graph = ctx.analysis_service.get_project_graph();
+            let _ = store.save_graph(&graph);
+        }
+    }
+
+    if ctx.is_cancelled() {
+        return Err(HandlerError::Internal("Cancelled".into()));
+    }
+
+    let graph = ctx.analysis_service.get_project_graph();
+    let symbols = graph.symbol_count();
+    let edges_count = graph.edge_count();
+    let elapsed = start.elapsed().as_millis() as u64;
+
+    // Collect actual edges with base names for correctness evaluation
+    let edges: Vec<EdgeInfo> = graph
+        .all_dependencies()
+        .map(|(source_id, target_id, _)| {
+            let from = graph
+                .get_symbol(source_id)
+                .map(|s| s.name().to_string())
+                .unwrap_or_else(|| source_id.to_string());
+            let to = graph
+                .get_symbol(target_id)
+                .map(|s| s.name().to_string())
+                .unwrap_or_else(|| target_id.to_string());
+            EdgeInfo { from, to }
+        })
+        .collect();
+    
+    let source = if loaded_from_cache { "cache (redb)" } else { "built + persisted" };
+    Ok(BuildGraphOutput {
+        success: true,
+        symbols_found: symbols,
+        relationships_found: edges_count,
+        edges,
+        message: format!(
+            "Graph loaded from {}: {} symbols, {} relationships in {}ms",
+            source, symbols, edges_count, elapsed
+        ),
+    })
 }
 
 /// Handler for get_call_hierarchy tool
