@@ -79,3 +79,4 @@ sandbox/reports/
 # Temp / scratch files
 .tmp-*/
 adder.go
+.cognicode/
