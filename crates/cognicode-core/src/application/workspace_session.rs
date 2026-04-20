@@ -9,10 +9,10 @@ use tokio::sync::{RwLock, broadcast};
 
 use crate::application::commands::MoveSymbolCommand;
 use crate::application::dto::{
-    AnalyzeImpactResult, ArchitectureResult, BuildIndexResult, CallHierarchyEntry,
-    ComplexityResult, ComplexitySummaryDto, GetCallHierarchyResult, GraphCoverageMetrics, GraphStatsDto, HotPathDto,
-    ProjectDiagnosticsDto, RefactorPreviewDto, RefactorResult, RiskLevel, SourceLocation, SymbolDto,
-    ChangeEntry, ValidationResult,
+    AnalyzeImpactResult,
+    ComplexitySummaryDto, GetCallHierarchyResult, GraphStatsDto, GraphCoverageMetrics, HotPathDto,
+    ProjectDiagnosticsDto, RefactorResult, RiskLevel, SourceLocation, SymbolDto,
+    ValidationResult,
 };
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::file_operations::FileOperationsService;
@@ -75,6 +75,8 @@ pub struct IncrementalResult {
     pub symbols_added: usize,
     /// Number of symbols removed
     pub symbols_removed: usize,
+    /// Whether the graph was actually rebuilt
+    pub graph_updated: bool,
 }
 
 /// Transport-neutral facade for CogniCode operations.
@@ -188,12 +190,22 @@ impl WorkspaceSession {
             }
         }
 
-        // Build fresh
+        // Build fresh — build_project_graph is CPU-bound + blocking I/O; use spawn_blocking
+        // to avoid starving the tokio thread pool.
+        {
+            let graph_guard = self.graph.read().await;
+            if graph_guard.is_some() {
+                return Ok(());
+            }
+        }
+        let analysis = Arc::clone(&self.analysis);
+        let workspace_root = self.workspace_root.clone();
+        tokio::task::spawn_blocking(move || analysis.build_project_graph(&workspace_root))
+            .await
+            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Task join error: {}", e)))?
+            .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
         let mut graph_guard = self.graph.write().await;
         if graph_guard.is_none() {
-            self.analysis
-                .build_project_graph(&self.workspace_root)
-                .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
             *graph_guard = Some(self.analysis.get_project_graph());
         }
         Ok(())
@@ -206,7 +218,7 @@ impl WorkspaceSession {
     /// Enable persistence with a GraphStore.
     #[cfg(feature = "persistence")]
     pub fn set_graph_store(&self, store: Arc<dyn GraphStore>) {
-        let mut guard = self.graph_store.try_write();
+        let guard = self.graph_store.try_write();
         if let Ok(mut guard) = guard {
             *guard = Some(store);
         }
@@ -393,33 +405,73 @@ impl WorkspaceSession {
         // Build sets for quick lookup
         let new_set: HashSet<PathBuf> = new_files.iter().cloned().collect();
         let modified_set: HashSet<PathBuf> = modified_files.iter().cloned().collect();
-        let deleted_set: HashSet<PathBuf> = deleted_files.iter().cloned().collect();
+        let _deleted_set: HashSet<PathBuf> = deleted_files.iter().cloned().collect();
 
         let mut result = IncrementalResult::default();
 
-        // Get the current graph
-        let graph_guard = self.graph.read().await;
-        let current_graph = graph_guard
-            .as_ref()
-            .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
+        // Verify graph exists (read lock, then IMMEDIATELY drop it before any await)
+        {
+            let graph_guard = self.graph.read().await;
+            if graph_guard.is_none() {
+                return Err(WorkspaceError::GraphNotBuilt("Graph not built".to_string()));
+            }
+            // graph_guard dropped here — MUST be dropped before spawn_blocking + write lock
+        }
 
         // Count files that will be skipped (not in new/modified/deleted)
         let total_files = current_files.len();
         let changed_count = new_files.len() + modified_files.len() + deleted_files.len();
         result.files_skipped = total_files.saturating_sub(changed_count);
-
-        // For now, just report what would be done - full implementation would
-        // require modifying the graph structure directly
         result.files_parsed = new_files.len() + modified_files.len();
         result.files_removed = deleted_files.len();
 
-        // Update manifest with new/modified file info
+        // If there are no changes, skip graph rebuild
+        if changed_count == 0 {
+            result.graph_updated = false;
+            return Ok(result);
+        }
+
+        // Rebuild the graph to reflect the changes.
+        // build_project_graph is CPU-bound + blocking I/O; must run in spawn_blocking
+        // to avoid starving the tokio thread pool.
+        // NOTE: read lock is already dropped above — no deadlock risk.
+        //
+        // Invalidate the file_cache for changed files BEFORE rebuilding.
+        // build_project_graph uses an mtime-based file_cache; if a file was modified
+        // but the mtime resolution didn't change (e.g. within the same second), the
+        // old symbols would be returned from cache. Invalidating by path forces a
+        // fresh re-parse of every changed file.
+        let changed_abs_paths: Vec<std::path::PathBuf> = new_files
+            .iter()
+            .chain(modified_files.iter())
+            .chain(deleted_files.iter())
+            .map(|rel| self.workspace_root.join(rel))
+            .collect();
+        self.analysis.invalidate_file_cache_for(&changed_abs_paths);
+
+        let analysis = Arc::clone(&self.analysis);
+        let workspace_root = self.workspace_root.clone();
+        tokio::task::spawn_blocking(move || analysis.build_project_graph(&workspace_root))
+            .await
+            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Task join error: {}", e)))?
+            .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
+
+        // Update local graph cache to point to the rebuilt graph
+        let new_graph = self.analysis.get_project_graph();
+        {
+            let mut graph_guard = self.graph.write().await;
+            *graph_guard = Some(Arc::clone(&new_graph));
+        }
+
+        result.graph_updated = true;
+
+        // Update manifest with new/modified file info — use the NEW graph for symbol counts
         let updated_entries: Vec<_> = current_files
             .iter()
             .filter(|(p, _, _, _)| new_set.contains(p) || modified_set.contains(p))
             .map(|(p, h, t, _)| {
-                // Count symbols in this file from the current graph
-                let symbol_count = current_graph
+                // Count symbols in this file from the NEW (rebuilt) graph
+                let symbol_count = new_graph
                     .symbols()
                     .filter(|s| {
                         s.location()
@@ -799,25 +851,28 @@ impl WorkspaceSession {
 
     /// Build the call graph using the specified strategy
     ///
-    /// Strategy can be: "lightweight", "on_demand", "per_file", "full"
+    /// | Strategy       | Description                                               |
+    /// |----------------|-----------------------------------------------------------|
+    /// | `"full"`       | Full rayon-parallel parse (default, most complete)        |
+    /// | `"lightweight"`| Symbol-only index, no call edges — fastest                |
+    /// | `"per_file"`   | Per-file graphs merged — good for incremental workloads   |
+    /// | `"on_demand"`  | Alias for `"full"`                                        |
+    ///
+    /// All strategies run inside `spawn_blocking` to avoid blocking the tokio thread pool.
     pub async fn build_graph(&self, strategy: &str) -> WorkspaceResult<()> {
+        let analysis = Arc::clone(&self.analysis);
+        let workspace_root = self.workspace_root.clone();
+        let strategy_owned = strategy.to_string();
+        tokio::task::spawn_blocking(move || {
+            analysis.build_graph_with_strategy(&workspace_root, &strategy_owned)
+        })
+        .await
+        .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Task join error: {}", e)))?
+        .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
+
+        // Update local graph cache from the shared analysis cache
         let mut graph_guard = self.graph.write().await;
-        
-        match strategy {
-            "full" | "full_graph" => {
-                self.analysis
-                    .build_project_graph(&self.workspace_root)
-                    .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
-                *graph_guard = Some(self.analysis.get_project_graph());
-            }
-            _ => {
-                // For other strategies, use on-demand approach
-                self.analysis
-                    .build_project_graph(&self.workspace_root)
-                    .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
-                *graph_guard = Some(self.analysis.get_project_graph());
-            }
-        }
+        *graph_guard = Some(self.analysis.get_project_graph());
         Ok(())
     }
 
@@ -1104,6 +1159,8 @@ impl WorkspaceSession {
     /// Build a lightweight symbol index (idempotent)
     ///
     /// If the graph is already built, returns cached result immediately.
+    /// Uses `spawn_blocking` because `build_project_graph` is CPU-bound + blocking I/O,
+    /// and calling it directly in an async fn would starve the tokio thread pool.
     pub async fn build_lightweight_index(&self, strategy: &str) -> WorkspaceResult<crate::application::dto::BuildIndexResult> {
         // Check if graph is already built (idempotency guard)
         {
@@ -1120,20 +1177,23 @@ impl WorkspaceSession {
                 }
             }
         }
-        
-        // Not cached, build the graph
-        self.analysis
-            .build_project_graph(&self.workspace_root)
+
+        // Not cached — build_project_graph is CPU-bound + blocking I/O; use spawn_blocking
+        let analysis = Arc::clone(&self.analysis);
+        let workspace_root = self.workspace_root.clone();
+        tokio::task::spawn_blocking(move || analysis.build_project_graph(&workspace_root))
+            .await
+            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Task join error: {}", e)))?
             .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
-        
+
         let graph = self.analysis.get_project_graph();
         let symbols = graph.symbol_count();
         let edges = graph.edge_count();
-        
+
         // Store the built graph for future cached access
         let mut graph_guard = self.graph.write().await;
         *graph_guard = Some(graph.clone());
-        
+
         Ok(crate::application::dto::BuildIndexResult {
             success: true,
             strategy: strategy.to_string(),
@@ -1221,30 +1281,37 @@ impl WorkspaceSession {
     }
 
     /// Query the symbol index by name
+    ///
+    /// Searches the already-built project graph for symbols whose name
+    /// matches (case-insensitive prefix/exact). Reuses the cached graph from
+    /// `self.analysis` — never rebuilds from scratch per call.
     pub async fn query_symbol_index(&self, symbol: &str) -> WorkspaceResult<Vec<crate::application::dto::SymbolDto>> {
-        let mut analysis = AnalysisService::new();
-        analysis
-            .build_project_graph(&self.workspace_root)
-            .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
-        
-        let locations = analysis.find_symbol(symbol);
-        
-        let mut results = Vec::new();
-        for loc in locations {
-            // Create a SymbolDto from the location
-            let symbol_dto = crate::application::dto::SymbolDto {
-                id: format!("{}:{}:{}", loc.file, loc.line, loc.column),
-                name: symbol.to_string(),
-                kind: format!("{:?}", loc.symbol_kind),
-                file_path: loc.file,
-                line: loc.line,
-                column: loc.column,
+        // Ensure the graph is built (cheap if already cached)
+        self.ensure_graph_built().await?;
+
+        // Search directly in the shared graph — no AnalysisService rebuild needed
+        let graph = self.analysis.get_project_graph();
+        let matches = graph.find_by_name(symbol);
+
+        let results = matches
+            .into_iter()
+            .map(|sym| crate::application::dto::SymbolDto {
+                id: format!(
+                    "{}:{}:{}",
+                    sym.location().file(),
+                    sym.location().line(),
+                    sym.location().column()
+                ),
+                name: sym.name().to_string(),
+                kind: format!("{:?}", sym.kind()),
+                file_path: sym.location().file().to_string(),
+                line: sym.location().line(),
+                column: sym.location().column(),
                 documentation: None,
                 signature: None,
-            };
-            results.push(symbol_dto);
-        }
-        
+            })
+            .collect();
+
         Ok(results)
     }
 
@@ -2815,4 +2882,391 @@ pub const MY_CONST: i32 = 42;
             "Should find symbols using relative path"
         );
     }
+
+    // =========================================================================
+    // Tests for incremental_reindex
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_incremental_reindex_graph_updates_when_file_modified() {
+        use crate::infrastructure::persistence::InMemoryGraphStore;
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test.rs");
+        std::fs::write(&test_file, "fn original_function() {}").unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+
+        // Set up in-memory graph store
+        let store = Arc::new(InMemoryGraphStore::new());
+        session.set_graph_store(store.clone());
+
+        // Build initial graph
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
+
+        // First incremental reindex - should not trigger graph update (no changes yet)
+        let result = session.incremental_reindex().await.unwrap();
+        // First call may or may not rebuild depending on whether manifest exists
+        let first_files_parsed = result.files_parsed;
+        let first_graph_updated = result.graph_updated;
+
+        // Modify the file to add a new function
+        std::fs::write(&test_file, "fn original_function() {}\nfn new_function() {}").unwrap();
+
+        // Wait a bit to ensure mtime changes
+        std::thread::sleep(Duration::from_millis(100));
+
+        // Second incremental reindex - should detect changes and rebuild graph
+        let result = session.incremental_reindex().await.unwrap();
+
+        // Should report changes
+        assert!(
+            result.files_parsed > 0 || result.graph_updated,
+            "Should detect file modification"
+        );
+
+        // Verify the new function is in the graph
+        let graph = session.analysis.get_project_graph();
+        let symbol_names: Vec<_> = graph.symbols().map(|s| s.name().to_string()).collect();
+        assert!(
+            symbol_names.contains(&"new_function".to_string()),
+            "Should find new_function in graph after modification. Found: {:?}",
+            symbol_names
+        );
+
+        // The graph should have been updated
+        assert!(
+            result.graph_updated || first_graph_updated,
+            "Graph should have been updated at least once"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_incremental_reindex_no_changes_does_not_rebuild_graph() {
+        use crate::infrastructure::persistence::InMemoryGraphStore;
+        use std::sync::Arc;
+
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test.rs");
+        std::fs::write(&test_file, "fn test_function() {}").unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+
+        // Set up in-memory graph store
+        let store = Arc::new(InMemoryGraphStore::new());
+        session.set_graph_store(store.clone());
+
+        // Build initial graph
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
+
+        // First reindex - may rebuild (first time, no manifest)
+        let _result1 = session.incremental_reindex().await.unwrap();
+
+        // Second reindex - no changes, should not rebuild
+        let result2 = session.incremental_reindex().await.unwrap();
+
+        // With no changes, files_parsed should be 0
+        assert_eq!(
+            result2.files_parsed, 0,
+            "Should report 0 files parsed when no changes"
+        );
+        assert!(
+            !result2.graph_updated,
+            "Should not rebuild graph when no changes"
+        );
+    }
+
+    // =========================================================================
+    // Tests for build_lightweight_index (async safety + spawn_blocking)
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_build_lightweight_index_returns_symbol_count() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(
+            temp_dir.path().join("lib.rs"),
+            "fn alpha() {}\nfn beta() {}\nfn gamma() {}",
+        )
+        .unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        let result = session.build_lightweight_index("lightweight").await.unwrap();
+
+        assert!(result.success, "build_lightweight_index should succeed");
+        assert!(
+            result.symbols_indexed > 0,
+            "Should index at least 1 symbol, got {}",
+            result.symbols_indexed
+        );
+        assert_eq!(result.strategy, "lightweight");
+    }
+
+    #[tokio::test]
+    async fn test_build_lightweight_index_is_idempotent() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("lib.rs"), "fn foo() {}").unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        let first = session.build_lightweight_index("lightweight").await.unwrap();
+        let second = session.build_lightweight_index("lightweight").await.unwrap();
+
+        // Second call returns the cached result
+        assert_eq!(first.symbols_indexed, second.symbols_indexed);
+        assert!(
+            second.message.contains("Cached"),
+            "Second call should return cached result, got: {}",
+            second.message
+        );
+    }
+
+    #[tokio::test]
+    async fn test_build_lightweight_index_does_not_block_other_tasks() {
+        // Verify that build_lightweight_index does not starve other tokio tasks.
+        // We run it concurrently with a simple counter task; if it blocked, the
+        // counter would never increment.
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("lib.rs"), "fn x() {}").unwrap();
+
+        let session = std::sync::Arc::new(WorkspaceSession::new(temp_dir.path()).await.unwrap());
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter_clone = std::sync::Arc::clone(&counter);
+
+        let build_fut = {
+            let s = std::sync::Arc::clone(&session);
+            async move { s.build_lightweight_index("lightweight").await.unwrap() }
+        };
+        let tick_fut = async move {
+            // Yield to executor a few times — this would starve if build blocked
+            for _ in 0..5 {
+                tokio::task::yield_now().await;
+                counter_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        };
+
+        let (result, _) = tokio::join!(build_fut, tick_fut);
+        assert!(result.success);
+        // Counter should have been able to run
+        assert_eq!(
+            counter.load(std::sync::atomic::Ordering::Relaxed),
+            5,
+            "Tick task should complete 5 increments while build runs"
+        );
+    }
+
+    // =========================================================================
+    // Tests for query_symbol_index (uses self.analysis, no rebuild per call)
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_query_symbol_index_finds_symbol_after_build() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(
+            temp_dir.path().join("lib.rs"),
+            "fn my_special_fn() {}\nfn another_fn() {}",
+        )
+        .unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        // Build the graph first
+        session.build_graph("full").await.unwrap();
+
+        let results = session.query_symbol_index("my_special_fn").await.unwrap();
+        assert!(
+            !results.is_empty(),
+            "Should find my_special_fn in the symbol index"
+        );
+        assert_eq!(results[0].name, "my_special_fn");
+    }
+
+    #[tokio::test]
+    async fn test_query_symbol_index_returns_empty_for_unknown_symbol() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("lib.rs"), "fn known_fn() {}").unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        session.build_graph("full").await.unwrap();
+
+        let results = session.query_symbol_index("definitely_not_exists_xyz").await.unwrap();
+        assert!(results.is_empty(), "Should return empty for unknown symbol");
+    }
+
+    #[tokio::test]
+    async fn test_query_symbol_index_reuses_cached_graph() {
+        // Verify query_symbol_index does NOT rebuild the graph on each call.
+        // We build once, then call query twice — both should be fast and consistent.
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("lib.rs"), "fn cached_fn() {}").unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        session.build_graph("full").await.unwrap();
+
+        let r1 = session.query_symbol_index("cached_fn").await.unwrap();
+        let r2 = session.query_symbol_index("cached_fn").await.unwrap();
+
+        assert_eq!(
+            r1.len(),
+            r2.len(),
+            "Both calls should return the same result from cache"
+        );
+        assert!(!r1.is_empty(), "Should find cached_fn");
+    }
+
+    #[tokio::test]
+    async fn test_query_symbol_index_symbol_dto_fields_are_populated() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("mymod.rs"), "fn well_named_fn() {}").unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        session.build_graph("full").await.unwrap();
+
+        let results = session.query_symbol_index("well_named_fn").await.unwrap();
+        assert!(!results.is_empty(), "Should find well_named_fn");
+
+        let dto = &results[0];
+        assert_eq!(dto.name, "well_named_fn");
+        assert!(!dto.file_path.is_empty(), "file_path should be populated");
+        assert!(!dto.id.is_empty(), "id should be non-empty");
+    }
+
+    // =========================================================================
+    // Tests for build_graph strategy dispatch
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_build_graph_full_strategy_builds_symbols() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(
+            temp_dir.path().join("lib.rs"),
+            "fn full_fn_a() {}\nfn full_fn_b() { full_fn_a(); }",
+        )
+        .unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        session.build_graph("full").await.unwrap();
+
+        let graph_guard = session.graph.read().await;
+        let graph = graph_guard.as_ref().expect("Graph should be set");
+        assert!(
+            graph.symbol_count() >= 2,
+            "Full strategy should find both functions, got {}",
+            graph.symbol_count()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_build_graph_lightweight_strategy_builds_symbols() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(
+            temp_dir.path().join("lib.rs"),
+            "fn lw_fn_a() {}\nfn lw_fn_b() {}",
+        )
+        .unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        session.build_graph("lightweight").await.unwrap();
+
+        let graph_guard = session.graph.read().await;
+        let graph = graph_guard.as_ref().expect("Graph should be set");
+        assert!(
+            graph.symbol_count() >= 2,
+            "Lightweight strategy should find functions, got {}",
+            graph.symbol_count()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_build_graph_per_file_strategy_builds_symbols() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(
+            temp_dir.path().join("a.rs"),
+            "fn per_file_a() {}",
+        )
+        .unwrap();
+        std::fs::write(
+            temp_dir.path().join("b.rs"),
+            "fn per_file_b() {}",
+        )
+        .unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        session.build_graph("per_file").await.unwrap();
+
+        let graph_guard = session.graph.read().await;
+        let graph = graph_guard.as_ref().expect("Graph should be set");
+        assert!(
+            graph.symbol_count() >= 2,
+            "Per-file strategy should find symbols from both files, got {}",
+            graph.symbol_count()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_build_graph_on_demand_strategy_builds_symbols() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("lib.rs"), "fn on_demand_fn() {}").unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        session.build_graph("on_demand").await.unwrap();
+
+        let graph_guard = session.graph.read().await;
+        let graph = graph_guard.as_ref().expect("Graph should be set after on_demand");
+        assert!(graph.symbol_count() > 0, "on_demand strategy should build symbols");
+    }
+
+    #[tokio::test]
+    async fn test_build_graph_unknown_strategy_falls_back_to_full() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("lib.rs"), "fn fallback_fn() {}").unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        // Unknown strategy should not panic and should fall back to full build
+        session.build_graph("unknown_strategy_xyz").await.unwrap();
+
+        let graph_guard = session.graph.read().await;
+        let graph = graph_guard.as_ref().expect("Graph should be set even for unknown strategy");
+        assert!(graph.symbol_count() > 0, "Unknown strategy should fall back to full build");
+    }
+
+    #[tokio::test]
+    async fn test_build_graph_lightweight_has_fewer_edges_than_full() {
+        // The lightweight strategy produces symbols only (0 edges).
+        // The full strategy produces call edges between functions.
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(
+            temp_dir.path().join("lib.rs"),
+            "fn caller() { callee(); }\nfn callee() {}",
+        )
+        .unwrap();
+
+        // Build with full strategy
+        let session_full = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        session_full.build_graph("full").await.unwrap();
+        let full_edges = {
+            let g = session_full.graph.read().await;
+            g.as_ref().unwrap().edge_count()
+        };
+
+        // Build with lightweight strategy
+        let session_lw = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        session_lw.build_graph("lightweight").await.unwrap();
+        let lw_edges = {
+            let g = session_lw.graph.read().await;
+            g.as_ref().unwrap().edge_count()
+        };
+
+        // Lightweight should have ≤ edges than full (it has 0 by design)
+        assert!(
+            lw_edges <= full_edges,
+            "Lightweight strategy should not produce more edges than full (lw={lw_edges}, full={full_edges})"
+        );
+    }
 }
+

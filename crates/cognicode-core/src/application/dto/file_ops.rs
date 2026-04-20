@@ -2,7 +2,6 @@
 //!
 //! These DTOs decouple the application layer from the MCP protocol.
 
-use super::common::SourceLocation;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================

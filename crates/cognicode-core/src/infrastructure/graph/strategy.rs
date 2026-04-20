@@ -12,7 +12,7 @@ use crate::infrastructure::graph::on_demand_graph::{
 };
 use crate::infrastructure::graph::per_file_graph::PerFileGraphCache;
 use crate::infrastructure::graph::symbol_index::SymbolIndex;
-use crate::infrastructure::parser::{Language, TreeSitterParser};
+use crate::infrastructure::parser::TreeSitterParser;
 use std::path::Path;
 use std::sync::Arc;
 

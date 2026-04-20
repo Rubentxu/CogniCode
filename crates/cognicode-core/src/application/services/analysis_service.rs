@@ -180,6 +180,16 @@ impl AnalysisService {
     ///
     /// Walks the directory recursively, parses each supported source file,
     /// extracts symbols and call relationships, and builds a project-wide call graph.
+    /// Invalidates `file_cache` entries for specific absolute paths.
+    /// Must be called before `build_project_graph` when files have been modified
+    /// externally so that the mtime-based cache does not return stale symbols.
+    pub fn invalidate_file_cache_for(&self, paths: &[std::path::PathBuf]) {
+        let mut cache = self.file_cache.lock().unwrap();
+        for path in paths {
+            cache.remove(&path.to_string_lossy().into_owned());
+        }
+    }
+
     pub fn build_project_graph(&self, project_dir: &Path) -> AppResult<()> {
         use ignore::WalkBuilder;
         use rayon::prelude::*;
@@ -189,7 +199,6 @@ impl AnalysisService {
             std::collections::HashMap::new();
 
         // Coverage tracking
-        let mut total_files: usize = 0;
         let mut parsed_files: usize = 0;
         let mut unresolved_edges: usize = 0;
 
@@ -229,7 +238,7 @@ impl AnalysisService {
             .filter(|(_, lang, _, _)| lang.is_some())
             .collect();
 
-        total_files = files.len();
+        let total_files = files.len();
 
         let results: Vec<_> = files
             .into_par_iter()
@@ -321,6 +330,100 @@ impl AnalysisService {
         Ok(())
     }
 
+    /// Builds the project graph using the named strategy.
+    ///
+    /// | Strategy     | Behaviour                                                         |
+    /// |--------------|-------------------------------------------------------------------|
+    /// | `"full"`     | Full rayon-parallel parse of all source files (default)           |
+    /// | `"lightweight"` | Lightweight symbol-only index, faster but no call edges        |
+    /// | `"per_file"` | Per-file graphs merged into one; good for incremental workloads   |
+    /// | `"on_demand"` | Alias for `"full"` — on-demand sub-graphs are query-time only   |
+    /// | anything else | Falls back to `"full"`                                           |
+    ///
+    /// All strategies update `graph_cache` so that `get_project_graph()` reflects
+    /// the result immediately after this call returns.
+    pub fn build_graph_with_strategy(&self, project_dir: &Path, strategy: &str) -> AppResult<()> {
+        match strategy {
+            "lightweight" => self.build_graph_lightweight(project_dir),
+            "per_file" => self.build_graph_per_file(project_dir),
+            // "full", "on_demand", or any other value
+            _ => self.build_project_graph(project_dir),
+        }
+    }
+
+    /// Lightweight strategy: builds a symbol-only index (no call edges) using
+    /// `LightweightIndex::build_index`, then converts the index entries into a
+    /// minimal `CallGraph` (symbols only, 0 edges) and stores it in `graph_cache`.
+    ///
+    /// Significantly faster than the full strategy for large codebases when only
+    /// symbol lookup is required (e.g. `query_symbol_index`).
+    fn build_graph_lightweight(&self, project_dir: &Path) -> AppResult<()> {
+        use crate::infrastructure::graph::LightweightIndex;
+        use crate::domain::aggregates::call_graph::SymbolId;
+        use crate::domain::value_objects::Location;
+        use crate::domain::aggregates::Symbol;
+
+        let mut index = LightweightIndex::new();
+        index
+            .build_index(project_dir)
+            .map_err(|e| AppError::AnalysisError(e.to_string()))?;
+
+        // Convert index entries to a minimal CallGraph (symbols, no call edges)
+        let mut store = PetGraphStore::new();
+        for (name, locations) in index.entries() {
+            for loc in locations {
+                let sym_kind = loc.symbol_kind.clone();
+                let location = Location::new(
+                    loc.file.clone(),
+                    loc.line,
+                    loc.column,
+                );
+                let symbol = Symbol::new(
+                    name.clone(),
+                    sym_kind,
+                    location,
+                );
+                let id = SymbolId::new(symbol.fully_qualified_name());
+                store.add_symbol_with_location(&id, symbol);
+            }
+        }
+        let graph = store.to_call_graph();
+        self.graph_cache.set(graph);
+        Ok(())
+    }
+
+    /// Per-file strategy: builds a per-file graph for every source file in
+    /// `project_dir` and merges them into a single `CallGraph` stored in
+    /// `graph_cache`.
+    ///
+    /// Useful when incremental, file-level invalidation is important.
+    fn build_graph_per_file(&self, project_dir: &Path) -> AppResult<()> {
+        use crate::infrastructure::graph::PerFileGraphCache;
+
+        let cache = PerFileGraphCache::with_project_dir(
+            project_dir.to_string_lossy().into_owned()
+        );
+
+        // Index all supported files first — merge_all only merges cached entries
+        let supported_extensions = ["rs", "py", "js", "ts", "go", "java", "c", "cpp", "h"];
+        if let Ok(entries) = std::fs::read_dir(project_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                        if supported_extensions.contains(&ext) {
+                            let _ = cache.get_or_build(&path); // best-effort; ignore parse errors
+                        }
+                    }
+                }
+            }
+        }
+
+        let graph = cache.merge_all();
+        self.graph_cache.set(graph);
+        Ok(())
+    }
+
     /// Builds a call graph for a subgraph limited to specific directories.
     ///
     /// Unlike `build_project_graph`, this method only includes files that are
@@ -350,7 +453,6 @@ impl AnalysisService {
             std::collections::HashMap::new();
 
         // Coverage tracking
-        let mut total_files: usize = 0;
         let mut parsed_files: usize = 0;
         let mut unresolved_edges: usize = 0;
 
@@ -388,7 +490,7 @@ impl AnalysisService {
             .filter(|(_, lang, _, _)| lang.is_some())
             .collect();
 
-        total_files = files.len();
+        let total_files = files.len();
 
         let results: Vec<_> = files
             .into_par_iter()
@@ -503,7 +605,6 @@ impl AnalysisService {
                 std::collections::HashMap::new();
 
             // Coverage tracking
-            let mut total_files: usize = 0;
             let mut parsed_files: usize = 0;
             let mut unresolved_edges: usize = 0;
 
@@ -546,7 +647,7 @@ impl AnalysisService {
                 .filter(|(_, lang, _, _)| lang.is_some())
                 .collect();
 
-            total_files = files.len();
+            let total_files = files.len();
 
             let results: Vec<_> = files
                 .into_par_iter()

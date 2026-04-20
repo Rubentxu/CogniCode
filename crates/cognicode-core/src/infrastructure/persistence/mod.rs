@@ -12,3 +12,6 @@ pub mod redb_graph_store;
 pub use memory_graph_store::InMemoryGraphStore;
 #[cfg(feature = "persistence")]
 pub use redb_graph_store::RedbGraphStore;
+
+#[cfg(test)]
+mod store_contract_tests;

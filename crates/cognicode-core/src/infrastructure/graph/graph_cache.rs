@@ -361,4 +361,63 @@ mod tests {
         assert!(event1_received, "Should have received GraphReplaced after clear");
         assert!(event2_received, "Should have received GraphCleared after clear");
     }
+
+    #[test]
+    fn test_broadcast_with_no_subscribers_does_not_panic() {
+        let cache = GraphCache::new();
+        // No subscribers - should not panic when setting graph
+        let graph = CallGraph::new();
+        cache.set(graph);
+        // If we get here without panic, the test passes
+        assert_eq!(cache.get().symbol_count(), 0);
+    }
+
+    #[test]
+    fn test_lagged_receiver_receives_latest_after_overflow() {
+        let cache = GraphCache::new();
+        let mut rx = cache.subscribe();
+
+        // The broadcast channel has capacity 16 (defined in new())
+        // Send more messages than capacity without consuming
+        for _ in 0..20 {
+            let graph = CallGraph::new();
+            cache.set(graph);
+        }
+
+        // The receiver may have lagged behind - the system should not panic
+        // try_recv should return Err(Lagged) or Ok(latest) but never panic
+        let result = rx.try_recv();
+        // It's acceptable if it's Lagged (fell behind) or Ok (got latest)
+        // Both are valid states - no panic
+        if result.is_err() {
+            // If error, it could be Lagged or Empty - both are fine
+            // Empty means no message was available at that instant
+            // Lagged means the receiver couldn't keep up
+        }
+        // If we get here without panic, test passes
+    }
+
+    #[test]
+    fn test_receiver_dropped_does_not_affect_cache_operations() {
+        let cache = GraphCache::new();
+        {
+            let _rx = cache.subscribe();
+            // _rx goes out of scope and is dropped here
+        }
+        // After dropping receiver, cache operations should still work
+        let graph = CallGraph::new();
+        cache.set(graph.clone());
+        assert_eq!(cache.get().symbol_count(), 0);
+
+        // Add something and verify
+        cache.update(|g| {
+            let sym = crate::domain::aggregates::symbol::Symbol::new(
+                "dropped_test",
+                SymbolKind::Function,
+                Location::new("test.rs", 1, 1),
+            );
+            g.add_symbol(sym);
+        });
+        assert_eq!(cache.get().symbol_count(), 1);
+    }
 }

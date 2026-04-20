@@ -273,6 +273,14 @@ impl LightweightIndex {
         self.index.len()
     }
 
+    /// Returns an iterator over all (name, locations) pairs in the index.
+    ///
+    /// Useful for converting the lightweight index into other representations
+    /// such as a `CallGraph` or for serialization.
+    pub fn entries(&self) -> impl Iterator<Item = (&String, &Vec<SymbolLocation>)> {
+        self.index.iter()
+    }
+
     /// Returns the total number of symbol locations (including duplicates across files)
     pub fn location_count(&self) -> usize {
         self.index.values().map(|v| v.len()).sum()

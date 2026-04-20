@@ -12,10 +12,10 @@ use super::ground_truth::{
     parse_returned_edges, parse_returned_entry_points, parse_returned_hot_paths,
     parse_returned_leaf_functions, parse_returned_search_results, parse_returned_usages,
     BehavioralPreservationResult, CodeMatchResult, ComplexityMatchResult, EdgeMatchResult,
-    EntryPointMatchResult, ExpectedCode, ExpectedComplexity, ExpectedMatch, ExpectedSearchResult,
-    ExpectedUsage, GroundTruth, HotPathMatchResult, IndexCompletenessResult,
+    EntryPointMatchResult,
+    GroundTruth, HotPathMatchResult, IndexCompletenessResult,
     LeafFunctionMatchResult, MergeAccuracyResult, OutlineMatchResult, PerFileEdgeMatchResult,
-    QueryAccuracyResult, ReturnedSearchResult, ReturnedSymbol, ReturnedUsage,
+    QueryAccuracyResult, ReturnedSymbol,
     SearchResultMatchResult, SymbolMatchResult, UsageMatchResult,
 };
 

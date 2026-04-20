@@ -9,7 +9,7 @@ use crate::domain::traits::refactor_strategy::{
     ValidationError, ValidationErrorCode,
 };
 use crate::domain::value_objects::{Location, SourceRange};
-use crate::infrastructure::parser::{Language, TreeSitterParser};
+use crate::infrastructure::parser::TreeSitterParser;
 use crate::infrastructure::safety::{OperationType, SafetyGate, SafetyOperation};
 use regex::Regex;
 use std::collections::HashMap;

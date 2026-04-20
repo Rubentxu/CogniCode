@@ -1,7 +1,7 @@
 //! Change Signature Strategy - Strategy pattern implementation for change signature refactoring
 
 use crate::domain::aggregates::refactor::{Refactor, RefactorKind, RefactorParameters};
-use crate::domain::aggregates::symbol::{FunctionSignature, Parameter};
+use crate::domain::aggregates::symbol::{FunctionSignature};
 use crate::domain::traits::refactor_strategy::{
     PreparedEdits, RefactorError, RefactorStrategy, RefactorValidation, ValidationError,
     ValidationErrorCode,
@@ -621,7 +621,7 @@ impl RefactorStrategy for ChangeSignatureStrategy {
                 .map_err(|e| RefactorError::IoError(format!("Failed to write file: {}", e)))?;
         }
 
-        let mut modified_files = vec![PathBuf::from(file_path)];
+        let modified_files = vec![PathBuf::from(file_path)];
         if change_result.call_sites_updated > 0 {
             // Call sites in the same file are already counted above
         }
@@ -908,6 +908,7 @@ pub struct SignatureChangeResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::aggregates::symbol::Parameter;
 
     #[test]
     fn test_find_call_sites_python() {

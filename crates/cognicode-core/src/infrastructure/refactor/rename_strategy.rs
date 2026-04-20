@@ -1,16 +1,15 @@
 //! Rename Strategy - Strategy pattern implementation for rename refactoring
 
 use crate::domain::aggregates::refactor::{Refactor, RefactorKind, RefactorParameters, TextEdit};
-use crate::domain::aggregates::Symbol;
 use crate::domain::traits::refactor_strategy::{
     PreparedEdits, RefactorError, RefactorStrategy, RefactorValidation, ValidationError,
     ValidationErrorCode,
 };
 use crate::domain::value_objects::{Location, SourceRange};
-use crate::infrastructure::parser::{Language, TreeSitterParser};
-use crate::infrastructure::safety::{OperationType, SafetyGate, SafetyOperation, SafetyValidation};
+use crate::infrastructure::parser::{TreeSitterParser};
+use crate::infrastructure::safety::{OperationType, SafetyGate, SafetyOperation};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Strategy implementation for rename refactoring operations
@@ -307,6 +306,7 @@ pub fn create_rename_edit(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::infrastructure::parser::Language;
 
     #[test]
     fn test_find_occurrences_python() {

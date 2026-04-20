@@ -8,7 +8,7 @@
 //! - list_files: Directory listing with .gitignore filtering
 
 use crate::application::dto::{
-    ContentMatch, EditFileRequest, EditFileResult, EditValidation, FileEdit, FileEntry,
+    ContentMatch, EditFileRequest, EditFileResult, EditValidation, FileEntry,
     FileMetadata, ListFilesRequest, ListFilesResult, ReadFileRequest, ReadFileResult,
     SearchContentRequest, SearchContentResult, WriteFileRequest, WriteFileResult,
 };
@@ -1444,6 +1444,7 @@ impl Default for FileOperationsService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::dto::FileEdit;
     use std::io::Write;
     use tempfile::{NamedTempFile, TempDir};
 

@@ -11,6 +11,9 @@ use crate::domain::value_objects::file_manifest::FileManifest;
 /// In-memory implementation of GraphStore for testing
 #[derive(Debug, Default)]
 pub struct InMemoryGraphStore {
+    #[cfg(test)]
+    pub(crate) graph: Mutex<Option<Vec<u8>>>,
+    #[cfg(not(test))]
     graph: Mutex<Option<Vec<u8>>>,
     manifest: Mutex<Option<Vec<u8>>>,
 }
@@ -41,9 +44,11 @@ impl GraphStore for InMemoryGraphStore {
         let guard = self.graph.lock().unwrap();
         match guard.as_ref() {
             Some(bytes) => {
-                let (graph, _) = decode_from_slice::<CallGraph, _>(bytes, standard())
-                    .map_err(|e| StoreError::Serialization(e.to_string()))?;
-                Ok(Some(graph))
+                match decode_from_slice::<CallGraph, _>(bytes, standard()) {
+                    Ok((graph, _)) => Ok(Some(graph)),
+                    // Graceful degradation: if data is corrupted, treat as absent
+                    Err(_) => Ok(None),
+                }
             }
             None => Ok(None),
         }
@@ -64,9 +69,11 @@ impl GraphStore for InMemoryGraphStore {
         let guard = self.manifest.lock().unwrap();
         match guard.as_ref() {
             Some(bytes) => {
-                let (manifest, _) = decode_from_slice::<FileManifest, _>(bytes, standard())
-                    .map_err(|e| StoreError::Serialization(e.to_string()))?;
-                Ok(Some(manifest))
+                match decode_from_slice::<FileManifest, _>(bytes, standard()) {
+                    Ok((manifest, _)) => Ok(Some(manifest)),
+                    // Graceful degradation: if data is corrupted, treat as absent
+                    Err(_) => Ok(None),
+                }
             }
             None => Ok(None),
         }
@@ -163,5 +170,28 @@ mod tests {
         assert!(store.load_graph().unwrap().is_none());
         assert!(store.load_manifest().unwrap().is_none());
         assert!(!store.exists().unwrap());
+    }
+
+    #[test]
+    fn test_corrupted_data_returns_none_gracefully() {
+        let store = InMemoryGraphStore::new();
+
+        // First, save valid data
+        let graph = create_test_graph();
+        store.save_graph(&graph).unwrap();
+
+        // Verify it loads correctly
+        assert!(store.load_graph().unwrap().is_some());
+
+        // Now corrupt the internal bytes directly
+        {
+            let mut guard = store.graph.lock().unwrap();
+            *guard = Some(vec![0xFF, 0x00, 0x01, 0xFE, 0x00]);
+        }
+
+        // Loading corrupted data should return Ok(None), not Err
+        let result = store.load_graph();
+        assert!(result.is_ok(), "Expected Ok, got Err");
+        assert!(result.unwrap().is_none(), "Expected None for corrupted data");
     }
 }

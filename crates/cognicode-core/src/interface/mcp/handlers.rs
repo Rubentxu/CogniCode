@@ -216,6 +216,16 @@ pub type HandlerResult<T> = Result<T, HandlerError>;
 /// - If `input` is `None`, returns `working_dir` unchanged.
 /// - If `input` is an absolute path, returns it unchanged.
 /// - If `input` is a relative path (including "."), joins it to `working_dir`.
+/// Generate a unique redb file path based on the target directory.
+/// This ensures different directories get different cache files.
+fn graph_db_path(working_dir: &Path, directory: &Path) -> PathBuf {
+    let db_dir = working_dir.join(".cognicode");
+    let canonical_dir = directory.canonicalize().unwrap_or_else(|_| directory.to_path_buf());
+    let hash = blake3::hash(canonical_dir.to_string_lossy().as_bytes());
+    let hash_str = &hash.to_string()[..16];
+    db_dir.join(format!("graph_{}.redb", hash_str))
+}
+
 fn resolve_directory(input: Option<String>, working_dir: &Path) -> PathBuf {
     match input {
         None => working_dir.to_path_buf(),
@@ -292,8 +302,7 @@ pub async fn handle_build_graph(
     }
 
     // --- Persistence: try to load from redb first ---
-    let db_dir = ctx.working_dir.join(".cognicode");
-    let db_path = db_dir.join("graph.redb");
+    let db_path = graph_db_path(&ctx.working_dir, &directory);
     let mut loaded_from_cache = false;
 
     if db_path.exists() {
@@ -311,7 +320,7 @@ pub async fn handle_build_graph(
             return Err(HandlerError::App(e));
         }
         // Persist the freshly built graph
-        let _ = std::fs::create_dir_all(&db_dir);
+        let _ = std::fs::create_dir_all(db_path.parent().unwrap_or(&ctx.working_dir));
         if let Ok(store) = RedbGraphStore::open(&db_path) {
             let graph = ctx.analysis_service.get_project_graph();
             let _ = store.save_graph(&graph);
@@ -2639,11 +2648,125 @@ mod tests {
         let input = MergeGraphsInput {
             file_paths: vec![],
         };
-        
+
         let result = handle_merge_graphs(&ctx, input).await;
         assert!(result.is_ok());
         let output = result.unwrap();
         assert_eq!(output.file_count, 0);
         assert_eq!(output.merged_symbol_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_handle_build_graph_creates_redb_on_first_call() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir_path = tempdir.path();
+
+        // Create a simple Rust file
+        let rust_file = tempdir_path.join("hello.rs");
+        std::fs::write(&rust_file, "fn hello() {}\n").unwrap();
+
+        let ctx = HandlerContext::new(tempdir_path.to_path_buf());
+        let input = BuildGraphInput {
+            directory: None,
+        };
+
+        let result = handle_build_graph(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.success);
+        assert!(output.message.contains("built + persisted"));
+
+        // Verify redb file exists
+        let db_dir = tempdir_path.join(".cognicode");
+        let mut entries = std::fs::read_dir(&db_dir).unwrap();
+        let db_file = entries.find(|e| {
+            e.as_ref()
+                .map(|entry| entry.file_name().to_string_lossy().starts_with("graph_"))
+                .unwrap_or(false)
+        });
+        assert!(db_file.is_some(), "Expected a graph_*.redb file to exist");
+    }
+
+    #[tokio::test]
+    async fn test_handle_build_graph_loads_from_cache_on_second_call() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir_path = tempdir.path();
+
+        // Create a simple Rust file
+        let rust_file = tempdir_path.join("hello.rs");
+        std::fs::write(&rust_file, "fn hello() {}\n").unwrap();
+
+        let ctx = HandlerContext::new(tempdir_path.to_path_buf());
+
+        // First call - should build and persist
+        let input1 = BuildGraphInput {
+            directory: None,
+        };
+        let result1 = handle_build_graph(&ctx, input1).await;
+        assert!(result1.is_ok());
+        let output1 = result1.unwrap();
+        assert!(output1.success);
+        assert!(output1.message.contains("built + persisted"));
+        let symbols_first = output1.symbols_found;
+
+        // Second call - should load from cache
+        let input2 = BuildGraphInput {
+            directory: None,
+        };
+        let result2 = handle_build_graph(&ctx, input2).await;
+        assert!(result2.is_ok());
+        let output2 = result2.unwrap();
+        assert!(output2.success);
+        assert!(output2.message.contains("cache (redb)"));
+        assert_eq!(output2.symbols_found, symbols_first);
+    }
+
+    #[tokio::test]
+    async fn test_handle_build_graph_different_dirs_use_different_cache_files() {
+        // Create two temp directories with different Rust files
+        let tempdir1 = tempfile::tempdir().unwrap();
+        let tempdir1_path = tempdir1.path();
+        let rust_file1 = tempdir1_path.join("file1.rs");
+        std::fs::write(&rust_file1, "fn function_one() {}\n").unwrap();
+
+        let tempdir2 = tempfile::tempdir().unwrap();
+        let tempdir2_path = tempdir2.path();
+        let rust_file2 = tempdir2_path.join("file2.rs");
+        std::fs::write(&rust_file2, "fn function_two() {}\n").unwrap();
+
+        let ctx = HandlerContext::new(tempdir1_path.to_path_buf());
+
+        // First call with tempdir1
+        let input1 = BuildGraphInput {
+            directory: Some(tempdir1_path.to_string_lossy().to_string()),
+        };
+        let result1 = handle_build_graph(&ctx, input1).await;
+        assert!(result1.is_ok());
+        assert!(result1.unwrap().success);
+
+        // Second call with tempdir2
+        let input2 = BuildGraphInput {
+            directory: Some(tempdir2_path.to_string_lossy().to_string()),
+        };
+        let result2 = handle_build_graph(&ctx, input2).await;
+        assert!(result2.is_ok());
+        assert!(result2.unwrap().success);
+
+        // Verify both cache files exist and are different
+        let db_dir = tempdir1_path.join(".cognicode");
+        let entries: Vec<_> = std::fs::read_dir(&db_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .collect();
+        let graph_files: Vec<_> = entries
+            .iter()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("graph_"))
+            .collect();
+
+        assert_eq!(graph_files.len(), 2, "Expected 2 different graph cache files");
+
+        let name1 = graph_files[0].file_name().to_string_lossy().into_owned();
+        let name2 = graph_files[1].file_name().to_string_lossy().into_owned();
+        assert_ne!(name1, name2, "Cache files should have different names");
     }
 }
