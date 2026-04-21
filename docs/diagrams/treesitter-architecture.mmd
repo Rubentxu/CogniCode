@@ -1,0 +1,94 @@
+flowchart TB
+    subgraph "🌳 Tree-sitter Core"
+        CORE["tree-sitter = 0.24"]
+    end
+
+    subgraph "🦀 Rust Parser"
+        RUST_LANG["Language: Rust"]
+        RUST_QUERY["🎯 Queries:<br/>- function_item<br/>- impl_item<br/>- struct<br/>- enum<br/>- macro"]
+        RUST_NODE["📍 Node Types:<br/>function_item, identifier,<br/>parameter, block"]
+    end
+
+    subgraph "🐍 Python Parser"
+        PY_LANG["Language: Python"]
+        PY_QUERY["🎯 Queries:<br/>- function_definition<br/>- class_definition<br/>- assignment"]
+        PY_NODE["📍 Node Types:<br/>function_def, identifier,<br/>parameters, decorator"]
+    end
+
+    subgraph "📜 JavaScript Parser"
+        JS_LANG["Language: JavaScript"]
+        JS_QUERY["🎯 Queries:<br/>- function_declaration<br/>- arrow_function<br/>- class_declaration"]
+        JS_NODE["📍 Node Types:<br/>function, identifier,<br/>formal_parameters"]
+    end
+
+    subgraph "📘 TypeScript Parser"
+        TS_LANG["Language: TypeScript"]
+        TS_QUERY["🎯 Queries:<br/>- function_declaration<br/>- class_declaration<br/>- interface_declaration<br/>- type_alias"]
+        TS_NODE["📍 Node Types:<br/>function_signature,<br/>type_annotation,<br/>identifier"]
+    end
+
+    subgraph "🐹 Go Parser"
+        GO_LANG["Language: Go"]
+        GO_QUERY["🎯 Queries:<br/>- function_declaration<br/>- type_declaration<br/>- const_declaration<br/>- var_declaration"]
+        GO_NODE["📍 Node Types:<br/>function_decl, identifier,<br/>parameter_list, block"]
+    end
+
+    subgraph "☕ Java Parser"
+        JAVA_LANG["Language: Java"]
+        JAVA_QUERY["🎯 Queries:<br/>- method_declaration<br/>- class_declaration<br/>- interface_declaration<br/>- constructor"]
+        JAVA_NODE["📍 Node Types:<br/>method_decl, identifier,<br/>formal_parameters, block"]
+    end
+
+    subgraph "🎯 Common Symbol Extraction"
+        COMMON["📤 SymbolInfo:<br/>- name: String<br/>- kind: SymbolKind<br/>- location: Location<br/>- signature: Option&lt;String&gt;"]
+    end
+
+    %% Tree-sitter core connections
+    CORE --> RUST_LANG
+    CORE --> PY_LANG
+    CORE --> JS_LANG
+    CORE --> TS_LANG
+    CORE --> GO_LANG
+    CORE --> JAVA_LANG
+
+    %% Language to queries
+    RUST_LANG --> RUST_QUERY
+    PY_LANG --> PY_QUERY
+    JS_LANG --> JS_QUERY
+    TS_LANG --> TS_QUERY
+    GO_LANG --> GO_QUERY
+    JAVA_LANG --> JAVA_QUERY
+
+    %% Queries to nodes
+    RUST_QUERY --> RUST_NODE
+    PY_QUERY --> PY_NODE
+    JS_QUERY --> JS_NODE
+    TS_QUERY --> TS_NODE
+    GO_QUERY --> GO_NODE
+    JAVA_QUERY --> JAVA_NODE
+
+    %% All to common output
+    RUST_NODE --> COMMON
+    PY_NODE --> COMMON
+    JS_NODE --> COMMON
+    TS_NODE --> COMMON
+    GO_NODE --> COMMON
+    JAVA_NODE --> COMMON
+
+    classDef core fill:#ff6b6b,stroke:#ff6b6b,color:#ffffff
+    classDef rust fill:#1a1a2e,stroke:#ff8c00,color:#ff8c00
+    classDef python fill:#1a1a2e,stroke:#4caf50,color:#4caf50
+    classDef javascript fill:#1a1a2e,stroke:#ffc107,color:#ffc107
+    classDef typescript fill:#1a1a2e,stroke:#00d9ff,color:#00d9ff
+    classDef go fill:#1a1a2e,stroke:#00add8,color:#00add8
+    classDef java fill:#1a1a2e,stroke:#ff5722,color:#ff5722
+    classDef common fill:#2d2d44,stroke:#e94560,color:#e94560
+
+    class CORE core
+    class RUST_LANG,RUST_QUERY,RUST_NODE rust
+    class PY_LANG,PY_QUERY,PY_NODE python
+    class JS_LANG,JS_QUERY,JS_NODE javascript
+    class TS_LANG,TS_QUERY,TS_NODE typescript
+    class GO_LANG,GO_QUERY,GO_NODE go
+    class JAVA_LANG,JAVA_QUERY,JAVA_NODE java
+    class COMMON common

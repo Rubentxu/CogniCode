@@ -1,0 +1,15 @@
+sequenceDiagram
+    participant LLM as LLM Agent
+    participant MCP as MCP Server
+    participant APP as Application Services
+    participant DOM as Domain
+    participant INFRA as Infrastructure
+
+    LLM->>MCP: tool_call(get_call_hierarchy)
+    MCP->>APP: NavigationService
+    APP->>DOM: Symbol lookup
+    DOM->>INFRA: Parse source (Tree-sitter)
+    INFRA-->>DOM: AST + Symbols
+    DOM-->>APP: Call hierarchy
+    APP-->>MCP: DTO response
+    MCP-->>LLM: JSON result

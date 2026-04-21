@@ -1,0 +1,40 @@
+graph TB
+    subgraph Interface
+        MCP[MCP Server]
+        LSP[LSP Server]
+        CLI[CLI]
+    end
+    subgraph Application
+        NS[NavigationService]
+        RS[RefactorService]
+        AS[AnalysisService]
+    end
+    subgraph Domain
+        SYM[Symbol]
+        CG[CallGraph]
+        REF[Refactor]
+        IA[ImpactAnalyzer]
+        CD[CycleDetector]
+        CC[ComplexityCalculator]
+    end
+    subgraph Infrastructure
+        TSP[TreeSitter Parser]
+        PGS[PetGraph Store]
+        VFS[Virtual File System]
+        SG[Safety Gate]
+    end
+    MCP --> NS
+    MCP --> RS
+    MCP --> AS
+    LSP --> NS
+    CLI --> NS
+    NS --> SYM
+    NS --> CG
+    RS --> REF
+    RS --> SG
+    AS --> IA
+    AS --> CD
+    AS --> CC
+    TSP --> SYM
+    PGS --> CG
+    VFS --> SG

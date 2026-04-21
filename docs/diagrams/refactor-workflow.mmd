@@ -1,0 +1,10 @@
+graph LR
+    A[Agent Request] --> B[Parse & Validate]
+    B --> C{Valid?}
+    C -->|No| D[Return Error]
+    C -->|Yes| E[Generate Edits]
+    E --> F[Apply to VFS]
+    F --> G[Validate AST]
+    G --> H{Valid?}
+    H -->|No| I[Reject & Rollback]
+    H -->|Yes| J[Apply to Disk]

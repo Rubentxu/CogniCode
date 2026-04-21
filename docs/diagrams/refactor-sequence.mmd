@@ -1,0 +1,48 @@
+sequenceDiagram
+    participant Agent as 🤖 AI Agent
+    participant MCP as 🖥️ MCP Server
+    participant Handler as ⚙️ Handler
+    participant Validator as ✅ InputValidator
+    participant Service as 🔍 AnalysisService
+    participant Parser as 🌳 TreeSitterParser
+    participant Graph as 🕸️ PetGraphStore
+    participant Safety as 🛡️ SafetyGate
+    participant Strategy as 🔨 RenameStrategy
+    participant VFS as 💾 VirtualFileSystem
+
+    Agent->>MCP: safe_refactor(rename, symbol="foo", new_name="bar")
+    
+    MCP->>Handler: handle_safe_refactor(params)
+    Handler->>Validator: validate_path(file_path)
+    Validator-->>Handler: PathValid
+    
+    Handler->>Service: rename_symbol(command)
+    
+    Service->>Safety: check_risk_level(symbol)
+    Safety-->>Service: RiskLevel::Medium
+    
+    Service->>Graph: find_all_references(symbol)
+    Graph-->>Service: Vec&lt;Location&gt;
+    
+    Service->>Parser: parse_file(file_path)
+    Parser-->>Service: Tree
+    
+    Service->>Strategy: prepare_edits(symbol, new_name, tree)
+    Strategy-->>Service: Vec&lt;TextEdit&gt;
+    
+    Service->>VFS: apply_edits(edits)
+    VFS-->>Service: VirtualFileSystem(updated)
+    
+    Service->>Parser: validate_syntax(vfs)
+    Parser-->>Service: SyntaxValid
+    
+    Service-->>Handler: RefactorPreviewDto { changes, preview }
+    Handler-->>MCP: { jsonrpc, result: preview }
+    MCP-->>Agent: JSON-RPC Response
+
+    Note over Agent,VFS: Preview Mode - No changes applied yet
+    
+    Agent->>MCP: safe_refactor(apply=true)
+    MCP->>Service: apply_rename(changes)
+    Service->>Graph: update_symbol(old, new)
+    Service-->>Agent: { success: true, applied: 5 }

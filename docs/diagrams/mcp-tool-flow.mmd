@@ -1,0 +1,69 @@
+flowchart TB
+    subgraph "1. Agente IA"
+        REQUEST["🔵 MCP Request<br/>tools/call: get_file_symbols"]
+    end
+
+    subgraph "2. Interface Layer"
+        STDIN["📥 stdin<br/>JSON-RPC Request"]
+        PARSER_JSON["🔍 JSON Parser"]
+        DISPATCHER["⚡ Method Dispatcher"]
+        HANDLER["⚙️ Handler<br/>handle_get_file_symbols()"]
+        VALIDATOR["✅ InputValidator<br/>Path validation"]
+    end
+
+    subgraph "3. Application Layer"
+        ANALYSIS["🔍 AnalysisService<br/>get_file_symbols()"]
+        ERROR_APP["⚠️ AppError"]
+    end
+
+    subgraph "4. Infrastructure Layer"
+        PARSER_TS["🌳 TreeSitterParser<br/>find_all_symbols()"]
+        
+        subgraph "Language Parsers"
+            RUST_P["🦀 Rust<br/>tree-sitter-rust"]
+            PY_P["🐍 Python<br/>tree-sitter-python"]
+            JS_P["📜 JavaScript<br/>tree-sitter-javascript"]
+            TS_P["📘 TypeScript<br/>tree-sitter-typescript"]
+            GO_P["🐹 Go<br/>tree-sitter-go"]
+            JAVA_P["☕ Java<br/>tree-sitter-java"]
+        end
+        
+        GRAPH["🕸️ PetGraphStore<br/>Symbol storage"]
+    end
+
+    subgraph "5. Response"
+        RESPONSE["📤 stdout<br/>JSON-RPC Response<br/>SymbolInfo[]"]
+    end
+
+    %% Flow connections
+    REQUEST --> STDIN
+    STDIN --> PARSER_JSON
+    PARSER_JSON --> DISPATCHER
+    DISPATCHER --> HANDLER
+    HANDLER --> VALIDATOR
+    VALIDATOR --> ANALYSIS
+    ANALYSIS --> PARSER_TS
+    ANALYSIS --> ERROR_APP
+    
+    PARSER_TS --> RUST_P
+    PARSER_TS --> PY_P
+    PARSER_TS --> JS_P
+    PARSER_TS --> TS_P
+    PARSER_TS --> GO_P
+    PARSER_TS --> JAVA_P
+    
+    PARSER_TS --> GRAPH
+    GRAPH --> RESPONSE
+    ERROR_APP --> RESPONSE
+
+    classDef interface fill:#1a1a2e,stroke:#00d9ff,color:#00d9ff
+    classDef application fill:#16213e,stroke:#e94560,color:#e94560
+    classDef infrastructure fill:#1a1a2e,stroke:#00ff88,color:#00ff88
+    classDef language fill:#2d2d44,stroke:#ffc107,color:#ffc107
+    classDef response fill:#2d2d44,stroke:#ff6b6b,color:#ff6b6b
+
+    class STDIN,PARSER_JSON,DISPATCHER,HANDLER,VALIDATOR interface
+    class ANALYSIS,ERROR_APP application
+    class PARSER_TS,GRAPH infrastructure
+    class RUST_P,PY_P,JS_P,TS_P,GO_P,JAVA_P language
+    class RESPONSE response

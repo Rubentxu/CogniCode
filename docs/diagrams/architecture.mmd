@@ -1,0 +1,80 @@
+flowchart TB
+    subgraph "Interface Layer (interface/)"
+        MCP["🖥️ MCP Server<br/>(mcp_server.rs)"]
+        LSP["📝 LSP Server<br/>(lsp_server.rs)"]
+        HANDLERS["⚙️ MCP Handlers<br/>(handlers.rs)"]
+        SCHEMAS["📋 MCP Schemas<br/>(schemas.rs)"]
+    end
+
+    subgraph "Application Layer (application/)"
+        ANALYSIS["🔍 AnalysisService<br/>(analysis_service.rs)"]
+        FILEOPS["📁 FileOperationsService<br/>(file_operations.rs)"]
+        REFACTOR["🔧 RefactorService<br/>(refactor_service.rs)"]
+        ERROR["⚠️ Error Handling<br/>(error.rs)"]
+    end
+
+    subgraph "Domain Layer (domain/)"
+        TRAITS["🔗 Domain Traits<br/>(traits/)"]
+        COMPLEXITY["📊 ComplexityCalculator<br/>(complexity.rs)"]
+        ENTITIES["🏛️ Entities<br/>(entities.rs)"]
+    end
+
+    subgraph "Infrastructure Layer (infrastructure/)"
+        PARSER["🌳 TreeSitterParser<br/>(tree_sitter_parser.rs)"]
+        GRAPH["🕸️ PetGraphStore<br/>(graph/)"]
+        SAFETY["🛡️ SafetyGate<br/>(safety/mod.rs)"]
+        REFACTOR_STRATS["🔨 Refactor Strategies<br/>(refactor/)"]
+        VFS["💾 VirtualFileSystem<br/>(vfs.rs)"]
+    end
+
+    subgraph "Binary Entry Points"
+        MAIN["🚀 cognicode<br/>(main.rs)"]
+        MCP_BIN["🎯 cognicode-mcp<br/>(mcp_server.rs)"]
+        LSP_BIN["📡 cognicode-lsp<br/>(lsp_server.rs)"]
+        SANDBOX["🧪 sandbox-orchestrator<br/>(sandbox_orchestrator.rs)"]
+    end
+
+    %% Main flows
+    MAIN --> MCP_BIN
+    MAIN --> LSP_BIN
+    MCP_BIN --> HANDLERS
+    LSP_BIN --> HANDLERS
+
+    HANDLERS --> SCHEMAS
+    HANDLERS --> ANALYSIS
+    HANDLERS --> FILEOPS
+    HANDLERS --> REFACTOR
+
+    ANALYSIS --> TRAITS
+    ANALYSIS --> COMPLEXITY
+    ANALYSIS --> PARSER
+    ANALYSIS --> GRAPH
+
+    FILEOPS --> VFS
+    FILEOPS --> SAFETY
+
+    REFACTOR --> SAFETY
+    REFACTOR --> REFACTOR_STRATS
+    REFACTOR --> PARSER
+    REFACTOR --> GRAPH
+
+    PARSER --> TRAITS
+    GRAPH --> TRAITS
+    SAFETY --> ERROR
+
+    %% Sandbox integration
+    SANDBOX --> MCP_BIN
+    SANDBOX --> ANALYSIS
+    SANDBOX --> FILEOPS
+
+    classDef interface fill:#1a1a2e,stroke:#00d9ff,color:#00d9ff
+    classDef application fill:#16213e,stroke:#e94560,color:#e94560
+    classDef domain fill:#0f3460,stroke:#ffc107,color:#ffc107
+    classDef infrastructure fill:#1a1a2e,stroke:#00ff88,color:#00ff88
+    classDef binary fill:#2d2d44,stroke:#ff6b6b,color:#ff6b6b
+
+    class MCP,LSP,HANDLERS,SCHEMAS interface
+    class ANALYSIS,FILEOPS,REFACTOR,ERROR application
+    class TRAITS,COMPLEXITY,ENTITIES domain
+    class PARSER,GRAPH,SAFETY,REFACTOR_STRATS,VFS infrastructure
+    class MAIN,MCP_BIN,LSP_BIN,SANDBOX binary

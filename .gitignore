@@ -19,8 +19,6 @@ Thumbs.db
 # Claude Code
 /.claude/
 
-# Documentation (not production code)
-docs/
 
 # Examples (demos, not core library)
 /examples/
@@ -42,7 +40,6 @@ AGENTS.md
 .agent
 .agents/
 .qwen/
-!docs/architecture/diagrams/**
 node_modules/
 *.png
 # Criticas y análisis (no comittear)

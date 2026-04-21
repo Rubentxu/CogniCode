@@ -1,0 +1,10 @@
+graph TD
+    A[func_a] --> B[func_b]
+    B --> C[func_c]
+    C -->|cycle| A
+    D[func_d] --> E[func_e]
+    E --> D
+    style C fill:#ff6b6b
+    style A fill:#ff6b6b
+    style D fill:#ff6b6b
+    style E fill:#ff6b6b

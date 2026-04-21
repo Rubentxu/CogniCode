@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2680.0500000000006 2356" width="2680.0500000000006" height="2356" style="--bg:#1a1b26;--fg:#a9b1d6;--line:#3d59a1;--accent:#7aa2f7;--muted:#565f89;background:var(--bg)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 30%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="4.8" refX="8" refY="2.4" orient="auto">
+    <polygon points="0 0, 8 2.4, 0 4.8" fill="var(--_arrow)" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="4.8" refX="0" refY="2.4" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.4, 8 4.8" fill="var(--_arrow)" />
+  </marker>
+</defs>
+<rect x="2213.7000000000007" y="40" width="426.3499999999999" height="152" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+<rect x="2213.7000000000007" y="40" width="426.3499999999999" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+<text x="2225.7000000000007" y="54" dy="0.35em" font-size="12" font-weight="600" fill="var(--_text-sec)">&quot;1. Agente IA&quot;</text>
+<rect x="2238.725" y="276" width="376.3000000000002" height="1096" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+<rect x="2238.725" y="276" width="376.3000000000002" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+<text x="2250.725" y="290" dy="0.35em" font-size="12" font-weight="600" fill="var(--_text-sec)">&quot;2. Interface Layer&quot;</text>
+<rect x="2235.15" y="1456" width="383.4499999999998" height="388" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+<rect x="2235.15" y="1456" width="383.4499999999998" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+<text x="2247.15" y="1470" dy="0.35em" font-size="12" font-weight="600" fill="var(--_text-sec)">&quot;3. Application Layer&quot;</text>
+<rect x="40" y="1692" width="2175.15" height="388" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+<rect x="40" y="1692" width="2175.15" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+<text x="52" y="1706" dy="0.35em" font-size="12" font-weight="600" fill="var(--_text-sec)">&quot;4. Infrastructure Layer&quot;</text>
+<rect x="60.000000000000114" y="1948" width="1807.45" height="112" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+<rect x="60.000000000000114" y="1948" width="1807.45" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+<text x="72.00000000000011" y="1962" dy="0.35em" font-size="12" font-weight="600" fill="var(--_text-sec)">&quot;Language Parsers&quot;</text>
+<rect x="1920.8000000000004" y="2164" width="645.9000000000001" height="152" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+<rect x="1920.8000000000004" y="2164" width="645.9000000000001" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+<text x="1932.8000000000004" y="2178" dy="0.35em" font-size="12" font-weight="600" fill="var(--_text-sec)">&quot;5. Response&quot;</text>
+<polyline points="2426.8750000000005,152 2426.8750000000005,352" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="2426.8750000000005,388 2426.8750000000005,588" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="2426.8750000000005,624 2426.8750000000005,824" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="2426.8750000000005,860 2426.8750000000005,1060" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="2426.8750000000005,1096 2426.8750000000005,1296" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="2426.8750000000005,1332 2426.8750000000005,1532" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="2426.8750000000005,1568 2426.8750000000005,1588 2341.0125000000003,1588 2341.0125000000003,1786 1347.3500000000001,1786" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="2426.8750000000005,1568 2426.8750000000005,1588 2436.8750000000005,1588 2436.8750000000005,1768" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="1174.0500000000002,1804 1174.0500000000002,1824 205.25000000000009,1824 205.25000000000009,2004" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="1174.0500000000002,1804 1174.0500000000002,1824 490.0500000000002,1824 490.0500000000002,2004" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="1174.0500000000002,1804 1174.0500000000002,1824 817.7500000000002,1824 817.7500000000002,2004" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="1174.0500000000002,1804 1174.0500000000002,2004" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="1174.0500000000002,1804 1174.0500000000002,1824 1473.15,1824 1473.15,2004" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="1174.0500000000002,1804 1174.0500000000002,1824 1725.775,1824 1725.775,2004" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="1174.0500000000002,1804 1174.0500000000002,1824 2041.3000000000002,1824 2041.3000000000002,2004" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="2041.3000000000002,2040 2041.3000000000002,2258 2061.5125000000003,2258" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<polyline points="2436.8750000000005,1804 2436.8750000000005,2258 2436.7125,2258" fill="none" stroke="var(--_line)" stroke-width="0.75" marker-end="url(#arrowhead)" />
+<rect x="2235.7000000000003" y="116" width="382.35" height="36" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+<rect x="2300.0500000000006" y="352" width="253.65" height="36" rx="0" ry="0" fill="#1a1a2e" stroke="#00d9ff" stroke-width="0.75" />
+<rect x="2353.6750000000006" y="588" width="146.4" height="36" rx="0" ry="0" fill="#1a1a2e" stroke="#00d9ff" stroke-width="0.75" />
+<rect x="2335.8000000000006" y="824" width="182.15" height="36" rx="0" ry="0" fill="#1a1a2e" stroke="#00d9ff" stroke-width="0.75" />
+<rect x="2260.7250000000004" y="1060" width="332.3" height="36" rx="0" ry="0" fill="#1a1a2e" stroke="#00d9ff" stroke-width="0.75" />
+<rect x="2275.0250000000005" y="1296" width="303.70000000000005" height="36" rx="0" ry="0" fill="#1a1a2e" stroke="#00d9ff" stroke-width="0.75" />
+<rect x="2257.1500000000005" y="1532" width="339.45000000000005" height="36" rx="0" ry="0" fill="#16213e" stroke="#e94560" stroke-width="0.75" />
+<rect x="2374.4000000000005" y="1768" width="124.95" height="36" rx="0" ry="0" fill="#16213e" stroke="#e94560" stroke-width="0.75" />
+<rect x="1000.7500000000002" y="1768" width="346.6" height="36" rx="0" ry="0" fill="#1a1a2e" stroke="#00ff88" stroke-width="0.75" />
+<rect x="1889.4500000000003" y="2004" width="303.70000000000005" height="36" rx="0" ry="0" fill="#1a1a2e" stroke="#00ff88" stroke-width="0.75" />
+<rect x="82.00000000000007" y="2004" width="246.50000000000003" height="36" rx="0" ry="0" fill="#2d2d44" stroke="#ffc107" stroke-width="0.75" />
+<rect x="352.50000000000017" y="2004" width="275.1" height="36" rx="0" ry="0" fill="#2d2d44" stroke="#ffc107" stroke-width="0.75" />
+<rect x="651.6000000000003" y="2004" width="332.3" height="36" rx="0" ry="0" fill="#2d2d44" stroke="#ffc107" stroke-width="0.75" />
+<rect x="1007.9000000000002" y="2004" width="332.3" height="36" rx="0" ry="0" fill="#2d2d44" stroke="#ffc107" stroke-width="0.75" />
+<rect x="1364.2" y="2004" width="217.9" height="36" rx="0" ry="0" fill="#2d2d44" stroke="#ffc107" stroke-width="0.75" />
+<rect x="1606.1000000000001" y="2004" width="239.35000000000002" height="36" rx="0" ry="0" fill="#2d2d44" stroke="#ffc107" stroke-width="0.75" />
+<rect x="2061.5125000000003" y="2240" width="375.20000000000005" height="36" rx="0" ry="0" fill="#2d2d44" stroke="#ff6b6b" stroke-width="0.75" />
+<text x="2426.8750000000005" y="134" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="var(--_text)">&quot;🔵 MCP Request&lt;br/&gt;tools/call: get_file_symbols&quot;</text>
+<text x="2426.8750000000005" y="370" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#00d9ff">&quot;📥 stdin&lt;br/&gt;JSON-RPC Request&quot;</text>
+<text x="2426.8750000000005" y="606" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#00d9ff">&quot;🔍 JSON Parser&quot;</text>
+<text x="2426.8750000000005" y="842" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#00d9ff">&quot;⚡ Method Dispatcher&quot;</text>
+<text x="2426.8750000000005" y="1078" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#00d9ff">&quot;⚙️ Handler&lt;br/&gt;handle_get_file_symbols()&quot;</text>
+<text x="2426.8750000000005" y="1314" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#00d9ff">&quot;✅ InputValidator&lt;br/&gt;Path validation&quot;</text>
+<text x="2426.8750000000005" y="1550" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#e94560">&quot;🔍 AnalysisService&lt;br/&gt;get_file_symbols()&quot;</text>
+<text x="2436.8750000000005" y="1786" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#e94560">&quot;⚠️ AppError&quot;</text>
+<text x="1174.0500000000002" y="1786" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#00ff88">&quot;🌳 TreeSitterParser&lt;br/&gt;find_all_symbols()&quot;</text>
+<text x="2041.3000000000002" y="2022" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#00ff88">&quot;🕸️ PetGraphStore&lt;br/&gt;Symbol storage&quot;</text>
+<text x="205.25000000000009" y="2022" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#ffc107">&quot;🦀 Rust&lt;br/&gt;tree-sitter-rust&quot;</text>
+<text x="490.0500000000002" y="2022" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#ffc107">&quot;🐍 Python&lt;br/&gt;tree-sitter-python&quot;</text>
+<text x="817.7500000000002" y="2022" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#ffc107">&quot;📜 JavaScript&lt;br/&gt;tree-sitter-javascript&quot;</text>
+<text x="1174.0500000000002" y="2022" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#ffc107">&quot;📘 TypeScript&lt;br/&gt;tree-sitter-typescript&quot;</text>
+<text x="1473.15" y="2022" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#ffc107">&quot;🐹 Go&lt;br/&gt;tree-sitter-go&quot;</text>
+<text x="1725.775" y="2022" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#ffc107">&quot;☕ Java&lt;br/&gt;tree-sitter-java&quot;</text>
+<text x="2249.1125" y="2258" text-anchor="middle" dy="0.35em" font-size="13" font-weight="500" fill="#ff6b6b">&quot;📤 stdout&lt;br/&gt;JSON-RPC Response&lt;br/&gt;SymbolInfo[</text>
+</svg>
