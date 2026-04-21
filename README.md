@@ -327,7 +327,7 @@ files, and the full call chain — before touching a single line of code.
 These are just 2 of 20 scenarios. The full guide covers **dead code detection,
 safe rename refactoring, complexity audits, execution path tracing**, and more.
 
-👉 [Read the full Agent Prompt Guide →](docs/agent-prompts.md)
+👉 [Read the full Agent Prompt Guide →](docs/agent-prompts.md) · [Versión en español →](docs/agent-prompts-es.md)
 
 ## License
 

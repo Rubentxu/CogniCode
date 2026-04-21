@@ -330,7 +330,7 @@ Estos son solo 2 de los 20 escenarios. La guía completa cubre **detección de
 código muerto, refactoring seguro con rename, auditorías de complejidad,
 trazado de rutas de ejecución** y mucho más.
 
-👉 [Lee la Guía Completa de Prompts para Agentes →](docs/agent-prompts.md)
+👉 [Lee la Guía Completa de Prompts para Agentes →](docs/agent-prompts-es.md) · [English version →](docs/agent-prompts.md)
 
 ## Licencia
 
