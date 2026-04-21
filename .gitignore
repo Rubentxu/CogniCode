@@ -77,3 +77,10 @@ sandbox/reports/
 .tmp-*/
 adder.go
 .cognicode/
+
+# SDD / OpenSpec artifacts (agent planning data)
+.tmp-cognicode-verify-extra/
+openspec/
+sdd/
+rust-intelligence
+sandbox/fixtures/rust-intelligence/
