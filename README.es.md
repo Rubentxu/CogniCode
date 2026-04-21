@@ -277,6 +277,61 @@ cargo build --release -p cognicode-mcp
 cargo run -p cognicode-cli -- doctor
 ```
 
+## Uso con Agentes de IA
+
+CogniCode está diseñado para ser la **columna vertebral de inteligencia de
+código** de los agentes de IA. En lugar de pedirle al agente que lea archivos
+e intuya la estructura, le das herramientas que devuelven respuestas precisas
+y estructuradas.
+
+📖 **[docs/agent-prompts.md](docs/agent-prompts.md)** contiene 20 escenarios
+de prompts listos para usar, con cadenas de razonamiento completas y secuencias
+de tool calls. Un vistazo:
+
+---
+
+### Explorando un Repositorio Nuevo
+
+> *"Acabo de clonar este repo. Ayúdame a entender qué hace, cuáles son los
+> puntos de entrada principales y qué funciones se llaman más."*
+
+**Razonamiento del agente:** Primero construir el grafo completo, luego obtener
+los entry points (superficie pública de la API), las leaf functions
+(primitivos de bajo nivel) y los hot paths (código más interconectado). Los
+tres juntos dan una visión 360° de cualquier base de código desconocida.
+
+```
+1. build_graph        → strategy: "full"
+2. get_entry_points   → la superficie pública de la API
+3. get_leaf_functions → los primitivos de bajo nivel
+4. get_hot_paths      → min_fan_in: 3  (las funciones carga-crítica)
+```
+
+---
+
+### Análisis de Impacto Antes de un PR
+
+> *"Voy a cambiar `UserRepository.find_by_email`. ¿Qué puede romperse?"*
+
+```
+1. build_lightweight_index
+2. query_symbol_index  → symbol_name: "find_by_email"
+3. analyze_impact      → symbol_name: "UserRepository.find_by_email"
+4. get_call_hierarchy  → direction: "incoming", depth: 3
+```
+
+El agente obtiene un nivel de riesgo (`low` / `medium` / `high`), una lista de
+archivos impactados y la cadena de llamadas completa — antes de tocar una sola
+línea de código.
+
+---
+
+Estos son solo 2 de los 20 escenarios. La guía completa cubre **detección de
+código muerto, refactoring seguro con rename, auditorías de complejidad,
+trazado de rutas de ejecución** y mucho más.
+
+👉 [Lee la Guía Completa de Prompts para Agentes →](docs/agent-prompts.md)
+
 ## Licencia
 
 Ver [LICENSE](LICENSE) para más detalles.

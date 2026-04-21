@@ -277,6 +277,58 @@ cargo build --release -p cognicode-mcp
 cargo run -p cognicode-cli -- doctor
 ```
 
+## Using with AI Agents
+
+CogniCode is designed to be the **code intelligence backbone** for AI agents.
+Instead of asking an agent to read files and guess at structure, you give it
+tools that return precise, structured answers.
+
+📖 **[docs/agent-prompts.md](docs/agent-prompts.md)** contains 20 ready-to-use
+prompt scenarios with full reasoning chains and tool call sequences. Here's a
+taste:
+
+---
+
+### Onboarding a New Codebase
+
+> *"I just cloned this repo. Help me understand what it does, what the main
+> entry points are, and which functions are called the most."*
+
+**Agent reasoning:** Build the full graph first, then get entry points (public
+API surface), leaf functions (low-level primitives), and hot paths (most
+interconnected code). Together these three give a 360° view of any unfamiliar
+codebase.
+
+```
+1. build_graph      → strategy: "full"
+2. get_entry_points → the public API surface
+3. get_leaf_functions → low-level primitives
+4. get_hot_paths    → min_fan_in: 3  (the load-bearing functions)
+```
+
+---
+
+### Analyzing Change Impact Before a PR
+
+> *"I'm about to change `UserRepository.find_by_email`. What will break?"*
+
+```
+1. build_lightweight_index
+2. query_symbol_index  → symbol_name: "find_by_email"
+3. analyze_impact      → symbol_name: "UserRepository.find_by_email"
+4. get_call_hierarchy  → direction: "incoming", depth: 3
+```
+
+The agent gets a risk level (`low` / `medium` / `high`), a list of impacted
+files, and the full call chain — before touching a single line of code.
+
+---
+
+These are just 2 of 20 scenarios. The full guide covers **dead code detection,
+safe rename refactoring, complexity audits, execution path tracing**, and more.
+
+👉 [Read the full Agent Prompt Guide →](docs/agent-prompts.md)
+
 ## License
 
 See [LICENSE](LICENSE) for details.
