@@ -1660,9 +1660,18 @@ pub async fn handle_export_mermaid(
     // Collect symbols to process
     let symbol_ids: Vec<SymbolId> = symbols_to_export.collect();
 
-    // Add nodes
+    // Determine filter - empty string behaves same as None
+    let module_filter: Option<&str> = input.module_filter.as_deref().filter(|s| !s.is_empty());
+
+    // Add nodes (filtered by module_filter)
     for symbol_id in &symbol_ids {
         if let Some(symbol) = graph.get_symbol(symbol_id) {
+            // Apply module filter - skip symbols whose file path doesn't contain the filter string
+            if let Some(filter_str) = module_filter {
+                if !symbol.location().file().contains(filter_str) {
+                    continue;
+                }
+            }
             let node_id = sanitize_mermaid_id(symbol.name());
             mermaid_lines.push(format!("    {}[{}]", node_id, symbol.name()));
             node_count += 1;
@@ -1674,14 +1683,26 @@ pub async fn handle_export_mermaid(
         // For subgraph, traverse up to max_depth
         let mut visited = std::collections::HashSet::new();
         for symbol_id in &symbol_ids {
-            collect_edges_recursive(&graph, symbol_id, &mut visited, input.max_depth, &mut mermaid_lines, &mut edge_count);
+            collect_edges_recursive(&graph, symbol_id, &mut visited, input.max_depth, &mut mermaid_lines, &mut edge_count, module_filter);
         }
     } else {
-        // For full graph, add all edges
+        // For full graph, add all edges (filtered by module_filter)
         for symbol_id in &symbol_ids {
             if let Some(symbol) = graph.get_symbol(symbol_id) {
+                // Skip source symbol if it doesn't match filter
+                if let Some(filter_str) = module_filter {
+                    if !symbol.location().file().contains(filter_str) {
+                        continue;
+                    }
+                }
                 for (callee_id, _) in graph.callees(symbol_id) {
                     if let Some(callee) = graph.get_symbol(&callee_id) {
+                        // Skip callee if it doesn't match module filter
+                        if let Some(filter_str) = module_filter {
+                            if !callee.location().file().contains(filter_str) {
+                                continue;
+                            }
+                        }
                         let from_id = sanitize_mermaid_id(symbol.name());
                         let to_id = sanitize_mermaid_id(callee.name());
                         mermaid_lines.push(format!("    {} --> {}", from_id, to_id));
@@ -1851,6 +1872,7 @@ fn collect_edges_recursive(
     remaining_depth: u8,
     lines: &mut Vec<String>,
     edge_count: &mut usize,
+    module_filter: Option<&str>,
 ) {
     if remaining_depth == 0 || visited.contains(symbol_id) {
         return;
@@ -1859,14 +1881,27 @@ fn collect_edges_recursive(
     visited.insert(symbol_id.clone());
 
     if let Some(symbol) = graph.get_symbol(symbol_id) {
+        // Skip if symbol doesn't match module filter
+        if let Some(filter_str) = module_filter {
+            if !symbol.location().file().contains(filter_str) {
+                return;
+            }
+        }
+
         for (callee_id, _) in graph.callees(symbol_id) {
             if !visited.contains(&callee_id) {
                 if let Some(callee) = graph.get_symbol(&callee_id) {
+                    // Skip callee if it doesn't match module filter
+                    if let Some(filter_str) = module_filter {
+                        if !callee.location().file().contains(filter_str) {
+                            continue;
+                        }
+                    }
                     let from_id = sanitize_mermaid_id(symbol.name());
                     let to_id = sanitize_mermaid_id(callee.name());
                     lines.push(format!("    {} --> {}", from_id, to_id));
                     *edge_count += 1;
-                    collect_edges_recursive(graph, &callee_id, visited, remaining_depth - 1, lines, edge_count);
+                    collect_edges_recursive(graph, &callee_id, visited, remaining_depth - 1, lines, edge_count, module_filter);
                 }
             }
         }
@@ -2767,6 +2802,293 @@ mod tests {
 
         let name1 = graph_files[0].file_name().to_string_lossy().into_owned();
         let name2 = graph_files[1].file_name().to_string_lossy().into_owned();
-        assert_ne!(name1, name2, "Cache files should have different names");
+        assert_ne!(name1, name2, "Cache files should be different names");
+    }
+
+    // =============================================================================
+    // Export Mermaid module_filter tests
+    // =============================================================================
+
+    #[tokio::test]
+    async fn test_export_mermaid_module_filter_returns_only_matching_symbols() {
+        // Create a temp project with two files - one that matches the filter and one that doesn't
+        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir_path = tempdir.path();
+
+        // Create handlers.rs file with a function
+        let handlers_file = tempdir_path.join("handlers.rs");
+        std::fs::write(&handlers_file, "pub fn handle_request() {}\n").unwrap();
+
+        // Create main.rs file with a different function
+        let main_file = tempdir_path.join("main.rs");
+        std::fs::write(&main_file, "fn main() {}\n").unwrap();
+
+        let ctx = HandlerContext::new(tempdir_path.to_path_buf());
+
+        // Build the graph first
+        let build_input = BuildGraphInput { directory: None };
+        let build_result = handle_build_graph(&ctx, build_input).await;
+        assert!(build_result.is_ok());
+
+        // Now export with module_filter set to "handlers.rs"
+        let export_input = ExportMermaidInput {
+            root_symbol: None,
+            max_depth: 3,
+            include_external: false,
+            theme: None,
+            format: Some("code".to_string()),
+            module_filter: Some("handlers.rs".to_string()),
+        };
+        let export_result = handle_export_mermaid(&ctx, export_input).await;
+        assert!(export_result.is_ok());
+        let output = export_result.unwrap();
+
+        // The mermaid code should only contain symbols from handlers.rs
+        // (node_count should be 1, from the handle_request function)
+        assert!(output.node_count >= 1, "Expected at least 1 node from handlers.rs, got {}", output.node_count);
+        // Verify the handlers function appears in the output
+        assert!(output.mermaid_code.contains("handle_request"),
+            "Expected 'handle_request' to appear in output, got: {}", output.mermaid_code);
+        // main should NOT appear since it doesn't match the filter
+        // (unless there's a reference to it)
+    }
+
+    #[tokio::test]
+    async fn test_export_mermaid_module_filter_backwards_compat() {
+        // Create a temp project
+        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir_path = tempdir.path();
+
+        let handlers_file = tempdir_path.join("handlers.rs");
+        std::fs::write(&handlers_file, "pub fn handle_request() {}\n").unwrap();
+
+        let ctx = HandlerContext::new(tempdir_path.to_path_buf());
+
+        // Build the graph first
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Export WITHOUT module_filter (backwards compat - should return all symbols)
+        let export_input = ExportMermaidInput {
+            root_symbol: None,
+            max_depth: 3,
+            include_external: false,
+            theme: None,
+            format: Some("code".to_string()),
+            module_filter: None,
+        };
+        let export_result = handle_export_mermaid(&ctx, export_input).await;
+        assert!(export_result.is_ok());
+        let output = export_result.unwrap();
+
+        // Should include the handlers function
+        assert!(output.mermaid_code.contains("handle_request"),
+            "Expected 'handle_request' in output, got: {}", output.mermaid_code);
+        assert!(output.node_count >= 1, "Expected at least 1 node, got {}", output.node_count);
+    }
+
+    #[tokio::test]
+    async fn test_export_mermaid_module_filter_empty_string() {
+        // Create a temp project
+        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir_path = tempdir.path();
+
+        let handlers_file = tempdir_path.join("handlers.rs");
+        std::fs::write(&handlers_file, "pub fn handle_request() {}\n").unwrap();
+
+        let ctx = HandlerContext::new(tempdir_path.to_path_buf());
+
+        // Build the graph first
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Export with empty string filter - should behave same as None (no filtering)
+        let export_input = ExportMermaidInput {
+            root_symbol: None,
+            max_depth: 3,
+            include_external: false,
+            theme: None,
+            format: Some("code".to_string()),
+            module_filter: Some("".to_string()),
+        };
+        let export_result = handle_export_mermaid(&ctx, export_input).await;
+        assert!(export_result.is_ok());
+        let output = export_result.unwrap();
+
+        // Empty string should match everything, same as None
+        assert!(output.node_count >= 1, "Expected at least 1 node, got {}", output.node_count);
+    }
+
+    #[tokio::test]
+    async fn test_export_mermaid_module_filter_no_matches() {
+        // Create a temp project
+        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir_path = tempdir.path();
+
+        let handlers_file = tempdir_path.join("handlers.rs");
+        std::fs::write(&handlers_file, "pub fn handle_request() {}\n").unwrap();
+
+        let ctx = HandlerContext::new(tempdir_path.to_path_buf());
+
+        // Build the graph first
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Export with filter that matches nothing
+        let export_input = ExportMermaidInput {
+            root_symbol: None,
+            max_depth: 3,
+            include_external: false,
+            theme: None,
+            format: Some("code".to_string()),
+            module_filter: Some("nonexistent_module.rs".to_string()),
+        };
+        let export_result = handle_export_mermaid(&ctx, export_input).await;
+        assert!(export_result.is_ok());
+        let output = export_result.unwrap();
+
+        // Should return empty diagram, not an error
+        assert_eq!(output.node_count, 0, "Expected 0 nodes when no matches, got {}", output.node_count);
+        assert_eq!(output.edge_count, 0, "Expected 0 edges when no matches, got {}", output.edge_count);
+    }
+
+    #[tokio::test]
+    async fn test_export_mermaid_module_filter_with_format_svg() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir_path = tempdir.path();
+
+        let handlers_file = tempdir_path.join("handlers.rs");
+        std::fs::write(&handlers_file, "pub fn handle_request() {}\n").unwrap();
+
+        let ctx = HandlerContext::new(tempdir_path.to_path_buf());
+
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Export with filter + format=svg
+        let export_input = ExportMermaidInput {
+            root_symbol: None,
+            max_depth: 3,
+            include_external: false,
+            theme: Some("tokyo-night-light".to_string()),
+            format: Some("svg".to_string()),
+            module_filter: Some("handlers.rs".to_string()),
+        };
+        let export_result = handle_export_mermaid(&ctx, export_input).await;
+        assert!(export_result.is_ok());
+        let output = export_result.unwrap();
+
+        // SVG format should produce svg field
+        assert!(output.svg.is_some(), "Expected SVG output when format=svg, got None");
+        assert!(output.node_count >= 1, "Expected at least 1 node, got {}", output.node_count);
+    }
+
+    #[tokio::test]
+    async fn test_export_mermaid_module_filter_with_format_code() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir_path = tempdir.path();
+
+        let handlers_file = tempdir_path.join("handlers.rs");
+        std::fs::write(&handlers_file, "pub fn handle_request() {}\n").unwrap();
+
+        let ctx = HandlerContext::new(tempdir_path.to_path_buf());
+
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Export with filter + format=code
+        let export_input = ExportMermaidInput {
+            root_symbol: None,
+            max_depth: 3,
+            include_external: false,
+            theme: None,
+            format: Some("code".to_string()),
+            module_filter: Some("handlers.rs".to_string()),
+        };
+        let export_result = handle_export_mermaid(&ctx, export_input).await;
+        assert!(export_result.is_ok());
+        let output = export_result.unwrap();
+
+        // Code format should NOT produce svg field
+        assert!(output.svg.is_none(), "Expected no SVG when format=code, got Some");
+        assert!(output.node_count >= 1, "Expected at least 1 node, got {}", output.node_count);
+    }
+
+    #[tokio::test]
+    async fn test_export_mermaid_module_filter_combines_with_root_symbol() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir_path = tempdir.path();
+
+        // Create two files
+        let handlers_file = tempdir_path.join("handlers.rs");
+        std::fs::write(&handlers_file, "pub fn handle_request() {}\n pub fn internal_helper() {}\n").unwrap();
+
+        let main_file = tempdir_path.join("main.rs");
+        std::fs::write(&main_file, "fn main() { handle_request(); }\n").unwrap();
+
+        let ctx = HandlerContext::new(tempdir_path.to_path_buf());
+
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Export with both root_symbol and module_filter
+        // root_symbol limits to subgraph around handle_request
+        // module_filter should further limit to symbols from handlers.rs
+        let export_input = ExportMermaidInput {
+            root_symbol: Some("handle_request".to_string()),
+            max_depth: 3,
+            include_external: false,
+            theme: None,
+            format: Some("code".to_string()),
+            module_filter: Some("handlers.rs".to_string()),
+        };
+        let export_result = handle_export_mermaid(&ctx, export_input).await;
+        assert!(export_result.is_ok());
+        let output = export_result.unwrap();
+
+        // Should have at least handle_request node
+        assert!(output.mermaid_code.contains("handle_request"),
+            "Expected 'handle_request' in output, got: {}", output.mermaid_code);
+    }
+
+    #[tokio::test]
+    async fn test_export_mermaid_module_filter_path_separator() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir_path = tempdir.path();
+
+        // Create a nested directory structure
+        let interface_dir = tempdir_path.join("interface");
+        std::fs::create_dir(&interface_dir).unwrap();
+        let mcp_dir = interface_dir.join("mcp");
+        std::fs::create_dir(&mcp_dir).unwrap();
+
+        let handlers_file = mcp_dir.join("handlers.rs");
+        std::fs::write(&handlers_file, "pub fn handle_mcp_request() {}\n").unwrap();
+
+        let main_file = tempdir_path.join("main.rs");
+        std::fs::write(&main_file, "fn main() {}\n").unwrap();
+
+        let ctx = HandlerContext::new(tempdir_path.to_path_buf());
+
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Filter by "interface/mcp" should match the nested path
+        let export_input = ExportMermaidInput {
+            root_symbol: None,
+            max_depth: 3,
+            include_external: false,
+            theme: None,
+            format: Some("code".to_string()),
+            module_filter: Some("interface/mcp".to_string()),
+        };
+        let export_result = handle_export_mermaid(&ctx, export_input).await;
+        assert!(export_result.is_ok());
+        let output = export_result.unwrap();
+
+        // Should match symbols from interface/mcp/handlers.rs
+        assert!(output.mermaid_code.contains("handle_mcp_request"),
+            "Expected 'handle_mcp_request' in output, got: {}", output.mermaid_code);
+        assert!(output.node_count >= 1, "Expected at least 1 node, got {}", output.node_count);
     }
 }

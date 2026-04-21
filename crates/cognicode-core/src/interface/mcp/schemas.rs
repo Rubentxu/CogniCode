@@ -464,6 +464,12 @@ pub struct ExportMermaidInput {
     /// Output format: "code" (default, returns mermaid source) or "svg" (renders to SVG).
     /// If omitted and theme is provided, defaults to "svg".
     pub format: Option<String>,
+
+    /// Filter symbols by file path substring match (case-sensitive).
+    /// Only symbols whose source file path contains this substring will be included.
+    /// Example: "handlers" matches "src/handlers/auth.rs". None means no filtering.
+    #[serde(default)]
+    pub module_filter: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

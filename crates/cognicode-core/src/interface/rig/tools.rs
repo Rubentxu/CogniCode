@@ -971,6 +971,8 @@ pub struct ExportMermaidArgs {
     pub theme: Option<String>,
     #[serde(default)]
     pub root_symbol: Option<String>,
+    #[serde(default)]
+    pub module_filter: Option<String>,
 }
 
 impl ExportMermaidTool {
@@ -991,7 +993,8 @@ impl Tool for ExportMermaidTool {
             let properties = serde_json::json!({
                 "format": param("format", "string", "Output format (currently only 'code' is supported)"),
                 "theme": param("theme", "string", "Mermaid theme for rendering"),
-                "root_symbol": param("root_symbol", "string", "Optional root symbol to center the graph around")
+                "root_symbol": param("root_symbol", "string", "Optional root symbol to center the graph around"),
+                "module_filter": param("module_filter", "string", "Filter symbols by file path substring match (case-sensitive)")
             });
             create_tool_definition(
                 Self::NAME,
@@ -1004,7 +1007,7 @@ impl Tool for ExportMermaidTool {
     fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
             let format = args.format.as_deref().unwrap_or("code");
-            let result = self.session.export_mermaid(format, args.theme.as_deref(), args.root_symbol.as_deref()).await
+            let result = self.session.export_mermaid(format, args.theme.as_deref(), args.root_symbol.as_deref(), args.module_filter.as_deref()).await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(result)

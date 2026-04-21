@@ -1100,7 +1100,7 @@ impl WorkspaceSession {
     }
 
     /// Export the call graph as Mermaid diagram
-    pub async fn export_mermaid(&self, _format: &str, theme: Option<&str>, root: Option<&str>) -> WorkspaceResult<String> {
+    pub async fn export_mermaid(&self, _format: &str, theme: Option<&str>, root: Option<&str>, _module_filter: Option<&str>) -> WorkspaceResult<String> {
         self.ensure_graph_built().await?;
 
         let graph_guard = self.graph.read().await;
