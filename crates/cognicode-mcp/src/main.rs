@@ -7,7 +7,6 @@ use opentelemetry_otlp::MetricExporter;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use rayon::ThreadPoolBuilder;
 use rmcp::transport::io::stdio;
-use rmcp::ServerHandler;
 use std::path::PathBuf;
 use tracing::info;
 

@@ -10,7 +10,7 @@ use tokio::sync::{RwLock, broadcast};
 use crate::application::commands::MoveSymbolCommand;
 use crate::application::dto::{
     AnalyzeImpactResult,
-    ComplexitySummaryDto, GetCallHierarchyResult, GraphStatsDto, GraphCoverageMetrics, HotPathDto,
+    ComplexitySummaryDto, GetCallHierarchyResult, GraphStatsDto, HotPathDto,
     ProjectDiagnosticsDto, RefactorResult, RiskLevel, SourceLocation, SymbolDto,
     ValidationResult,
 };
@@ -1687,6 +1687,7 @@ impl WorkspaceSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::dto::GraphCoverageMetrics;
     use tempfile::TempDir;
 
     #[tokio::test]
