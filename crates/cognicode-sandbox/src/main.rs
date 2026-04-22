@@ -194,6 +194,7 @@ struct AutoresearchArgs {
 }
 
 /// Container configuration for a language runtime.
+#[allow(dead_code)]
 struct ContainerConfig {
     image: String,
     name: String,
@@ -285,8 +286,6 @@ fn load_manifests(paths: &[String]) -> Result<Vec<Manifest>, String> {
             }
         } else if path_pattern.contains('*') {
             // Glob pattern
-            let base = path.parent().unwrap_or(&path);
-            let pattern = path.file_name().and_then(|n| n.to_str()).unwrap_or("*");
             for entry in glob::glob(&path_pattern.to_string())
                 .map_err(|e| format!("invalid glob pattern: {e}"))?
             {
@@ -580,7 +579,6 @@ fn execute_scenario(
         // For real repos (go_repos.yaml, java_repos.yaml), MCP SHOULD start.
         // We use scenario.repo.is_some() to distinguish: real repos have repo: go/cobra, etc.
         // while capability probes have no repo field.
-        let is_real_repo = scenario.repo.is_some();
         if cfg.name.contains("rust")
             || cfg.name.contains("python")
             || cfg.name.contains("javascript")
@@ -644,12 +642,10 @@ fn execute_scenario(
     }
 
     // Execute MCP call
-    let tool_start = Instant::now();
     let mut tool_call_ms = 0u64;
     let mut captured_call: Option<CapturedCall> = None;
     let mut tool_response: Option<Value> = None;
     let mut full_mcp_response: Option<Value> = None; // Original MCP response for classification
-    let mut mutation_applied = false;
     let mut mcp_timeout_occurred = false;
     let mut protocol_violation_occurred = false;
     let mut resource_limit_exceeded = false;
@@ -675,7 +671,6 @@ fn execute_scenario(
                                 if verbose {
                                     eprintln!("  [MUTATION] Applied edit via filesystem: {} bytes -> {} bytes", content.len(), new_content.len());
                                 }
-                                mutation_applied = true;
                                 tool_response = Some(serde_json::json!({
                                     "content": [{
                                         "type": "text",
@@ -761,7 +756,6 @@ fn execute_scenario(
                     notifications: Vec::new(), // Skip drain_notifications to avoid deadlock
                     duration_ms: tool_call_ms,
                 });
-                mutation_applied = true;
             }
             Err(e) => {
                 tool_call_ms = call_start.elapsed().as_millis() as u64;
@@ -828,7 +822,7 @@ fn execute_scenario(
     {
         let ground_truth: Option<GroundTruth> = serde_json::from_value(gt_value.clone()).ok();
 
-        if let Some(ref gt) = ground_truth {
+        if ground_truth.is_some() {
             let exec_metadata = ExecutionMetadata::with_errors(
                 workspace_size_kb,
                 if tool_call_error { 1 } else { 0 },
@@ -876,8 +870,6 @@ fn execute_scenario(
     });
 
     // Validation pipeline - skip for read_only and preview_only scenarios
-    let validation_start = Instant::now();
-    let mut validation_ms = 0u64;
     let validation_result = if scenario.scenario_class == "read_only" || scenario.preview_only {
         ValidationResult {
             stages: vec![],
@@ -892,7 +884,6 @@ fn execute_scenario(
     } else {
         run_validation_pipeline(scenario, &workspace_path, verbose)
     };
-    validation_ms = validation_start.elapsed().as_millis() as u64;
 
     // Check for resource limit exceeded (SIGKILL = exit code 137) in validation stages
     for stage in &validation_result.stages {
@@ -2212,8 +2203,6 @@ fn load_baseline_summary(path: &Path) -> std::io::Result<Summary> {
 /// - A scenario was expected_fail in baseline but now passes unexpectedly (unexpected_pass)
 /// - A new scenario appears with unexpected_fail or unexpected_pass
 fn compute_regressions(current: &[ScenarioResult], baseline: &Summary) -> Vec<String> {
-    use std::collections::HashMap;
-
     // Build a map of scenario_id -> outcome from baseline
     // Note: baseline is a Summary, not a list of ScenarioResult, so we need to
     // infer outcomes from the summary statistics or load the full baseline results
