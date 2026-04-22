@@ -66,6 +66,8 @@ enum Commands {
     Report(ReportArgs),
     /// Benchmark: run a tool N times sequentially and report latency stats
     Benchmark(BenchmarkArgs),
+    /// Autoresearch: run tests + sandbox, auto-decide keep/discard, log results
+    Autoresearch(AutoresearchArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -154,6 +156,41 @@ struct BenchmarkArgs {
     /// Output results as JSON
     #[arg(long)]
     json: bool,
+}
+
+#[derive(Parser, Debug, Clone)]
+struct AutoresearchArgs {
+    /// Description of this experiment
+    #[arg(long)]
+    description: String,
+
+    /// Path to the cognicode-mcp binary
+    #[arg(long)]
+    server_binary: Option<PathBuf>,
+
+    /// Results TSV file (appends if exists, creates if not)
+    #[arg(long, default_value = "autoresearch/results.tsv")]
+    results_tsv: PathBuf,
+
+    /// Results directory for sandbox output
+    #[arg(long, default_value = "autoresearch/exp")]
+    results_dir: PathBuf,
+
+    /// Manifest(s) to run for sandbox validation
+    #[arg(long, default_value = "sandbox/manifests/rust_fixture.yaml")]
+    manifests: Vec<String>,
+
+    /// Working directory for cargo test
+    #[arg(long)]
+    project_dir: Option<PathBuf>,
+
+    /// Sandbox fixtures directory
+    #[arg(long, default_value = "sandbox/fixtures")]
+    fixtures_dir: PathBuf,
+
+    /// Sandbox repos directory
+    #[arg(long, default_value = "sandbox/repos")]
+    repos_dir: PathBuf,
 }
 
 /// Container configuration for a language runtime.
@@ -1791,6 +1828,80 @@ fn truncate(s: &str, max_len: usize) -> Option<String> {
     }
 }
 
+fn get_git_short_hash(project_dir: &Path) -> Result<String, String> {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .current_dir(project_dir)
+        .output()
+        .map_err(|e| format!("Failed to run git: {e}"))?;
+    let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if hash.is_empty() {
+        Err("Empty git hash".into())
+    } else {
+        Ok(hash)
+    }
+}
+
+fn parse_test_results(output: &str) -> String {
+    // Parse lines like "test result: ok. 832 passed; 0 failed; 5 ignored"
+    let mut total_passed = 0;
+    for line in output.lines() {
+        if line.contains("test result:") && line.contains("passed") {
+            if let Some(passed) = line.split("passed").next() {
+                if let Some(num_str) = passed.split_whitespace().last() {
+                    if let Ok(n) = num_str.parse::<usize>() {
+                        total_passed += n;
+                    }
+                }
+            }
+        }
+    }
+    if total_passed > 0 {
+        total_passed.to_string()
+    } else {
+        "0".to_string()
+    }
+}
+
+fn log_autoresearch_result(
+    tsv_path: &Path,
+    commit: &str,
+    tests_passed: &str,
+    sandbox_passed: &str,
+    health_score: f64,
+    status: &str,
+    description: &str,
+) -> Result<(), String> {
+    // Create parent directory if needed
+    if let Some(parent) = tsv_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create dir: {e}"))?;
+    }
+
+    // Check if file exists to decide whether to write header
+    let write_header = !tsv_path.exists();
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(tsv_path)
+        .map_err(|e| format!("Failed to open TSV: {e}"))?;
+
+    use std::io::Write;
+
+    if write_header {
+        writeln!(file, "commit\ttests_passed\tsandbox_passed\thealth_score\tstatus\tdescription")
+            .map_err(|e| format!("Failed to write header: {e}"))?;
+    }
+
+    writeln!(
+        file,
+        "{}\t{}\t{}\t{:.1}\t{}\t{}",
+        commit, tests_passed, sandbox_passed, health_score, status, description
+    ).map_err(|e| format!("Failed to write row: {e}"))?;
+
+    Ok(())
+}
+
 /// Reset a git repo by checking out clean files and removing untracked files.
 /// This is used to ensure a pristine state before running scenarios on real repos.
 /// Returns Ok if the directory was reset (or wasn't a git repo).
@@ -1957,6 +2068,109 @@ fn run(args: RunArgs, verbose: bool) -> Result<i32, String> {
 
     // Determine exit code
     let exit_code = if summary.failed > 0 { 1 } else { 0 };
+
+    Ok(exit_code)
+}
+
+fn autoresearch(args: AutoresearchArgs, verbose: bool) -> Result<i32, String> {
+    use std::process::Command as StdCommand;
+
+    let project_dir = args.project_dir.unwrap_or_else(|| std::env::current_dir().unwrap());
+    let commit = get_git_short_hash(&project_dir).unwrap_or_else(|_| "0000000".to_string());
+
+    // Step 1: Run cargo test --workspace
+    eprintln!("[autoresearch] Step 1: Running cargo test --workspace...");
+    let test_output = StdCommand::new("cargo")
+        .args(["test", "--workspace", "--", "-q"])
+        .current_dir(&project_dir)
+        .output()
+        .map_err(|e| format!("Failed to run cargo test: {e}"))?;
+
+    let test_stdout = String::from_utf8_lossy(&test_output.stdout);
+    let test_stderr = String::from_utf8_lossy(&test_output.stderr);
+    let test_combined = format!("{}\n{}", test_stdout, test_stderr);
+
+    // Parse test results
+    let tests_passed = parse_test_results(&test_combined);
+    let tests_ok = test_output.status.success();
+
+    eprintln!("[autoresearch] Tests: {} (ok={})", tests_passed, tests_ok);
+
+    // Step 2: Run sandbox if tests passed
+    let mut sandbox_passed = "0/0".to_string();
+    let mut health_score = 0.0;
+
+    if tests_ok {
+        eprintln!("[autoresearch] Step 2: Running sandbox scenarios...");
+        let server_binary = resolve_server_binary(args.server_binary.clone());
+
+        // Load and expand manifests
+        let manifests = load_manifests(&args.manifests)?;
+        let scenarios = expand_manifests(&manifests);
+
+        if !scenarios.is_empty() {
+            let mut results = Vec::new();
+            for scenario in &scenarios {
+                let (result, _captured) = execute_scenario(
+                    scenario,
+                    &server_binary,
+                    &args.repos_dir,
+                    &args.fixtures_dir,
+                    verbose,
+                );
+                results.push(result);
+            }
+
+            let passed = results.iter().filter(|r| r.outcome == "pass" || r.outcome == "expected_fail").count();
+            let total = results.len();
+            sandbox_passed = format!("{}/{}", passed, total);
+
+            let summary = aggregate_summary(&results);
+            health_score = summary.health_score;
+
+            // Write sandbox results
+            let exp_dir = &args.results_dir;
+            std::fs::create_dir_all(exp_dir).ok();
+            write_summary(&summary, exp_dir).ok();
+        }
+    } else {
+        eprintln!("[autoresearch] Skipping sandbox (tests failed)");
+    }
+
+    // Step 3: Determine status
+    let status = if tests_ok && !sandbox_passed.starts_with("0/") {
+        "keep"
+    } else if !tests_ok {
+        "discard"
+    } else {
+        "discard"
+    };
+
+    // Step 4: Log to TSV
+    log_autoresearch_result(
+        &args.results_tsv,
+        &commit,
+        &tests_passed,
+        &sandbox_passed,
+        health_score,
+        status,
+        &args.description,
+    )?;
+
+    // Step 5: Output JSON summary to stdout
+    let summary = serde_json::json!({
+        "commit": commit,
+        "tests_passed": tests_passed,
+        "sandbox_passed": sandbox_passed,
+        "health_score": health_score,
+        "status": status,
+        "description": args.description,
+    });
+    println!("{}", serde_json::to_string_pretty(&summary).unwrap());
+
+    // Return exit code: 0 = keep, 1 = discard
+    let exit_code = if status == "keep" { 0 } else { 1 };
+    eprintln!("[autoresearch] Result: {} (exit={})", status, exit_code);
 
     Ok(exit_code)
 }
@@ -3805,5 +4019,63 @@ fn main() {
                 2
             }));
         }
+        Commands::Autoresearch(args) => {
+            std::process::exit(autoresearch(args.clone(), cli.verbose).unwrap_or_else(|e| {
+                eprintln!("Error: {e}");
+                2
+            }));
+        }
+    }
+}
+
+#[cfg(test)]
+mod autoresearch_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_test_results_multiple_crates() {
+        let output = r#"
+test result: ok. 759 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out
+test result: ok. 73 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+"#;
+        assert_eq!(parse_test_results(output), "832");
+    }
+
+    #[test]
+    fn test_parse_test_results_single_crate() {
+        let output = "test result: ok. 42 passed; 0 failed; 0 ignored";
+        assert_eq!(parse_test_results(output), "42");
+    }
+
+    #[test]
+    fn test_parse_test_results_no_tests() {
+        let output = "no test output here";
+        assert_eq!(parse_test_results(output), "0");
+    }
+
+    #[test]
+    fn test_log_autoresearch_result_creates_tsv() {
+        let temp = tempfile::tempdir().unwrap();
+        let tsv_path = temp.path().join("results.tsv");
+
+        log_autoresearch_result(&tsv_path, "abc1234", "832", "12/12", 95.0, "keep", "baseline").unwrap();
+        log_autoresearch_result(&tsv_path, "def5678", "830", "11/12", 88.0, "discard", "broke something").unwrap();
+
+        let contents = std::fs::read_to_string(&tsv_path).unwrap();
+        let lines: Vec<&str> = contents.lines().collect();
+        assert_eq!(lines.len(), 3); // header + 2 rows
+        assert!(lines[0].starts_with("commit\t"));
+        assert!(lines[1].contains("abc1234"));
+        assert!(lines[1].contains("keep"));
+        assert!(lines[2].contains("discard"));
+    }
+
+    #[test]
+    fn test_get_git_short_hash_in_repo() {
+        // This test runs in the CogniCode repo, so it should succeed
+        let dir = std::env::current_dir().unwrap();
+        let result = get_git_short_hash(&dir);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 7);
     }
 }
