@@ -2650,6 +2650,1132 @@ fn benchmark(args: BenchmarkArgs, verbose: bool) -> Result<i32, String> {
     }
 }
 
+// =============================================================================
+// Batch D Tests: classify_outcome — Additional Branches
+// =============================================================================
+
+#[cfg(test)]
+mod classify_outcome_tests {
+    use super::*;
+    use cognicode_core::sandbox_core::artifacts::{PipelineStageResult, ValidationResult};
+    use cognicode_core::sandbox_core::manifest::{ExpandedScenario, StageDef, ValidationPipeline};
+    use std::collections::HashMap;
+
+    fn make_test_scenario(expected_outcome: &str) -> ExpandedScenario {
+        ExpandedScenario {
+            id: "test_scenario".into(),
+            language: "rust".into(),
+            tier: "A".into(),
+            tool: "edit_file".into(),
+            action: "concrete".into(),
+            arguments: HashMap::new(),
+            workspace: ".".into(),
+            expected_outcome: expected_outcome.into(),
+            validation: ValidationPipeline::default(),
+            timeout_seconds: 30,
+            scenario_class: "mutation".into(),
+            preview_only: false,
+            variant: None,
+            ground_truth: None,
+            metrics: None,
+            repo: None,
+            commit: None,
+            container_image: None,
+        }
+    }
+
+    fn empty_validation() -> ValidationResult {
+        ValidationResult {
+            stages: vec![],
+            passed: true,
+        }
+    }
+
+    fn validation_with_stage(stage_name: &str, status: &str) -> ValidationResult {
+        ValidationResult {
+            stages: vec![PipelineStageResult {
+                stage: stage_name.into(),
+                status: status.into(),
+                exit_code: Some(if status == "pass" { 0 } else { 1 }),
+                stdout_excerpt: None,
+                stderr_excerpt: None,
+                duration_ms: 100,
+            }],
+            passed: status == "pass",
+        }
+    }
+
+    // --- timeout ---
+
+    #[test]
+    fn test_classify_outcome_timeout() {
+        let scenario = make_test_scenario("pass");
+        let validation = empty_validation();
+
+        let outcome = classify_outcome(
+            &scenario,
+            None,
+            &validation,
+            true,  // mcp_timeout_occurred
+            false,
+            false,
+        );
+
+        assert_eq!(outcome, "timeout");
+    }
+
+    // --- resource_limit_exceeded ---
+
+    #[test]
+    fn test_classify_outcome_resource_limit_exceeded() {
+        let scenario = make_test_scenario("pass");
+        let validation = empty_validation();
+
+        let outcome = classify_outcome(
+            &scenario,
+            None,
+            &validation,
+            false,
+            false,
+            true,  // resource_limit_exceeded
+        );
+
+        assert_eq!(outcome, "resource_limit_exceeded");
+    }
+
+    // --- expected_fail when validation fails ---
+
+    #[test]
+    fn test_classify_outcome_expected_fail_validation_fails() {
+        let scenario = make_test_scenario("expected_fail");
+        let validation = validation_with_stage("build", "fail");
+
+        let outcome = classify_outcome(
+            &scenario,
+            None,
+            &validation,
+            false,
+            false,
+            false,
+        );
+
+        assert_eq!(outcome, "expected_fail");
+    }
+
+    // --- mcp_error when response has error and scenario is not expected_fail ---
+
+    #[test]
+    fn test_classify_outcome_mcp_error_non_expected_fail() {
+        let scenario = make_test_scenario("pass");
+        let validation = empty_validation();
+
+        let response = serde_json::json!({
+            "error": { "code": -32600, "message": "Invalid request" }
+        });
+
+        let outcome = classify_outcome(
+            &scenario,
+            Some(&response),
+            &validation,
+            false,
+            false,
+            false,
+        );
+
+        assert_eq!(outcome, "mcp_error");
+    }
+
+    // --- path_safety_rejection ---
+
+    #[test]
+    fn test_classify_outcome_path_safety_rejection() {
+        let scenario = make_test_scenario("pass");
+        let validation = empty_validation();
+
+        // Response with isError: true and path safety error text
+        let response = serde_json::json!({
+            "result": {
+                "isError": true,
+                "content": [
+                    { "isError": true, "text": "Access denied: /etc/passwd is outside allowed workspace" }
+                ]
+            }
+        });
+
+        let outcome = classify_outcome(
+            &scenario,
+            Some(&response),
+            &validation,
+            false,
+            false,
+            false,
+        );
+
+        assert_eq!(outcome, "path_safety_rejection");
+    }
+
+    // --- expected_tool_rejection → maps to "pass" ---
+
+    #[test]
+    fn test_classify_outcome_expected_tool_rejection_pass() {
+        // Scenario name contains "path_safety" and error text matches
+        let mut scenario = make_test_scenario("pass");
+        scenario.id = "test_path_safety_outside_workspace".into();
+
+        let validation = empty_validation();
+
+        let response = serde_json::json!({
+            "result": {
+                "isError": true,
+                "content": [
+                    { "isError": true, "text": "Access denied: path is outside workspace" }
+                ]
+            }
+        });
+
+        let outcome = classify_outcome(
+            &scenario,
+            Some(&response),
+            &validation,
+            false,
+            false,
+            false,
+        );
+
+        // is_expected_tool_rejection returns true, so outcome should be "pass"
+        assert_eq!(outcome, "pass");
+    }
+
+    // --- edit_rejected when applied: false and expected_outcome = "pass" ---
+
+    #[test]
+    fn test_classify_outcome_edit_rejected() {
+        let mut scenario = make_test_scenario("pass");
+        scenario.tool = "edit_file".into();
+
+        let validation = empty_validation();
+
+        // Response where applied: false
+        let response = serde_json::json!({
+            "result": {
+                "content": [
+                    { "text": "{\"applied\": false, \"reason\": \"parse failed\"}" }
+                ]
+            }
+        });
+
+        let outcome = classify_outcome(
+            &scenario,
+            Some(&response),
+            &validation,
+            false,
+            false,
+            false,
+        );
+
+        assert_eq!(outcome, "edit_rejected");
+    }
+
+    // --- unexpected_pass: validation passes but expected_outcome = "expected_fail" and preview_only = false ---
+
+    #[test]
+    fn test_classify_outcome_unexpected_pass() {
+        let mut scenario = make_test_scenario("expected_fail");
+        scenario.preview_only = false;
+
+        let validation = validation_with_stage("build", "pass");
+
+        let outcome = classify_outcome(
+            &scenario,
+            None,
+            &validation,
+            false,
+            false,
+            false,
+        );
+
+        assert_eq!(outcome, "unexpected_pass");
+    }
+
+    // --- semantic_regression: mutation scenario with test stage failure ---
+
+    #[test]
+    fn test_classify_outcome_semantic_regression() {
+        let mut scenario = make_test_scenario("pass");
+        scenario.scenario_class = "mutation".into();
+
+        let validation = validation_with_stage("test", "fail");
+
+        let outcome = classify_outcome(
+            &scenario,
+            None,
+            &validation,
+            false,
+            false,
+            false,
+        );
+
+        assert_eq!(outcome, "semantic_regression");
+    }
+
+    // --- no_result when no result and not expected_fail/capability_missing ---
+
+    #[test]
+    fn test_classify_outcome_no_result() {
+        let scenario = make_test_scenario("pass");
+        let validation = empty_validation();
+
+        // No response (None) and validation stages is empty
+        let outcome = classify_outcome(
+            &scenario,
+            None,
+            &validation,
+            false,
+            false,
+            false,
+        );
+
+        assert_eq!(outcome, "no_result");
+    }
+
+    // --- capability_missing outcome ---
+
+    #[test]
+    fn test_classify_outcome_capability_missing() {
+        let mut scenario = make_test_scenario("capability_missing");
+        let validation = validation_with_stage("build", "fail");
+
+        let outcome = classify_outcome(
+            &scenario,
+            None,
+            &validation,
+            false,
+            false,
+            false,
+        );
+
+        assert_eq!(outcome, "capability_missing");
+    }
+
+    // --- basic pass case ---
+
+    #[test]
+    fn test_classify_outcome_pass() {
+        let scenario = make_test_scenario("pass");
+        let validation = validation_with_stage("build", "pass");
+
+        let outcome = classify_outcome(
+            &scenario,
+            None,
+            &validation,
+            false,
+            false,
+            false,
+        );
+
+        assert_eq!(outcome, "pass");
+    }
+
+    // --- expected_fail with preview_only ---
+
+    #[test]
+    fn test_classify_outcome_expected_fail_preview_only() {
+        let mut scenario = make_test_scenario("expected_fail");
+        scenario.preview_only = true;
+
+        let validation = validation_with_stage("build", "pass");
+
+        let outcome = classify_outcome(
+            &scenario,
+            None,
+            &validation,
+            false,
+            false,
+            false,
+        );
+
+        // preview_only + validation passed + expected_fail = expected_fail
+        assert_eq!(outcome, "expected_fail");
+    }
+
+    // --- capability_missing maps to expected_fail when no validation failure ---
+
+    #[test]
+    fn test_classify_outcome_capability_missing_no_validation_failure() {
+        let scenario = make_test_scenario("capability_missing");
+        let validation = validation_with_stage("build", "pass");
+
+        let outcome = classify_outcome(
+            &scenario,
+            None,
+            &validation,
+            false,
+            false,
+            false,
+        );
+
+        assert_eq!(outcome, "expected_fail");
+    }
+
+    // --- build_failure maps correctly ---
+
+    #[test]
+    fn test_classify_outcome_build_failure() {
+        let scenario = make_test_scenario("pass");
+        let validation = validation_with_stage("build", "fail");
+
+        let outcome = classify_outcome(
+            &scenario,
+            None,
+            &validation,
+            false,
+            false,
+            false,
+        );
+
+        assert_eq!(outcome, "build_failure");
+    }
+}
+
+// =============================================================================
+// Batch E Tests: determine_failure_class — Additional Mappings
+// =============================================================================
+
+#[cfg(test)]
+mod determine_failure_class_tests {
+    use super::*;
+    use cognicode_core::sandbox_core::manifest::{ExpandedScenario, ValidationPipeline};
+    use std::collections::HashMap;
+
+    fn make_test_scenario(tool: &str) -> ExpandedScenario {
+        ExpandedScenario {
+            id: "test_scenario".into(),
+            language: "rust".into(),
+            tier: "A".into(),
+            tool: tool.into(),
+            action: "concrete".into(),
+            arguments: HashMap::new(),
+            workspace: ".".into(),
+            expected_outcome: "pass".into(),
+            validation: ValidationPipeline::default(),
+            timeout_seconds: 30,
+            scenario_class: "mutation".into(),
+            preview_only: false,
+            variant: None,
+            ground_truth: None,
+            metrics: None,
+            repo: None,
+            commit: None,
+            container_image: None,
+        }
+    }
+
+    // --- pass -> Some(Pass) ---
+
+    #[test]
+    fn test_determine_failure_class_pass() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("pass", &scenario);
+        assert_eq!(fc, Some(FailureClass::Pass));
+    }
+
+    // --- expected_fail with regular expected_fail -> Some(ExpectedFail) ---
+
+    #[test]
+    fn test_determine_failure_class_expected_fail() {
+        let mut scenario = make_test_scenario("edit_file");
+        scenario.expected_outcome = "expected_fail".into();
+        let fc = determine_failure_class("expected_fail", &scenario);
+        assert_eq!(fc, Some(FailureClass::ExpectedFail));
+    }
+
+    // --- expected_fail with capability_missing -> Some(CapabilityMissing) ---
+
+    #[test]
+    fn test_determine_failure_class_expected_fail_capability_missing() {
+        let mut scenario = make_test_scenario("edit_file");
+        scenario.expected_outcome = "capability_missing".into();
+        let fc = determine_failure_class("expected_fail", &scenario);
+        assert_eq!(fc, Some(FailureClass::CapabilityMissing));
+    }
+
+    // --- capability_missing -> Some(CapabilityMissing) ---
+
+    #[test]
+    fn test_determine_failure_class_capability_missing() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("capability_missing", &scenario);
+        assert_eq!(fc, Some(FailureClass::CapabilityMissing));
+    }
+
+    // --- timeout -> Some(Timeout) ---
+
+    #[test]
+    fn test_determine_failure_class_timeout() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("timeout", &scenario);
+        assert_eq!(fc, Some(FailureClass::Timeout));
+    }
+
+    // --- resource_limit_exceeded -> Some(ResourceLimitExceeded) ---
+
+    #[test]
+    fn test_determine_failure_class_resource_limit_exceeded() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("resource_limit_exceeded", &scenario);
+        assert_eq!(fc, Some(FailureClass::ResourceLimitExceeded));
+    }
+
+    // --- mcp_error -> Some(McpToolError) ---
+
+    #[test]
+    fn test_determine_failure_class_mcp_error() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("mcp_error", &scenario);
+        assert!(matches!(fc, Some(FailureClass::McpToolError { .. })));
+    }
+
+    // --- path_safety_rejection -> Some(PathSafetyRejection) ---
+
+    #[test]
+    fn test_determine_failure_class_path_safety_rejection() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("path_safety_rejection", &scenario);
+        assert_eq!(fc, Some(FailureClass::PathSafetyRejection));
+    }
+
+    // --- edit_rejected -> Some(UnexpectedFail) ---
+
+    #[test]
+    fn test_determine_failure_class_edit_rejected() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("edit_rejected", &scenario);
+        assert_eq!(fc, Some(FailureClass::UnexpectedFail));
+    }
+
+    // --- semantic_regression -> Some(SemanticRegression) ---
+
+    #[test]
+    fn test_determine_failure_class_semantic_regression() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("semantic_regression", &scenario);
+        assert_eq!(fc, Some(FailureClass::SemanticRegression));
+    }
+
+    // --- build_failure -> Some(BuildFailure) ---
+
+    #[test]
+    fn test_determine_failure_class_build_failure() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("build_failure", &scenario);
+        assert_eq!(fc, Some(FailureClass::BuildFailure));
+    }
+
+    // --- unexpected_pass -> Some(UnexpectedPass) ---
+
+    #[test]
+    fn test_determine_failure_class_unexpected_pass() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("unexpected_pass", &scenario);
+        assert_eq!(fc, Some(FailureClass::UnexpectedPass));
+    }
+
+    // --- no_result -> Some(SandboxInfraFailure) ---
+
+    #[test]
+    fn test_determine_failure_class_no_result() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("no_result", &scenario);
+        assert_eq!(fc, Some(FailureClass::SandboxInfraFailure));
+    }
+
+    // --- syntax_failure -> Some(SyntaxValidationFailure) ---
+
+    #[test]
+    fn test_determine_failure_class_syntax_failure() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("syntax_failure", &scenario);
+        assert_eq!(fc, Some(FailureClass::SyntaxValidationFailure));
+    }
+
+    // --- format_failure -> Some(FormatFailure) ---
+
+    #[test]
+    fn test_determine_failure_class_format_failure() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("format_failure", &scenario);
+        assert_eq!(fc, Some(FailureClass::FormatFailure));
+    }
+
+    // --- lint_failure -> Some(LintFailure) ---
+
+    #[test]
+    fn test_determine_failure_class_lint_failure() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("lint_failure", &scenario);
+        assert_eq!(fc, Some(FailureClass::LintFailure));
+    }
+
+    // --- test_failure -> Some(TestFailure) ---
+
+    #[test]
+    fn test_determine_failure_class_test_failure() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("test_failure", &scenario);
+        assert_eq!(fc, Some(FailureClass::TestFailure));
+    }
+
+    // --- unknown outcome -> Some(UnexpectedFail) (catch-all) ---
+
+    #[test]
+    fn test_determine_failure_class_unknown() {
+        let scenario = make_test_scenario("edit_file");
+        let fc = determine_failure_class("what_is_this", &scenario);
+        assert_eq!(fc, Some(FailureClass::UnexpectedFail));
+    }
+}
+
+// =============================================================================
+// Batch F Tests: aggregate_summary — Full Coverage
+// =============================================================================
+
+#[cfg(test)]
+mod aggregate_summary_tests {
+    use super::*;
+    use cognicode_core::sandbox_core::artifacts::{
+        ResourceUsage, ScenarioResult, Timing,
+    };
+
+    fn make_result(
+        outcome: &str,
+        language: &str,
+        tool: &str,
+        failure_class: Option<FailureClass>,
+    ) -> ScenarioResult {
+        ScenarioResult {
+            scenario_id: format!("test_{}", outcome),
+            language: language.into(),
+            tier: "A".into(),
+            repo: "test_repo".into(),
+            commit: "abc123".into(),
+            tool: tool.into(),
+            action: "concrete".into(),
+            expected_outcome: "pass".into(),
+            outcome: outcome.into(),
+            failure_class,
+            timing_ms: Timing {
+                setup_ms: 10,
+                server_startup_ms: 20,
+                tool_call_ms: 30,
+                validation_ms: 40,
+                teardown_ms: 5,
+                total_ms: 105,
+            },
+            resource_usage: ResourceUsage {
+                peak_rss_mb: 50.0,
+                cpu_time_s: 0.5,
+            },
+            mutation: None,
+            validation: None,
+            dimension_scores: None,
+            artifacts: vec![],
+            container_image: "test:latest".into(),
+            workspace_snapshot_id: "snap123".into(),
+            started_at: "2025-01-01T00:00:00Z".into(),
+            completed_at: "2025-01-01T00:01:00Z".into(),
+        }
+    }
+
+    // --- empty results ---
+
+    #[test]
+    fn test_aggregate_summary_empty() {
+        let results: Vec<ScenarioResult> = vec![];
+        let summary = aggregate_summary(&results);
+
+        assert_eq!(summary.total, 0);
+        assert_eq!(summary.passed, 0);
+        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.expected_failures, 0);
+        assert_eq!(summary.unexpected_passes, 0);
+        assert_eq!(summary.pass_rate, 0.0);
+        assert!(summary.by_language.is_empty());
+        assert!(summary.by_tool.is_empty());
+        assert!(summary.failure_distribution.is_empty());
+    }
+
+    // --- basic pass counting ---
+
+    #[test]
+    fn test_aggregate_summary_pass_counting() {
+        let results = vec![
+            make_result("pass", "rust", "edit_file", Some(FailureClass::Pass)),
+            make_result("pass", "rust", "read_file", Some(FailureClass::Pass)),
+        ];
+        let summary = aggregate_summary(&results);
+
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.passed, 2);
+        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.expected_failures, 0);
+        assert_eq!(summary.unexpected_passes, 0);
+        assert_eq!(summary.pass_rate, 1.0);
+    }
+
+    // --- expected_fail counting (includes preexisting_fail) ---
+
+    #[test]
+    fn test_aggregate_summary_expected_fail_counting() {
+        let results = vec![
+            make_result(
+                "expected_fail",
+                "rust",
+                "edit_file",
+                Some(FailureClass::ExpectedFail),
+            ),
+            make_result(
+                "preexisting_fail",
+                "python",
+                "read_file",
+                Some(FailureClass::PreexistingRepoFailure),
+            ),
+        ];
+        let summary = aggregate_summary(&results);
+
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.passed, 0);
+        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.expected_failures, 2);
+        assert_eq!(summary.unexpected_passes, 0);
+        // pass_rate = passed / total = 0 / 2 = 0.0
+        assert_eq!(summary.pass_rate, 0.0);
+    }
+
+    // --- unexpected_pass counting ---
+
+    #[test]
+    fn test_aggregate_summary_unexpected_pass_counting() {
+        let results = vec![make_result(
+            "unexpected_pass",
+            "rust",
+            "edit_file",
+            Some(FailureClass::UnexpectedPass),
+        )];
+        let summary = aggregate_summary(&results);
+
+        assert_eq!(summary.total, 1);
+        assert_eq!(summary.passed, 0);
+        assert_eq!(summary.failed, 1); // unexpected_pass counts as failed
+        assert_eq!(summary.expected_failures, 0);
+        assert_eq!(summary.unexpected_passes, 1);
+        assert_eq!(summary.pass_rate, 0.0);
+    }
+
+    // --- generic failure counting ---
+
+    #[test]
+    fn test_aggregate_summary_failure_counting() {
+        let results = vec![
+            make_result(
+                "build_failure",
+                "rust",
+                "edit_file",
+                Some(FailureClass::BuildFailure),
+            ),
+            make_result(
+                "test_failure",
+                "python",
+                "read_file",
+                Some(FailureClass::TestFailure),
+            ),
+        ];
+        let summary = aggregate_summary(&results);
+
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.passed, 0);
+        assert_eq!(summary.failed, 2);
+        assert_eq!(summary.expected_failures, 0);
+        assert_eq!(summary.unexpected_passes, 0);
+        assert_eq!(summary.pass_rate, 0.0);
+    }
+
+    // --- ci_blocking counter ---
+
+    #[test]
+    fn test_aggregate_summary_ci_blocking() {
+        let results = vec![
+            // BuildFailure is CI-blocking
+            make_result(
+                "build_failure",
+                "rust",
+                "edit_file",
+                Some(FailureClass::BuildFailure),
+            ),
+            // ExpectedFail is NOT CI-blocking
+            make_result(
+                "expected_fail",
+                "rust",
+                "edit_file",
+                Some(FailureClass::ExpectedFail),
+            ),
+            // CapabilityMissing is NOT CI-blocking
+            make_result(
+                "capability_missing",
+                "python",
+                "read_file",
+                Some(FailureClass::CapabilityMissing),
+            ),
+            // TestFailure is CI-blocking
+            make_result(
+                "test_failure",
+                "python",
+                "edit_file",
+                Some(FailureClass::TestFailure),
+            ),
+        ];
+        let summary = aggregate_summary(&results);
+
+        assert_eq!(summary.ci_blocking, 2); // BuildFailure + TestFailure
+    }
+
+    // --- failure_distribution map ---
+
+    #[test]
+    fn test_aggregate_summary_failure_distribution() {
+        let results = vec![
+            make_result(
+                "build_failure",
+                "rust",
+                "edit_file",
+                Some(FailureClass::BuildFailure),
+            ),
+            make_result(
+                "build_failure",
+                "python",
+                "edit_file",
+                Some(FailureClass::BuildFailure),
+            ),
+            make_result(
+                "test_failure",
+                "rust",
+                "edit_file",
+                Some(FailureClass::TestFailure),
+            ),
+        ];
+        let summary = aggregate_summary(&results);
+
+        assert_eq!(summary.failure_distribution.get("build_failure"), Some(&2));
+        assert_eq!(summary.failure_distribution.get("test_failure"), Some(&1));
+    }
+
+    // --- by_language breakdown ---
+
+    #[test]
+    fn test_aggregate_summary_by_language() {
+        let results = vec![
+            make_result("pass", "rust", "edit_file", Some(FailureClass::Pass)),
+            make_result("pass", "rust", "read_file", Some(FailureClass::Pass)),
+            make_result(
+                "build_failure",
+                "python",
+                "edit_file",
+                Some(FailureClass::BuildFailure),
+            ),
+        ];
+        let summary = aggregate_summary(&results);
+
+        let rust_entry = summary.by_language.get("rust").expect("rust entry exists");
+        assert_eq!(rust_entry.total, 2);
+        assert_eq!(rust_entry.passed, 2);
+        assert_eq!(rust_entry.failed, 0);
+
+        let python_entry = summary.by_language.get("python").expect("python entry exists");
+        assert_eq!(python_entry.total, 1);
+        assert_eq!(python_entry.passed, 0);
+        assert_eq!(python_entry.failed, 1);
+    }
+
+    // --- by_tool breakdown ---
+
+    #[test]
+    fn test_aggregate_summary_by_tool() {
+        let results = vec![
+            make_result("pass", "rust", "edit_file", Some(FailureClass::Pass)),
+            make_result(
+                "build_failure",
+                "rust",
+                "read_file",
+                Some(FailureClass::BuildFailure),
+            ),
+            make_result("pass", "python", "edit_file", Some(FailureClass::Pass)),
+        ];
+        let summary = aggregate_summary(&results);
+
+        let edit_file_entry = summary.by_tool.get("edit_file").expect("edit_file entry exists");
+        assert_eq!(edit_file_entry.total, 2);
+        assert_eq!(edit_file_entry.passed, 2);
+        assert_eq!(edit_file_entry.failed, 0);
+
+        let read_file_entry = summary.by_tool.get("read_file").expect("read_file entry exists");
+        assert_eq!(read_file_entry.total, 1);
+        assert_eq!(read_file_entry.passed, 0);
+        assert_eq!(read_file_entry.failed, 1);
+    }
+
+    // --- pass_rate calculation ---
+
+    #[test]
+    fn test_aggregate_summary_pass_rate() {
+        // 3 pass out of 4 total = 0.75
+        let results = vec![
+            make_result("pass", "rust", "edit_file", Some(FailureClass::Pass)),
+            make_result("pass", "rust", "read_file", Some(FailureClass::Pass)),
+            make_result("pass", "python", "edit_file", Some(FailureClass::Pass)),
+            make_result(
+                "build_failure",
+                "python",
+                "edit_file",
+                Some(FailureClass::BuildFailure),
+            ),
+        ];
+        let summary = aggregate_summary(&results);
+
+        assert_eq!(summary.total, 4);
+        assert_eq!(summary.passed, 3);
+        assert!((summary.pass_rate - 0.75).abs() < 0.001);
+    }
+
+    // --- language pass_rate ---
+
+    #[test]
+    fn test_aggregate_summary_language_pass_rate() {
+        let results = vec![
+            make_result("pass", "rust", "edit_file", Some(FailureClass::Pass)),
+            make_result(
+                "build_failure",
+                "rust",
+                "edit_file",
+                Some(FailureClass::BuildFailure),
+            ),
+        ];
+        let summary = aggregate_summary(&results);
+
+        let rust_entry = summary.by_language.get("rust").expect("rust entry exists");
+        // 1 passed out of 2 total = 0.5
+        assert!((rust_entry.pass_rate - 0.5).abs() < 0.001);
+    }
+
+    // --- preexisting_fail does not block CI ---
+
+    #[test]
+    fn test_aggregate_summary_preexisting_does_not_block_ci() {
+        let results = vec![make_result(
+            "preexisting_fail",
+            "rust",
+            "edit_file",
+            Some(FailureClass::PreexistingRepoFailure),
+        )];
+        let summary = aggregate_summary(&results);
+
+        assert_eq!(summary.ci_blocking, 0);
+        assert_eq!(summary.expected_failures, 1);
+    }
+
+    // --- pass with FailureClass::Pass does not block CI ---
+
+    #[test]
+    fn test_aggregate_summary_pass_does_not_block_ci() {
+        let results = vec![make_result("pass", "rust", "edit_file", Some(FailureClass::Pass))];
+        let summary = aggregate_summary(&results);
+
+        assert_eq!(summary.ci_blocking, 0);
+    }
+}
+
+// =============================================================================
+// Batch G Tests: is_expected_tool_rejection
+// =============================================================================
+
+#[cfg(test)]
+mod is_expected_tool_rejection_tests {
+    use super::*;
+
+    // --- path_safety scenarios that should return true ---
+
+    #[test]
+    fn test_is_expected_tool_rejection_path_safety_outside() {
+        assert!(is_expected_tool_rejection(
+            "test_path_safety_outside",
+            "Access denied: path is outside allowed workspace"
+        ));
+    }
+
+    #[test]
+    fn test_is_expected_tool_rejection_path_safety_path_traversal() {
+        // Error text must contain the exact substring "path traversal" (lowercase after to_lowercase)
+        assert!(is_expected_tool_rejection(
+            "test_path_traversal_attempt",
+            "Error: path traversal detected: cannot access /etc/passwd"
+        ));
+    }
+
+    #[test]
+    fn test_is_expected_tool_rejection_path_safety_not_allowed() {
+        assert!(is_expected_tool_rejection(
+            "path_safety_probe",
+            "Access not allowed to parent directory"
+        ));
+    }
+
+    #[test]
+    fn test_is_expected_tool_rejection_path_safety_access_denied() {
+        // Error text must contain "access denied" (case-insensitive after to_lowercase)
+        assert!(is_expected_tool_rejection(
+            "path_safety_test",
+            "Error: access denied"
+        ));
+    }
+
+    // --- nonexistent file scenarios ---
+
+    #[test]
+    fn test_is_expected_tool_rejection_nonexistent_not_found() {
+        assert!(is_expected_tool_rejection(
+            "test_nonexistent_file",
+            "File not found: /tmp/does_not_exist.txt"
+        ));
+    }
+
+    #[test]
+    fn test_is_expected_tool_rejection_nonexistent_no_such_file() {
+        // Error text must contain exact substring "no such file"
+        assert!(is_expected_tool_rejection(
+            "nonexistent_probe",
+            "Error: no such file or directory"
+        ));
+    }
+
+    #[test]
+    fn test_is_expected_tool_rejection_nonexistent_does_not_exist() {
+        assert!(is_expected_tool_rejection(
+            "test_nonexistent",
+            "File does not exist"
+        ));
+    }
+
+    // --- empty_path scenarios ---
+
+    #[test]
+    fn test_is_expected_tool_rejection_empty_path_empty() {
+        // Error text must contain "empty" (case-sensitive substring check)
+        assert!(is_expected_tool_rejection(
+            "test_empty_path",
+            "Error: empty path provided"
+        ));
+    }
+
+    #[test]
+    fn test_is_expected_tool_rejection_empty_path_is_a_directory() {
+        assert!(is_expected_tool_rejection(
+            "empty_path_probe",
+            "/some/path is a directory, not a file"
+        ));
+    }
+
+    // --- long_path scenarios ---
+
+    #[test]
+    fn test_is_expected_tool_rejection_long_path_does_not_exist() {
+        assert!(is_expected_tool_rejection(
+            "test_long_path",
+            "Parent directory does not exist"
+        ));
+    }
+
+    #[test]
+    fn test_is_expected_tool_rejection_long_path_not_found() {
+        assert!(is_expected_tool_rejection(
+            "long_path_attempt",
+            "Path not found: /deeply/nested/path/that/does/not/exist"
+        ));
+    }
+
+    // --- unicode_name scenarios ---
+
+    #[test]
+    fn test_is_expected_tool_rejection_unicode_name_not_found() {
+        assert!(is_expected_tool_rejection(
+            "test_unicode_name_file",
+            "File not found: /tmp/file_with_unicode_名字.txt"
+        ));
+    }
+
+    #[test]
+    fn test_is_expected_tool_rejection_unicode_name_no_such_file() {
+        // Error text must contain "no such file" (lowercase)
+        assert!(is_expected_tool_rejection(
+            "unicode_name_probe",
+            "Error: no such file or directory"
+        ));
+    }
+
+    // --- on_directory scenarios ---
+
+    #[test]
+    fn test_is_expected_tool_rejection_on_directory_is_a_directory() {
+        assert!(is_expected_tool_rejection(
+            "test_complexity_on_directory",
+            "/path/to/dir is a directory, not a file"
+        ));
+    }
+
+    #[test]
+    fn test_is_expected_tool_rejection_on_directory_not_a_file() {
+        // Error text must contain "is a directory" or "not a file" (case-sensitive)
+        assert!(is_expected_tool_rejection(
+            "on_directory_probe",
+            "Error: not a file, expected a file path"
+        ));
+    }
+
+    // --- scenarios that should return false ---
+
+    #[test]
+    fn test_is_expected_tool_rejection_no_match_name() {
+        // Name doesn't contain expected pattern
+        assert!(!is_expected_tool_rejection(
+            "test_read_file",
+            "File not found"
+        ));
+    }
+
+    #[test]
+    fn test_is_expected_tool_rejection_no_match_error() {
+        // Name matches but error text doesn't
+        assert!(!is_expected_tool_rejection(
+            "test_path_safety_outside",
+            "Internal server error"
+        ));
+    }
+
+    #[test]
+    fn test_is_expected_tool_rejection_unrelated_error() {
+        assert!(!is_expected_tool_rejection(
+            "test_read_file",
+            "Permission denied"
+        ));
+    }
+
+    #[test]
+    fn test_is_expected_tool_rejection_mismatch() {
+        // nonexistent name but path_safety error
+        assert!(!is_expected_tool_rejection(
+            "test_nonexistent_file",
+            "Access denied: path is outside workspace"
+        ));
+    }
+}
+
 fn main() {
     let cli = Cli::parse();
 
