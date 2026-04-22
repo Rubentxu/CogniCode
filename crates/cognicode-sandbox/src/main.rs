@@ -1252,8 +1252,8 @@ fn classify_outcome(
     // even when full_mcp_response is None. Treat presence of tool_response as a valid result.
     if !has_result && !validation.stages.is_empty() {
         // Check if validation stages produced results - this indicates the scenario ran
-        let any_stageRan = validation.stages.iter().any(|s| s.exit_code.is_some());
-        if any_stageRan {
+        let any_stage_ran = validation.stages.iter().any(|s| s.exit_code.is_some());
+        if any_stage_ran {
             // Scenario ran (even if validation failed) - treat as having a result
             // Proceed to validation check below
         } else {
