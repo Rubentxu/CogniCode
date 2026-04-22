@@ -160,9 +160,9 @@ struct BenchmarkArgs {
 
 #[derive(Parser, Debug, Clone)]
 struct AutoresearchArgs {
-    /// Description of this experiment
+    /// Experiment label
     #[arg(long)]
-    description: String,
+    label: String,
 
     /// Path to the cognicode-mcp binary
     #[arg(long)]
@@ -2154,7 +2154,7 @@ fn autoresearch(args: AutoresearchArgs, verbose: bool) -> Result<i32, String> {
         &sandbox_passed,
         health_score,
         status,
-        &args.description,
+        &args.label,
     )?;
 
     // Step 5: Output JSON summary to stdout
@@ -2164,7 +2164,7 @@ fn autoresearch(args: AutoresearchArgs, verbose: bool) -> Result<i32, String> {
         "sandbox_passed": sandbox_passed,
         "health_score": health_score,
         "status": status,
-        "description": args.description,
+        "label": args.label,
     });
     println!("{}", serde_json::to_string_pretty(&summary).unwrap());
 

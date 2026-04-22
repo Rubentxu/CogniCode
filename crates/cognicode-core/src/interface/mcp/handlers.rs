@@ -2084,13 +2084,6 @@ pub async fn handle_build_lightweight_index(
         return Err(HandlerError::Internal("Cancelled".into()));
     }
 
-    // Detect if this is the lightweight strategy (special-cased for index caching)
-    let is_lightweight = matches!(
-        input.strategy.as_str(),
-        "lightweight" | "on_demand" | "ondemand" | ""
-    ) || !["on_demand","ondemand","per_file","perfile","full","full_graph"]
-        .contains(&input.strategy.as_str());
-
     if ctx.is_cancelled() {
         return Err(HandlerError::Internal("Cancelled".into()));
     }
