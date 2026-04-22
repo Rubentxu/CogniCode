@@ -17,12 +17,10 @@ use std::sync::Arc;
 /// CogniCodeHandler implements the rmcp ServerHandler trait
 ///
 /// This handler bridges the rmcp SDK with the existing CogniCode handler functions.
-/// It maintains the project root path and a cancellation flag, plus a persistent
-/// HandlerContext that survives across requests to avoid rebuilding the analysis graph.
+/// It maintains a persistent HandlerContext that survives across requests to avoid
+/// rebuilding the analysis graph, plus a cancellation flag.
 #[derive(Debug)]
 pub struct CogniCodeHandler {
-    /// Root directory of the project being analyzed
-    project_root: PathBuf,
     /// Persistent handler context - created once and shared across all requests
     ctx: Arc<HandlerContext>,
     /// Cancellation token for handling cancelled requests
@@ -40,10 +38,9 @@ impl CogniCodeHandler {
                 project_root.clone()
             });
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        let mut ctx = HandlerContext::new(canonical_root.clone());
+        let mut ctx = HandlerContext::new(canonical_root);
         ctx.cancellation_token = cancellation_token.clone();
         Self {
-            project_root: canonical_root,
             ctx: Arc::new(ctx),
             cancellation_token,
         }
@@ -743,7 +740,8 @@ mod tests {
     #[test]
     fn test_cognicode_handler_creation() {
         let handler = CogniCodeHandler::new(PathBuf::from("/tmp/test"));
-        assert_eq!(handler.project_root, PathBuf::from("/tmp/test"));
+        // working_dir is canonicalized so may differ from input path
+        assert!(handler.ctx.working_dir.to_string_lossy().ends_with("test"));
     }
 
     #[test]
