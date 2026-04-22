@@ -12,7 +12,7 @@ use crate::infrastructure::graph::lightweight_index::{LightweightIndex, SymbolLo
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 /// Direction for call hierarchy traversal
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -197,8 +197,8 @@ impl TreeNode {
 /// This builder is designed for lazy evaluation - it only parses and builds
 /// the graph portions needed to answer a specific query.
 pub struct OnDemandGraphBuilder {
-    /// Index for fast symbol lookup (Arc so multiple builders can share)
-    index: Arc<LightweightIndex>,
+    /// Index for fast symbol lookup (Arc<RwLock> so multiple builders can share with concurrent access)
+    index: Arc<RwLock<LightweightIndex>>,
     /// Cache of parsed files to avoid re-parsing
     file_cache: HashMap<String, (Vec<Symbol>, Vec<(Symbol, String)>)>, // (symbols, relationships)
 }
@@ -207,41 +207,31 @@ impl OnDemandGraphBuilder {
     /// Creates a new OnDemandGraphBuilder with an empty index
     pub fn new() -> Self {
         Self {
-            index: Arc::new(LightweightIndex::new()),
+            index: Arc::new(RwLock::new(LightweightIndex::new())),
             file_cache: HashMap::new(),
         }
     }
 
     /// Creates a new OnDemandGraphBuilder with a shared index
-    pub fn with_index(index: Arc<LightweightIndex>) -> Self {
+    pub fn with_index(index: Arc<RwLock<LightweightIndex>>) -> Self {
         Self {
             index,
             file_cache: HashMap::new(),
         }
     }
 
-    /// Sets the index from a directory scan (only works on uniquely-owned index)
+    /// Sets the index from a directory scan
     pub fn set_index<P: AsRef<Path>>(&mut self, project_dir: P) -> std::io::Result<()> {
-        // Only possible if we have unique ownership (Arc::get_mut succeeds)
-        if let Some(idx) = Arc::get_mut(&mut self.index) {
-            idx.build_index(project_dir)
-        } else {
-            // Arc is shared — cannot mutate. Caller must use Arc::new() index.
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Cannot set_index on a shared index. Create with LightweightIndex::new() first.",
-            ))
-        }
+        // Use RwLock write guard for safe concurrent mutation
+        self.index.write().unwrap().build_index(project_dir)
     }
 
-    /// Builds the index from in-memory sources (only works on uniquely-owned index)
+    /// Builds the index from in-memory sources
     pub fn build_index_from_sources<'a, I>(&mut self, sources: I)
     where
         I: IntoIterator<Item = (&'a str, &'a str)>,
     {
-        if let Some(idx) = Arc::get_mut(&mut self.index) {
-            idx.build_from_sources(sources);
-        }
+        self.index.write().unwrap().build_from_sources(sources);
     }
 
     /// Builds a subgraph centered on a specific symbol
@@ -255,7 +245,7 @@ impl OnDemandGraphBuilder {
         direction: TraversalDirection,
     ) -> CallHierarchyResult {
         // Find symbol locations
-        let locations = self.index.find_symbol(symbol_name);
+        let locations = self.index.read().unwrap().find_symbol(symbol_name);
         if locations.is_empty() {
             return CallHierarchyResult {
                 root_symbol: Symbol::new(
@@ -330,8 +320,8 @@ impl OnDemandGraphBuilder {
     /// by only parsing files that could contain relevant symbols.
     pub fn build_for_path(&mut self, source_name: &str, target_name: &str) -> Option<CallGraph> {
         // Find source and target locations
-        let source_locs = self.index.find_symbol(source_name).to_vec();
-        let target_locs = self.index.find_symbol(target_name).to_vec();
+        let source_locs = self.index.read().unwrap().find_symbol(source_name).to_vec();
+        let target_locs = self.index.read().unwrap().find_symbol(target_name).to_vec();
 
         if source_locs.is_empty() || target_locs.is_empty() {
             return None;
@@ -406,7 +396,7 @@ impl OnDemandGraphBuilder {
     /// Returns the CallHierarchyItem with exact location, or None if not found.
     /// This should be called before recursive_expand to get the starting point.
     pub fn prepare_call_hierarchy(&self, symbol_name: &str) -> Option<CallHierarchyItem> {
-        let locations = self.index.find_symbol(symbol_name);
+        let locations = self.index.read().unwrap().find_symbol(symbol_name);
         if locations.is_empty() {
             return None;
         }
@@ -623,7 +613,7 @@ impl OnDemandGraphBuilder {
         _direction: TraversalDirection,
         files: &mut HashSet<String>,
     ) {
-        let locations = self.index.find_symbol(symbol_name);
+        let locations = self.index.read().unwrap().find_symbol(symbol_name);
         if !locations.is_empty() {
             for loc in locations {
                 files.insert(loc.file.clone());
@@ -633,16 +623,18 @@ impl OnDemandGraphBuilder {
 
         let prefix_len = symbol_name.len().min(3);
         let prefix = &symbol_name[..prefix_len];
-        let mut candidates: Vec<(&str, &[SymbolLocation])> = self
-            .index
+        let index_guard = self.index.read().unwrap();
+        let candidates: Vec<(String, Vec<SymbolLocation>)> = index_guard
             .all_entries()
             .filter(|(name, _)| name.starts_with(prefix))
+            .map(|(name, locs)| (name.to_string(), locs.to_vec()))
             .collect();
-        candidates.truncate(50);
+        drop(index_guard);
+        let candidates = candidates; // re-bind as immutable
 
         let name_lower = symbol_name.to_lowercase();
         for (indexed_name, locations) in candidates {
-            if self.levenshtein_distance(indexed_name, &name_lower) <= 10 {
+            if self.levenshtein_distance(&indexed_name, &name_lower) <= 10 {
                 for loc in locations {
                     files.insert(loc.file.clone());
                 }
@@ -755,7 +747,7 @@ impl OnDemandGraphBuilder {
             }
 
             // Find the callee's locations
-            let callee_locs = self.index.find_symbol(callee_name);
+            let callee_locs = self.index.read().unwrap().find_symbol(callee_name);
             if callee_locs.is_empty() {
                 continue;
             }
@@ -814,7 +806,7 @@ impl OnDemandGraphBuilder {
                 continue;
             }
 
-            let caller_loc = self.index.find_symbol(caller.name());
+            let caller_loc = self.index.read().unwrap().find_symbol(caller.name());
             if caller_loc.is_empty() {
                 continue;
             }
@@ -910,7 +902,7 @@ impl OnDemandGraphBuilder {
             }
 
             // Find callees of current
-            for loc in self.index.find_symbol(&current_name) {
+            for loc in self.index.read().unwrap().find_symbol(&current_name) {
                 let relationships = self.get_file_relationships(&loc.file);
                 for (caller, callee_name) in relationships {
                     if caller.name().to_lowercase() != current_name.to_lowercase() {
@@ -920,7 +912,7 @@ impl OnDemandGraphBuilder {
                     if !visited.contains(&callee_name.to_lowercase()) {
                         visited.insert(callee_name.to_lowercase());
 
-                        let callee_locs = self.index.find_symbol(&callee_name);
+                        let callee_locs = self.index.read().unwrap().find_symbol(&callee_name);
                         if let Some(callee_loc) = callee_locs.first() {
                             let new_path = {
                                 let mut p = path.clone();

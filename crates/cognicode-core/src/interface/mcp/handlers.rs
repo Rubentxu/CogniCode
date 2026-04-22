@@ -216,14 +216,11 @@ pub type HandlerResult<T> = Result<T, HandlerError>;
 /// - If `input` is `None`, returns `working_dir` unchanged.
 /// - If `input` is an absolute path, returns it unchanged.
 /// - If `input` is a relative path (including "."), joins it to `working_dir`.
-/// Generate a unique redb file path based on the target directory.
-/// This ensures different directories get different cache files.
-fn graph_db_path(working_dir: &Path, directory: &Path) -> PathBuf {
-    let db_dir = working_dir.join(".cognicode");
+/// Generate a redb file path based on the target directory.
+/// The .cognicode directory is placed inside the analyzed project directory.
+fn graph_db_path(directory: &Path) -> PathBuf {
     let canonical_dir = directory.canonicalize().unwrap_or_else(|_| directory.to_path_buf());
-    let hash = blake3::hash(canonical_dir.to_string_lossy().as_bytes());
-    let hash_str = &hash.to_string()[..16];
-    db_dir.join(format!("graph_{}.redb", hash_str))
+    canonical_dir.join(".cognicode").join("graph.redb")
 }
 
 fn resolve_directory(input: Option<String>, working_dir: &Path) -> PathBuf {
@@ -251,6 +248,100 @@ fn resolve_file_path(input_path: &str, working_dir: &Path) -> PathBuf {
     } else {
         working_dir.join(p)
     }
+}
+
+/// Checks whether any source file has changed since the manifest was saved.
+/// Uses mtime as a fast check (no hashing unless needed).
+fn is_manifest_stale(manifest: &crate::domain::value_objects::file_manifest::FileManifest, project_dir: &Path) -> bool {
+    use walkdir::WalkDir;
+    const SKIP_DIRS: &[&str] = &["target", "node_modules", ".git", "dist", "build",
+        "vendor", "__pycache__", ".cache", ".next", ".nuxt", "coverage",
+        ".tox", "venv", ".venv", ".env", "env", ".cognicode"];
+
+    let mut checked = 0usize;
+    for entry in WalkDir::new(project_dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|e| {
+            !e.file_name()
+                .to_str()
+                .map(|s| SKIP_DIRS.contains(&s))
+                .unwrap_or(false)
+        })
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let path = entry.path();
+        // Only check supported source extensions
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !["rs","py","js","ts","go","java","c","cpp","h"].contains(&ext) {
+            continue;
+        }
+        checked += 1;
+        let rel = path.strip_prefix(project_dir).unwrap_or(path);
+        let mtime = std::fs::metadata(path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        match manifest.entries.get(rel) {
+            Some(entry) if entry.mtime == mtime => continue,  // unchanged
+            _ => return true,  // new, modified, or missing from manifest
+        }
+    }
+    // If manifest has more entries than files checked, files were deleted → stale
+    let manifest_source_count = manifest.entries.len();
+    checked != manifest_source_count
+}
+
+/// Builds a FileManifest for the given project directory.
+fn build_manifest(project_dir: &Path) -> std::io::Result<crate::domain::value_objects::file_manifest::FileManifest> {
+    use crate::domain::value_objects::file_manifest::{FileManifest, FileEntry};
+    use walkdir::WalkDir;
+    const SKIP_DIRS: &[&str] = &["target", "node_modules", ".git", "dist", "build",
+        "vendor", "__pycache__", ".cache", ".next", ".nuxt", "coverage",
+        ".tox", "venv", ".venv", ".env", "env", ".cognicode"];
+
+    let mut manifest = FileManifest::new(project_dir.to_path_buf());
+
+    for entry in WalkDir::new(project_dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|e| {
+            !e.file_name()
+                .to_str()
+                .map(|s| SKIP_DIRS.contains(&s))
+                .unwrap_or(false)
+        })
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+    {
+        let path = entry.path();
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !["rs","py","js","ts","go","java","c","cpp","h"].contains(&ext) {
+            continue;
+        }
+        let rel = path.strip_prefix(project_dir)
+            .unwrap_or(path)
+            .to_path_buf();
+        let mtime = std::fs::metadata(path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        // Use mtime as content_hash proxy (cheap — no file read needed)
+        let _ = manifest.entries.insert(
+            rel,
+            FileEntry {
+                content_hash: mtime.to_string(),
+                mtime,
+                symbol_count: 0,
+            },
+        );
+    }
+    Ok(manifest)
 }
 
 /// Input for build_graph
@@ -301,15 +392,27 @@ pub async fn handle_build_graph(
         return Err(HandlerError::Internal("Cancelled".into()));
     }
 
-    // --- Persistence: try to load from redb first ---
-    let db_path = graph_db_path(&ctx.working_dir, &directory);
+    // --- Persistence: try to load from redb, but verify staleness ---
+    let db_path = graph_db_path(&directory);
     let mut loaded_from_cache = false;
 
     if db_path.exists() {
         if let Ok(store) = RedbGraphStore::open(&db_path) {
-            if let Ok(Some(graph)) = store.load_graph() {
-                ctx.analysis_service.graph_cache().set(graph);
-                loaded_from_cache = true;
+            // Check staleness via FileManifest
+            let is_stale = match store.load_manifest() {
+                Ok(Some(manifest)) => {
+                    // Scan source files and compare hashes
+                    is_manifest_stale(&manifest, &directory)
+                }
+                Ok(None) => true,  // No manifest → stale
+                Err(_) => true,    // Error reading → rebuild
+            };
+
+            if !is_stale {
+                if let Ok(Some(graph)) = store.load_graph() {
+                    ctx.analysis_service.graph_cache().set(graph);
+                    loaded_from_cache = true;
+                }
             }
         }
     }
@@ -319,11 +422,15 @@ pub async fn handle_build_graph(
         if let Err(e) = ctx.analysis_service.build_project_graph(&directory) {
             return Err(HandlerError::App(e));
         }
-        // Persist the freshly built graph
-        let _ = std::fs::create_dir_all(db_path.parent().unwrap_or(&ctx.working_dir));
+        // Persist the freshly built graph + manifest
+        let _ = std::fs::create_dir_all(db_path.parent().unwrap_or(&directory));
         if let Ok(store) = RedbGraphStore::open(&db_path) {
             let graph = ctx.analysis_service.get_project_graph();
             let _ = store.save_graph(&graph);
+            // Build and save manifest
+            if let Ok(manifest) = build_manifest(&directory) {
+                let _ = store.save_manifest(&manifest);
+            }
         }
     }
 
@@ -1936,38 +2043,67 @@ pub async fn handle_build_lightweight_index(
         return Err(HandlerError::Internal("Cancelled".into()));
     }
 
-    // Create the appropriate strategy based on input
-    let mut strategy: Box<dyn GraphStrategy> =
-        match input.strategy.as_str() {
-            "lightweight" => Box::new(LightweightStrategy::new()),
-            "on_demand" | "ondemand" => Box::new(OnDemandStrategy::new()),
-            "per_file" | "perfile" => Box::new(PerFileStrategy::new()),
-            "full" | "full_graph" => Box::new(FullGraphStrategy::new()),
-            _ => Box::new(LightweightStrategy::new()),
-        };
+    // Detect if this is the lightweight strategy (special-cased for index caching)
+    let is_lightweight = matches!(
+        input.strategy.as_str(),
+        "lightweight" | "on_demand" | "ondemand" | ""
+    ) || !["on_demand","ondemand","per_file","perfile","full","full_graph"]
+        .contains(&input.strategy.as_str());
 
     if ctx.is_cancelled() {
         return Err(HandlerError::Internal("Cancelled".into()));
     }
 
-    // Build the index
-    match strategy.build_index(&directory) {
+    // Build the index — CPU-bound blocking work, offload to blocking thread pool
+    // to avoid starving the tokio async runtime (which caused MCP timeout -32001).
+    // For lightweight strategy, build directly as LightweightStrategy (concrete type)
+    // so we can extract the index via into_index() without rebuilding.
+    let strategy_name_input = input.strategy.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        match strategy_name_input.as_str() {
+            "lightweight" | "" => {
+                let mut s = LightweightStrategy::new();
+                let build_result = s.build_index(&directory);
+                let symbols = s.query_symbols("").len();
+                let index = Some(s.into_index());
+                (build_result, symbols, "LightweightStrategy".to_string(), index, directory)
+            }
+            _ => {
+                let mut strategy: Box<dyn GraphStrategy> = match strategy_name_input.as_str() {
+                    "on_demand" | "ondemand" => Box::new(OnDemandStrategy::new()),
+                    "per_file" | "perfile" => Box::new(PerFileStrategy::new()),
+                    "full" | "full_graph" => Box::new(FullGraphStrategy::new()),
+                    _ => Box::new(LightweightStrategy::new()),
+                };
+                let build_result = strategy.build_index(&directory);
+                let symbols = strategy.query_symbols("").len();
+                let name = strategy.name().to_string();
+                (build_result, symbols, name, None, directory)
+            }
+        }
+    })
+    .await
+    .map_err(|e| HandlerError::Internal(format!("spawn_blocking panicked: {e}")))?;
+
+    let (build_result, symbols, strategy_name, opt_index, _directory) = result;
+
+    match build_result {
         Ok(()) => {
-            let symbols = strategy.query_symbols("").len();
             let elapsed = start.elapsed().as_millis() as u64;
 
-            // Get actual stats from the strategy
-            let symbols_indexed = symbols;
-            let locations_indexed = symbols;
+            // Cache the lightweight index in AnalysisService (no rebuild needed)
+            if let Some(index) = opt_index {
+                ctx.analysis_service.set_symbol_index(index);
+            }
 
             Ok(BuildIndexOutput {
                 success: true,
-                strategy: strategy.name().to_string(),
-                symbols_indexed,
-                locations_indexed,
+                strategy: strategy_name.clone(),
+                symbols_indexed: symbols,
+                locations_indexed: symbols,
                 message: format!(
                     "Index built successfully using {} strategy in {}ms",
-                    strategy.name(),
+                    strategy_name,
                     elapsed
                 ),
             })
@@ -1986,14 +2122,6 @@ pub async fn handle_query_symbol_index(
     // Validate input
     ctx.validator.validate_query(&input.symbol_name)?;
 
-    let directory = resolve_directory(input.directory, &ctx.working_dir);
-
-    // Build a lightweight index to query
-    let mut strategy = LightweightStrategy::new();
-    if let Err(e) = strategy.build_index(&directory) {
-        return Err(HandlerError::App(AppError::AnalysisError(e.to_string())));
-    }
-
     // Empty symbol name returns empty results
     if input.symbol_name.is_empty() {
         return Ok(QuerySymbolOutput {
@@ -2003,7 +2131,25 @@ pub async fn handle_query_symbol_index(
         });
     }
 
-    let locations = strategy.query_symbols(&input.symbol_name);
+    // Use the cached index in AnalysisService if available
+    let locations = if ctx.analysis_service.has_symbol_index() {
+        ctx.analysis_service.find_symbol(&input.symbol_name)
+    } else {
+        // Cache miss: build the index and store it for next time
+        let directory = resolve_directory(input.directory, &ctx.working_dir);
+        let index = tokio::task::spawn_blocking({
+            let dir = directory.clone();
+            move || {
+                let mut s = LightweightStrategy::new();
+                s.build_index(&dir).ok();
+                s.into_index()
+            }
+        })
+        .await
+        .map_err(|e| HandlerError::Internal(e.to_string()))?;
+        ctx.analysis_service.set_symbol_index(index);
+        ctx.analysis_service.find_symbol(&input.symbol_name)
+    };
 
     let location_entries: Vec<SymbolLocationEntry> = locations
         .iter()
@@ -2711,15 +2857,9 @@ mod tests {
         assert!(output.success);
         assert!(output.message.contains("built + persisted"));
 
-        // Verify redb file exists
-        let db_dir = tempdir_path.join(".cognicode");
-        let mut entries = std::fs::read_dir(&db_dir).unwrap();
-        let db_file = entries.find(|e| {
-            e.as_ref()
-                .map(|entry| entry.file_name().to_string_lossy().starts_with("graph_"))
-                .unwrap_or(false)
-        });
-        assert!(db_file.is_some(), "Expected a graph_*.redb file to exist");
+        // Verify redb file exists at .cognicode/graph.redb inside the analyzed project
+        let db_path = tempdir_path.join(".cognicode").join("graph.redb");
+        assert!(db_path.exists(), "Expected .cognicode/graph.redb to exist at {:?}", db_path);
     }
 
     #[tokio::test]
@@ -2787,22 +2927,52 @@ mod tests {
         assert!(result2.is_ok());
         assert!(result2.unwrap().success);
 
-        // Verify both cache files exist and are different
-        let db_dir = tempdir1_path.join(".cognicode");
-        let entries: Vec<_> = std::fs::read_dir(&db_dir)
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .collect();
-        let graph_files: Vec<_> = entries
-            .iter()
-            .filter(|e| e.file_name().to_string_lossy().starts_with("graph_"))
-            .collect();
+        // Each project directory has its own .cognicode/graph.redb
+        let db_path1 = tempdir1_path.join(".cognicode").join("graph.redb");
+        let db_path2 = tempdir2_path.join(".cognicode").join("graph.redb");
+        assert!(db_path1.exists(), "Expected cache file in tempdir1 at {:?}", db_path1);
+        assert!(db_path2.exists(), "Expected cache file in tempdir2 at {:?}", db_path2);
+        // Files are different (different content)
+        let content1 = std::fs::read(&db_path1).unwrap();
+        let content2 = std::fs::read(&db_path2).unwrap();
+        assert_ne!(content1, content2, "Cache files should contain different graphs");
+    }
 
-        assert_eq!(graph_files.len(), 2, "Expected 2 different graph cache files");
+    #[tokio::test]
+    async fn test_handle_build_graph_detects_stale_cache() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir_path = tempdir.path();
 
-        let name1 = graph_files[0].file_name().to_string_lossy().into_owned();
-        let name2 = graph_files[1].file_name().to_string_lossy().into_owned();
-        assert_ne!(name1, name2, "Cache files should be different names");
+        // Create a simple Rust file
+        let rust_file = tempdir_path.join("hello.rs");
+        std::fs::write(&rust_file, "fn hello() {}\n").unwrap();
+
+        let ctx = HandlerContext::new(tempdir_path.to_path_buf());
+
+        // First call - should build and persist
+        let input1 = BuildGraphInput {
+            directory: None,
+        };
+        let result1 = handle_build_graph(&ctx, input1).await;
+        assert!(result1.is_ok());
+        let output1 = result1.unwrap();
+        assert!(output1.success);
+        assert!(output1.message.contains("built + persisted"));
+
+        // Modify the file to make the cache stale
+        std::fs::write(&rust_file, "fn hello() { let x = 1; }\n").unwrap();
+
+        // Second call - should detect stale cache and rebuild
+        let input2 = BuildGraphInput {
+            directory: None,
+        };
+        let result2 = handle_build_graph(&ctx, input2).await;
+        assert!(result2.is_ok());
+        let output2 = result2.unwrap();
+        assert!(output2.success);
+        // Should rebuild because file was modified
+        assert!(output2.message.contains("built + persisted"),
+            "Expected 'built + persisted' but got: {}", output2.message);
     }
 
     // =============================================================================

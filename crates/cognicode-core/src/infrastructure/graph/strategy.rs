@@ -14,7 +14,7 @@ use crate::infrastructure::graph::per_file_graph::PerFileGraphCache;
 use crate::infrastructure::graph::symbol_index::SymbolIndex;
 use crate::infrastructure::parser::TreeSitterParser;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 /// Trait for graph construction strategies
 ///
@@ -66,6 +66,11 @@ impl LightweightStrategy {
         Self {
             index: LightweightIndex::new(),
         }
+    }
+
+    /// Consumes the strategy and returns the underlying LightweightIndex.
+    pub fn into_index(self) -> LightweightIndex {
+        self.index
     }
 }
 
@@ -136,7 +141,7 @@ impl GraphStrategy for LightweightStrategy {
 /// portions of the graph for each query.
 pub struct OnDemandStrategy {
     builder: OnDemandGraphBuilder,
-    index: Arc<LightweightIndex>,
+    index: Arc<RwLock<LightweightIndex>>,
 }
 
 impl OnDemandStrategy {
@@ -144,7 +149,7 @@ impl OnDemandStrategy {
     pub fn new() -> Self {
         Self {
             builder: OnDemandGraphBuilder::new(),
-            index: Arc::new(LightweightIndex::new()),
+            index: Arc::new(RwLock::new(LightweightIndex::new())),
         }
     }
 }
@@ -157,11 +162,12 @@ impl Default for OnDemandStrategy {
 
 impl GraphStrategy for OnDemandStrategy {
     fn build_index(&mut self, project_dir: &Path) -> std::io::Result<()> {
-        // Build the strategy's own index
-        if let Some(idx) = Arc::get_mut(&mut self.index) {
-            idx.build_index(project_dir)?;
-        }
-        // Also build the builder's index (it has unique ownership when created with new())
+        // Build the strategy's own index — uses RwLock write guard (no silent failure)
+        self.index
+            .write()
+            .unwrap()
+            .build_index(project_dir)?;
+        // Also build the builder's index
         self.builder.set_index(project_dir)
     }
 
@@ -169,7 +175,7 @@ impl GraphStrategy for OnDemandStrategy {
         &self,
         symbol_name: &str,
     ) -> Vec<crate::infrastructure::graph::lightweight_index::SymbolLocation> {
-        self.index.find_symbol(symbol_name).to_vec()
+        self.index.read().unwrap().find_symbol(symbol_name).to_vec()
     }
 
     fn build_local_graph(&self, file_path: &Path) -> std::io::Result<CallGraph> {
@@ -424,7 +430,7 @@ impl GraphStrategy for FullGraphStrategy {
     ) -> CallHierarchyResult {
         let mut builder = OnDemandGraphBuilder::new();
         if let Some(ref idx) = self.symbol_index {
-            builder = OnDemandGraphBuilder::with_index(Arc::new(idx.underlying_index().clone()));
+            builder = OnDemandGraphBuilder::with_index(Arc::new(RwLock::new(idx.underlying_index().clone())));
         }
         builder.build_for_symbol(symbol_name, depth, direction)
     }

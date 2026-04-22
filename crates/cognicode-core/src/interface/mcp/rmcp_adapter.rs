@@ -17,11 +17,14 @@ use std::sync::Arc;
 /// CogniCodeHandler implements the rmcp ServerHandler trait
 ///
 /// This handler bridges the rmcp SDK with the existing CogniCode handler functions.
-/// It maintains the project root path and a cancellation flag.
+/// It maintains the project root path and a cancellation flag, plus a persistent
+/// HandlerContext that survives across requests to avoid rebuilding the analysis graph.
 #[derive(Debug)]
 pub struct CogniCodeHandler {
     /// Root directory of the project being analyzed
     project_root: PathBuf,
+    /// Persistent handler context - created once and shared across all requests
+    ctx: Arc<HandlerContext>,
     /// Cancellation token for handling cancelled requests
     cancellation_token: Arc<AtomicBool>,
 }
@@ -36,17 +39,14 @@ impl CogniCodeHandler {
                 // If canonicalize fails (e.g., path doesn't exist yet), use the original
                 project_root.clone()
             });
+        let cancellation_token = Arc::new(AtomicBool::new(false));
+        let mut ctx = HandlerContext::new(canonical_root.clone());
+        ctx.cancellation_token = cancellation_token.clone();
         Self {
             project_root: canonical_root,
-            cancellation_token: Arc::new(AtomicBool::new(false)),
+            ctx: Arc::new(ctx),
+            cancellation_token,
         }
-    }
-
-    /// Creates a HandlerContext from the project root
-    fn create_handler_context(&self) -> HandlerContext {
-        let mut ctx = HandlerContext::new(self.project_root.clone());
-        ctx.cancellation_token = self.cancellation_token.clone();
-        ctx
     }
 }
 
@@ -508,9 +508,9 @@ impl ServerHandler for CogniCodeHandler {
         request: CallToolRequestParams,
         _context: rmcp::service::RequestContext<RoleServer>,
     ) -> impl std::future::Future<Output = Result<CallToolResult, rmcp::ErrorData>> + Send + '_ {
-        let mut ctx = self.create_handler_context();
+        let ctx = self.ctx.clone();
         async move {
-            let result = call_tool_handler(&mut ctx, request).await;
+            let result = call_tool_handler(&ctx, request).await;
 
             match result {
                 Ok(output) => Ok(CallToolResult::success(vec![Content::text(output)])),
@@ -531,7 +531,7 @@ impl ServerHandler for CogniCodeHandler {
 
 /// Handles the tool call by dispatching to the appropriate handler
 async fn call_tool_handler(
-    ctx: &mut HandlerContext,
+    ctx: &HandlerContext,
     request: CallToolRequestParams,
 ) -> anyhow::Result<String> {
     let tool_name = request.name.as_ref();

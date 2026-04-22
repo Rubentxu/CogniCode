@@ -21,8 +21,8 @@ pub struct AnalysisService {
     cycle_detector: CycleDetector,
     impact_analyzer: ImpactAnalyzer,
     graph_cache: Arc<GraphCache>,
-    symbol_index: Option<LightweightIndex>,
-    on_demand_builder: Option<OnDemandGraphBuilder>,
+    symbol_index: Mutex<Option<LightweightIndex>>,
+    on_demand_builder: Mutex<Option<OnDemandGraphBuilder>>,
     /// File cache: maps file path to (mtime, symbols, relationships)
     /// Uses Arc<Mutex<...>> to support Send across thread boundaries for async operations
     file_cache: Arc<Mutex<
@@ -47,8 +47,8 @@ impl AnalysisService {
             cycle_detector: CycleDetector::new(),
             impact_analyzer: ImpactAnalyzer::new(),
             graph_cache: Arc::new(GraphCache::new()),
-            symbol_index: None,
-            on_demand_builder: None,
+            symbol_index: Mutex::new(None),
+            on_demand_builder: Mutex::new(None),
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
             coverage_metrics: Mutex::new(None),
         }
@@ -70,8 +70,8 @@ impl AnalysisService {
             cycle_detector: CycleDetector::new(),
             impact_analyzer: ImpactAnalyzer::new(),
             graph_cache: cache,
-            symbol_index: None,
-            on_demand_builder: None,
+            symbol_index: Mutex::new(None),
+            on_demand_builder: Mutex::new(None),
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
             coverage_metrics: Mutex::new(None),
         }
@@ -82,40 +82,37 @@ impl AnalysisService {
         self.graph_cache.clone()
     }
 
-    /// Returns the symbol index for fast symbol lookups
+    /// Replaces the symbol index with a pre-built one (e.g. from spawn_blocking).
+    pub fn set_symbol_index(&self, index: LightweightIndex) {
+        *self.symbol_index.lock().unwrap() = Some(index);
+    }
+
+    /// Checks whether a symbol index has been built.
+    pub fn has_symbol_index(&self) -> bool {
+        self.symbol_index.lock().unwrap().is_some()
+    }
+
+    /// Returns a snapshot of the symbol index for fast symbol lookups.
     ///
-    /// Returns a reference to the underlying LightweightIndex if it has been built,
-    /// or builds it first if necessary.
-    pub fn symbol_index(&mut self) -> &LightweightIndex {
-        if self.symbol_index.is_none() {
-            // Build from cached graph or create empty
+    /// Builds the index on first call (lazy init, protected by Mutex).
+    /// Returns a cloned `LightweightIndex` so callers don't need to hold the lock.
+    fn ensure_symbol_index(&self) -> LightweightIndex {
+        let mut guard = self.symbol_index.lock().unwrap();
+        if guard.is_none() {
             let graph = self.get_project_graph();
-
-            // If graph has symbols, we need to scan files to build proper index
-            // For now, create index from graph's symbols
             let mut index = LightweightIndex::new();
-
             for symbol in graph.symbols() {
                 let location =
                     SymbolLocation::from_location(symbol.location(), symbol.kind().clone());
                 let name_lower = symbol.name().to_lowercase();
                 index.insert(name_lower, location);
             }
-
-            self.symbol_index = Some(index);
+            *guard = Some(index);
         }
-        self.symbol_index.as_ref().unwrap()
+        guard.as_ref().unwrap().clone()
     }
 
-    /// Returns a mutable reference to the symbol index
-    #[allow(dead_code)]
-    pub fn symbol_index_mut(&mut self) -> &mut LightweightIndex {
-        // Ensure it's built first
-        let _ = self.symbol_index();
-        self.symbol_index.as_mut().unwrap()
-    }
-
-    /// Queries the call hierarchy for a symbol using on-demand approach
+    /// Queries the call hierarchy for a symbol using on-demand approach.
     ///
     /// This method builds only the necessary portion of the graph for the query,
     /// making it efficient for deep call hierarchies.
@@ -125,55 +122,48 @@ impl AnalysisService {
     /// * `depth` - Maximum traversal depth
     /// * `direction` - Whether to look at callers, callees, or both
     pub fn query_call_hierarchy(
-        &mut self,
+        &self,
         symbol: &str,
         depth: u32,
         direction: TraversalDirection,
     ) -> AppResult<CallHierarchyResult> {
-        // Ensure we have the index built
-        if self.on_demand_builder.is_none() {
+        let mut guard = self.on_demand_builder.lock().unwrap();
+        if guard.is_none() {
             let mut builder = OnDemandGraphBuilder::new();
             let project_root = std::env::current_dir().map_err(|e| {
                 AppError::AnalysisError(format!("Failed to get current dir: {}", e))
             })?;
-
             builder
                 .set_index(&project_root)
                 .map_err(|e| AppError::AnalysisError(format!("Failed to build index: {}", e)))?;
-            self.on_demand_builder = Some(builder);
+            *guard = Some(builder);
         }
-
-        let result = self
-            .on_demand_builder
+        let result = guard
             .as_mut()
             .unwrap()
             .build_for_symbol(symbol, depth, direction);
-
         Ok(result)
     }
 
-    /// Builds the full project graph explicitly
+    /// Builds the full project graph explicitly.
     ///
     /// This method constructs the complete call graph for the project,
     /// parsing all source files and building all symbol relationships.
     /// Use this when you need the complete graph for global analysis.
-    pub fn build_full_graph(&mut self, project_dir: &Path) -> AppResult<()> {
+    pub fn build_full_graph(&self, project_dir: &Path) -> AppResult<()> {
         self.build_project_graph(project_dir)
     }
 
-    /// Finds symbols by name using the lightweight index
+    /// Finds symbols by name using the lightweight index.
     ///
     /// Returns all locations where the symbol is defined.
     pub fn find_symbol(
-        &mut self,
+        &self,
         symbol_name: &str,
     ) -> Vec<crate::infrastructure::graph::SymbolLocation> {
-        // Ensure index is built
-        let _ = self.symbol_index();
-        self.symbol_index
-            .as_ref()
-            .map(|idx| idx.find_symbol(symbol_name).to_vec())
-            .unwrap_or_default()
+        self.ensure_symbol_index()
+            .find_symbol(symbol_name)
+            .to_vec()
     }
 
     /// Builds a call graph by scanning all source files in a directory
