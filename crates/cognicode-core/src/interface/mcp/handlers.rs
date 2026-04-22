@@ -279,14 +279,14 @@ fn is_manifest_stale(manifest: &crate::domain::value_objects::file_manifest::Fil
         }
         checked += 1;
         let rel = path.strip_prefix(project_dir).unwrap_or(path);
-        let mtime = std::fs::metadata(path)
+        let mtime_ms = std::fs::metadata(path)
             .and_then(|m| m.modified())
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs())
+            .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         match manifest.entries.get(rel) {
-            Some(entry) if entry.mtime == mtime => continue,  // unchanged
+            Some(entry) if entry.mtime == mtime_ms => continue,  // unchanged
             _ => return true,  // new, modified, or missing from manifest
         }
     }
@@ -329,7 +329,7 @@ fn build_manifest(project_dir: &Path) -> std::io::Result<crate::domain::value_ob
             .and_then(|m| m.modified())
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs())
+            .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         // Use mtime as content_hash proxy (cheap — no file read needed)
         let _ = manifest.entries.insert(
@@ -483,7 +483,7 @@ pub async fn handle_get_call_hierarchy(
     ctx.validator.validate_query(&input.symbol_name)?;
 
     // Ensure the project graph is built before querying
-    ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx)?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -535,6 +535,9 @@ pub async fn handle_get_file_symbols(
 ) -> HandlerResult<serde_json::Value> {
     // Validate file path
     ctx.validator.validate_file_path(&input.file_path)?;
+
+    // Ensure graph is built for compressed output
+    let _ensure = ensure_graph_built(ctx)?;
 
     // Resolve the file path
     let file_path = if Path::new(&input.file_path).is_absolute() {
@@ -793,7 +796,7 @@ pub async fn handle_analyze_impact(
     ctx.validator.validate_query(&input.symbol_name)?;
 
     // Ensure the project graph is built before querying dependents
-    ensure_graph_built(ctx)?;
+    let ensure = ensure_graph_built(ctx)?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -840,13 +843,16 @@ pub async fn handle_analyze_impact(
         RiskLevel::Low
     };
 
+    let auto_note = if ensure.auto_built { ensure.message.clone() } else { String::new() };
+
     Ok(AnalyzeImpactOutput {
         symbol: input.symbol_name,
         impacted_files,
         impacted_symbols,
         risk_level,
         summary: format!(
-            "Impact analysis completed in {}ms. {} symbols across {} files would be affected.",
+            "{}Impact analysis completed in {}ms. {} symbols across {} files would be affected.",
+            auto_note,
             start.elapsed().as_millis(),
             symbols_count,
             files_count
@@ -854,26 +860,58 @@ pub async fn handle_analyze_impact(
     })
 }
 
+/// Result of ensuring a prerequisite is satisfied.
+#[derive(Debug, Clone)]
+pub struct EnsureResult {
+    /// True if the prerequisite was auto-resolved (wasn't ready before).
+    pub auto_built: bool,
+    /// Human-readable message about what was done.
+    pub message: String,
+    /// Number of symbols/nodes after resolution.
+    pub count: usize,
+}
+
+impl EnsureResult {
+    fn already_present(count: usize) -> Self {
+        Self { auto_built: false, message: String::new(), count }
+    }
+    fn auto_built(count: usize, elapsed_ms: u64) -> Self {
+        Self {
+            auto_built: true,
+            message: format!("Graph auto-built ({} symbols, {}ms). ", count, elapsed_ms),
+            count,
+        }
+    }
+}
+
 /// Ensures the project graph is built, building it on-demand if empty.
 /// This prevents empty callgraph results from being returned as "success with no data".
-fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<()> {
+fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
     let graph = ctx.analysis_service.get_project_graph();
-    // Check if graph is empty (no symbols built yet)
-    if graph.symbols().next().is_none() {
-        // Build the graph on demand
-        ctx.analysis_service.build_project_graph(&ctx.working_dir)
-            .map_err(|e| HandlerError::App(e))?;
+    let count = graph.symbols().count();
+    if count > 0 {
+        return Ok(EnsureResult::already_present(count));
     }
-    Ok(())
+    // Auto-build the graph
+    let start = std::time::Instant::now();
+    ctx.analysis_service.build_project_graph(&ctx.working_dir)
+        .map_err(HandlerError::App)?;
+    let graph = ctx.analysis_service.get_project_graph();
+    let count = graph.symbols().count();
+    let elapsed = start.elapsed().as_millis() as u64;
+    Ok(EnsureResult::auto_built(count, elapsed))
 }
 
 /// Ensures the semantic search index is populated, indexing the working directory on demand.
-fn ensure_semantic_indexed(ctx: &HandlerContext) -> HandlerResult<()> {
-    if ctx.semantic_search.index().is_empty() {
-        ctx.semantic_search.populate_from_directory(&ctx.working_dir)
-            .map_err(|e| HandlerError::Internal(e))?;
+fn ensure_semantic_indexed(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
+    if !ctx.semantic_search.index().is_empty() {
+        return Ok(EnsureResult::already_present(ctx.semantic_search.index().len()));
     }
-    Ok(())
+    let start = std::time::Instant::now();
+    ctx.semantic_search.populate_from_directory(&ctx.working_dir)
+        .map_err(|e| HandlerError::Internal(e))?;
+    let elapsed = start.elapsed().as_millis() as u64;
+    Ok(EnsureResult::auto_built(ctx.semantic_search.index().len(), elapsed))
 }
 
 /// Handler for check_architecture tool
@@ -889,7 +927,7 @@ pub async fn handle_check_architecture(
     }
 
     // Ensure graph is built before querying
-    ensure_graph_built(ctx)?;
+    let ensure = ensure_graph_built(ctx)?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -929,12 +967,15 @@ pub async fn handle_check_architecture(
         })
         .collect();
 
+    let auto_note = if ensure.auto_built { ensure.message.clone() } else { String::new() };
+
     Ok(CheckArchitectureOutput {
         cycles,
         violations,
         score,
         summary: format!(
-            "Architecture check completed in {}ms - {} cycles detected, {} symbols involved",
+            "{}Architecture check completed in {}ms - {} cycles detected, {} symbols involved",
+            auto_note,
             start.elapsed().as_millis(),
             cycle_result.cycles.len(),
             cycle_result.symbols_in_cycles()
@@ -1561,7 +1602,7 @@ pub async fn handle_get_entry_points(
     let start = Instant::now();
 
     // Ensure graph is built before querying
-    ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx)?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -1569,10 +1610,10 @@ pub async fn handle_get_entry_points(
     // Check if graph is empty after build attempt
     let root_ids = graph.roots();
     
-    // If still empty, return a clear message indicating graph needs to be built
+    // If still empty, return a helpful message
     if root_ids.len() == 0 && graph.symbol_count() == 0 {
         return Err(HandlerError::NotFound(
-            "Call graph is empty. Build the project graph first using build_graph tool.".into()
+            "No source code found in the project directory. Ensure the directory contains supported source files (.rs, .py, .ts, .js, .go, .java).".into()
         ));
     }
 
@@ -1623,7 +1664,7 @@ pub async fn handle_get_leaf_functions(
     let start = Instant::now();
 
     // Ensure graph is built before querying
-    ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx)?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -1631,10 +1672,10 @@ pub async fn handle_get_leaf_functions(
     // Check if graph is empty after build attempt
     let leaf_ids = graph.leaves();
     
-    // If still empty, return a clear message indicating graph needs to be built
+    // If still empty, return a helpful message
     if leaf_ids.len() == 0 && graph.symbol_count() == 0 {
         return Err(HandlerError::NotFound(
-            "Call graph is empty. Build the project graph first using build_graph tool.".into()
+            "No source code found in the project directory. Ensure the directory contains supported source files (.rs, .py, .ts, .js, .go, .java).".into()
         ));
     }
 
@@ -1689,7 +1730,7 @@ pub async fn handle_trace_path(
     ctx.validator.validate_query(&input.target)?;
 
     // Ensure graph is built before querying
-    ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx)?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -1743,7 +1784,7 @@ pub async fn handle_export_mermaid(
     let start = Instant::now();
 
     // Ensure the project graph is built before exporting
-    ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx)?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -1849,7 +1890,7 @@ pub async fn handle_get_hot_paths(
     let start = Instant::now();
 
     // Ensure graph is built before querying
-    ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx)?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -1857,7 +1898,7 @@ pub async fn handle_get_hot_paths(
     // Check if graph is empty after build attempt
     if graph.symbol_count() == 0 {
         return Err(HandlerError::NotFound(
-            "Call graph is empty. Build the project graph first using build_graph tool.".into()
+            "No source code found in the project directory. Ensure the directory contains supported source files (.rs, .py, .ts, .js, .go, .java).".into()
         ));
     }
 
@@ -2501,7 +2542,7 @@ pub async fn handle_semantic_search(
     }
 
     // Ensure the search index is populated before querying
-    ensure_semantic_indexed(ctx)?;
+    let _ensure = ensure_semantic_indexed(ctx)?;
 
     // Convert kind filters
     let kinds: Vec<SearchSymbolKind> = input.kinds.as_ref()
@@ -3260,5 +3301,78 @@ mod tests {
         assert!(output.mermaid_code.contains("handle_mcp_request"),
             "Expected 'handle_mcp_request' in output, got: {}", output.mermaid_code);
         assert!(output.node_count >= 1, "Expected at least 1 node, got {}", output.node_count);
+    }
+
+    // =============================================================================
+    // Ensure graph auto-build tests
+    // =============================================================================
+
+    #[tokio::test]
+    async fn test_ensure_graph_built_auto_resolves() {
+        // Create a temp dir with a Rust file
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, "fn main() { helper(); }\nfn helper() {}").unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Call ensure_graph_built on empty state — should auto-build
+        let result = ensure_graph_built(&ctx).unwrap();
+        assert!(result.auto_built);
+        assert!(result.count > 0);
+        assert!(result.message.contains("auto-built"));
+    }
+
+    #[tokio::test]
+    async fn test_ensure_graph_built_skips_when_present() {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, "fn main() { helper(); }\nfn helper() {}").unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Build graph first
+        ctx.analysis_service.build_project_graph(temp.path()).unwrap();
+
+        // Now ensure should not auto-build
+        let result = ensure_graph_built(&ctx).unwrap();
+        assert!(!result.auto_built);
+    }
+
+    #[tokio::test]
+    async fn test_analyze_impact_auto_builds_graph() {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, "fn main() { calculate(); }\nfn calculate() -> i32 { 42 }").unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Call analyze_impact WITHOUT calling build_graph first
+        let input = AnalyzeImpactInput { symbol_name: "calculate".to_string(), compressed: false };
+        let result = handle_analyze_impact(&ctx, input).await.unwrap();
+
+        // Should succeed (auto-built graph) and include auto-built note
+        assert!(result.summary.contains("auto-built") || result.summary.contains("auto_built"));
+    }
+
+    #[tokio::test]
+    async fn test_get_entry_points_auto_builds_graph() {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, "fn main() { helper(); }\nfn helper() {}").unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Call get_entry_points WITHOUT calling build_graph first
+        let input = GetEntryPointsInput { compressed: false };
+        let result = handle_get_entry_points(&ctx, input).await.unwrap();
+
+        // Should succeed with auto-built graph
+        // (entry_points may be empty for simple files, but shouldn't error)
+        assert!(result.total >= 0);
     }
 }
