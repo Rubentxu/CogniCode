@@ -157,7 +157,7 @@ impl LightweightIndex {
             let ts_parser = parser_cache.entry(language).or_insert_with(|| {
                 match TreeSitterParser::new(language) {
                     Ok(p) => p,
-                    Err(_) => return TreeSitterParser::new(Language::Rust).unwrap(),
+                    Err(_) => TreeSitterParser::new(Language::Rust).unwrap(),
                 }
             });
 
@@ -206,7 +206,7 @@ impl LightweightIndex {
             let ts_parser = parser_cache.entry(language).or_insert_with(|| {
                 match TreeSitterParser::new(language) {
                     Ok(p) => p,
-                    Err(_) => return TreeSitterParser::new(Language::Rust).unwrap(),
+                    Err(_) => TreeSitterParser::new(Language::Rust).unwrap(),
                 }
             });
 
