@@ -207,7 +207,7 @@ fn check_binary(name: &str, version_args: &[&str]) -> (bool, Option<String>, Opt
 
     let version = if found {
         // Try to get version
-        let version_output = Command::new(name)
+        Command::new(name)
             .args(version_args)
             .output()
             .ok()
@@ -219,8 +219,7 @@ fn check_binary(name: &str, version_args: &[&str]) -> (bool, Option<String>, Opt
                 } else {
                     Some(version_str)
                 }
-            });
-        version_output
+            })
     } else {
         None
     };

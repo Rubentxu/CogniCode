@@ -410,17 +410,10 @@ impl ExtractStrategy {
                 } else {
                     String::new()
                 };
-                if params_str.is_empty() {
-                    format!(
-                        "func {}({}){} {{\n    // body\n}}",
-                        name, params_str, return_type
-                    )
-                } else {
-                    format!(
-                        "func {}({}){} {{\n    // body\n}}",
-                        name, params_str, return_type
-                    )
-                }
+                format!(
+                    "func {}({}){} {{\n    // body\n}}",
+                    name, params_str, return_type
+                )
             }
             Language::Java => {
                 let return_type = if has_return {

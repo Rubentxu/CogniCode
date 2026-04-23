@@ -1018,8 +1018,7 @@ fn compute_variance(values: impl Iterator<Item = f64>) -> f64 {
         return 0.0;
     }
     let mean = values.iter().sum::<f64>() / n;
-    let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0);
-    variance
+    values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0)
 }
 
 /// Compute R² for a linear fit: latency = a * size + b
@@ -1596,8 +1595,6 @@ pub fn score_scenario(
             // Use call graph score if available, otherwise use symbol/outline/code/complexity score
             let base_score = if !call_graph_score.is_nan() {
                 call_graph_score
-            } else if !correctitud.is_nan() && correctitud > 0.0 {
-                correctitud
             } else {
                 correctitud
             };

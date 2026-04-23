@@ -137,13 +137,13 @@ impl MoveStrategy {
                 // Handle multi-line definitions
                 let mut text = String::new();
                 for line_num in start.row..=end.row {
-                    if line_num as usize >= lines.len() {
+                    if line_num >= lines.len() {
                         break;
                     }
                     if line_num > start.row {
                         text.push('\n');
                     }
-                    text.push_str(lines[line_num as usize]);
+                    text.push_str(lines[line_num]);
                 }
 
                 Ok(Some(text))
@@ -196,13 +196,13 @@ impl MoveStrategy {
         let mut text = String::new();
 
         for line_num in start.row..=end.row {
-            if line_num as usize >= lines.len() {
+            if line_num >= lines.len() {
                 break;
             }
             if line_num > start.row {
                 text.push('\n');
             }
-            text.push_str(lines[line_num as usize]);
+            text.push_str(lines[line_num]);
         }
 
         // Extract the module path (simplified - just get the text)
@@ -562,13 +562,11 @@ impl MoveStrategy {
             })?;
 
             // Add a blank line before the definition if file doesn't end with one
-            let def_with_separator = if existing.ends_with('\n') || existing.is_empty() {
+            if existing.ends_with('\n') || existing.is_empty() {
                 format!("{}\n{}", existing.trim_end(), definition_text)
             } else {
                 format!("{}\n\n{}", existing.trim_end(), definition_text)
-            };
-
-            def_with_separator
+            }
         } else {
             // Target file doesn't exist - create parent directories if needed
             if let Some(parent) = Path::new(target_file).parent() {

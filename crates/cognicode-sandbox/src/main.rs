@@ -394,7 +394,7 @@ fn execute_scenario(
     let repo_path = repos_dir.join(&repo_name);
 
     // Track temp directory for fixture isolation - must live for entire function
-    let temp_workspace_dir: Option<TempDir>;
+    let temp_workspace_dir_: Option<TempDir>;
     let workspace_path: PathBuf;
 
     // Determine whether to use repo or fixture
@@ -405,7 +405,7 @@ fn execute_scenario(
 
     if use_repo {
         // Use real repo directly - no temp workspace needed
-        temp_workspace_dir = None;
+        temp_workspace_dir_ = None;
         workspace_path = if scenario.workspace.is_empty() || scenario.workspace == "." {
             repo_path.clone()
         } else {
@@ -494,7 +494,7 @@ fn execute_scenario(
             }
         }
 
-        temp_workspace_dir = Some(temp_dir);
+        temp_workspace_dir_ = Some(temp_dir);
 
         // Determine the effective workspace directory
         // workspace can be:
@@ -544,7 +544,7 @@ fn execute_scenario(
         };
     } else {
         // Fallback to current directory
-        temp_workspace_dir = None;
+        temp_workspace_dir_ = None;
         workspace_path = PathBuf::from(".");
     }
 
@@ -968,6 +968,10 @@ fn execute_scenario(
         started_at,
         completed_at,
     };
+
+    // Explicitly drop to signal we intentionally don't read the value
+    // (TempDir cleanup happens via RAII when the Option is dropped)
+    let _ = temp_workspace_dir_;
 
     (scenario_result, captured_call)
 }
@@ -2134,8 +2138,6 @@ fn autoresearch(args: AutoresearchArgs, verbose: bool) -> Result<i32, String> {
     // Step 3: Determine status
     let status = if tests_ok && !sandbox_passed.starts_with("0/") {
         "keep"
-    } else if !tests_ok {
-        "discard"
     } else {
         "discard"
     };

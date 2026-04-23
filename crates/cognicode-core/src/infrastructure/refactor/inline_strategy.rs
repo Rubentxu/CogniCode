@@ -419,17 +419,7 @@ impl InlineStrategy {
             let call_text = self.extract_text_at_range(source, &call_site.range)?;
 
             // If there's a return type, we need to handle assignment context
-            let replacement = if plan.return_type.is_some() {
-                // Check if this is an assignment context based on the line
-                let line_text = &call_site.context;
-                if line_text.contains("let ") || line_text.contains("= ") {
-                    inlined_body.trim().to_string()
-                } else {
-                    inlined_body.trim().to_string()
-                }
-            } else {
-                inlined_body.trim().to_string()
-            };
+            let replacement = inlined_body.trim().to_string();
 
             result = result.replace(&call_text, &replacement);
         }
