@@ -176,7 +176,7 @@ impl InputValidator {
             let mut found = false;
             for ws in &self.allowed_paths {
                 let candidate = ws.join(&path_buf);
-                if candidate.exists() || candidate.parent().map_or(false, |p| p.exists()) {
+                if candidate.exists() || candidate.parent().is_some_and(|p| p.exists()) {
                     resolved = candidate;
                     found = true;
                     break;

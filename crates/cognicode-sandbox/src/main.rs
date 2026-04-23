@@ -278,7 +278,7 @@ fn load_manifests(paths: &[String]) -> Result<Vec<Manifest>, String> {
                 let entry_path = entry.path();
                 if entry_path
                     .extension()
-                    .map_or(false, |e| e == "yaml" || e == "yml")
+                    .is_some_and(|e| e == "yaml" || e == "yml")
                 {
                     let m = Manifest::from_path(&entry_path).map_err(|e| e.to_string())?;
                     manifests.push(m);
@@ -2236,7 +2236,7 @@ fn compute_regressions(current: &[ScenarioResult], baseline: &Summary) -> Vec<St
         .iter()
         .filter(|r| {
             r.outcome == "unexpected_fail"
-                && r.failure_class.as_ref().map_or(false, |fc| {
+                && r.failure_class.as_ref().is_some_and(|fc| {
                     !matches!(
                         fc,
                         FailureClass::CapabilityMissing
@@ -2274,7 +2274,7 @@ fn report(args: ReportArgs) -> Result<i32, String> {
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
-        if path.is_file() && path.file_name().map_or(false, |n| n == "result.json") {
+        if path.is_file() && path.file_name().is_some_and(|n| n == "result.json") {
             let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
             if let Ok(result) = serde_json::from_str::<ScenarioResult>(&content) {
                 results.push(result);
@@ -2288,7 +2288,7 @@ fn report(args: ReportArgs) -> Result<i32, String> {
     for r in results {
         let key = r.scenario_id.clone();
         let existing = latest.get(&key);
-        if existing.map_or(true, |e| r.completed_at > e.completed_at) {
+        if !existing.is_some_and(|e| r.completed_at <= e.completed_at) {
             latest.insert(key, r);
         }
     }
