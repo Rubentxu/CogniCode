@@ -184,7 +184,7 @@ impl PerFileGraphCache {
                 .collect()
         };
 
-        let path_refs: Vec<&Path> = paths.iter().map(|p| Path::new(p)).collect();
+        let path_refs: Vec<&Path> = paths.iter().map(Path::new).collect();
         self.merge(&path_refs)
     }
 

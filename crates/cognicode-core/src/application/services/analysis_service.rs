@@ -888,7 +888,7 @@ impl AnalysisService {
             .filter_map(|id| {
                 graph
                     .get_symbol(id)
-                    .map(|symbol| SymbolDto::from_symbol(symbol))
+                    .map(SymbolDto::from_symbol)
             })
             .collect()
     }
@@ -906,7 +906,7 @@ impl AnalysisService {
             .filter_map(|id| {
                 graph
                     .get_symbol(id)
-                    .map(|symbol| SymbolDto::from_symbol(symbol))
+                    .map(SymbolDto::from_symbol)
             })
             .collect()
     }
@@ -939,11 +939,11 @@ impl AnalysisService {
         Ok(path.map(|symbol_ids| {
             symbol_ids
                 .iter()
-                .filter_map(|id| {
-                    graph
-                        .get_symbol(id)
-                        .map(|symbol| SymbolDto::from_symbol(symbol))
-                })
+            .filter_map(|id| {
+                graph
+                    .get_symbol(id)
+                    .map(SymbolDto::from_symbol)
+            })
                 .collect()
         }))
     }

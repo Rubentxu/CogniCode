@@ -213,7 +213,7 @@ impl DependencyRepository for PetGraphStore {
                     .into_iter()
                     .filter_map(|idx| self.index_to_symbol.get(&idx).cloned())
                     .collect();
-                let ids: Vec<SymbolId> = names.iter().map(|n| SymbolId::new(n)).collect();
+                let ids: Vec<SymbolId> = names.iter().map(SymbolId::new).collect();
                 crate::domain::services::Cycle::new(ids, names)
             })
             .collect();

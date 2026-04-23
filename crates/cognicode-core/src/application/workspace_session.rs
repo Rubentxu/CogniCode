@@ -794,7 +794,7 @@ impl WorkspaceSession {
         let service = search_guard.as_ref()
             .ok_or_else(|| WorkspaceError::Internal(anyhow::anyhow!("Semantic search not initialized")))?;
 
-        let search_kinds = kinds.map(|k| Self::map_kind_strings(k)).unwrap_or_default();
+        let search_kinds = kinds.map(Self::map_kind_strings).unwrap_or_default();
 
         let search_query = SearchQuery {
             query: query.to_string(),
@@ -1261,7 +1261,7 @@ impl WorkspaceSession {
         // Collect all symbols and sort by (file_path, line)
         let mut symbols: Vec<SymbolDto> = graph
             .symbols()
-            .map(|s| SymbolDto::from_symbol(s))
+            .map(SymbolDto::from_symbol)
             .collect();
 
         symbols.sort_by(|a, b| {
