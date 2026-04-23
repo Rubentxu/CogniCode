@@ -168,7 +168,7 @@ impl SearchIndex {
                 let indexed = IndexedSymbol {
                     name: s.name().to_string(),
                     name_lower: s.name().to_lowercase(),
-                    kind: s.kind().clone(),
+                    kind: *s.kind(),
                     location: s.location().clone(),
                 };
                 self.all_symbols.insert(key, indexed.clone());
@@ -241,7 +241,7 @@ impl SearchIndex {
             if heap.len() < query.max_results {
                 let symbol = Symbol::new(
                     indexed.name.clone(),
-                    indexed.kind.clone(),
+                    indexed.kind,
                     indexed.location.clone(),
                 );
                 heap.push(Reverse(SearchResult::new(symbol, score, match_type)));
@@ -249,7 +249,7 @@ impl SearchIndex {
                 let temp_result = SearchResult::new(
                     Symbol::new(
                         indexed.name.clone(),
-                        indexed.kind.clone(),
+                        indexed.kind,
                         indexed.location.clone(),
                     ),
                     score,

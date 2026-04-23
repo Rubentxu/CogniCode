@@ -103,7 +103,7 @@ impl AnalysisService {
             let mut index = LightweightIndex::new();
             for symbol in graph.symbols() {
                 let location =
-                    SymbolLocation::from_location(symbol.location(), symbol.kind().clone());
+                    SymbolLocation::from_location(symbol.location(), *symbol.kind());
                 let name_lower = symbol.name().to_lowercase();
                 index.insert(name_lower, location);
             }
@@ -253,7 +253,7 @@ impl AnalysisService {
                 }
 
                 let source = std::fs::read_to_string(&path).ok()?;
-                let parser = TreeSitterParser::with_cache(language.clone()).ok()?;
+                let parser = TreeSitterParser::with_cache(language).ok()?;
 
                 let symbols = parser
                     .find_all_symbols_with_path(&source, &file_path)
@@ -362,7 +362,7 @@ impl AnalysisService {
         let mut store = PetGraphStore::new();
         for (name, locations) in index.entries() {
             for loc in locations {
-                let sym_kind = loc.symbol_kind.clone();
+                let sym_kind = loc.symbol_kind;
                 let location = Location::new(
                     loc.file.clone(),
                     loc.line,
@@ -505,7 +505,7 @@ impl AnalysisService {
                 }
 
                 let source = std::fs::read_to_string(&path).ok()?;
-                let parser = TreeSitterParser::with_cache(language.clone()).ok()?;
+                let parser = TreeSitterParser::with_cache(language).ok()?;
 
                 let symbols = parser
                     .find_all_symbols_with_path(&source, &file_path)
@@ -661,17 +661,17 @@ impl AnalysisService {
                         }
                     }
 
-                    let source = std::fs::read_to_string(&path).ok()?;
-                    let parser = TreeSitterParser::with_cache(language.clone()).ok()?;
+                let source = std::fs::read_to_string(&path).ok()?;
+                let parser = TreeSitterParser::with_cache(language).ok()?;
 
-                    let symbols = parser
-                        .find_all_symbols_with_path(&source, &file_path)
-                        .unwrap_or_default();
-                    let relationships = parser
-                        .find_call_relationships(&source, &file_path)
-                        .unwrap_or_default();
+                let symbols = parser
+                    .find_all_symbols_with_path(&source, &file_path)
+                    .unwrap_or_default();
+                let relationships = parser
+                    .find_call_relationships(&source, &file_path)
+                    .unwrap_or_default();
 
-                    Some((file_path, mtime, symbols, relationships, true)) // from_cache = false (parsed)
+                Some((file_path, mtime, symbols, relationships, true)) // from_cache = false (parsed)
                 })
                 .collect();
 

@@ -165,7 +165,7 @@ impl LightweightIndex {
                 for symbol in symbols {
                     let name_lower = symbol.name().to_lowercase();
                     let location =
-                        SymbolLocation::from_location(symbol.location(), symbol.kind().clone());
+                        SymbolLocation::from_location(symbol.location(), *symbol.kind());
 
                     if let Some(file_names) = self.file_index.get_mut(&file_path) {
                         if file_name_set.insert(name_lower.clone()) {
@@ -214,7 +214,7 @@ impl LightweightIndex {
                 for symbol in symbols {
                     let name_lower = symbol.name().to_lowercase();
                     let location =
-                        SymbolLocation::from_location(symbol.location(), symbol.kind().clone());
+                        SymbolLocation::from_location(symbol.location(), *symbol.kind());
 
                     if let Some(file_names) = self.file_index.get_mut(file_path) {
                         if !file_names.contains(&name_lower) {

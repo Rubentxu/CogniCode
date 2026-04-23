@@ -261,7 +261,7 @@ impl OnDemandGraphBuilder {
         let root_loc = locations[0].clone();
         let root_symbol = Symbol::new(
             symbol_name,
-            root_loc.symbol_kind.clone(),
+            root_loc.symbol_kind,
             Location::new(&root_loc.file, root_loc.line, root_loc.column),
         );
 
@@ -351,7 +351,7 @@ impl OnDemandGraphBuilder {
         // Add source symbol
         let source_symbol = Symbol::new(
             source_name,
-            source_loc.symbol_kind.clone(),
+            source_loc.symbol_kind,
             Location::new(&source_loc.file, source_loc.line, source_loc.column),
         );
         graph.add_symbol(source_symbol);
@@ -359,7 +359,7 @@ impl OnDemandGraphBuilder {
         // Add target symbol
         let target_symbol = Symbol::new(
             target_name,
-            target_loc.symbol_kind.clone(),
+            target_loc.symbol_kind,
             Location::new(&target_loc.file, target_loc.line, target_loc.column),
         );
         graph.add_symbol(target_symbol);
@@ -407,7 +407,7 @@ impl OnDemandGraphBuilder {
             loc.file.clone(),
             loc.line,
             loc.column,
-            loc.symbol_kind.clone(),
+            loc.symbol_kind,
         ))
     }
 
@@ -424,7 +424,7 @@ impl OnDemandGraphBuilder {
         let mut result = CallHierarchyResult {
             root_symbol: Symbol::new(
                 item.name.clone(),
-                item.kind.clone(),
+                item.kind,
                 Location::new(&item.file, item.line, item.column),
             ),
             entries: Vec::new(),
@@ -758,7 +758,7 @@ impl OnDemandGraphBuilder {
             if visited.insert(key.clone()) {
                 let callee_symbol = Symbol::new(
                     callee_name,
-                    callee_loc.symbol_kind.clone(),
+                    callee_loc.symbol_kind,
                     Location::new(&callee_loc.file, callee_loc.line, callee_loc.column),
                 );
 
@@ -817,7 +817,7 @@ impl OnDemandGraphBuilder {
             if visited.insert(key.clone()) {
                 let caller_symbol = Symbol::new(
                     caller.name(),
-                    caller_loc.symbol_kind.clone(),
+                    caller_loc.symbol_kind,
                     Location::new(&caller_loc.file, caller_loc.line, caller_loc.column),
                 );
 

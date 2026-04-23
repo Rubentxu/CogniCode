@@ -653,7 +653,7 @@ impl CallGraph {
         for event in events {
             match event {
                 GraphEvent::SymbolAdded(e) => {
-                    let symbol = Symbol::new(e.name.clone(), e.kind.clone(), e.location.clone());
+                    let symbol = Symbol::new(e.name.clone(), e.kind, e.location.clone());
                     self.add_symbol(symbol);
                 }
                 GraphEvent::SymbolRemoved(e) => {

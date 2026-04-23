@@ -74,7 +74,7 @@ impl ComplexityCalculator {
         let mut complexity = 0;
 
         // Increments for nesting
-        for (_i, dp) in decision_points.iter().enumerate() {
+        for dp in decision_points.iter() {
             // Structural complexity increases with nesting
             let nesting_bonus = std::cmp::min(nesting_depth, 3) as u32;
             let base = match dp {

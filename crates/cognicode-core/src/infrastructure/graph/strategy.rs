@@ -108,7 +108,7 @@ impl GraphStrategy for LightweightStrategy {
         let root_symbol = if let Some(loc) = locations.first() {
             crate::domain::aggregates::symbol::Symbol::new(
                 symbol_name,
-                loc.symbol_kind.clone(),
+                loc.symbol_kind,
                 crate::domain::value_objects::Location::new(&loc.file, loc.line, loc.column),
             )
         } else {

@@ -140,7 +140,7 @@ impl PerFileGraphCache {
             for symbol in graph.symbols() {
                 let new_symbol = Symbol::new(
                     symbol.name(),
-                    symbol.kind().clone(),
+                    *symbol.kind(),
                     Location::new(
                         symbol.location().file(),
                         symbol.location().line(),
