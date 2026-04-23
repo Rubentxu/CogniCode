@@ -127,7 +127,7 @@ impl LightweightIndex {
             if path.is_dir() {
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                     // Skip if directory name matches any SKIP_DIRS entry
-                    if SKIP_DIRS.iter().any(|&skip| name == skip) {
+                    if SKIP_DIRS.contains(&name) {
                         continue;
                     }
                     // Skip hidden directories (except .git which is already handled)
@@ -152,7 +152,7 @@ impl LightweightIndex {
 
             self.file_index
                 .entry(file_path.clone())
-                .or_insert_with(Vec::new);
+                .or_default();
 
             let ts_parser = parser_cache.entry(language).or_insert_with(|| {
                 match TreeSitterParser::new(language) {
@@ -175,7 +175,7 @@ impl LightweightIndex {
 
                     self.index
                         .entry(name_lower)
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(location);
                 }
             }
@@ -201,7 +201,7 @@ impl LightweightIndex {
 
             self.file_index
                 .entry(file_path.to_string())
-                .or_insert_with(Vec::new);
+                .or_default();
 
             let ts_parser = parser_cache.entry(language).or_insert_with(|| {
                 match TreeSitterParser::new(language) {
@@ -224,7 +224,7 @@ impl LightweightIndex {
 
                     self.index
                         .entry(name_lower)
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(location);
                 }
             }
@@ -306,13 +306,13 @@ impl LightweightIndex {
     pub fn insert(&mut self, name: impl Into<String>, location: SymbolLocation) {
         let name_lower = name.into().to_lowercase();
         let file_path = location.file.clone();
-        self.index
-            .entry(name_lower.clone())
-            .or_insert_with(Vec::new)
-            .push(location);
+                    self.index
+                        .entry(name_lower.clone())
+                        .or_default()
+                        .push(location);
         self.file_index
             .entry(file_path)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(name_lower);
     }
 

@@ -1433,13 +1433,13 @@ fn aggregate_summary(results: &[ScenarioResult]) -> Summary {
         // Track per-language durations
         lang_durations
             .entry(r.language.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(r.timing_ms.total_ms);
 
         // Track per-tool durations
         tool_durations
             .entry(r.tool.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(r.timing_ms.total_ms);
 
         match r.outcome.as_str() {

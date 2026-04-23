@@ -67,13 +67,13 @@ impl CallGraph {
     pub fn add_symbol(&mut self, symbol: Symbol) -> SymbolId {
         let id = SymbolId::new(symbol.fully_qualified_name());
         self.symbols.entry(id.clone()).or_insert_with(|| {
-            self.edges.entry(id.clone()).or_insert_with(HashSet::new);
+            self.edges.entry(id.clone()).or_default();
             self.reverse_edges
                 .entry(id.clone())
-                .or_insert_with(HashSet::new);
+                .or_default();
             self.name_index
                 .entry(symbol.name().to_lowercase())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(id.clone());
             symbol
         });
@@ -98,13 +98,13 @@ impl CallGraph {
         // Add edge
         self.edges
             .entry(source_id.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert((target_id.clone(), dependency_type));
 
         // Add reverse edge
         self.reverse_edges
             .entry(target_id.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(source_id.clone());
 
         Ok(())

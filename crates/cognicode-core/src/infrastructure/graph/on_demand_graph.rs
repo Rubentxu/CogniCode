@@ -42,7 +42,7 @@ impl CallHierarchyResult {
             if entry.direction == TraversalDirection::Callees {
                 result
                     .entry(entry.depth)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(entry);
             }
         }
@@ -56,7 +56,7 @@ impl CallHierarchyResult {
             if entry.direction == TraversalDirection::Callers {
                 result
                     .entry(entry.depth)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(entry);
             }
         }
