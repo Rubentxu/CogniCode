@@ -912,7 +912,7 @@ impl OnDemandGraphBuilder {
                     if !visited.contains(&callee_name.to_lowercase()) {
                         visited.insert(callee_name.to_lowercase());
 
-                        let callee_locs = self.index.read().unwrap().find_symbol(&callee_name);
+                        let callee_locs = self.index.read().unwrap().find_symbol(callee_name);
                         if let Some(callee_loc) = callee_locs.first() {
                             let new_path = {
                                 let mut p = path.clone();

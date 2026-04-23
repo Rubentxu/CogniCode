@@ -2275,7 +2275,7 @@ fn report(args: ReportArgs) -> Result<i32, String> {
     {
         let path = entry.path();
         if path.is_file() && path.file_name().map_or(false, |n| n == "result.json") {
-            let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+            let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
             if let Ok(result) = serde_json::from_str::<ScenarioResult>(&content) {
                 results.push(result);
             }
