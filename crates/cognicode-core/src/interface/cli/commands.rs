@@ -374,7 +374,7 @@ impl CommandExecutor {
                     for loc in locations {
                         println!("  {}:{}:{} ({})",
                             loc.file, loc.line, loc.column,
-                            format!("{:?}", loc.symbol_kind));
+                            format_args!("{:?}", loc.symbol_kind));
                     }
                 }
             }
@@ -1139,7 +1139,7 @@ fn print_outline_tree(nodes: &[OutlineNode], indent: usize) {
             .map(|s| format!(": {}", s))
             .unwrap_or_default();
 
-        println!("{}{} ({}){}", prefix, node.name, format!("{:?}", node.kind), sig_info);
+        println!("{}{} ({}){sig_info}", prefix, node.name, node.kind);
 
         if !node.children.is_empty() {
             print_outline_tree(&node.children, indent + 1);
