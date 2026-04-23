@@ -1463,7 +1463,7 @@ fn aggregate_summary(results: &[ScenarioResult]) -> Summary {
         let lang_entry = summary
             .by_language
             .entry(r.language.clone())
-            .or_insert_with(|| cognicode_core::sandbox_core::artifacts::LanguageBreakdown::new());
+            .or_insert_with(cognicode_core::sandbox_core::artifacts::LanguageBreakdown::new);
         lang_entry.total += 1;
         if r.outcome == "pass" || r.outcome == "expected_fail" || r.outcome == "preexisting_fail" {
             lang_entry.passed += 1;
@@ -1481,7 +1481,7 @@ fn aggregate_summary(results: &[ScenarioResult]) -> Summary {
         let tool_entry = summary
             .by_tool
             .entry(r.tool.clone())
-            .or_insert_with(|| cognicode_core::sandbox_core::artifacts::ToolBreakdown::new());
+            .or_insert_with(cognicode_core::sandbox_core::artifacts::ToolBreakdown::new);
         tool_entry.total += 1;
         if r.outcome == "pass" || r.outcome == "expected_fail" || r.outcome == "preexisting_fail" {
             tool_entry.passed += 1;

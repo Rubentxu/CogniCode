@@ -365,7 +365,7 @@ pub fn run_doctor_checks(workspace_path: Option<&Path>) -> DoctorReport {
 
     // Detect workspace languages if path provided
     let detected_languages = workspace_path
-        .map(|p| detect_workspace_languages(p))
+        .map(detect_workspace_languages)
         .unwrap_or_default();
 
     let workspace_info = workspace_path.map(|p| WorkspaceInfo {

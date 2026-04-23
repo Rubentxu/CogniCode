@@ -1104,7 +1104,7 @@ fn parse_outline_nodes(value: &Value) -> Vec<OutlineNodeParsed> {
 
     if let Some(arr) = nodes_value.as_array() {
         arr.iter()
-            .filter_map(|v| parse_single_outline_node(v))
+            .filter_map(parse_single_outline_node)
             .collect()
     } else {
         Vec::new()
@@ -1125,7 +1125,7 @@ fn parse_single_outline_node(value: &Value) -> Option<OutlineNodeParsed> {
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|v| parse_single_outline_node(v))
+            .filter_map(parse_single_outline_node)
                 .collect()
         })
         .unwrap_or_default();

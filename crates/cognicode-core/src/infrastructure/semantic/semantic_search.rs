@@ -361,7 +361,7 @@ impl SemanticSearchService {
         let extension = file_path.extension().and_then(|e| e.to_str());
 
         let language =
-            Language::from_extension(extension.as_ref().map(|s| std::ffi::OsStr::new(s)))
+            Language::from_extension(extension.as_ref().map(std::ffi::OsStr::new))
                 .ok_or_else(|| "Unsupported file type".to_string())?;
 
         let source = std::fs::read_to_string(file_path)
@@ -425,7 +425,7 @@ impl SemanticSearchService {
 
             let extension = path.extension().and_then(|e| e.to_str());
             let language = crate::infrastructure::parser::Language::from_extension(
-                extension.as_ref().map(|s| std::ffi::OsStr::new(s)),
+                extension.as_ref().map(std::ffi::OsStr::new),
             );
 
             if let Some(_lang) = language {
