@@ -3,7 +3,6 @@
 //! End-to-end tests that validate the complete LSP stack with real language server binaries.
 //! These tests are ignored by default and run only when the respective LSP binaries are available.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
 

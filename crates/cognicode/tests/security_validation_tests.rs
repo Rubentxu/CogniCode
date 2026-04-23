@@ -28,6 +28,7 @@ fn test_path_validation_rule_allows_safe_paths() {
     std::fs::create_dir_all(&workspace).unwrap();
 
     let safe_file = workspace.join("src").join("main.rs");
+    std::fs::create_dir_all(safe_file.parent().unwrap()).unwrap();
     std::fs::write(&safe_file, "fn main() {}").unwrap();
 
     // Safe path within workspace should be allowed

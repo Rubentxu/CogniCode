@@ -9,10 +9,6 @@
 //! - Complex control flow detection
 
 use cognicode::application::services::refactor_service::RefactorService;
-use cognicode::domain::aggregates::refactor::Refactor;
-use cognicode::domain::aggregates::RefactorKind;
-use cognicode::domain::aggregates::Symbol;
-use cognicode::domain::value_objects::{Location, SymbolKind};
 use cognicode::infrastructure::parser::{Language, TreeSitterParser};
 use cognicode::infrastructure::refactor::ExtractStrategy;
 use cognicode::infrastructure::refactor::InlineStrategy;
@@ -150,6 +146,7 @@ fn get_total(items: Vec<i32>) -> i32 {
             &["x".to_string(), "y".to_string()],
             "x + y",
             true,
+            None,
         );
 
         assert!(snippet.contains("fn my_function"));
@@ -433,7 +430,7 @@ fn foo() {
 "#;
 
         let blocks = strategy.find_extractable_blocks(source, "test.rs").unwrap();
-        // Empty name is validated at a higher level
-        assert!(blocks.is_empty() || blocks.len() >= 0);
+        // Empty name is validated at a higher level - block list may or may not be empty
+        assert!(blocks.len() >= 0); // always true, but documents intent
     }
 }

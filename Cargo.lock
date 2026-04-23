@@ -399,6 +399,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cognicode"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "cognicode-core",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "cognicode-cli"
 version = "0.4.0"
 dependencies = [
