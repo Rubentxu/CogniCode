@@ -793,7 +793,7 @@ impl CommandExecutor {
                     "HIGH"
                 } else if impacted_symbols.len() > 2 {
                     "MEDIUM"
-                } else if impacted_symbols.len() > 0 {
+                } else if !impacted_symbols.is_empty() {
                     "LOW"
                 } else {
                     "NONE"

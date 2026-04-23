@@ -1611,7 +1611,7 @@ pub async fn handle_get_entry_points(
     let root_ids = graph.roots();
     
     // If still empty, return a helpful message
-    if root_ids.len() == 0 && graph.symbol_count() == 0 {
+    if root_ids.is_empty() && graph.symbol_count() == 0 {
         return Err(HandlerError::NotFound(
             "No source code found in the project directory. Ensure the directory contains supported source files (.rs, .py, .ts, .js, .go, .java).".into()
         ));
@@ -1673,7 +1673,7 @@ pub async fn handle_get_leaf_functions(
     let leaf_ids = graph.leaves();
     
     // If still empty, return a helpful message
-    if leaf_ids.len() == 0 && graph.symbol_count() == 0 {
+    if leaf_ids.is_empty() && graph.symbol_count() == 0 {
         return Err(HandlerError::NotFound(
             "No source code found in the project directory. Ensure the directory contains supported source files (.rs, .py, .ts, .js, .go, .java).".into()
         ));
