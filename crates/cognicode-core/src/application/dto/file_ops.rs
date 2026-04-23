@@ -9,18 +9,13 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// Read mode for file content
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum ReadMode {
+    #[default]
     Raw,
     Outline,
     Symbols,
     Compressed,
-}
-
-impl Default for ReadMode {
-    fn default() -> Self {
-        ReadMode::Raw
-    }
 }
 
 impl std::fmt::Display for ReadMode {

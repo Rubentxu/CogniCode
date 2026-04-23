@@ -1643,7 +1643,7 @@ fn generate_markdown_summary(results: &[ScenarioResult], summary: &Summary) -> S
     let mut md = String::new();
 
     writeln!(md, "# CogniCode Sandbox Validation Report").unwrap();
-    writeln!(md, "").unwrap();
+    writeln!(md).unwrap();
     writeln!(md, "**Date**: {}", summary.run_started_at).unwrap();
     writeln!(
         md,
@@ -1671,12 +1671,12 @@ fn generate_markdown_summary(results: &[ScenarioResult], summary: &Summary) -> S
         fmt_dim(summary.dimension_scores.robustez)
     )
     .unwrap();
-    writeln!(md, "").unwrap();
+    writeln!(md).unwrap();
 
     // Per-language breakdown
     if !summary.by_language.is_empty() {
         writeln!(md, "## Per-Language Breakdown").unwrap();
-        writeln!(md, "").unwrap();
+        writeln!(md).unwrap();
         writeln!(
             md,
             "| Language | Total | Passed | Failed | Pass Rate | p50 | p95 | p99 |"
@@ -1706,13 +1706,13 @@ fn generate_markdown_summary(results: &[ScenarioResult], summary: &Summary) -> S
             )
             .unwrap();
         }
-        writeln!(md, "").unwrap();
+        writeln!(md).unwrap();
     }
 
     // Per-tool breakdown
     if !summary.by_tool.is_empty() {
         writeln!(md, "## Per-Tool Breakdown").unwrap();
-        writeln!(md, "").unwrap();
+        writeln!(md).unwrap();
         writeln!(
             md,
             "| Tool | Total | Passed | Failed | Pass Rate | p50 | p95 | p99 |"
@@ -1742,21 +1742,21 @@ fn generate_markdown_summary(results: &[ScenarioResult], summary: &Summary) -> S
             )
             .unwrap();
         }
-        writeln!(md, "").unwrap();
+        writeln!(md).unwrap();
     }
 
     // Timing distribution
     if summary.duration_p50_ms.is_some() {
         writeln!(md, "## Timing Distribution").unwrap();
-        writeln!(md, "").unwrap();
+        writeln!(md).unwrap();
         writeln!(md, "- **p50**: {}ms", summary.duration_p50_ms.unwrap_or(0)).unwrap();
         writeln!(md, "- **p95**: {}ms", summary.duration_p95_ms.unwrap_or(0)).unwrap();
         writeln!(md, "- **p99**: {}ms", summary.duration_p99_ms.unwrap_or(0)).unwrap();
-        writeln!(md, "").unwrap();
+        writeln!(md).unwrap();
     }
 
     writeln!(md, "## Results").unwrap();
-    writeln!(md, "").unwrap();
+    writeln!(md).unwrap();
     writeln!(
         md,
         "| Scenario | Language | Tool | Action | Outcome | Duration |"
@@ -1777,15 +1777,15 @@ fn generate_markdown_summary(results: &[ScenarioResult], summary: &Summary) -> S
         .unwrap();
     }
 
-    writeln!(md, "").unwrap();
+    writeln!(md).unwrap();
 
     if !summary.failure_distribution.is_empty() {
         writeln!(md, "## Failure Distribution").unwrap();
-        writeln!(md, "").unwrap();
+        writeln!(md).unwrap();
         for (class, count) in &summary.failure_distribution {
             writeln!(md, "- **{}**: {}", class, count).unwrap();
         }
-        writeln!(md, "").unwrap();
+        writeln!(md).unwrap();
     }
 
     md

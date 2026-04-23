@@ -252,9 +252,9 @@ pub enum ViolationCode {
 ///
 /// Note: This enum uses explicit ordinal values but comparisons should
 /// use RiskThreshold::is_above() to avoid ordinal assumptions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum RiskLevel {
-    /// No risk
+    #[default]
     None = 0,
     /// Low risk operation
     Low = 1,
@@ -264,12 +264,6 @@ pub enum RiskLevel {
     High = 3,
     /// Critical risk operation
     Critical = 4,
-}
-
-impl Default for RiskLevel {
-    fn default() -> Self {
-        RiskLevel::None
-    }
 }
 
 // =============================================================================
