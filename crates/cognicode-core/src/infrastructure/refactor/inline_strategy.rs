@@ -158,7 +158,7 @@ impl InlineStrategy {
                 if child.kind() == "arguments" {
                     for j in 0..child.child_count() {
                         if let Some(arg) = child.child(j) {
-                            if let Some(text) = arg.utf8_text(source_bytes).ok() {
+                            if let Ok(text) = arg.utf8_text(source_bytes) {
                                 let trimmed = text.trim();
                                 if !trimmed.is_empty() && trimmed != "," {
                                     arguments.push(trimmed.to_string());
@@ -276,7 +276,7 @@ impl InlineStrategy {
                 if child.kind() == "parameters" {
                     for j in 0..child.child_count() {
                         if let Some(param) = child.child(j) {
-                            if let Some(text) = param.utf8_text(source_bytes).ok() {
+                            if let Ok(text) = param.utf8_text(source_bytes) {
                                 let trimmed = text.trim();
                                 if !trimmed.is_empty() && trimmed != "," {
                                     params.push(trimmed.to_string());

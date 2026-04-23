@@ -189,13 +189,13 @@ impl GraphStrategy for OnDemandStrategy {
                 })?;
 
         let parser = TreeSitterParser::new(language)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
         let symbols = parser
             .find_all_symbols_with_path(&source, &file_path_str)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
         let relationships = parser
             .find_call_relationships(&source, &file_path_str)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let mut graph = CallGraph::new();
         let mut name_to_id: std::collections::HashMap<
@@ -388,13 +388,13 @@ impl GraphStrategy for FullGraphStrategy {
                 })?;
 
         let parser = TreeSitterParser::new(language)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
         let symbols = parser
             .find_all_symbols_with_path(&source, &file_path_str)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
         let relationships = parser
             .find_call_relationships(&source, &file_path_str)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let mut graph = CallGraph::new();
         let mut name_to_id: std::collections::HashMap<
