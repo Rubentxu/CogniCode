@@ -909,7 +909,7 @@ fn ensure_semantic_indexed(ctx: &HandlerContext) -> HandlerResult<EnsureResult> 
     }
     let start = std::time::Instant::now();
     ctx.semantic_search.populate_from_directory(&ctx.working_dir)
-        .map_err(|e| HandlerError::Internal(e))?;
+        .map_err(HandlerError::Internal)?;
     let elapsed = start.elapsed().as_millis() as u64;
     Ok(EnsureResult::auto_built(ctx.semantic_search.index().len(), elapsed))
 }

@@ -885,6 +885,9 @@ fn execute_scenario(
         run_validation_pipeline(scenario, &workspace_path, verbose)
     };
 
+    // Compute validation_ms from stage durations
+    let validation_ms = validation_result.stages.iter().map(|s| s.duration_ms).sum();
+
     // Check for resource limit exceeded (SIGKILL = exit code 137) in validation stages
     for stage in &validation_result.stages {
         if let Some(code) = stage.exit_code {

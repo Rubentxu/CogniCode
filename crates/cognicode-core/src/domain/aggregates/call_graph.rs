@@ -394,7 +394,7 @@ impl CallGraph {
     ///
     /// Generates a directed graph representation suitable for Mermaid flowchart syntax.
     pub fn to_mermaid(&self, title: &str) -> String {
-        let mut mermaid = format!("flowchart TD\n");
+        let mut mermaid = String::from("flowchart TD\n");
         mermaid.push_str(&format!("    %% {}\n", title));
 
         // Add node declarations
@@ -667,7 +667,7 @@ impl CallGraph {
                         // Create updated symbol
                         let new_symbol = Symbol::new(
                             e.name.clone(),
-                            symbol.kind().clone(),
+                            *symbol.kind(),
                             e.new_location.clone(),
                         );
                         let new_id = SymbolId::new(e.new_location.fully_qualified_name());
