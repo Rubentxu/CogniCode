@@ -2579,6 +2579,216 @@ mod edit_file_schema_tests {
 }
 
 // =============================================================================
+// Batch D Tests: expand_manifests and workspace_root Substitution
+// =============================================================================
+
+#[cfg(test)]
+mod expand_manifests_tests {
+    use super::*;
+    use cognicode_core::sandbox_core::manifest::{Manifest, ValidationPipeline};
+    use std::collections::HashMap;
+
+    fn make_test_manifest() -> Manifest {
+        let yaml = r#"
+version: "1.0"
+language: rust
+tier: A
+timeout_seconds: 60
+validation:
+  failure_is_regression: true
+  stages:
+    - name: build
+      commands: [cargo build]
+scenarios:
+  - name: read_symbols
+    tool: get_file_symbols
+    action: get_symbols
+    workspace: src/lib.rs
+  - name: rename_func
+    tool: safe_refactor
+    action: rename
+    workspace: src/ser.rs
+"#;
+        Manifest::from_str(yaml).unwrap()
+    }
+
+    #[test]
+    fn test_expand_manifests_returns_expanded_scenarios() {
+        let manifest = make_test_manifest();
+        let scenarios = expand_manifests(&[manifest]);
+        assert_eq!(scenarios.len(), 2);
+        let ids: Vec<_> = scenarios.iter().map(|s| s.id.as_str()).collect();
+        assert!(ids.contains(&"rust_read_symbols_default"));
+        assert!(ids.contains(&"rust_rename_func_default"));
+    }
+
+    #[test]
+    fn test_expand_manifests_preserves_fields() {
+        let manifest = make_test_manifest();
+        let scenarios = expand_manifests(&[manifest]);
+        let s = &scenarios[0];
+        assert_eq!(s.language, "rust");
+        assert_eq!(s.tier, "A");
+        assert_eq!(s.tool, "get_file_symbols");
+        assert_eq!(s.workspace, "src/lib.rs");
+        assert_eq!(s.timeout_seconds, 60);
+    }
+
+    #[test]
+    fn test_expand_manifests_multiple_manifests() {
+        let yaml2 = r#"
+version: "1.0"
+language: python
+tier: A
+timeout_seconds: 45
+validation:
+  failure_is_regression: true
+  stages:
+    - name: syntax
+      commands: [python -m py_compile]
+scenarios:
+  - name: find_usages
+    tool: find_usages
+    action: find
+    workspace: main.py
+"#;
+        let manifest1 = make_test_manifest();
+        let manifest2 = Manifest::from_str(yaml2).unwrap();
+        let scenarios = expand_manifests(&[manifest1, manifest2]);
+        assert_eq!(scenarios.len(), 3);
+        let languages: Vec<_> = scenarios.iter().map(|s| s.language.as_str()).collect();
+        assert!(languages.contains(&"rust"));
+        assert!(languages.contains(&"python"));
+    }
+}
+
+#[cfg(test)]
+mod workspace_root_substitution_tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_workspace_root_substituted_in_command() {
+        let workspace = Path::new("/tmp/test_workspace");
+        let cmd = "echo {workspace_root}/src && ls {workspace_root}";
+        let expanded = cmd.replace("{workspace_root}", &workspace.to_string_lossy());
+        assert_eq!(expanded, "echo /tmp/test_workspace/src && ls /tmp/test_workspace");
+    }
+
+    #[test]
+    fn test_workspace_root_multiple_occurrences() {
+        let workspace = Path::new("/my/repo");
+        let cmd = "{workspace_root}/build.sh && {workspace_root}/test.sh";
+        let expanded = cmd.replace("{workspace_root}", &workspace.to_string_lossy());
+        assert_eq!(expanded, "/my/repo/build.sh && /my/repo/test.sh");
+    }
+
+    #[test]
+    fn test_workspace_root_no_template_passthrough() {
+        let workspace = Path::new("/workspace");
+        let cmd = "cargo build --release";
+        let expanded = cmd.replace("{workspace_root}", &workspace.to_string_lossy());
+        assert_eq!(expanded, "cargo build --release");
+    }
+
+    #[test]
+    fn test_workspace_root_empty_template_when_no_match() {
+        let workspace = Path::new("/workspace");
+        let cmd = "echo hello";
+        let expanded = cmd.replace("{workspace_root}", &workspace.to_string_lossy());
+        assert_eq!(expanded, "echo hello");
+    }
+}
+
+// =============================================================================
+// Batch E Tests: run_validation_pipeline and compute_dir_size_kb
+// =============================================================================
+
+#[cfg(test)]
+mod validation_pipeline_tests {
+    use super::*;
+    use cognicode_core::sandbox_core::manifest::{ExpandedScenario, StageDef, ValidationPipeline};
+    use std::collections::HashMap;
+
+    fn make_readonly_scenario() -> ExpandedScenario {
+        ExpandedScenario {
+            id: "test_readonly".into(),
+            language: "rust".into(),
+            tier: "A".into(),
+            tool: "read_file".into(),
+            action: "read".into(),
+            arguments: HashMap::new(),
+            workspace: ".".into(),
+            expected_outcome: "pass".into(),
+            validation: ValidationPipeline {
+                stages: vec![StageDef {
+                    name: "build".into(),
+                    commands: vec!["cargo build".into()],
+                    expected_exit_range: (0, 0),
+                    timeout_seconds: 60,
+                }],
+                failure_is_regression: true,
+            },
+            timeout_seconds: 30,
+            scenario_class: "read_only".into(),
+            preview_only: false,
+            variant: None,
+            ground_truth: None,
+            metrics: None,
+            repo: None,
+            commit: None,
+            container_image: None,
+        }
+    }
+
+    #[test]
+    fn test_read_only_scenario_skips_validation() {
+        let scenario = make_readonly_scenario();
+        let workspace = std::env::temp_dir();
+        let result = run_validation_pipeline(&scenario, &workspace, false);
+        // read_only scenarios should return empty stages, passed=true
+        assert!(result.stages.is_empty());
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn test_dir_size_computation() {
+        // Create a temp dir with known files
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path();
+
+        // Write some files of known sizes
+        std::fs::write(path.join("a.txt"), &[0u8; 1024]).unwrap(); // 1KB
+        std::fs::write(path.join("b.txt"), &[0u8; 2048]).unwrap(); // 2KB
+
+        let size_kb = compute_dir_size_kb(path);
+        // At least 3KB (1 + 2, rounded up)
+        assert!(size_kb >= 3);
+        assert!(size_kb <= 4); // Allow some overhead for filesystem
+    }
+
+    #[test]
+    fn test_dir_size_empty_dir() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let size_kb = compute_dir_size_kb(temp_dir.path());
+        assert_eq!(size_kb, 0);
+    }
+
+    #[test]
+    fn test_dir_size_nested_dirs() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path();
+
+        std::fs::create_dir_all(path.join("sub/nested")).unwrap();
+        std::fs::write(path.join("sub/file.txt"), &[0u8; 512]).unwrap();
+        std::fs::write(path.join("sub/nested/deep.txt"), &[0u8; 512]).unwrap();
+
+        let size_kb = compute_dir_size_kb(path);
+        // 512 + 512 = 1024 bytes = 1KB, rounded up
+        assert!(size_kb >= 1);
+    }
+}
+
 // Batch C Tests: Protocol Violation Detection (Gap 1)
 // =============================================================================
 

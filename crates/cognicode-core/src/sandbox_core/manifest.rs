@@ -316,4 +316,239 @@ scenarios:
                 .unwrap();
         assert_eq!(scenario.expected_outcome, "pass");
     }
+
+    #[test]
+    fn test_expand_repo_inheritance_from_manifest() {
+        let manifest_yaml = r#"
+version: "1.0"
+language: rust
+tier: B
+repo: my_rust_repo
+timeout_seconds: 60
+validation:
+  failure_is_regression: true
+  stages:
+    - name: build
+      commands: [cargo build]
+scenarios:
+  - name: test_scenario
+    tool: safe_refactor
+    action: rename
+    workspace: src/lib.rs
+"#;
+        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let scenarios = manifest.expand();
+        assert_eq!(scenarios.len(), 1);
+        assert_eq!(scenarios[0].repo, Some("my_rust_repo".to_string()));
+    }
+
+    #[test]
+    fn test_expand_repo_empty_string_overrides_manifest() {
+        let manifest_yaml = r#"
+version: "1.0"
+language: rust
+tier: B
+repo: manifest_repo
+timeout_seconds: 60
+validation:
+  failure_is_regression: true
+  stages:
+    - name: build
+      commands: [cargo build]
+scenarios:
+  - name: test_scenario
+    tool: safe_refactor
+    action: rename
+    workspace: src/lib.rs
+    repo: ""
+"#;
+        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let scenarios = manifest.expand();
+        // Empty string "" means "explicitly no repo" — should NOT inherit
+        assert_eq!(scenarios[0].repo, None);
+    }
+
+    #[test]
+    fn test_expand_scenario_repo_overrides_manifest() {
+        let manifest_yaml = r#"
+version: "1.0"
+language: rust
+tier: B
+repo: manifest_repo
+timeout_seconds: 60
+validation:
+  failure_is_regression: true
+  stages:
+    - name: build
+      commands: [cargo build]
+scenarios:
+  - name: test_scenario
+    tool: safe_refactor
+    action: rename
+    workspace: src/lib.rs
+    repo: scenario_repo
+"#;
+        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let scenarios = manifest.expand();
+        assert_eq!(scenarios[0].repo, Some("scenario_repo".to_string()));
+    }
+
+    #[test]
+    fn test_expand_validation_inheritance_from_manifest() {
+        let manifest_yaml = r#"
+version: "1.0"
+language: rust
+tier: A
+timeout_seconds: 60
+validation:
+  failure_is_regression: true
+  stages:
+    - name: build
+      commands: [cargo build]
+    - name: test
+      commands: [cargo test]
+scenarios:
+  - name: test_scenario
+    tool: read_file
+    action: read
+    workspace: src/lib.rs
+"#;
+        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let scenarios = manifest.expand();
+        assert_eq!(scenarios[0].validation.stages.len(), 2);
+        assert_eq!(scenarios[0].validation.stages[0].name, "build");
+        assert_eq!(scenarios[0].validation.stages[1].name, "test");
+    }
+
+    #[test]
+    fn test_expand_validation_override_per_scenario() {
+        let manifest_yaml = r#"
+version: "1.0"
+language: rust
+tier: A
+timeout_seconds: 60
+validation:
+  failure_is_regression: true
+  stages:
+    - name: build
+      commands: [cargo build]
+scenarios:
+  - name: test_scenario
+    tool: read_file
+    action: read
+    workspace: src/lib.rs
+    validation:
+      failure_is_regression: false
+      stages:
+        - name: syntax
+          commands: [rustfmt --check]
+"#;
+        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let scenarios = manifest.expand();
+        // Scenario should have its own validation, not manifest's
+        assert_eq!(scenarios[0].validation.stages.len(), 1);
+        assert_eq!(scenarios[0].validation.stages[0].name, "syntax");
+        assert!(!scenarios[0].validation.failure_is_regression);
+    }
+
+    #[test]
+    fn test_expand_timeout_inheritance() {
+        let manifest_yaml = r#"
+version: "1.0"
+language: rust
+tier: A
+timeout_seconds: 120
+validation:
+  failure_is_regression: true
+  stages:
+    - name: build
+      commands: [cargo build]
+scenarios:
+  - name: test_scenario
+    tool: read_file
+    action: read
+    workspace: src/lib.rs
+"#;
+        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let scenarios = manifest.expand();
+        assert_eq!(scenarios[0].timeout_seconds, 120);
+    }
+
+    #[test]
+    fn test_expand_timeout_override_per_scenario() {
+        let manifest_yaml = r#"
+version: "1.0"
+language: rust
+tier: A
+timeout_seconds: 120
+validation:
+  failure_is_regression: true
+  stages:
+    - name: build
+      commands: [cargo build]
+scenarios:
+  - name: test_scenario
+    tool: read_file
+    action: read
+    workspace: src/lib.rs
+    timeout_seconds: 30
+"#;
+        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let scenarios = manifest.expand();
+        assert_eq!(scenarios[0].timeout_seconds, 30);
+    }
+
+    #[test]
+    fn test_expand_id_with_variant() {
+        let manifest_yaml = r#"
+version: "1.0"
+language: python
+tier: A
+timeout_seconds: 60
+validation:
+  failure_is_regression: true
+  stages:
+    - name: build
+      commands: [python -m py_compile]
+scenarios:
+  - name: refactor_func
+    tool: safe_refactor
+    action: rename
+    workspace: main.py
+    variant: regression
+"#;
+        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let scenarios = manifest.expand();
+        assert_eq!(scenarios[0].id, "python_refactor_func_regression");
+        assert_eq!(scenarios[0].variant, Some("regression".to_string()));
+    }
+
+    #[test]
+    fn test_expand_multiple_scenarios_each_gets_id() {
+        let manifest_yaml = r#"
+version: "1.0"
+language: rust
+tier: A
+timeout_seconds: 60
+validation:
+  failure_is_regression: true
+  stages:
+    - name: build
+      commands: [cargo build]
+scenarios:
+  - name: scenario_a
+    tool: read_file
+    action: read
+    workspace: src/a.rs
+  - name: scenario_b
+    tool: read_file
+    action: read
+    workspace: src/b.rs
+"#;
+        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let scenarios = manifest.expand();
+        assert_eq!(scenarios.len(), 2);
+        assert_eq!(scenarios[0].id, "rust_scenario_a_default");
+        assert_eq!(scenarios[1].id, "rust_scenario_b_default");
+    }
 }
