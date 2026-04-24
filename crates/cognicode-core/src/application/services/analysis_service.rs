@@ -1038,6 +1038,34 @@ impl AnalysisService {
         }
     }
 
+    /// Returns all symbols in the project graph with optional pagination.
+    ///
+    /// Returns symbols sorted by (file_path, line).
+    pub fn get_all_symbols(&self, limit: Option<usize>, offset: Option<usize>) -> Vec<super::super::dto::SymbolDto> {
+        let graph = self.get_project_graph();
+
+        // Collect all symbols and sort by (file_path, line)
+        let mut symbols: Vec<_> = graph
+            .symbols()
+            .map(super::super::dto::SymbolDto::from_symbol)
+            .collect();
+
+        symbols.sort_by(|a, b| {
+            a.file_path.cmp(&b.file_path).then(a.line.cmp(&b.line))
+        });
+
+        // Apply pagination
+        let offset = offset.unwrap_or(0);
+        let limit = limit.unwrap_or(symbols.len());
+
+        if offset >= symbols.len() {
+            return Vec::new();
+        }
+
+        let end = std::cmp::min(offset + limit, symbols.len());
+        symbols[offset..end].to_vec()
+    }
+
     /// Traces an execution path between two symbols using BFS
     ///
     /// Returns the path from source to target if one exists, or None if no path

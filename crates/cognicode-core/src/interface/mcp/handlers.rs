@@ -15,7 +15,8 @@ use crate::interface::mcp::schemas::{
     AnalysisMetadata, ExportMermaidInput, ExportMermaidOutput, FindDeadCodeInput, FindDeadCodeOutput,
     FindReferencesInput, FindReferencesOutput,
     FindUsagesInput, FindUsagesOutput,
-    GetCallHierarchyInput, GetCallHierarchyOutput, GetComplexityInput, GetComplexityOutput,
+    GetAllSymbolsInput, GetAllSymbolsOutput, GetCallHierarchyInput, GetCallHierarchyOutput,
+    GetComplexityInput, GetComplexityOutput,
     GetEntryPointsInput, GetEntryPointsOutput, GetFileSymbolsInput, GetFileSymbolsOutput,
     GetHotPathsInput, GetHotPathsOutput, GetLeafFunctionsInput, GetLeafFunctionsOutput,
     GetModuleDependenciesInput, GetModuleDependenciesOutput, GetPerFileGraphInput, GetPerFileGraphOutput,
@@ -2015,6 +2016,58 @@ pub async fn handle_get_module_dependencies(
             total_calls: result.metadata.total_calls,
             analysis_time_ms: result.metadata.analysis_time_ms,
         },
+    })
+}
+
+/// Handler for get_all_symbols tool
+pub async fn handle_get_all_symbols(
+    ctx: &HandlerContext,
+    input: GetAllSymbolsInput,
+) -> HandlerResult<GetAllSymbolsOutput> {
+    let _ensure = ensure_graph_built(ctx)?;
+
+    let all_symbols = ctx.analysis_service.get_all_symbols(input.limit, input.offset);
+    let total = all_symbols.len();
+
+    // Check if there are more symbols beyond this batch
+    let limit = input.limit.unwrap_or(100);
+    let offset = input.offset.unwrap_or(0);
+    let has_more = offset + total >= limit;
+
+    // Convert to SymbolInfo
+    let symbols: Vec<SymbolInfo> = all_symbols
+        .into_iter()
+        .map(|s| SymbolInfo {
+            name: s.name,
+            kind: match s.kind.as_str() {
+                "function" => McpSymbolKind::Function,
+                "method" => McpSymbolKind::Method,
+                "class" => McpSymbolKind::Class,
+                "struct" => McpSymbolKind::Struct,
+                "enum" => McpSymbolKind::Enum,
+                "trait" => McpSymbolKind::Trait,
+                "field" => McpSymbolKind::Field,
+                "variable" => McpSymbolKind::Variable,
+                "constant" => McpSymbolKind::Constant,
+                "module" => McpSymbolKind::Module,
+                "interface" | "type" => McpSymbolKind::Interface,
+                "constructor" => McpSymbolKind::Constructor,
+                "parameter" => McpSymbolKind::Parameter,
+                _ => McpSymbolKind::Variable,
+            },
+            location: SourceLocation {
+                file: s.file_path,
+                line: s.line,
+                column: s.column,
+            },
+            signature: s.signature,
+        })
+        .collect();
+
+    Ok(GetAllSymbolsOutput {
+        symbols,
+        total,
+        has_more,
     })
 }
 

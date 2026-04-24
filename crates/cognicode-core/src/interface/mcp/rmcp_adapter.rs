@@ -617,6 +617,12 @@ async fn call_tool_handler(
             let output = crate::interface::mcp::handlers::handle_get_hot_paths(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
+        "get_all_symbols" => {
+            let input: crate::interface::mcp::schemas::GetAllSymbolsInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_get_all_symbols(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
         "find_dead_code" => {
             let input: crate::interface::mcp::schemas::FindDeadCodeInput =
                 serde_json::from_value(arguments.into())?;

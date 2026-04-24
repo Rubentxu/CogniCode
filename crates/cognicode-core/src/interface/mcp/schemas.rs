@@ -135,6 +135,28 @@ pub struct SourceLocation {
 }
 
 // ============================================================================
+// Get All Symbols
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetAllSymbolsInput {
+    /// Maximum number of symbols to return (default: 100)
+    #[serde(default)]
+    pub limit: Option<usize>,
+
+    /// Offset from which to start returning symbols (default: 0)
+    #[serde(default)]
+    pub offset: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetAllSymbolsOutput {
+    pub symbols: Vec<SymbolInfo>,
+    pub total: usize,
+    pub has_more: bool,
+}
+
+// ============================================================================
 // Find Usages
 // ============================================================================
 
