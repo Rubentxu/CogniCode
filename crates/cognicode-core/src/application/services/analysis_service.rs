@@ -1,6 +1,9 @@
 //! Analysis Service - Handles code analysis operations
 
-use crate::application::dto::{GraphCoverageMetrics, GraphStatsDto, SymbolDto};
+use crate::application::dto::{
+    AnalysisMetadata, DeadCodeEntry, DeadCodeReason, DeadCodeResult, GraphCoverageMetrics,
+    GraphStatsDto, SymbolDto,
+};
 use crate::application::error::{AppError, AppResult};
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::CallGraph;
@@ -909,6 +912,77 @@ impl AnalysisService {
                     .map(SymbolDto::from_symbol)
             })
             .collect()
+    }
+
+    /// Detects potentially dead code in the call graph.
+    ///
+    /// Dead code = callable or type definition symbols that are NOT reachable
+    /// from any entry point (root symbols with no incoming edges).
+    ///
+    /// Confidence scoring:
+    /// - 0.5: Symbol is public (may be API used externally)
+    /// - 0.95: Symbol is private (unlikely to be called externally)
+    ///
+    /// Note: This only detects functions/types that have NO incoming edges.
+    /// For more accurate detection with references (F3.2), more edges need
+    /// to be populated.
+    pub fn detect_dead_code(&self) -> DeadCodeResult {
+        let start = std::time::Instant::now();
+        let graph = self.get_project_graph();
+
+        let dead_ids = graph.find_dead_code();
+        let total_symbols = graph.symbols().count();
+
+        let dead_code: Vec<DeadCodeEntry> = dead_ids
+            .iter()
+            .filter_map(|id| {
+                let symbol = graph.get_symbol(id)?;
+                let kind_str = symbol.kind().to_string();
+                let kind = match kind_str.as_str() {
+                    "function" => super::super::dto::SymbolKind::Function,
+                    "method" => super::super::dto::SymbolKind::Method,
+                    "constructor" => super::super::dto::SymbolKind::Constructor,
+                    "class" => super::super::dto::SymbolKind::Class,
+                    "struct" => super::super::dto::SymbolKind::Struct,
+                    "enum" => super::super::dto::SymbolKind::Enum,
+                    "trait" => super::super::dto::SymbolKind::Trait,
+                    "type" | "interface" => super::super::dto::SymbolKind::TypeAlias,
+                    _ => super::super::dto::SymbolKind::Unknown,
+                };
+
+                // For now, all dead code gets NoIncomingEdges reason
+                // Visibility-based confidence could be added later
+                let confidence = 0.5;
+
+                Some(DeadCodeEntry {
+                    symbol: symbol.fully_qualified_name().to_string(),
+                    file: symbol.location().file().to_string(),
+                    line: symbol.location().line() + 1,
+                    column: symbol.location().column() + 1,
+                    kind,
+                    reason: DeadCodeReason::NoIncomingEdges,
+                    confidence,
+                })
+            })
+            .collect();
+
+        let total_dead = dead_code.len();
+        let dead_code_percent = if total_symbols > 0 {
+            (total_dead as f32 / total_symbols as f32) * 100.0
+        } else {
+            0.0
+        };
+
+        DeadCodeResult {
+            dead_code,
+            total_dead,
+            total_symbols,
+            dead_code_percent,
+            metadata: AnalysisMetadata {
+                total_calls: graph.edge_count(),
+                analysis_time_ms: start.elapsed().as_millis() as u64,
+            },
+        }
     }
 
     /// Traces an execution path between two symbols using BFS

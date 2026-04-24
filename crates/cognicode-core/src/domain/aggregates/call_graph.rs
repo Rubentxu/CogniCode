@@ -612,6 +612,45 @@ impl CallGraph {
             .collect()
     }
 
+    /// Returns all dead code symbols (not reachable from any entry point).
+    ///
+    /// Dead code = callable or type definition symbols that are NOT reachable
+    /// from any entry point via outgoing edges.
+    ///
+    /// Entry points are symbols with no incoming edges (roots).
+    pub fn find_dead_code(&self) -> Vec<SymbolId> {
+        // BFS from all roots to find reachable symbols
+        let mut live = HashSet::new();
+        let mut queue: Vec<SymbolId> = self.roots();
+
+        while let Some(id) = queue.pop() {
+            if live.insert(id.clone()) {
+                // Add all callees to the queue
+                for (target, _) in self.dependencies(&id) {
+                    if !live.contains(target) {
+                        queue.push(target.clone());
+                    }
+                }
+            }
+        }
+
+        // Dead code = callable or type_def symbols NOT in live set
+        self.symbols
+            .keys()
+            .filter(|id| {
+                !live.contains(id)
+                    && self
+                        .get_symbol(id)
+                        .map(|s| {
+                            let kind = s.kind();
+                            kind.is_callable() || kind.is_type_definition()
+                        })
+                        .unwrap_or(false)
+            })
+            .cloned()
+            .collect()
+    }
+
     /// Removes a symbol and all its edges from the graph
     pub fn remove_symbol(&mut self, id: &SymbolId) -> Option<Symbol> {
         if let Some(symbol) = self.symbols.remove(id) {

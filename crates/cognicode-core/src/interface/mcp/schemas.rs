@@ -523,6 +523,41 @@ pub struct HotPathEntry {
 }
 
 // ============================================================================
+// Dead Code Detection
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FindDeadCodeInput {
+    /// Maximum number of entries to return (default: 50)
+    #[serde(default = "default_dead_code_limit")]
+    pub limit: usize,
+}
+
+fn default_dead_code_limit() -> usize {
+    50
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FindDeadCodeOutput {
+    pub dead_code: Vec<DeadCodeEntry>,
+    pub total_dead: usize,
+    pub total_symbols: usize,
+    pub dead_code_percent: f32,
+    pub metadata: AnalysisMetadata,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeadCodeEntry {
+    pub symbol: String,
+    pub file: String,
+    pub line: u32,
+    pub column: u32,
+    pub kind: String,
+    pub reason: String,
+    pub confidence: f32,
+}
+
+// ============================================================================
 // Graph Strategy - Build Index
 // ============================================================================
 

@@ -11,8 +11,9 @@ use crate::domain::services::CycleDetector;
 use crate::interface::mcp::schemas::{
     AnalyzeImpactInput, AnalyzeImpactOutput, BuildIndexInput, BuildIndexOutput,
     BuildSubgraphInput, BuildSubgraphOutput, ChangeEntry, CheckArchitectureInput,
-    CheckArchitectureOutput, ComplexityMetrics, ContextLines, DependencyInfo, AnalysisMetadata,
-    ExportMermaidInput, ExportMermaidOutput, FindReferencesInput, FindReferencesOutput,
+    CheckArchitectureOutput, ComplexityMetrics, ContextLines, DeadCodeEntry, DependencyInfo,
+    AnalysisMetadata, ExportMermaidInput, ExportMermaidOutput, FindDeadCodeInput, FindDeadCodeOutput,
+    FindReferencesInput, FindReferencesOutput,
     FindUsagesInput, FindUsagesOutput,
     GetCallHierarchyInput, GetCallHierarchyOutput, GetComplexityInput, GetComplexityOutput,
     GetEntryPointsInput, GetEntryPointsOutput, GetFileSymbolsInput, GetFileSymbolsOutput,
@@ -1935,6 +1936,43 @@ pub async fn handle_get_hot_paths(
         metadata: AnalysisMetadata {
             total_calls: total,
             analysis_time_ms: start.elapsed().as_millis() as u64,
+        },
+    })
+}
+
+/// Handler for find_dead_code tool
+pub async fn handle_find_dead_code(
+    ctx: &HandlerContext,
+    input: FindDeadCodeInput,
+) -> HandlerResult<FindDeadCodeOutput> {
+    let _ensure = ensure_graph_built(ctx)?;
+
+    let result = ctx.analysis_service.detect_dead_code();
+
+    // Apply limit and truncate
+    let dead_code: Vec<DeadCodeEntry> = result
+        .dead_code
+        .into_iter()
+        .take(input.limit)
+        .map(|e| DeadCodeEntry {
+            symbol: e.symbol,
+            file: e.file,
+            line: e.line,
+            column: e.column,
+            kind: format!("{:?}", e.kind).to_lowercase(),
+            reason: format!("{:?}", e.reason),
+            confidence: e.confidence,
+        })
+        .collect();
+
+    Ok(FindDeadCodeOutput {
+        dead_code,
+        total_dead: result.total_dead,
+        total_symbols: result.total_symbols,
+        dead_code_percent: result.dead_code_percent,
+        metadata: AnalysisMetadata {
+            total_calls: result.metadata.total_calls,
+            analysis_time_ms: result.metadata.analysis_time_ms,
         },
     })
 }
