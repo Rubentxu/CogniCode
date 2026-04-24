@@ -87,6 +87,20 @@ pub struct ScenarioDef {
     /// Contains correctness type, latency targets, etc.
     #[serde(default)]
     pub metrics: Option<serde_json::Value>,
+    /// Root cause validation for debug analysis scenarios.
+    /// Validates that debug_analyze returns the expected root_cause.kind and summary_contains.
+    #[serde(default)]
+    pub root_cause_validation: Option<RootCauseValidation>,
+}
+
+/// Root cause validation for debug_analyze scenarios.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RootCauseValidation {
+    /// Expected root cause kind (e.g., "index_out_of_bounds", "unwrap_on_none")
+    pub kind: String,
+    /// Optional substring that must appear in the root_cause summary
+    #[serde(default)]
+    pub summary_contains: Option<String>,
 }
 
 fn default_expected_outcome() -> String {
@@ -192,6 +206,7 @@ impl Manifest {
                 variant: def.variant.clone(),
                 ground_truth: def.ground_truth.clone(),
                 metrics: def.metrics.clone(),
+                root_cause_validation: def.root_cause_validation.clone(),
                 repo,         // Inherits from manifest top-level if not set in scenario
                 commit: None, // Set by orchestrator
                 container_image: None,
@@ -225,6 +240,9 @@ pub struct ExpandedScenario {
     /// Metrics definition for quality scoring (v2.0)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metrics: Option<serde_json::Value>,
+    /// Root cause validation for debug analysis scenarios.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_cause_validation: Option<RootCauseValidation>,
     /// Set by orchestrator from manifest metadata
     pub repo: Option<String>,
     pub commit: Option<String>,

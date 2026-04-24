@@ -944,6 +944,15 @@ pub async fn handle_check_architecture(
         ));
     }
 
+    // If graph has symbols but no edges, call relationships weren't extracted
+    // This can happen if the graph was built with "lightweight" strategy
+    // or if there was an issue extracting call relationships
+    if edge_count == 0 {
+        return Err(HandlerError::NotFound(
+            "Call relationships not found (0 edges). The graph may have been built with a lightweight strategy that doesn't extract call edges. Try rebuilding with 'full' strategy.".into()
+        ));
+    }
+
     // Get coverage diagnostics
     let coverage = ctx.analysis_service.get_coverage_metrics();
     let (coverage_percent, total_files, parsed_files) = coverage
