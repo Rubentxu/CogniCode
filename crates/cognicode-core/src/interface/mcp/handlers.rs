@@ -934,6 +934,32 @@ pub async fn handle_check_architecture(
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
+    let symbol_count = graph.symbol_count();
+    let edge_count = graph.edge_count();
+
+    // If graph has no symbols, architecture check is not applicable
+    if symbol_count == 0 {
+        return Err(HandlerError::NotFound(
+            "No source code found in the project directory. Ensure the directory contains supported source files (.rs, .py, .ts, .js, .go, .java).".into()
+        ));
+    }
+
+    // Get coverage diagnostics
+    let coverage = ctx.analysis_service.get_coverage_metrics();
+    let (coverage_percent, total_files, parsed_files) = coverage
+        .map(|c| (c.coverage_percent, c.total_source_files, c.parsed_files))
+        .unwrap_or((0.0, 0, 0));
+
+    // Build diagnostic message based on coverage
+    let mut diagnostics = Vec::new();
+    if coverage_percent < 20.0 && coverage_percent > 0.0 {
+        diagnostics.push(format!(
+            "LOW COVERAGE: only {}/{} files parsed ({:.0}%)",
+            parsed_files, total_files, coverage_percent
+        ));
+    } else if coverage_percent == 0.0 && total_files == 0 {
+        diagnostics.push("No source files found in project directory".to_string());
+    }
 
     // Use CycleDetector to detect cycles
     let cycle_detector = CycleDetector::new();
@@ -951,7 +977,18 @@ pub async fn handle_check_architecture(
     // Calculate architecture score based on cycles
     // Score is 100 if no cycles, reduced by 5 points per cycle symbol
     let cycle_penalty = cycle_result.symbols_in_cycles() * 5;
-    let score = (100.0 - cycle_penalty as f32).max(0.0);
+    let base_score = (100.0 - cycle_penalty as f32).max(0.0);
+
+    // Adjust score if coverage is low (reduce confidence)
+    let score = if coverage_percent < 20.0 && coverage_percent > 0.0 {
+        // Low coverage means score is uncertain — reduce by half
+        base_score * 0.5
+    } else if symbol_count < 10 {
+        // Very few symbols also reduces confidence
+        base_score * 0.7
+    } else {
+        base_score
+    };
 
     // Violations are cycles that violate architecture rules
     let violations: Vec<crate::interface::mcp::schemas::ViolationInfo> = cycle_result
@@ -971,17 +1008,26 @@ pub async fn handle_check_architecture(
         .collect();
 
     let auto_note = if ensure.auto_built { ensure.message.clone() } else { String::new() };
+    let diagnostics_note = if !diagnostics.is_empty() {
+        format!(" [{}]", diagnostics.join("; "))
+    } else {
+        String::new()
+    };
 
     Ok(CheckArchitectureOutput {
         cycles,
         violations,
         score,
         summary: format!(
-            "{}Architecture check completed in {}ms - {} cycles detected, {} symbols involved",
+            "{}{}Architecture check completed in {}ms - {} cycles detected, {} symbols involved, {} edges, score {:.1}{}",
             auto_note,
+            if auto_note.is_empty() && !diagnostics_note.is_empty() { "" } else { "" },
             start.elapsed().as_millis(),
             cycle_result.cycles.len(),
-            cycle_result.symbols_in_cycles()
+            cycle_result.symbols_in_cycles(),
+            edge_count,
+            score,
+            diagnostics_note
         ),
     })
 }

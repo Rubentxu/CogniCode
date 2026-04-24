@@ -1,5 +1,6 @@
 //! Analysis Service - Handles code analysis operations
 
+use tracing::{debug, info, warn};
 use crate::application::dto::{
     AnalysisMetadata, DeadCodeEntry, DeadCodeReason, DeadCodeResult, GraphCoverageMetrics,
     GraphStatsDto, ModuleDependenciesResult, ModuleDependency, ModuleDependencyGraph, SymbolDto,
@@ -187,6 +188,8 @@ impl AnalysisService {
         use ignore::WalkBuilder;
         use rayon::prelude::*;
 
+        info!("Building project graph for directory: {:?}", project_dir);
+
         let mut store = PetGraphStore::new();
         let mut name_to_symbol_id: std::collections::HashMap<String, SymbolId> =
             std::collections::HashMap::new();
@@ -228,10 +231,25 @@ impl AnalysisService {
                     .unwrap_or(0);
                 (path, language, file_path, mtime)
             })
-            .filter(|(_, lang, _, _)| lang.is_some())
             .collect();
 
         let total_files = files.len();
+        let files_with_lang: usize = files.iter().filter(|(_, lang, _, _)| lang.is_some()).count();
+
+        info!(
+            "WalkBuilder found {} files, {} have recognized language extensions",
+            total_files, files_with_lang
+        );
+
+        // Log first few files for debugging
+        for (path, lang, _, _) in files.iter().take(5) {
+            debug!("  Found file: {:?} with language: {:?}", path.file_name(), lang);
+        }
+
+        let files: Vec<_> = files
+            .into_iter()
+            .filter(|(_, lang, _, _)| lang.is_some())
+            .collect();
 
         let results: Vec<_> = files
             .into_par_iter()
@@ -304,6 +322,21 @@ impl AnalysisService {
         }
 
         let call_graph = store.to_call_graph();
+        let symbol_count = call_graph.symbol_count();
+        let edge_count = call_graph.edge_count();
+
+        info!(
+            "Graph built: {} symbols, {} edges, {} parsed files, {} unresolved edges",
+            symbol_count, edge_count, parsed_files, unresolved_edges
+        );
+
+        if symbol_count == 0 {
+            warn!(
+                "No symbols extracted! total_files={}, parsed_files={}",
+                total_files, parsed_files
+            );
+        }
+
         self.graph_cache.set(call_graph);
 
         // Update coverage metrics
@@ -787,6 +820,11 @@ impl AnalysisService {
             language_breakdown,
             coverage,
         }
+    }
+
+    /// Returns coverage metrics from the last graph build.
+    pub fn get_coverage_metrics(&self) -> Option<GraphCoverageMetrics> {
+        self.coverage_metrics.lock().unwrap().clone()
     }
 
     /// Extracts symbols from a file
