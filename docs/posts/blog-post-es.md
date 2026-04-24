@@ -58,13 +58,13 @@ Déjame llevarte a 1995. Eres un desarrollador C++. Quieres entender qué hace `
 
 Usas "Find in Files". Buscas `processOrder`. Obtienes una lista de coincidencias. Abres cada archivo. Lees el código. Intentas mantenerlo todo en tu cabeza.
 
-Luego, alrededor de 2000, algo mágico pasó. Los IDEs empezaron a construir índices de símbolos. Empezaron a rastrear qué función llama a cuál. "Find Usages" se volvió una cosa. "Go to Definition" se volvió una cosa. El IDE mantenía un modelo actualizado de la estructura de tu codebase, y podías consultarlo instantáneamente.
+Luego, alrededor de 2000, algo cambió. Los IDEs empezaron a construir índices de símbolos. Empezaron a rastrear qué función llama a cuál. De repente, "Find Usages" y "Go to Definition" pasaron a ser herramientas indispensables. El IDE mantenía un modelo actualizado de la estructura de tu codebase, y podías consultarlo instantáneamente.
 
 La ganancia de productividad no fue sobre leer más código. Fue sobre leer código *estructuralmente*. En lugar de buscar ciegamente, podías hacer preguntas precisas y obtener respuestas precisas.
 
 **CogniCode trae este mismo cambio de paradigma a los agentes de IA.**
 
-La idea clave es esta: ahora tenemos el MCP (Model Context Protocol) que permite a los agentes de IA llamar herramientas externas. Esto significa que podemos dar a los agentes de IA la misma inteligencia estructural que los IDEs dan a los desarrolladores humanos. No haciendo el LLM más inteligente (ya es tan inteligente como va a ficar para razonamiento estructural), sino dándole herramientas que hacen razonamiento estructural *por* él.
+La idea clave es esta: ahora tenemos el MCP (Model Context Protocol) que permite a los agentes de IA llamar herramientas externas. Esto significa que podemos dar a los agentes de IA la misma inteligencia estructural que los IDEs dan a los desarrolladores humanos. No haciendo el LLM más inteligente (ya ha alcanzado su límite para razonamiento estructural), sino dándole herramientas que hacen razonamiento estructural *por* él.
 
 El cambio de paradigma es de:
 
@@ -92,7 +92,7 @@ Esto es lo que ofrece:
 
 **32 herramientas MCP** para inteligencia de código — todo, desde construir call graphs hasta analizar el impacto de cambios, pasando por buscar dependencias circulares.
 
-**6 lenguajes soportados**: Rust, Python, TypeScript, JavaScript, Go y Java. Estos se parsean usando Tree-sitter, que produce ASTs (Abstract Syntax Trees) precisos en lugar de depender de匹配 frágil con regex.
+**6 lenguajes soportados**: Rust, Python, TypeScript, JavaScript, Go y Java. Estos se parsean usando Tree-sitter, que produce ASTs (Abstract Syntax Trees) precisos en lugar de depender de coincidencias frágiles con regex.
 
 **4 estrategias de grafo**: Puedes construir un call graph completo (comprehensivo pero más lento), un índice liviano (búsquedas rápidas solo de símbolos), un grafo on-demand (construido según se necesita), o un grafo por archivo (para análisis de un solo archivo).
 

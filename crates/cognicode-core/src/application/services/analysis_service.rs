@@ -1,6 +1,10 @@
 //! Analysis Service - Handles code analysis operations
 
-use crate::application::dto::{GraphCoverageMetrics, GraphStatsDto, SymbolDto};
+use tracing::{debug, info, warn};
+use crate::application::dto::{
+    AnalysisMetadata, DeadCodeEntry, DeadCodeReason, DeadCodeResult, GraphCoverageMetrics,
+    GraphStatsDto, ModuleDependenciesResult, ModuleDependency, ModuleDependencyGraph, SymbolDto,
+};
 use crate::application::error::{AppError, AppResult};
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::CallGraph;
@@ -103,7 +107,7 @@ impl AnalysisService {
             let mut index = LightweightIndex::new();
             for symbol in graph.symbols() {
                 let location =
-                    SymbolLocation::from_location(symbol.location(), symbol.kind().clone());
+                    SymbolLocation::from_location(symbol.location(), *symbol.kind());
                 let name_lower = symbol.name().to_lowercase();
                 index.insert(name_lower, location);
             }
@@ -184,6 +188,8 @@ impl AnalysisService {
         use ignore::WalkBuilder;
         use rayon::prelude::*;
 
+        info!("Building project graph for directory: {:?}", project_dir);
+
         let mut store = PetGraphStore::new();
         let mut name_to_symbol_id: std::collections::HashMap<String, SymbolId> =
             std::collections::HashMap::new();
@@ -225,10 +231,25 @@ impl AnalysisService {
                     .unwrap_or(0);
                 (path, language, file_path, mtime)
             })
-            .filter(|(_, lang, _, _)| lang.is_some())
             .collect();
 
         let total_files = files.len();
+        let files_with_lang: usize = files.iter().filter(|(_, lang, _, _)| lang.is_some()).count();
+
+        info!(
+            "WalkBuilder found {} files, {} have recognized language extensions",
+            total_files, files_with_lang
+        );
+
+        // Log first few files for debugging
+        for (path, lang, _, _) in files.iter().take(5) {
+            debug!("  Found file: {:?} with language: {:?}", path.file_name(), lang);
+        }
+
+        let files: Vec<_> = files
+            .into_iter()
+            .filter(|(_, lang, _, _)| lang.is_some())
+            .collect();
 
         let results: Vec<_> = files
             .into_par_iter()
@@ -253,7 +274,7 @@ impl AnalysisService {
                 }
 
                 let source = std::fs::read_to_string(&path).ok()?;
-                let parser = TreeSitterParser::with_cache(language.clone()).ok()?;
+                let parser = TreeSitterParser::with_cache(language).ok()?;
 
                 let symbols = parser
                     .find_all_symbols_with_path(&source, &file_path)
@@ -301,6 +322,21 @@ impl AnalysisService {
         }
 
         let call_graph = store.to_call_graph();
+        let symbol_count = call_graph.symbol_count();
+        let edge_count = call_graph.edge_count();
+
+        info!(
+            "Graph built: {} symbols, {} edges, {} parsed files, {} unresolved edges",
+            symbol_count, edge_count, parsed_files, unresolved_edges
+        );
+
+        if symbol_count == 0 {
+            warn!(
+                "No symbols extracted! total_files={}, parsed_files={}",
+                total_files, parsed_files
+            );
+        }
+
         self.graph_cache.set(call_graph);
 
         // Update coverage metrics
@@ -362,7 +398,7 @@ impl AnalysisService {
         let mut store = PetGraphStore::new();
         for (name, locations) in index.entries() {
             for loc in locations {
-                let sym_kind = loc.symbol_kind.clone();
+                let sym_kind = loc.symbol_kind;
                 let location = Location::new(
                     loc.file.clone(),
                     loc.line,
@@ -505,7 +541,7 @@ impl AnalysisService {
                 }
 
                 let source = std::fs::read_to_string(&path).ok()?;
-                let parser = TreeSitterParser::with_cache(language.clone()).ok()?;
+                let parser = TreeSitterParser::with_cache(language).ok()?;
 
                 let symbols = parser
                     .find_all_symbols_with_path(&source, &file_path)
@@ -661,17 +697,17 @@ impl AnalysisService {
                         }
                     }
 
-                    let source = std::fs::read_to_string(&path).ok()?;
-                    let parser = TreeSitterParser::with_cache(language.clone()).ok()?;
+                let source = std::fs::read_to_string(&path).ok()?;
+                let parser = TreeSitterParser::with_cache(language).ok()?;
 
-                    let symbols = parser
-                        .find_all_symbols_with_path(&source, &file_path)
-                        .unwrap_or_default();
-                    let relationships = parser
-                        .find_call_relationships(&source, &file_path)
-                        .unwrap_or_default();
+                let symbols = parser
+                    .find_all_symbols_with_path(&source, &file_path)
+                    .unwrap_or_default();
+                let relationships = parser
+                    .find_call_relationships(&source, &file_path)
+                    .unwrap_or_default();
 
-                    Some((file_path, mtime, symbols, relationships, true)) // from_cache = false (parsed)
+                Some((file_path, mtime, symbols, relationships, true)) // from_cache = false (parsed)
                 })
                 .collect();
 
@@ -786,6 +822,11 @@ impl AnalysisService {
         }
     }
 
+    /// Returns coverage metrics from the last graph build.
+    pub fn get_coverage_metrics(&self) -> Option<GraphCoverageMetrics> {
+        self.coverage_metrics.lock().unwrap().clone()
+    }
+
     /// Extracts symbols from a file
     pub fn get_file_symbols(&self, path: &Path) -> AppResult<Vec<SymbolDto>> {
         // Read the source file
@@ -888,7 +929,7 @@ impl AnalysisService {
             .filter_map(|id| {
                 graph
                     .get_symbol(id)
-                    .map(|symbol| SymbolDto::from_symbol(symbol))
+                    .map(SymbolDto::from_symbol)
             })
             .collect()
     }
@@ -906,9 +947,161 @@ impl AnalysisService {
             .filter_map(|id| {
                 graph
                     .get_symbol(id)
-                    .map(|symbol| SymbolDto::from_symbol(symbol))
+                    .map(SymbolDto::from_symbol)
             })
             .collect()
+    }
+
+    /// Detects potentially dead code in the call graph.
+    ///
+    /// Dead code = callable or type definition symbols that are NOT reachable
+    /// from any entry point (root symbols with no incoming edges).
+    ///
+    /// Confidence scoring:
+    /// - 0.5: Symbol is public (may be API used externally)
+    /// - 0.95: Symbol is private (unlikely to be called externally)
+    ///
+    /// Note: This only detects functions/types that have NO incoming edges.
+    /// For more accurate detection with references (F3.2), more edges need
+    /// to be populated.
+    pub fn detect_dead_code(&self) -> DeadCodeResult {
+        let start = std::time::Instant::now();
+        let graph = self.get_project_graph();
+
+        let dead_ids = graph.find_dead_code();
+        let total_symbols = graph.symbols().count();
+
+        let dead_code: Vec<DeadCodeEntry> = dead_ids
+            .iter()
+            .filter_map(|id| {
+                let symbol = graph.get_symbol(id)?;
+                let kind_str = symbol.kind().to_string();
+                let kind = match kind_str.as_str() {
+                    "function" => super::super::dto::SymbolKind::Function,
+                    "method" => super::super::dto::SymbolKind::Method,
+                    "constructor" => super::super::dto::SymbolKind::Constructor,
+                    "class" => super::super::dto::SymbolKind::Class,
+                    "struct" => super::super::dto::SymbolKind::Struct,
+                    "enum" => super::super::dto::SymbolKind::Enum,
+                    "trait" => super::super::dto::SymbolKind::Trait,
+                    "type" | "interface" => super::super::dto::SymbolKind::TypeAlias,
+                    _ => super::super::dto::SymbolKind::Unknown,
+                };
+
+                // For now, all dead code gets NoIncomingEdges reason
+                // Visibility-based confidence could be added later
+                let confidence = 0.5;
+
+                Some(DeadCodeEntry {
+                    symbol: symbol.fully_qualified_name().to_string(),
+                    file: symbol.location().file().to_string(),
+                    line: symbol.location().line() + 1,
+                    column: symbol.location().column() + 1,
+                    kind,
+                    reason: DeadCodeReason::NoIncomingEdges,
+                    confidence,
+                })
+            })
+            .collect();
+
+        let total_dead = dead_code.len();
+        let dead_code_percent = if total_symbols > 0 {
+            (total_dead as f32 / total_symbols as f32) * 100.0
+        } else {
+            0.0
+        };
+
+        DeadCodeResult {
+            dead_code,
+            total_dead,
+            total_symbols,
+            dead_code_percent,
+            metadata: AnalysisMetadata {
+                total_calls: graph.edge_count(),
+                analysis_time_ms: start.elapsed().as_millis() as u64,
+            },
+        }
+    }
+
+    /// Detects module-level dependencies and cycles in the call graph.
+    ///
+    /// Groups symbol-level edges into module-level edges, detects cycles using
+    /// Tarjan SCC, and calculates coupling scores.
+    pub fn detect_module_dependencies(&self) -> ModuleDependenciesResult {
+        let start = std::time::Instant::now();
+        let graph = self.get_project_graph();
+
+        let (modules_data, cycles, coupling_matrix) = graph.find_module_dependencies();
+
+        let total_cross_module_edges: usize = coupling_matrix.values().sum();
+        let total_modules = modules_data.len();
+
+        let modules: Vec<ModuleDependency> = modules_data
+            .into_iter()
+            .map(|(module, depends_on, depended_by, coupling_score)| {
+                let total_deps = depends_on.len() + depended_by.len();
+                let stability = if total_deps > 0 {
+                    depended_by.len() as f32 / total_deps as f32
+                } else {
+                    0.5 // Isolated module
+                };
+                ModuleDependency {
+                    module,
+                    depends_on,
+                    depended_by,
+                    coupling_score,
+                    stability,
+                }
+            })
+            .collect();
+
+        let coupling_matrix_vec: Vec<(String, String, usize)> = coupling_matrix
+            .into_iter()
+            .map(|((from, to), count)| (from, to, count))
+            .collect();
+
+        ModuleDependenciesResult {
+            graph: ModuleDependencyGraph {
+                modules,
+                cycles: cycles.clone(),
+                coupling_matrix: coupling_matrix_vec,
+            },
+            total_modules,
+            total_cross_module_edges,
+            cycle_count: cycles.len(),
+            metadata: AnalysisMetadata {
+                total_calls: graph.edge_count(),
+                analysis_time_ms: start.elapsed().as_millis() as u64,
+            },
+        }
+    }
+
+    /// Returns all symbols in the project graph with optional pagination.
+    ///
+    /// Returns symbols sorted by (file_path, line).
+    pub fn get_all_symbols(&self, limit: Option<usize>, offset: Option<usize>) -> Vec<super::super::dto::SymbolDto> {
+        let graph = self.get_project_graph();
+
+        // Collect all symbols and sort by (file_path, line)
+        let mut symbols: Vec<_> = graph
+            .symbols()
+            .map(super::super::dto::SymbolDto::from_symbol)
+            .collect();
+
+        symbols.sort_by(|a, b| {
+            a.file_path.cmp(&b.file_path).then(a.line.cmp(&b.line))
+        });
+
+        // Apply pagination
+        let offset = offset.unwrap_or(0);
+        let limit = limit.unwrap_or(symbols.len());
+
+        if offset >= symbols.len() {
+            return Vec::new();
+        }
+
+        let end = std::cmp::min(offset + limit, symbols.len());
+        symbols[offset..end].to_vec()
     }
 
     /// Traces an execution path between two symbols using BFS
@@ -939,11 +1132,11 @@ impl AnalysisService {
         Ok(path.map(|symbol_ids| {
             symbol_ids
                 .iter()
-                .filter_map(|id| {
-                    graph
-                        .get_symbol(id)
-                        .map(|symbol| SymbolDto::from_symbol(symbol))
-                })
+            .filter_map(|id| {
+                graph
+                    .get_symbol(id)
+                    .map(SymbolDto::from_symbol)
+            })
                 .collect()
         }))
     }

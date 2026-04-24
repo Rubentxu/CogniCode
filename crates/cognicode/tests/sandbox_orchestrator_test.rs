@@ -9,37 +9,24 @@
 use std::path::PathBuf;
 
 use cognicode::sandbox_core::artifacts::{
-    LanguageBreakdown, MutationInfo, PipelineStageResult, ResourceUsage, ScenarioResult, Summary,
-    Timing, ToolBreakdown, ValidationResult,
+    LanguageBreakdown, ResourceUsage, ScenarioResult,
+    Timing, ToolBreakdown,
 };
 use cognicode::sandbox_core::failure::FailureClass;
 
 /// Detect the orchestrator binary path.
 /// Looks in the standard cargo target locations.
 fn orchestrator_path() -> Option<PathBuf> {
-    // Try the release binary in standard cargo locations
-    let candidates = [
-        PathBuf::from("target/release/sandbox-orchestrator"),
-        PathBuf::from("../target/release/sandbox-orchestrator"),
-        PathBuf::from("../../target/release/sandbox-orchestrator"),
-    ];
+    let project_root = project_root();
 
-    for candidate in &candidates {
-        if candidate.exists() {
-            return Some(candidate.clone());
-        }
+    let release_path = project_root.join("target/release/sandbox-orchestrator");
+    if release_path.exists() {
+        return Some(release_path);
     }
 
-    // Try using CARGO_MANIFEST_DIR to find project root
-    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-        let manifest_path = PathBuf::from(&manifest_dir);
-        let release_path = manifest_path
-            .parent()
-            .unwrap_or(&manifest_path)
-            .join("target/release/sandbox-orchestrator");
-        if release_path.exists() {
-            return Some(release_path);
-        }
+    let debug_path = project_root.join("target/debug/sandbox-orchestrator");
+    if debug_path.exists() {
+        return Some(debug_path);
     }
 
     None
@@ -48,13 +35,24 @@ fn orchestrator_path() -> Option<PathBuf> {
 /// Helper: run the orchestrator plan command and return stdout.
 fn run_plan(manifest_paths: &[&str]) -> Option<String> {
     let orch = orchestrator_path()?;
+    let project_root = project_root();
+
     let mut cmd = std::process::Command::new(&orch);
     cmd.arg("plan");
     for p in manifest_paths {
-        cmd.arg(p);
+        cmd.arg(project_root.join(p));
     }
     let output = cmd.output().ok()?;
     Some(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Get project root (two ancestors up from crates/cognicode)
+fn project_root() -> PathBuf {
+    PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        .ancestors()
+        .nth(2)
+        .unwrap()
+        .to_path_buf()
 }
 
 #[test]
@@ -95,9 +93,10 @@ fn test_plan_expands_multiple_manifests() {
 fn test_plan_json_format() {
     let orch = orchestrator_path()
         .expect("orchestrator binary not found - run: cargo build --bin sandbox-orchestrator");
+    let project_root = project_root();
     let output = std::process::Command::new(&orch)
         .arg("plan")
-        .arg("sandbox/manifests/rust.yaml")
+        .arg(project_root.join("sandbox/manifests/rust.yaml"))
         .arg("--format")
         .arg("json")
         .output()
@@ -134,7 +133,7 @@ fn test_manifest_schema_rust_tier_a() {
     // Verify rust.yaml parses correctly and has Tier A
     use cognicode::sandbox_core::manifest::Manifest;
 
-    let manifest = Manifest::from_path(&PathBuf::from("sandbox/manifests/rust.yaml"))
+    let manifest = Manifest::from_path(&project_root().join("sandbox/manifests/rust.yaml"))
         .expect("rust.yaml should parse");
     assert_eq!(manifest.language, "rust");
     assert_eq!(manifest.tier, "A");
@@ -161,7 +160,7 @@ fn test_manifest_schema_rust_tier_a() {
 fn test_manifest_schema_python_tier_a() {
     use cognicode::sandbox_core::manifest::Manifest;
 
-    let manifest = Manifest::from_path(&PathBuf::from("sandbox/manifests/python.yaml"))
+    let manifest = Manifest::from_path(&project_root().join("sandbox/manifests/python.yaml"))
         .expect("python.yaml should parse");
     assert_eq!(manifest.language, "python");
     assert_eq!(manifest.tier, "A");
@@ -172,7 +171,7 @@ fn test_manifest_schema_python_tier_a() {
 fn test_manifest_expand_produces_unique_ids() {
     use cognicode::sandbox_core::manifest::Manifest;
 
-    let manifest = Manifest::from_path(&PathBuf::from("sandbox/manifests/rust.yaml"))
+    let manifest = Manifest::from_path(&project_root().join("sandbox/manifests/rust.yaml"))
         .expect("rust.yaml should parse");
     let expanded = manifest.expand();
 
@@ -305,10 +304,8 @@ fn test_scenario_result_roundtrip_serde() {
 
 #[test]
 fn test_summary_aggregation() {
-    use cognicode::sandbox_core::artifacts::{
-        LanguageBreakdown, ResourceUsage, ScenarioResult, Timing, ToolBreakdown,
-    };
-    use cognicode::sandbox_core::failure::FailureClass;
+    
+    
 
     let results = vec![
         make_pass_result("rust_read_file_raw"),
@@ -369,7 +366,7 @@ fn aggregate_test_results(
     results: &[ScenarioResult],
 ) -> cognicode::sandbox_core::artifacts::Summary {
     use cognicode::sandbox_core::artifacts::Summary;
-    use std::collections::HashMap;
+    
 
     let mut summary = Summary::new("2026-01-01T00:00:00Z".into(), "test".into());
     let mut all_durations = Vec::new();
@@ -437,9 +434,9 @@ fn aggregate_test_results(
 /// This is a unit test for the classify_outcome function via direct import.
 #[test]
 fn test_classify_outcome_respects_expected_fail_on_validation_failure() {
-    use cognicode::sandbox_core::artifacts::{PipelineStageResult, ValidationResult};
-    use cognicode::sandbox_core::manifest::ExpandedScenario;
-    use std::collections::HashMap;
+    
+    
+    
 
     // We need to test classify_outcome directly, but it's private.
     // We test via integration: run a scenario with expected_fail + validation failure
@@ -454,7 +451,7 @@ fn test_classify_outcome_respects_expected_fail_on_validation_failure() {
     // and validation failure should get "expected_fail" outcome, not stage failure.
 
     // Create a minimal manifest with expected_fail + validation stages
-    use cognicode::sandbox_core::manifest::{Manifest, ScenarioDef, StageDef, ValidationPipeline};
+    use cognicode::sandbox_core::manifest::Manifest;
 
     // This test verifies the behavior through manifest parsing:
     // A scenario with expected_fail outcome should NOT get stage-failure outcomes
@@ -545,7 +542,7 @@ scenarios:
 #[test]
 fn test_fixture_isolation_no_corruption() {
     use std::fs;
-    use std::io::Write;
+    
     use tempfile::TempDir;
 
     // Create a minimal test fixture

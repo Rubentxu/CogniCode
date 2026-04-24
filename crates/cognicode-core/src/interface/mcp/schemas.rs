@@ -135,6 +135,28 @@ pub struct SourceLocation {
 }
 
 // ============================================================================
+// Get All Symbols
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetAllSymbolsInput {
+    /// Maximum number of symbols to return (default: 100)
+    #[serde(default)]
+    pub limit: Option<usize>,
+
+    /// Offset from which to start returning symbols (default: 0)
+    #[serde(default)]
+    pub offset: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetAllSymbolsOutput {
+    pub symbols: Vec<SymbolInfo>,
+    pub total: usize,
+    pub has_more: bool,
+}
+
+// ============================================================================
 // Find Usages
 // ============================================================================
 
@@ -520,6 +542,81 @@ pub struct HotPathEntry {
     pub column: u32,
     pub fan_in: usize,
     pub fan_out: usize,
+}
+
+// ============================================================================
+// Dead Code Detection
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FindDeadCodeInput {
+    /// Maximum number of entries to return (default: 50)
+    #[serde(default = "default_dead_code_limit")]
+    pub limit: usize,
+}
+
+fn default_dead_code_limit() -> usize {
+    50
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FindDeadCodeOutput {
+    pub dead_code: Vec<DeadCodeEntry>,
+    pub total_dead: usize,
+    pub total_symbols: usize,
+    pub dead_code_percent: f32,
+    pub metadata: AnalysisMetadata,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeadCodeEntry {
+    pub symbol: String,
+    pub file: String,
+    pub line: u32,
+    pub column: u32,
+    pub kind: String,
+    pub reason: String,
+    pub confidence: f32,
+}
+
+// ============================================================================
+// Module Dependencies
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetModuleDependenciesInput {
+    /// Maximum number of modules to return (default: 100)
+    #[serde(default = "default_module_limit")]
+    pub limit: usize,
+}
+
+fn default_module_limit() -> usize {
+    100
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModuleDependency {
+    pub module: String,
+    pub depends_on: Vec<String>,
+    pub depended_by: Vec<String>,
+    pub coupling_score: usize,
+    pub stability: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModuleDependencyGraph {
+    pub modules: Vec<ModuleDependency>,
+    pub cycles: Vec<Vec<String>>,
+    pub coupling_matrix: Vec<(String, String, usize)>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetModuleDependenciesOutput {
+    pub graph: ModuleDependencyGraph,
+    pub total_modules: usize,
+    pub total_cross_module_edges: usize,
+    pub cycle_count: usize,
+    pub metadata: AnalysisMetadata,
 }
 
 // ============================================================================

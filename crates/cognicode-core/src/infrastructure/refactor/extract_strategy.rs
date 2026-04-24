@@ -410,17 +410,10 @@ impl ExtractStrategy {
                 } else {
                     String::new()
                 };
-                if params_str.is_empty() {
-                    format!(
-                        "func {}({}){} {{\n    // body\n}}",
-                        name, params_str, return_type
-                    )
-                } else {
-                    format!(
-                        "func {}({}){} {{\n    // body\n}}",
-                        name, params_str, return_type
-                    )
-                }
+                format!(
+                    "func {}({}){} {{\n    // body\n}}",
+                    name, params_str, return_type
+                )
             }
             Language::Java => {
                 let return_type = if has_return {
@@ -586,7 +579,7 @@ impl ExtractStrategy {
         let new_function = self.generate_function_snippet(
             &plan.new_function_name,
             &plan.free_variables,
-            &plan.block_body.trim(),
+            plan.block_body.trim(),
             plan.has_return_value,
             plan.return_type_hint.as_deref(),
         );
@@ -606,7 +599,7 @@ impl ExtractStrategy {
 
         // Step 5: Replace the extracted block with the call
         // We need to recalculate positions after insertion
-        let block_text = self.extract_text_at_range(&source, &plan.block_range)?;
+        let block_text = self.extract_text_at_range(source, &plan.block_range)?;
         result = result.replace(&block_text, &replacement_call);
 
         Ok(result)

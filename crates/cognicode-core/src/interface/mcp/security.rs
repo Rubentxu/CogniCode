@@ -176,7 +176,7 @@ impl InputValidator {
             let mut found = false;
             for ws in &self.allowed_paths {
                 let candidate = ws.join(&path_buf);
-                if candidate.exists() || candidate.parent().map_or(false, |p| p.exists()) {
+                if candidate.exists() || candidate.parent().is_some_and(|p| p.exists()) {
                     resolved = candidate;
                     found = true;
                     break;
@@ -574,6 +574,10 @@ impl SqlValidationRule {
     pub fn validate(&self, input: &str) -> Result<(), SecurityError> {
         let lower = input.to_lowercase();
         // Detect common SQL injection patterns
+        // NOTE: We intentionally do NOT block "INSERT INTO", "DELETE FROM", "UPDATE SET"
+        // as these are legitimate SQL keywords that may appear in user queries.
+        // The actual SQL injection danger comes from quote escaping (', --, ;).
+        // Real protection requires parameterized queries, not keyword blocklists.
         let patterns = [
             "'; drop",
             "';drop",
@@ -582,9 +586,6 @@ impl SqlValidationRule {
             "'--",
             "union select",
             "union all select",
-            "insert into",
-            "delete from",
-            "update set",
             "exec(",
             "execute(",
             "xp_",

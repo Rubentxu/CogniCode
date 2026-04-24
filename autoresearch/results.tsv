@@ -1,0 +1,2 @@
+commit	tests_passed	sandbox_passed	health_score	status	description
+308a509	837	skip	N/A	keep	remove unused is_lightweight variable in handle_build_lightweight_index

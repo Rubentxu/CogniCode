@@ -207,7 +207,7 @@ fn check_binary(name: &str, version_args: &[&str]) -> (bool, Option<String>, Opt
 
     let version = if found {
         // Try to get version
-        let version_output = Command::new(name)
+        Command::new(name)
             .args(version_args)
             .output()
             .ok()
@@ -219,8 +219,7 @@ fn check_binary(name: &str, version_args: &[&str]) -> (bool, Option<String>, Opt
                 } else {
                     Some(version_str)
                 }
-            });
-        version_output
+            })
     } else {
         None
     };
@@ -365,7 +364,7 @@ pub fn run_doctor_checks(workspace_path: Option<&Path>) -> DoctorReport {
 
     // Detect workspace languages if path provided
     let detected_languages = workspace_path
-        .map(|p| detect_workspace_languages(p))
+        .map(detect_workspace_languages)
         .unwrap_or_default();
 
     let workspace_info = workspace_path.map(|p| WorkspaceInfo {

@@ -74,7 +74,7 @@ impl LspProcess {
             return Ok(self
                 .capabilities
                 .clone()
-                .unwrap_or_else(|| ServerCapabilities::default()));
+                .unwrap_or_else(ServerCapabilities::default));
         }
 
         let root_uri = format!("file://{}", workspace_root.display());

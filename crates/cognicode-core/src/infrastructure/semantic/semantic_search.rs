@@ -168,7 +168,7 @@ impl SearchIndex {
                 let indexed = IndexedSymbol {
                     name: s.name().to_string(),
                     name_lower: s.name().to_lowercase(),
-                    kind: s.kind().clone(),
+                    kind: *s.kind(),
                     location: s.location().clone(),
                 };
                 self.all_symbols.insert(key, indexed.clone());
@@ -241,7 +241,7 @@ impl SearchIndex {
             if heap.len() < query.max_results {
                 let symbol = Symbol::new(
                     indexed.name.clone(),
-                    indexed.kind.clone(),
+                    indexed.kind,
                     indexed.location.clone(),
                 );
                 heap.push(Reverse(SearchResult::new(symbol, score, match_type)));
@@ -249,7 +249,7 @@ impl SearchIndex {
                 let temp_result = SearchResult::new(
                     Symbol::new(
                         indexed.name.clone(),
-                        indexed.kind.clone(),
+                        indexed.kind,
                         indexed.location.clone(),
                     ),
                     score,
@@ -361,7 +361,7 @@ impl SemanticSearchService {
         let extension = file_path.extension().and_then(|e| e.to_str());
 
         let language =
-            Language::from_extension(extension.as_ref().map(|s| std::ffi::OsStr::new(s)))
+            Language::from_extension(extension.as_ref().map(std::ffi::OsStr::new))
                 .ok_or_else(|| "Unsupported file type".to_string())?;
 
         let source = std::fs::read_to_string(file_path)
@@ -425,7 +425,7 @@ impl SemanticSearchService {
 
             let extension = path.extension().and_then(|e| e.to_str());
             let language = crate::infrastructure::parser::Language::from_extension(
-                extension.as_ref().map(|s| std::ffi::OsStr::new(s)),
+                extension.as_ref().map(std::ffi::OsStr::new),
             );
 
             if let Some(_lang) = language {

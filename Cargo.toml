@@ -1,10 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/cognicode",
     "crates/cognicode-core",
     "crates/cognicode-mcp",
     "crates/cognicode-cli",
     "crates/cognicode-sandbox",
+    "crates/rcode-debug",
 ]
 
 [workspace.package]

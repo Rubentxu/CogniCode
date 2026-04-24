@@ -17,12 +17,10 @@ use std::sync::Arc;
 /// CogniCodeHandler implements the rmcp ServerHandler trait
 ///
 /// This handler bridges the rmcp SDK with the existing CogniCode handler functions.
-/// It maintains the project root path and a cancellation flag, plus a persistent
-/// HandlerContext that survives across requests to avoid rebuilding the analysis graph.
+/// It maintains a persistent HandlerContext that survives across requests to avoid
+/// rebuilding the analysis graph, plus a cancellation flag.
 #[derive(Debug)]
 pub struct CogniCodeHandler {
-    /// Root directory of the project being analyzed
-    project_root: PathBuf,
     /// Persistent handler context - created once and shared across all requests
     ctx: Arc<HandlerContext>,
     /// Cancellation token for handling cancelled requests
@@ -40,10 +38,9 @@ impl CogniCodeHandler {
                 project_root.clone()
             });
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        let mut ctx = HandlerContext::new(canonical_root.clone());
+        let mut ctx = HandlerContext::new(canonical_root);
         ctx.cancellation_token = cancellation_token.clone();
         Self {
-            project_root: canonical_root,
             ctx: Arc::new(ctx),
             cancellation_token,
         }
@@ -620,6 +617,24 @@ async fn call_tool_handler(
             let output = crate::interface::mcp::handlers::handle_get_hot_paths(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
+        "get_all_symbols" => {
+            let input: crate::interface::mcp::schemas::GetAllSymbolsInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_get_all_symbols(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        "find_dead_code" => {
+            let input: crate::interface::mcp::schemas::FindDeadCodeInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_find_dead_code(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        "get_module_dependencies" => {
+            let input: crate::interface::mcp::schemas::GetModuleDependenciesInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_get_module_dependencies(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
         "build_lightweight_index" => {
             let input: crate::interface::mcp::schemas::BuildIndexInput =
                 serde_json::from_value(arguments.into())?;
@@ -743,7 +758,8 @@ mod tests {
     #[test]
     fn test_cognicode_handler_creation() {
         let handler = CogniCodeHandler::new(PathBuf::from("/tmp/test"));
-        assert_eq!(handler.project_root, PathBuf::from("/tmp/test"));
+        // working_dir is canonicalized so may differ from input path
+        assert!(handler.ctx.working_dir.to_string_lossy().ends_with("test"));
     }
 
     #[test]

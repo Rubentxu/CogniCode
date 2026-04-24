@@ -11,13 +11,16 @@ use crate::domain::services::CycleDetector;
 use crate::interface::mcp::schemas::{
     AnalyzeImpactInput, AnalyzeImpactOutput, BuildIndexInput, BuildIndexOutput,
     BuildSubgraphInput, BuildSubgraphOutput, ChangeEntry, CheckArchitectureInput,
-    CheckArchitectureOutput, ComplexityMetrics, ContextLines, DependencyInfo, AnalysisMetadata,
-    ExportMermaidInput, ExportMermaidOutput, FindReferencesInput, FindReferencesOutput,
+    CheckArchitectureOutput, ComplexityMetrics, ContextLines, DeadCodeEntry, DependencyInfo,
+    AnalysisMetadata, ExportMermaidInput, ExportMermaidOutput, FindDeadCodeInput, FindDeadCodeOutput,
+    FindReferencesInput, FindReferencesOutput,
     FindUsagesInput, FindUsagesOutput,
-    GetCallHierarchyInput, GetCallHierarchyOutput, GetComplexityInput, GetComplexityOutput,
+    GetAllSymbolsInput, GetAllSymbolsOutput, GetCallHierarchyInput, GetCallHierarchyOutput,
+    GetComplexityInput, GetComplexityOutput,
     GetEntryPointsInput, GetEntryPointsOutput, GetFileSymbolsInput, GetFileSymbolsOutput,
     GetHotPathsInput, GetHotPathsOutput, GetLeafFunctionsInput, GetLeafFunctionsOutput,
-    GetPerFileGraphInput, GetPerFileGraphOutput, GoToDefinitionInput, GoToDefinitionOutput,
+    GetModuleDependenciesInput, GetModuleDependenciesOutput, GetPerFileGraphInput, GetPerFileGraphOutput,
+    GoToDefinitionInput, GoToDefinitionOutput,
     HierarchyEntryInfo, HierarchySymbolInfo,
     HotPathEntry, HoverInput, HoverOutput, MergeGraphsInput, MergeGraphsOutput,
     OutlineInput, OutlineNodeDto, OutlineOutput,
@@ -909,7 +912,7 @@ fn ensure_semantic_indexed(ctx: &HandlerContext) -> HandlerResult<EnsureResult> 
     }
     let start = std::time::Instant::now();
     ctx.semantic_search.populate_from_directory(&ctx.working_dir)
-        .map_err(|e| HandlerError::Internal(e))?;
+        .map_err(HandlerError::Internal)?;
     let elapsed = start.elapsed().as_millis() as u64;
     Ok(EnsureResult::auto_built(ctx.semantic_search.index().len(), elapsed))
 }
@@ -931,6 +934,41 @@ pub async fn handle_check_architecture(
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
+    let symbol_count = graph.symbol_count();
+    let edge_count = graph.edge_count();
+
+    // If graph has no symbols, architecture check is not applicable
+    if symbol_count == 0 {
+        return Err(HandlerError::NotFound(
+            "No source code found in the project directory. Ensure the directory contains supported source files (.rs, .py, .ts, .js, .go, .java).".into()
+        ));
+    }
+
+    // If graph has symbols but no edges, call relationships weren't extracted
+    // This can happen if the graph was built with "lightweight" strategy
+    // or if there was an issue extracting call relationships
+    if edge_count == 0 {
+        return Err(HandlerError::NotFound(
+            "Call relationships not found (0 edges). The graph may have been built with a lightweight strategy that doesn't extract call edges. Try rebuilding with 'full' strategy.".into()
+        ));
+    }
+
+    // Get coverage diagnostics
+    let coverage = ctx.analysis_service.get_coverage_metrics();
+    let (coverage_percent, total_files, parsed_files) = coverage
+        .map(|c| (c.coverage_percent, c.total_source_files, c.parsed_files))
+        .unwrap_or((0.0, 0, 0));
+
+    // Build diagnostic message based on coverage
+    let mut diagnostics = Vec::new();
+    if coverage_percent < 20.0 && coverage_percent > 0.0 {
+        diagnostics.push(format!(
+            "LOW COVERAGE: only {}/{} files parsed ({:.0}%)",
+            parsed_files, total_files, coverage_percent
+        ));
+    } else if coverage_percent == 0.0 && total_files == 0 {
+        diagnostics.push("No source files found in project directory".to_string());
+    }
 
     // Use CycleDetector to detect cycles
     let cycle_detector = CycleDetector::new();
@@ -948,7 +986,18 @@ pub async fn handle_check_architecture(
     // Calculate architecture score based on cycles
     // Score is 100 if no cycles, reduced by 5 points per cycle symbol
     let cycle_penalty = cycle_result.symbols_in_cycles() * 5;
-    let score = (100.0 - cycle_penalty as f32).max(0.0);
+    let base_score = (100.0 - cycle_penalty as f32).max(0.0);
+
+    // Adjust score if coverage is low (reduce confidence)
+    let score = if coverage_percent < 20.0 && coverage_percent > 0.0 {
+        // Low coverage means score is uncertain — reduce by half
+        base_score * 0.5
+    } else if symbol_count < 10 {
+        // Very few symbols also reduces confidence
+        base_score * 0.7
+    } else {
+        base_score
+    };
 
     // Violations are cycles that violate architecture rules
     let violations: Vec<crate::interface::mcp::schemas::ViolationInfo> = cycle_result
@@ -968,17 +1017,26 @@ pub async fn handle_check_architecture(
         .collect();
 
     let auto_note = if ensure.auto_built { ensure.message.clone() } else { String::new() };
+    let diagnostics_note = if !diagnostics.is_empty() {
+        format!(" [{}]", diagnostics.join("; "))
+    } else {
+        String::new()
+    };
 
     Ok(CheckArchitectureOutput {
         cycles,
         violations,
         score,
         summary: format!(
-            "{}Architecture check completed in {}ms - {} cycles detected, {} symbols involved",
+            "{}{}Architecture check completed in {}ms - {} cycles detected, {} symbols involved, {} edges, score {:.1}{}",
             auto_note,
+            if auto_note.is_empty() && !diagnostics_note.is_empty() { "" } else { "" },
             start.elapsed().as_millis(),
             cycle_result.cycles.len(),
-            cycle_result.symbols_in_cycles()
+            cycle_result.symbols_in_cycles(),
+            edge_count,
+            score,
+            diagnostics_note
         ),
     })
 }
@@ -1611,7 +1669,7 @@ pub async fn handle_get_entry_points(
     let root_ids = graph.roots();
     
     // If still empty, return a helpful message
-    if root_ids.len() == 0 && graph.symbol_count() == 0 {
+    if root_ids.is_empty() && graph.symbol_count() == 0 {
         return Err(HandlerError::NotFound(
             "No source code found in the project directory. Ensure the directory contains supported source files (.rs, .py, .ts, .js, .go, .java).".into()
         ));
@@ -1673,7 +1731,7 @@ pub async fn handle_get_leaf_functions(
     let leaf_ids = graph.leaves();
     
     // If still empty, return a helpful message
-    if leaf_ids.len() == 0 && graph.symbol_count() == 0 {
+    if leaf_ids.is_empty() && graph.symbol_count() == 0 {
         return Err(HandlerError::NotFound(
             "No source code found in the project directory. Ensure the directory contains supported source files (.rs, .py, .ts, .js, .go, .java).".into()
         ));
@@ -1939,6 +1997,135 @@ pub async fn handle_get_hot_paths(
     })
 }
 
+/// Handler for find_dead_code tool
+pub async fn handle_find_dead_code(
+    ctx: &HandlerContext,
+    input: FindDeadCodeInput,
+) -> HandlerResult<FindDeadCodeOutput> {
+    let _ensure = ensure_graph_built(ctx)?;
+
+    let result = ctx.analysis_service.detect_dead_code();
+
+    // Apply limit and truncate
+    let dead_code: Vec<DeadCodeEntry> = result
+        .dead_code
+        .into_iter()
+        .take(input.limit)
+        .map(|e| DeadCodeEntry {
+            symbol: e.symbol,
+            file: e.file,
+            line: e.line,
+            column: e.column,
+            kind: format!("{:?}", e.kind).to_lowercase(),
+            reason: format!("{:?}", e.reason),
+            confidence: e.confidence,
+        })
+        .collect();
+
+    Ok(FindDeadCodeOutput {
+        dead_code,
+        total_dead: result.total_dead,
+        total_symbols: result.total_symbols,
+        dead_code_percent: result.dead_code_percent,
+        metadata: AnalysisMetadata {
+            total_calls: result.metadata.total_calls,
+            analysis_time_ms: result.metadata.analysis_time_ms,
+        },
+    })
+}
+
+/// Handler for get_module_dependencies tool
+pub async fn handle_get_module_dependencies(
+    ctx: &HandlerContext,
+    input: GetModuleDependenciesInput,
+) -> HandlerResult<GetModuleDependenciesOutput> {
+    let _ensure = ensure_graph_built(ctx)?;
+
+    let result = ctx.analysis_service.detect_module_dependencies();
+
+    // Convert DTO ModuleDependency to schema ModuleDependency
+    let limited_modules: Vec<crate::interface::mcp::schemas::ModuleDependency> = result
+        .graph
+        .modules
+        .into_iter()
+        .take(input.limit)
+        .map(|m| crate::interface::mcp::schemas::ModuleDependency {
+            module: m.module,
+            depends_on: m.depends_on,
+            depended_by: m.depended_by,
+            coupling_score: m.coupling_score,
+            stability: m.stability,
+        })
+        .collect();
+
+    Ok(GetModuleDependenciesOutput {
+        graph: crate::interface::mcp::schemas::ModuleDependencyGraph {
+            modules: limited_modules,
+            cycles: result.graph.cycles,
+            coupling_matrix: result.graph.coupling_matrix,
+        },
+        total_modules: result.total_modules,
+        total_cross_module_edges: result.total_cross_module_edges,
+        cycle_count: result.cycle_count,
+        metadata: AnalysisMetadata {
+            total_calls: result.metadata.total_calls,
+            analysis_time_ms: result.metadata.analysis_time_ms,
+        },
+    })
+}
+
+/// Handler for get_all_symbols tool
+pub async fn handle_get_all_symbols(
+    ctx: &HandlerContext,
+    input: GetAllSymbolsInput,
+) -> HandlerResult<GetAllSymbolsOutput> {
+    let _ensure = ensure_graph_built(ctx)?;
+
+    let all_symbols = ctx.analysis_service.get_all_symbols(input.limit, input.offset);
+    let total = all_symbols.len();
+
+    // Check if there are more symbols beyond this batch
+    let limit = input.limit.unwrap_or(100);
+    let offset = input.offset.unwrap_or(0);
+    let has_more = offset + total >= limit;
+
+    // Convert to SymbolInfo
+    let symbols: Vec<SymbolInfo> = all_symbols
+        .into_iter()
+        .map(|s| SymbolInfo {
+            name: s.name,
+            kind: match s.kind.as_str() {
+                "function" => McpSymbolKind::Function,
+                "method" => McpSymbolKind::Method,
+                "class" => McpSymbolKind::Class,
+                "struct" => McpSymbolKind::Struct,
+                "enum" => McpSymbolKind::Enum,
+                "trait" => McpSymbolKind::Trait,
+                "field" => McpSymbolKind::Field,
+                "variable" => McpSymbolKind::Variable,
+                "constant" => McpSymbolKind::Constant,
+                "module" => McpSymbolKind::Module,
+                "interface" | "type" => McpSymbolKind::Interface,
+                "constructor" => McpSymbolKind::Constructor,
+                "parameter" => McpSymbolKind::Parameter,
+                _ => McpSymbolKind::Variable,
+            },
+            location: SourceLocation {
+                file: s.file_path,
+                line: s.line,
+                column: s.column,
+            },
+            signature: s.signature,
+        })
+        .collect();
+
+    Ok(GetAllSymbolsOutput {
+        symbols,
+        total,
+        has_more,
+    })
+}
+
 fn build_symbol_name_index(graph: &CallGraph) -> HashMap<String, Vec<(&str, &Symbol)>> {
     let mut index: HashMap<String, Vec<(&str, &Symbol)>> = HashMap::new();
     for (id, symbol) in graph.symbol_ids() {
@@ -2083,13 +2270,6 @@ pub async fn handle_build_lightweight_index(
     if ctx.is_cancelled() {
         return Err(HandlerError::Internal("Cancelled".into()));
     }
-
-    // Detect if this is the lightweight strategy (special-cased for index caching)
-    let is_lightweight = matches!(
-        input.strategy.as_str(),
-        "lightweight" | "on_demand" | "ondemand" | ""
-    ) || !["on_demand","ondemand","per_file","perfile","full","full_graph"]
-        .contains(&input.strategy.as_str());
 
     if ctx.is_cancelled() {
         return Err(HandlerError::Internal("Cancelled".into()));

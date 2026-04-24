@@ -158,7 +158,7 @@ impl InlineStrategy {
                 if child.kind() == "arguments" {
                     for j in 0..child.child_count() {
                         if let Some(arg) = child.child(j) {
-                            if let Some(text) = arg.utf8_text(source_bytes).ok() {
+                            if let Ok(text) = arg.utf8_text(source_bytes) {
                                 let trimmed = text.trim();
                                 if !trimmed.is_empty() && trimmed != "," {
                                     arguments.push(trimmed.to_string());
@@ -276,7 +276,7 @@ impl InlineStrategy {
                 if child.kind() == "parameters" {
                     for j in 0..child.child_count() {
                         if let Some(param) = child.child(j) {
-                            if let Some(text) = param.utf8_text(source_bytes).ok() {
+                            if let Ok(text) = param.utf8_text(source_bytes) {
                                 let trimmed = text.trim();
                                 if !trimmed.is_empty() && trimmed != "," {
                                     params.push(trimmed.to_string());
@@ -419,17 +419,7 @@ impl InlineStrategy {
             let call_text = self.extract_text_at_range(source, &call_site.range)?;
 
             // If there's a return type, we need to handle assignment context
-            let replacement = if plan.return_type.is_some() {
-                // Check if this is an assignment context based on the line
-                let line_text = &call_site.context;
-                if line_text.contains("let ") || line_text.contains("= ") {
-                    inlined_body.trim().to_string()
-                } else {
-                    inlined_body.trim().to_string()
-                }
-            } else {
-                inlined_body.trim().to_string()
-            };
+            let replacement = inlined_body.trim().to_string();
 
             result = result.replace(&call_text, &replacement);
         }

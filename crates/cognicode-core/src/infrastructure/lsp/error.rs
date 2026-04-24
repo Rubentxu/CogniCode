@@ -50,19 +50,14 @@ pub enum LspProcessError {
     Internal(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum ServerStatus {
+    #[default]
     Starting,
     Indexing { progress: f32 },
     Ready,
     Busy,
     Crashed { reason: String },
-}
-
-impl Default for ServerStatus {
-    fn default() -> Self {
-        ServerStatus::Starting
-    }
 }
 
 impl ServerStatus {

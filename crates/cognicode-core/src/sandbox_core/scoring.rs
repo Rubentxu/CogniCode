@@ -99,7 +99,9 @@ pub struct ToolScore {
     pub language: String,
     /// Scenario ID
     pub scenario_id: String,
-    /// Correctitud score (0-100)
+    /// Correctitud score (0-100).
+    /// Returns 0.0 (not NaN) when ground truth is unavailable — NaN values
+    /// are converted to 0.0 by the scoring engine for API compatibility.
     pub correctitud: f64,
     /// Latencia score (0-100)
     pub latencia: f64,
@@ -1018,8 +1020,7 @@ fn compute_variance(values: impl Iterator<Item = f64>) -> f64 {
         return 0.0;
     }
     let mean = values.iter().sum::<f64>() / n;
-    let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0);
-    variance
+    values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0)
 }
 
 /// Compute R² for a linear fit: latency = a * size + b
@@ -1596,8 +1597,6 @@ pub fn score_scenario(
             // Use call graph score if available, otherwise use symbol/outline/code/complexity score
             let base_score = if !call_graph_score.is_nan() {
                 call_graph_score
-            } else if !correctitud.is_nan() && correctitud > 0.0 {
-                correctitud
             } else {
                 correctitud
             };
@@ -2313,6 +2312,143 @@ mod tests {
         assert!(score.correctitud > 90.0);
         assert_eq!(score.latencia, 100.0); // 50ms < 100ms target
         assert!(score.health_score > 0.0);
+    }
+
+    #[test]
+    fn test_score_scenario_no_ground_truth_returns_zero_correctitud() {
+        let metrics = make_sample_metrics();
+        let response = serde_json::json!({"symbols": []});
+
+        let score = score_scenario(
+            "get_file_symbols",
+            "rust",
+            "rust_symbols_test",
+            &response,
+            &None,
+            &Some(metrics),
+            50,
+            ExecutionMetadata::default(),
+        );
+
+        // When ground_truth is None, the scoring function converts NaN → 0.0
+        // for the returned struct (see lines 1633-1637 in score_scenario)
+        assert_eq!(score.correctitud, 0.0);
+        assert!(score.symbol_match.is_none());
+        assert!(score.outline_match.is_none());
+        // Latencia should still be scored (it's independent of ground truth)
+        assert_eq!(score.latencia, 100.0); // 50ms < 100ms target
+    }
+
+    #[test]
+    fn test_score_scenario_no_metrics_still_scores() {
+        let gt = make_sample_ground_truth();
+        let response = serde_json::json!({
+            "symbols": [
+                {"name": "greet", "kind": "function"},
+                {"name": "add", "kind": "function"}
+            ]
+        });
+
+        let score = score_scenario(
+            "get_file_symbols",
+            "rust",
+            "rust_symbols_test",
+            &response,
+            &Some(gt),
+            &None,
+            50,
+            ExecutionMetadata::default(),
+        );
+
+        // Should still compute correctness from ground truth even without metrics
+        assert!(!score.correctitud.is_nan());
+        assert_eq!(score.latencia, 100.0); // latency score still computed
+    }
+
+    #[test]
+    fn test_score_scenario_latency_score_bounds() {
+        let gt = make_sample_ground_truth();
+        let metrics = make_sample_metrics();
+
+        // 0ms latency should be max score
+        let fast = score_scenario(
+            "get_file_symbols", "rust", "fast",
+            &serde_json::json!({"symbols": []}),
+            &Some(gt.clone()), &Some(metrics.clone()),
+            0, ExecutionMetadata::default(),
+        );
+        assert_eq!(fast.latencia, 100.0);
+
+        // Very high latency should get low score
+        let slow = score_scenario(
+            "get_file_symbols", "rust", "slow",
+            &serde_json::json!({"symbols": []}),
+            &Some(gt), &Some(metrics),
+            5000, // 5 seconds — way over 100ms target
+            ExecutionMetadata::default(),
+        );
+        assert!(slow.latencia < 50.0);
+        assert!(slow.latencia >= 0.0);
+    }
+
+    #[test]
+    fn test_score_scenario_all_dimensions_in_range() {
+        let gt = make_sample_ground_truth();
+        let metrics = make_sample_metrics();
+        let response = serde_json::json!({
+            "symbols": [{"name": "greet", "kind": "function"}]
+        });
+
+        let score = score_scenario(
+            "get_file_symbols",
+            "rust",
+            "test",
+            &response,
+            &Some(gt),
+            &Some(metrics),
+            50,
+            ExecutionMetadata::default(),
+        );
+
+        // All 5 dimensions and health_score should be in [0, 100]
+        for (name, value) in [
+            ("correctitud", score.correctitud),
+            ("latencia", score.latencia),
+            ("escalabilidad", score.escalabilidad),
+            ("consistencia", score.consistencia),
+            ("robustez", score.robustez),
+            ("health_score", score.health_score),
+        ] {
+            assert!(
+                (0.0..=100.0).contains(&value) || value.is_nan(),
+                "{} score {} out of range [0,100] or NaN",
+                name, value
+            );
+        }
+    }
+
+    #[test]
+    fn test_score_scenario_with_workspace_size_for_escalabilidad() {
+        let gt = make_sample_ground_truth();
+        let metrics = make_sample_metrics();
+        let response = serde_json::json!({"symbols": []});
+
+        // Large workspace should affect escalabilidad
+        let meta = ExecutionMetadata::with_workspace_size(50_000); // 50MB workspace
+
+        let score = score_scenario(
+            "get_file_symbols",
+            "rust",
+            "large_workspace",
+            &response,
+            &Some(gt),
+            &Some(metrics),
+            50,
+            meta,
+        );
+
+        // Should have computed escalabilidad (may be NaN if no call graph)
+        assert!(!score.escalabilidad.is_nan() || score.escalabilidad == 0.0);
     }
 
     #[test]

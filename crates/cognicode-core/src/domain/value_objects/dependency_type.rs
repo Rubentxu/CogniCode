@@ -4,30 +4,17 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Represents the type of dependency relationship between symbols in the code graph.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum DependencyType {
-    /// Direct function call
+    #[default]
     Calls,
-    /// Direct import or use statement
     Imports,
-    /// Type inheritance or implementation
     Inherits,
-    /// Generic type parameter dependency
     UsesGeneric,
-    /// Variable reference dependency
     References,
-    /// Module-level dependency
     Defines,
-    /// Annotation or attribute dependency
     AnnotatedBy,
-    /// Contains or is contained by
     Contains,
-}
-
-impl Default for DependencyType {
-    fn default() -> Self {
-        DependencyType::Calls
-    }
 }
 
 impl fmt::Display for DependencyType {

@@ -1,0 +1,283 @@
+# Debug Analysis Scenarios for rcode-debug
+#
+# These scenarios test the debug_analyze() and debug_doctor() functions.
+#
+# Run with:
+#   cargo run --bin sandbox-orchestrator -- run sandbox/manifests/debugging/debug_scenarios.yaml --fixtures-dir sandbox/fixtures
+
+version: "1.0"
+language: rust
+tier: A
+description: "Debug analysis scenarios for testing crash analysis"
+
+timeout_seconds: 60
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  # ─── Doctor Check Scenarios ─────────────────────────────────────────────────
+
+  - name: debug_doctor_check_rust
+    description: "Check debugging capabilities for Rust"
+    tool: debug_doctor
+    action: check
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      language: rust
+
+  - name: debug_doctor_check_python
+    description: "Check debugging capabilities for Python"
+    tool: debug_doctor
+    action: check
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      language: python
+
+  # ─── Rust Debug Analyze Scenarios ──────────────────────────────────────────────
+
+  - name: debug_analyze_rust_index_oob
+    description: "Analyze index out of bounds panic in Rust"
+    tool: debug_analyze
+    action: analyze
+    workspace: sandbox/fixtures/rust-debug
+    scenario_class: analysis
+    expected_outcome: pass
+    build_commands:
+      - cargo build --release
+    root_cause_validation:
+      kind: index_out_of_bounds
+      summary_contains: "Array or index"
+    arguments:
+      target:
+        language: rust
+        name: rust_panic_demo
+        program: target/release/rust-debug-fixture
+        args: ["index_oob"]
+        env: {}
+        cwd: null
+      error:
+        kind: Panic
+        message: "index out of bounds"
+        output: null
+      context:
+        suspect_functions: null
+
+  - name: debug_analyze_rust_unwrap_none
+    description: "Analyze Option::unwrap() on None panic"
+    tool: debug_analyze
+    action: analyze
+    workspace: sandbox/fixtures/rust-debug
+    scenario_class: analysis
+    expected_outcome: pass
+    build_commands:
+      - cargo build --release
+    root_cause_validation:
+      kind: unwrap_on_none
+      summary_contains: "unwrap"
+    arguments:
+      target:
+        language: rust
+        name: rust_unwrap_demo
+        program: target/release/rust-debug-fixture
+        args: ["unwrap_none"]
+        env: {}
+        cwd: null
+      error:
+        kind: Panic
+        message: "called `Option::unwrap()` on a `None` value"
+        output: null
+      context:
+        suspect_functions: null
+
+  - name: debug_analyze_rust_divzero
+    description: "Analyze division by zero panic"
+    tool: debug_analyze
+    action: analyze
+    workspace: sandbox/fixtures/rust-debug
+    scenario_class: analysis
+    expected_outcome: pass
+    build_commands:
+      - cargo build --release
+    root_cause_validation:
+      kind: division_by_zero
+      summary_contains: "Division by zero"
+    arguments:
+      target:
+        language: rust
+        name: rust_divzero_demo
+        program: target/release/rust-debug-fixture
+        args: ["divzero"]
+        env: {}
+        cwd: null
+      error:
+        kind: Panic
+        message: "division by zero"
+        output: null
+      context:
+        suspect_functions: null
+
+  - name: debug_analyze_rust_assert
+    description: "Analyze assertion failure"
+    tool: debug_analyze
+    action: analyze
+    workspace: sandbox/fixtures/rust-debug
+    scenario_class: analysis
+    expected_outcome: pass
+    build_commands:
+      - cargo build --release
+    root_cause_validation:
+      kind: assertion_failed
+      summary_contains: "Assertion"
+    arguments:
+      target:
+        language: rust
+        name: rust_assert_demo
+        program: target/release/rust-debug-fixture
+        args: ["assert"]
+        env: {}
+        cwd: null
+      error:
+        kind: Assertion
+        message: "Numbers should be equal"
+        output: null
+      context:
+        suspect_functions: null
+
+  # ─── Python Debug Analyze Scenarios ───────────────────────────────────────────
+
+  - name: debug_analyze_python_index_error
+    description: "Analyze Python IndexError"
+    tool: debug_analyze
+    action: analyze
+    workspace: sandbox/fixtures/python-debug
+    scenario_class: analysis
+    expected_outcome: pass
+    build_commands: []
+    root_cause_validation:
+      kind: index_out_of_bounds
+      summary_contains: "Array or index"
+    arguments:
+      target:
+        language: python
+        name: python_index_demo
+        program: python3
+        args: ["crash_demo.py", "index_error"]
+        env: {}
+        cwd: null
+      error:
+        kind: Panic
+        message: "IndexError: list index out of range"
+        output: null
+      context:
+        suspect_functions: null
+
+  - name: debug_analyze_python_key_error
+    description: "Analyze Python KeyError"
+    tool: debug_analyze
+    action: analyze
+    workspace: sandbox/fixtures/python-debug
+    scenario_class: analysis
+    expected_outcome: pass
+    build_commands: []
+    arguments:
+      target:
+        language: python
+        name: python_key_demo
+        program: python3
+        args: ["crash_demo.py", "key_error"]
+        env: {}
+        cwd: null
+      error:
+        kind: Panic
+        message: "KeyError"
+        output: null
+      context:
+        suspect_functions: null
+
+  - name: debug_analyze_python_type_error
+    description: "Analyze Python TypeError"
+    tool: debug_analyze
+    action: analyze
+    workspace: sandbox/fixtures/python-debug
+    scenario_class: analysis
+    expected_outcome: pass
+    build_commands: []
+    arguments:
+      target:
+        language: python
+        name: python_type_demo
+        program: python3
+        args: ["crash_demo.py", "type_error"]
+        env: {}
+        cwd: null
+      error:
+        kind: Panic
+        message: "TypeError"
+        output: null
+      context:
+        suspect_functions: null
+
+  - name: debug_analyze_python_zero_division
+    description: "Analyze Python ZeroDivisionError"
+    tool: debug_analyze
+    action: analyze
+    workspace: sandbox/fixtures/python-debug
+    scenario_class: analysis
+    expected_outcome: pass
+    build_commands: []
+    root_cause_validation:
+      kind: division_by_zero
+      summary_contains: "Division by zero"
+    arguments:
+      target:
+        language: python
+        name: python_divzero_demo
+        program: python3
+        args: ["crash_demo.py", "zero_division"]
+        env: {}
+        cwd: null
+      error:
+        kind: Panic
+        message: "ZeroDivisionError"
+        output: null
+      context:
+        suspect_functions: null
+
+  # ─── Expected Fail Scenarios ───────────────────────────────────────────────────
+
+  - name: debug_analyze_unsupported_language
+    description: "Debug analyze on unsupported language"
+    tool: debug_analyze
+    action: analyze
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: expected_fail
+    arguments:
+      target:
+        language: cobol
+        name: cobol_program
+        program: /tmp/cobol.exe
+        args: []
+        env: {}
+        cwd: null
+      error:
+        kind: ExitCode
+        message: "unsupported language"
+        output: null
+      context: null
+
+  - name: debug_doctor_unsupported_language
+    description: "Doctor check for unsupported language"
+    tool: debug_doctor
+    action: check
+    workspace: .
+    scenario_class: analysis
+    expected_outcome: pass
+    arguments:
+      language: cobol

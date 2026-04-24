@@ -140,7 +140,7 @@ impl PerFileGraphCache {
             for symbol in graph.symbols() {
                 let new_symbol = Symbol::new(
                     symbol.name(),
-                    symbol.kind().clone(),
+                    *symbol.kind(),
                     Location::new(
                         symbol.location().file(),
                         symbol.location().line(),
@@ -184,7 +184,7 @@ impl PerFileGraphCache {
                 .collect()
         };
 
-        let path_refs: Vec<&Path> = paths.iter().map(|p| Path::new(p)).collect();
+        let path_refs: Vec<&Path> = paths.iter().map(Path::new).collect();
         self.merge(&path_refs)
     }
 
@@ -201,15 +201,15 @@ impl PerFileGraphCache {
             })?;
 
         let parser = TreeSitterParser::new(language)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let symbols = parser
             .find_all_symbols_with_path(&source, file_path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let relationships = parser
             .find_call_relationships(&source, file_path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let mut graph = CallGraph::new();
         let mut name_to_symbol: HashMap<String, crate::domain::aggregates::call_graph::SymbolId> =

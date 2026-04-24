@@ -188,7 +188,7 @@ fn is_binary_file(path: &Path) -> Result<bool, String> {
         .map_err(|e| format!("Cannot read file: {}", e))?;
 
     // Check for null bytes in first 8000 bytes
-    Ok(buffer[..bytes_read].iter().any(|&b| b == 0))
+    Ok(buffer[..bytes_read].contains(&0))
 }
 
 #[cfg(test)]

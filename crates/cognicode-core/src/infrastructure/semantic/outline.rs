@@ -360,7 +360,7 @@ impl OutlineBuilder {
         for i in 0..params_node.child_count() {
             if let Some(child) = params_node.child(i) {
                 if child.kind() == "identifier" {
-                    if let Some(name) = child.utf8_text(self.source.as_bytes()).ok() {
+                    if let Ok(name) = child.utf8_text(self.source.as_bytes()) {
                         params.push(name.to_string());
                     }
                 }
@@ -379,7 +379,7 @@ impl OutlineBuilder {
         for i in 0..params_node.child_count() {
             if let Some(child) = params_node.child(i) {
                 if child.kind() == "identifier" {
-                    if let Some(name) = child.utf8_text(self.source.as_bytes()).ok() {
+                    if let Ok(name) = child.utf8_text(self.source.as_bytes()) {
                         params.push(name.to_string());
                     }
                 }

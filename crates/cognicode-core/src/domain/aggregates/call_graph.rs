@@ -67,13 +67,13 @@ impl CallGraph {
     pub fn add_symbol(&mut self, symbol: Symbol) -> SymbolId {
         let id = SymbolId::new(symbol.fully_qualified_name());
         self.symbols.entry(id.clone()).or_insert_with(|| {
-            self.edges.entry(id.clone()).or_insert_with(HashSet::new);
+            self.edges.entry(id.clone()).or_default();
             self.reverse_edges
                 .entry(id.clone())
-                .or_insert_with(HashSet::new);
+                .or_default();
             self.name_index
                 .entry(symbol.name().to_lowercase())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(id.clone());
             symbol
         });
@@ -98,13 +98,13 @@ impl CallGraph {
         // Add edge
         self.edges
             .entry(source_id.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert((target_id.clone(), dependency_type));
 
         // Add reverse edge
         self.reverse_edges
             .entry(target_id.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(source_id.clone());
 
         Ok(())
@@ -394,7 +394,7 @@ impl CallGraph {
     ///
     /// Generates a directed graph representation suitable for Mermaid flowchart syntax.
     pub fn to_mermaid(&self, title: &str) -> String {
-        let mut mermaid = format!("flowchart TD\n");
+        let mut mermaid = String::from("flowchart TD\n");
         mermaid.push_str(&format!("    %% {}\n", title));
 
         // Add node declarations
@@ -612,6 +612,150 @@ impl CallGraph {
             .collect()
     }
 
+    /// Returns all dead code symbols (not reachable from any entry point).
+    ///
+    /// Dead code = callable or type definition symbols that are NOT reachable
+    /// from any entry point via outgoing edges.
+    ///
+    /// Entry points are symbols with no incoming edges (roots).
+    pub fn find_dead_code(&self) -> Vec<SymbolId> {
+        // BFS from all roots to find reachable symbols
+        let mut live = HashSet::new();
+        let mut queue: Vec<SymbolId> = self.roots();
+
+        while let Some(id) = queue.pop() {
+            if live.insert(id.clone()) {
+                // Add all callees to the queue
+                for (target, _) in self.dependencies(&id) {
+                    if !live.contains(target) {
+                        queue.push(target.clone());
+                    }
+                }
+            }
+        }
+
+        // Dead code = callable or type_def symbols NOT in live set
+        self.symbols
+            .keys()
+            .filter(|id| {
+                !live.contains(id)
+                    && self
+                        .get_symbol(id)
+                        .map(|s| {
+                            let kind = s.kind();
+                            kind.is_callable() || kind.is_type_definition()
+                        })
+                        .unwrap_or(false)
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Extracts the module path from a file path (parent directory).
+    fn module_from_file(file: &str) -> String {
+        std::path::Path::new(file)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| file.to_string())
+    }
+
+    /// Returns all modules in the graph (unique parent directories of symbol files).
+    pub fn modules(&self) -> HashSet<String> {
+        self.symbols
+            .values()
+            .map(|s| Self::module_from_file(s.location().file()))
+            .collect()
+    }
+
+    /// Finds module dependencies using Tarjan SCC for cycle detection.
+    ///
+    /// Returns a tuple of:
+    /// - modules: Vec of (module, depends_on, depended_by, coupling_score)
+    /// - cycles: Vec of cycles (each cycle is a Vec of module names)
+    /// - coupling_matrix: Map of (from, to) -> edge count
+    pub fn find_module_dependencies(&self) -> (Vec<(String, Vec<String>, Vec<String>, usize)>, Vec<Vec<String>>, HashMap<(String, String), usize>) {
+        // Step 1: Build module-level edges from symbol edges
+        let mut module_edges: HashMap<(String, String), usize> = HashMap::new();
+        let mut module_outgoing: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut module_incoming: HashMap<String, HashSet<String>> = HashMap::new();
+
+        for (source_id, targets) in &self.edges {
+            let source_module = self.get_symbol(source_id)
+                .map(|s| Self::module_from_file(s.location().file()))
+                .unwrap_or_default();
+
+            for (target_id, _) in targets {
+                let target_module = self.get_symbol(target_id)
+                    .map(|s| Self::module_from_file(s.location().file()))
+                    .unwrap_or_default();
+
+                if source_module != target_module && !source_module.is_empty() && !target_module.is_empty() {
+                    *module_edges.entry((source_module.clone(), target_module.clone())).or_insert(0) += 1;
+                    module_outgoing.entry(source_module.clone()).or_default().insert(target_module.clone());
+                    module_incoming.entry(target_module.clone()).or_default().insert(source_module.clone());
+                }
+            }
+        }
+
+        // Step 2: Get all modules
+        let all_modules: HashSet<String> = module_outgoing.keys().cloned()
+            .chain(module_incoming.keys().cloned())
+            .collect();
+
+        // Step 3: Build module graph for Tarjan SCC
+        // Map module name to index for petgraph
+        let module_list: Vec<String> = all_modules.into_iter().collect();
+        let module_index: HashMap<&String, usize> = module_list.iter()
+            .enumerate()
+            .map(|(i, m)| (m, i))
+            .collect();
+
+        use petgraph::graph::{DiGraph, NodeIndex};
+        let mut graph: DiGraph<(), ()> = DiGraph::new();
+        // Add nodes
+        for _ in &module_list {
+            graph.add_node(());
+        }
+        // Add edges
+        for ((src, dst), _) in &module_edges {
+            if let (Some(&si), Some(&di)) = (module_index.get(src), module_index.get(dst)) {
+                graph.add_edge(NodeIndex::new(si), NodeIndex::new(di), ());
+            }
+        }
+
+        // Step 4: Run Tarjan SCC to find cycles
+        use petgraph::algo::tarjan_scc;
+        let sccs = tarjan_scc(&graph);
+        let cycles: Vec<Vec<String>> = sccs
+            .into_iter()
+            .filter(|scc| scc.len() > 1)
+            .map(|scc| scc.iter().map(|&idx| module_list[idx.index()].clone()).collect())
+            .collect();
+
+        // Step 5: Build result
+        let modules: Vec<(String, Vec<String>, Vec<String>, usize)> = module_list
+            .into_iter()
+            .map(|module| {
+                let depends_on: Vec<String> = module_outgoing.get(&module)
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect();
+                let depended_by: Vec<String> = module_incoming.get(&module)
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect();
+                let coupling_score: usize = depends_on.iter().map(|m| {
+                    module_edges.get(&(module.clone(), m.clone())).copied().unwrap_or(0)
+                }).sum();
+                (module, depends_on, depended_by, coupling_score)
+            })
+            .collect();
+
+        (modules, cycles, module_edges)
+    }
+
     /// Removes a symbol and all its edges from the graph
     pub fn remove_symbol(&mut self, id: &SymbolId) -> Option<Symbol> {
         if let Some(symbol) = self.symbols.remove(id) {
@@ -653,7 +797,7 @@ impl CallGraph {
         for event in events {
             match event {
                 GraphEvent::SymbolAdded(e) => {
-                    let symbol = Symbol::new(e.name.clone(), e.kind.clone(), e.location.clone());
+                    let symbol = Symbol::new(e.name.clone(), e.kind, e.location.clone());
                     self.add_symbol(symbol);
                 }
                 GraphEvent::SymbolRemoved(e) => {
@@ -667,7 +811,7 @@ impl CallGraph {
                         // Create updated symbol
                         let new_symbol = Symbol::new(
                             e.name.clone(),
-                            symbol.kind().clone(),
+                            *symbol.kind(),
                             e.new_location.clone(),
                         );
                         let new_id = SymbolId::new(e.new_location.fully_qualified_name());
