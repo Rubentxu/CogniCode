@@ -136,15 +136,6 @@ impl DapClient {
         Ok(response)
     }
 
-    /// Send a raw DAP message (for events/commands without response)
-    async fn send_raw(&self, msg: &str) -> Result<()> {
-        let mut stdin = self.stdin.write().await;
-        stdin.write_all(msg.as_bytes()).await.map_err(DebugError::Io)?;
-        stdin.write_all(b"\n").await.map_err(DebugError::Io)?;
-        stdin.flush().await.map_err(DebugError::Io)?;
-        Ok(())
-    }
-
     /// Initialize the debug session
     pub async fn initialize(&self) -> Result<Capabilities> {
         let args = serde_json::json!({
