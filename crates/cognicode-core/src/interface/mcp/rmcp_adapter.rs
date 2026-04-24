@@ -623,6 +623,12 @@ async fn call_tool_handler(
             let output = crate::interface::mcp::handlers::handle_find_dead_code(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
+        "get_module_dependencies" => {
+            let input: crate::interface::mcp::schemas::GetModuleDependenciesInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_get_module_dependencies(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
         "build_lightweight_index" => {
             let input: crate::interface::mcp::schemas::BuildIndexInput =
                 serde_json::from_value(arguments.into())?;

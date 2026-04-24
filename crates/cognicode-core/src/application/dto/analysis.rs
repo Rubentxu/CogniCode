@@ -234,6 +234,51 @@ pub struct DeadCodeResult {
 }
 
 // ============================================================================
+// Module Dependency Graph
+// ============================================================================
+
+/// Dependency information for a single module
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModuleDependency {
+    /// Module path (e.g., "src/auth" or "crates/agent")
+    pub module: String,
+    /// Modules this module depends on
+    pub depends_on: Vec<String>,
+    /// Modules that depend on this module
+    pub depended_by: Vec<String>,
+    /// Number of cross-module edges
+    pub coupling_score: usize,
+    /// Stability score (0.0-1.0): higher with more incoming dependencies
+    pub stability: f32,
+}
+
+/// Complete module dependency graph with cycle detection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModuleDependencyGraph {
+    /// List of all modules with their dependencies
+    pub modules: Vec<ModuleDependency>,
+    /// Detected cycles between modules
+    pub cycles: Vec<Vec<String>>,
+    /// Coupling matrix: (from_module, to_module) → edge count
+    pub coupling_matrix: Vec<(String, String, usize)>,
+}
+
+/// Result of module dependency analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModuleDependenciesResult {
+    /// The module dependency graph
+    pub graph: ModuleDependencyGraph,
+    /// Total number of modules
+    pub total_modules: usize,
+    /// Total cross-module edges
+    pub total_cross_module_edges: usize,
+    /// Number of cycles detected
+    pub cycle_count: usize,
+    /// Analysis metadata
+    pub metadata: AnalysisMetadata,
+}
+
+// ============================================================================
 // Project Diagnostics
 // ============================================================================
 

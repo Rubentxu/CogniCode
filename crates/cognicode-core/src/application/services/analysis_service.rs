@@ -2,7 +2,7 @@
 
 use crate::application::dto::{
     AnalysisMetadata, DeadCodeEntry, DeadCodeReason, DeadCodeResult, GraphCoverageMetrics,
-    GraphStatsDto, SymbolDto,
+    GraphStatsDto, ModuleDependenciesResult, ModuleDependency, ModuleDependencyGraph, SymbolDto,
 };
 use crate::application::error::{AppError, AppResult};
 use crate::domain::aggregates::call_graph::SymbolId;
@@ -978,6 +978,59 @@ impl AnalysisService {
             total_dead,
             total_symbols,
             dead_code_percent,
+            metadata: AnalysisMetadata {
+                total_calls: graph.edge_count(),
+                analysis_time_ms: start.elapsed().as_millis() as u64,
+            },
+        }
+    }
+
+    /// Detects module-level dependencies and cycles in the call graph.
+    ///
+    /// Groups symbol-level edges into module-level edges, detects cycles using
+    /// Tarjan SCC, and calculates coupling scores.
+    pub fn detect_module_dependencies(&self) -> ModuleDependenciesResult {
+        let start = std::time::Instant::now();
+        let graph = self.get_project_graph();
+
+        let (modules_data, cycles, coupling_matrix) = graph.find_module_dependencies();
+
+        let total_cross_module_edges: usize = coupling_matrix.values().sum();
+        let total_modules = modules_data.len();
+
+        let modules: Vec<ModuleDependency> = modules_data
+            .into_iter()
+            .map(|(module, depends_on, depended_by, coupling_score)| {
+                let total_deps = depends_on.len() + depended_by.len();
+                let stability = if total_deps > 0 {
+                    depended_by.len() as f32 / total_deps as f32
+                } else {
+                    0.5 // Isolated module
+                };
+                ModuleDependency {
+                    module,
+                    depends_on,
+                    depended_by,
+                    coupling_score,
+                    stability,
+                }
+            })
+            .collect();
+
+        let coupling_matrix_vec: Vec<(String, String, usize)> = coupling_matrix
+            .into_iter()
+            .map(|((from, to), count)| (from, to, count))
+            .collect();
+
+        ModuleDependenciesResult {
+            graph: ModuleDependencyGraph {
+                modules,
+                cycles: cycles.clone(),
+                coupling_matrix: coupling_matrix_vec,
+            },
+            total_modules,
+            total_cross_module_edges,
+            cycle_count: cycles.len(),
             metadata: AnalysisMetadata {
                 total_calls: graph.edge_count(),
                 analysis_time_ms: start.elapsed().as_millis() as u64,

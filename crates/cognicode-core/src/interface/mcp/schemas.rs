@@ -558,6 +558,46 @@ pub struct DeadCodeEntry {
 }
 
 // ============================================================================
+// Module Dependencies
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetModuleDependenciesInput {
+    /// Maximum number of modules to return (default: 100)
+    #[serde(default = "default_module_limit")]
+    pub limit: usize,
+}
+
+fn default_module_limit() -> usize {
+    100
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModuleDependency {
+    pub module: String,
+    pub depends_on: Vec<String>,
+    pub depended_by: Vec<String>,
+    pub coupling_score: usize,
+    pub stability: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModuleDependencyGraph {
+    pub modules: Vec<ModuleDependency>,
+    pub cycles: Vec<Vec<String>>,
+    pub coupling_matrix: Vec<(String, String, usize)>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetModuleDependenciesOutput {
+    pub graph: ModuleDependencyGraph,
+    pub total_modules: usize,
+    pub total_cross_module_edges: usize,
+    pub cycle_count: usize,
+    pub metadata: AnalysisMetadata,
+}
+
+// ============================================================================
 // Graph Strategy - Build Index
 // ============================================================================
 

@@ -18,7 +18,8 @@ use crate::interface::mcp::schemas::{
     GetCallHierarchyInput, GetCallHierarchyOutput, GetComplexityInput, GetComplexityOutput,
     GetEntryPointsInput, GetEntryPointsOutput, GetFileSymbolsInput, GetFileSymbolsOutput,
     GetHotPathsInput, GetHotPathsOutput, GetLeafFunctionsInput, GetLeafFunctionsOutput,
-    GetPerFileGraphInput, GetPerFileGraphOutput, GoToDefinitionInput, GoToDefinitionOutput,
+    GetModuleDependenciesInput, GetModuleDependenciesOutput, GetPerFileGraphInput, GetPerFileGraphOutput,
+    GoToDefinitionInput, GoToDefinitionOutput,
     HierarchyEntryInfo, HierarchySymbolInfo,
     HotPathEntry, HoverInput, HoverOutput, MergeGraphsInput, MergeGraphsOutput,
     OutlineInput, OutlineNodeDto, OutlineOutput,
@@ -1970,6 +1971,46 @@ pub async fn handle_find_dead_code(
         total_dead: result.total_dead,
         total_symbols: result.total_symbols,
         dead_code_percent: result.dead_code_percent,
+        metadata: AnalysisMetadata {
+            total_calls: result.metadata.total_calls,
+            analysis_time_ms: result.metadata.analysis_time_ms,
+        },
+    })
+}
+
+/// Handler for get_module_dependencies tool
+pub async fn handle_get_module_dependencies(
+    ctx: &HandlerContext,
+    input: GetModuleDependenciesInput,
+) -> HandlerResult<GetModuleDependenciesOutput> {
+    let _ensure = ensure_graph_built(ctx)?;
+
+    let result = ctx.analysis_service.detect_module_dependencies();
+
+    // Convert DTO ModuleDependency to schema ModuleDependency
+    let limited_modules: Vec<crate::interface::mcp::schemas::ModuleDependency> = result
+        .graph
+        .modules
+        .into_iter()
+        .take(input.limit)
+        .map(|m| crate::interface::mcp::schemas::ModuleDependency {
+            module: m.module,
+            depends_on: m.depends_on,
+            depended_by: m.depended_by,
+            coupling_score: m.coupling_score,
+            stability: m.stability,
+        })
+        .collect();
+
+    Ok(GetModuleDependenciesOutput {
+        graph: crate::interface::mcp::schemas::ModuleDependencyGraph {
+            modules: limited_modules,
+            cycles: result.graph.cycles,
+            coupling_matrix: result.graph.coupling_matrix,
+        },
+        total_modules: result.total_modules,
+        total_cross_module_edges: result.total_cross_module_edges,
+        cycle_count: result.cycle_count,
         metadata: AnalysisMetadata {
             total_calls: result.metadata.total_calls,
             analysis_time_ms: result.metadata.analysis_time_ms,
