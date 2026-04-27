@@ -16,17 +16,18 @@ Built with **Domain-Driven Design** and **Clean Architecture**, it supports six 
 
 ## Features
 
-- **32 MCP tools** — call graphs, impact analysis, semantic search, safe refactoring, and more
+- **32+ MCP tools** — call graphs, impact analysis, semantic search, safe refactoring, complexity metrics, and more
 - **6 languages** — Rust, Python, TypeScript, JavaScript, Go, Java (via Tree-sitter)
 - **4 graph strategies** — `full`, `lightweight`, `on_demand`, `per_file`
 - **Persistent graph cache** — RedbGraphStore survives across sessions (embedded `redb` database)
 - **Safe refactoring** — rename, extract, inline, move, change signature with impact preview
-- **LSP navigation** — go-to-definition, hover, find references via language servers
-- **Architecture analysis** — cycle detection (Tarjan SCC), risk assessment, hot-path identification
+- **LSP navigation** — go-to-definition, hover, find references
+- **Architecture analysis** — cycle detection (Tarjan SCC), risk assessment, hot-path identification, dead code detection
 - **Mermaid export** — generate call graph diagrams as code or rendered SVG
 - **Context compression** — return natural language summaries instead of raw JSON
 - **Sandbox orchestrator** — automated scenario testing and benchmarking
 - **Zero-config startup** — works out of the box with `cognicode-mcp --cwd /your/project`
+- **OpenTelemetry integration** — metrics and observability support
 
 ## Installation
 
@@ -107,7 +108,7 @@ Add CogniCode as an MCP server in your AI client configuration:
 
 ## MCP Tools
 
-### Graph Analysis
+### Graph Analysis (12 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -122,11 +123,19 @@ Add CogniCode as an MCP server in your AI client configuration:
 | `export_mermaid` | Export call graph as Mermaid flowchart or SVG. |
 | `build_lightweight_index` | Build fast symbol-only index. |
 | `query_symbol_index` | Case-insensitive symbol lookup. |
+| `find_dead_code` | Find unused symbols across the project. |
+
+### Graph Operations (5 tools)
+
+| Tool | Description |
+|------|-------------|
 | `build_call_subgraph` | Build on-demand subgraph centered on a symbol. |
 | `get_per_file_graph` | Get call graph for a single file. |
-| `merge_file_graphs` | Merge graphs from multiple files. |
+| `merge_graphs` | Merge graphs from multiple files. |
+| `get_module_dependencies` | Analyze module-level dependencies. |
+| `get_all_symbols` | Get all symbols in the workspace. |
 
-### Symbols & Semantics
+### Symbols & Semantics (9 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -140,7 +149,7 @@ Add CogniCode as an MCP server in your AI client configuration:
 | `structural_search` | AST-based structural pattern matching. |
 | `validate_syntax` | Validate file syntax using Tree-sitter. |
 
-### LSP Navigation
+### LSP Navigation (3 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -148,7 +157,7 @@ Add CogniCode as an MCP server in your AI client configuration:
 | `hover` | Get type info and documentation. |
 | `find_references` | Find all references to a symbol. |
 
-### File Operations
+### File Operations (5 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -157,7 +166,12 @@ Add CogniCode as an MCP server in your AI client configuration:
 | `list_files` | List project files with glob filtering. |
 | `write_file` | Create or overwrite files within workspace. |
 | `edit_file` | Edit files with syntax validation. |
-| `safe_refactor` | Safe refactoring with validation and preview. |
+
+### Refactoring (1 tool)
+
+| Tool | Description |
+|------|-------------|
+| `safe_refactor` | Safe refactoring with validation and preview (rename, extract, inline, move, change signature). |
 
 ## CLI
 
@@ -208,42 +222,67 @@ Choose the right strategy for your use case:
 
 ## Architecture
 
-CogniCode follows **Domain-Driven Design** with a clean layered architecture:
+CogniCode follows **Domain-Driven Design** with Clean Architecture and 4 bounded contexts:
 
 ```
-┌─────────────────────────────────────────┐
-│              Interface Layer             │
-│   MCP Handlers │ CLI Commands │ LSP      │
-├─────────────────────────────────────────┤
-│           Application Layer              │
-│   WorkspaceSession │ DTOs │ Services     │
-├─────────────────────────────────────────┤
-│             Domain Layer                 │
-│   Aggregates │ Traits │ Value Objects    │
-│   Events │ Domain Services               │
-├─────────────────────────────────────────┤
-│          Infrastructure Layer            │
-│   Tree-sitter │ Graph │ Persistence      │
-│   Semantic │ Refactor │ LSP │ Safety     │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                      COGNICODE                               │
+│                                                               │
+│  ┌────────────────┐  ┌────────────────┐  ┌──────────────┐  │
+│  │   DOMAIN       │  │  APPLICATION   │  │ INFRASTRUCTURE│ │
+│  │   (Core)       │  │   (Services)   │  │  (Impl)       │ │
+│  └───────┬────────┘  └───────┬────────┘  └──────┬───────┘  │
+│          │                    │                   │          │
+│          └────────────────────┼───────────────────┘          │
+│                               │                              │
+│                    ┌──────────┴──────────┐                    │
+│                    │     INTERFACE       │                    │
+│                    │   (MCP, LSP, CLI)  │                    │
+│                    └────────────────────┘                    │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+**Domain Context** (Core business logic):
+- Aggregates: `Symbol`, `CallGraph`, `Refactor`
+- Value Objects: `Location`, `SourceRange`, `DependencyType`
+- Domain Services: `ImpactAnalyzer`, `CycleDetector`, `ComplexityCalculator`
+- Traits: `CodeIntelligenceProvider`, `DependencyRepository`, `RefactorStrategy`
+
+**Application Context** (Orchestration):
+- Services: `NavigationService`, `RefactorService`, `AnalysisService`
+- DTOs: Request/response contracts
+- Commands: Use case orchestrators
+
+**Infrastructure Context** (Implementations):
+- Parsers: `TreeSitterParser`
+- Graph Stores: `PetGraphStore`, `RedbGraphStore`
+- LSP: `LspClient`
+- Persistence: `RedbGraphStore` (embedded `redb` database)
+
+**Interface Context** (External protocols):
+- MCP Server (Model Context Protocol)
+- CLI Commands
+- LSP Server
 
 **Key design decisions:**
 
 - **Trait-based strategies** — Graph building, refactoring, and parsing are pluggable via traits
 - **ArcSwap graph cache** — Atomic, lock-free reads across async tasks
-- **Rayon parallelism** — Heavy computation runs on a dedicated thread pool
+- **Rayon parallelism** — Heavy computation runs on a dedicated thread pool (8MB stack per thread)
 - **Workspace sandboxing** — All file operations are restricted to the declared workspace
-- **Cancellation propagation** — MCP `on_cancelled` tokens flow through all handlers
+- **Cancellation propagation** — MCP cancellation tokens flow through all handlers
+- **OpenTelemetry metrics** — Built-in observability with OTLP export
 
 ## Workspace Crates
 
 | Crate | Description |
 |-------|-------------|
+| `cognicode` | Shared types and utilities |
 | `cognicode-core` | Domain logic, application services, infrastructure |
 | `cognicode-mcp` | MCP server (`cognicode-mcp`) and test client (`mcp-client`) |
 | `cognicode-cli` | Terminal interface (`cognicode`) |
 | `cognicode-sandbox` | Automated scenario testing and benchmarking |
+| `rcode-debug` | Time-travel debugging integration (Chronos MCP) |
 
 ## Configuration
 
@@ -267,7 +306,7 @@ CogniCode follows **Domain-Driven Design** with a clean layered architecture:
 # Build all crates
 cargo build --workspace
 
-# Run tests (746 tests)
+# Run tests
 cargo test --workspace
 
 # Build release binary

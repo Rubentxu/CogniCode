@@ -16,17 +16,18 @@ Construido con **Domain-Driven Design** y **Clean Architecture**, soporta seis l
 
 ## Características
 
-- **32 herramientas MCP** — grafos de llamadas, análisis de impacto, búsqueda semántica, refactorización segura y más
+- **32+ herramientas MCP** — grafos de llamadas, análisis de impacto, búsqueda semántica, refactorización segura, métricas de complejidad y más
 - **6 lenguajes** — Rust, Python, TypeScript, JavaScript, Go, Java (mediante Tree-sitter)
 - **4 estrategias de grafo** — `full`, `lightweight`, `on_demand`, `per_file`
 - **Caché persistente** — RedbGraphStore sobrevive entre sesiones (base de datos embebida `redb`)
 - **Refactorización segura** — renombrar, extraer, inline, mover, cambiar firma con vista previa de impacto
-- **Navegación LSP** — ir a definición, hover, buscar referencias mediante servidores de lenguaje
-- **Análisis de arquitectura** — detección de ciclos (Tarjan SCC), evaluación de riesgo, identificación de caminos críticos
+- **Navegación LSP** — ir a definición, hover, buscar referencias
+- **Análisis de arquitectura** — detección de ciclos (Tarjan SCC), evaluación de riesgo, identificación de caminos críticos, detección de código muerto
 - **Exportación Mermaid** — genera diagramas de grafo de llamadas como código o SVG renderizado
 - **Compresión de contexto** — devuelve resúmenes en lenguaje natural en vez de JSON crudo
 - **Orquestador de sandbox** — testing automatizado y benchmarking de escenarios
 - **Inicio sin configuración** — funciona directamente con `cognicode-mcp --cwd /tu/proyecto`
+- **Integración OpenTelemetry** — soporte de métricas y observabilidad
 
 ## Instalación
 
@@ -107,7 +108,7 @@ Añade CogniCode como servidor MCP en la configuración de tu cliente de IA:
 
 ## Herramientas MCP
 
-### Análisis de Grafos
+### Análisis de Grafos (12 herramientas)
 
 | Herramienta | Descripción |
 |-------------|-------------|
@@ -122,11 +123,19 @@ Añade CogniCode como servidor MCP en la configuración de tu cliente de IA:
 | `export_mermaid` | Exporta el grafo como diagrama Mermaid o SVG. |
 | `build_lightweight_index` | Construye un índice rápido de solo símbolos. |
 | `query_symbol_index` | Búsqueda de símbolos insensible a mayúsculas. |
+| `find_dead_code` | Encuentra símbolos no utilizados en el proyecto. |
+
+### Operaciones de Grafos (5 herramientas)
+
+| Herramienta | Descripción |
+|-------------|-------------|
 | `build_call_subgraph` | Construye un subgrafo bajo demanda centrado en un símbolo. |
 | `get_per_file_graph` | Obtiene el grafo de llamadas de un solo archivo. |
-| `merge_file_graphs` | Fusiona grafos de múltiples archivos. |
+| `merge_graphs` | Fusiona grafos de múltiples archivos. |
+| `get_module_dependencies` | Analiza dependencias a nivel de módulo. |
+| `get_all_symbols` | Obtiene todos los símbolos del workspace. |
 
-### Símbolos y Semántica
+### Símbolos y Semántica (9 herramientas)
 
 | Herramienta | Descripción |
 |-------------|-------------|
@@ -140,7 +149,7 @@ Añade CogniCode como servidor MCP en la configuración de tu cliente de IA:
 | `structural_search` | Búsqueda estructural basada en AST (pattern matching). |
 | `validate_syntax` | Valida la sintaxis de un archivo mediante Tree-sitter. |
 
-### Navegación LSP
+### Navegación LSP (3 herramientas)
 
 | Herramienta | Descripción |
 |-------------|-------------|
@@ -148,7 +157,7 @@ Añade CogniCode como servidor MCP en la configuración de tu cliente de IA:
 | `hover` | Obtiene información de tipos y documentación. |
 | `find_references` | Encuentra todas las referencias a un símbolo. |
 
-### Operaciones de Archivos
+### Operaciones de Archivos (5 herramientas)
 
 | Herramienta | Descripción |
 |-------------|-------------|
@@ -157,7 +166,12 @@ Añade CogniCode como servidor MCP en la configuración de tu cliente de IA:
 | `list_files` | Lista archivos del proyecto con filtrado por glob. |
 | `write_file` | Crea o sobrescribe archivos dentro del workspace. |
 | `edit_file` | Edita archivos con validación de sintaxis. |
-| `safe_refactor` | Refactorización segura con validación y vista previa. |
+
+### Refactorización (1 herramienta)
+
+| Herramienta | Descripción |
+|-------------|-------------|
+| `safe_refactor` | Refactorización segura con validación y vista previa (rename, extract, inline, move, change signature). |
 
 ## CLI
 
@@ -208,42 +222,67 @@ Elige la estrategia adecuada para tu caso de uso:
 
 ## Arquitectura
 
-CogniCode sigue **Domain-Driven Design** con una arquitectura limpia por capas:
+CogniCode sigue **Domain-Driven Design** con Clean Architecture y 4 bounded contexts:
 
 ```
-┌─────────────────────────────────────────┐
-│             Capa de Interfaz            │
-│   Handlers MCP │ CLI │ LSP               │
-├─────────────────────────────────────────┤
-│            Capa de Aplicación           │
-│   WorkspaceSession │ DTOs │ Servicios    │
-├─────────────────────────────────────────┤
-│              Capa de Dominio            │
-│   Agregados │ Traits │ Value Objects     │
-│   Eventos │ Servicios de Dominio        │
-├─────────────────────────────────────────┤
-│          Capa de Infraestructura        │
-│   Tree-sitter │ Grafos │ Persistencia   │
-│   Semántica │ Refactorización │ LSP     │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                      COGNICODE                               │
+│                                                               │
+│  ┌────────────────┐  ┌────────────────┐  ┌──────────────┐  │
+│  │   DOMAIN       │  │  APPLICATION   │  │ INFRASTRUCTURE│ │
+│  │   (Core)       │  │   (Services)   │  │  (Impl)       │ │
+│  └───────┬────────┘  └───────┬────────┘  └──────┬───────┘  │
+│          │                    │                   │          │
+│          └────────────────────┼───────────────────┘          │
+│                               │                              │
+│                    ┌──────────┴──────────┐                    │
+│                    │     INTERFACE       │                    │
+│                    │   (MCP, LSP, CLI)  │                    │
+│                    └────────────────────┘                    │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+**Contexto de Dominio** (Lógica de negocio central):
+- Agregados: `Symbol`, `CallGraph`, `Refactor`
+- Value Objects: `Location`, `SourceRange`, `DependencyType`
+- Servicios de Dominio: `ImpactAnalyzer`, `CycleDetector`, `ComplexityCalculator`
+- Traits: `CodeIntelligenceProvider`, `DependencyRepository`, `RefactorStrategy`
+
+**Contexto de Aplicación** (Orquestación):
+- Servicios: `NavigationService`, `RefactorService`, `AnalysisService`
+- DTOs: Contratos de solicitud/respuesta
+- Comandos: Orquestadores de casos de uso
+
+**Contexto de Infraestructura** (Implementaciones):
+- Parsers: `TreeSitterParser`
+- Almacenamiento de Grafos: `PetGraphStore`, `RedbGraphStore`
+- LSP: `LspClient`
+- Persistencia: `RedbGraphStore` (base de datos embebida `redb`)
+
+**Contexto de Interfaz** (Protocolos externos):
+- Servidor MCP (Model Context Protocol)
+- Comandos CLI
+- Servidor LSP
 
 **Decisiones de diseño clave:**
 
 - **Estrategias basadas en traits** — La construcción de grafos, refactorización y parsing son extensibles mediante traits
 - **Caché de grafos con ArcSwap** — Lecturas atómicas sin bloqueos entre tareas async
-- **Paralelismo con Rayon** — El cómputo pesado se ejecuta en un thread pool dedicado
+- **Paralelismo con Rayon** — El cómputo pesado se ejecuta en un thread pool dedicado (8MB de stack por thread)
 - **Sandbox del workspace** — Todas las operaciones de archivos están restringidas al workspace declarado
-- **Propagación de cancelación** — Los tokens `on_cancelled` de MCP fluyen por todos los handlers
+- **Propagación de cancelación** — Los tokens de cancelación de MCP fluyen por todos los handlers
+- **Métricas OpenTelemetry** — Observabilidad integrada con exportación OTLP
 
 ## Crates del Workspace
 
 | Crate | Descripción |
 |-------|-------------|
+| `cognicode` | Tipos compartidos y utilidades |
 | `cognicode-core` | Lógica de dominio, servicios de aplicación, infraestructura |
 | `cognicode-mcp` | Servidor MCP (`cognicode-mcp`) y cliente de test (`mcp-client`) |
 | `cognicode-cli` | Interfaz de terminal (`cognicode`) |
 | `cognicode-sandbox` | Testing automatizado de escenarios y benchmarking |
+| `rcode-debug` | Integración de debugging time-travel (Chronos MCP) |
 
 ## Configuración
 
@@ -267,7 +306,7 @@ CogniCode sigue **Domain-Driven Design** con una arquitectura limpia por capas:
 # Construir todos los crates
 cargo build --workspace
 
-# Ejecutar tests (746 tests)
+# Ejecutar tests
 cargo test --workspace
 
 # Construir binario de release
