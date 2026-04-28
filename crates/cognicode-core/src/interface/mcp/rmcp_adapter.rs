@@ -722,7 +722,7 @@ async fn call_tool_handler(
         "safe_refactor" => {
             let input: crate::interface::mcp::schemas::SafeRefactorInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_safe_refactor(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::refactor_handlers::handle_safe_refactor(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "find_usages" => {
@@ -852,20 +852,20 @@ async fn call_tool_handler(
             let input: crate::interface::mcp::schemas::GoToDefinitionInput =
                 serde_json::from_value(arguments.into())?;
             let output =
-                crate::interface::mcp::handlers::handle_go_to_definition(ctx, input).await?;
+                crate::interface::mcp::handlers::lsp_handlers::handle_go_to_definition(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "hover" => {
             let input: crate::interface::mcp::schemas::HoverInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_hover(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::lsp_handlers::handle_hover(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "find_references" => {
             let input: crate::interface::mcp::schemas::FindReferencesInput =
                 serde_json::from_value(arguments.into())?;
             let output =
-                crate::interface::mcp::handlers::handle_find_references(ctx, input).await?;
+                crate::interface::mcp::handlers::lsp_handlers::handle_find_references(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "read_file" => {
@@ -903,83 +903,83 @@ async fn call_tool_handler(
         "smart_overview" => {
             let input: crate::interface::mcp::schemas::SmartOverviewInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_smart_overview(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_smart_overview(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "ranked_symbols" => {
             let input: crate::interface::mcp::schemas::RankedSymbolsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_ranked_symbols(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_ranked_symbols(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
         "suggest_onboarding_plan" => {
             let input: crate::interface::mcp::schemas::OnboardingPlanInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_suggest_onboarding_plan(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_suggest_onboarding_plan(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "auto_diagnose" => {
             let input: crate::interface::mcp::schemas::AutoDiagnoseInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_auto_diagnose(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_auto_diagnose(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "suggest_refactor_plan" => {
             let input: crate::interface::mcp::schemas::SuggestRefactorPlanInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_suggest_refactor_plan(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_suggest_refactor_plan(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         // AIX-3: NL to Symbol & Ask About Code & Find Pattern
         "nl_to_symbol" => {
             let input: crate::interface::mcp::schemas::NlToSymbolInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_nl_to_symbol(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_nl_to_symbol(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "ask_about_code" => {
             let input: crate::interface::mcp::schemas::AskAboutCodeInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_ask_about_code(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_ask_about_code(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "find_pattern_by_intent" => {
             let input: crate::interface::mcp::schemas::FindPatternByIntentInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_find_pattern_by_intent(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_find_pattern_by_intent(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         // AIX-4: Compare Call Graphs & Detect API Breaks
         "compare_call_graphs" => {
             let input: crate::interface::mcp::schemas::CompareCallGraphsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_compare_call_graphs(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_compare_call_graphs(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "detect_api_breaks" => {
             let input: crate::interface::mcp::schemas::DetectApiBreaksInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_detect_api_breaks(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_detect_api_breaks(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         // AIX-5: System Prompt Context & God Functions & Long Params
         "generate_system_prompt_context" => {
             let input: crate::interface::mcp::schemas::SystemPromptContextInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_generate_system_prompt_context(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_generate_system_prompt_context(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "detect_god_functions" => {
             let input: crate::interface::mcp::schemas::DetectGodFunctionsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_detect_god_functions(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_detect_god_functions(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "detect_long_parameter_lists" => {
             let input: crate::interface::mcp::schemas::DetectLongParamsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_detect_long_parameter_lists(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_detect_long_parameter_lists(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         _ => anyhow::bail!("Unknown tool: {}", tool_name),
