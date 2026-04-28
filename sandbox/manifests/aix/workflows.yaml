@@ -1,0 +1,148 @@
+# AIX-2: onboarding_plan + auto_diagnose + suggest_refactor_plan
+version: "2.0"
+language: rust
+tier: A
+description: "Test AIX-2 tools (onboarding, diagnose, refactor plan) on rust-intelligence fixture"
+
+timeout_seconds: 60
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  # --- suggest_onboarding_plan (AIX-2.1) ---
+  - name: onboarding_plan_understand
+    tool: suggest_onboarding_plan
+    action: plan
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Generate onboarding plan for understanding the codebase"
+    arguments:
+      goal: understand
+    ground_truth:
+      indexed_symbols:
+        - name: greet
+          kind: function
+    metrics:
+      latency:
+        target_ms: 3000
+        max_ms: 10000
+
+  - name: onboarding_plan_refactor
+    tool: suggest_onboarding_plan
+    action: plan
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Generate onboarding plan for refactoring"
+    arguments:
+      goal: refactor
+      focus: Calculator
+    metrics:
+      latency:
+        target_ms: 3000
+        max_ms: 10000
+
+  - name: onboarding_plan_debug
+    tool: suggest_onboarding_plan
+    action: plan
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Generate onboarding plan for debugging"
+    arguments:
+      goal: debug
+      focus: greet
+    metrics:
+      latency:
+        target_ms: 3000
+        max_ms: 10000
+
+  - name: onboarding_plan_add_feature
+    tool: suggest_onboarding_plan
+    action: plan
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Generate onboarding plan for adding a feature"
+    arguments:
+      goal: add_feature
+    metrics:
+      latency:
+        target_ms: 3000
+        max_ms: 10000
+
+  - name: onboarding_plan_review
+    tool: suggest_onboarding_plan
+    action: plan
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Generate onboarding plan for code review"
+    arguments:
+      goal: review
+    metrics:
+      latency:
+        target_ms: 3000
+        max_ms: 10000
+
+  # --- auto_diagnose (AIX-2.3) ---
+  - name: auto_diagnose_project
+    tool: auto_diagnose
+    action: diagnose
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Full project diagnosis"
+    arguments:
+      target: project
+      min_severity: warning
+    ground_truth:
+      symbols:
+        - name: greet
+          kind: function
+        - name: Calculator
+          kind: struct
+    metrics:
+      latency:
+        target_ms: 5000
+        max_ms: 15000
+
+  # --- suggest_refactor_plan (AIX-2.2) ---
+  - name: refactor_plan_calculator
+    tool: suggest_refactor_plan
+    action: plan
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Refactoring plan for Calculator struct"
+    arguments:
+      symbol: Calculator
+      goal: reduce_complexity
+      max_steps: 3
+    ground_truth:
+      symbols:
+        - name: Calculator
+          kind: struct
+    metrics:
+      latency:
+        target_ms: 3000
+        max_ms: 10000
+
+  - name: refactor_plan_greet
+    tool: suggest_refactor_plan
+    action: plan
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Refactoring plan for greet function"
+    arguments:
+      symbol: greet
+      goal: improve_naming
+      max_steps: 3
+    metrics:
+      latency:
+        target_ms: 3000
+        max_ms: 10000

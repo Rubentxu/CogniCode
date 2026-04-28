@@ -4,6 +4,7 @@
 //! the JSON-RPC 2.0 specification.
 
 use serde::{Deserialize, Serialize};
+use crate::application::dto::OverviewDetail;
 
 /// Default depth for call hierarchy traversal
 fn default_depth() -> u8 {
@@ -1515,4 +1516,229 @@ pub struct FileEntry {
 
     /// Detected programming language (if applicable)
     pub language: Option<String>,
+}
+
+// ============================================================================
+// AIX Tool Input Schemas
+// ============================================================================
+
+// AIX-1: Smart Overview & Ranked Symbols
+
+/// Input for smart_overview tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SmartOverviewInput {
+    /// Detail level: quick (~100 tokens), medium (~400 tokens), detailed (~800 tokens)
+    #[serde(default)]
+    pub detail: Option<OverviewDetail>,
+}
+
+fn default_ranked_limit() -> usize {
+    50
+}
+
+/// Input for ranked_symbols tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RankedSymbolsInput {
+    /// Search query string
+    pub query: String,
+    /// Maximum number of results to return
+    #[serde(default = "default_ranked_limit")]
+    pub limit: usize,
+}
+
+// AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
+
+/// Goal for onboarding plan
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OnboardingGoalDetail {
+    Understand,
+    Refactor,
+    Debug,
+    AddFeature,
+    Review,
+}
+
+fn default_onboarding_goal() -> OnboardingGoalDetail {
+    OnboardingGoalDetail::Understand
+}
+
+/// Input for suggest_onboarding_plan tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OnboardingPlanInput {
+    /// Goal for the onboarding plan
+    #[serde(default = "default_onboarding_goal")]
+    pub goal: OnboardingGoalDetail,
+}
+
+fn default_diagnose_target() -> Option<String> {
+    None
+}
+
+fn default_min_severity() -> String {
+    "important".to_string()
+}
+
+/// Input for auto_diagnose tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AutoDiagnoseInput {
+    /// Optional target directory to diagnose
+    #[serde(default = "default_diagnose_target")]
+    pub target: Option<String>,
+    /// Minimum severity level to report
+    #[serde(default = "default_min_severity")]
+    pub min_severity: String,
+}
+
+fn default_refactor_goal() -> String {
+    "reduce_complexity".to_string()
+}
+
+fn default_max_steps() -> usize {
+    5
+}
+
+/// Input for suggest_refactor_plan tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SuggestRefactorPlanInput {
+    /// Target symbol to refactor
+    pub symbol: String,
+    /// Goal for refactoring
+    #[serde(default = "default_refactor_goal")]
+    pub goal: String,
+    /// Maximum number of steps in the plan
+    #[serde(default = "default_max_steps")]
+    pub max_steps: usize,
+}
+
+// AIX-3: NL to Symbol & Ask About Code & Find Pattern
+
+fn default_nl_limit() -> usize {
+    20
+}
+
+/// Input for nl_to_symbol tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NlToSymbolInput {
+    /// Natural language query
+    pub query: String,
+    /// Maximum number of results
+    #[serde(default = "default_nl_limit")]
+    pub limit: usize,
+}
+
+fn default_ask_limit() -> usize {
+    10
+}
+
+/// Input for ask_about_code tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AskAboutCodeInput {
+    /// Question about code flow
+    pub question: String,
+    /// Maximum number of answers
+    #[serde(default = "default_ask_limit")]
+    pub limit: usize,
+}
+
+/// Input for find_pattern_by_intent tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FindPatternByIntentInput {
+    /// Natural language intent description
+    pub intent: String,
+    /// Whether to list all available patterns
+    #[serde(default)]
+    pub list_patterns: Option<bool>,
+}
+
+// AIX-4: Compare Call Graphs & Detect API Breaks
+
+/// Input for compare_call_graphs tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CompareCallGraphsInput {
+    /// Optional baseline directory to compare against
+    #[serde(default)]
+    pub baseline_dir: Option<String>,
+}
+
+fn default_api_break_severity() -> String {
+    "minor".to_string()
+}
+
+/// Input for detect_api_breaks tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DetectApiBreaksInput {
+    /// Optional baseline directory to compare against
+    #[serde(default)]
+    pub baseline_dir: Option<String>,
+    /// Minimum severity to report
+    #[serde(default = "default_api_break_severity")]
+    pub min_severity: String,
+}
+
+// AIX-5: System Prompt Context & God Functions & Long Params
+
+/// Format detail for system prompt context
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ContextFormatDetail {
+    Xml,
+    Json,
+    Markdown,
+}
+
+fn default_context_format() -> ContextFormatDetail {
+    ContextFormatDetail::Xml
+}
+
+/// Input for generate_system_prompt_context tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SystemPromptContextInput {
+    /// Output format
+    #[serde(default = "default_context_format")]
+    pub format: ContextFormatDetail,
+    /// Whether to include architecture info
+    #[serde(default)]
+    pub include_architecture: Option<bool>,
+    /// Whether to include hot paths
+    #[serde(default)]
+    pub include_hot_paths: Option<bool>,
+}
+
+fn default_god_min_lines() -> usize {
+    50
+}
+
+fn default_god_min_complexity() -> u32 {
+    15
+}
+
+fn default_god_min_fan_in() -> usize {
+    5
+}
+
+/// Input for detect_god_functions tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DetectGodFunctionsInput {
+    /// Minimum lines of code threshold
+    #[serde(default = "default_god_min_lines")]
+    pub min_lines: usize,
+    /// Minimum cyclomatic complexity threshold
+    #[serde(default = "default_god_min_complexity")]
+    pub min_complexity: u32,
+    /// Minimum fan-in threshold
+    #[serde(default = "default_god_min_fan_in")]
+    pub min_fan_in: usize,
+}
+
+fn default_max_params() -> usize {
+    5
+}
+
+/// Input for detect_long_parameter_lists tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DetectLongParamsInput {
+    /// Maximum number of parameters allowed
+    #[serde(default = "default_max_params")]
+    pub max_params: usize,
 }

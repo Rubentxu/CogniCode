@@ -1,0 +1,122 @@
+# AIX-5: system_prompt_context + detect_god_functions + detect_long_parameter_lists
+version: "2.0"
+language: rust
+tier: A
+description: "Test AIX-5 advanced tools on rust-intelligence fixture"
+
+timeout_seconds: 60
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  # --- generate_system_prompt_context (AIX-5.1) ---
+  - name: system_prompt_context_xml
+    tool: generate_system_prompt_context
+    action: generate
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Generate XML system prompt context"
+    arguments:
+      format: xml
+    ground_truth:
+      symbols:
+        - name: greet
+          kind: function
+        - name: Calculator
+          kind: struct
+    metrics:
+      latency:
+        target_ms: 5000
+        max_ms: 15000
+
+  - name: system_prompt_context_json
+    tool: generate_system_prompt_context
+    action: generate
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Generate JSON system prompt context"
+    arguments:
+      format: json
+    metrics:
+      latency:
+        target_ms: 5000
+        max_ms: 15000
+
+  # --- detect_god_functions (AIX-5.2) ---
+  - name: detect_god_functions_default
+    tool: detect_god_functions
+    action: detect
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Detect god functions with default thresholds"
+    arguments:
+      min_lines: 10
+      min_complexity: 1
+      min_fan_in: 0
+    ground_truth:
+      symbols:
+        - name: greet
+          kind: function
+    metrics:
+      latency:
+        target_ms: 5000
+        max_ms: 15000
+
+  - name: detect_god_functions_high_threshold
+    tool: detect_god_functions
+    action: detect
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Detect god functions with high thresholds (should find none)"
+    arguments:
+      min_lines: 500
+      min_complexity: 50
+      min_fan_in: 50
+    metrics:
+      latency:
+        target_ms: 5000
+        max_ms: 15000
+
+  # --- detect_long_parameter_lists (AIX-5.3) ---
+  - name: detect_long_params_low_threshold
+    tool: detect_long_parameter_lists
+    action: detect
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Detect functions with more than 1 parameter (should find add/multiply)"
+    arguments:
+      max_params: 1
+    ground_truth:
+      symbols:
+        - name: add
+          kind: function
+        - name: multiply
+          kind: function
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.20
+      latency:
+        target_ms: 5000
+        max_ms: 15000
+
+  - name: detect_long_params_high_threshold
+    tool: detect_long_parameter_lists
+    action: detect
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Detect functions with more than 10 parameters (should find none)"
+    arguments:
+      max_params: 10
+    metrics:
+      latency:
+        target_ms: 5000
+        max_ms: 15000

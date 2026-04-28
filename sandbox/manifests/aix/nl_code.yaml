@@ -1,0 +1,130 @@
+# AIX-3: nl_to_symbol + ask_about_code + find_pattern_by_intent
+version: "2.0"
+language: rust
+tier: A
+description: "Test AIX-3 NL→Code tools on rust-intelligence fixture"
+
+timeout_seconds: 60
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  # --- nl_to_symbol (AIX-3.1) ---
+  - name: nl_to_symbol_greeting_function
+    tool: nl_to_symbol
+    action: search
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Map 'greeting function' to greet symbol"
+    arguments:
+      description: "a function that greets people"
+      limit: 3
+    ground_truth:
+      symbols:
+        - name: greet
+          kind: function
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.20
+      latency:
+        target_ms: 5000
+        max_ms: 15000
+
+  - name: nl_to_symbol_calculator_struct
+    tool: nl_to_symbol
+    action: search
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Map 'calculator' to Calculator struct"
+    arguments:
+      description: "something that calculates numbers"
+      limit: 3
+      kinds:
+        - struct
+    ground_truth:
+      symbols:
+        - name: Calculator
+          kind: struct
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.20
+
+  - name: nl_to_symbol_add_function
+    tool: nl_to_symbol
+    action: search
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Map 'add numbers' to add function"
+    arguments:
+      description: "adds two numbers together"
+      limit: 3
+    ground_truth:
+      symbols:
+        - name: add
+          kind: function
+
+  # --- ask_about_code (AIX-3.2) ---
+  - name: ask_about_code_greet_flow
+    tool: ask_about_code
+    action: query
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Ask how greet function flows"
+    arguments:
+      question: "what calls the greet function"
+      max_answers: 2
+    metrics:
+      latency:
+        target_ms: 5000
+        max_ms: 15000
+
+  # --- find_pattern_by_intent (AIX-3.3) ---
+  - name: find_pattern_list_all
+    tool: find_pattern_by_intent
+    action: search
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "List all available intent patterns"
+    arguments:
+      list_patterns: true
+    metrics:
+      latency:
+        target_ms: 1000
+        max_ms: 5000
+
+  - name: find_pattern_async_await
+    tool: find_pattern_by_intent
+    action: search
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Find patterns matching 'async without await'"
+    arguments:
+      intent: "async without await"
+    metrics:
+      latency:
+        target_ms: 1000
+        max_ms: 5000
+
+  - name: find_pattern_missing_docs
+    tool: find_pattern_by_intent
+    action: search
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Find patterns matching 'missing documentation'"
+    arguments:
+      intent: "missing doc"
+    metrics:
+      latency:
+        target_ms: 1000
+        max_ms: 5000

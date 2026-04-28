@@ -114,28 +114,40 @@ impl LightweightIndex {
             ".env",         // Python virtual env
             "env",          // Python virtual env
             ".sandbox",     // sandbox working copies
+            "sandbox",      // sandbox repos and fixtures
         ];
 
+        // Helper to check if a path should be skipped
+        // project_dir is the root being indexed - we never skip it even if hidden
+        fn should_skip_path(path: &std::path::Path, project_dir: &std::path::Path) -> bool {
+            // Never skip the project directory itself
+            if path == project_dir {
+                return false;
+            }
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if SKIP_DIRS.contains(&name) {
+                    return true;
+                }
+                // Skip hidden directories (except .git which is already handled)
+                if name.starts_with('.') && name != ".git" {
+                    return true;
+                }
+            }
+            false
+        }
+
+        let project_dir = project_dir.as_ref();
         for entry in WalkDir::new(project_dir)
             .follow_links(true)
             .into_iter()
+            .filter_entry(|e| !should_skip_path(e.path(), project_dir))
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
 
-            // Skip directories that are known to contain no source code
+            // Skip directories - only process files
             if path.is_dir() {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    // Skip if directory name matches any SKIP_DIRS entry
-                    if SKIP_DIRS.contains(&name) {
-                        continue;
-                    }
-                    // Skip hidden directories (except .git which is already handled)
-                    if name.starts_with('.') && name != ".git" {
-                        continue;
-                    }
-                }
-                continue; // Skip directories - only process files below
+                continue;
             }
 
             let language = match Language::from_extension(path.extension()) {

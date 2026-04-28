@@ -3,7 +3,7 @@
 //! Implements the Tool trait from rig-core for all CogniCode operations.
 
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
 #[cfg(feature = "rig")]
@@ -48,7 +48,7 @@ impl From<crate::application::workspace_session::WorkspaceError> for ToolError {
 // =============================================================================
 
 /// Build a parameter schema for tool definitions
-fn param(name: &str, type_str: &str, description: &str) -> JsonValue {
+fn param(_name: &str, type_str: &str, description: &str) -> JsonValue {
     serde_json::json!({
         "type": type_str,
         "description": description

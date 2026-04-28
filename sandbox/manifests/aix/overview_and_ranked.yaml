@@ -1,0 +1,121 @@
+# AIX-1: smart_overview + ranked_symbols
+version: "2.0"
+language: rust
+tier: A
+description: "Test AIX-1 tools (smart_overview, ranked_symbols) on rust-intelligence fixture"
+
+timeout_seconds: 60
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  # --- smart_overview (AIX-1.1) ---
+  - name: smart_overview_quick
+    tool: smart_overview
+    action: overview
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Quick smart overview of rust-intelligence fixture"
+    arguments:
+      detail: quick
+    ground_truth:
+      symbols:
+        - name: greet
+          kind: function
+        - name: add
+          kind: function
+        - name: Calculator
+          kind: struct
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.15
+      latency:
+        target_ms: 5000
+        max_ms: 15000
+
+  - name: smart_overview_medium
+    tool: smart_overview
+    action: overview
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Medium smart overview with entry points and hot paths"
+    arguments:
+      detail: medium
+    ground_truth:
+      entry_points:
+        - greet
+        - add
+        - multiply
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.15
+      latency:
+        target_ms: 5000
+        max_ms: 15000
+
+  - name: smart_overview_detailed
+    tool: smart_overview
+    action: overview
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Detailed smart overview with first reads"
+    arguments:
+      detail: detailed
+    metrics:
+      latency:
+        target_ms: 5000
+        max_ms: 15000
+
+  # --- ranked_symbols (AIX-1.3) ---
+  - name: ranked_symbols_basic
+    tool: ranked_symbols
+    action: search
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Ranked symbol search for 'greet'"
+    arguments:
+      query: greet
+      limit: 5
+    ground_truth:
+      symbols:
+        - name: greet
+          kind: function
+      search_results:
+        - name: greet
+          kind: function
+    metrics:
+      correctness:
+        type: precision_recall
+        tolerance_pct: 0.10
+      latency:
+        target_ms: 3000
+        max_ms: 10000
+
+  - name: ranked_symbols_with_kind_filter
+    tool: ranked_symbols
+    action: search
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: read_only
+    expected_outcome: pass
+    description: "Ranked symbol search for structs"
+    arguments:
+      query: Calculator
+      limit: 3
+      kinds:
+        - struct
+    ground_truth:
+      symbols:
+        - name: Calculator
+          kind: struct
+    metrics:
+      latency:
+        target_ms: 3000
+        max_ms: 10000

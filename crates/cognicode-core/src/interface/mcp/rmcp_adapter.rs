@@ -474,6 +474,158 @@ impl ServerHandler for CogniCodeHandler {
                         "required": ["action", "target"]
                     }).as_object().cloned().unwrap()),
                 ),
+                // AIX-1: Smart Overview & Ranked Symbols
+                Tool::new(
+                    "smart_overview",
+                    "Get a comprehensive project overview with architecture score, hot paths, and recommended first reads for AI agents.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "detail": { "type": "string", "enum": ["quick", "medium", "detailed"], "description": "Detail level: quick (~100 tokens), medium (~400 tokens), detailed (~800 tokens)" }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "ranked_symbols",
+                    "Get AI-relevance ranked symbols based on a search query, considering fan-in, complexity, and documentation.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "query": { "type": "string", "description": "Search query string" },
+                            "limit": { "type": "integer", "description": "Maximum number of results to return (default: 50)" }
+                        },
+                        "required": ["query"]
+                    }).as_object().cloned().unwrap()),
+                ),
+                // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
+                Tool::new(
+                    "suggest_onboarding_plan",
+                    "Generate a step-by-step onboarding plan to understand, refactor, debug, or extend a codebase.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "goal": { "type": "string", "enum": ["understand", "refactor", "debug", "add_feature", "review"], "description": "Goal for the onboarding plan" }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "auto_diagnose",
+                    "Automatically diagnose project health issues including architecture problems, dead code, and complexity hotspots.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "target": { "type": "string", "description": "Optional target directory to diagnose" },
+                            "min_severity": { "type": "string", "enum": ["info", "warning", "important", "critical"], "description": "Minimum severity level to report" }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "suggest_refactor_plan",
+                    "Analyze a symbol and suggest a concrete refactoring plan with risk assessment.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "symbol": { "type": "string", "description": "Target symbol to refactor" },
+                            "goal": { "type": "string", "description": "Goal for refactoring (default: reduce_complexity)" },
+                            "max_steps": { "type": "integer", "description": "Maximum number of steps in the plan" }
+                        },
+                        "required": ["symbol"]
+                    }).as_object().cloned().unwrap()),
+                ),
+                // AIX-3: NL to Symbol & Ask About Code & Find Pattern
+                Tool::new(
+                    "nl_to_symbol",
+                    "Convert natural language descriptions to precise symbol matches using keyword extraction and semantic search.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "query": { "type": "string", "description": "Natural language query" },
+                            "limit": { "type": "integer", "description": "Maximum number of results (default: 20)" }
+                        },
+                        "required": ["query"]
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "ask_about_code",
+                    "Answer questions about code flow by tracing execution paths between symbols.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "question": { "type": "string", "description": "Question about code flow" },
+                            "limit": { "type": "integer", "description": "Maximum number of answers (default: 10)" }
+                        },
+                        "required": ["question"]
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "find_pattern_by_intent",
+                    "Match natural language intent descriptions to known code patterns.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "intent": { "type": "string", "description": "Natural language intent description" },
+                            "list_patterns": { "type": "boolean", "description": "Whether to list all available patterns" }
+                        },
+                        "required": ["intent"]
+                    }).as_object().cloned().unwrap()),
+                ),
+                // AIX-4: Compare Call Graphs & Detect API Breaks
+                Tool::new(
+                    "compare_call_graphs",
+                    "Compare the current call graph against a baseline to detect structural changes.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "baseline_dir": { "type": "string", "description": "Optional baseline directory to compare against" }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "detect_api_breaks",
+                    "Detect breaking changes in the public API by comparing entry points between current and baseline graphs.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "baseline_dir": { "type": "string", "description": "Optional baseline directory to compare against" },
+                            "min_severity": { "type": "string", "enum": ["patch", "minor", "major"], "description": "Minimum severity to report" }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
+                // AIX-5: System Prompt Context & God Functions & Long Params
+                Tool::new(
+                    "generate_system_prompt_context",
+                    "Generate a structured context block for LLM system prompts in XML, JSON, or Markdown format.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "format": { "type": "string", "enum": ["xml", "json", "markdown"], "description": "Output format" },
+                            "include_architecture": { "type": "boolean", "description": "Whether to include architecture info" },
+                            "include_hot_paths": { "type": "boolean", "description": "Whether to include hot paths" }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "detect_god_functions",
+                    "Find overly large or complex functions (god functions) that should be refactored.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "min_lines": { "type": "integer", "description": "Minimum lines of code threshold (default: 50)" },
+                            "min_complexity": { "type": "integer", "description": "Minimum cyclomatic complexity threshold (default: 15)" },
+                            "min_fan_in": { "type": "integer", "description": "Minimum fan-in threshold (default: 5)" }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "detect_long_parameter_lists",
+                    "Find functions with too many parameters that should be consolidated into structs.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "max_params": { "type": "integer", "description": "Maximum number of parameters allowed (default: 5)" }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
             ];
 
             // Paginate
@@ -745,6 +897,89 @@ async fn call_tool_handler(
             let input: crate::interface::mcp::schemas::ListFilesInput =
                 serde_json::from_value(arguments.into())?;
             let output = crate::interface::mcp::handlers::handle_list_files(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        // AIX-1: Smart Overview & Ranked Symbols
+        "smart_overview" => {
+            let input: crate::interface::mcp::schemas::SmartOverviewInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_smart_overview(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        "ranked_symbols" => {
+            let input: crate::interface::mcp::schemas::RankedSymbolsInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_ranked_symbols(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
+        "suggest_onboarding_plan" => {
+            let input: crate::interface::mcp::schemas::OnboardingPlanInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_suggest_onboarding_plan(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        "auto_diagnose" => {
+            let input: crate::interface::mcp::schemas::AutoDiagnoseInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_auto_diagnose(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        "suggest_refactor_plan" => {
+            let input: crate::interface::mcp::schemas::SuggestRefactorPlanInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_suggest_refactor_plan(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        // AIX-3: NL to Symbol & Ask About Code & Find Pattern
+        "nl_to_symbol" => {
+            let input: crate::interface::mcp::schemas::NlToSymbolInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_nl_to_symbol(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        "ask_about_code" => {
+            let input: crate::interface::mcp::schemas::AskAboutCodeInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_ask_about_code(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        "find_pattern_by_intent" => {
+            let input: crate::interface::mcp::schemas::FindPatternByIntentInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_find_pattern_by_intent(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        // AIX-4: Compare Call Graphs & Detect API Breaks
+        "compare_call_graphs" => {
+            let input: crate::interface::mcp::schemas::CompareCallGraphsInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_compare_call_graphs(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        "detect_api_breaks" => {
+            let input: crate::interface::mcp::schemas::DetectApiBreaksInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_detect_api_breaks(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        // AIX-5: System Prompt Context & God Functions & Long Params
+        "generate_system_prompt_context" => {
+            let input: crate::interface::mcp::schemas::SystemPromptContextInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_generate_system_prompt_context(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        "detect_god_functions" => {
+            let input: crate::interface::mcp::schemas::DetectGodFunctionsInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_detect_god_functions(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        "detect_long_parameter_lists" => {
+            let input: crate::interface::mcp::schemas::DetectLongParamsInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_detect_long_parameter_lists(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         _ => anyhow::bail!("Unknown tool: {}", tool_name),

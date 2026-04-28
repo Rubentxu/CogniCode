@@ -1,0 +1,44 @@
+# AIX-4: compare_call_graphs + detect_api_breaks (Semantic Diff)
+version: "2.0"
+language: rust
+tier: A
+description: "Test AIX-4 semantic diff tools on rust-intelligence fixture"
+
+timeout_seconds: 60
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  # --- compare_call_graphs (AIX-4.1) ---
+  - name: compare_call_graphs_no_baseline
+    tool: compare_call_graphs
+    action: diff
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Compare call graphs — expects no baseline message"
+    ground_truth:
+      symbols:
+        - name: greet
+          kind: function
+    metrics:
+      latency:
+        target_ms: 3000
+        max_ms: 10000
+
+  # --- detect_api_breaks (AIX-4.2) ---
+  - name: detect_api_breaks_no_baseline
+    tool: detect_api_breaks
+    action: detect
+    workspace: sandbox/fixtures/rust-intelligence
+    scenario_class: analysis
+    expected_outcome: pass
+    description: "Detect API breaks — expects no baseline message"
+    arguments:
+      min_severity: minor
+    metrics:
+      latency:
+        target_ms: 3000
+        max_ms: 10000
