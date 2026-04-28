@@ -926,6 +926,31 @@ pub struct ApiBreaksResult {
 }
 
 // =============================================================================
+// Evaluate Refactor Quality (AIX-4.3)
+// =============================================================================
+
+/// Refactor quality evaluation result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefactorEvalDto {
+    /// Quality score 0-100 (higher = better)
+    pub quality_score: f64,
+    /// Verdict: "improvement" | "neutral" | "regression"
+    pub verdict: String,
+    /// Complexity delta (negative = simpler = better)
+    pub complexity_delta: f64,
+    /// Coupling delta (negative = less coupled = better)
+    pub coupling_delta: isize,
+    /// Cycle count delta (negative = fewer cycles = better)
+    pub cycle_delta: isize,
+    /// Dead code delta (negative = less dead code = better)
+    pub dead_code_delta: isize,
+    /// Recommendations for further improvements
+    pub recommendations: Vec<String>,
+    /// Metadata
+    pub _meta: OverviewMeta,
+}
+
+// =============================================================================
 // System Prompt Context (AIX-5.1)
 // =============================================================================
 
@@ -1005,6 +1030,32 @@ pub struct LongParamsResult {
     pub functions: Vec<LongParamFunctionDto>,
     pub threshold: usize,
     pub total_analyzed: usize,
+    pub _meta: OverviewMeta,
+}
+
+// ============================================================================
+// Symbol Hotness (PL3)
+// ============================================================================
+
+/// A symbol with its hotness/access tracking data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HotSymbolDto {
+    /// Symbol name
+    pub symbol: String,
+    /// Number of times this symbol was accessed
+    pub access_count: usize,
+    /// Normalized hotness score (0.0-1.0, where 1.0 is the hottest)
+    pub hotness_score: f64,
+}
+
+/// Result of querying hot symbols
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HotSymbolsResult {
+    /// List of hot symbols sorted by access count descending
+    pub symbols: Vec<HotSymbolDto>,
+    /// Total number of symbol accesses across all tracked symbols
+    pub total_accesses: usize,
+    /// Metadata for context
     pub _meta: OverviewMeta,
 }
 

@@ -7,10 +7,11 @@ use crate::application::dto::{
     ApiBreak, ApiBreaksResult, ArchitectureResult, AskAboutCodeResult, CodeAnswer, CodePathStep,
     DiagnoseIssue, DiagnoseReportDto, EntryPointSummary, FindPatternResult, GodFunctionDto,
     GodFunctionThresholds, GodFunctionsResult, GraphDiffDto, HotPathDto,
+    HotSymbolDto, HotSymbolsResult,
     IntentMatch, LongParamFunctionDto, LongParamsResult,
     NlSymbolMatch, NlToSymbolResult, OnboardingPlanDto, OnboardingStep,
     OverviewDetail, OverviewMeta, ProjectType, RankedSymbolDto,
-    RankedSymbolsResult, RefactorActionStep, RefactorSuggestionDto, SmartOverviewDto,
+    RankedSymbolsResult, RefactorActionStep, RefactorEvalDto, RefactorSuggestionDto, SmartOverviewDto,
     SystemPromptContext,
 };
 use crate::application::services::analysis_service::AnalysisService;
@@ -30,7 +31,7 @@ use crate::interface::mcp::schemas::{
     GetAllSymbolsInput, GetAllSymbolsOutput, GetCallHierarchyInput, GetCallHierarchyOutput,
     GetComplexityInput, GetComplexityOutput,
     GetEntryPointsInput, GetEntryPointsOutput, GetFileSymbolsInput, GetFileSymbolsOutput,
-    GetHotPathsInput, GetHotPathsOutput, GetLeafFunctionsInput, GetLeafFunctionsOutput,
+    GetHotPathsInput, GetHotPathsOutput, GetHotSymbolsInput, GetLeafFunctionsInput, GetLeafFunctionsOutput,
     GetModuleDependenciesInput, GetModuleDependenciesOutput, GetPerFileGraphInput, GetPerFileGraphOutput,
     GoToDefinitionInput, GoToDefinitionOutput,
     HierarchyEntryInfo, HierarchySymbolInfo,
@@ -45,7 +46,7 @@ use crate::interface::mcp::schemas::{
     // AIX Input schemas
     AskAboutCodeInput, AutoDiagnoseInput, CompareCallGraphsInput,
     ContextFormatDetail, DetectApiBreaksInput, DetectGodFunctionsInput, DetectLongParamsInput,
-    FindPatternByIntentInput, NlToSymbolInput, OnboardingGoalDetail, OnboardingPlanInput,
+    EvaluateRefactorQualityInput, FindPatternByIntentInput, NlToSymbolInput, OnboardingGoalDetail, OnboardingPlanInput,
     RankedSymbolsInput, SmartOverviewInput, SuggestRefactorPlanInput, SystemPromptContextInput,
 };
 use crate::interface::mcp::security::{InputValidator, SecurityError};
@@ -66,7 +67,7 @@ use crate::domain::traits::GraphStore;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 /// Context passed to all handlers containing shared services
@@ -84,6 +85,8 @@ pub struct HandlerContext {
     pub client_version: Option<String>,
     pub cancellation_token: Arc<AtomicBool>,
     pub log_level: Arc<tokio::sync::RwLock<tracing::Level>>,
+    /// Tracks symbol access hotness for AI relevance learning
+    pub symbol_hotness: Arc<Mutex<HashMap<String, usize>>>,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -119,6 +122,7 @@ impl HandlerContext {
             client_version: None,
             cancellation_token: Arc::new(AtomicBool::new(false)),
             log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
+            symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -136,6 +140,7 @@ impl HandlerContext {
             client_version: None,
             cancellation_token: Arc::new(AtomicBool::new(false)),
             log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
+            symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -156,6 +161,7 @@ impl HandlerContext {
             client_version: None,
             cancellation_token: Arc::new(AtomicBool::new(false)),
             log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
+            symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -176,6 +182,7 @@ impl HandlerContext {
             client_version: None,
             cancellation_token: Arc::new(AtomicBool::new(false)),
             log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
+            symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -194,6 +201,26 @@ impl HandlerContext {
             .map(|g| *g)
             .unwrap_or(tracing::Level::INFO);
         level >= stored_level
+    }
+
+    /// Records that a symbol was accessed (queried by AI agent)
+    /// This builds up hotness data over time for relevance ranking
+    pub fn record_symbol_access(&self, symbol_name: &str, count: usize) {
+        if let Ok(mut hotness) = self.symbol_hotness.lock() {
+            *hotness.entry(symbol_name.to_string()).or_default() += count;
+        }
+    }
+
+    /// Gets the normalized hotness score for a symbol (0.0-1.0)
+    /// Returns 0.0 if the symbol hasn't been accessed or on lock error
+    pub fn get_symbol_hotness(&self, symbol_name: &str) -> f64 {
+        if let Ok(hotness) = self.symbol_hotness.lock() {
+            let max = hotness.values().max().copied().unwrap_or(1);
+            let count = hotness.get(symbol_name).copied().unwrap_or(0);
+            count as f64 / max as f64 // normalized 0.0-1.0
+        } else {
+            0.0
+        }
     }
 }
 
@@ -1663,6 +1690,49 @@ pub async fn handle_get_hot_paths(
         metadata: AnalysisMetadata {
             total_calls: total,
             analysis_time_ms: start.elapsed().as_millis() as u64,
+        },
+    })
+}
+
+/// Handler for get_hot_symbols tool (PL3)
+pub async fn handle_get_hot_symbols(
+    ctx: &HandlerContext,
+    input: GetHotSymbolsInput,
+) -> HandlerResult<HotSymbolsResult> {
+    let _start = Instant::now();
+
+    // Get the hotness data from context
+    let hotness = ctx.symbol_hotness.lock().map_err(|_| {
+        HandlerError::Internal("Failed to acquire hotness lock".into())
+    })?;
+
+    // Convert to sorted vector
+    let mut symbols: Vec<HotSymbolDto> = hotness
+        .iter()
+        .map(|(symbol, count)| {
+            let max = hotness.values().max().copied().unwrap_or(1);
+            let hotness_score = *count as f64 / max as f64;
+            HotSymbolDto {
+                symbol: symbol.clone(),
+                access_count: *count,
+                hotness_score,
+            }
+        })
+        .collect();
+
+    // Sort by access count descending
+    symbols.sort_by(|a, b| b.access_count.cmp(&a.access_count));
+    symbols.truncate(input.limit);
+
+    let total_accesses: usize = hotness.values().sum();
+    let symbol_count = symbols.len();
+
+    Ok(HotSymbolsResult {
+        symbols,
+        total_accesses,
+        _meta: OverviewMeta {
+            estimated_tokens: symbol_count * 30,
+            detail_level: "hot_symbols".to_string(),
         },
     })
 }

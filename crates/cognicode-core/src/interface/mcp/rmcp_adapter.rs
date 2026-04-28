@@ -591,6 +591,14 @@ impl ServerHandler for CogniCodeHandler {
                         }
                     }).as_object().cloned().unwrap()),
                 ),
+                Tool::new(
+                    "evaluate_refactor_quality",
+                    "Evaluate whether a refactoring was beneficial by comparing current graph state vs persisted baseline.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {}
+                    }).as_object().cloned().unwrap()),
+                ),
                 // AIX-5: System Prompt Context & God Functions & Long Params
                 Tool::new(
                     "generate_system_prompt_context",
@@ -623,6 +631,17 @@ impl ServerHandler for CogniCodeHandler {
                         "type": "object",
                         "properties": {
                             "max_params": { "type": "integer", "description": "Maximum number of parameters allowed (default: 5)" }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
+                // PL3: Symbol Hotness Tracking
+                Tool::new(
+                    "get_hot_symbols",
+                    "Get the most frequently accessed symbols (AI query hotness tracking).",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "limit": { "type": "integer", "description": "Maximum number of hot symbols to return (default: 20)" }
                         }
                     }).as_object().cloned().unwrap()),
                 ),
@@ -963,6 +982,12 @@ async fn call_tool_handler(
             let output = crate::interface::mcp::handlers::aix_handlers::handle_detect_api_breaks(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
+        "evaluate_refactor_quality" => {
+            let input: crate::interface::mcp::schemas::EvaluateRefactorQualityInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_evaluate_refactor_quality(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
         // AIX-5: System Prompt Context & God Functions & Long Params
         "generate_system_prompt_context" => {
             let input: crate::interface::mcp::schemas::SystemPromptContextInput =
@@ -980,6 +1005,13 @@ async fn call_tool_handler(
             let input: crate::interface::mcp::schemas::DetectLongParamsInput =
                 serde_json::from_value(arguments.into())?;
             let output = crate::interface::mcp::handlers::aix_handlers::handle_detect_long_parameter_lists(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        // PL3: Symbol Hotness Tracking
+        "get_hot_symbols" => {
+            let input: crate::interface::mcp::schemas::GetHotSymbolsInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_get_hot_symbols(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         _ => anyhow::bail!("Unknown tool: {}", tool_name),

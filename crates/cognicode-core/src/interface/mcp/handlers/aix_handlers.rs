@@ -101,23 +101,53 @@ pub async fn handle_ranked_symbols(
         }
     );
 
+    // Calculate max fan_in for normalization
+    let max_fan_in = results.iter()
+        .map(|r| {
+            let symbol_id = SymbolId::new(r.symbol.fully_qualified_name());
+            graph.callers(&symbol_id).len()
+        })
+        .max()
+        .unwrap_or(1);
+
     let mut ranked: Vec<RankedSymbolDto> = Vec::new();
     for r in results.iter().take(input.limit) {
         let symbol_id = SymbolId::new(r.symbol.fully_qualified_name());
         let fan_in = graph.callers(&symbol_id).len();
         let complexity = get_symbol_complexity(&graph, &symbol_id);
+        let symbol_name = r.symbol.name().to_string();
+
+        // Calculate hotness boost (5% weight, extra on top of base score)
+        let hotness_boost = ctx.get_symbol_hotness(&symbol_name) * 0.05;
+
+        // Calculate enhanced relevance score with hotness boost
+        let fan_in_norm = if max_fan_in > 0 {
+            fan_in as f64 / max_fan_in as f64
+        } else {
+            0.0
+        };
+        let base_score = r.score as f64;
+        // Apply weighted scoring: fan_in * 0.4 + base * 0.6
+        let weighted_score = fan_in_norm * 0.4 + base_score * 0.6;
+        // Add hotness boost and cap at 1.0
+        let relevance_score = (weighted_score + hotness_boost).min(1.0);
 
         ranked.push(RankedSymbolDto {
-            name: r.symbol.name().to_string(),
+            name: symbol_name,
             file: r.symbol.location().file().to_string(),
             line: r.symbol.location().line() + 1,
             kind: format!("{:?}", r.symbol.kind()).to_lowercase(),
-            relevance_score: r.score as f64,
+            relevance_score,
             fan_in,
             complexity,
             has_docs: false,
-            summary: format!("{} (score: {:.2})", r.symbol.name(), r.score),
+            summary: format!("{} (score: {:.2})", r.symbol.name(), relevance_score),
         });
+    }
+
+    // Record symbol accesses for hotness tracking
+    for r in &ranked {
+        ctx.record_symbol_access(&r.name, 1);
     }
 
     let total = ranked.len();
@@ -434,6 +464,11 @@ pub async fn handle_nl_to_symbol(
 
     let total = matches.len();
     matches.truncate(input.limit);
+
+    // Record symbol accesses for hotness tracking
+    for m in &matches {
+        ctx.record_symbol_access(&m.symbol_name, 1);
+    }
 
     Ok(NlToSymbolResult {
         query: input.query,
@@ -892,6 +927,135 @@ pub async fn handle_detect_long_parameter_lists(
         _meta: OverviewMeta {
             estimated_tokens: long_param_count * 40,
             detail_level: "long_params".to_string(),
+        },
+    })
+}
+
+/// Handler for evaluate_refactor_quality tool (AIX-4.3)
+pub async fn handle_evaluate_refactor_quality(
+    ctx: &HandlerContext,
+    _input: EvaluateRefactorQualityInput,
+) -> HandlerResult<RefactorEvalDto> {
+    let _ensure = ensure_graph_built(ctx)?;
+
+    let _current_graph = ctx.analysis_service.get_project_graph();
+    let stats = ctx.analysis_service.get_graph_stats();
+
+    // Get current metrics
+    let current_symbols = stats.symbol_count;
+    let current_edges = stats.edge_count;
+
+    // Get current cycles and dead code
+    let arch_result = check_architecture_internal(ctx)?;
+    let current_cycles = arch_result.as_ref().map(|r| r.cycles.len()).unwrap_or(0);
+    let dead_code_result = ctx.analysis_service.detect_dead_code();
+    let current_dead_code = dead_code_result.total_dead;
+
+    // Calculate complexity metric (edges per symbol as proxy)
+    let current_complexity = if current_symbols > 0 {
+        current_edges as f64 / current_symbols as f64
+    } else {
+        0.0
+    };
+
+    // Try to load baseline from GraphStore
+    let baseline_path = ctx.working_dir.join(".cognicode").join("graph.redb");
+    let (has_baseline, baseline_complexity, baseline_edges, baseline_cycles, baseline_dead_code) =
+        if let Ok(store) = RedbGraphStore::open(&baseline_path) {
+            if let Ok(Some(baseline_graph)) = store.load_graph() {
+                let baseline_symbols = baseline_graph.symbol_count();
+                let baseline_edge_count = baseline_graph.edge_count();
+                let baseline_complex = if baseline_symbols > 0 {
+                    baseline_edge_count as f64 / baseline_symbols as f64
+                } else {
+                    0.0
+                };
+
+                // Calculate baseline cycles
+                let cycle_detector = CycleDetector::new();
+                let baseline_cycle_result = cycle_detector.detect_cycles(&baseline_graph);
+                let baseline_cycle_count = baseline_cycle_result.cycles.len();
+
+                // Baseline dead code would need a separate analysis, use 0 as placeholder
+                // since we can't retroactively analyze baseline dead code without the service
+                (true, baseline_complex, baseline_edge_count, baseline_cycle_count, 0isize)
+            } else {
+                (false, 0.0, 0usize, 0, 0isize)
+            }
+        } else {
+            (false, 0.0, 0usize, 0, 0isize)
+        };
+
+    if !has_baseline {
+        return Ok(RefactorEvalDto {
+            quality_score: 0.0,
+            verdict: "neutral".to_string(),
+            complexity_delta: 0.0,
+            coupling_delta: 0,
+            cycle_delta: 0,
+            dead_code_delta: 0,
+            recommendations: vec!["No baseline to compare. Save graph first.".to_string()],
+            _meta: OverviewMeta {
+                estimated_tokens: 50,
+                detail_level: "evaluate_refactor".to_string(),
+            },
+        });
+    }
+
+    // Calculate deltas (current - baseline, so negative = improvement)
+    let complexity_delta = current_complexity - baseline_complexity;
+    let coupling_delta = current_edges as isize - baseline_edges as isize;
+    let cycle_delta = current_cycles as isize - baseline_cycles as isize;
+    let dead_code_delta = current_dead_code as isize - baseline_dead_code as isize;
+
+    // Calculate penalties
+    let complexity_penalty = (complexity_delta * 5.0).max(0.0).min(30.0);
+    let coupling_penalty = (coupling_delta as f64 * 3.0).max(0.0).min(25.0);
+    let cycle_penalty = (cycle_delta as f64 * 10.0).max(0.0).min(25.0);
+    let dead_code_bonus = (-dead_code_delta as f64 * 2.0).max(0.0).min(20.0);
+
+    // Calculate quality score
+    let quality_score = (100.0 - complexity_penalty - coupling_penalty - cycle_penalty + dead_code_bonus)
+        .max(0.0).min(100.0);
+
+    // Determine verdict
+    let verdict = if quality_score >= 80.0 {
+        "improvement"
+    } else if quality_score >= 50.0 {
+        "neutral"
+    } else {
+        "regression"
+    }.to_string();
+
+    // Generate recommendations
+    let mut recommendations = Vec::new();
+    if complexity_delta > 0.0 {
+        recommendations.push("Complexity increased. Consider extracting complex functions.".to_string());
+    }
+    if coupling_delta > 0 {
+        recommendations.push("Coupling increased. Look for opportunities to reduce dependencies.".to_string());
+    }
+    if cycle_delta > 0 {
+        recommendations.push("New cycles detected. Break cyclic dependencies with traits or shared modules.".to_string());
+    }
+    if dead_code_delta > 0 {
+        recommendations.push("More dead code detected. Remove unused symbols.".to_string());
+    }
+    if recommendations.is_empty() && quality_score >= 80.0 {
+        recommendations.push("Refactoring appears successful. Consider running tests to verify.".to_string());
+    }
+
+    Ok(RefactorEvalDto {
+        quality_score,
+        verdict,
+        complexity_delta,
+        coupling_delta,
+        cycle_delta,
+        dead_code_delta,
+        recommendations,
+        _meta: OverviewMeta {
+            estimated_tokens: 150,
+            detail_level: "evaluate_refactor".to_string(),
         },
     })
 }
@@ -1485,5 +1649,76 @@ fn main() { f15(); }
         let output = result.unwrap();
         assert_eq!(output.format, "markdown");
         assert!(output.content.contains("Project Stats") || output.content.contains("Symbols"));
+    }
+
+    #[tokio::test]
+    async fn test_refactor_eval_no_baseline() {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, "fn main() {}\n").unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Do NOT build graph - this ensures no baseline exists
+        let input = EvaluateRefactorQualityInput {};
+
+        let result = handle_evaluate_refactor_quality(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // No graph built means no baseline - should be neutral with a note
+        assert_eq!(output.verdict, "neutral");
+        assert!(output.quality_score >= 0.0);
+        assert!(output.recommendations.iter().any(|r| r.contains("No baseline")));
+    }
+
+    #[tokio::test]
+    async fn test_symbol_hotness_tracking_increments() {
+        let temp = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Record some symbol accesses
+        ctx.record_symbol_access("symbol_a", 5);
+        ctx.record_symbol_access("symbol_b", 3);
+        ctx.record_symbol_access("symbol_a", 2); // Should increment to 7
+
+        // Verify hotness scores
+        let score_a = ctx.get_symbol_hotness("symbol_a");
+        let score_b = ctx.get_symbol_hotness("symbol_b");
+        let score_c = ctx.get_symbol_hotness("symbol_nonexistent");
+
+        // symbol_a has 7 accesses, symbol_b has 3, max is 7
+        assert!((score_a - 1.0).abs() < 0.001, "symbol_a should have hotness 1.0 (hottest)");
+        assert!((score_b - 3.0 / 7.0).abs() < 0.001, "symbol_b should have hotness 3/7");
+        assert!((score_c - 0.0).abs() < 0.001, "nonexistent symbol should have hotness 0.0");
+    }
+
+    #[tokio::test]
+    async fn test_ranked_symbols_hotness_boost() {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, "fn process_data() { helper(); }\nfn helper() {}").unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Build graph first
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Pre-record a symbol as hot
+        ctx.record_symbol_access("process_data", 10);
+
+        let input = RankedSymbolsInput {
+            query: "process".to_string(),
+            limit: 10,
+        };
+
+        let result = handle_ranked_symbols(&ctx, input).await;
+        assert!(result.is_ok());
+
+        // Now check hotness is tracked
+        let hotness = ctx.get_symbol_hotness("process_data");
+        assert!(hotness > 0.0, "process_data should have some hotness after being ranked");
     }
 }

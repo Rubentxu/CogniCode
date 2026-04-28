@@ -1546,6 +1546,18 @@ pub struct RankedSymbolsInput {
     pub limit: usize,
 }
 
+fn default_hot_symbols_limit() -> usize {
+    20
+}
+
+/// Input for get_hot_symbols tool (PL3)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetHotSymbolsInput {
+    /// Maximum number of hot symbols to return
+    #[serde(default = "default_hot_symbols_limit")]
+    pub limit: usize,
+}
+
 // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
 
 /// Goal for onboarding plan
@@ -1676,6 +1688,11 @@ pub struct DetectApiBreaksInput {
     #[serde(default = "default_api_break_severity")]
     pub min_severity: String,
 }
+
+/// Input for evaluate_refactor_quality tool (AIX-4.3)
+/// No parameters needed - compares current graph state vs persisted baseline
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EvaluateRefactorQualityInput {}
 
 // AIX-5: System Prompt Context & God Functions & Long Params
 
