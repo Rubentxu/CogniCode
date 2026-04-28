@@ -1644,7 +1644,8 @@ pub struct AskAboutCodeInput {
 /// Input for find_pattern_by_intent tool
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FindPatternByIntentInput {
-    /// Natural language intent description
+    /// Natural language intent description (optional when listing all patterns)
+    #[serde(default)]
     pub intent: String,
     /// Whether to list all available patterns
     #[serde(default)]

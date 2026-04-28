@@ -20,7 +20,7 @@ scenarios:
     expected_outcome: pass
     description: "Map 'greeting function' to greet symbol"
     arguments:
-      description: "a function that greets people"
+      query: "a function that greets people"
       limit: 3
     ground_truth:
       symbols:
@@ -42,7 +42,7 @@ scenarios:
     expected_outcome: pass
     description: "Map 'calculator' to Calculator struct"
     arguments:
-      description: "something that calculates numbers"
+      query: "something that calculates numbers"
       limit: 3
       kinds:
         - struct
@@ -63,7 +63,7 @@ scenarios:
     expected_outcome: pass
     description: "Map 'add numbers' to add function"
     arguments:
-      description: "adds two numbers together"
+      query: "adds two numbers together"
       limit: 3
     ground_truth:
       symbols:
@@ -96,6 +96,7 @@ scenarios:
     description: "List all available intent patterns"
     arguments:
       list_patterns: true
+      intent: ""
     metrics:
       latency:
         target_ms: 1000
