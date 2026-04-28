@@ -787,7 +787,7 @@ pub async fn handle_structural_search(
     ctx: &HandlerContext,
     input: StructuralSearchInput,
 ) -> HandlerResult<StructuralSearchOutput> {
-    let _start = Instant::now();
+    
 
     // Validate input
     ctx.validator.validate_query(&input.query)?;
@@ -1063,7 +1063,7 @@ pub async fn handle_safe_refactor(
     ctx: &HandlerContext,
     input: SafeRefactorInput,
 ) -> HandlerResult<SafeRefactorOutput> {
-    let _start = Instant::now();
+    
 
     // Validate input
     ctx.validator.validate_query(&input.target)?;
@@ -1575,7 +1575,7 @@ fn find_identifier_in_node(node: tree_sitter::Node, source: &str) -> Option<Stri
 }
 
 /// Counts parameters in a function definition
-#[allow(dead_code)]
+
 fn count_parameters(node: tree_sitter::Node, _source: &str) -> u32 {
     let mut count = 0u32;
     for i in 0..node.child_count() {
@@ -1669,7 +1669,7 @@ fn process_decision_points(
 }
 
 /// Handler for get_entry_points tool
-#[allow(dead_code)]
+
 pub async fn handle_get_entry_points(
     ctx: &HandlerContext,
     _input: GetEntryPointsInput,
@@ -1731,7 +1731,7 @@ pub async fn handle_get_entry_points(
 }
 
 /// Handler for get_leaf_functions tool
-#[allow(dead_code)]
+
 pub async fn handle_get_leaf_functions(
     ctx: &HandlerContext,
     _input: GetLeafFunctionsInput,
@@ -2184,7 +2184,7 @@ fn find_symbol_in_graph(graph: &CallGraph, name: &str) -> Option<SymbolId> {
 }
 
 // BFS path finding algorithm
-#[allow(dead_code)]
+
 fn find_path_bfs(graph: &CallGraph, source: &SymbolId, target: &SymbolId, max_depth: u8) -> Vec<SymbolId> {
     use std::collections::VecDeque;
 
@@ -2355,7 +2355,7 @@ pub async fn handle_query_symbol_index(
     ctx: &HandlerContext,
     input: QuerySymbolInput,
 ) -> HandlerResult<QuerySymbolOutput> {
-    let _start = Instant::now();
+    
 
     // Validate input
     ctx.validator.validate_query(&input.symbol_name)?;
@@ -2417,7 +2417,7 @@ pub async fn handle_build_call_subgraph(
         return Err(HandlerError::Internal("Cancelled".into()));
     }
 
-    let _start = Instant::now();
+    
 
     // Validate input
     ctx.validator.validate_query(&input.symbol_name)?;
