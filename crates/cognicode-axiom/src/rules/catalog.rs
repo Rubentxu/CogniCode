@@ -207,7 +207,7 @@ impl S3776Rule {
 
 impl Default for S3776Rule {
     fn default() -> Self {
-        Self::new(15)
+        Self::new(20)
     }
 }
 
@@ -993,12 +993,19 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"let\s+(mut\s+)?([A-Z][a-zA-Z0-9_]*|[a-z]+[A-Z])").unwrap();
+        // Single-char variables common in iterators should be skipped
+        let single_char_skip = ["i", "j", "x", "y", "n", "k", "v", "c"];
         for (idx, line) in ctx.source.lines().enumerate() {
             for cap in re.captures_iter(line) {
                 if let Some(name) = cap.get(2) {
+                    let name_str = name.as_str();
+                    // Skip single-char variables common in iterators
+                    if single_char_skip.contains(&name_str) {
+                        continue;
+                    }
                     issues.push(Issue::new(
                         "S117",
-                        format!("Variable '{}' does not follow snake_case", name.as_str()),
+                        format!("Variable '{}' does not follow snake_case", name_str),
                         Severity::Minor,
                         Category::CodeSmell,
                         ctx.file_path,
@@ -1415,10 +1422,17 @@ declare_rule! {
         for (idx, line) in ctx.source.lines().enumerate() {
             for cap in re.captures_iter(line) {
                 if let Some(name) = cap.get(1) {
-                    if name.as_str().len() > 1 {
+                    let name_str = name.as_str();
+                    if name_str.len() > 1 {
+                        // Skip if type param is used with a trait bound (e.g., T: Serialize)
+                        // These have semantic meaning and shouldn't be flagged
+                        let full_match = cap.get(0).unwrap().as_str();
+                        if full_match.ends_with(':') || line.contains(&format!("{}:", name_str)) {
+                            continue;
+                        }
                         issues.push(Issue::new(
                             "S119",
-                            format!("Type parameter '{}' should use single-letter name", name.as_str()),
+                            format!("Type parameter '{}' should use single-letter name", name_str),
                             Severity::Minor,
                             Category::CodeSmell,
                             ctx.file_path,
@@ -1743,7 +1757,12 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("panic!(") && !line.contains("test") && !line.contains("unreachable") {
+            // Skip panic! in tests, macros, or codegen
+            if line.contains("panic!(") 
+                && !line.contains("test")
+                && !line.contains("unreachable")
+                && !line.contains("macro")
+                && !line.contains("codegen") {
                 issues.push(Issue::new("S2221", "panic! in non-test code - consider returning Result instead", Severity::Major, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::moderate("Return Result<_, Error> or use unreachable!() if truly impossible")));
             }
         }
@@ -2656,7 +2675,7 @@ declare_rule! {
     severity: Major
     category: CodeSmell
     language: "rust"
-    params: { max_complexity: usize = 10 }
+    params: { max_complexity: usize = 15 }
     check: => {
         let mut issues = Vec::new();
         for func_node in ctx.query_functions() {
@@ -2848,6 +2867,20 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         for func_node in ctx.query_functions() {
+            // Skip functions inside trait definitions - they don't use #[must_use]
+            let mut parent = func_node.parent();
+            let mut in_trait = false;
+            while let Some(p) = parent {
+                if p.kind() == "trait_item" {
+                    in_trait = true;
+                    break;
+                }
+                parent = p.parent();
+            }
+            if in_trait {
+                continue; // Skip functions in trait definitions
+            }
+            
             let text = func_node.utf8_text(ctx.source.as_bytes()).unwrap_or("");
             if text.contains("-> Result<") || text.contains("-> Option<") {
                 if !text.contains("#[must_use]") {
@@ -4981,9 +5014,18 @@ declare_rule! {
         for (idx, line) in ctx.source.lines().enumerate() {
             if let Some(cap) = re.captures(line) {
                 if let Some(name) = cap.get(1) {
+                    let name_str = name.as_str();
+                    // Skip test functions
+                    if name_str.starts_with("test_") || name_str.contains("_test_") {
+                        continue;
+                    }
+                    // Skip closure parameters (|x| syntax is not a function declaration)
+                    if name_str.starts_with('|') {
+                        continue;
+                    }
                     issues.push(Issue::new(
                         "S100",
-                        format!("Function '{}' should use snake_case", name.as_str()),
+                        format!("Function '{}' should use snake_case", name_str),
                         Severity::Minor,
                         Category::CodeSmell,
                         ctx.file_path,
@@ -5013,9 +5055,14 @@ declare_rule! {
         for (idx, line) in ctx.source.lines().enumerate() {
             if let Some(cap) = re.captures(line) {
                 if let Some(name) = cap.get(1) {
+                    let name_str = name.as_str();
+                    // Skip single-letter generic type parameters (T, E, K, V, etc.)
+                    if name_str.len() == 1 {
+                        continue;
+                    }
                     issues.push(Issue::new(
                         "S101",
-                        format!("Struct '{}' should use CamelCase", name.as_str()),
+                        format!("Struct '{}' should use CamelCase", name_str),
                         Severity::Minor,
                         Category::CodeSmell,
                         ctx.file_path,
@@ -22703,13 +22750,22 @@ declare_rule! {
     severity: Major
     category: CodeSmell
     language: "go"
-    params: {}
+    params: { max_params: usize = 7 }
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"func\s+\w+\s*\(([^)]{50,})\)").unwrap();
+        let re = regex::Regex::new(r"func\s+\w+\s*\(([^)]*)\)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new("GO_S107", "Function has too many parameters - group into struct", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+            if let Some(cap) = re.captures(line) {
+                if let Some(params) = cap.get(1) {
+                    let param_str = params.as_str();
+                    // Count commas + 1 to get parameter count
+                    let param_count = param_str.matches(',').count() + 1;
+                    // Handle empty params
+                    let actual_count = if param_str.trim().is_empty() { 0 } else { param_count };
+                    if actual_count > self.max_params {
+                        issues.push(Issue::new("GO_S107", format!("Function has {} parameters (max {})", actual_count, self.max_params), Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
             }
         }
         issues
