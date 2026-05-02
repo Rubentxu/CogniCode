@@ -1,4 +1,4 @@
-//! CallGraph persistence — replaces RedbGraphStore with SQLite
+//! CallGraph persistence with SQLite
 //!
 //! Stores CallGraph as bincode blob (backward compatible) AND
 //! populates symbols/call_edges tables for queryability.

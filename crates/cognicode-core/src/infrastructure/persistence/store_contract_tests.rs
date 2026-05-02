@@ -2,7 +2,7 @@
 //!
 //! This module defines a test suite that verifies any GraphStore implementation
 //! satisfies the contract expected by the system. These tests are instantiated
-//! for both InMemoryGraphStore and RedbGraphStore.
+//! for InMemoryGraphStore.
 
 #[cfg(test)]
 mod tests {
@@ -159,64 +159,6 @@ mod tests {
         #[test]
         fn inmemory_exists_returns_true_when_has_data() {
             run_exists_returns_true_when_has_data(&InMemoryGraphStore::new());
-        }
-    }
-
-    // ========================================================================
-    // Test instantiation for RedbGraphStore
-    // ========================================================================
-
-    mod redb_tests {
-        use super::*;
-        use crate::infrastructure::persistence::RedbGraphStore;
-        use tempfile::TempDir;
-
-        fn make_store() -> (RedbGraphStore, TempDir) {
-            let temp_dir = TempDir::new().unwrap();
-            let store = RedbGraphStore::open(temp_dir.path().join("test.redb")).unwrap();
-            (store, temp_dir)
-        }
-
-        #[test]
-        fn redb_load_from_empty_returns_none() {
-            let (store, _dir) = make_store();
-            run_load_from_empty_returns_none(&store);
-        }
-
-        #[test]
-        fn redb_save_and_load_roundtrip() {
-            let (store, _dir) = make_store();
-            run_save_and_load_roundtrip(&store);
-        }
-
-        #[test]
-        fn redb_corrupted_or_cleared_returns_none() {
-            let (store, _dir) = make_store();
-            run_corrupted_or_cleared_returns_none(&store);
-        }
-
-        #[test]
-        fn redb_manifest_roundtrip() {
-            let (store, _dir) = make_store();
-            run_manifest_roundtrip(&store);
-        }
-
-        #[test]
-        fn redb_clear_removes_graph_and_manifest() {
-            let (store, _dir) = make_store();
-            run_clear_removes_graph_and_manifest(&store);
-        }
-
-        #[test]
-        fn redb_exists_returns_false_when_empty() {
-            let (store, _dir) = make_store();
-            run_exists_returns_false_when_empty(&store);
-        }
-
-        #[test]
-        fn redb_exists_returns_true_when_has_data() {
-            let (store, _dir) = make_store();
-            run_exists_returns_true_when_has_data(&store);
         }
     }
 }

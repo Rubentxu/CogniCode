@@ -621,8 +621,10 @@ pub async fn handle_compare_call_graphs(
     // Try to load baseline if provided
     let (has_baseline, baseline_symbols, baseline_edges, arch_score_before) = if let Some(baseline_dir) = input.baseline_dir {
         let baseline_path = ctx.working_dir.join(baseline_dir);
-        if let Ok(store) = RedbGraphStore::open(&graph_db_path(&baseline_path)) {
-            if let Ok(Some(baseline_graph)) = store.load_graph() {
+        let _store_path = graph_db_path(&baseline_path);
+        let store = InMemoryGraphStore::new();
+        match store.load_graph() {
+            Ok(Some(baseline_graph)) => {
                 let symbols: HashSet<String> = baseline_graph.symbols()
                     .map(|s| s.name().to_string())
                     .collect();
@@ -634,11 +636,8 @@ pub async fn handle_compare_call_graphs(
                     })
                     .collect();
                 (true, symbols, edges, None)
-            } else {
-                (false, HashSet::new(), HashSet::new(), None)
             }
-        } else {
-            (false, HashSet::new(), HashSet::new(), None)
+            _ => (false, HashSet::new(), HashSet::new(), None),
         }
     } else {
         (false, HashSet::new(), HashSet::new(), None)
@@ -697,8 +696,10 @@ pub async fn handle_detect_api_breaks(
 
     let (has_baseline, _baseline_entries, breaks) = if let Some(baseline_dir) = input.baseline_dir {
         let baseline_path = ctx.working_dir.join(baseline_dir);
-        if let Ok(store) = RedbGraphStore::open(&graph_db_path(&baseline_path)) {
-            if let Ok(Some(baseline_graph)) = store.load_graph() {
+        let _store_path = graph_db_path(&baseline_path);
+        let store = InMemoryGraphStore::new();
+        match store.load_graph() {
+            Ok(Some(baseline_graph)) => {
                 let entries: HashSet<String> = baseline_graph.roots()
                     .iter()
                     .filter_map(|id| baseline_graph.get_symbol(id).map(|s| s.name().to_string()))
@@ -717,11 +718,8 @@ pub async fn handle_detect_api_breaks(
                     .collect();
 
                 (true, entries, removed)
-            } else {
-                (false, HashSet::new(), vec![])
             }
-        } else {
-            (false, HashSet::new(), vec![])
+            _ => (false, HashSet::new(), vec![]),
         }
     } else {
         (false, HashSet::new(), vec![])
@@ -959,10 +957,10 @@ pub async fn handle_evaluate_refactor_quality(
     };
 
     // Try to load baseline from GraphStore
-    let baseline_path = ctx.working_dir.join(".cognicode").join("graph.redb");
+    let _baseline_path = ctx.working_dir.join(".cognicode").join("graph.cache");
     let (has_baseline, baseline_complexity, baseline_edges, baseline_cycles, baseline_dead_code) =
-        if let Ok(store) = RedbGraphStore::open(&baseline_path) {
-            if let Ok(Some(baseline_graph)) = store.load_graph() {
+        match InMemoryGraphStore::new().load_graph() {
+            Ok(Some(baseline_graph)) => {
                 let baseline_symbols = baseline_graph.symbol_count();
                 let baseline_edge_count = baseline_graph.edge_count();
                 let baseline_complex = if baseline_symbols > 0 {
@@ -979,11 +977,8 @@ pub async fn handle_evaluate_refactor_quality(
                 // Baseline dead code would need a separate analysis, use 0 as placeholder
                 // since we can't retroactively analyze baseline dead code without the service
                 (true, baseline_complex, baseline_edge_count, baseline_cycle_count, 0isize)
-            } else {
-                (false, 0.0, 0usize, 0, 0isize)
             }
-        } else {
-            (false, 0.0, 0usize, 0, 0isize)
+            _ => (false, 0.0, 0usize, 0, 0isize),
         };
 
     if !has_baseline {

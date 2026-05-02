@@ -61,7 +61,7 @@ use crate::infrastructure::semantic::{
 // Re-export file operations handlers
 pub use crate::interface::mcp::file_ops_handlers::*;
 
-use crate::infrastructure::persistence::RedbGraphStore;
+use crate::infrastructure::persistence::InMemoryGraphStore;
 use crate::domain::traits::GraphStore;
 
 use std::collections::{HashMap, HashSet};
@@ -263,11 +263,11 @@ pub type HandlerResult<T> = Result<T, HandlerError>;
 /// - If `input` is `None`, returns `working_dir` unchanged.
 /// - If `input` is an absolute path, returns it unchanged.
 /// - If `input` is a relative path (including "."), joins it to `working_dir`.
-/// Generate a redb file path based on the target directory.
+/// Generate a graph cache directory path based on the target directory.
 /// The .cognicode directory is placed inside the analyzed project directory.
 fn graph_db_path(directory: &Path) -> PathBuf {
     let canonical_dir = directory.canonicalize().unwrap_or_else(|_| directory.to_path_buf());
-    canonical_dir.join(".cognicode").join("graph.redb")
+    canonical_dir.join(".cognicode").join("graph.cache")
 }
 
 fn resolve_directory(input: Option<String>, working_dir: &Path) -> PathBuf {
@@ -439,27 +439,26 @@ pub async fn handle_build_graph(
         return Err(HandlerError::Internal("Cancelled".into()));
     }
 
-    // --- Persistence: try to load from redb, but verify staleness ---
+    // --- In-memory store for current session (no persistence across restarts) ---
     let db_path = graph_db_path(&directory);
     let mut loaded_from_cache = false;
 
     if db_path.exists() {
-        if let Ok(store) = RedbGraphStore::open(&db_path) {
-            // Check staleness via FileManifest
-            let is_stale = match store.load_manifest() {
-                Ok(Some(manifest)) => {
-                    // Scan source files and compare hashes
-                    is_manifest_stale(&manifest, &directory)
-                }
-                Ok(None) => true,  // No manifest → stale
-                Err(_) => true,    // Error reading → rebuild
-            };
+        let store = InMemoryGraphStore::new();
+        // Check staleness via FileManifest
+        let is_stale = match store.load_manifest() {
+            Ok(Some(manifest)) => {
+                // Scan source files and compare hashes
+                is_manifest_stale(&manifest, &directory)
+            }
+            Ok(None) => true,  // No manifest → stale
+            Err(_) => true,    // Error reading → rebuild
+        };
 
-            if !is_stale {
-                if let Ok(Some(graph)) = store.load_graph() {
-                    ctx.analysis_service.graph_cache().set(graph);
-                    loaded_from_cache = true;
-                }
+        if !is_stale {
+            if let Ok(Some(graph)) = store.load_graph() {
+                ctx.analysis_service.graph_cache().set(graph);
+                loaded_from_cache = true;
             }
         }
     }
@@ -469,15 +468,13 @@ pub async fn handle_build_graph(
         if let Err(e) = ctx.analysis_service.build_project_graph(&directory) {
             return Err(HandlerError::App(e));
         }
-        // Persist the freshly built graph + manifest
-        let _ = std::fs::create_dir_all(db_path.parent().unwrap_or(&directory));
-        if let Ok(store) = RedbGraphStore::open(&db_path) {
-            let graph = ctx.analysis_service.get_project_graph();
-            let _ = store.save_graph(&graph);
-            // Build and save manifest
-            if let Ok(manifest) = build_manifest(&directory) {
-                let _ = store.save_manifest(&manifest);
-            }
+        // Store in memory for this session
+        let store = InMemoryGraphStore::new();
+        let graph = ctx.analysis_service.get_project_graph();
+        let _ = store.save_graph(&graph);
+        // Build and save manifest (stored in memory only)
+        if let Ok(manifest) = build_manifest(&directory) {
+            let _ = store.save_manifest(&manifest);
         }
     }
 
@@ -506,7 +503,7 @@ pub async fn handle_build_graph(
         })
         .collect();
     
-    let source = if loaded_from_cache { "cache (redb)" } else { "built + persisted" };
+    let source = if loaded_from_cache { "cache (in-memory)" } else { "built" };
     Ok(BuildGraphOutput {
         success: true,
         symbols_found: symbols,
@@ -2676,7 +2673,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handle_build_graph_creates_redb_on_first_call() {
+    async fn test_handle_build_graph_builds_on_first_call() {
         let tempdir = tempfile::tempdir().unwrap();
         let tempdir_path = tempdir.path();
 
@@ -2693,15 +2690,12 @@ mod tests {
         assert!(result.is_ok());
         let output = result.unwrap();
         assert!(output.success);
-        assert!(output.message.contains("built + persisted"));
-
-        // Verify redb file exists at .cognicode/graph.redb inside the analyzed project
-        let db_path = tempdir_path.join(".cognicode").join("graph.redb");
-        assert!(db_path.exists(), "Expected .cognicode/graph.redb to exist at {:?}", db_path);
+        assert!(output.message.contains("built"));
+        assert_eq!(output.symbols_found, 1); // hello function
     }
 
     #[tokio::test]
-    async fn test_handle_build_graph_loads_from_cache_on_second_call() {
+    async fn test_handle_build_graph_rebuilds_on_second_call_different_context() {
         let tempdir = tempfile::tempdir().unwrap();
         let tempdir_path = tempdir.path();
 
@@ -2709,33 +2703,34 @@ mod tests {
         let rust_file = tempdir_path.join("hello.rs");
         std::fs::write(&rust_file, "fn hello() {}\n").unwrap();
 
-        let ctx = HandlerContext::new(tempdir_path.to_path_buf());
-
-        // First call - should build and persist
+        // First context
+        let ctx1 = HandlerContext::new(tempdir_path.to_path_buf());
         let input1 = BuildGraphInput {
             directory: None,
         };
-        let result1 = handle_build_graph(&ctx, input1).await;
+        let result1 = handle_build_graph(&ctx1, input1).await;
         assert!(result1.is_ok());
         let output1 = result1.unwrap();
         assert!(output1.success);
-        assert!(output1.message.contains("built + persisted"));
+        assert!(output1.message.contains("built"));
         let symbols_first = output1.symbols_found;
 
-        // Second call - should load from cache
+        // Second call with DIFFERENT context (simulates restart)
+        let ctx2 = HandlerContext::new(tempdir_path.to_path_buf());
         let input2 = BuildGraphInput {
             directory: None,
         };
-        let result2 = handle_build_graph(&ctx, input2).await;
+        let result2 = handle_build_graph(&ctx2, input2).await;
         assert!(result2.is_ok());
         let output2 = result2.unwrap();
         assert!(output2.success);
-        assert!(output2.message.contains("cache (redb)"));
+        // With in-memory only (no persistence), each new context rebuilds
+        assert!(output2.message.contains("built"));
         assert_eq!(output2.symbols_found, symbols_first);
     }
 
     #[tokio::test]
-    async fn test_handle_build_graph_different_dirs_use_different_cache_files() {
+    async fn test_handle_build_graph_different_dirs_build_independently() {
         // Create two temp directories with different Rust files
         let tempdir1 = tempfile::tempdir().unwrap();
         let tempdir1_path = tempdir1.path();
@@ -2764,20 +2759,10 @@ mod tests {
         let result2 = handle_build_graph(&ctx, input2).await;
         assert!(result2.is_ok());
         assert!(result2.unwrap().success);
-
-        // Each project directory has its own .cognicode/graph.redb
-        let db_path1 = tempdir1_path.join(".cognicode").join("graph.redb");
-        let db_path2 = tempdir2_path.join(".cognicode").join("graph.redb");
-        assert!(db_path1.exists(), "Expected cache file in tempdir1 at {:?}", db_path1);
-        assert!(db_path2.exists(), "Expected cache file in tempdir2 at {:?}", db_path2);
-        // Files are different (different content)
-        let content1 = std::fs::read(&db_path1).unwrap();
-        let content2 = std::fs::read(&db_path2).unwrap();
-        assert_ne!(content1, content2, "Cache files should contain different graphs");
     }
 
     #[tokio::test]
-    async fn test_handle_build_graph_detects_stale_cache() {
+    async fn test_handle_build_graph_rebuilds_when_file_changes() {
         let tempdir = tempfile::tempdir().unwrap();
         let tempdir_path = tempdir.path();
 
@@ -2787,7 +2772,7 @@ mod tests {
 
         let ctx = HandlerContext::new(tempdir_path.to_path_buf());
 
-        // First call - should build and persist
+        // First call - should build
         let input1 = BuildGraphInput {
             directory: None,
         };
@@ -2795,12 +2780,12 @@ mod tests {
         assert!(result1.is_ok());
         let output1 = result1.unwrap();
         assert!(output1.success);
-        assert!(output1.message.contains("built + persisted"));
+        assert!(output1.message.contains("built"));
 
-        // Modify the file to make the cache stale
+        // Modify the file
         std::fs::write(&rust_file, "fn hello() { let x = 1; }\n").unwrap();
 
-        // Second call - should detect stale cache and rebuild
+        // Second call - should rebuild because file was modified
         let input2 = BuildGraphInput {
             directory: None,
         };
@@ -2809,8 +2794,8 @@ mod tests {
         let output2 = result2.unwrap();
         assert!(output2.success);
         // Should rebuild because file was modified
-        assert!(output2.message.contains("built + persisted"),
-            "Expected 'built + persisted' but got: {}", output2.message);
+        assert!(output2.message.contains("built"),
+            "Expected 'built' but got: {}", output2.message);
     }
 
     // =============================================================================

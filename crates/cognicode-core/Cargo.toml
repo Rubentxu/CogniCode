@@ -8,7 +8,7 @@ authors.workspace = true
 [features]
 default = ["persistence"]
 rig = ["dep:rig-core"]
-persistence = ["dep:redb", "dep:blake3"]
+persistence = ["dep:blake3"]
 
 [dependencies]
 # Parsing
@@ -33,7 +33,6 @@ serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 bincode = { workspace = true, features = ["serde"] }
-redb = { workspace = true, optional = true }
 blake3 = { workspace = true, optional = true }
 
 # Error Handling

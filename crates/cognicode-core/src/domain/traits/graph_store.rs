@@ -1,7 +1,7 @@
 //! Trait for persisting and loading the call graph
 //!
 //! This trait abstracts the persistence backend for the call graph,
-//! supporting both file-based stores (like redb) and in-memory stores for testing.
+//! supporting both file-based stores and in-memory stores for testing.
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::value_objects::file_manifest::FileManifest;
