@@ -16,6 +16,7 @@ path = "src/lib.rs"
 [dependencies]
 cognicode-axiom.workspace = true
 cognicode-core.workspace = true
+cognicode-db.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true

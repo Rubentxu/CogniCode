@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/cognicode",
     "crates/cognicode-core",
+    "crates/cognicode-db",
     "crates/cognicode-mcp",
     "crates/cognicode-cli",
     "crates/cognicode-sandbox",
@@ -21,6 +22,7 @@ authors = ["CogniCode Team"]
 [workspace.dependencies]
 # Internal
 cognicode-core = { path = "crates/cognicode-core" }
+cognicode-db = { path = "crates/cognicode-db" }
 cognicode-axiom = { path = "crates/cognicode-axiom" }
 cognicode-macros = { path = "crates/cognicode-macros" }
 

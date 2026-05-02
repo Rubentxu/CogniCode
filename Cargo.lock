@@ -620,6 +620,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cognicode-db"
+version = "0.4.0"
+dependencies = [
+ "blake3",
+ "chrono",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cognicode-macros"
 version = "0.1.0"
 dependencies = [
@@ -658,6 +669,7 @@ dependencies = [
  "clap",
  "cognicode-axiom",
  "cognicode-core",
+ "cognicode-db",
  "dirs-next",
  "ignore",
  "rayon",
