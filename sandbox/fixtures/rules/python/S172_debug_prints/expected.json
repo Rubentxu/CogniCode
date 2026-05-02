@@ -1,0 +1,23 @@
+{
+  "rule_id": "S172",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_print_statement",
+      "file": "src/smelly.py",
+      "description": "print() in library code should trigger S172",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S172"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_log_statement",
+      "file": "src/clean.py",
+      "description": "Logging should not trigger S172",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

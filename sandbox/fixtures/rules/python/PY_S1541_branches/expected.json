@@ -1,0 +1,23 @@
+{
+  "rule_id": "PY_S1541",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_too_many_branches",
+      "file": "src/smelly.py",
+      "description": "Function with 12+ branches should trigger PY_S1541",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S1541"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_normal_branches",
+      "file": "src/clean.py",
+      "description": "Function with 3 branches should not trigger PY_S1541",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

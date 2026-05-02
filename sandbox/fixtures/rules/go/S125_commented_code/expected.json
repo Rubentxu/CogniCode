@@ -1,0 +1,23 @@
+{
+  "rule_id": "S125",
+  "language": "go",
+  "test_cases": [
+    {
+      "name": "detects_commented_code",
+      "file": "src/smelly.go",
+      "description": "Commented code should trigger S125",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S125"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_normal_comment",
+      "file": "src/clean.go",
+      "description": "Normal comment should not trigger S125",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

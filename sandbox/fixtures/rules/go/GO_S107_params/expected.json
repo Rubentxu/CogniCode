@@ -1,0 +1,23 @@
+{
+  "rule_id": "GO_S107",
+  "language": "go",
+  "test_cases": [
+    {
+      "name": "detects_too_many_params",
+      "file": "src/smelly.go",
+      "description": "Function with 9+ parameters should trigger GO_S107",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["GO_S107"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_normal_params",
+      "file": "src/clean.go",
+      "description": "Function with normal parameters should not trigger GO_S107",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

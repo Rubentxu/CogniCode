@@ -1,0 +1,23 @@
+{
+  "rule_id": "PY_S138",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_long_function",
+      "file": "src/smelly.py",
+      "description": "Function with 55+ lines should trigger PY_S138",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S138"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_short_function",
+      "file": "src/clean.py",
+      "description": "Short function should not trigger PY_S138",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

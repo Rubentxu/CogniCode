@@ -1,0 +1,23 @@
+{
+  "rule_id": "GO_S2221",
+  "language": "go",
+  "test_cases": [
+    {
+      "name": "detects_panic",
+      "file": "src/smelly.go",
+      "description": "panic() in non-test code should trigger GO_S2221",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["GO_S2221"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_proper_error_handling",
+      "file": "src/clean.go",
+      "description": "Proper error handling should not trigger GO_S2221",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

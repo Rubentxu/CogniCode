@@ -1,0 +1,23 @@
+{
+  "rule_id": "GO_S138",
+  "language": "go",
+  "test_cases": [
+    {
+      "name": "detects_long_function",
+      "file": "src/smelly.go",
+      "description": "Function with 55+ lines should trigger GO_S138",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["GO_S138"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_short_function",
+      "file": "src/clean.go",
+      "description": "Short function should not trigger GO_S138",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

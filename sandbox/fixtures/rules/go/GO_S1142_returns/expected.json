@@ -1,0 +1,23 @@
+{
+  "rule_id": "GO_S1142",
+  "language": "go",
+  "test_cases": [
+    {
+      "name": "detects_too_many_returns",
+      "file": "src/smelly.go",
+      "description": "Function with 6+ returns should trigger GO_S1142",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["GO_S1142"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_normal_returns",
+      "file": "src/clean.go",
+      "description": "Function with 2 returns should not trigger GO_S1142",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

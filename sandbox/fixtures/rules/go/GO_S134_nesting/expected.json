@@ -1,0 +1,23 @@
+{
+  "rule_id": "GO_S134",
+  "language": "go",
+  "test_cases": [
+    {
+      "name": "detects_deep_nesting",
+      "file": "src/smelly.go",
+      "description": "6+ nested ifs should trigger GO_S134",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["GO_S134"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_normal_nesting",
+      "file": "src/clean.go",
+      "description": "2 nested ifs should not trigger GO_S134",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}
