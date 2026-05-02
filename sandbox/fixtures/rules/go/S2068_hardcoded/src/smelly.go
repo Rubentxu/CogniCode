@@ -1,7 +1,7 @@
-// Smelly: Hardcoded password
+// Hardcoded password in code
 package main
 
 func getPassword() string {
-	password := "secret"
+	password = "secret"
 	return password
 }

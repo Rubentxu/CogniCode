@@ -1,9 +1,7 @@
-// Smelly: Commented out code
+// Commented out code
 package main
 
 func process() bool {
-	// func oldFunction() {
-	//     return true
-	// }
+	// if true { return false }
 	return true
 }

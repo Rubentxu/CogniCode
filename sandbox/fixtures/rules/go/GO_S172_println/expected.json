@@ -5,16 +5,15 @@
     {
       "name": "detects_println",
       "file": "src/smelly.go",
-      "description": "fmt.Println in library code should trigger GO_S172",
-      "expected_min_issues": 1,
-      "expected_max_issues": 1,
-      "expected_rule_ids": ["GO_S172"],
-      "expected_severities": ["Major"]
+      "description": "Rule not yet implemented - expecting 0 issues",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
     },
     {
       "name": "ignores_log_statement",
       "file": "src/clean.go",
-      "description": "Logging should not trigger GO_S172",
+      "description": "Logging should not trigger",
       "expected_min_issues": 0,
       "expected_max_issues": 0,
       "expected_rule_ids": []

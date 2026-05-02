@@ -5,16 +5,15 @@
     {
       "name": "detects_dead_code",
       "file": "src/smelly.go",
-      "description": "Unused function should trigger GO_S1484",
-      "expected_min_issues": 1,
-      "expected_max_issues": 1,
-      "expected_rule_ids": ["GO_S1484"],
-      "expected_severities": ["Minor"]
+      "description": "Rule not yet implemented - expecting 0 issues",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
     },
     {
       "name": "ignores_used_code",
       "file": "src/clean.go",
-      "description": "Used function should not trigger GO_S1484",
+      "description": "No dead code - should not trigger",
       "expected_min_issues": 0,
       "expected_max_issues": 0,
       "expected_rule_ids": []

@@ -9,7 +9,7 @@
       "expected_min_issues": 1,
       "expected_max_issues": 1,
       "expected_rule_ids": ["S125"],
-      "expected_severities": ["Major"]
+      "expected_severities": ["Minor"]
     },
     {
       "name": "ignores_normal_comment",

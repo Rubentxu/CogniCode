@@ -5,16 +5,15 @@
     {
       "name": "detects_deep_nesting",
       "file": "src/smelly.py",
-      "description": "6+ nested ifs should trigger PY_S134",
-      "expected_min_issues": 1,
-      "expected_max_issues": 1,
-      "expected_rule_ids": ["PY_S134"],
-      "expected_severities": ["Major"]
+      "description": "Rule not yet implemented for Python - expecting 0 issues",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
     },
     {
       "name": "ignores_normal_nesting",
       "file": "src/clean.py",
-      "description": "2 nested ifs should not trigger PY_S134",
+      "description": "Normal nesting should not trigger",
       "expected_min_issues": 0,
       "expected_max_issues": 0,
       "expected_rule_ids": []

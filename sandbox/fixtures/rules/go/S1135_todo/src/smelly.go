@@ -1,8 +1,8 @@
-// Smelly: TODO comment left in code
+// Hardcoded credentials in code
 package main
 
 func calculate(x int) int {
-	// TODO: fix this - the algorithm is wrong for negative numbers
+	// TODO: fix this algorithm for negative numbers
 	if x < 0 {
 		return 0
 	}

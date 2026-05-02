@@ -1,6 +1,7 @@
-// Smelly: Wrong naming convention
+// Smelly: Wrong variable naming convention
 package main
 
-func MyFunction() string {
-	return "wrong naming"
+func main() {
+	var MyVar = "wrong naming"
+	println(MyVar)
 }

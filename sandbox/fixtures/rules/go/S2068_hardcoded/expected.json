@@ -1,20 +1,20 @@
 {
-  "rule_id": "S2068",
+  "rule_id": "GO_S2068",
   "language": "go",
   "test_cases": [
     {
       "name": "detects_hardcoded_password",
       "file": "src/smelly.go",
-      "description": "Hardcoded password should trigger S2068",
+      "description": "Hardcoded password should trigger GO_S2068",
       "expected_min_issues": 1,
       "expected_max_issues": 1,
-      "expected_rule_ids": ["S2068"],
+      "expected_rule_ids": ["GO_S2068"],
       "expected_severities": ["Blocker"]
     },
     {
       "name": "ignores_env_variable",
       "file": "src/clean.go",
-      "description": "Environment variable should not trigger S2068",
+      "description": "Environment variable should not trigger GO_S2068",
       "expected_min_issues": 0,
       "expected_max_issues": 0,
       "expected_rule_ids": []

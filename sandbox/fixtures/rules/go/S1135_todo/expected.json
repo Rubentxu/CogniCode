@@ -1,20 +1,20 @@
 {
-  "rule_id": "S1135",
+  "rule_id": "GO_S1135",
   "language": "go",
   "test_cases": [
     {
       "name": "detects_todo_comment",
       "file": "src/smelly.go",
-      "description": "TODO comment should trigger S1135",
+      "description": "TODO comment should trigger GO_S1135",
       "expected_min_issues": 1,
       "expected_max_issues": 1,
-      "expected_rule_ids": ["S1135"],
+      "expected_rule_ids": ["GO_S1135"],
       "expected_severities": ["Minor"]
     },
     {
       "name": "ignores_no_todo",
       "file": "src/clean.go",
-      "description": "No TODO comment should not trigger S1135",
+      "description": "No TODO comment should not trigger GO_S1135",
       "expected_min_issues": 0,
       "expected_max_issues": 0,
       "expected_rule_ids": []

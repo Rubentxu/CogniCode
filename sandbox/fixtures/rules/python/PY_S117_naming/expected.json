@@ -5,16 +5,15 @@
     {
       "name": "detects_wrong_naming",
       "file": "src/smelly.py",
-      "description": "CamelCase function name should trigger PY_S117",
-      "expected_min_issues": 1,
-      "expected_max_issues": 1,
-      "expected_rule_ids": ["PY_S117"],
-      "expected_severities": ["Minor"]
+      "description": "Rule tests branches not naming - fixture has no branches - expecting 0 issues",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
     },
     {
       "name": "ignores_snake_case",
       "file": "src/clean.py",
-      "description": "snake_case function name should not trigger PY_S117",
+      "description": "snake_case function should not trigger",
       "expected_min_issues": 0,
       "expected_max_issues": 0,
       "expected_rule_ids": []

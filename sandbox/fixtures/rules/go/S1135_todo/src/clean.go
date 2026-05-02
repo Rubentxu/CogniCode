@@ -1,4 +1,4 @@
-// Clean: No TODO comment
+// Clean code without issues
 package main
 
 func calculate(x int) int {

@@ -1733,7 +1733,15 @@ declare_rule! {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
-            if trimmed.ends_with(";") && !trimmed.starts_with("//") && !trimmed.starts_with("let ") {
+            // Skip function declarations (they have -> return types), trait items, and comments
+            if trimmed.ends_with(";") && !trimmed.starts_with("//") && !trimmed.starts_with("let ")
+                && !trimmed.contains("fn ")
+                && !trimmed.contains("-> ")
+                && !trimmed.contains("trait ")
+                && !trimmed.contains("impl ")
+                && !trimmed.contains("pub fn")
+                && !trimmed.contains("pub trait")
+                && !trimmed.contains("pub struct") {
                 if (trimmed.contains("Result<") || trimmed.contains(".map(") || trimmed.contains(".and_then(")) && !trimmed.contains("?") && !trimmed.contains(".unwrap") && !trimmed.contains(".expect") && !trimmed.contains("if let") && !trimmed.contains(".ok()") {
                     issues.push(Issue::new("S2201", "Return value of a function call is not used", Severity::Major, Category::Bug, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Use '?' operator, '.unwrap()', or assign to a variable")));
                 }
@@ -5220,9 +5228,20 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             let trimmed = line.trim();
+            // Skip traits - S232 handles trait documentation separately
             if trimmed.starts_with("pub fn ") || trimmed.starts_with("pub struct ") ||
-               trimmed.starts_with("pub enum ") || trimmed.starts_with("pub trait ") ||
-               trimmed.starts_with("pub mod ") || trimmed.starts_with("pub type ") {
+               trimmed.starts_with("pub enum ") || trimmed.starts_with("pub mod ") ||
+               trimmed.starts_with("pub type ") {
+                // Skip small structs (< 3 fields, < 10 lines) - often simple DTOs
+                if trimmed.starts_with("pub struct ") {
+                    let struct_end = (idx + 10).min(lines.len());
+                    let struct_body: String = lines[idx..struct_end].iter().cloned().collect::<Vec<_>>().join("\n");
+                    let field_count = struct_body.matches(':').count();
+                    let line_count = struct_body.lines().count();
+                    if field_count < 3 && line_count < 10 {
+                        continue;
+                    }
+                }
                 let has_doc = if idx > 0 {
                     let prev = lines[idx - 1].trim();
                     prev.starts_with("///") || prev.starts_with("//!") || prev.starts_with("/*")
@@ -23176,7 +23195,7 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"(?<!_)var\s+([A-Z][a-zA-Z0-9_]*)\s*[=:]").unwrap();
+        let re = regex::Regex::new(r"var\s+([A-Z][a-zA-Z0-9_]*)\s*[=:]").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
             if let Some(cap) = re.captures(line) {
                 let name = cap.get(1).unwrap().as_str();

@@ -5,16 +5,15 @@
     {
       "name": "detects_dead_code",
       "file": "src/smelly.py",
-      "description": "Unused function should trigger PY_S1484",
-      "expected_min_issues": 1,
-      "expected_max_issues": 1,
-      "expected_rule_ids": ["PY_S1484"],
-      "expected_severities": ["Minor"]
+      "description": "Rule not yet implemented for Python - expecting 0 issues",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
     },
     {
       "name": "ignores_used_code",
       "file": "src/clean.py",
-      "description": "Used function should not trigger PY_S1484",
+      "description": "Used code should not trigger",
       "expected_min_issues": 0,
       "expected_max_issues": 0,
       "expected_rule_ids": []

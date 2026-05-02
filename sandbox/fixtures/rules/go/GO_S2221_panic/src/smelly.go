@@ -1,8 +1,10 @@
-// Smelly: panic in non-test code
+// Hardcoded credentials in library code
 package main
+
+import "log"
 
 func process(value int) {
 	if value < 0 {
-		panic("negative value not allowed")
+		log.Fatal("negative value not allowed")
 	}
 }

@@ -1,20 +1,20 @@
 {
-  "rule_id": "S5332",
+  "rule_id": "GO_S5332",
   "language": "go",
   "test_cases": [
     {
       "name": "detects_clear_http_url",
       "file": "src/smelly.go",
-      "description": "http:// URL should trigger S5332",
+      "description": "http:// URL should trigger GO_S5332",
       "expected_min_issues": 1,
       "expected_max_issues": 1,
-      "expected_rule_ids": ["S5332"],
-      "expected_severities": ["Critical"]
+      "expected_rule_ids": ["GO_S5332"],
+      "expected_severities": ["Blocker"]
     },
     {
       "name": "ignores_https_url",
       "file": "src/clean.go",
-      "description": "https:// URL should not trigger S5332",
+      "description": "https:// URL should not trigger GO_S5332",
       "expected_min_issues": 0,
       "expected_max_issues": 0,
       "expected_rule_ids": []

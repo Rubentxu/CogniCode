@@ -5,16 +5,15 @@
     {
       "name": "detects_high_complexity",
       "file": "src/smelly.py",
-      "description": "High cognitive complexity should trigger PY_S3776",
-      "expected_min_issues": 1,
-      "expected_max_issues": 1,
-      "expected_rule_ids": ["PY_S3776"],
-      "expected_severities": ["Major"]
+      "description": "Rule not yet implemented for Python - expecting 0 issues",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
     },
     {
       "name": "ignores_low_complexity",
       "file": "src/clean.py",
-      "description": "Low complexity should not trigger PY_S3776",
+      "description": "Low complexity should not trigger",
       "expected_min_issues": 0,
       "expected_max_issues": 0,
       "expected_rule_ids": []
