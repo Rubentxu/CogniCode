@@ -17,6 +17,7 @@ use handler::{
     RemediationSuggestion, TechnicalDebtReportResult, ProjectRatingsResult,
     DuplicationResult, DuplicationGroupResult, DuplicationLocationResult,
     GetQualityProfileParams, AnalyzeComplexityParams, CheckNamingParams, GetFileMetricsParams,
+    SetBaselineParams, GetDiffParams,
 };
 use cognicode_axiom::linters::{ClippyRunner, Linter};
 use cognicode_axiom::rules::types::{Issue, RuleContext, RuleRegistry, Severity};
@@ -109,6 +110,8 @@ impl QualityAnalysisHandler {
             Tool::new("test_rule", "Test a rule against source code fixture", std::sync::Arc::new(serde_json::json!({"type": "object", "properties": {"rule_id": {"type": "string"}, "source": {"type": "string"}, "language": {"type": "string", "default": "rust"}}}).as_object().cloned().unwrap())),
             Tool::new("list_smells", "List all code smells found in a project with counts", std::sync::Arc::new(serde_json::json!({"type": "object", "properties": {"project_path": {"type": "string"}}}).as_object().cloned().unwrap())),
             Tool::new("load_adrs", "Parse ADR files and convert to quality rules", std::sync::Arc::new(serde_json::json!({"type": "object", "properties": {"adr_path": {"type": "string"}, "adr_directory": {"type": "string"}}}).as_object().cloned().unwrap())),
+            Tool::new("set_quality_baseline", "Set quality baseline for diff tracking (call at start of SDD)", std::sync::Arc::new(serde_json::json!({"type": "object", "properties": {"project_path": {"type": "string", "default": "."}}}).as_object().cloned().unwrap())),
+            Tool::new("get_quality_diff", "Get quality diff vs baseline (call in sdd-verify)", std::sync::Arc::new(serde_json::json!({"type": "object", "properties": {"project_path": {"type": "string", "default": "."}}}).as_object().cloned().unwrap())),
         ]
     }
 
@@ -614,6 +617,44 @@ profiles:
                 Ok(serde_json::to_string_pretty(&serde_json::json!({
                     "adrs_loaded": results.len(),
                     "adrs": results,
+                }))?)
+            }
+            "set_quality_baseline" => {
+                let params: SetBaselineParams = serde_json::from_value(args).unwrap_or_default();
+                let project_path = params.project_path.unwrap_or_else(|| PathBuf::from("."));
+                let mut state = cognicode_quality::incremental::AnalysisState::load(&project_path);
+                
+                // Run analysis to get current metrics
+                let result = self.analyze_project_impl(AnalyzeProjectParams { project_path })?;
+                let blockers = result.issues.iter().filter(|i| i.severity == "Blocker").count();
+                let criticals = result.issues.iter().filter(|i| i.severity == "Critical").count();
+                
+                state.set_baseline(result.total_issues, 0, "B", blockers, criticals);
+                state.save();
+                
+                Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "status": "baseline_set",
+                    "total_issues": result.total_issues,
+                    "blockers": blockers,
+                    "message": "Baseline established. Future analyses will diff against this point."
+                }))?)
+            }
+            "get_quality_diff" => {
+                let params: GetDiffParams = serde_json::from_value(args).unwrap_or_default();
+                let project_path = params.project_path.unwrap_or_else(|| PathBuf::from("."));
+                let state = cognicode_quality::incremental::AnalysisState::load(&project_path);
+                
+                let result = self.analyze_project_impl(AnalyzeProjectParams { project_path })?;
+                let blockers = result.issues.iter().filter(|i| i.severity == "Blocker").count();
+                
+                let diff = state.diff_vs_baseline(result.total_issues, 0, "B", blockers);
+                
+                Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "has_baseline": diff.is_some(),
+                    "diff": diff,
+                    "current_issues": result.total_issues,
+                    "history_snapshots": state.history.len(),
+                    "files_tracked": state.file_states.len(),
                 }))?)
             }
             _ => Err(anyhow::anyhow!("Unknown tool: {}", name)),

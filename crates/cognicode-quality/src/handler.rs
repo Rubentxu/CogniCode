@@ -230,6 +230,7 @@ impl QualityAnalysisHandler {
         let bugs = all_issues.iter().filter(|i| matches!(i.category, cognicode_axiom::rules::Category::Bug)).count();
         let vulnerabilities = all_issues.iter().filter(|i| matches!(i.category, cognicode_axiom::rules::Category::Vulnerability)).count();
         let blockers = all_issues.iter().filter(|i| matches!(i.severity, Severity::Blocker)).count();
+        let criticals = all_issues.iter().filter(|i| matches!(i.severity, Severity::Critical)).count();
         let issues_by_severity = Self::aggregate_issues_by_severity(&all_issues);
 
         // === New code issues (computed before consuming all_issues) ===
@@ -258,6 +259,10 @@ impl QualityAnalysisHandler {
         };
 
         // === Persist state ===
+        // Auto-set baseline on first analysis if not already set
+        if state.baseline.is_none() {
+            state.set_baseline(total_issues, debt, rating, blockers, criticals);
+        }
         state.add_snapshot(total_issues, debt, rating, changed_count, 0, 0);
         state.save();
 
@@ -408,6 +413,16 @@ pub struct ListSmellsParams {
 pub struct LoadAdrParams {
     pub adr_path: Option<String>,
     pub adr_directory: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct SetBaselineParams {
+    pub project_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct GetDiffParams {
+    pub project_path: Option<PathBuf>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
