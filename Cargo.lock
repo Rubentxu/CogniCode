@@ -623,8 +623,10 @@ dependencies = [
 name = "cognicode-db"
 version = "0.4.0"
 dependencies = [
+ "bincode",
  "blake3",
  "chrono",
+ "cognicode-core",
  "rusqlite",
  "serde",
  "serde_json",

@@ -56,6 +56,12 @@ pub fn initialize_schema(db: &Connection) {
             last_analyzed TEXT NOT NULL
         );
         
+        -- CallGraph blob storage (bincode serialized)
+        CREATE TABLE IF NOT EXISTS call_graphs (
+            id INTEGER PRIMARY KEY,
+            data BLOB NOT NULL
+        );
+
         -- Future: cognicode-mcp tables (symbols, call_edges)
         -- Defined here for schema completeness, not yet used
         CREATE TABLE IF NOT EXISTS symbols (
