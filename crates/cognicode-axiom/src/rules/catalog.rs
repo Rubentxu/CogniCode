@@ -1582,10 +1582,21 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"(\w+)\s*=\s*\1\s*;").unwrap();
+        // Check for self-assignment patterns without using backreferences (not supported in Rust regex)
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new("S1656", "Self-assignment detected - no effect", Severity::Major, Category::Bug, ctx.file_path, idx + 1));
+            let trimmed = line.trim();
+            // Look for patterns like: x = x; where x is the same identifier on both sides
+            if let Some(eq_pos) = trimmed.find('=') {
+                if eq_pos > 0 {
+                    let lhs = trimmed[..eq_pos].trim();
+                    let rhs = trimmed[eq_pos + 1..].trim().trim_end_matches(';').trim();
+                    if lhs == rhs && !lhs.is_empty() && !rhs.is_empty() {
+                        // Verify it's a valid identifier pattern (not like "x = x + 1")
+                        if !rhs.contains('+') && !rhs.contains('-') && !rhs.contains('*') && !rhs.contains('/') {
+                            issues.push(Issue::new("S1656", "Self-assignment detected - no effect", Severity::Major, Category::Bug, ctx.file_path, idx + 1));
+                        }
+                    }
+                }
             }
         }
         issues
@@ -1605,10 +1616,23 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"(\w+)\s*[=!<>]=\s*\1").unwrap();
+        // Check for comparison operators with identical operands (avoid backreferences)
+        let comparison_ops = ["==", "!=", ">=", "<=", ">", "<"];
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) && !line.contains("// allow") {
-                issues.push(Issue::new("S1764", "Identical operands in comparison - always true/false", Severity::Major, Category::Bug, ctx.file_path, idx + 1));
+            if line.contains("// allow") {
+                continue;
+            }
+            for op in &comparison_ops {
+                if let Some(pos) = line.find(op) {
+                    if pos > 0 {
+                        let before = line[..pos].trim();
+                        let after = line[pos + op.len()..].trim();
+                        if before == after && !before.is_empty() {
+                            issues.push(Issue::new("S1764", "Identical operands in comparison - always true/false", Severity::Major, Category::Bug, ctx.file_path, idx + 1));
+                            break;
+                        }
+                    }
+                }
             }
         }
         issues
@@ -4012,17 +4036,24 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"(\w+)\s+as\s+\1\b").unwrap();
+        // Check for redundant type casts without using backreferences
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new(
-                    "S1905",
-                    "Redundant type cast to the same type",
-                    Severity::Minor,
-                    Category::CodeSmell,
-                    ctx.file_path,
-                    idx + 1,
-                ).with_remediation(Remediation::quick("Remove the unnecessary cast")));
+            if let Some(as_pos) = line.find(" as ") {
+                let before_as = line[..as_pos].trim().split_whitespace().last().unwrap_or("");
+                let after_as = line[as_pos + 4..].trim().split_whitespace().next().unwrap_or("");
+                // Extract the type name (remove any leading `&` or `*`)
+                let type_before = before_as.trim_start_matches('&').trim_start_matches('*');
+                let type_after = after_as.trim_start_matches('&').trim_start_matches('*').split_whitespace().next().unwrap_or("");
+                if type_before == type_after && !type_before.is_empty() {
+                    issues.push(Issue::new(
+                        "S1905",
+                        "Redundant type cast to the same type",
+                        Severity::Minor,
+                        Category::CodeSmell,
+                        ctx.file_path,
+                        idx + 1,
+                    ).with_remediation(Remediation::quick("Remove the unnecessary cast")));
+                }
             }
         }
         issues
@@ -4072,17 +4103,38 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"if\s+let\s+Some\((\w+)\)\s*=\s*(\w+)\s*\{\s*\1\s*\}\s*else\s*\{\s*(\w+)\s*\}").unwrap();
+        // Detect `if let Some(x) = y { x } else { z }` pattern without backreference
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new(
-                    "S1941",
-                    "Simplifiable if-let pattern - use unwrap_or instead",
-                    Severity::Minor,
-                    Category::CodeSmell,
-                    ctx.file_path,
-                    idx + 1,
-                ).with_remediation(Remediation::quick("Replace with unwrap_or for better readability")));
+            let trimmed = line.trim();
+            // Check for the basic pattern structure
+            if trimmed.starts_with("if let Some(") && trimmed.contains(") = ") && trimmed.contains("} else {") {
+                // Simple heuristic: look for the same identifier after "Some(" and in the body
+                if let Some(start) = trimmed.find("Some(") {
+                    let after_some = &trimmed[start + 5..];
+                    if let Some(end) = after_some.find(')') {
+                        let var_name = after_some[..end].trim();
+                        if !var_name.is_empty() && var_name.chars().next().map(|c| c.is_lowercase()).unwrap_or(false) {
+                            // Check if the same var appears in the body before "} else {"
+                            if let Some(else_pos) = trimmed.find("} else {") {
+                                let body = &trimmed[else_pos..];
+                                let body_before_else = &trimmed[..else_pos];
+                                // Look for the pattern: { <var> } or { <spaces><var><spaces> }
+                                let var_in_body = format!("{{{} ", var_name);
+                                let var_in_body2 = format!("{{ {}}} ", var_name);
+                                if body_before_else.contains(&var_in_body) || body_before_else.contains(&var_in_body2) {
+                                    issues.push(Issue::new(
+                                        "S1941",
+                                        "Simplifiable if-let pattern - use unwrap_or instead",
+                                        Severity::Minor,
+                                        Category::CodeSmell,
+                                        ctx.file_path,
+                                        idx + 1,
+                                    ).with_remediation(Remediation::quick("Replace with unwrap_or for better readability")));
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         issues
@@ -5977,17 +6029,34 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"if\s+let\s+Ok\((\w+)\)\s*=\s*(\w+)\s*\{\s*Some\(\1\)\s*\}\s*else\s*\{\s*None\s*\}").unwrap();
+        // Detect `if let Ok(x) = expr { Some(x) } else { None }` without backreference
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new(
-                    "R018",
-                    "Redundant if-let pattern - use .ok() instead",
-                    Severity::Minor,
-                    Category::CodeSmell,
-                    ctx.file_path,
-                    idx + 1,
-                ).with_remediation(Remediation::quick("Replace with .ok() method")));
+            let trimmed = line.trim();
+            // Check for basic pattern structure
+            if trimmed.starts_with("if let Ok(") && trimmed.contains("} else { None }") {
+                if let Some(start) = trimmed.find("Ok(") {
+                    let after_ok = &trimmed[start + 3..];
+                    if let Some(end) = after_ok.find(')') {
+                        let var_name = after_ok[..end].trim();
+                        if !var_name.is_empty() {
+                            // Look for Some(var_name) in the body before } else {
+                            if let Some(else_pos) = trimmed.find("} else {") {
+                                let body_before_else = &trimmed[..else_pos];
+                                let some_pattern = format!("Some({})", var_name);
+                                if body_before_else.contains(&some_pattern) {
+                                    issues.push(Issue::new(
+                                        "R018",
+                                        "Redundant if-let pattern - use .ok() instead",
+                                        Severity::Minor,
+                                        Category::CodeSmell,
+                                        ctx.file_path,
+                                        idx + 1,
+                                    ).with_remediation(Remediation::quick("Replace with .ok() method")));
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         issues
@@ -7634,19 +7703,37 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"if\s*\(([^)]+)\)\s*\{[^}]*\}\s*else\s+if\s*\1\s*\{").unwrap();
-        for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new(
-                    "JS_S137",
-                    "Identical condition in if-else chain - second branch is unreachable",
-                    Severity::Major,
-                    Category::Bug,
-                    ctx.file_path,
-                    idx + 1,
-                ).with_remediation(Remediation::quick(
-                    "Merge the duplicate conditions or remove the redundant branch"
-                )));
+        // Detect identical conditions in if-else chains without backreference support
+        // Note: This is a simplified detection since Rust regex doesn't support backreferences
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for idx in 0..lines.len() {
+            let line = lines[idx].trim();
+            // Look for else if pattern
+            if line.starts_with("else if (") {
+                if let Some(cond_end) = line.find(") {") {
+                    let condition = &line[9..cond_end]; // Skip "else if ("
+                    // Look back for the matching if statement
+                    if idx > 0 {
+                        let prev_line = lines[idx - 1].trim();
+                        if prev_line.starts_with("if (") {
+                            if let Some(prev_cond_end) = prev_line.find(") {") {
+                                let prev_condition = &prev_line[4..prev_cond_end]; // Skip "if ("
+                                if condition == prev_condition {
+                                    issues.push(Issue::new(
+                                        "JS_S137",
+                                        "Identical condition in if-else chain - second branch is unreachable",
+                                        Severity::Major,
+                                        Category::Bug,
+                                        ctx.file_path,
+                                        idx + 1,
+                                    ).with_remediation(Remediation::quick(
+                                        "Merge the duplicate conditions or remove the redundant branch"
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         issues
@@ -7800,19 +7887,30 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"(\w+)\s*=\s*\1\s*;").unwrap();
+        // Check for self-assignment patterns without using backreferences
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new(
-                    "JS_S143",
-                    "Self-assignment has no effect",
-                    Severity::Major,
-                    Category::Bug,
-                    ctx.file_path,
-                    idx + 1,
-                ).with_remediation(Remediation::quick(
-                    "Remove the self-assignment"
-                )));
+            let trimmed = line.trim();
+            // Look for patterns like: x = x; where x is the same identifier on both sides
+            if let Some(eq_pos) = trimmed.find('=') {
+                if eq_pos > 0 {
+                    let lhs = trimmed[..eq_pos].trim();
+                    let rhs = trimmed[eq_pos + 1..].trim().trim_end_matches(';').trim();
+                    if lhs == rhs && !lhs.is_empty() && !rhs.is_empty() {
+                        // Verify it's a valid identifier pattern (not like "x = x + 1")
+                        if !rhs.contains('+') && !rhs.contains('-') && !rhs.contains('*') && !rhs.contains('/') {
+                            issues.push(Issue::new(
+                                "JS_S143",
+                                "Self-assignment has no effect",
+                                Severity::Major,
+                                Category::Bug,
+                                ctx.file_path,
+                                idx + 1,
+                            ).with_remediation(Remediation::quick(
+                                "Remove the self-assignment"
+                            )));
+                        }
+                    }
+                }
             }
         }
         issues
@@ -8199,21 +8297,29 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"(\w+)\s*!==\s*\1|\1\s*!=\s*\1").unwrap();
+        // Detect x !== x or x != x patterns for NaN checking without backreference
+        let comparison_ops = ["!==", "!="];
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
-                    if name.as_str() == name.as_str().to_uppercase() || name.as_str().to_lowercase().contains("nan") {
-                        issues.push(Issue::new(
-                            "JS_S155",
-                            "Self-comparison to detect NaN - use Number.isNaN() instead",
-                            Severity::Major,
-                            Category::Bug,
-                            ctx.file_path,
-                            idx + 1,
-                        ).with_remediation(Remediation::quick(
-                            "Use Number.isNaN(value) or isNaN(value) to check for NaN"
-                        )));
+            for op in &comparison_ops {
+                if let Some(pos) = line.find(op) {
+                    let before = line[..pos].trim();
+                    let after = line[pos + op.len()..].trim();
+                    // Check if it's a self-comparison (x !== x)
+                    if before == after && !before.is_empty() {
+                        // Check if the variable name suggests NaN handling
+                        let name_lower = before.to_lowercase();
+                        if name_lower.contains("nan") || name_lower == name_lower.to_uppercase() {
+                            issues.push(Issue::new(
+                                "JS_S155",
+                                "Self-comparison to detect NaN - use Number.isNaN() instead",
+                                Severity::Major,
+                                Category::Bug,
+                                ctx.file_path,
+                                idx + 1,
+                            ).with_remediation(Remediation::quick(
+                                "Use Number.isNaN(value) or isNaN(value) to check for NaN"
+                            )));
+                        }
                     }
                 }
             }
@@ -9167,19 +9273,55 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"(\w+)\.(\w+)\s*,\s*\1\.(\w+)").unwrap();
+        // Detect obj.prop1, obj.prop2 patterns without backreference
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let (Some(obj), Some(prop1), Some(prop2)) = (cap.get(1), cap.get(2), cap.get(3)) {
-                    if obj.as_str() != prop1.as_str() && obj.as_str() != prop2.as_str() {
-                        issues.push(Issue::new(
-                            "JS_ES4",
-                            format!("Multiple properties from same object - use destructuring: const {{ {}, {} }} = {}", prop1.as_str(), prop2.as_str(), obj.as_str()),
-                            Severity::Minor,
-                            Category::CodeSmell,
-                            ctx.file_path,
-                            idx + 1,
-                        ).with_remediation(Remediation::quick("Use object destructuring: const { x, y } = obj")));
+            // Look for patterns like: obj.prop1, obj.prop2
+            let prop_pattern_count = line.matches(".").count(); // Simplified
+            // Find all occurrences of word.prop
+            let mut obj_props: Vec<(&str, &str)> = Vec::new();
+            let mut search_pos = 0;
+            while let Some(dot_pos) = line[search_pos..].find('.') {
+                let abs_dot_pos = search_pos + dot_pos;
+                // Look for word before the dot
+                let before_dot = &line[..abs_dot_pos];
+                if let Some(space_pos) = before_dot.rfind(|c: char| !c.is_alphanumeric() && c != '_') {
+                    let obj_name = &before_dot[space_pos + 1..];
+                    // Look for prop name after the dot
+                    let after_dot = &line[abs_dot_pos + 1..];
+                    if let Some(end_pos) = after_dot.find(|c: char| !c.is_alphanumeric() && c != '_') {
+                        let prop_name = &after_dot[..end_pos];
+                        if !obj_name.is_empty() && !prop_name.is_empty() && prop_name.chars().next().map(|c| c.is_lowercase()).unwrap_or(false) {
+                            obj_props.push((obj_name, prop_name));
+                        }
+                        search_pos = abs_dot_pos + end_pos + 1;
+                    } else if !after_dot.is_empty() {
+                        let prop_name = after_dot.trim();
+                        if !prop_name.is_empty() && prop_name.chars().next().map(|c| c.is_lowercase()).unwrap_or(false) {
+                            obj_props.push((obj_name, prop_name));
+                        }
+                        break;
+                    } else {
+                        search_pos = abs_dot_pos + 1;
+                    }
+                } else {
+                    search_pos = abs_dot_pos + 1;
+                }
+            }
+            // Check if same object with multiple different properties
+            if obj_props.len() >= 2 {
+                for i in 0..obj_props.len() {
+                    for j in (i + 1)..obj_props.len() {
+                        if obj_props[i].0 == obj_props[j].0 && obj_props[i].1 != obj_props[j].1 {
+                            issues.push(Issue::new(
+                                "JS_ES4",
+                                format!("Multiple properties from same object - use destructuring: const {{ {}, {} }} = {}", obj_props[i].1, obj_props[j].1, obj_props[i].0),
+                                Severity::Minor,
+                                Category::CodeSmell,
+                                ctx.file_path,
+                                idx + 1,
+                            ).with_remediation(Remediation::quick("Use object destructuring: const { x, y } = obj")));
+                            break;
+                        }
                     }
                 }
             }
@@ -9324,18 +9466,28 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"\{\s*(\w+)\s*:\s*\1\s*\}").unwrap();
+        // Detect {x: x} patterns without backreference
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
-                    issues.push(Issue::new(
-                        "JS_ES9",
-                        format!("Use object shorthand {{ {}}} instead of {{ {}: {} }}", name.as_str(), name.as_str(), name.as_str()),
-                        Severity::Minor,
-                        Category::CodeSmell,
-                        ctx.file_path,
-                        idx + 1,
-                    ).with_remediation(Remediation::quick("Use shorthand: { x } instead of { x: x }")));
+            let trimmed = line.trim();
+            // Look for { var: var } pattern
+            if let Some(start) = trimmed.find('{') {
+                if let Some(end) = trimmed.rfind('}') {
+                    let content = &trimmed[start + 1..end];
+                    // Look for pattern: identifier: identifier
+                    if let Some(colon_pos) = content.find(':') {
+                        let prop_name = content[..colon_pos].trim();
+                        let prop_value = content[colon_pos + 1..].trim();
+                        if prop_name == prop_value && !prop_name.is_empty() {
+                            issues.push(Issue::new(
+                                "JS_ES9",
+                                format!("Use object shorthand {{ {}}} instead of {{ {}: {} }}", prop_name, prop_name, prop_name),
+                                Severity::Minor,
+                                Category::CodeSmell,
+                                ctx.file_path,
+                                idx + 1,
+                            ).with_remediation(Remediation::quick("Use shorthand: { x } instead of { x: x }")));
+                        }
+                    }
                 }
             }
         }
@@ -9635,17 +9787,25 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"(?<![Number\.])isNaN\s*\(").unwrap();
+        // Detect isNaN( without preceding Number. (lookbehind not supported in Rust regex)
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) && !line.trim().starts_with("//") {
-                issues.push(Issue::new(
-                    "JS_ES19",
-                    "Use Number.isNaN() instead of isNaN()",
-                    Severity::Minor,
-                    Category::CodeSmell,
-                    ctx.file_path,
-                    idx + 1,
-                ).with_remediation(Remediation::quick("Replace isNaN(x) with Number.isNaN(x)")));
+            if line.trim().starts_with("//") {
+                continue;
+            }
+            let isNaN_pos = line.find("isNaN(");
+            if let Some(pos) = isNaN_pos {
+                // Check if it's NOT preceded by "Number." or "."
+                let before = if pos >= 7 { &line[pos - 7..pos] } else { "" };
+                if !before.contains("Number") && !before.ends_with('.') {
+                    issues.push(Issue::new(
+                        "JS_ES19",
+                        "Use Number.isNaN() instead of isNaN()",
+                        Severity::Minor,
+                        Category::CodeSmell,
+                        ctx.file_path,
+                        idx + 1,
+                    ).with_remediation(Remediation::quick("Replace isNaN(x) with Number.isNaN(x)")));
+                }
             }
         }
         issues
@@ -10525,10 +10685,21 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"let\s+\w+:\s*(\w+)\s*=\s*\w+\s+as\s+\1").unwrap();
+        // Detect `let x: Type = y as Type` patterns without backreference
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new("JS_S185", "Unnecessary type assertion - type already known", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Remove the unnecessary 'as Type' assertion")));
+            let trimmed = line.trim();
+            // Look for the pattern: let <var>: <Type> = <expr> as <Type>
+            if let Some(as_pos) = trimmed.find(" as ") {
+                let before_as = trimmed[..as_pos].trim();
+                let after_as = trimmed[as_pos + 4..].trim();
+                // Check if the part before " as " contains a type annotation
+                if let Some(colon_pos) = before_as.find(':') {
+                    let declared_type = before_as[colon_pos + 1..].trim().split_whitespace().next().unwrap_or("");
+                    let asserted_type = after_as.split_whitespace().next().unwrap_or("");
+                    if declared_type == asserted_type && !declared_type.is_empty() {
+                        issues.push(Issue::new("JS_S185", "Unnecessary type assertion - type already known", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Remove the unnecessary 'as Type' assertion")));
+                    }
+                }
             }
         }
         issues
@@ -12991,9 +13162,10 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"public\s+static\s+(?!final)\w+\s+\w+").unwrap();
+        // Detect public static fields that are not final
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
+            let trimmed = line.trim();
+            if trimmed.starts_with("public static ") && !trimmed.contains("final") {
                 issues.push(Issue::new("JAVA_S2386", "Mutable public static field", Severity::Critical, Category::Bug, ctx.file_path, idx + 1));
             }
         }
@@ -13014,10 +13186,19 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"static\s+(?!final)\w+\s+\w+\s*=.*getInstance|static\s+\w+\s+\w+\s*=\s*new\s+\w+\(\)").unwrap();
+        // Detect static field initialization via getInstance or new without proper thread-safety
+        // Check for: static ... = ...getInstance(...) or static ... = new ...
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new("JAVA_S2444", "Non-thread-safe lazy initialization of static field", Severity::Major, Category::Bug, ctx.file_path, idx + 1));
+            let trimmed = line.trim();
+            if trimmed.starts_with("static ") {
+                // Skip if it contains "final"
+                if trimmed.contains("final") {
+                    continue;
+                }
+                // Check for getInstance or "new" pattern
+                if (trimmed.contains("getInstance") || trimmed.contains("= new ")) && !trimmed.contains("synchronized") {
+                    issues.push(Issue::new("JAVA_S2444", "Non-thread-safe lazy initialization of static field", Severity::Major, Category::Bug, ctx.file_path, idx + 1));
+                }
             }
         }
         issues
@@ -13534,8 +13715,13 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"(private|protected|public)?\s+(?!final)\w+\s+([a-z][a-zA-Z0-9_]*)\s*[;=]").unwrap();
+        // Detect field declarations with non-camelCase names (excluding final fields)
+        let re = regex::Regex::new(r"(private|protected|public)?\s+\w+\s+([a-z][a-zA-Z0-9_]*)\s*[;=]").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
+            // Skip if line contains 'final'
+            if line.contains("final") {
+                continue;
+            }
             if let Some(cap) = re.captures(line) {
                 if let Some(name) = cap.get(2) {
                     let field_name = name.as_str();
@@ -13805,7 +13991,9 @@ declare_rule! {
             if re.is_match(line) {
                 let start = idx;
                 let method_body: String = ctx.source.lines().skip(start).take(100).collect::<Vec<_>>().join("\n");
-                let brace_count = method_body.matches('{').count() - method_body.matches('}').count();
+                let open_braces = method_body.matches('{').count();
+                let close_braces = method_body.matches('}').count();
+                let brace_count = open_braces.saturating_sub(close_braces);
                 if brace_count > 0 {
                     let line_count = method_body.lines().take_while(|l| l.matches('{').count() > l.matches('}').count()).count();
                     if line_count > self.threshold {
@@ -15776,8 +15964,13 @@ declare_rule! {
         let mut issues = Vec::new();
         let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(&ctx.source);
         if implements_serial {
-            let re = regex::Regex::new(r"(?!transient)(private|public|protected)\s+(\w+)\s+(\w+)\s*;").unwrap();
+            // Check for non-serializable fields, excluding transient fields
+            let re = regex::Regex::new(r"(private|public|protected)\s+(\w+)\s+(\w+)\s*;").unwrap();
             for (idx, line) in ctx.source.lines().enumerate() {
+                // Skip transient fields
+                if line.trim().starts_with("transient") {
+                    continue;
+                }
                 if let Some(cap) = re.captures(line) {
                     let field_type = cap.get(2).unwrap().as_str();
                     let non_serializable = ["Thread", "Socket", "InputStream", "OutputStream", "Connection", "Statement", "ResultSet"];
@@ -15911,10 +16104,18 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"<(\w+),\s*\1\s*>").unwrap();
+        // Detect <T, T> patterns in generics without backreference
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new("JAVA_S2172", "Type parameter shadows another type parameter with the same name", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Rename one of the type parameters to a different letter")));
+            // Look for <something, something> pattern
+            if let Some(lt_pos) = line.find('<') {
+                if let Some(gt_pos) = line[lt_pos..].find('>') {
+                    let generics_content = &line[lt_pos + 1..lt_pos + gt_pos];
+                    // Split by comma and trim
+                    let parts: Vec<&str> = generics_content.split(',').map(|s| s.trim()).collect();
+                    if parts.len() == 2 && parts[0] == parts[1] && !parts[0].is_empty() {
+                        issues.push(Issue::new("JAVA_S2172", "Type parameter shadows another type parameter with the same name", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Rename one of the type parameters to a different letter")));
+                    }
+                }
             }
         }
         issues
@@ -15957,10 +16158,24 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"\(\s*(\w+)\s*\)\s*\1\s*\(").unwrap();
+        // Detect (Type) Type(...) patterns without backreference
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new("JAVA_S2174", "Cast to the same type is unnecessary", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Remove the redundant cast")));
+            // Look for (Type) pattern
+            if let Some(open_paren) = line.find('(') {
+                if open_paren > 0 {
+                    let before_paren = line[..open_paren].trim();
+                    if let Some(close_paren) = line[open_paren + 1..].find(')') {
+                        let type_name = line[open_paren + 1..open_paren + 1 + close_paren].trim();
+                        let after_cast = line[open_paren + close_paren + 2..].trim();
+                        // Check if the next token is the same type name followed by (
+                        if after_cast.starts_with(&type_name) {
+                            let remainder = &after_cast[type_name.len()..];
+                            if remainder.trim().starts_with('(') {
+                                issues.push(Issue::new("JAVA_S2174", "Cast to the same type is unnecessary", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Remove the redundant cast")));
+                            }
+                        }
+                    }
+                }
             }
         }
         issues

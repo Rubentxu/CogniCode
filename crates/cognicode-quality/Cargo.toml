@@ -9,6 +9,10 @@ authors.workspace = true
 name = "cognicode-quality"
 path = "src/main.rs"
 
+[lib]
+name = "cognicode_quality"
+path = "src/lib.rs"
+
 [dependencies]
 cognicode-axiom.workspace = true
 cognicode-core.workspace = true
@@ -26,3 +30,6 @@ ignore.workspace = true
 regex.workspace = true
 dirs-next = "2"
 serde_yaml = "0.9"
+
+[dev-dependencies]
+tempfile.workspace = true

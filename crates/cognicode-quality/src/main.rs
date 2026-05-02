@@ -2,8 +2,21 @@
 //!
 //! This binary exposes quality analysis tools from cognicode-axiom as MCP tools.
 
+mod handler;
+
 use anyhow::Result;
 use clap::Parser;
+use handler::{
+    QualityAnalysisHandler, AnalyzeFileParams, AnalyzeProjectParams,
+    GetTechnicalDebtParams, GetRatingsParams, DetectDuplicationsParams,
+    CheckCodeSmellParams, GetQualityGateParams, RunQualityGateParams,
+    CheckLintParams, GetRemediationParams, TestRuleParams, ListSmellsParams,
+    LoadAdrParams, FileAnalysisResult, IssueResult, FileMetricsResult,
+    ProjectMetricsResult, RuleInfo, ComplexityResult, NamingIssue,
+    RemediationSuggestion, TechnicalDebtReportResult, ProjectRatingsResult,
+    DuplicationResult, DuplicationGroupResult, DuplicationLocationResult,
+    GetQualityProfileParams, AnalyzeComplexityParams, CheckNamingParams, GetFileMetricsParams,
+};
 use cognicode_axiom::linters::{ClippyRunner, Linter};
 use cognicode_axiom::rules::types::{Issue, RuleContext, RuleRegistry, Severity};
 use cognicode_axiom::rules::{
@@ -28,246 +41,6 @@ use tracing::info;
 struct Args {
     #[arg(short, long, default_value = ".")]
     cwd: PathBuf,
-}
-
-/// Quality Analysis Server Handler
-struct QualityAnalysisHandler {
-    cwd: PathBuf,
-    rule_registry: RuleRegistry,
-}
-
-impl QualityAnalysisHandler {
-    fn new(cwd: PathBuf) -> Self {
-        Self {
-            cwd,
-            rule_registry: RuleRegistry::discover(),
-        }
-    }
-
-    fn count_functions_in_context(ctx: &RuleContext) -> usize {
-        let query_str = format!("({}) @func", ctx.language.function_node_type());
-        ctx.count_matches(&query_str)
-    }
-
-    fn aggregate_issues_by_severity(issues: &[Issue]) -> HashMap<String, usize> {
-        let mut counts: HashMap<String, usize> = HashMap::new();
-        for issue in issues {
-            *counts.entry(format!("{:?}", issue.severity)).or_insert(0) += 1;
-        }
-        counts
-    }
-
-    fn check_naming_impl(&self, source: &str, convention: &str) -> Vec<NamingIssue> {
-        let mut issues = Vec::new();
-        let re = match convention {
-            "snake_case" => regex::Regex::new(r"\b(let|const)\s+(?:mut\s+)?([A-Z][a-zA-Z0-9_]*)").unwrap(),
-            "camelCase" => regex::Regex::new(r"\b(let|const)\s+(?:mut\s+)?([a-z]+_[a-z])").unwrap(),
-            _ => regex::Regex::new(r"\b(let|const)\s+(?:mut\s+)?([A-Z][a-zA-Z0-9_]*)").unwrap(),
-        };
-
-        for (line_num, line) in source.lines().enumerate() {
-            for cap in re.captures_iter(line) {
-                if let Some(name) = cap.get(2) {
-                    issues.push(NamingIssue {
-                        line: line_num + 1,
-                        column: 1,
-                        identifier: name.as_str().to_string(),
-                        expected_convention: convention.to_string(),
-                        message: format!("Use {} naming convention", convention),
-                    });
-                }
-            }
-        }
-        issues
-    }
-
-    fn default_gate(&self) -> QualityGate {
-        QualityGate::new("cognicode-default", "Default CogniCode quality gate")
-            .add_condition(GateCondition::new(
-                "code_smells",
-                CompareOperator::LT,
-                MetricValue::Integer(50),
-            ))
-            .add_condition(GateCondition::new(
-                "bugs",
-                CompareOperator::LT,
-                MetricValue::Integer(10),
-            ))
-            .add_condition(GateCondition::new(
-                "vulnerabilities",
-                CompareOperator::LT,
-                MetricValue::Integer(5),
-            ))
-    }
-
-    fn language_name(language: Language) -> String {
-        language.name().to_lowercase()
-    }
-
-    fn analyze_file_impl(&self, params: AnalyzeFileParams) -> Result<FileAnalysisResult> {
-        let source = std::fs::read_to_string(&params.file_path)?;
-        let ext = params.file_path.extension();
-        let language = Language::from_extension(ext.map(OsStr::new)).unwrap_or(Language::Rust);
-
-        let mut parser = tree_sitter::Parser::new();
-        let ts_language = language.to_ts_language();
-        if parser.set_language(&ts_language).is_err() {
-            return Ok(FileAnalysisResult {
-                file_path: params.file_path.display().to_string(),
-                issues: vec![],
-                metrics: FileMetricsResult::default(),
-                success: false,
-                error: Some("Failed to set language".to_string()),
-            });
-        }
-        let tree = match parser.parse(&source, None) {
-            Some(t) => t,
-            None => {
-                return Ok(FileAnalysisResult {
-                    file_path: params.file_path.display().to_string(),
-                    issues: vec![],
-                    metrics: FileMetricsResult::default(),
-                    success: false,
-                    error: Some("Failed to parse file".to_string()),
-                });
-            }
-        };
-        let graph = CallGraph::default();
-        let metrics = FileMetrics::default();
-
-        let ctx = RuleContext {
-            tree: &tree,
-            source: &source,
-            file_path: &params.file_path,
-            language: &language,
-            graph: &graph,
-            metrics: &metrics,
-        };
-
-        let mut all_issues = Vec::new();
-        let lang_name = Self::language_name(language);
-        let rules = self.rule_registry.for_language(&lang_name);
-        for rule in rules {
-            let issues = rule.check(&ctx);
-            all_issues.extend(issues);
-        }
-
-        let file_metrics = FileMetricsResult {
-            lines_of_code: source.lines().count(),
-            function_count: Self::count_functions_in_context(&ctx),
-            issues_by_severity: Self::aggregate_issues_by_severity(&all_issues),
-        };
-
-        Ok(FileAnalysisResult {
-            file_path: params.file_path.display().to_string(),
-            issues: all_issues.into_iter().map(IssueResult::from).collect(),
-            metrics: file_metrics,
-            success: true,
-            error: None,
-        })
-    }
-
-    fn analyze_project_impl(&self, params: AnalyzeProjectParams) -> Result<ProjectAnalysisResult> {
-        let root = if params.project_path.display().to_string() == "." {
-            self.cwd.clone()
-        } else {
-            params.project_path
-        };
-
-        let mut all_issues = Vec::new();
-        let mut file_metrics: HashMap<String, FileMetricsResult> = HashMap::new();
-
-        let walker = ignore::WalkBuilder::new(&root)
-            .hidden(false)
-            .git_ignore(true)
-            .build();
-
-        for entry in walker.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-
-            let ext = path.extension();
-            let language = match Language::from_extension(ext.map(OsStr::new)) {
-                Some(lang) => lang,
-                None => continue,
-            };
-
-            let source = match std::fs::read_to_string(path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            let mut parser = tree_sitter::Parser::new();
-            let ts_language = language.to_ts_language();
-            if parser.set_language(&ts_language).is_err() {
-                continue;
-            }
-            let tree = match parser.parse(&source, None) {
-                Some(t) => t,
-                None => continue,
-            };
-            let graph = CallGraph::default();
-            let metrics = FileMetrics::default();
-
-            let ctx = RuleContext {
-                tree: &tree,
-                source: &source,
-                file_path: path,
-                language: &language,
-                graph: &graph,
-                metrics: &metrics,
-            };
-
-            let mut file_issues = Vec::new();
-            let lang_name = Self::language_name(language);
-            let rules = self.rule_registry.for_language(&lang_name);
-            for rule in rules {
-                let issues = rule.check(&ctx);
-                file_issues.extend(issues);
-            }
-
-            all_issues.extend(file_issues.clone());
-
-            file_metrics.insert(
-                path.display().to_string(),
-                FileMetricsResult {
-                    lines_of_code: source.lines().count(),
-                    function_count: Self::count_functions_in_context(&ctx),
-                    issues_by_severity: Self::aggregate_issues_by_severity(&file_issues),
-                },
-            );
-        }
-
-        let total_loc: usize = file_metrics.values().map(|m| m.lines_of_code).sum();
-        let total_functions: usize = file_metrics.values().map(|m| m.function_count).sum();
-
-        let code_smells = all_issues.iter().filter(|i| matches!(i.category, cognicode_axiom::rules::Category::CodeSmell)).count();
-        let bugs = all_issues.iter().filter(|i| matches!(i.category, cognicode_axiom::rules::Category::Bug)).count();
-        let vulnerabilities = all_issues.iter().filter(|i| matches!(i.category, cognicode_axiom::rules::Category::Vulnerability)).count();
-        let issues_by_severity = Self::aggregate_issues_by_severity(&all_issues);
-        let issues_result: Vec<IssueResult> = all_issues.into_iter().map(IssueResult::from).collect();
-
-        Ok(ProjectAnalysisResult {
-            project_path: root.display().to_string(),
-            total_files: file_metrics.len(),
-            total_issues: issues_result.len(),
-            issues: issues_result,
-            file_metrics,
-            project_metrics: ProjectMetricsResult {
-                ncloc: total_loc,
-                functions: total_functions,
-                classes: 0,
-                code_smells,
-                bugs,
-                vulnerabilities,
-                issues_by_severity,
-            },
-            success: true,
-            error: None,
-        })
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -365,7 +138,6 @@ impl QualityAnalysisHandler {
                 let params: GetQualityGateParams = serde_json::from_value(args)?;
                 let gate = self.default_gate();
 
-                // Get project metrics
                 let project_path = params.project_path.unwrap_or_else(|| self.cwd.clone());
                 let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path })?;
 
@@ -393,17 +165,30 @@ impl QualityAnalysisHandler {
                 let params: GetTechnicalDebtParams = serde_json::from_value(args).unwrap_or_default();
                 let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path: params.project_path })?;
                 let calculator = cognicode_axiom::rules::TechnicalDebtCalculator::new();
-                let issues: Vec<Issue> = project_result.issues.iter().cloned().map(IssueResult::into_issue).collect();
+                let issues: Vec<Issue> = project_result.issues.iter().cloned().map(|i| Issue::new(&i.rule_id, &i.message, Severity::Minor, cognicode_axiom::rules::Category::CodeSmell, std::path::PathBuf::from(&i.file), i.line)).collect();
                 let debt = calculator.calculate(&issues, project_result.project_metrics.ncloc);
-                Ok(serde_json::to_string_pretty(&TechnicalDebtReportResult::from(debt))?)
+                let debt_result = TechnicalDebtReportResult {
+                    total_debt_minutes: debt.total_debt_minutes,
+                    debt_ratio: debt.debt_ratio,
+                    rating: format!("{:?}", debt.rating),
+                    total_issues: debt.total_issues,
+                    ncloc: debt.ncloc,
+                };
+                Ok(serde_json::to_string_pretty(&debt_result)?)
             }
             "get_project_ratings" => {
                 let params: GetRatingsParams = serde_json::from_value(args).unwrap_or_default();
                 let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path: params.project_path })?;
-                let issues: Vec<Issue> = project_result.issues.iter().cloned().map(IssueResult::into_issue).collect();
+                let issues: Vec<Issue> = project_result.issues.iter().cloned().map(|i| Issue::new(&i.rule_id, &i.message, Severity::Minor, cognicode_axiom::rules::Category::CodeSmell, std::path::PathBuf::from(&i.file), i.line)).collect();
                 let debt = cognicode_axiom::rules::TechnicalDebtCalculator::new().calculate(&issues, project_result.project_metrics.ncloc);
                 let ratings = cognicode_axiom::rules::ProjectRatings::compute(&issues, project_result.project_metrics.ncloc, &debt);
-                Ok(serde_json::to_string_pretty(&ProjectRatingsResult::from(ratings))?)
+                let ratings_result = ProjectRatingsResult {
+                    reliability: format!("{:?}", ratings.reliability),
+                    security: format!("{:?}", ratings.security),
+                    maintainability: format!("{:?}", ratings.maintainability),
+                    overall: ratings.overall(),
+                };
+                Ok(serde_json::to_string_pretty(&ratings_result)?)
             }
             "detect_duplications" => {
                 let params: DetectDuplicationsParams = serde_json::from_value(args).unwrap_or_default();
@@ -426,11 +211,35 @@ impl QualityAnalysisHandler {
                         }
                     }
                     let groups = detector.detect_multi_file_duplications(&files);
-                    Ok(serde_json::to_string_pretty(&DuplicationResult::from_groups(groups))?)
+                    let dup_result = DuplicationResult {
+                        groups: groups.iter().map(|g| DuplicationGroupResult {
+                            lines: g.lines,
+                            hash: g.hash,
+                            locations: g.locations.iter().map(|l| DuplicationLocationResult {
+                                file: l.file.clone(),
+                                start_line: l.start_line,
+                                end_line: l.end_line,
+                            }).collect(),
+                        }).collect(),
+                        total_duplicates: groups.iter().map(|g| g.locations.len()).sum(),
+                    };
+                    Ok(serde_json::to_string_pretty(&dup_result)?)
                 } else if let Some(file_path) = params.file_path {
                     let source = std::fs::read_to_string(&file_path)?;
                     let groups = detector.detect_duplications(&source);
-                    Ok(serde_json::to_string_pretty(&DuplicationResult::from_groups(groups))?)
+                    let dup_result = DuplicationResult {
+                        groups: groups.iter().map(|g| DuplicationGroupResult {
+                            lines: g.lines,
+                            hash: g.hash,
+                            locations: g.locations.iter().map(|l| DuplicationLocationResult {
+                                file: l.file.clone(),
+                                start_line: l.start_line,
+                                end_line: l.end_line,
+                            }).collect(),
+                        }).collect(),
+                        total_duplicates: groups.iter().map(|g| g.locations.len()).sum(),
+                    };
+                    Ok(serde_json::to_string_pretty(&dup_result)?)
                 } else {
                     Err(anyhow::anyhow!("Either file_path or project_path required"))
                 }
@@ -600,10 +409,8 @@ profiles:
             "run_quality_gate" => {
                 let params: RunQualityGateParams = serde_json::from_value(args)?;
 
-                // Get or load the gate
                 let gate = self.default_gate();
 
-                // Get project metrics
                 let project_path = params.project_path.unwrap_or_else(|| self.cwd.clone());
                 let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path })?;
 
@@ -748,7 +555,7 @@ profiles:
                     serde_json::json!({
                         "rule_id": rule_id,
                         "count": count,
-                        "severity": details, // placeholder
+                        "severity": details,
                     })
                 }).collect();
 
@@ -811,255 +618,29 @@ profiles:
             _ => Err(anyhow::anyhow!("Unknown tool: {}", name)),
         }
     }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Type Definitions
-// ─────────────────────────────────────────────────────────────────────────────
+    fn check_naming_impl(&self, source: &str, convention: &str) -> Vec<NamingIssue> {
+        let mut issues = Vec::new();
+        let re = match convention {
+            "snake_case" => regex::Regex::new(r"\b(let|const)\s+(?:mut\s+)?([A-Z][a-zA-Z0-9_]*)").unwrap(),
+            "camelCase" => regex::Regex::new(r"\b(let|const)\s+(?:mut\s+)?([a-z]+_[a-z])").unwrap(),
+            _ => regex::Regex::new(r"\b(let|const)\s+(?:mut\s+)?([A-Z][a-zA-Z0-9_]*)").unwrap(),
+        };
 
-#[derive(Debug, Deserialize)]
-struct AnalyzeFileParams { file_path: PathBuf }
-
-#[derive(Debug, Deserialize, Default)]
-struct AnalyzeProjectParams { project_path: PathBuf }
-
-#[derive(Debug, Deserialize, Default)]
-struct GetTechnicalDebtParams { project_path: PathBuf }
-
-#[derive(Debug, Deserialize, Default)]
-struct GetRatingsParams { project_path: PathBuf }
-
-#[derive(Debug, Deserialize, Default)]
-struct DetectDuplicationsParams { file_path: Option<PathBuf>, project_path: Option<PathBuf> }
-
-#[derive(Debug, Deserialize)]
-struct CheckCodeSmellParams { rule_id: String, file_path: String }
-
-#[derive(Debug, Deserialize)]
-struct GetQualityProfileParams { profile_name: String }
-
-#[derive(Debug, Deserialize)]
-struct AnalyzeComplexityParams { file_path: String }
-
-#[derive(Debug, Deserialize)]
-struct CheckNamingParams { file_path: String, convention: Option<String> }
-
-#[derive(Debug, Deserialize)]
-struct GetFileMetricsParams { file_path: String }
-
-#[derive(Debug, Deserialize)]
-struct GetQualityGateParams { gate_name: String, project_path: Option<PathBuf> }
-
-#[derive(Debug, Deserialize)]
-struct RunQualityGateParams { gate_name: String, project_path: Option<PathBuf> }
-
-#[derive(Debug, Deserialize)]
-struct CheckLintParams { project_path: Option<PathBuf>, linters: Option<Vec<String>> }
-
-#[derive(Debug, Deserialize, Default)]
-struct GetRemediationParams { project_path: PathBuf, max_issues: Option<u32> }
-
-#[derive(Debug, Deserialize)]
-struct TestRuleParams { rule_id: String, source: String, language: Option<String> }
-
-#[derive(Debug, Deserialize, Default)]
-struct ListSmellsParams { project_path: PathBuf }
-
-#[derive(Debug, Deserialize)]
-struct LoadAdrParams { adr_path: Option<String>, adr_directory: Option<String> }
-
-// Result types
-#[derive(Debug, Serialize)]
-struct FileAnalysisResult {
-    file_path: String,
-    issues: Vec<IssueResult>,
-    metrics: FileMetricsResult,
-    success: bool,
-    error: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct ProjectAnalysisResult {
-    project_path: String,
-    total_files: usize,
-    total_issues: usize,
-    issues: Vec<IssueResult>,
-    file_metrics: HashMap<String, FileMetricsResult>,
-    project_metrics: ProjectMetricsResult,
-    success: bool,
-    error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct IssueResult {
-    rule_id: String,
-    message: String,
-    severity: String,
-    category: String,
-    file: String,
-    line: usize,
-    column: Option<usize>,
-}
-
-impl IssueResult {
-    fn into_issue(self) -> Issue {
-        Issue::new(&self.rule_id, &self.message,
-            match self.severity.as_str() {
-                "Info" => Severity::Info,
-                "Minor" => Severity::Minor,
-                "Major" => Severity::Major,
-                "Critical" => Severity::Critical,
-                _ => Severity::Minor,
-            },
-            cognicode_axiom::rules::Category::CodeSmell,
-            std::path::PathBuf::from(&self.file),
-            self.line,
-        )
-    }
-}
-
-impl From<Issue> for IssueResult {
-    fn from(issue: Issue) -> Self {
-        Self {
-            rule_id: issue.rule_id,
-            message: issue.message,
-            severity: format!("{:?}", issue.severity),
-            category: format!("{:?}", issue.category),
-            file: issue.file.display().to_string(),
-            line: issue.line,
-            column: issue.column,
+        for (line_num, line) in source.lines().enumerate() {
+            for cap in re.captures_iter(line) {
+                if let Some(name) = cap.get(2) {
+                    issues.push(NamingIssue {
+                        line: line_num + 1,
+                        column: 1,
+                        identifier: name.as_str().to_string(),
+                        expected_convention: convention.to_string(),
+                        message: format!("Use {} naming convention", convention),
+                    });
+                }
+            }
         }
-    }
-}
-
-#[derive(Debug, Serialize, Default)]
-struct FileMetricsResult {
-    lines_of_code: usize,
-    function_count: usize,
-    issues_by_severity: HashMap<String, usize>,
-}
-
-#[derive(Debug, Serialize)]
-struct ProjectMetricsResult {
-    ncloc: usize,
-    functions: usize,
-    classes: usize,
-    code_smells: usize,
-    bugs: usize,
-    vulnerabilities: usize,
-    issues_by_severity: HashMap<String, usize>,
-}
-
-#[derive(Debug, Serialize)]
-struct RuleInfo {
-    id: String,
-    name: String,
-    severity: String,
-    category: String,
-    language: String,
-}
-
-#[derive(Debug, Serialize)]
-struct ComplexityResult {
-    file_path: String,
-    total_complexity: i32,
-}
-
-#[derive(Debug, Serialize)]
-struct NamingIssue {
-    line: usize,
-    column: usize,
-    identifier: String,
-    expected_convention: String,
-    message: String,
-}
-
-#[derive(Debug, Serialize)]
-struct RemediationSuggestion {
-    rule_id: String,
-    message: String,
-    effort_minutes: u32,
-    description: String,
-}
-
-// Technical Debt Result (local type with Serialize)
-#[derive(Debug, Serialize)]
-struct TechnicalDebtReportResult {
-    total_debt_minutes: u64,
-    debt_ratio: f64,
-    rating: String,
-    total_issues: usize,
-    ncloc: usize,
-}
-
-impl From<cognicode_axiom::rules::TechnicalDebtReport> for TechnicalDebtReportResult {
-    fn from(r: cognicode_axiom::rules::TechnicalDebtReport) -> Self {
-        Self {
-            total_debt_minutes: r.total_debt_minutes,
-            debt_ratio: r.debt_ratio,
-            rating: format!("{:?}", r.rating),
-            total_issues: r.total_issues,
-            ncloc: r.ncloc,
-        }
-    }
-}
-
-// Project Ratings Result (local type with Serialize)
-#[derive(Debug, Serialize)]
-struct ProjectRatingsResult {
-    reliability: String,
-    security: String,
-    maintainability: String,
-    overall: char,
-}
-
-impl From<cognicode_axiom::rules::ProjectRatings> for ProjectRatingsResult {
-    fn from(r: cognicode_axiom::rules::ProjectRatings) -> Self {
-        Self {
-            reliability: format!("{:?}", r.reliability),
-            security: format!("{:?}", r.security),
-            maintainability: format!("{:?}", r.maintainability),
-            overall: r.overall(),
-        }
-    }
-}
-
-// Duplication Result
-#[derive(Debug, Serialize)]
-struct DuplicationResult {
-    groups: Vec<DuplicationGroupResult>,
-    total_duplicates: usize,
-}
-
-#[derive(Debug, Serialize)]
-struct DuplicationGroupResult {
-    lines: usize,
-    hash: u32,
-    locations: Vec<DuplicationLocationResult>,
-}
-
-#[derive(Debug, Serialize)]
-struct DuplicationLocationResult {
-    file: String,
-    start_line: usize,
-    end_line: usize,
-}
-
-impl DuplicationResult {
-    fn from_groups(groups: Vec<cognicode_axiom::rules::DuplicationGroup>) -> Self {
-        let total = groups.iter().map(|g| g.locations.len()).sum();
-        Self {
-            groups: groups.into_iter().map(|g| DuplicationGroupResult {
-                lines: g.lines,
-                hash: g.hash,
-                locations: g.locations.into_iter().map(|l| DuplicationLocationResult {
-                    file: l.file,
-                    start_line: l.start_line,
-                    end_line: l.end_line,
-                }).collect(),
-            }).collect(),
-            total_duplicates: total,
-        }
+        issues
     }
 }
 
