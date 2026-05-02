@@ -1,0 +1,23 @@
+{
+  "rule_id": "JAVA_S144",
+  "language": "java",
+  "test_cases": [
+    {
+      "name": "detects_float_equality",
+      "file": "src/SmellyCompare.java",
+      "description": "Float == comparison should trigger JAVA_S144",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JAVA_S144"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_epsilon_comparison",
+      "file": "src/CleanCompare.java",
+      "description": "Epsilon comparison should not trigger JAVA_S144",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

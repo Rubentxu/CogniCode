@@ -1,0 +1,23 @@
+{
+  "rule_id": "S113",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_long_line",
+      "file": "src/lib.rs",
+      "description": "Line exceeding 140 characters triggers S113",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S113"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_short_lines",
+      "file": "src/clean.rs",
+      "description": "Short lines do not trigger S113",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

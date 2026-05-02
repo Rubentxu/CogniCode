@@ -3,6 +3,8 @@
 //! Provides the foundational types for the rule engine including severity levels,
 //! categories, issue reporting, and the rule trait.
 
+#![allow(non_local_definitions)] // inventory::collect! generates non-local impl
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;

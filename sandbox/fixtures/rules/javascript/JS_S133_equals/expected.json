@@ -1,0 +1,23 @@
+{
+  "rule_id": "JS_S133",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_loose_equality",
+      "file": "src/smelly.js",
+      "description": "== usage should trigger JS_S133",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JS_S133"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_strict_equality",
+      "file": "src/clean.js",
+      "description": "=== should not trigger JS_S133",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

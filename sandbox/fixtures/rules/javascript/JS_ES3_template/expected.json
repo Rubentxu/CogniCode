@@ -1,0 +1,23 @@
+{
+  "rule_id": "JS_ES3",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_string_concatenation",
+      "file": "src/smelly.js",
+      "description": "String concatenation should trigger JS_ES3",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JS_ES3"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_template_literals",
+      "file": "src/clean.js",
+      "description": "Template literals should not trigger JS_ES3",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

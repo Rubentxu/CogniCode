@@ -483,6 +483,7 @@ dependencies = [
  "chrono",
  "cognicode-core",
  "cognicode-macros",
+ "cognicode-rule-test-harness",
  "inventory",
  "rayon",
  "regex",
@@ -615,6 +616,19 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tree-sitter",
+]
+
+[[package]]
+name = "cognicode-rule-test-harness"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "cognicode-axiom",
+ "cognicode-core",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "walkdir",
 ]
 
 [[package]]

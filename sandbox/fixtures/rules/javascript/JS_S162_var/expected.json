@@ -1,0 +1,23 @@
+{
+  "rule_id": "JS_S162",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_var_usage",
+      "file": "src/smelly.js",
+      "description": "var usage should trigger JS_S162",
+      "expected_min_issues": 2,
+      "expected_max_issues": 2,
+      "expected_rule_ids": ["JS_S162"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_let_usage",
+      "file": "src/clean.js",
+      "description": "let should not trigger JS_S162",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

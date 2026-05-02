@@ -1,0 +1,23 @@
+{
+  "rule_id": "JS_RX28",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_direct_state_mutation",
+      "file": "src/smelly.js",
+      "description": "Direct state mutation should trigger JS_RX28",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JS_RX28"],
+      "expected_severities": ["Critical"]
+    },
+    {
+      "name": "ignores_setState_usage",
+      "file": "src/clean.js",
+      "description": "setState should not trigger JS_RX28",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "rule_id": "S5631",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_unwrap_in_lib",
+      "file": "src/lib.rs",
+      "description": "unwrap() in non-test function triggers S5631",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S5631"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_safe_error_handling",
+      "file": "src/clean.rs",
+      "description": "unwrap_or() and test code does not trigger S5631",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

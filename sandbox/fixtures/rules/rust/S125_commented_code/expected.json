@@ -1,0 +1,23 @@
+{
+  "rule_id": "S125",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_commented_code",
+      "file": "src/lib.rs",
+      "description": "Commented out function code triggers S125",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S125"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_regular_comments",
+      "file": "src/clean.rs",
+      "description": "Regular comments do not trigger S125",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

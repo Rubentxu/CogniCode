@@ -1,0 +1,23 @@
+{
+  "rule_id": "JS_RX4",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_map_without_key",
+      "file": "src/smelly.jsx",
+      "description": "map without key should trigger JS_RX4",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JS_RX4"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_map_with_key",
+      "file": "src/clean.jsx",
+      "description": "map with key should not trigger JS_RX4",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

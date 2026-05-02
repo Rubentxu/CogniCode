@@ -1,0 +1,23 @@
+{
+  "rule_id": "JAVA_N2",
+  "language": "java",
+  "test_cases": [
+    {
+      "name": "detects_optional_get",
+      "file": "src/SmellyOptional.java",
+      "description": "Optional.get() without check should trigger JAVA_N2",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JAVA_N2"],
+      "expected_severities": ["Critical"]
+    },
+    {
+      "name": "ignores_orElse",
+      "file": "src/CleanOptional.java",
+      "description": "orElse should not trigger JAVA_N2",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

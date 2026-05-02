@@ -1,0 +1,23 @@
+{
+  "rule_id": "JAVA_S185",
+  "language": "java",
+  "test_cases": [
+    {
+      "name": "detects_dead_store",
+      "file": "src/SmellyCode.java",
+      "description": "Dead store should trigger JAVA_S185",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JAVA_S185"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_no_dead_store",
+      "file": "src/CleanCode.java",
+      "description": "No dead store should not trigger JAVA_S185",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

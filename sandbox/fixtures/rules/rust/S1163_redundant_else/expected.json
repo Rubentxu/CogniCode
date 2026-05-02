@@ -1,0 +1,23 @@
+{
+  "rule_id": "S1163",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_return_in_else",
+      "file": "src/lib.rs",
+      "description": "return in else branch triggers S1163",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S1163"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_proper_else",
+      "file": "src/clean.rs",
+      "description": "Expression in else does not trigger S1163",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "rule_id": "JS_NODE1",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_sync_fs_usage",
+      "file": "src/smelly.js",
+      "description": "Synchronous fs usage should trigger JS_NODE1",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JS_NODE1"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_async_fs_usage",
+      "file": "src/clean.js",
+      "description": "Async fs usage should not trigger JS_NODE1",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "rule_id": "JS_S1523",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_eval_usage",
+      "file": "src/smelly.js",
+      "description": "eval() usage should trigger JS_S1523",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JS_S1523"],
+      "expected_severities": ["Blocker"]
+    },
+    {
+      "name": "ignores_safe_parse",
+      "file": "src/clean.js",
+      "description": "JSON.parse should not trigger JS_S1523",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

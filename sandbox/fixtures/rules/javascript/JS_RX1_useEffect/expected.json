@@ -1,0 +1,23 @@
+{
+  "rule_id": "JS_RX1",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_useEffect_without_deps",
+      "file": "src/smelly.jsx",
+      "description": "useEffect without deps array should trigger JS_RX1",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JS_RX1"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_useEffect_with_deps",
+      "file": "src/clean.jsx",
+      "description": "useEffect with deps array should not trigger JS_RX1",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

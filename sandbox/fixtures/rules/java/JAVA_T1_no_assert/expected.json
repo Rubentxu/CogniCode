@@ -1,0 +1,23 @@
+{
+  "rule_id": "JAVA_T1",
+  "language": "java",
+  "test_cases": [
+    {
+      "name": "detects_test_without_assertions",
+      "file": "src/SmellyTest.java",
+      "description": "Test without assertions should trigger JAVA_T1",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JAVA_T1"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_test_with_assertions",
+      "file": "src/CleanTest.java",
+      "description": "Test with assertions should not trigger JAVA_T1",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

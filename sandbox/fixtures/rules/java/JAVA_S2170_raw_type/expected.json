@@ -1,0 +1,23 @@
+{
+  "rule_id": "JAVA_S2170",
+  "language": "java",
+  "test_cases": [
+    {
+      "name": "detects_raw_type",
+      "file": "src/SmellyRawType.java",
+      "description": "Raw types should trigger JAVA_S2170",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JAVA_S2170"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_generic_type",
+      "file": "src/CleanRawType.java",
+      "description": "Generic types should not trigger JAVA_S2170",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

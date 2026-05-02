@@ -1,0 +1,23 @@
+{
+  "rule_id": "JAVA_S106",
+  "language": "java",
+  "test_cases": [
+    {
+      "name": "detects_system_out",
+      "file": "src/SmellyLogger.java",
+      "description": "System.out.println should trigger JAVA_S106",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JAVA_S106"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_proper_logger",
+      "file": "src/CleanLogger.java",
+      "description": "Proper logger should not trigger JAVA_S106",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

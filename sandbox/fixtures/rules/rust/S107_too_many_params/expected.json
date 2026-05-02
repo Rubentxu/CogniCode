@@ -1,0 +1,23 @@
+{
+  "rule_id": "S107",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_too_many_params",
+      "file": "src/lib.rs",
+      "description": "Function with 10 parameters triggers S107",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S107"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_few_params",
+      "file": "src/clean.rs",
+      "description": "Function with 2 parameters does not trigger S107",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

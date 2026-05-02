@@ -1,0 +1,23 @@
+{
+  "rule_id": "S2111",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_format_without_args",
+      "file": "src/lib.rs",
+      "description": "format! without arguments triggers S2111",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S2111"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_string_conversion",
+      "file": "src/clean.rs",
+      "description": "Using .to_string() does not trigger S2111",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

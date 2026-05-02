@@ -1,0 +1,15 @@
+[package]
+name = "cognicode-rule-test-harness"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Test harness for cognicode-axiom quality rules with fixture-based testing"
+
+[dependencies]
+cognicode-axiom.workspace = true
+cognicode-core.workspace = true
+tree-sitter.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+walkdir.workspace = true

@@ -1,0 +1,23 @@
+{
+  "rule_id": "S2068",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_hardcoded_secret",
+      "file": "src/lib.rs",
+      "description": "Hardcoded password triggers S2068",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S2068"],
+      "expected_severities": ["Blocker"]
+    },
+    {
+      "name": "ignores_env_var_usage",
+      "file": "src/clean.rs",
+      "description": "Using env::var does not trigger S2068",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

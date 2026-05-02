@@ -1,0 +1,23 @@
+{
+  "rule_id": "JAVA_S121",
+  "language": "java",
+  "test_cases": [
+    {
+      "name": "detects_missing_braces",
+      "file": "src/SmellyConditional.java",
+      "description": "if without braces should trigger JAVA_S121",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JAVA_S121"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_braces",
+      "file": "src/CleanConditional.java",
+      "description": "if with braces should not trigger JAVA_S121",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

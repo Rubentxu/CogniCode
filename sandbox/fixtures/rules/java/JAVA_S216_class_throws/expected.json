@@ -1,0 +1,23 @@
+{
+  "rule_id": "JAVA_S216",
+  "language": "java",
+  "test_cases": [
+    {
+      "name": "detects_generic_exception",
+      "file": "src/SmellyReader.java",
+      "description": "throws Exception should trigger JAVA_S216",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JAVA_S216"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_specific_exception",
+      "file": "src/CleanReader.java",
+      "description": "throws IOException should not trigger JAVA_S216",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

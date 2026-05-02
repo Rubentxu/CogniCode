@@ -1,0 +1,23 @@
+{
+  "rule_id": "JS_S140",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_with_statement",
+      "file": "src/smelly.js",
+      "description": "with statement should trigger JS_S140",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JS_S140"],
+      "expected_severities": ["Critical"]
+    },
+    {
+      "name": "ignores_direct_property_access",
+      "file": "src/clean.js",
+      "description": "Direct property access should not trigger JS_S140",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "rule_id": "JAVA_P1",
+  "language": "java",
+  "test_cases": [
+    {
+      "name": "detects_string_concat_in_loop",
+      "file": "src/SmellyConcat.java",
+      "description": "String concat in loop should trigger JAVA_P1",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JAVA_P1"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_stringbuilder",
+      "file": "src/CleanConcat.java",
+      "description": "StringBuilder should not trigger JAVA_P1",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

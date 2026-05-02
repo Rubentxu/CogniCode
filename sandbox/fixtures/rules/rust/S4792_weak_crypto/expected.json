@@ -1,0 +1,23 @@
+{
+  "rule_id": "S4792",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_weak_crypto_md5",
+      "file": "src/lib.rs",
+      "description": "Using MD5 for hashing triggers S4792",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S4792"],
+      "expected_severities": ["Critical"]
+    },
+    {
+      "name": "ignores_strong_crypto_sha256",
+      "file": "src/clean.rs",
+      "description": "Using SHA-256 does not trigger S4792",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

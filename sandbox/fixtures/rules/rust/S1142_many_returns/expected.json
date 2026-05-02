@@ -1,0 +1,23 @@
+{
+  "rule_id": "S1142",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_many_returns",
+      "file": "src/lib.rs",
+      "description": "Function with 5 return statements triggers S1142",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S1142"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_single_return",
+      "file": "src/clean.rs",
+      "description": "Single return function does not trigger S1142",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

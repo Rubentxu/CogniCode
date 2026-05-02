@@ -1,0 +1,23 @@
+{
+  "rule_id": "JAVA_S217",
+  "language": "java",
+  "test_cases": [
+    {
+      "name": "detects_ternary_bool",
+      "file": "src/SmellyReturn.java",
+      "description": "Ternary to boolean should trigger JAVA_S217",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JAVA_S217"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_direct_bool",
+      "file": "src/CleanReturn.java",
+      "description": "Direct boolean should not trigger JAVA_S217",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

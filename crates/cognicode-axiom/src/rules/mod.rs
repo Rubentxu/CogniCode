@@ -32,6 +32,9 @@ pub use scraper::{SonarQubeScraper, scrape_command};
 #[cfg(test)]
 mod catalog_tests;
 
+#[cfg(test)]
+mod catalog_tests_generated;
+
 pub use store::{RuleStore, RuleId};
 pub use store::Rule as GovernanceRule;
 pub use validator::RuleValidator;

@@ -1,0 +1,23 @@
+{
+  "rule_id": "JS_ES1",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_unnecessary_let",
+      "file": "src/smelly.js",
+      "description": "let for non-reassigned vars should trigger JS_ES1",
+      "expected_min_issues": 1,
+      "expected_max_issues": 2,
+      "expected_rule_ids": ["JS_ES1"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_const_usage",
+      "file": "src/clean.js",
+      "description": "const should not trigger JS_ES1",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

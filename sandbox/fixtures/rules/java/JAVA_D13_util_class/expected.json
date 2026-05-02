@@ -1,0 +1,23 @@
+{
+  "rule_id": "JAVA_D13",
+  "language": "java",
+  "test_cases": [
+    {
+      "name": "detects_public_constructor",
+      "file": "src/SmellyUtils.java",
+      "description": "Public constructor in util class should trigger JAVA_D13",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JAVA_D13"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_private_constructor",
+      "file": "src/CleanUtils.java",
+      "description": "Private constructor should not trigger JAVA_D13",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

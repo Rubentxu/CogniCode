@@ -1,0 +1,23 @@
+{
+  "rule_id": "JS_TEST1",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_test_without_assertions",
+      "file": "src/smelly.js",
+      "description": "Test without assertions should trigger JS_TEST1",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JS_TEST1"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_test_with_assertions",
+      "file": "src/clean.js",
+      "description": "Test with assertions should not trigger JS_TEST1",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

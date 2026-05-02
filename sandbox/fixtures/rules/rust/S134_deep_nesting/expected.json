@@ -1,0 +1,23 @@
+{
+  "rule_id": "S134",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_deep_nesting",
+      "file": "src/lib.rs",
+      "description": "Function with 6 nested if statements triggers S134",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S134"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_shallow_nesting",
+      "file": "src/clean.rs",
+      "description": "Function with minimal nesting does not trigger S134",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

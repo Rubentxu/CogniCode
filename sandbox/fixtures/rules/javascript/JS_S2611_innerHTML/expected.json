@@ -1,0 +1,23 @@
+{
+  "rule_id": "JS_S2611",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_innerHTML_xss",
+      "file": "src/smelly.js",
+      "description": "innerHTML usage should trigger JS_S2611",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JS_S2611"],
+      "expected_severities": ["Blocker"]
+    },
+    {
+      "name": "ignores_textContent",
+      "file": "src/clean.js",
+      "description": "textContent should not trigger JS_S2611",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

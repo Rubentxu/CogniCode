@@ -27,6 +27,10 @@
 //! - JS_S5736: X-Content-Type-Options missing
 //! - JS_S5852: RegExp DoS (catastrophic backtracking)
 
+#![allow(non_snake_case)]
+#![allow(non_camel_case_types)]
+#![allow(unused_variables)]
+
 use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use cognicode_macros::declare_rule;
 use inventory::submit;
@@ -6073,6 +6077,10 @@ declare_rule! {
         let mut issues = Vec::new();
         let eval_patterns = ["eval(", "new Function(", "setTimeout(", "setInterval("];
         for (idx, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("//") || trimmed.starts_with("*") {
+                continue;
+            }
             for pattern in &eval_patterns {
                 if line.contains(pattern) {
                     let col = line.find(pattern).unwrap() + 1;
@@ -7119,6 +7127,10 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("//") || trimmed.starts_with("*") {
+                continue;
+            }
             if line.contains("debugger") {
                 issues.push(Issue::new(
                     "JS_S123",
@@ -7432,22 +7444,39 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"[!=]=\s*(?!=)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) && !line.trim().starts_with("//") && !line.trim().starts_with("*") {
-                for cap in re.find_iter(line) {
-                    let col = cap.start() + 1;
-                    issues.push(Issue::new(
-                        "JS_S133",
-                        "Use === instead of == or !== instead of !=",
-                        Severity::Major,
-                        Category::Bug,
-                        ctx.file_path,
-                        idx + 1,
-                    ).with_column(col).with_remediation(Remediation::quick(
-                        "Use strict equality (=== or !==) for type-safe comparison"
-                    )));
+            if line.trim().starts_with("//") || line.trim().starts_with("*") {
+                continue;
+            }
+            // Check for == or != but not === or !==
+            let chars: Vec<char> = line.chars().collect();
+            let mut i = 0;
+            while i < chars.len() {
+                if i + 1 < chars.len() {
+                    let two = &line[i..i+2];
+                    if two == "==" || two == "!=" {
+                        // Check it's not === or !==
+                        let is_triple = i + 2 < chars.len() && chars[i+2] == '=';
+                        if !is_triple {
+                            issues.push(Issue::new(
+                                "JS_S133",
+                                "Use === instead of == or !== instead of !=",
+                                Severity::Major,
+                                Category::Bug,
+                                ctx.file_path,
+                                idx + 1,
+                            ).with_column(i + 1).with_remediation(Remediation::quick(
+                                "Use strict equality (=== or !==) for type-safe comparison"
+                            )));
+                        }
+                        // Skip ahead to avoid double-counting
+                        if is_triple {
+                            i += 3;
+                            continue;
+                        }
+                    }
                 }
+                i += 1;
             }
         }
         issues
@@ -9040,6 +9069,10 @@ declare_rule! {
         let re = regex::Regex::new(r"\blet\s+(\w+)").unwrap();
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("//") || trimmed.starts_with("*") {
+                continue;
+            }
             if let Some(cap) = re.captures(line) {
                 if let Some(name) = cap.get(1) {
                     let var_name = name.as_str();
@@ -13411,7 +13444,14 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("System.out.println") || line.contains("System.err.println") || line.contains("System.out.print") {
+            let trimmed = line.trim();
+            if trimmed.starts_with("//") || trimmed.starts_with("*") {
+                continue;
+            }
+            if line.contains("System.out") || line.contains("System.err") {
+                if line.contains("Logger") {
+                    continue;
+                }
                 issues.push(Issue::new("JAVA_S106", "System.out/System.err used - use a logger instead", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
             }
         }
@@ -16587,6 +16627,10 @@ declare_rule! {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("//") || trimmed.starts_with("*") {
+                continue;
+            }
             if (line.contains("class") || line.contains("interface")) && (line.contains("Util") || line.contains("Helper") || line.contains("Constants")) {
                 let context: String = lines.iter().skip(idx).take(30).map(|s| *s).collect::<Vec<_>>().join("\n");
                 if context.contains("public") && !context.contains("private") && !context.contains("protected") {

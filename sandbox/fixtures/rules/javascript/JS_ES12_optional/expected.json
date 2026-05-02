@@ -1,0 +1,23 @@
+{
+  "rule_id": "JS_ES12",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_deep_property_access",
+      "file": "src/smelly.js",
+      "description": "Deep property access should trigger JS_ES12",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JS_ES12"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_optional_chaining",
+      "file": "src/clean.js",
+      "description": "Optional chaining should not trigger JS_ES12",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "rule_id": "JS_S123",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_debugger_statement",
+      "file": "src/smelly.js",
+      "description": "debugger statement should trigger JS_S123",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JS_S123"],
+      "expected_severities": ["Blocker"]
+    },
+    {
+      "name": "ignores_clean_code",
+      "file": "src/clean.js",
+      "description": "No debugger should not trigger JS_S123",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

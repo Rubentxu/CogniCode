@@ -1,0 +1,23 @@
+{
+  "rule_id": "S172",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_debug_print",
+      "file": "src/lib.rs",
+      "description": "println! in library code triggers S172",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S172"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_no_debug_print",
+      "file": "src/clean.rs",
+      "description": "No println! does not trigger S172",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

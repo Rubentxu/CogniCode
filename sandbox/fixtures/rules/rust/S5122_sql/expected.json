@@ -1,0 +1,23 @@
+{
+  "rule_id": "S5122",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_sql_injection",
+      "file": "src/lib.rs",
+      "description": "String formatting in SQL query triggers S5122",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S5122"],
+      "expected_severities": ["Blocker"]
+    },
+    {
+      "name": "ignores_parameterized_query",
+      "file": "src/clean.rs",
+      "description": "Parameterized query does not trigger S5122",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

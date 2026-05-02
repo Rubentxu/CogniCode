@@ -1,0 +1,23 @@
+{
+  "rule_id": "S138",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_long_function",
+      "file": "src/lib.rs",
+      "description": "Function exceeding 50 lines triggers S138",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S138"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_short_function",
+      "file": "src/clean.rs",
+      "description": "Short function does not trigger S138",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

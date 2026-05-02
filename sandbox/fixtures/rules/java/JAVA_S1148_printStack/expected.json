@@ -1,0 +1,23 @@
+{
+  "rule_id": "JAVA_S1148",
+  "language": "java",
+  "test_cases": [
+    {
+      "name": "detects_printStackTrace",
+      "file": "src/SmellyHandler.java",
+      "description": "printStackTrace should trigger JAVA_S1148",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JAVA_S1148"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_proper_logging",
+      "file": "src/CleanHandler.java",
+      "description": "Proper logging should not trigger JAVA_S1148",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

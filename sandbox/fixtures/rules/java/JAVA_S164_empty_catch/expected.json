@@ -1,0 +1,23 @@
+{
+  "rule_id": "JAVA_S164",
+  "language": "java",
+  "test_cases": [
+    {
+      "name": "detects_empty_catch",
+      "file": "src/SmellyHandler.java",
+      "description": "Empty catch block should trigger JAVA_S164",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["JAVA_S164"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_catch_with_logging",
+      "file": "src/CleanHandler.java",
+      "description": "Catch with logging should not trigger JAVA_S164",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

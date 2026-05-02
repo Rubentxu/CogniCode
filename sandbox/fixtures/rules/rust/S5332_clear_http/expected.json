@@ -1,0 +1,23 @@
+{
+  "rule_id": "S5332",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_clear_http",
+      "file": "src/lib.rs",
+      "description": "Using http:// URL triggers S5332",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["S5332"],
+      "expected_severities": ["Blocker"]
+    },
+    {
+      "name": "ignores_https",
+      "file": "src/clean.rs",
+      "description": "Using https:// does not trigger S5332",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}
