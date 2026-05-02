@@ -580,6 +580,7 @@ dependencies = [
  "blake3",
  "chrono",
  "clap",
+ "cognicode-store-traits",
  "dashmap",
  "futures-util",
  "glob",
@@ -626,6 +627,7 @@ dependencies = [
  "blake3",
  "chrono",
  "cognicode-core",
+ "cognicode-store-traits",
  "rusqlite",
  "serde",
  "serde_json",
@@ -647,6 +649,7 @@ dependencies = [
  "anyhow",
  "clap",
  "cognicode-core",
+ "cognicode-db",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -718,6 +721,16 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "walkdir",
+]
+
+[[package]]
+name = "cognicode-store-traits"
+version = "0.4.0"
+dependencies = [
+ "bincode",
+ "serde",
+ "thiserror 2.0.18",
+ "tokio-test",
 ]
 
 [[package]]

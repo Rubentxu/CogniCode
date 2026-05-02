@@ -11,5 +11,6 @@ serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 blake3.workspace = true
-cognicode-core.workspace = true
 bincode.workspace = true
+cognicode-store-traits.workspace = true
+cognicode-core.workspace = true

@@ -1,0 +1,14 @@
+[package]
+name = "cognicode-store-traits"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "GraphStore trait and shared domain types — extracted to break circular dependencies"
+
+[dependencies]
+thiserror.workspace = true
+serde = { workspace = true, features = ["derive"] }
+bincode = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+tokio-test.workspace = true

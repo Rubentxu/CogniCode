@@ -28,22 +28,26 @@ pub struct CogniCodeHandler {
 }
 
 impl CogniCodeHandler {
-    /// Creates a new CogniCodeHandler
+    /// Creates a new CogniCodeHandler with InMemoryGraphStore (no persistence)
     pub fn new(project_root: PathBuf) -> Self {
-        // Canonicalize to absolute path to avoid issues with relative paths
-        // containing "./" or other components that cause validation mismatches
-        let canonical_root = std::fs::canonicalize(&project_root)
-            .unwrap_or_else(|_| {
-                // If canonicalize fails (e.g., path doesn't exist yet), use the original
-                project_root.clone()
-            });
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        let mut ctx = HandlerContext::new(canonical_root);
+        let mut ctx = Self::build_ctx(project_root);
         ctx.cancellation_token = cancellation_token.clone();
-        Self {
-            ctx: Arc::new(ctx),
-            cancellation_token,
-        }
+        Self { ctx: Arc::new(ctx), cancellation_token }
+    }
+
+    /// Creates a new CogniCodeHandler with a custom GraphStore (SQLite for persistence)
+    pub fn with_graph_store(project_root: PathBuf, store: Box<dyn crate::domain::traits::GraphStore>) -> Self {
+        let cancellation_token = Arc::new(AtomicBool::new(false));
+        let mut ctx = HandlerContext::with_graph_store(project_root, store);
+        ctx.cancellation_token = cancellation_token.clone();
+        Self { ctx: Arc::new(ctx), cancellation_token }
+    }
+
+    fn build_ctx(project_root: PathBuf) -> HandlerContext {
+        let canonical_root = std::fs::canonicalize(&project_root)
+            .unwrap_or_else(|_| project_root.clone());
+        HandlerContext::new(canonical_root)
     }
 }
 

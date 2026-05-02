@@ -63,6 +63,22 @@ pub use crate::interface::mcp::file_ops_handlers::*;
 
 use crate::infrastructure::persistence::InMemoryGraphStore;
 use crate::domain::traits::GraphStore;
+use crate::domain::traits::graph_store::StoreError;
+use crate::domain::value_objects::file_manifest::FileManifest;
+
+/// Wrapper that delegates GraphStore calls to an inner Arc<dyn GraphStore>
+struct ContextGraphStore {
+    inner: Arc<dyn GraphStore>,
+}
+
+impl GraphStore for ContextGraphStore {
+    fn save_graph(&self, graph: &CallGraph) -> Result<(), StoreError> { self.inner.save_graph(graph) }
+    fn load_graph(&self) -> Result<Option<CallGraph>, StoreError> { self.inner.load_graph() }
+    fn save_manifest(&self, m: &FileManifest) -> Result<(), StoreError> { self.inner.save_manifest(m) }
+    fn load_manifest(&self) -> Result<Option<FileManifest>, StoreError> { self.inner.load_manifest() }
+    fn clear(&self) -> Result<(), StoreError> { self.inner.clear() }
+    fn exists(&self) -> Result<bool, StoreError> { self.inner.exists() }
+}
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -87,6 +103,8 @@ pub struct HandlerContext {
     pub log_level: Arc<tokio::sync::RwLock<tracing::Level>>,
     /// Tracks symbol access hotness for AI relevance learning
     pub symbol_hotness: Arc<Mutex<HashMap<String, usize>>>,
+    /// Optional persistent GraphStore (SQLite). Falls back to InMemoryGraphStore if None.
+    pub graph_store: Option<Arc<dyn GraphStore>>,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -123,6 +141,7 @@ impl HandlerContext {
             cancellation_token: Arc::new(AtomicBool::new(false)),
             log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
+            graph_store: None,
         }
     }
 
@@ -141,6 +160,7 @@ impl HandlerContext {
             cancellation_token: Arc::new(AtomicBool::new(false)),
             log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
+            graph_store: None,
         }
     }
 
@@ -162,6 +182,7 @@ impl HandlerContext {
             cancellation_token: Arc::new(AtomicBool::new(false)),
             log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
+            graph_store: None,
         }
     }
 
@@ -183,6 +204,7 @@ impl HandlerContext {
             cancellation_token: Arc::new(AtomicBool::new(false)),
             log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
+            graph_store: None,
         }
     }
 
@@ -192,6 +214,22 @@ impl HandlerContext {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancellation_token.load(Ordering::SeqCst)
+    }
+
+    /// Get the GraphStore — persistent (SQLite) if configured, or InMemory fallback
+    pub fn get_graph_store(&self) -> Box<dyn GraphStore> {
+        if let Some(ref store) = self.graph_store {
+            Box::new(ContextGraphStore { inner: store.clone() })
+        } else {
+            Box::new(InMemoryGraphStore::new())
+        }
+    }
+
+    /// Create a HandlerContext with a pre-configured persistent GraphStore
+    pub fn with_graph_store(working_dir: PathBuf, store: Box<dyn GraphStore>) -> Self {
+        let mut ctx = Self::new(working_dir);
+        ctx.graph_store = Some(Arc::from(store));
+        ctx
     }
 
     pub fn should_log(&self, level: tracing::Level) -> bool {
@@ -444,7 +482,7 @@ pub async fn handle_build_graph(
     let mut loaded_from_cache = false;
 
     if db_path.exists() {
-        let store = InMemoryGraphStore::new();
+        let store = ctx.get_graph_store();
         // Check staleness via FileManifest
         let is_stale = match store.load_manifest() {
             Ok(Some(manifest)) => {
@@ -469,7 +507,7 @@ pub async fn handle_build_graph(
             return Err(HandlerError::App(e));
         }
         // Store in memory for this session
-        let store = InMemoryGraphStore::new();
+        let store = ctx.get_graph_store();
         let graph = ctx.analysis_service.get_project_graph();
         let _ = store.save_graph(&graph);
         // Build and save manifest (stored in memory only)

@@ -6,8 +6,8 @@
 use rusqlite::{Connection, params};
 use std::sync::Mutex;
 
-use cognicode_core::domain::aggregates::call_graph::CallGraph;
 use cognicode_core::domain::traits::graph_store::{GraphStore, StoreError};
+use cognicode_core::domain::aggregates::call_graph::CallGraph;
 use cognicode_core::domain::value_objects::file_manifest::FileManifest;
 
 /// SQLite-based implementation of GraphStore

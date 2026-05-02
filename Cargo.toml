@@ -4,6 +4,7 @@ members = [
     "crates/cognicode",
     "crates/cognicode-core",
     "crates/cognicode-db",
+    "crates/cognicode-store-traits",
     "crates/cognicode-mcp",
     "crates/cognicode-cli",
     "crates/cognicode-sandbox",
@@ -23,6 +24,7 @@ authors = ["CogniCode Team"]
 # Internal
 cognicode-core = { path = "crates/cognicode-core" }
 cognicode-db = { path = "crates/cognicode-db" }
+cognicode-store-traits = { path = "crates/cognicode-store-traits" }
 cognicode-axiom = { path = "crates/cognicode-axiom" }
 cognicode-macros = { path = "crates/cognicode-macros" }
 

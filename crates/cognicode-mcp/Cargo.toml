@@ -15,6 +15,7 @@ path = "src/mcp_client.rs"
 
 [dependencies]
 cognicode-core.workspace = true
+cognicode-db = { path = "../cognicode-db" }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -77,7 +77,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting CogniCode MCP Server v{}", env!("CARGO_PKG_VERSION"));
 
     // Use the new rmcp-based server
-    let handler = CogniCodeHandler::new(args.cwd);
+    // Try SQLite persistence first, fall back to in-memory
+    let handler = {
+        let db_path = args.cwd.join(".cognicode/cognicode.db");
+        if let Ok(store) = cognicode_db::graph::SqliteGraphStore::open(&db_path) {
+            CogniCodeHandler::with_graph_store(args.cwd, Box::new(store))
+        } else {
+            CogniCodeHandler::new(args.cwd)
+        }
+    };
     let transport = stdio();
     let server = rmcp::serve_server(handler, transport).await?;
 
