@@ -641,6 +641,8 @@ name = "cognicode-quality"
 version = "0.4.0"
 dependencies = [
  "anyhow",
+ "blake3",
+ "chrono",
  "clap",
  "cognicode-axiom",
  "cognicode-core",

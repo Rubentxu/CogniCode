@@ -3,6 +3,7 @@
 //! This binary exposes quality analysis tools from cognicode-axiom as MCP tools.
 
 mod handler;
+mod incremental;
 
 use anyhow::Result;
 use clap::Parser;

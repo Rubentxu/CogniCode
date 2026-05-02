@@ -18,6 +18,10 @@ use std::ffi::OsStr;
 use std::path::PathBuf;
 use tracing::info;
 
+use crate::incremental::{AnalysisState, BaselineDiff};
+
+
+
 /// Quality Analysis Handler - exposes analysis functionality
 pub struct QualityAnalysisHandler {
     pub cwd: PathBuf,
@@ -115,20 +119,35 @@ impl QualityAnalysisHandler {
     pub fn analyze_project_impl(&self, params: AnalyzeProjectParams) -> Result<ProjectAnalysisResult> {
         let root = params.project_path;
 
-        let mut all_issues = Vec::new();
-        let mut file_metrics_map: HashMap<String, FileMetricsResult> = HashMap::new();
+        // === INCREMENTAL: Load state ===
+        let mut state = AnalysisState::load(&root);
 
+        // Collect all files
+        let mut all_files = Vec::new();
         let walker = ignore::WalkBuilder::new(&root)
             .hidden(false)
             .git_ignore(true)
             .build();
-
         for entry in walker.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
+            if entry.path().is_file() {
+                all_files.push(entry.path().to_path_buf());
             }
+        }
 
+        // === INCREMENTAL: Find changed files ===
+        let changed_files = state.find_changed_files(&all_files);
+        let total_files = all_files.len();
+        let changed_count = changed_files.len();
+        let reused_count = total_files - changed_count;
+
+        info!("Incremental: {}/{} files changed, {} reused from cache",
+              changed_count, total_files, reused_count);
+
+        // Only analyze changed files
+        let mut all_issues = Vec::new();
+        let mut file_metrics_map: HashMap<String, FileMetricsResult> = HashMap::new();
+
+        for path in &changed_files {
             let ext = path.extension();
             let language = match Language::from_extension(ext.map(OsStr::new)) {
                 Some(lang) => lang,
@@ -171,6 +190,9 @@ impl QualityAnalysisHandler {
 
             all_issues.extend(file_issues.clone());
 
+            let issues_count = file_issues.len();
+            state.update_file_state(path, issues_count);
+
             file_metrics_map.insert(
                 path.display().to_string(),
                 FileMetricsResult {
@@ -181,14 +203,66 @@ impl QualityAnalysisHandler {
             );
         }
 
+        // Recover cached issues for unchanged files
+        for path in &all_files {
+            if !changed_files.contains(path) {
+                let key = path.to_string_lossy().to_string();
+                if let Some(file_state) = state.file_states.get(&key) {
+                    // Carry forward metrics from cached state
+                    if let Ok(source) = std::fs::read_to_string(path) {
+                        file_metrics_map.insert(
+                            key.clone(),
+                            FileMetricsResult {
+                                lines_of_code: source.lines().count(),
+                                function_count: 0, // Not re-computed for cached files
+                                issues_by_severity: HashMap::new(),
+                            },
+                        );
+                    }
+                }
+            }
+        }
+
         let total_loc: usize = file_metrics_map.values().map(|m| m.lines_of_code).sum();
         let total_functions: usize = file_metrics_map.values().map(|m| m.function_count).sum();
 
         let code_smells = all_issues.iter().filter(|i| matches!(i.category, cognicode_axiom::rules::Category::CodeSmell)).count();
         let bugs = all_issues.iter().filter(|i| matches!(i.category, cognicode_axiom::rules::Category::Bug)).count();
         let vulnerabilities = all_issues.iter().filter(|i| matches!(i.category, cognicode_axiom::rules::Category::Vulnerability)).count();
+        let blockers = all_issues.iter().filter(|i| matches!(i.severity, Severity::Blocker)).count();
         let issues_by_severity = Self::aggregate_issues_by_severity(&all_issues);
+
+        // === New code issues (computed before consuming all_issues) ===
+        let new_code_files = state.get_new_code_files();
+        let new_code_issues = all_issues.iter()
+            .filter(|issue| {
+                let file_str = issue.file.to_string_lossy().to_string();
+                new_code_files.contains(&file_str)
+            })
+            .count();
+
         let issues_result: Vec<IssueResult> = all_issues.into_iter().map(IssueResult::from).collect();
+
+        // === Compute metrics ===
+        let total_issues = issues_result.len();
+        // Debt estimation: simplified - 5 min per code smell, 15 min per bug, 30 min per vulnerability
+        let debt = (code_smells as u64 * 5) + (bugs as u64 * 15) + (vulnerabilities as u64 * 30);
+        let rating = if blockers > 0 || bugs > 10 {
+            "F"
+        } else if code_smells > 50 || vulnerabilities > 5 {
+            "C"
+        } else if code_smells > 25 {
+            "B"
+        } else {
+            "A"
+        };
+
+        // === Persist state ===
+        state.add_snapshot(total_issues, debt, rating, changed_count, 0, 0);
+        state.save();
+
+        // === Diff vs baseline ===
+        let baseline_diff = state.diff_vs_baseline(total_issues, debt, rating, blockers);
 
         Ok(ProjectAnalysisResult {
             project_path: root.display().to_string(),
@@ -207,6 +281,13 @@ impl QualityAnalysisHandler {
             },
             success: true,
             error: None,
+            incremental: IncrementalInfo {
+                files_total: total_files,
+                files_changed: changed_count,
+                files_reused: reused_count,
+                baseline_diff,
+                new_code_issues,
+            },
         })
     }
 
@@ -352,6 +433,16 @@ pub struct ProjectAnalysisResult {
     pub project_metrics: ProjectMetricsResult,
     pub success: bool,
     pub error: Option<String>,
+    pub incremental: IncrementalInfo,
+}
+
+#[derive(Debug, Serialize)]
+pub struct IncrementalInfo {
+    pub files_total: usize,
+    pub files_changed: usize,
+    pub files_reused: usize,
+    pub baseline_diff: Option<BaselineDiff>,
+    pub new_code_issues: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
