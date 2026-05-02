@@ -1,0 +1,61 @@
+[package]
+name = "cognicode-axiom"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Quality analysis crate for CogniCode — rule engine, code smells, quality gates, and linters"
+
+[dependencies]
+# Internal
+cognicode-core = { path = "../cognicode-core" }
+cognicode-macros = { path = "../cognicode-macros" }
+
+# Async
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Regex
+regex = { workspace = true }
+
+# Parallelism
+rayon = { workspace = true }
+
+# MCP
+rmcp = { workspace = true }
+
+# Procedural macro inventory for rule registration
+inventory = "0.3"
+
+# Tree-sitter for AST analysis
+tree-sitter = "0.24"
+streaming-iterator = "0.1"
+
+# For BLAKE3 hashing (duplication detection)
+blake3 = "1"
+
+# For YAML profiles
+serde_yaml = "0.9"
+
+# For SonarQube API scraper (optional)
+reqwest = { version = "0.12", features = ["blocking", "json"], optional = true }
+
+[features]
+default = []
+scraper = ["dep:reqwest"]
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+tempfile = { workspace = true }

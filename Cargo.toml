@@ -8,6 +8,8 @@ members = [
     "crates/cognicode-sandbox",
     "crates/rcode-debug",
     "crates/cognicode-macros",
+    "crates/cognicode-axiom",
+    "crates/cognicode-quality",
 ]
 
 [workspace.package]
@@ -18,6 +20,8 @@ authors = ["CogniCode Team"]
 [workspace.dependencies]
 # Internal
 cognicode-core = { path = "crates/cognicode-core" }
+cognicode-axiom = { path = "crates/cognicode-axiom" }
+cognicode-macros = { path = "crates/cognicode-macros" }
 
 # Parsing
 tree-sitter = "0.24"

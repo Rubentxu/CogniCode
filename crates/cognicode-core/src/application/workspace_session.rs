@@ -1682,6 +1682,282 @@ impl WorkspaceSession {
             Ok(self.workspace_root.join(path))
         }
     }
+
+    // =========================================================================
+    // AIX (AI Experience) Methods — optimized for LLM agent consumption
+    // =========================================================================
+
+    /// Smart project overview optimized for AI agents.
+    /// Returns structured data: project type, stats, entry points, hot paths, architecture score.
+    pub async fn smart_overview(&self, detail: &str) -> WorkspaceResult<serde_json::Value> {
+        self.ensure_graph_built().await?;
+        let stats = self.analysis.get_graph_stats();
+        let entry_points = self.analysis.get_entry_points();
+        let hot_paths = self.get_hot_paths(5, 2).await.unwrap_or_default();
+        let arch = self.check_architecture(None).await.ok();
+        let coverage = self.analysis.get_coverage_metrics();
+
+        let eps: Vec<serde_json::Value> = entry_points.iter().take(5).map(|ep| {
+            serde_json::json!({
+                "name": ep.name, "file": ep.file_path, "line": ep.line, "kind": ep.kind
+            })
+        }).collect();
+
+        let hps: Vec<serde_json::Value> = hot_paths.iter().take(5).map(|hp| {
+            serde_json::json!({
+                "symbol": hp.symbol_name, "file": hp.file, "line": hp.line,
+                "fan_in": hp.fan_in, "fan_out": hp.fan_out
+            })
+        }).collect();
+
+        Ok(serde_json::json!({
+            "total_symbols": stats.symbol_count,
+            "total_edges": stats.edge_count,
+            "total_files": stats.file_count,
+            "languages": stats.language_breakdown,
+            "top_entry_points": eps,
+            "critical_hot_paths": hps,
+            "architecture_score": arch.as_ref().map(|a| a.score),
+            "cycles_count": arch.as_ref().map(|a| a.cycles.len()),
+            "coverage_percent": coverage.as_ref().map(|c| c.coverage_percent),
+            "detail": detail,
+        }))
+    }
+
+    /// Auto-diagnose the project: find architecture issues, dead code, complexity hotspots.
+    pub async fn auto_diagnose(&self) -> WorkspaceResult<serde_json::Value> {
+        self.ensure_graph_built().await?;
+        let arch = self.check_architecture(None).await.ok();
+        let dead_code = self.analysis.detect_dead_code();
+        let hot_paths = self.get_hot_paths(10, 2).await.unwrap_or_default();
+        let stats = self.analysis.get_graph_stats();
+        let mod_deps = self.analysis.detect_module_dependencies();
+
+        let mut issues: Vec<serde_json::Value> = Vec::new();
+
+        if let Some(ref a) = arch {
+            for cycle in &a.cycles {
+                issues.push(serde_json::json!({
+                    "category": "architecture",
+                    "severity": "critical",
+                    "title": format!("Cyclic dependency: {} symbols", cycle.symbols.len()),
+                    "description": format!("Cycle: {}", cycle.symbols.join(" -> ")),
+                    "recommendation": "Break cycle with trait abstraction or shared module"
+                }));
+            }
+        }
+
+        if dead_code.total_dead > 0 {
+            issues.push(serde_json::json!({
+                "category": "dead_code",
+                "severity": "important",
+                "title": format!("{} dead code entries", dead_code.total_dead),
+                "description": format!("{:.1}% of symbols never called", dead_code.dead_code_percent),
+                "recommendation": "Remove unused code or add documentation explaining why it exists"
+            }));
+        }
+
+        if !hot_paths.is_empty() {
+            issues.push(serde_json::json!({
+                "category": "hot_paths",
+                "severity": "info",
+                "title": format!("{} high-traffic functions", hot_paths.len()),
+                "description": "Functions with highest fan-in (most callers)",
+                "hot_functions": hot_paths.iter().take(5).map(|hp| 
+                    format!("{} (fan-in: {})", hp.symbol_name, hp.fan_in)
+                ).collect::<Vec<_>>()
+            }));
+        }
+
+        Ok(serde_json::json!({
+            "total_issues": issues.len(),
+            "issues": issues,
+            "stats": {
+                "symbols": stats.symbol_count,
+                "edges": stats.edge_count,
+                "files": stats.file_count,
+                "dead_code_percent": dead_code.dead_code_percent,
+                "cross_module_refs": mod_deps.total_cross_module_edges,
+            }
+        }))
+    }
+
+    /// Generate an onboarding plan based on goal (understand, refactor, debug, add_feature, review).
+    pub async fn suggest_onboarding_plan(&self, goal: &str) -> WorkspaceResult<serde_json::Value> {
+        self.ensure_graph_built().await?;
+        let entry_points = self.analysis.get_entry_points();
+        let hot_paths = self.get_hot_paths(5, 2).await.unwrap_or_default();
+        let stats = self.analysis.get_graph_stats();
+
+        let mut steps: Vec<serde_json::Value> = Vec::new();
+
+        // Step 1: Entry points
+        steps.push(serde_json::json!({
+            "step": 1,
+            "title": "Explore entry points",
+            "description": format!("Start with {} main entry points", entry_points.len().min(5)),
+            "files": entry_points.iter().take(5).map(|ep| 
+                format!("{} ({}:{})", ep.name, ep.file_path, ep.line)
+            ).collect::<Vec<_>>(),
+            "estimated_tokens": 200
+        }));
+
+        // Step 2: Hot paths
+        steps.push(serde_json::json!({
+            "step": 2,
+            "title": "Trace critical paths",
+            "description": format!("Follow {} most-called functions", hot_paths.len().min(5)),
+            "files": hot_paths.iter().take(5).map(|hp|
+                format!("{} ({}:{})", hp.symbol_name, hp.file, hp.line)
+            ).collect::<Vec<_>>(),
+            "estimated_tokens": 300
+        }));
+
+        // Step 3-5: Goal-specific
+        match goal {
+            "refactor" => {
+                steps.push(serde_json::json!({
+                    "step": 3, "title": "Identify refactor targets",
+                    "description": "Find god functions and high-complexity areas",
+                    "estimated_tokens": 250
+                }));
+                steps.push(serde_json::json!({
+                    "step": 4, "title": "Plan extraction strategy",
+                    "description": "Design component boundaries for extracted code",
+                    "estimated_tokens": 300
+                }));
+            }
+            "debug" => {
+                steps.push(serde_json::json!({
+                    "step": 3, "title": "Check architecture for cycles",
+                    "description": "Cycles often hide bugs",
+                    "estimated_tokens": 200
+                }));
+                steps.push(serde_json::json!({
+                    "step": 4, "title": "Trace error paths",
+                    "description": "Follow error propagation chains",
+                    "estimated_tokens": 250
+                }));
+            }
+            _ => {
+                steps.push(serde_json::json!({
+                    "step": 3, "title": "Understand data flow",
+                    "description": "Trace how data moves through the system",
+                    "estimated_tokens": 200
+                }));
+                steps.push(serde_json::json!({
+                    "step": 4, "title": "Review module structure",
+                    "description": format!("{} files across project", stats.file_count),
+                    "estimated_tokens": 200
+                }));
+            }
+        }
+
+        steps.push(serde_json::json!({
+            "step": steps.len() + 1,
+            "title": "Deep dive into specific areas",
+            "description": "Use cognicode tools to explore specific symbols and files",
+            "estimated_tokens": 400
+        }));
+
+        let total_tokens: u64 = steps.iter()
+            .filter_map(|s| s["estimated_tokens"].as_u64())
+            .sum();
+
+        Ok(serde_json::json!({
+            "goal": goal,
+            "total_steps": steps.len(),
+            "total_estimated_tokens": total_tokens,
+            "steps": steps,
+        }))
+    }
+
+    /// Answer natural language questions about the codebase using call graph analysis.
+    pub async fn ask_about_code(&self, question: &str) -> WorkspaceResult<serde_json::Value> {
+        self.ensure_graph_built().await?;
+        let graph = self.graph.read().await;
+        let graph = graph.as_ref()
+            .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
+
+        let words: Vec<&str> = question.split_whitespace().collect();
+        let mut answers: Vec<serde_json::Value> = Vec::new();
+
+        // Try to find symbol mentioned in question
+        for word in &words {
+            let results = self.query_symbol_index(word).await.unwrap_or_default();
+            if !results.is_empty() {
+                answers.push(serde_json::json!({
+                    "explanation": format!("Found {} symbols matching '{}'", results.len(), word),
+                    "matches": results.iter().take(5).map(|s| 
+                        format!("{} {:?} ({}:{})", s.name, s.kind, s.file_path, s.line)
+                    ).collect::<Vec<_>>(),
+                    "confidence": 0.8
+                }));
+                // Only report first match
+                break;
+            }
+        }
+
+        // Try to find path between first and last word
+        if words.len() >= 2 {
+            let src = words.first().unwrap();
+            let tgt = words.last().unwrap();
+            if let Ok(path) = self.trace_path(src, tgt, 10).await {
+                if !path.is_empty() {
+                    answers.push(serde_json::json!({
+                        "explanation": format!("Path from '{}' to '{}': {}", src, tgt, path.join(" → ")),
+                        "path": path,
+                        "path_length": path.len(),
+                        "confidence": 0.7
+                    }));
+                }
+            }
+        }
+
+        if answers.is_empty() {
+            answers.push(serde_json::json!({
+                "explanation": "No direct matches found. Try using cognicode_get_symbols or cognicode_get_outline to explore.",
+                "confidence": 0.3
+            }));
+        }
+
+        Ok(serde_json::json!({
+            "question": question,
+            "answers": answers,
+        }))
+    }
+
+    /// Get ranked symbols by hotness (fan-in priority) for AI agent consumption.
+    pub async fn ranked_symbols_ai(&self, query: &str, limit: usize) -> WorkspaceResult<serde_json::Value> {
+        self.ensure_graph_built().await?;
+        let hot_paths = self.get_hot_paths(limit, 1).await.unwrap_or_default();
+        
+        // If query provided, filter by name match
+        let filtered: Vec<_> = if query.is_empty() {
+            hot_paths
+        } else {
+            hot_paths.into_iter()
+                .filter(|hp| hp.symbol_name.to_lowercase().contains(&query.to_lowercase()))
+                .collect()
+        };
+
+        let symbols: Vec<serde_json::Value> = filtered.iter().map(|hp| {
+            serde_json::json!({
+                "name": hp.symbol_name,
+                "file": hp.file,
+                "line": hp.line,
+                "fan_in": hp.fan_in,
+                "fan_out": hp.fan_out,
+                "relevance_score": hp.fan_in as f64,
+            })
+        }).collect();
+
+        Ok(serde_json::json!({
+            "query": query,
+            "count": symbols.len(),
+            "symbols": symbols,
+        }))
+    }
 }
 
 #[cfg(test)]

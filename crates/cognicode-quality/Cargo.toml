@@ -1,0 +1,28 @@
+[package]
+name = "cognicode-quality"
+description = "CogniCode Quality Analysis MCP Server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "cognicode-quality"
+path = "src/main.rs"
+
+[dependencies]
+cognicode-axiom.workspace = true
+cognicode-core.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rmcp.workspace = true
+clap.workspace = true
+rayon.workspace = true
+tree-sitter.workspace = true
+ignore.workspace = true
+regex.workspace = true
+dirs-next = "2"
+serde_yaml = "0.9"
