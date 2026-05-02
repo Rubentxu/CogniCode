@@ -1,20 +1,20 @@
 {
-  "rule_id": "S1135",
+  "rule_id": "PY_S1313",
   "language": "python",
   "test_cases": [
     {
-      "name": "detects_todo_comment",
+      "name": "detects_hardcoded_ip",
       "file": "src/smelly.py",
-      "description": "TODO comment should trigger S1135",
+      "description": "Hardcoded IP should trigger PY_S1313",
       "expected_min_issues": 1,
-      "expected_max_issues": 2,
-      "expected_rule_ids": ["S1135"],
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S1313"],
       "expected_severities": ["Minor"]
     },
     {
-      "name": "ignores_no_todo",
+      "name": "ignores_no_ip",
       "file": "src/clean.py",
-      "description": "No TODO comment should not trigger S1135",
+      "description": "No hardcoded IP should not trigger PY_S1313",
       "expected_min_issues": 0,
       "expected_max_issues": 0,
       "expected_rule_ids": []

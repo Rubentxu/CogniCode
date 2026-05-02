@@ -1,0 +1,23 @@
+{
+  "rule_id": "PY_S5542",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_weak_hash",
+      "file": "src/smelly.py",
+      "description": "MD5 hash should trigger PY_S5542",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S5542"],
+      "expected_severities": ["Critical"]
+    },
+    {
+      "name": "ignores_strong_hash",
+      "file": "src/clean.py",
+      "description": "SHA-256 hash should not trigger PY_S5542",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

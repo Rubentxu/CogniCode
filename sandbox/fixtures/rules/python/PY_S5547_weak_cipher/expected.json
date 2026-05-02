@@ -1,0 +1,23 @@
+{
+  "rule_id": "PY_S5547",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_weak_cipher",
+      "file": "src/smelly.py",
+      "description": "DES cipher should trigger PY_S5547",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S5547"],
+      "expected_severities": ["Critical"]
+    },
+    {
+      "name": "ignores_strong_cipher",
+      "file": "src/clean.py",
+      "description": "AES cipher should not trigger PY_S5547",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

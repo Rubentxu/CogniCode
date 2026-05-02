@@ -1,20 +1,20 @@
 {
-  "rule_id": "S1135",
+  "rule_id": "PY_S3330",
   "language": "python",
   "test_cases": [
     {
-      "name": "detects_todo_comment",
+      "name": "detects_no_httponly",
       "file": "src/smelly.py",
-      "description": "TODO comment should trigger S1135",
+      "description": "Cookie without HttpOnly should trigger PY_S3330",
       "expected_min_issues": 1,
       "expected_max_issues": 2,
-      "expected_rule_ids": ["S1135"],
+      "expected_rule_ids": ["PY_S3330"],
       "expected_severities": ["Minor"]
     },
     {
-      "name": "ignores_no_todo",
+      "name": "ignores_with_httponly",
       "file": "src/clean.py",
-      "description": "No TODO comment should not trigger S1135",
+      "description": "Cookie with HttpOnly should not trigger PY_S3330",
       "expected_min_issues": 0,
       "expected_max_issues": 0,
       "expected_rule_ids": []

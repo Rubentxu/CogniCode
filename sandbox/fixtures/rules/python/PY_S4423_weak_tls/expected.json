@@ -1,0 +1,23 @@
+{
+  "rule_id": "PY_S4423",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_weak_tls",
+      "file": "src/smelly.py",
+      "description": "Weak TLS protocol should trigger PY_S4423",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S4423"],
+      "expected_severities": ["Critical"]
+    },
+    {
+      "name": "ignores_strong_tls",
+      "file": "src/clean.py",
+      "description": "Strong TLS should not trigger PY_S4423",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "rule_id": "PY_S2095",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_resource_leak",
+      "file": "src/smelly.py",
+      "description": "File open without context manager should trigger PY_S2095",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S2095"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_context_manager",
+      "file": "src/clean.py",
+      "description": "File with context manager should not trigger PY_S2095",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

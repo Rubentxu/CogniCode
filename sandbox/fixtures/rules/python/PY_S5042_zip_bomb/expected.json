@@ -1,0 +1,23 @@
+{
+  "rule_id": "PY_S5042",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_zip_bomb",
+      "file": "src/smelly.py",
+      "description": "extractall without validation should trigger PY_S5042",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S5042"],
+      "expected_severities": ["Critical"]
+    },
+    {
+      "name": "ignores_safe_extract",
+      "file": "src/clean.py",
+      "description": "extractall with validation should not trigger PY_S5042",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

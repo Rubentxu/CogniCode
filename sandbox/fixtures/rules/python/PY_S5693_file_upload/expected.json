@@ -1,0 +1,23 @@
+{
+  "rule_id": "PY_S5693",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_no_size_limit",
+      "file": "src/smelly.py",
+      "description": "File upload without size limit should trigger PY_S5693",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S5693"],
+      "expected_severities": ["Critical"]
+    },
+    {
+      "name": "ignores_with_limit",
+      "file": "src/clean.py",
+      "description": "File upload with size limit should not trigger PY_S5693",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

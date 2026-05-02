@@ -2436,8 +2436,29 @@ declare_rule! {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
             let t = line.trim();
+            // Rust-style // comments
             if t.starts_with("// let ") || t.starts_with("// fn ") || t.starts_with("// impl ") ||
-               t.starts_with("// pub ") || t.starts_with("// struct ") || t.starts_with("// if ") {
+               t.starts_with("// pub ") || t.starts_with("// struct ") || t.starts_with("// if ") ||
+               t.starts_with("// match ") || t.starts_with("// for ") || t.starts_with("// while ") ||
+               t.starts_with("// loop ") || t.starts_with("// mut ") || t.starts_with("// ref ") {
+                issues.push(Issue::new(
+                    "S125",
+                    format!("Commented-out code at line {}", idx + 1),
+                    Severity::Minor,
+                    Category::CodeSmell,
+                    ctx.file_path,
+                    idx + 1,
+                ));
+            }
+            // Python-style # comments with code patterns
+            if t.starts_with("# def ") || t.starts_with("# class ") || t.starts_with("# if ") ||
+               t.starts_with("# elif ") || t.starts_with("# else ") || t.starts_with("# for ") ||
+               t.starts_with("# while ") || t.starts_with("# try ") || t.starts_with("# except ") ||
+               t.starts_with("# finally ") || t.starts_with("# with ") || t.starts_with("# import ") ||
+               t.starts_with("# from ") || t.starts_with("# return ") || t.starts_with("# yield ") ||
+               t.starts_with("# raise ") || t.starts_with("# pass ") || t.starts_with("# break ") ||
+               t.starts_with("# continue ") || t.starts_with("# lambda ") || t.starts_with("# self.") ||
+               t.starts_with("# async ") || t.starts_with("# await ") {
                 issues.push(Issue::new(
                     "S125",
                     format!("Commented-out code at line {}", idx + 1),
@@ -2774,21 +2795,39 @@ declare_rule! {
     name: "Debugging statements should not be in production code"
     severity: Major
     category: CodeSmell
-    language: "rust"
+    language: "*"
     params: {}
     check: => {
         let mut issues = Vec::new();
+        let is_test_file = ctx.file_path.to_string_lossy().contains("test");
         for (idx, line) in ctx.source.lines().enumerate() {
-            if !ctx.file_path.to_string_lossy().contains("test") &&
-               (line.contains("println!(") || line.contains("dbg!(") || line.contains("eprintln!(")) {
-                issues.push(Issue::new(
-                    "S172",
-                    "Debug print statement in non-test code",
-                    Severity::Major,
-                    Category::CodeSmell,
-                    ctx.file_path,
-                    idx + 1,
-                ).with_remediation(Remediation::quick("Use tracing::debug! or log::debug! instead")));
+            if !is_test_file {
+                // Rust debugging statements
+                if line.contains("println!(") || line.contains("dbg!(") || line.contains("eprintln!(") {
+                    issues.push(Issue::new(
+                        "S172",
+                        "Debug print statement in non-test code",
+                        Severity::Major,
+                        Category::CodeSmell,
+                        ctx.file_path,
+                        idx + 1,
+                    ).with_remediation(Remediation::quick("Use tracing::debug! or log::debug! instead")));
+                }
+                // Python debugging statements
+                if line.contains("print(") && !line.trim().starts_with("def ") && !line.trim().starts_with("class ") {
+                    // Avoid flagging print function definitions or type hints
+                    let clean_line = line.replace("print", "").replace("def ", "").replace("type ", "");
+                    if !clean_line.contains("->") && !line.trim().starts_with("#") {
+                        issues.push(Issue::new(
+                            "S172",
+                            "Debug print statement in non-test code",
+                            Severity::Major,
+                            Category::CodeSmell,
+                            ctx.file_path,
+                            idx + 1,
+                        ).with_remediation(Remediation::quick("Use Python logging module instead")));
+                    }
+                }
             }
         }
         issues
@@ -18749,6 +18788,6139 @@ declare_rule! {
             let re = regex::Regex::new(r"for\s*\([^)]*\.size\s*\(\s*\)[^)]*\)").unwrap();
             if re.is_match(line) && !line.contains("ArrayList") && !line.contains("HashMap") && !line.contains("HashSet") {
                 issues.push(Issue::new("JAVA_P15", "size in for loop condition", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
+            }
+        }
+        issues
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Python Security Rules (PY_S1-PY_S30)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S2068 — Hardcoded credentials
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S2068"
+    name: "Hardcoded credentials should not be used"
+    severity: Blocker
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if (t.contains("password") || t.contains("secret") || t.contains("api_key")) && (t.contains("= \"") || t.contains("= '")) {
+                if !t.contains("getenv") && !t.contains("environ") && !t.contains("os.environ") {
+                    issues.push(Issue::new("PY_S2068", "Hardcoded credential detected", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S5332 — Clear-text HTTP
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S5332"
+    name: "Clear-text HTTP should not be used"
+    severity: Blocker
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("http://") && !line.contains("https://") && !line.contains("localhost") {
+                issues.push(Issue::new("PY_S5332", "Clear-text HTTP URL detected", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S2077 — SQL injection via f-strings
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S2077"
+    name: "SQL queries should not be built with string interpolation"
+    severity: Blocker
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER"];
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let has_sql: bool = sql_keywords.iter().any(|kw| line.to_uppercase().contains(kw));
+            if has_sql && (line.contains("f\"") || line.contains("f'")) && line.contains("{") {
+                issues.push(Issue::new("PY_S2077", "SQL query built with f-string interpolation", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1523 — eval()/exec() usage
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1523"
+    name: "eval() and exec() should not be used"
+    severity: Blocker
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("eval(") || line.contains("exec(") {
+                issues.push(Issue::new("PY_S1523", "Use of eval() or exec() is security-sensitive", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S4830 — SSL verification disabled
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S4830"
+    name: "SSL certificate verification should not be disabled"
+    severity: Blocker
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if (line.contains("verify=False") || line.contains("verify = False")) && (line.contains("requests") || line.contains("urllib")) {
+                issues.push(Issue::new("PY_S4830", "SSL verification disabled - man-in-the-middle risk", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S4423 — Weak TLS protocol
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S4423"
+    name: "Weak TLS protocols should not be used"
+    severity: Critical
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("TLSv1_0") || line.contains("TLSv1.1") || line.contains("SSLv3") || line.contains("PROTOCOL_TLSv1") {
+                issues.push(Issue::new("PY_S4423", "Weak TLS protocol detected", Severity::Critical, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S4784 — ReDoS via re.compile with user input
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S4784"
+    name: "Regular expressions should not be built from user input"
+    severity: Blocker
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("re.compile(") && (line.contains("request") || line.contains("user") || line.contains("input")) {
+                issues.push(Issue::new("PY_S4784", "Regex compiled from user input - ReDoS risk", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S5247 — XSS in templates (| safe filter)
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S5247"
+    name: "User input should not be marked as safe without sanitization"
+    severity: Blocker
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("| safe") || line.contains("|escape") && line.contains("{{") {
+                issues.push(Issue::new("PY_S5247", "Template marked safe without sanitization - XSS risk", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S5542 — Weak crypto: hashlib.md5()
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S5542"
+    name: "Weak cryptographic hash function should not be used"
+    severity: Critical
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("hashlib.md5") || line.contains("hashlib.sha1") {
+                issues.push(Issue::new("PY_S5542", "Weak cryptographic hash (MD5/SHA1) detected", Severity::Critical, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S5547 — Weak cipher: DES, RC4
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S5547"
+    name: "Weak cipher algorithms should not be used"
+    severity: Critical
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("DES.new") || line.contains("RC4") || line.contains("arc4") {
+                issues.push(Issue::new("PY_S5547", "Weak cipher (DES/RC4) detected", Severity::Critical, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S3649 — SQL via string concatenation
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S3649"
+    name: "SQL queries should not be built with string concatenation"
+    severity: Blocker
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE"];
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let has_sql: bool = sql_keywords.iter().any(|kw| line.to_uppercase().contains(kw));
+            if has_sql && (line.contains("+") || line.contains("format(") || line.contains("%")) && !line.contains("?") {
+                issues.push(Issue::new("PY_S3649", "SQL built with string concatenation", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S2612 — Weak file permissions (chmod 777)
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S2612"
+    name: "File permissions should not be too permissive"
+    severity: Critical
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("0o777") || line.contains("0777") || line.contains("chmod(0xfff") {
+                issues.push(Issue::new("PY_S2612", "Overly permissive file permissions (0777)", Severity::Critical, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S2095 — Resource leak (open without context manager)
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S2095"
+    name: "Resources should be properly closed"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t.contains("= open(") && !t.contains("with ") && !t.contains("as ") {
+                issues.push(Issue::new("PY_S2095", "File opened without context manager", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S5693 — File upload without size limit
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S5693"
+    name: "File uploads should have size limits"
+    severity: Critical
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("request.files") && !line.contains("max_size") && !line.contains("MAX_SIZE") && !line.contains("content_length") {
+                issues.push(Issue::new("PY_S5693", "File upload without size limit", Severity::Critical, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S3330 — Cookie without HttpOnly
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S3330"
+    name: "Cookies should set the HttpOnly flag"
+    severity: Minor
+    category: SecurityHotspot
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("set_cookie(") && !line.contains("httponly") && !line.contains("HttpOnly") {
+                issues.push(Issue::new("PY_S3330", "Cookie without HttpOnly flag", Severity::Minor, Category::SecurityHotspot, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S2092 — Cookie no Secure flag
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S2092"
+    name: "Cookies should set the Secure flag"
+    severity: Minor
+    category: SecurityHotspot
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("set_cookie(") && !line.contains("secure=") && !line.contains("Secure=") {
+                issues.push(Issue::new("PY_S2092", "Cookie without Secure flag", Severity::Minor, Category::SecurityHotspot, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S4502 — CSRF protection disabled
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S4502"
+    name: "CSRF protection should not be disabled"
+    severity: Blocker
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("csrf_exempt") || line.contains("@csrf.exempt") || line.contains("CSRF_DISABLED") {
+                issues.push(Issue::new("PY_S4502", "CSRF protection disabled", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S5725 — CSP header missing
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S5725"
+    name: "Content-Security-Policy header should be set"
+    severity: Minor
+    category: SecurityHotspot
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let all_source = ctx.source.to_string();
+        let has_route = all_source.contains("@app.route") || all_source.contains("Flask(__name__)");
+        let has_csp = all_source.contains("Content-Security-Policy") || all_source.contains("ContentSecurityPolicy");
+        if has_route && !has_csp {
+            issues.push(Issue::new("PY_S5725", "Content-Security-Policy header missing", Severity::Minor, Category::SecurityHotspot, ctx.file_path, 1));
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S5734 — HSTS header missing
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S5734"
+    name: "Strict-Transport-Security header should be set"
+    severity: Minor
+    category: SecurityHotspot
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let all_source = ctx.source.to_string();
+        let has_route = all_source.contains("@app.route") || all_source.contains("Flask(__name__)");
+        let has_hsts = all_source.contains("Strict-Transport-Security") || all_source.contains("HSTS");
+        if has_route && !has_hsts {
+            issues.push(Issue::new("PY_S5734", "HSTS header missing", Severity::Minor, Category::SecurityHotspot, ctx.file_path, 1));
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S5736 — X-Content-Type-Options missing
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S5736"
+    name: "X-Content-Type-Options header should be set"
+    severity: Minor
+    category: SecurityHotspot
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let all_source = ctx.source.to_string();
+        let has_route = all_source.contains("@app.route") || all_source.contains("Flask(__name__)");
+        let has_cto = all_source.contains("X-Content-Type-Options") || all_source.contains("nosniff");
+        if has_route && !has_cto {
+            issues.push(Issue::new("PY_S5736", "X-Content-Type-Options header missing", Severity::Minor, Category::SecurityHotspot, ctx.file_path, 1));
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1313 — Hardcoded IP address
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1313"
+    name: "IP addresses should not be hardcoded"
+    severity: Minor
+    category: SecurityHotspot
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let ip_re = regex::Regex::new(r#""\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}""#).unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(m) = ip_re.find(line) {
+                let ip = m.as_str();
+                if !ip.contains("0.0.0.0") && !ip.contains("127.0.0.1") {
+                    issues.push(Issue::new("PY_S1313", format!("Hardcoded IP address: {}", ip), Severity::Minor, Category::SecurityHotspot, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S3358 — Nested ternary expressions
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S3358"
+    name: "Nested ternary expressions should not be used"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            let ternary_count = t.matches(" if ").count();
+            if ternary_count >= 3 {
+                issues.push(Issue::new("PY_S3358", "Nested ternary expression detected", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S5042 — Zip bomb vulnerability
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S5042"
+    name: "Archive extraction should validate members"
+    severity: Critical
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if (line.contains("extractall") || line.contains("extractall(")) && !line.contains("members") && !line.contains("validate") {
+                issues.push(Issue::new("PY_S5042", "Archive extracted without member validation - zip bomb risk", Severity::Critical, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S2755 — XXE vulnerability
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S2755"
+    name: "XML parsing should not enable external entities"
+    severity: Blocker
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("etree.parse(") && !line.contains("resolve_entities") {
+                issues.push(Issue::new("PY_S2755", "XML parse may be vulnerable to XXE", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S4829 — print() in production code
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S4829"
+    name: "print() should not be used in production code"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("print(") && !line.contains("#") && !line.contains("test") && !line.contains("debug") {
+                issues.push(Issue::new("PY_S4829", "print() in production code", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1148 — Traceback exposed
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1148"
+    name: "Exception tracebacks should not be exposed in production"
+    severity: Critical
+    category: Vulnerability
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("traceback.print_exc()") || line.contains("traceback.format_exc()") {
+                issues.push(Issue::new("PY_S1148", "Exception traceback exposed", Severity::Critical, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1165 — Exception swallowed (except: pass)
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1165"
+    name: "Exceptions should not be swallowed silently"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t == "except:" || t == "except:" {
+                let next_lines: String = ctx.source.lines().skip(idx).take(3).collect::<Vec<_>>().join("\n");
+                if next_lines.contains("pass") && !next_lines.contains("log") && !next_lines.contains("print") {
+                    issues.push(Issue::new("PY_S1165", "Exception swallowed without logging", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1163 — Broad except clause
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1163"
+    name: "Exception types should be specified"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("except Exception:") || line.contains("except Exception :") {
+                issues.push(Issue::new("PY_S1163", "Catching all exceptions with 'except Exception'", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S112 — Generic exception raised
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S112"
+    name: "Generic exceptions should not be raised"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("raise Exception(") || line.contains("raise Exception (") {
+                issues.push(Issue::new("PY_S112", "Generic Exception raised", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S2221 — BaseException caught
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S2221"
+    name: "Catching BaseException is too broad"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("except BaseException") || line.contains("except BaseException:") {
+                issues.push(Issue::new("PY_S2221", "Catching BaseException is too broad", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Python Bug Rules (PY_B1-PY_B15)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S2259 — None dereference
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S2259"
+    name: "Variables should not be used after None check"
+    severity: Blocker
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains(" is None") || line.contains(" == None") {
+                let next_lines: String = ctx.source.lines().skip(idx).take(10).collect::<Vec<_>>().join("\n");
+                if next_lines.contains("if ") && next_lines.contains("return") {
+                    issues.push(Issue::new("PY_S2259", "Variable may be used after None check", Severity::Blocker, Category::Bug, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1244 — Float equality comparison
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1244"
+    name: "Floating point equality should not be used"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("==") && (line.contains("0.1") || line.contains("0.2") || line.contains("0.3")) {
+                issues.push(Issue::new("PY_S1244", "Float equality comparison", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1751 — Loop with single iteration
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1751"
+    name: "Loops should not have only one iteration"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t.contains("while True:") || t.contains("while True :") {
+                let body: String = ctx.source.lines().skip(idx).take(10).collect::<Vec<_>>().join("\n");
+                if body.contains("break") && !body.contains("continue") {
+                    issues.push(Issue::new("PY_S1751", "Loop executes only once due to break", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1845 — Dead store (assigned but never read)
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1845"
+    name: "Variables should not be assigned but never read"
+    severity: Major
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"^\s*(\w+)\s*=\s*").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(cap) = re.captures(line) {
+                let name = cap.get(1).unwrap().as_str();
+                if name != "_" {
+                    let remaining: String = ctx.source.lines().skip(idx + 1).collect::<Vec<_>>().join("\n");
+                    if !remaining.contains(&format!(" {} ", name)) && !remaining.contains(&format!("({}", name)) {
+                        issues.push(Issue::new("PY_S1845", format!("Variable '{}' assigned but never read", name), Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1854 — Unused import
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1854"
+    name: "Unused imports should be removed"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"^\s*import\s+(\w+)").unwrap();
+        let re_from = regex::Regex::new(r"^\s*from\s+(\w+)\s+import").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(cap) = re.captures(line) {
+                let module = cap.get(1).unwrap().as_str();
+                let remaining: String = ctx.source.lines().skip(idx + 1).collect::<Vec<_>>().join("\n");
+                if !remaining.contains(module) && module != "os" && module != "sys" {
+                    issues.push(Issue::new("PY_S1854", format!("Unused import: {}", module), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+            if let Some(cap) = re_from.captures(line) {
+                let module = cap.get(1).unwrap().as_str();
+                let remaining: String = ctx.source.lines().skip(idx + 1).collect::<Vec<_>>().join("\n");
+                if !remaining.contains(module) {
+                    issues.push(Issue::new("PY_S1854", format!("Unused import from: {}", module), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1481 — Unused variable
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1481"
+    name: "Unused variables should be removed"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"^\s*(\w+)\s*=\s*\w+\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(cap) = re.captures(line) {
+                let name = cap.get(1).unwrap().as_str();
+                let remaining: String = ctx.source.lines().skip(idx + 1).collect::<Vec<_>>().join("\n");
+                if !remaining.contains(&format!(" {} ", name)) && !remaining.contains(&format!("({}", name)) && !remaining.contains(&format!("={}", name)) {
+                    issues.push(Issue::new("PY_S1481", format!("Unused variable: {}", name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1226 — Parameter reassigned
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1226"
+    name: "Function parameters should not be reassigned"
+    severity: Major
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"def\s+\w+\s*\(([^)]+)\)").unwrap();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            if let Some(cap) = re.captures(line) {
+                let params = cap.get(1).unwrap().as_str();
+                let func_body: String = lines.iter().skip(idx).take(20).cloned().collect::<Vec<_>>().join("\n");
+                for param in params.split(",") {
+                    let p = param.trim().split(":").next().unwrap_or(param.trim()).trim();
+                    if p != "self" && p != "cls" && func_body.contains(&format!("{} =", p)) {
+                        issues.push(Issue::new("PY_S1226", format!("Parameter '{}' reassigned", p), Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1656 — Self-assignment
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1656"
+    name: "Variables should not be self-assigned"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if let Some(eq_pos) = t.find("=") {
+                if eq_pos > 0 {
+                    let lhs = t[..eq_pos].trim();
+                    let rhs = t[eq_pos + 1..].trim().trim_end_matches(";").trim();
+                    if lhs == rhs && !lhs.is_empty() {
+                        issues.push(Issue::new("PY_S1656", "Self-assignment detected", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1764 — Identical operands in comparison
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1764"
+    name: "Identical expressions should not be compared"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let comparison_ops = ["==", "!=", ">=", "<=", ">", "<"];
+        for (idx, line) in ctx.source.lines().enumerate() {
+            for op in &comparison_ops {
+                if let Some(pos) = line.find(op) {
+                    if pos > 0 {
+                        let before = line[..pos].trim();
+                        let after = line[pos + op.len()..].trim();
+                        if before == after && !before.is_empty() {
+                            issues.push(Issue::new("PY_S1764", "Identical operands in comparison", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S2589 — Always-true condition
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S2589"
+    name: "Conditions should not be constant"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t == "if True:" || t == "if False:" || t == "while True:" {
+                issues.push(Issue::new("PY_S2589", "Constant boolean condition", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S2757 — Assignment vs equality
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S2757"
+    name: "Assignment operators should not be used in conditions"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"if\s+\w+\s*=\s*\w+").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("PY_S2757", "Assignment in if condition - did you mean ==?", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1994 — Loop counter modified
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1994"
+    name: "Loop counters should not be modified inside the loop"
+    severity: Critical
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"for\s+(\w+)\s+in\s+").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(cap) = re.captures(line) {
+                let counter = cap.get(1).unwrap().as_str();
+                let body_start = idx + 1;
+                for (body_idx, body_line) in ctx.source.lines().skip(body_start).enumerate() {
+                    if body_line.contains(&format!("{} +=", counter)) || body_line.contains(&format!("{} -=", counter)) {
+                        issues.push(Issue::new("PY_S1994", format!("Loop counter '{}' modified inside loop", counter), Severity::Critical, Category::Bug, ctx.file_path, body_start + body_idx + 1));
+                    }
+                    if body_line.trim() == "# end" { break; }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S1860 — Deadlock-prone nested locks
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S1860"
+    name: "Nested locks should be avoided"
+    severity: Critical
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let mut lock_depth: i32 = 0;
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("with ") && (line.contains("lock") || line.contains("Lock")) {
+                if lock_depth > 0 {
+                    issues.push(Issue::new("PY_S1860", "Nested lock detected - potential deadlock", Severity::Critical, Category::Bug, ctx.file_path, idx+1));
+                }
+                lock_depth += 1;
+            }
+            if line.trim() == "" || line.trim() == "}" {
+                lock_depth = lock_depth.saturating_sub(1);
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S2201 — Return value ignored
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S2201"
+    name: "Return values should not be ignored"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"^\s*(\w+)\s*\([^)]*\)\s*$").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t.ends_with(";") && !t.starts_with("return") && !t.starts_with("if") && !t.starts_with("for") && !t.starts_with("while") {
+                if (t.contains("get(") || t.contains("find(") || t.contains("index(")) && !t.contains("result") && !t.contains("value") {
+                    issues.push(Issue::new("PY_S2201", "Return value ignored", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S2178 — is vs == for literals
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S2178"
+    name: "Use == for value comparison, not is"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"is\s+\d+").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("PY_S2178", "Use '==' for numeric comparison, not 'is'", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Additional Python Code Smell Rules (PY_S1XX - PY_S2XX)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S101 — Identical expressions on both sides of an operator
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S101"
+    name: "Identical expressions should not be used on both sides of an operator"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let ops = ["==", "!=", "+", "-", "*", "/", "//", "%", "**", "and", "or", "<<", ">>"];
+        for (idx, line) in ctx.source.lines().enumerate() {
+            for op in &ops {
+                if let Some(pos) = line.find(op) {
+                    if pos > 2 && pos < line.len() - 2 {
+                        let left = line[..pos].trim();
+                        let right = line[pos + op.len()..].trim();
+                        if left == right && !left.is_empty() && !left.starts_with("//") && !left.starts_with("#") {
+                            issues.push(Issue::new("PY_S101", format!("Identical expression on both sides of '{}'", op), Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S102 — Empty except
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S102"
+    name: "Empty except clause should not be used"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("except") || t.starts_with("except:") {
+                if idx + 1 < lines.len() {
+                    let next = lines[idx + 1].trim();
+                    if next == "pass" || next == "..." || next.is_empty() {
+                        issues.push(Issue::new("PY_S102", "Empty except clause", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S103 — Line too long
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S103"
+    name: "Lines should not be too long"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let max_len = 120;
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.len() > max_len && !line.trim().starts_with("#") && !line.trim().starts_with("\"\"\"") {
+                issues.push(Issue::new("PY_S103", format!("Line too long ({} chars, max {})", line.len(), max_len), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S104 — Unused import
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S104"
+    name: "Unused imports should be removed"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut imports: Vec<(String, usize)> = Vec::new();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("import ") || t.starts_with("from ") {
+                let name = if t.starts_with("import ") {
+                    t["import ".len()..].split_whitespace().next().unwrap_or("").to_string()
+                } else if t.starts_with("from ") {
+                    t["from ".len()..].split_whitespace().next().unwrap_or("").to_string()
+                } else { continue };
+                imports.push((name, idx));
+            }
+        }
+
+        let all_code: String = lines.join("\n");
+        for (name, line_num) in imports {
+            if name != "*" && !all_code.matches(&format!(" {} ", name)).collect::<Vec<_>>().is_empty() == false {
+                if !all_code.contains(&format!(".{}{}", name, "(")) && !all_code.contains(&format!("{}()", name)) {
+                    issues.push(Issue::new("PY_S104", format!("Unused import: {}", name), Severity::Minor, Category::CodeSmell, ctx.file_path, line_num+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S105 — Unused variable
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S105"
+    name: "Unused variables should be removed"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"^\s*(\w+)\s*=\s*[^=]").unwrap();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            if let Some(cap) = re.captures(line) {
+                let var_name = cap.get(1).unwrap().as_str();
+                if var_name.starts_with("_") || var_name == "self" { continue; }
+                let remaining: String = lines.iter().skip(idx + 1).take(50).cloned().collect::<Vec<_>>().join("\n");
+                if !remaining.contains(&format!(" {} ", var_name)) && !remaining.contains(&format!("({}", var_name)) && !remaining.contains(&format!("={}", var_name)) {
+                    issues.push(Issue::new("PY_S105", format!("Unused variable: {}", var_name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S106 — Unused function argument
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S106"
+    name: "Unused function arguments should be removed or prefixed with _"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def ") {
+                let func_body: String = lines.iter().skip(idx).take(30).cloned().collect::<Vec<_>>().join("\n");
+                let arg_re = regex::Regex::new(r"def\s+\w+\s*\(([^)]+)\)").unwrap();
+                if let Some(cap) = arg_re.captures(&func_body) {
+                    let args = cap.get(1).unwrap().as_str();
+                    for arg in args.split(",") {
+                        let a = arg.trim().split(":").next().unwrap_or(arg.trim()).trim().to_string();
+                        if a != "self" && a != "cls" && !a.starts_with("_") {
+                            let body_after_def = func_body.lines().skip(1).collect::<Vec<_>>().join("\n");
+                            if !body_after_def.contains(&format!(" {} ", a)) && !body_after_def.contains(&format!("({}", a)) {
+                                issues.push(Issue::new("PY_S106", format!("Unused function argument: {}", a), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S107 — Too many method arguments
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S107"
+    name: "Functions should not have too many parameters"
+    severity: Major
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let max_params = 7;
+        let re = regex::Regex::new(r"def\s+\w+\s*\(([^)]+)\)").unwrap();
+
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(cap) = re.captures(line) {
+                let params = cap.get(1).unwrap().as_str();
+                let param_count = params.split(",").filter(|p| !p.trim().is_empty()).count();
+                if param_count > max_params {
+                    issues.push(Issue::new("PY_S107", format!("Function has {} parameters (max {})", param_count, max_params), Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S108 — Bare except clause
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S108"
+    name: "Bare except clauses should not be used"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t == "except:" || t.starts_with("except :") || t == "except" {
+                issues.push(Issue::new("PY_S108", "Bare except clause - caught all exceptions", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S109 — Too many return statements
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S109"
+    name: "Functions should not have too many return statements"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let max_returns = 6;
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def ") {
+                let func_end = idx + 30.min(lines.len() - idx);
+                let func_body: String = lines[idx..func_end].iter().cloned().collect::<Vec<_>>().join("\n");
+                let return_count = func_body.matches("return ").count();
+                if return_count > max_returns {
+                    issues.push(Issue::new("PY_S109", format!("Function has {} return statements (max {})", return_count, max_returns), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S110 — Missing docstring
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S110"
+    name: "Functions and classes should have docstrings"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def ") || t.starts_with("class ") {
+                let next_line_idx = idx + 1;
+                if next_line_idx < lines.len() {
+                    let next_line = lines[next_line_idx].trim();
+                    if !next_line.starts_with("\"\"\"") && !next_line.starts_with("'''") && !next_line.starts_with("@") {
+                        let name = if t.starts_with("def ") {
+                            t.split_whitespace().nth(1).unwrap_or("").split('(').next().unwrap_or("")
+                        } else {
+                            t.split_whitespace().nth(1).unwrap_or("")
+                        };
+                        issues.push(Issue::new("PY_S110", format!("Missing docstring for {}", name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S111 — Wildcard import
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S111"
+    name: "Wildcard imports should not be used"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t.contains(" from ") && (t.contains(" import *") || t.ends_with(" import *")) {
+                issues.push(Issue::new("PY_S111", "Wildcard import", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S220 — Redundant import alias
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S220"
+    name: "Import aliases should not be redundant"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            // import X as X
+            if let Some(m) = regex::Regex::new(r"import\s+(\w+)\s+as\s+\1\b").unwrap().find(t) {
+                issues.push(Issue::new("PY_S220", format!("Redundant import alias: {}", m.as_str()), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+            // from X import Y as Y
+            if let Some(m) = regex::Regex::new(r"from\s+\w+\s+import\s+(\w+)\s+as\s+\1\b").unwrap().find(t) {
+                issues.push(Issue::new("PY_S220", format!("Redundant import alias: {}", m.as_str()), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S113 — Shadowing built-in
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S113"
+    name: "Built-in names should not be shadowed"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let builtins = ["list", "dict", "set", "tuple", "str", "int", "float", "bool", "type", "object", "Exception", "print", "open", "range", "len", "abs", "max", "min"];
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def ") || t.starts_with("class ") || t.starts_with("for ") || t.starts_with("if ") {
+                for builtin in &builtins {
+                    if t.contains(builtin) && !t.contains("#") {
+                        issues.push(Issue::new("PY_S113", format!("Shadowing built-in: {}", builtin), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                        break;
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S114 — Constant variable name
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S114"
+    name: "Constants should be named in UPPER_CASE"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"^([A-Z][a-z]\w*)\s*=").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def ") || t.starts_with("class ") { continue; }
+            if let Some(cap) = re.captures(t) {
+                let name = cap.get(1).unwrap().as_str();
+                if !name.contains("_") && name.chars().all(|c| c.is_uppercase() || c.is_numeric()) == false {
+                    if name.chars().filter(|c| c.is_uppercase()).count() > name.len() / 2 {
+                        issues.push(Issue::new("PY_S114", format!("Constant '{}' should be UPPER_CASE", name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S115 — Confusing name
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S115"
+    name: "Variable and function names should not be confusingly similar"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut names: Vec<(String, usize)> = Vec::new();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def ") {
+                if let Some(name) = t.split_whitespace().nth(1) {
+                    let clean = name.split('(').next().unwrap_or(name);
+                    names.push((clean.to_string(), idx));
+                }
+            }
+            if t.starts_with("class ") {
+                if let Some(name) = t.split_whitespace().nth(1) {
+                    names.push((name.to_string(), idx));
+                }
+            }
+        }
+
+        for (i, (name1, line1)) in names.iter().enumerate() {
+            for (name2, line2) in names.iter().skip(i + 1) {
+                if name1.chars().count() == name2.chars().count() && name1 != name2 {
+                    let chars1: Vec<char> = name1.chars().collect();
+                    let chars2: Vec<char> = name2.chars().collect();
+                    let diff: usize = chars1.iter().zip(chars2.iter()).filter(|(a, b)| a != b).count();
+                    if diff == 1 {
+                        issues.push(Issue::new("PY_S115", format!("Confusingly similar names: '{}' and '{}'", name1, name2), Severity::Minor, Category::CodeSmell, ctx.file_path, *line1+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S116 — Empty function body
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S116"
+    name: "Function bodies should not be empty"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def ") && !t.contains("-> None") && !t.contains("async def") {
+                if idx + 1 < lines.len() {
+                    let next = lines[idx + 1].trim();
+                    if next == "pass" || next == "..." {
+                        issues.push(Issue::new("PY_S116", "Empty function body - did you forget to implement?", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S117 — Too many branches
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S117"
+    name: "Functions should not have too many branches"
+    severity: Major
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let max_branches = 10;
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def ") {
+                let func_end = idx + 50.min(lines.len() - idx);
+                let func_body: String = lines[idx..func_end].iter().cloned().collect::<Vec<_>>().join("\n");
+                let branch_count = func_body.matches("if ").count()
+                    + func_body.matches("elif ").count()
+                    + func_body.matches("else:").count()
+                    + func_body.matches("for ").count()
+                    + func_body.matches("while ").count()
+                    + func_body.matches("case ").count();
+                if branch_count > max_branches {
+                    issues.push(Issue::new("PY_S117", format!("Function has {} branches (max {})", branch_count, max_branches), Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S118 — Too many statements
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S118"
+    name: "Functions should not have too many statements"
+    severity: Major
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let max_statements = 50;
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def ") {
+                let func_end = idx + 100.min(lines.len() - idx);
+                let func_body: String = lines[idx..func_end].iter().cloned().collect::<Vec<_>>().join("\n");
+                let statement_count = func_body.lines().count();
+                if statement_count > max_statements {
+                    issues.push(Issue::new("PY_S118", format!("Function has {} statements (max {})", statement_count, max_statements), Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S119 — Empty class body
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S119"
+    name: "Class bodies should not be empty"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("class ") {
+                if idx + 1 < lines.len() {
+                    let next = lines[idx + 1].trim();
+                    if next == "pass" || next == "..." {
+                        issues.push(Issue::new("PY_S119", "Empty class body", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S120 — Cognitive complexity
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S120"
+    name: "Cognitive complexity should not be too high"
+    severity: Major
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let max_complexity = 15;
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def ") {
+                let func_end = idx + 50.min(lines.len() - idx);
+                let func_body: String = lines[idx..func_end].iter().cloned().collect::<Vec<_>>().join("\n");
+                let mut complexity = 0;
+                complexity += func_body.matches("if ").count() * 1;
+                complexity += func_body.matches("elif ").count() * 2;
+                complexity += func_body.matches("for ").count() * 1;
+                complexity += func_body.matches("while ").count() * 2;
+                complexity += func_body.matches("except ").count() * 1;
+                complexity += func_body.matches(" with ").count() * 1;
+                complexity += func_body.matches(" and ").count() + func_body.matches(" or ").count();
+                if complexity > max_complexity {
+                    issues.push(Issue::new("PY_S120", format!("Cognitive complexity is {} (max {})", complexity, max_complexity), Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Python Error Handling Rules (PY_S2XX)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S201 — Missing exception handling
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S201"
+    name: "Operations that can raise exceptions should be wrapped"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let risky_patterns = ["json.loads(", ".get()", ".fetch(", "requests.", "open(", "eval(", "exec("];
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut in_try = false;
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("try:") { in_try = true; }
+            if t.starts_with("except") { in_try = false; }
+
+            if !in_try {
+                for pattern in &risky_patterns {
+                    if line.contains(pattern) && !t.starts_with("#") && !t.starts_with("def ") && !t.starts_with("class ") {
+                        issues.push(Issue::new("PY_S201", format!("Unprotected operation: {}", pattern), Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                        break;
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S202 — Catching too broad exception
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S202"
+    name: "Exception handlers should catch specific types"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t == "except:" || t.starts_with("except :") || t == "except Exception:" || t == "except BaseException:" {
+                issues.push(Issue::new("PY_S202", "Catching too broad exception", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S203 — Not raising exception
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S203"
+    name: "Exceptions should be raised, not returned"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if (t.contains("return -1") || t.contains("return None") || t.contains("return false") || t.contains("return False")) &&
+               !t.contains("raise ") && !line.contains("#") {
+                let all_lines: Vec<&str> = ctx.source.lines().collect();
+                let prev_lines: String = all_lines[..idx].iter().rev().take(10).map(|s| *s).collect::<Vec<_>>().join("\n");
+                if prev_lines.contains("try") || prev_lines.contains("except") {
+                    issues.push(Issue::new("PY_S203", "Should raise exception instead of returning error value", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S204 — Swallowing exception
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S204"
+    name: "Exceptions should not be silently swallowed"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("except") || t.starts_with("except:") {
+                if idx + 1 < lines.len() {
+                    let next = lines[idx + 1].trim();
+                    if next == "pass" || next == "..." {
+                        issues.push(Issue::new("PY_S204", "Exception silently swallowed", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S205 — Missing finally
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S205"
+    name: "Try blocks with resource acquisition should have finally"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("try:") {
+                let try_block: String = lines[idx..].iter().take(30).cloned().collect::<Vec<_>>().join("\n");
+                if (try_block.contains("open(") || try_block.contains("connect(") || try_block.contains("lock") || try_block.contains("Lock")) &&
+                   !try_block.contains("finally:") {
+                    issues.push(Issue::new("PY_S205", "Try block with resource acquisition missing finally", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S206 — Return in finally
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S206"
+    name: "Return statements should not be in finally blocks"
+    severity: Critical
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("finally:") {
+                let finally_block: String = lines[idx..idx+20].iter().cloned().collect::<Vec<_>>().join("\n");
+                if finally_block.contains("return ") {
+                    issues.push(Issue::new("PY_S206", "Return in finally block can swallow exceptions", Severity::Critical, Category::Bug, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S207 — Raising generic exception
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S207"
+    name: "Specific exceptions should be raised"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t.contains("raise Exception(") || t.contains("raise BaseException(") {
+                issues.push(Issue::new("PY_S207", "Raising generic Exception - be more specific", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S208 — Except pass
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S208"
+    name: "Empty except with pass is suspicious"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("except") {
+                if idx + 1 < lines.len() {
+                    let next = lines[idx + 1].trim();
+                    if next == "pass" {
+                        issues.push(Issue::new("PY_S208", "Empty except with pass - should at least log", Severity::Minor, Category:: CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S209 — Confusing exception chaining
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S209"
+    name: "Exception chaining should use 'raise ... from ...'"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t.starts_with("raise ") && (t.contains("err") || t.contains("e.") || t.contains("ex.")) {
+                if !t.contains(" from ") {
+                    issues.push(Issue::new("PY_S209", "Use 'raise ... from ...' for exception chaining", Severity::Major, Category:: Bug, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S210 — Too many nested try blocks
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S210"
+    name: "Too many nested try blocks indicate poor error handling design"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut try_depth = 0;
+        let mut max_try_depth = 0;
+        let mut max_depth_line = 0;
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("try:") {
+                try_depth += 1;
+                if try_depth > max_try_depth {
+                    max_try_depth = try_depth;
+                    max_depth_line = idx;
+                }
+            }
+            if t.starts_with("except") || t.starts_with("finally") {
+                if try_depth > 0 { try_depth -= 1; }
+            }
+        }
+
+        if max_try_depth > 3 {
+            issues.push(Issue::new("PY_S210", format!("{} nested try blocks (max 3)", max_try_depth), Severity::Minor, Category::CodeSmell, ctx.file_path, max_depth_line+1));
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S211 — Error handling without logging
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S211"
+    name: "Caught exceptions should be logged"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("except") || t.starts_with("except:") {
+                let except_block: String = lines[idx..idx+10].iter().cloned().collect::<Vec<_>>().join("\n");
+                if !except_block.contains("log") && !except_block.contains("print") && !except_block.contains("raise") {
+                    issues.push(Issue::new("PY_S211", "Exception caught but not logged or re-raised", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S212 — Catching KeyboardInterrupt
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S212"
+    name: "KeyboardInterrupt should not be caught"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t.contains("KeyboardInterrupt") || t.contains("SystemExit") {
+                issues.push(Issue::new("PY_S212", "KeyboardInterrupt or SystemExit should not be caught", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S213 — Using assert instead of proper error handling
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S213"
+    name: "Assert should not be used for validation"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t.starts_with("assert ") && (t.contains("!=") || t.contains("==")) {
+                issues.push(Issue::new("PY_S213", "Assert used for validation instead of proper error handling", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_S214 — Exception in destructor
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_S214"
+    name: "Exceptions should not be raised in __del__"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.contains("def __del__") || t.contains("def __delete__") {
+                let method_body: String = lines[idx..idx+20].iter().cloned().collect::<Vec<_>>().join("\n");
+                if method_body.contains("raise ") {
+                    issues.push(Issue::new("PY_S214", "Exception raised in destructor - can cause crashes", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Python Performance Rules (PY_P1-PY_P10)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_P1 — range(len(x)) → use enumerate(x)
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_P1"
+    name: "Use enumerate() instead of range(len(x))"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("range(len(") {
+                issues.push(Issue::new("PY_P1", "Use enumerate() instead of range(len())", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_P2 — .keys() iteration → iterate dict directly
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_P2"
+    name: "Iterate dict directly instead of .keys()"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.keys\(\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && (line.contains("for ") || line.contains("in ")) {
+                issues.push(Issue::new("PY_P2", "Iterate dict directly instead of .keys()", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_P3 — map/filter with lambda → comprehension
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_P3"
+    name: "Use comprehension instead of map/filter with lambda"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"(map|filter)\s*\(\s*lambda\s+").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("PY_P3", "Use list comprehension instead of map/filter with lambda", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_P4 — .append in loop → comprehension
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_P4"
+    name: "Use comprehension instead of .append() in loop"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.contains(".append(") {
+                // Check if inside a for loop
+                let in_loop = idx > 0 && lines[..idx].iter().any(|l| l.contains("for ") && !l.trim().starts_with("#"));
+                if in_loop {
+                    issues.push(Issue::new("PY_P4", "Use list comprehension instead of .append() in loop", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_P5 — + string concat in loop → join()
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_P5"
+    name: "Use join() instead of += string concatenation in loop"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut in_loop = false;
+        for (idx, line) in lines.iter().enumerate() {
+            if line.contains("for ") || line.contains("while ") {
+                in_loop = true;
+            }
+            if in_loop && (line.contains("+=") || line.contains("= s +")) && !line.contains("join") {
+                issues.push(Issue::new("PY_P5", "Use str.join() instead of += in loop", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+            if in_loop && line.trim() == "}" {
+                in_loop = false;
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_P6 — time.sleep() in test → use mock/async
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_P6"
+    name: "Use mock or async helpers instead of time.sleep() in tests"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.contains("time.sleep(") && (t.starts_with("def test_") || idx > 0 && lines[..idx].iter().any(|l| l.contains("def test_"))) {
+                issues.push(Issue::new("PY_P6", "Use mock.patch or async instead of time.sleep() in tests", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_P7 — global keyword abuse
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_P7"
+    name: "Avoid using global keyword"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.trim().starts_with("global ") {
+                issues.push(Issue::new("PY_P7", "Avoid using 'global' keyword - pass as parameter or use class", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_P8 — del list[i] in loop (O(n²))
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_P8"
+    name: "Avoid deleting list items while iterating"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut in_loop = false;
+        for (idx, line) in lines.iter().enumerate() {
+            if line.contains("for ") || line.contains("while ") {
+                in_loop = true;
+            }
+            if in_loop && (line.contains("del ") && line.contains("[") || line.contains(".pop(")) {
+                issues.push(Issue::new("PY_P8", "Deleting items while iterating causes O(n²) - use list comprehension", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+            if in_loop && line.trim() == "\"" {
+                in_loop = false;
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_P9 — x in list instead of x in set (repeated membership test)
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_P9"
+    name: "Use set for membership testing instead of list"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.contains(" in [") || t.contains(" in (") {
+                // Check if repeated (likely in a loop or condition)
+                let prev_lines: String = lines[..idx].join("\n");
+                if prev_lines.contains(" for ") || prev_lines.contains("if ") || prev_lines.contains("while ") {
+                    issues.push(Issue::new("PY_P9", "Use set for membership testing instead of list/tuple", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_P10 — Class-level mutable attribute shared across instances
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_P10"
+    name: "Mutable default arguments are shared across function calls"
+    severity: Major
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"def\s+\w+\s*\(\s*\w+\s*=\s*\[\s*\]").unwrap();
+        let re2 = regex::Regex::new(r"def\s+\w+\s*\(\s*\w+\s*=\s*\{\s*\}").unwrap();
+        let re3 = regex::Regex::new(r"def\s+\w+\s*\(\s*\w+\s*=\s*\w+\s*\(\s*\)\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) || re2.is_match(line) || re3.is_match(line) {
+                issues.push(Issue::new("PY_P10", "Mutable default argument shared across calls - use None and initialize inside", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Python Testing Rules (PY_T1-PY_T10)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_T1 — Test without assertion: def test_x(): pass
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_T1"
+    name: "Tests should contain assertions"
+    severity: Major
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def test_") {
+                let func_body: String = lines[idx..].iter().take(20).cloned().collect::<Vec<_>>().join("\n");
+                if !func_body.contains("assert") && !func_body.contains("self.assert") && !func_body.contains("pytest") && !func_body.contains("raise") {
+                    issues.push(Issue::new("PY_T1", "Test has no assertions", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_T2 — Test with time.sleep()
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_T2"
+    name: "Tests should not use time.sleep()"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.contains("time.sleep(") && (t.starts_with("def test_") || idx > 0 && lines[..idx].iter().any(|l| l.contains("def test_"))) {
+                issues.push(Issue::new("PY_T2", "Test uses time.sleep() - use mock.patch or async helpers", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_T3 — assertEqual vs assertTrue: prefer specific assertion
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_T3"
+    name: "Use specific assertions instead of assertTrue/assertFalse"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if t.contains("assertTrue") || t.contains("assertFalse") {
+                issues.push(Issue::new("PY_T3", "Use specific assertions (assertEqual, assertIs, assertIn) instead of assertTrue/assertFalse", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_T4 — setUp/tearDown vs class-level: prefer setUpClass
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_T4"
+    name: "Use setUpClass/tearDownClass for expensive setup"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if (t.contains("def setUp(self)") || t.contains("def tearDown(self)")) && idx > 0 {
+                let prev_lines: String = lines[..idx].join("\n");
+                if prev_lines.contains("@classmethod") || prev_lines.contains("setUpClass") {
+                    continue;
+                }
+                issues.push(Issue::new("PY_T4", "Consider using setUpClass/tearDownClass for expensive setup shared across tests", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_T5 — unittest.skip without reason
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_T5"
+    name: "unittest.skip should have a reason"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r#"@unittest\.skip\s*\("#).unwrap();
+        let re2 = regex::Regex::new(r"@pytest\.mark\.skip\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if (re.is_match(t) || re2.is_match(t)) && !t.contains("reason=") {
+                issues.push(Issue::new("PY_T5", "@skip decorator should include a reason", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_T6 — Test method naming: must start with test_
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_T6"
+    name: "Test method names must start with test_"
+    severity: Major
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let in_test_class = false;
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("class Test") || t.contains("(unittest.TestCase)") || t.contains("TestCase") {
+                continue;
+            }
+            if t.starts_with("def ") && !t.starts_with("def test_") && !t.starts_with("def setUp") && !t.starts_with("def tearDown") && !t.starts_with("def testClass") && !t.starts_with("def __init__") {
+                if idx > 0 {
+                    let prev_lines: String = lines[..idx].join("\n");
+                    if prev_lines.contains("class Test") || prev_lines.contains("TestCase") {
+                        issues.push(Issue::new("PY_T6", "Test method must start with 'test_'", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_T7 — Test fixture too complex: >20 lines setup in test
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_T7"
+    name: "Test setup should be simple - extract fixtures"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def test_") {
+                let setup_lines: Vec<&str> = lines[idx..].iter().take(30).cloned().collect();
+                let setup_end = setup_lines.iter().position(|l| l.contains("assert") || l.contains("self.assert") || l.contains("#")).unwrap_or(setup_lines.len());
+                if setup_end > 20 {
+                    issues.push(Issue::new("PY_T7", "Test setup is too complex (>20 lines) - extract to fixture", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_T8 — Multiple asserts: >5 asserts in one test
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_T8"
+    name: "Too many assertions in one test - split into multiple tests"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def test_") {
+                let func_body: String = lines[idx..].iter().take(50).cloned().collect::<Vec<_>>().join("\n");
+                let assert_count = func_body.matches("assert").count() + func_body.matches("self.assert").count();
+                if assert_count > 5 {
+                    issues.push(Issue::new("PY_T8", format!("Test has {} assertions - consider splitting", assert_count), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_T9 — Duplicated test method
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_T9"
+    name: "Duplicated test methods should be removed"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut test_methods: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def test_") {
+                let method_name = t.split('(').next().unwrap_or(t).to_string();
+                let body: String = lines[idx..].iter().take(30).cloned().collect::<Vec<_>>().join("\n");
+                if let Some(prev_idx) = test_methods.get(&method_name) {
+                    let prev_body: String = lines[*prev_idx..].iter().take(30).cloned().collect::<Vec<_>>().join("\n");
+                    if prev_body == body {
+                        issues.push(Issue::new("PY_T9", format!("Duplicated test method '{}'", method_name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                } else {
+                    test_methods.insert(method_name, idx);
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_T10 — Non-deterministic test: random.random() in test
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_T10"
+    name: "Tests should not use random values"
+    severity: Minor
+    category: Bug
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if (t.contains("random.random(") || t.contains("random.randint(") || t.contains("random.choice(")) && (idx == 0 || lines[..idx].iter().any(|l| l.contains("def test_"))) {
+                issues.push(Issue::new("PY_T10", "Non-deterministic test - avoid random values", Severity::Minor, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Python Naming & Conventions Rules (PY_N1-PY_N25)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N1 — Function naming: def CamelCase(): → snake_case
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N1"
+    name: "Function names should use snake_case"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"def\s+([A-Z][a-zA-Z0-9_]*)\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            for cap in re.captures_iter(line) {
+                if let Some(name) = cap.get(1) {
+                    let n = name.as_str();
+                    if !n.starts_with("__") && !n.ends_with("__") {
+                        issues.push(Issue::new("PY_N1", format!("Function '{}' should use snake_case", n), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N2 — Class naming: class my_class: → PascalCase
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N2"
+    name: "Class names should use PascalCase"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"class\s+([a-z][a-zA-Z0-9_]*)\s*[:(]").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            for cap in re.captures_iter(line) {
+                if let Some(name) = cap.get(1) {
+                    let n = name.as_str();
+                    if !n.starts_with("_") {
+                        issues.push(Issue::new("PY_N2", format!("Class '{}' should use PascalCase", n), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N3 — Method naming: def MethodName(self): → snake_case
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N3"
+    name: "Method names should use snake_case"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"def\s+([A-Z][a-zA-Z0-9_]*)\s*\(").unwrap();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            if line.contains("class ") {
+                for cap in re.captures_iter(line) {
+                    if let Some(name) = cap.get(1) {
+                        let n = name.as_str();
+                        if !n.starts_with("__") && !n.ends_with("__") {
+                            issues.push(Issue::new("PY_N3", format!("Method '{}' should use snake_case", n), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                        }
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N4 — Constant naming: my_const = 5 → UPPER_CASE
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N4"
+    name: "Constant names should use UPPER_CASE"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"^([A-Z][a-zA-Z0-9_]*)\s*=\s*[^=]").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if !line.trim().starts_with("#") && !line.contains("def ") && !line.contains("class ") && !line.contains("import ") {
+                for cap in re.captures_iter(line) {
+                    if let Some(name) = cap.get(1) {
+                        let n = name.as_str();
+                        if n != n.to_uppercase() {
+                            issues.push(Issue::new("PY_N4", format!("Constant '{}' should use UPPER_CASE", n), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                        }
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N5 — Variable naming: MyVar = 5 → snake_case
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N5"
+    name: "Variable names should use snake_case"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"^\s*([A-Z][a-zA-Z0-9_]*)\s*=").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if !line.trim().starts_with("#") && !line.contains("def ") && !line.contains("class ") && !line.contains("import ") && !line.contains("CONST ") {
+                for cap in re.captures_iter(line) {
+                    if let Some(name) = cap.get(1) {
+                        let n = name.as_str();
+                        if !n.starts_with("__") {
+                            issues.push(Issue::new("PY_N5", format!("Variable '{}' should use snake_case", n), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                        }
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N6 — Module naming: no underscores in module name
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N6"
+    name: "Module names should not use underscores"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"^([a-z]+_[a-z]+)\.py\s*$").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.ends_with(".py") || line.contains("import ") {
+                for cap in re.captures_iter(line) {
+                    if let Some(name) = cap.get(1) {
+                        issues.push(Issue::new("PY_N6", format!("Module '{}' should not use underscores", name.as_str()), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N7 — Package naming: lowercase only
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N7"
+    name: "Package names should use lowercase only"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"(?:^import\s+([A-Z][a-zA-Z0-9_]+)|from\s+([A-Z][a-zA-Z0-9_]+)\s+)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            for cap in re.captures_iter(line) {
+                if let Some(name) = cap.get(1).or(cap.get(2)) {
+                    let n = name.as_str();
+                    if n.contains('_') {
+                        issues.push(Issue::new("PY_N7", format!("Package '{}' should use lowercase only", n), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N8 — Private method: def _method(self): outside class
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N8"
+    name: "Private method '_' prefix used outside class"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut class_stack: Vec<usize> = Vec::new();
+        for (idx, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            let leading_spaces = line.len() - line.trim_start().len();
+            if trimmed.starts_with("class ") {
+                class_stack.push(leading_spaces);
+            }
+            if trimmed.starts_with("def _") && !trimmed.contains("__") {
+                let in_class = !class_stack.is_empty() && leading_spaces > class_stack.last().copied().unwrap_or(0);
+                if !in_class {
+                    issues.push(Issue::new("PY_N8", "Private method prefix '_' used outside class", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+            // Pop classes when we dedent
+            while !class_stack.is_empty() && leading_spaces <= class_stack.last().copied().unwrap_or(0) && !trimmed.is_empty() {
+                class_stack.pop();
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N9 — Protected attribute: self._x accessed from outside
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N9"
+    name: "Protected attribute accessed from outside class"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut in_class = String::new();
+        for (idx, line) in lines.iter().enumerate() {
+            if line.trim().starts_with("class ") {
+                let re = regex::Regex::new(r"class\s+(\w+)").unwrap();
+                if let Some(cap) = re.captures(line) {
+                    in_class = cap.get(1).unwrap().as_str().to_string();
+                }
+            }
+            if !in_class.is_empty() && line.contains("self._") && !line.trim().starts_with("class ") && !line.trim().starts_with("def ") {
+                issues.push(Issue::new("PY_N9", "Protected attribute 'self._x' accessed from outside class", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+            if line.trim().starts_with("class ") {
+                in_class = String::new();
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N10 — Dunder method misuse: custom __my__ methods
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N10"
+    name: "Avoid custom dunder methods unless necessary"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"def\s+__(?!init__|call__|str__|repr__|len__|getitem__|setitem__|delitem__|iter__|next__|contains__|enter__|exit__|add__|sub__|mul__|truediv__|eq__|ne__|lt__|gt__|le__|ge__|hash__)\w+__").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("PY_N10", "Custom dunder method may conflict with built-in behavior", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N11 — Property naming: get_x() convention
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N11"
+    name: "Property getter should use @property decorator"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"def\s+get_(\w+)\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("PY_N11", "Use @property decorator instead of get_x() method", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N12 — Boolean function naming: def is_valid() → should start with is_/has_
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N12"
+    name: "Boolean methods should start with is_, has_, or _"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def ") && !t.contains("__") {
+                let re = regex::Regex::new(r"def\s+(\w+)\s*\(").unwrap();
+                if let Some(cap) = re.captures(t) {
+                    if let Some(name) = cap.get(1) {
+                        let n = name.as_str();
+                        if !n.starts_with("is_") && !n.starts_with("has_") && !n.starts_with("_") && !n.starts_with("test_") && !n.starts_with("set_") && !n.starts_with("get_") {
+                            // Check if it's inside a class
+                            let prev_lines = lines[..idx].join("\n");
+                            if prev_lines.contains("class ") {
+                                issues.push(Issue::new("PY_N12", format!("Boolean method '{}' should start with is_/has_", n), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N13 — Comparison method: __eq__ without __hash__
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N13"
+    name: "__eq__ defined without __hash__ makes objects unhashable"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut has_eq = false;
+        let mut has_hash = false;
+        for (idx, line) in lines.iter().enumerate() {
+            if line.contains("def __eq__") {
+                has_eq = true;
+            }
+            if line.contains("def __hash__") {
+                has_hash = true;
+            }
+            if has_eq && !has_hash && line.contains("def __eq__") {
+                issues.push(Issue::new("PY_N13", "__eq__ defined without __hash__ - object will be unhashable", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N14 — Context manager: __enter__ without __exit__
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N14"
+    name: "__enter__ defined without __exit__"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut has_enter = false;
+        let mut has_exit = false;
+        for (idx, line) in lines.iter().enumerate() {
+            if line.contains("def __enter__") {
+                has_enter = true;
+            }
+            if line.contains("def __exit__") {
+                has_exit = true;
+            }
+        }
+        if has_enter && !has_exit {
+            issues.push(Issue::new("PY_N14", "__enter__ defined without __exit__ - context manager incomplete", Severity::Minor, Category::CodeSmell, ctx.file_path, 1));
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N15 — Iterator: __iter__ without __next__
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N15"
+    name: "__iter__ defined without __next__"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut has_iter = false;
+        let mut has_next = false;
+        for (idx, line) in lines.iter().enumerate() {
+            if line.contains("def __iter__") {
+                has_iter = true;
+            }
+            if line.contains("def __next__") {
+                has_next = true;
+            }
+        }
+        if has_iter && !has_next {
+            issues.push(Issue::new("PY_N15", "__iter__ defined without __next__ - iterator incomplete", Severity::Minor, Category::CodeSmell, ctx.file_path, 1));
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N16 — Descriptor: __get__ without __set__
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N16"
+    name: "Descriptor __get__ defined without __set__"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut has_get = false;
+        let mut has_set = false;
+        for (idx, line) in lines.iter().enumerate() {
+            if line.contains("def __get__") {
+                has_get = true;
+            }
+            if line.contains("def __set__") {
+                has_set = true;
+            }
+        }
+        if has_get && !has_set {
+            issues.push(Issue::new("PY_N16", "Descriptor __get__ defined without __set__", Severity::Minor, Category::CodeSmell, ctx.file_path, 1));
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N17 — Callable: __call__ without useful docstring
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N17"
+    name: "__call__ should have a docstring"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.contains("def __call__") {
+                let body: String = lines[idx..idx+10].join("\n");
+                if !body.contains("\"\"\"") && !body.contains("'''") {
+                    issues.push(Issue::new("PY_N17", "__call__ should have a docstring", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N18 — Repr: __repr__ without __str__
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N18"
+    name: "__repr__ defined without __str__"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut has_repr = false;
+        let mut has_str = false;
+        for (idx, line) in lines.iter().enumerate() {
+            if line.contains("def __repr__") {
+                has_repr = true;
+            }
+            if line.contains("def __str__") {
+                has_str = true;
+            }
+        }
+        if has_repr && !has_str {
+            issues.push(Issue::new("PY_N18", "__repr__ defined without __str__ - consider adding both", Severity::Minor, Category::CodeSmell, ctx.file_path, 1));
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N19 — Slots: __slots__ with string instead of tuple
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N19"
+    name: "__slots__ should be a tuple, not a string"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r#"__slots__\s*=\s*"[^"]+""#).unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("PY_N19", "__slots__ should be a tuple, not a string", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N20 — New-style class: class Foo(object): in Python 3 (redundant)
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N20"
+    name: "Class inheriting from object is redundant in Python 3"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"class\s+\w+\s*\(\s*object\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("PY_N20", "Inheriting from object is redundant in Python 3", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N21 — Super without args: super() should be preferred
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N21"
+    name: "Use super() without arguments instead of super(ClassName, self)"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"super\s*\(\s*\w+\s*,\s*self\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("PY_N21", "Use super() instead of super(ClassName, self)", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N22 — Relative import: from . import x should be explicit
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N22"
+    name: "Use explicit relative imports instead of implicit"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"from\s+\.\s+import").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("PY_N22", "Use explicit relative import: from .module import name", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N23 — Wildcard import: from module import *
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N23"
+    name: "Avoid wildcard imports"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"from\s+\w+\s+import\s+\*").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("PY_N23", "Avoid wildcard imports - use explicit imports", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N24 — Shadowing builtins: list = [1,2,3] shadows list
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N24"
+    name: "Do not shadow built-in type names"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let builtins = ["list", "dict", "set", "tuple", "str", "int", "float", "bool", "type", "object", "Exception", "TypeError", "ValueError", "KeyError", "IndexError"];
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let t = line.trim();
+            if !t.starts_with("#") && !t.contains("import ") && !t.contains("def ") && !t.contains("class ") {
+                for b in &builtins {
+                    let re = regex::Regex::new(&format!(r"^\s*{}\s*=", b)).unwrap();
+                    if re.is_match(line) {
+                        issues.push(Issue::new("PY_N24", format!("Shadowing built-in '{}'", b), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PY_N25 — Unused parameter: def f(x, y): return x (y unused)
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "PY_N25"
+    name: "Unused parameters should be removed or prefixed with _"
+    severity: Minor
+    category: CodeSmell
+    language: "python"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            let t = line.trim();
+            if t.starts_with("def ") && t.contains("(") {
+                let re = regex::Regex::new(r"def\s+\w+\s*\(([^)]*)\)").unwrap();
+                if let Some(cap) = re.captures(t) {
+                    if let Some(params) = cap.get(1) {
+                        let param_str = params.as_str();
+                        if param_str.contains(",") {
+                            let param_names: Vec<&str> = param_str.split(",").filter_map(|p| {
+                                let p = p.trim();
+                                if p.starts_with("*") || p.starts_with("**") {
+                                    None
+                                } else {
+                                    Some(p.split(":").next().unwrap_or(p).trim())
+                                }
+                            }).collect();
+                            let func_body: String = lines[idx..idx+30].join("\n");
+                            for param in param_names {
+                                if !param.is_empty() && !param.starts_with("_") && !func_body.contains(&format!(" {} ", param)) && !func_body.contains(&format!("({}", param)) {
+                                    issues.push(Issue::new("PY_N25", format!("Unused parameter '{}'", param), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GO RULES — 40 rules: security, bugs, code smells, performance
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S2068 — Hardcoded credentials
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S2068"
+    name: "Hard-coded credentials are security sensitive"
+    severity: Blocker
+    category: SecurityHotspot
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let patterns = [
+            (r#"(?i)(password|passwd|pwd)\s*[=:]\s*["'][^"']{4,}["']"#, "password"),
+            (r#"(?i)(api[_-]?key|apikey)\s*[=:]\s*["'][^"']{4,}["']"#, "api_key"),
+            (r#"(?i)(secret|token)\s*[=:]\s*["'][^"']{4,}["']"#, "secret"),
+        ];
+        let regexes: Vec<_> = patterns.iter().map(|(p, _)| regex::Regex::new(p).unwrap()).collect();
+        for (line_num, line) in ctx.source.lines().enumerate() {
+            for re in &regexes {
+                if re.is_match(line) {
+                    issues.push(Issue::new("GO_S2068", "Hard-coded credential detected", Severity::Blocker, Category::SecurityHotspot, ctx.file_path, line_num+1).with_remediation(Remediation::moderate("Use environment variables or a secrets manager")));
+                    break;
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S2077 — SQL injection
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S2077"
+    name: "SQL injection vulnerabilities should be prevented"
+    severity: Blocker
+    category: Vulnerability
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "EXEC", "EXECUTE"];
+        let re = regex::Regex::new(r#"fmt\.Sprintf\s*\([^,]+,\s*["'][^"']*["']"#).unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                let upper = line.to_uppercase();
+                for kw in &sql_keywords {
+                    if upper.contains(kw) {
+                        issues.push(Issue::new("GO_S2077", "Potential SQL injection - use parameterized queries", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
+                        break;
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S1523 — exec.Command with user input
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S1523"
+    name: "Shell command built from user input"
+    severity: Blocker
+    category: Vulnerability
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"exec\.Command\s*\(\s*\w+\s*,").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("//") {
+                issues.push(Issue::new("GO_S1523", "exec.Command with variable input - verify no injection", Severity::Blocker, Category:: Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S2612 — chmod 777
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S2612"
+    name: "Permissions should be set explicitly"
+    severity: Blocker
+    category: SecurityHotspot
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"os\.Chmod\s*\([^)]*0[0-7]{3}").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S2612", "chmod with 777-like permissions - security risk", Severity::Blocker, Category::SecurityHotspot, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S1148 — panic in library
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S1148"
+    name: "panic! should not be used in library code"
+    severity: Major
+    category: Bug
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("panic(") && !line.contains("test") && !line.contains("_test.go") {
+                issues.push(Issue::new("GO_S1148", "panic in non-test code - return error instead", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S5332 — HTTP cleartext
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S5332"
+    name: "Clear-text protocols should not be used"
+    severity: Blocker
+    category: Vulnerability
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r#"http://[^\s""']+"#).unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(m) = re.find(line) {
+                if !line.contains("https://") && !line.contains("localhost") {
+                    issues.push(Issue::new("GO_S5332", format!("Clear-text HTTP URL: {}", m.as_str()), Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S4830 — TLS skip verification
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S4830"
+    name: "TLS certificate verification should not be disabled"
+    severity: Blocker
+    category: Vulnerability
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r#"(InsecureSkipVerify\s*[=:]\s*true|ClientConfig\s*{[^}]*InsecureSkipVerify[^}]*true)"#).unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S4830", "TLS InsecureSkipVerify set to true - transport is insecure", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S5542 — Weak crypto MD5
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S5542"
+    name: "Weak cryptographic hash function"
+    severity: Critical
+    category: Vulnerability
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"md5\.(New|Md5Sum|Md5)\b").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("//") {
+                issues.push(Issue::new("GO_S5542", "MD5 is a weak cryptographic hash - use SHA-256 or better", Severity::Critical, Category::Vulnerability, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S2095 — defer close missing
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S2095"
+    name: "Resources should be properly closed"
+    severity: Major
+    category: Bug
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"(os\.Open|io\.OpenFile|sql\.Open|bufio\.NewReader|bufio\.NewWriter)\s*\([^)]+\)\s*(?:\n[^}]*)?defer\s+.*\.Close\s*\(\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S2095", "Opened resource should be closed with defer", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S2259 — nil pointer dereference
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S2259"
+    name: "Nil pointers should be checked before dereferencing"
+    severity: Blocker
+    category: Bug
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\*\w+\s*\.\s*\w+\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("if") && !line.contains("//") {
+                issues.push(Issue::new("GO_S2259", "Potential nil pointer dereference", Severity::Blocker, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S108 — Empty error check
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S108"
+    name: "Empty blocks should not be used"
+    severity: Major
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"if\s+\w+\s*!=\s*nil\s*\{\s*\}").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S108", "Empty error check block - add handling logic", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S185 — Dead store
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S185"
+    name: "Unused assignments should be removed"
+    severity: Major
+    category: Bug
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"(\w+)\s*:?=\s*\1\s*;").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S185", "Variable assigned to itself - dead store", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S1481 — Unused variable
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S1481"
+    name: "Unused local variables should be removed"
+    severity: Minor
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"(?<!_)_\s*:?=\s*").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S1481", "Unused variable (blank identifier preferred)", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S1656 — Self-assignment
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S1656"
+    name: "Variables should not be self-assigned"
+    severity: Major
+    category: Bug
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"(\w+)\s*=\s*\1\s*;").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("//") {
+                issues.push(Issue::new("GO_S1656", "Self-assignment has no effect", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S1764 — Identical operands
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S1764"
+    name: "Identical expressions should not be compared"
+    severity: Major
+    category: Bug
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let ops = ["==", "!=", ">=", "<=", ">", "<"];
+        for (idx, line) in ctx.source.lines().enumerate() {
+            for op in &ops {
+                if let Some(pos) = line.find(op) {
+                    if pos > 0 {
+                        let before = line[..pos].trim();
+                        let after = line[pos+op.len()..].trim();
+                        if before == after && !before.is_empty() {
+                            issues.push(Issue::new("GO_S1764", "Identical operands - always true/false", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S2757 — = vs ==
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S2757"
+    name: "Unexpected assignment operators in conditions"
+    severity: Major
+    category: Bug
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"if\s+\w+\s*=\s*\w+").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("==") && !line.contains(":=") {
+                issues.push(Issue::new("GO_S2757", "Possible '=' instead of '==' in condition", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S1244 — Float equality
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S1244"
+    name: "Floating point equality should not be used"
+    severity: Major
+    category: Bug
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"(float32|float64)\b.*==").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S1244", "Floating point equality - use epsilon comparison", Severity::Major, Category:: Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S2201 — Return value ignored
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S2201"
+    name: "Return values should not be ignored"
+    severity: Major
+    category: Bug
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let fns = ["strings.Trim", "regexp.MustCompile", "json.Marshal", "json.Unmarshal"];
+        for (idx, line) in ctx.source.lines().enumerate() {
+            for fn_name in &fns {
+                if line.contains(fn_name) && !line.contains("if") && !line.contains("_") && !line.contains(":=") {
+                    issues.push(Issue::new("GO_S2201", "Return value is ignored", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                    break;
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S2221 — log.Fatal in library
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S2221"
+    name: "log.Fatal should not be used in library code"
+    severity: Major
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if (line.contains("log.Fatal") || line.contains("log.Panic")) && !line.contains("_test.go") {
+                issues.push(Issue::new("GO_S2221", "log.Fatal in non-test code - return error instead", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S1860 — Deadlock
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S1860"
+    name: "Nested mutex locks should be avoided"
+    severity: Critical
+    category: Bug
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.Lock\(\)").unwrap();
+        let mut lock_depth: i32 = 0;
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                lock_depth += 1;
+                if lock_depth > 1 {
+                    issues.push(Issue::new("GO_S1860", "Nested mutex lock - potential deadlock", Severity::Critical, Category::Bug, ctx.file_path, idx+1));
+                }
+            }
+            if line.contains("Unlock()") {
+                lock_depth = lock_depth.saturating_sub(1);
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S100 — Naming convention
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S100"
+    name: "Function names should use MixedCaps convention"
+    severity: Minor
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"func\s+([a-z][a-z0-9_]*)\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(cap) = re.captures(line) {
+                let name = cap.get(1).unwrap().as_str();
+                if name.contains("_") {
+                    issues.push(Issue::new("GO_S100", format!("Function '{}' should use MixedCaps", name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S107 — Too many parameters
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S107"
+    name: "Functions should not have too many parameters"
+    severity: Major
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"func\s+\w+\s*\(([^)]{50,})\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S107", "Function has too many parameters - group into struct", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S134 — Deep nesting
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S134"
+    name: "Control flow statements should not be nested too deeply"
+    severity: Major
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let mut depth = 0;
+        let mut max_depth_line = 0;
+        let mut max_depth = 0;
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("if ") || trimmed.starts_with("for ") || trimmed.starts_with("switch ") {
+                depth += 1;
+                if depth > max_depth {
+                    max_depth = depth;
+                    max_depth_line = idx + 1;
+                }
+            }
+            if trimmed == "}" && depth > 0 {
+                depth -= 1;
+            }
+        }
+        if max_depth > 4 {
+            issues.push(Issue::new("GO_S134", format!("Nesting depth {} exceeds threshold of 4", max_depth), Severity::Major, Category::CodeSmell, ctx.file_path, max_depth_line));
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S138 — Long function
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S138"
+    name: "Functions should not be too long"
+    severity: Major
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut in_func = false;
+        let mut func_start = 0;
+        let mut brace_count = 0;
+        for (idx, line) in lines.iter().enumerate() {
+            if line.contains("func ") && !line.contains("//") {
+                in_func = true;
+                func_start = idx;
+                brace_count = 0;
+            }
+            if in_func {
+                brace_count += line.matches("{").count() as i32;
+                brace_count -= line.matches("}").count() as i32;
+                if brace_count == 0 && idx > func_start {
+                    let func_len = idx - func_start + 1;
+                    if func_len > 50 {
+                        issues.push(Issue::new("GO_S138", format!("Function is {} lines - exceeds 50", func_len), Severity::Major, Category::CodeSmell, ctx.file_path, func_start+1));
+                    }
+                    in_func = false;
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S3776 — Cognitive complexity
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S3776"
+    name: "Cognitive complexity should not be too high"
+    severity: Major
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let keywords = ["if", "for", "switch", "case", "&&", "||", "goto"];
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        let mut in_func = false;
+        let mut func_start = 0;
+        let mut brace_count = 0;
+        let mut complexity = 0;
+        for (idx, line) in lines.iter().enumerate() {
+            if line.contains("func ") && !line.contains("//") {
+                in_func = true;
+                func_start = idx;
+                brace_count = 0;
+                complexity = 0;
+            }
+            if in_func {
+                brace_count += line.matches("{").count() as i32;
+                brace_count -= line.matches("}").count() as i32;
+                for kw in &keywords {
+                    if line.contains(kw) && !line.starts_with("//") {
+                        complexity += 1;
+                    }
+                }
+                if brace_count == 0 && idx > func_start {
+                    if complexity > 15 {
+                        issues.push(Issue::new("GO_S3776", format!("Cognitive complexity {} exceeds 15", complexity), Severity::Major, Category::CodeSmell, ctx.file_path, func_start+1));
+                    }
+                    in_func = false;
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S1186 — Empty function
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S1186"
+    name: "Empty functions should be completed or removed"
+    severity: Major
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"func\s+\w+\s*\(\s*\)\s*\{\s*\/\/.*\s*\}").unwrap();
+        let re2 = regex::Regex::new(r"func\s+\w+\s*\(\s*\)\s*\{\s*\}").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) || re2.is_match(line) {
+                issues.push(Issue::new("GO_S1186", "Empty function body", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S1871 — Duplicate branches
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S1871"
+    name: "Branches should not have identical implementations"
+    severity: Major
+    category: Bug
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\} else \{\s*if\s*\(").unwrap();
+        let re2 = regex::Regex::new(r"if\s*\([^)]+\)\s*\{[^}]+\}\s*else\s*\{[^}]+\}").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) || re2.is_match(line) {
+                issues.push(Issue::new("GO_S1871", "Duplicate branches in if-else - consider merging", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S122 — File too long
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S122"
+    name: "Files should not be too long"
+    severity: Major
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let line_count = ctx.source.lines().count();
+        if line_count > 1000 {
+            issues.push(Issue::new("GO_S122", format!("File has {} lines - exceeds 1000", line_count), Severity::Major, Category::CodeSmell, ctx.file_path, 1));
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S148 — Low comment ratio
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S148"
+    name: "Comments should not be empty"
+    severity: Minor
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\/\/\s*$").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S148", "Empty comment line", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S115 — Constant naming
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S115"
+    name: "Constant names should use MixedCaps"
+    severity: Minor
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"const\s+([a-z][a-z0-9_]*)\s*=").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(cap) = re.captures(line) {
+                let name = cap.get(1).unwrap().as_str();
+                if name.contains("_") || name.chars().any(|c| c.is_uppercase()) {
+                    issues.push(Issue::new("GO_S115", format!("Constant '{}' should use MixedCaps", name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S1700 — String concatenation
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S1700"
+    name: "String concatenation should use strings.Builder"
+    severity: Minor
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r#"\+\s*"[^"]*"\s*\+"#).unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S1700", "Use strings.Builder for string concatenation", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S1736 — Range loop index unused
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S1736"
+    name: "Range loop index should be used"
+    severity: Minor
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"for\s+_\s*:?=\s*range\s+").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("//") {
+                issues.push(Issue::new("GO_S1736", "Range loop index is ignored - use range over values only", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S1943 — Append without prealloc
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S1943"
+    name: "append should be called with pre-allocated slice"
+    severity: Minor
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"append\s*\(\s*\w+\s*,\s*\w+\s*\.\.\.\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S1943", "append may cause reallocation - pre-allocate with make()", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S2111 — sprintf in string literal
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S2111"
+    name: "fmt.Sprintf should not be used in string literal"
+    severity: Minor
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r#"`[^`]*fmt\.Sprintf[^`]*`"#).unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S2111", "fmt.Sprintf in raw string literal - use fmt.Printf", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S170 — Unused import
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S170"
+    name: "Unused imports should be removed"
+    severity: Minor
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r#"_\s+"\w+""#).unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S170", "Blank import identifier suggests unused import", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S173 — Missing doc comment
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S173"
+    name: "Exported functions should have doc comments"
+    severity: Minor
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"func\s+[A-Z]\w+\s*\(").unwrap();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for (idx, line) in lines.iter().enumerate() {
+            if re.is_match(line) && idx > 0 {
+                let prev = lines[idx.saturating_sub(1)].trim();
+                if !prev.starts_with("//") || prev.starts_with("//go:") {
+                    issues.push(Issue::new("GO_S173", "Exported function lacks doc comment", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S1160 — Error unchecked
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S1160"
+    name: "Errors should be handled"
+    severity: Major
+    category: Bug
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let unchecked_fns = ["os.Open", "os.Create", "os.ReadFile", "os.WriteFile", "json.Unmarshal"];
+        for (idx, line) in ctx.source.lines().enumerate() {
+            for fn_name in &unchecked_fns {
+                if line.contains(fn_name) && !line.contains("if") && !line.contains(":=") && !line.contains("_=") {
+                    issues.push(Issue::new("GO_S1160", format!("Error from {} is unchecked", fn_name), Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                    break;
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S117 — Variable naming
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S117"
+    name: "Variable names should use MixedCaps"
+    severity: Minor
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"(?<!_)var\s+([A-Z][a-zA-Z0-9_]*)\s*[=:]").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(cap) = re.captures(line) {
+                let name = cap.get(1).unwrap().as_str();
+                issues.push(Issue::new("GO_S117", format!("Variable '{}' should use mixedCaps", name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S1135 — TODO comment
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S1135"
+    name: "TODO comments should be completed or removed"
+    severity: Minor
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"(?i)TODO:?").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S1135", format!("TODO found: {}", line.trim()), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GO_S125 — Commented code
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "GO_S125"
+    name: "Commented code should not be committed"
+    severity: Minor
+    category: CodeSmell
+    language: "go"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"^\s*//\s*(if|for|switch|return|func|var|const|type)\s").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("GO_S125", "Commented code - remove instead of commenting", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// JAVA RULES — 52 rules: streams, Spring Boot, code smells
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JAVA_L16-L25 — Stream operations
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "JAVA_L16"
+    name: "Stream .skip() used before .limit() - consider reordering"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.skip\s*\(\s*\d+\s*\)\s*\.\s*limit\s*\(\s*\d+\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L16", ".skip() before .limit() - consider reversing order for performance", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L17"
+    name: "Stream .distinct() used after .limit() - distinct before limit is more efficient"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.limit\s*\([^)]+\)\s*\.\s*distinct\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L17", ".distinct() after .limit() - move distinct before limit", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L18"
+    name: "Stream .findFirst() used after .filter() - consider findAny for parallel"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.filter\s*\([^)]+\)\s*\.\s*findFirst\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L18", "findFirst() after filter - use findAny() for parallel streams", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L19"
+    name: "collect(Collectors.toList()) used where toList() suffices"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"Collectors\.toList\s*\(\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L19", "Use Stream.toList() instead of collect(Collectors.toList())", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L20"
+    name: "Stream .flatMap() used where .map() would suffice"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.flatMap\s*\(\s*\w+\s*->\s*Stream\.of\s*\([^)]+\)\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L20", ".flatMap(x -> Stream.of(...)) - use .map() instead", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L21"
+    name: "Stream .map() with identity function - remove it"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.map\s*\(\s*Function\.identity\s*\(\s*\)\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L21", "Identity function in .map() - remove the call", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L22"
+    name: "Stream .flatMap() with identity function - use .mapMulti() or flatten"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.flatMap\s*\(\s*Function\.identity\s*\(\s*\)\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L22", "Identity function in .flatMap() - use .mapMulti() or similar", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L23"
+    name: "Unnecessary .boxed() on primitive stream - already boxed"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"IntStream\.of\s*\([^)]+\)\s*\.boxed\s*\(\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L23", "Unnecessary .boxed() call", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L24"
+    name: ".allMatch() on empty stream returns true - verify intent"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.allMatch\s*\(\s*[^)]+\s*\)\s*;?\s*$").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L24", "allMatch() on empty stream returns true - verify this is intended", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L25"
+    name: ".noneMatch() on empty stream returns true - verify intent"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.noneMatch\s*\(\s*[^)]+\s*\)\s*;?\s*$").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L25", "noneMatch() on empty stream returns true - verify this is intended", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L26"
+    name: ".sorted() followed by .findFirst() - consider .min()/.max()"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.sorted\s*\([^)]*\)\s*\.\s*findFirst\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L26", ".sorted().findFirst() - use .min() or .max() instead", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L27"
+    name: "Stream .min()/.max() returns Optional - handle empty case"
+    severity: Major
+    category: Bug
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.min\s*\([^)]*\)\s*;?\s*$|\.max\s*\([^)]*\)\s*;?\s*$").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("orElse") && !line.contains("orElseThrow") && !line.contains("ifPresent") {
+                issues.push(Issue::new("JAVA_L27", "min()/max() returns Optional - handle empty case", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L28"
+    name: "Stream .count() used where .findAny().isPresent() or .limit(1).findAny().isPresent() suffices"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.filter\s*\([^)]+\)\s*\.\s*count\s*\(\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L28", "Use findAny().isPresent() instead of filter().count() > 0", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L29"
+    name: "Stream .distinct() on non-hashable elements - consider LinkedHashSet"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.distinct\s*\(\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("LinkedHashSet") && !line.contains("toCollection") {
+                issues.push(Issue::new("JAVA_L29", "distinct() uses hash - for ordered streams consider LinkedHashSet", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L30"
+    name: "Stream .toList() should be used instead of .collect(Collectors.toList())"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.collect\s*\(\s*Collectors\.toList\s*\(\s*\)\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L30", "Use .toList() instead of collect(Collectors.toList())", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JAVA_SP1-SP15 — Spring Boot rules
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "JAVA_SP1"
+    name: "@Autowired on field should be avoided - use constructor injection"
+    severity: Major
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"@Autowired\s+(private|protected|public|final)\s+\w+").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_SP1", "@Autowired on field - use constructor injection instead", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_SP2"
+    name: "@Component without interface - consider programming to interfaces"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"@Component\s*(?!.*implements)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("interface") {
+                issues.push(Issue::new("JAVA_SP2", "@Component without interface - consider using an interface", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_SP3"
+    name: "@Service with mutable state - inject stateless beans"
+    severity: Major
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"@Service\s*public\s+class\s+\w+\s*\{[^}]*(?!private|protected)\w+\s+=\s*new\s+\w+").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_SP3", "@Service with mutable state - services should be stateless", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_SP4"
+    name: "@RestController should not return null directly - use ResponseEntity"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"@RestController").unwrap();
+        let mut in_controller = false;
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) { in_controller = true; }
+            if in_controller && line.contains("return null") {
+                issues.push(Issue::new("JAVA_SP4", "Returning null from @RestController - use ResponseEntity", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+            if in_controller && line.trim() == "}" { in_controller = false; }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_SP5"
+    name: "@Transactional on private method - has no effect"
+    severity: Blocker
+    category: Bug
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"@Transactional\s+private\s+\w+\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_SP5", "@Transactional on private method - will not work", Severity::Blocker, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_SP6"
+    name: "@Async without thread pool - use TaskExecutor"
+    severity: Major
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"@Async\s+public\s+\w+\s*\(").unwrap();
+        let has_task_executor = ctx.source.contains("TaskExecutor") || ctx.source.contains("ExecutorService");
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !has_task_executor {
+                issues.push(Issue::new("JAVA_SP6", "@Async without TaskExecutor - provide a thread pool", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_SP7"
+    name: "@Value with complex expression - consider @ConfigurationProperties"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r#"@Value\s*\(\s*"\$\{[^}]+\.[^}]+\}"\s*\)"#).unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_SP7", "@Value with complex expression - consider @ConfigurationProperties", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_SP8"
+    name: "@Scheduled without cron expression - specify timing"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"@Scheduled\s*\(\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_SP8", "@Scheduled without parameters - specify cron or fixedRate", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_SP9"
+    name: "JpaRepository naming - use custom method naming conventions"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"extends\s+JpaRepository<[^>]+>\s*\{").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_SP9", "JpaRepository - follow Spring Data method naming conventions", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_SP10"
+    name: "@Entity without @Id - every entity needs a primary key"
+    severity: Blocker
+    category: Bug
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let has_entity = ctx.source.contains("@Entity");
+        let has_id = ctx.source.contains("@Id");
+        if has_entity && !has_id {
+            issues.push(Issue::new("JAVA_SP10", "@Entity without @Id field - add @Id annotation", Severity::Blocker, Category::Bug, ctx.file_path, 1));
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_SP11"
+    name: "@Bean method naming - use lowercase starting name"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"@Bean\s+public\s+\w+\s+([A-Z]\w+)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(cap) = re.captures(line) {
+                let name = cap.get(1).unwrap().as_str();
+                issues.push(Issue::new("JAVA_SP11", format!("@Bean method '{}' should start with lowercase", name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_SP12"
+    name: "@Profile validation - ensure profiles are defined"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r#"@ActiveProfiles\s*\(\s*"[^"]+"\s*\)"#).unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_SP12", "@ActiveProfiles - ensure profile is defined in configuration", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_SP13"
+    name: "@ConditionalOnMissingBean - verify bean absence intent"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"@ConditionalOnMissingBean").unwrap();
+        let count = ctx.source.matches("@ConditionalOnMissingBean").count();
+        if count > 5 {
+            issues.push(Issue::new("JAVA_SP13", "Many @ConditionalOnMissingBean - verify each is intentional", Severity::Minor, Category::CodeSmell, ctx.file_path, 1));
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_SP14"
+    name: "@ConfigurationProperties - validate binding"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"@ConfigurationProperties\s*(?!.*@Validated)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_SP14", "@ConfigurationProperties without @Validated - add @Validated", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_SP15"
+    name: "@Autowired in test - use constructor injection for testability"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"@Autowired\s+private\s+\w+\s+\w+;").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && ctx.source.contains("@SpringBootTest") {
+                issues.push(Issue::new("JAVA_SP15", "@Autowired in test - prefer constructor injection", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JAVA_S218-S229 — Code smells
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "JAVA_S218"
+    name: "Switch with too few cases - use if-else"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"switch\s*\([^)]+\)\s*\{[^}]*case\s+\w+:[^}]*\}").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("default:") {
+                issues.push(Issue::new("JAVA_S218", "Switch with few cases - if-else may be clearer", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_S219"
+    name: "Loop variable scope in for loop - declare outside"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"for\s*\(\s*int\s+\w+\s*=\s*0[^)]*\)\s*\{").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && idx > 0 {
+                let prev = ctx.source.lines().nth(idx.saturating_sub(1)).unwrap_or("");
+                if prev.contains("int ") && !prev.contains("for") {
+                    issues.push(Issue::new("JAVA_S219", "Loop variable declared outside - consider for loop declaration", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_S220"
+    name: "Private inner class - consider separate class if testable"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"private\s+static\s+class\s+\w+").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_S220", "Private inner class - extract if testing needed", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_S221"
+    name: "Method returns null - consider Optional"
+    severity: Major
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"return\s+null\s*;").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("Optional") && !line.contains("nullary") {
+                issues.push(Issue::new("JAVA_S221", "Returning null - consider Optional<> instead", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_S222"
+    name: "Parameter type mismatch - verify method signature"
+    severity: Major
+    category: Bug
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"method\s+\w+\s*\(\s*\w+\s+\w+\s*\)").unwrap();
+        let call_re = regex::Regex::new(r"\w+\.\w+\s*\(\s*\w+\s+\w+\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && call_re.is_match(line) {
+                issues.push(Issue::new("JAVA_S222", "Parameter type mismatch - verify method signature", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_S223"
+    name: "instanceof without cast - use pattern matching"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"instanceof\s+\w+\s*\)\s*\{[^}]*\(\s*\(\s*\w+\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_S223", "instanceof with cast - use Java 16+ pattern matching", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_S224"
+    name: "Flag parameter - split method"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"(boolean|Boolean)\s+\w+").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && (line.contains("method") || line.contains("func")) {
+                issues.push(Issue::new("JAVA_S224", "Flag parameter - consider splitting into separate methods", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_S225"
+    name: "Method has too many parameters - use builder or parameter object"
+    severity: Major
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"(\w+)\s*\([^)]{80,}\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_S225", "Method has too many parameters - use parameter object", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_S226"
+    name: "Size check in loop - verify logic"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.size\s*\(\s*\)\s*[<>=!]+\s*\d+").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && (line.contains("for ") || line.contains("while ")) {
+                issues.push(Issue::new("JAVA_S226", "Size check in loop - verify this is intentional", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_S227"
+    name: "for(;;) - use while(true)"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"for\s*\(\s*;\s*;\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_S227", "for(;;) - use while(true) for clarity", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_S228"
+    name: "Thread not started - verify thread start intent"
+    severity: Major
+    category: Bug
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"Thread\s+\w+\s*=\s*new\s+Thread\s*\([^)]+\)\s*;").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                let next_line = ctx.source.lines().nth(idx + 1).unwrap_or("");
+                if !next_line.contains(".start()") && !next_line.contains("//start") {
+                    issues.push(Issue::new("JAVA_S228", "Thread created but not started", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_S229"
+    name: "finalize() overridden - use AutoCloseable"
+    severity: Major
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"@Override\s+protected\s+void\s+finalize\s*\(\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_S229", "finalize() - use AutoCloseable instead", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JAVA_L31-L40 — More stream rules
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "JAVA_L31"
+    name: "reduce with identity on parallel stream - ensure identity is associative"
+    severity: Major
+    category: Bug
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.parallel\s*\(\s*\)\s*\.\s*reduce\s*\([^,]+,").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L31", "reduce with identity in parallel - ensure identity is associative", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L32"
+    name: "skip() followed by limit() on ordered stream - verify order intent"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.skip\s*\(\s*\d+\s*\)\s*\.\s*limit\s*\(\s*1\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L32", "skip(n).limit(1) - verify you want the nth element, not any", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L33"
+    name: "anyMatch on Optional - use isPresent()"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"Optional\w*\.anyMatch\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L33", "anyMatch on Optional - use isPresent() or orElse", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L34"
+    name: "findAny() vs findFirst() - use findFirst() for deterministic results"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.findAny\s*\(\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("//") {
+                issues.push(Issue::new("JAVA_L34", "findAny() returns non-deterministic result - use findFirst() if order matters", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L35"
+    name: "sorted() with Comparator - consider Comparable or explicit comparison"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.sorted\s*\(\s*Comparator\.\w+\s*\(\s*\w+,\s*\w+\s*->\s*\w+\.\w+\(\w+\)\s*\)\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L35", "sorted with Comparator lambda - consider Comparable", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L36"
+    name: "groupingBy with missing downstream collector - defaults to toList()"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"Collectors\.groupingBy\s*\([^)]+\)\s*(?!\.\w+\s*\()").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L36", "groupingBy without downstream - consider mapping or collectingAndThen", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L37"
+    name: "partitioningBy should use groupingBy for more than two groups"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"Collectors\.partitioningBy\s*\([^)]+\)\s*\.\s*get\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L37", "partitioningBy with .get() - use groupingBy for more than 2 groups", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L38"
+    name: "mapping collector - verify flatMapping is more appropriate"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"Collectors\.mapping\s*\([^,]+,\s*Collectors\.toList\s*\(\s*\)\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L38", "mapping(toList()) - consider flatMapping for nested collections", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L39"
+    name: "flatMapping usage - verify it replaces map+flatten pattern"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"Collectors\.flatMapping\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L39", "flatMapping - ensure it replaces map+flatten pattern", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JAVA_L40"
+    name: "teeing collector - use for combining two collectors"
+    severity: Minor
+    category: CodeSmell
+    language: "java"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"Collectors\.teeing\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JAVA_L40", "teeing - good for combining two independent collectors", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// JS/TS RULES — 28 rules: React, Testing, TypeScript
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JS_RX41-RX50 — React rules
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "JS_RX41"
+    name: "Context.Provider used directly - consider useContext hook"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"<\w+Provider\s+value\s*=").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JS_RX41", "Context.Provider - consider useContext for cleaner code", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_RX42"
+    name: "useEffect missing cleanup function for subscriptions"
+    severity: Major
+    category: Bug
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"useEffect\s*\(\s*\(\s*\)\s*=>\s*\{[^}]*addEventListener|setInterval|setTimeout[^}]*\}\s*,").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !ctx.source.lines().nth(idx + 1).unwrap_or("").contains("return") {
+                issues.push(Issue::new("JS_RX42", "useEffect with subscription - add cleanup return function", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_RX43"
+    name: "useCallback missing dependencies - may cause stale closures"
+    severity: Major
+    category: Bug
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"useCallback\s*\([^,]+,\s*\[\s*\]\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JS_RX43", "useCallback with empty deps - may cause stale closure", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_RX44"
+    name: "useState initializer called on every render - use lazy init"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"useState\s*\(\s*\w+\s*\([^)]*\)\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JS_RX44", "useState with function call - use lazy init: () => fn()", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_RX45"
+    name: "Derived state computed inline - consider useMemo"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"const\s+\w+\s*=\s*\w+\s*\.\s*map\s*\([^)]+\)\s*;?\s*const\s+\w+\s*=\s*\w+\s*\.\s*filter").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JS_RX45", "Derived state computed inline - use useMemo", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_RX46"
+    name: "useEffect with setState - may cause infinite loop"
+    severity: Blocker
+    category: Bug
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"useEffect\s*\([^}]*set\w+\s*\([^)]*\)[^}]*\}\s*,\s*\[\s*\w+\s*\]\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JS_RX46", "useEffect with setState in deps - risk of infinite loop", Severity::Blocker, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_RX47"
+    name: "useRef used but value not accessed - verify intent"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"const\s+\w+\s*=\s*useRef\s*\([^)]+\)\s*;?\s*(?!.*\1\.current)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JS_RX47", "useRef created but .current not accessed", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_RX48"
+    name: "useImperativeHandle without forwardRef"
+    severity: Major
+    category: Bug
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let has_forward_ref = ctx.source.contains("forwardRef");
+        let has_imperative = ctx.source.contains("useImperativeHandle");
+        if has_imperative && !has_forward_ref {
+            issues.push(Issue::new("JS_RX48", "useImperativeHandle requires forwardRef", Severity::Major, Category::Bug, ctx.file_path, 1));
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_RX49"
+    name: "React.lazy without Suspense - add boundary"
+    severity: Major
+    category: Bug
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let has_lazy = ctx.source.contains("React.lazy") || ctx.source.contains("lazy(");
+        let has_suspense = ctx.source.contains("Suspense");
+        if has_lazy && !has_suspense {
+            issues.push(Issue::new("JS_RX49", "React.lazy without Suspense - add Suspense boundary", Severity::Major, Category::Bug, ctx.file_path, 1));
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_RX50"
+    name: "createContext default value may cause null checks - use null"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"createContext\s*\(\s*\{\s*\}\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JS_RX50", "createContext with {} - use null and handle in provider", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JS_TEST11-TEST20 — Testing rules
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "JS_TEST11"
+    name: "Test without describe block - group related tests"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r#"it\s*\(\s*['"][^'"]+['"]\s*,"#).unwrap();
+        let has_describe = ctx.source.contains("describe(");
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !has_describe {
+                issues.push(Issue::new("JS_TEST11", "Test without describe - group tests with describe blocks", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+                break;
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_TEST12"
+    name: "Missing expect.assertions - add for async tests"
+    severity: Major
+    category: Bug
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r#"(test|it)\s*\(\s*['"][^'"]+['"]\s*,\s*(async\s*)?\("#).unwrap();
+        let has_assertions = ctx.source.contains("expect.assertions");
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !has_assertions {
+                issues.push(Issue::new("JS_TEST12", "Async test without expect.assertions - add assertion count check", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                break;
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_TEST13"
+    name: "beforeAll nested inside describe - move to top level"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"describe\s*\([^)]+\s*\{[^}]*beforeAll\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JS_TEST13", "beforeAll inside nested describe - move to outer scope", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_TEST14"
+    name: "mockImplementation vs mockReturnValue - use consistently"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let has_impl = ctx.source.contains("mockImplementation");
+        let has_return = ctx.source.contains("mockReturnValue");
+        if has_impl && has_return {
+            issues.push(Issue::new("JS_TEST14", "Mixing mockImplementation and mockReturnValue - pick one", Severity::Minor, Category::CodeSmell, ctx.file_path, 1));
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_TEST15"
+    name: "spyOn without restore - add cleanup"
+    severity: Major
+    category: Bug
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"jest\.spyOn\s*\([^)]+\)\s*;").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                let next_line = ctx.source.lines().nth(idx + 1).unwrap_or("");
+                if !next_line.contains("restore") && !next_line.contains("mockRestore") {
+                    issues.push(Issue::new("JS_TEST15", "spyOn without restore - add .mockRestore() in afterEach", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_TEST16"
+    name: "act() wrapper missing - wrap state updates in act()"
+    severity: Major
+    category: Bug
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"fireEvent\.\w+\s*\([^)]+\)\s*;?\s*(?!.*act\s*\()").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && ctx.source.contains("React") {
+                issues.push(Issue::new("JS_TEST16", "fireEvent without act() - wrap in act()", Severity::Major, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_TEST17"
+    name: "waitFor without timeout - specify timeout"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"waitFor\s*\(\s*\(\s*\)\s*=>\s*\{[^}]*\}\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("timeout") {
+                issues.push(Issue::new("JS_TEST17", "waitFor without timeout - add { timeout: ms }", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_TEST18"
+    name: "fireEvent vs userEvent - prefer userEvent for user behavior"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"fireEvent\.\w+\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && ctx.source.contains("@testing-library") {
+                issues.push(Issue::new("JS_TEST18", "fireEvent - consider userEvent for realistic interaction", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_TEST19"
+    name: "toBeTruthy vs toBe(true) - use specific matcher"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"expect\s*\([^)]+\)\s*\.\s*toBeTruthy\s*\(\s*\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JS_TEST19", "toBeTruthy() - use toBe(true) for boolean checks", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "JS_TEST20"
+    name: "toEqual vs toStrictEqual - use toStrictEqual for exact matching"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"expect\s*\([^)]+\)\s*\.\s*toEqual\s*\(\s*\{").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("JS_TEST20", "toEqual for objects - consider toStrictEqual for exact matching", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TS_ADV1-TS_ADV8 — TypeScript advanced rules
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "TS_ADV1"
+    name: "Numeric enum - use union type or const enum"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"enum\s+\w+\s*\{[^}]*(?:0|1|2|3|4|5|6|7|8|9)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("TS_ADV1", "Numeric enum - use string enum or const enum", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "TS_ADV2"
+    name: "Type assertion with 'as' - verify type is correct"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\bas\s+\w+").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("//") {
+                issues.push(Issue::new("TS_ADV2", "Type assertion 'as' - ensure type is correct", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "TS_ADV3"
+    name: "any type used - use unknown or specific type"
+    severity: Major
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r":\s*any\b|\bany\[\]").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("//") && !line.contains("@ts-ignore") {
+                issues.push(Issue::new("TS_ADV3", "any type - use unknown or specific type", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "TS_ADV4"
+    name: "NonNullable - use for null check"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"NonNullable<").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("TS_ADV4", "NonNullable - good for type narrowing", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "TS_ADV5"
+    name: "ReturnType - infer return type from function"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"ReturnType<").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("TS_ADV5", "ReturnType - good for extracting function return type", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "TS_ADV6"
+    name: "Omit vs Pick - verify correct utility type"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"(Omit|Pick)<").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("TS_ADV6", "Omit/Pick - verify correct utility type for intent", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "TS_ADV7"
+    name: "Record - verify key type constraints"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"Record<\s*\w+\s*,").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("TS_ADV7", "Record - ensure key type is appropriate (string | number)", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+declare_rule! {
+    id: "TS_ADV8"
+    name: "Exclude vs Extract - verify correct conditional type"
+    severity: Minor
+    category: CodeSmell
+    language: "javascript"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"(Exclude|Extract)<").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("TS_ADV8", "Exclude/Extract - verify correct for intended type filtering", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RUST RULES — 8 rules: R021-R028
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R021 — Arc<Mutex> when Rc<RefCell> works
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "R021"
+    name: "Arc<Mutex> used when Rc<RefCell> would suffice (single-threaded)"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"Arc<\s*Mutex<").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("thread") && !line.contains("Thread") && !ctx.source.contains("std::sync") {
+                issues.push(Issue::new("R021", "Arc<Mutex> in single-threaded context - use Rc<RefCell>", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R022 — Box<dyn Error> vs concrete error
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "R022"
+    name: "Box<dyn Error> used - consider concrete error type or anyhow::Error"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"Box<dyn\s+Error>").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !ctx.source.contains("anyhow") {
+                issues.push(Issue::new("R022", "Box<dyn Error> - consider anyhow::Error or concrete type", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R023 — Debug on sensitive struct
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "R023"
+    name: "Struct with sensitive data derives Debug - may leak secrets"
+    severity: Major
+    category: SecurityHotspot
+    language: "rust"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let sensitive = ["password", "secret", "token", "credential", "api_key", "private_key"];
+        let re = regex::Regex::new(r"#\[derive\([^)]*Debug[^)]*\)\]").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                let next_lines: String = ctx.source.lines().skip(idx).take(20).collect();
+                for s in &sensitive {
+                    if next_lines.to_lowercase().contains(s) {
+                        issues.push(Issue::new("R023", "Struct with sensitive fields derives Debug - may leak secrets", Severity::Major, Category::SecurityHotspot, ctx.file_path, idx+1));
+                        break;
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R024 — Drop without may_dangle
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "R024"
+    name: "Custom Drop impl - consider #[unsafe_destructor] or may_dangle"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"impl\s+Drop\s+for\s+").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !ctx.source.contains("may_dangle") && !ctx.source.contains("unsafe_destructor") {
+                issues.push(Issue::new("R024", "Custom Drop - verify Drop order safety or use may_dangle", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R025 — mem::forget misuse
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "R025"
+    name: "mem::forget used - may cause resource leaks"
+    severity: Minor
+    category: Bug
+    language: "rust"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"mem::forget\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("R025", "mem::forget - prevents Drop, may leak resources", Severity::Minor, Category::Bug, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R026 — PhantomData pattern
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "R026"
+    name: "PhantomData marker type - verify proper variance and drop check"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"PhantomData\s*<").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new("R026", "PhantomData - verify variance (Covariant/TInvariant/Contravariant)", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R027 — transmute without safety
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "R027"
+    name: "std::mem::transmute used - requires unsafe block"
+    severity: Critical
+    category: Bug
+    language: "rust"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"transmute\s*<").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                if !ctx.source.lines().nth(idx.saturating_sub(1)).unwrap_or("").contains("unsafe") {
+                    issues.push(Issue::new("R027", "transmute without unsafe block", Severity::Critical, Category::Bug, ctx.file_path, idx+1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// R028 — Pin without Unpin
+// ─────────────────────────────────────────────────────────────────────────────
+declare_rule! {
+    id: "R028"
+    name: "std::pin::Pin used without Unpin bound - verify safety"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"Pin<\s*\w+").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !ctx.source.contains("Unpin") && !ctx.source.contains("unsafe") {
+                issues.push(Issue::new("R028", "Pin without Unpin bound - ensure type implements Unpin or is pinned correctly", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
             }
         }
         issues

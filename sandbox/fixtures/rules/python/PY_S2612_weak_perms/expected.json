@@ -1,0 +1,23 @@
+{
+  "rule_id": "PY_S2612",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_weak_perms",
+      "file": "src/smelly.py",
+      "description": "chmod 777 should trigger PY_S2612",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S2612"],
+      "expected_severities": ["Critical"]
+    },
+    {
+      "name": "ignores_safe_perms",
+      "file": "src/clean.py",
+      "description": "Safe permissions should not trigger PY_S2612",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

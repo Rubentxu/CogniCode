@@ -1,0 +1,23 @@
+{
+  "rule_id": "PY_S1165",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_swallowed_exception",
+      "file": "src/smelly.py",
+      "description": "except: pass should trigger PY_S1165",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S1165"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_logged_exception",
+      "file": "src/clean.py",
+      "description": "Logged exception should not trigger PY_S1165",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

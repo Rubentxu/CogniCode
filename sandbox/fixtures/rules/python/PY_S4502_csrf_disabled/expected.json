@@ -1,20 +1,20 @@
 {
-  "rule_id": "S5332",
+  "rule_id": "PY_S4502",
   "language": "python",
   "test_cases": [
     {
-      "name": "detects_clear_http_url",
+      "name": "detects_csrf_exempt",
       "file": "src/smelly.py",
-      "description": "http:// URL should trigger S5332",
+      "description": "CSRF exempt should trigger PY_S4502",
       "expected_min_issues": 1,
       "expected_max_issues": 1,
-      "expected_rule_ids": ["S5332"],
+      "expected_rule_ids": ["PY_S4502"],
       "expected_severities": ["Blocker"]
     },
     {
-      "name": "ignores_https_url",
+      "name": "ignores_csrf_enabled",
       "file": "src/clean.py",
-      "description": "https:// URL should not trigger S5332",
+      "description": "CSRF enabled should not trigger PY_S4502",
       "expected_min_issues": 0,
       "expected_max_issues": 0,
       "expected_rule_ids": []

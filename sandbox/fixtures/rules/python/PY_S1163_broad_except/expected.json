@@ -1,0 +1,23 @@
+{
+  "rule_id": "PY_S1163",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_broad_except",
+      "file": "src/smelly.py",
+      "description": "except Exception: should trigger PY_S1163",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S1163"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_specific_except",
+      "file": "src/clean.py",
+      "description": "Specific exception should not trigger PY_S1163",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

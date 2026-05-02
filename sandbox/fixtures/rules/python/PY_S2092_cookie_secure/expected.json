@@ -1,0 +1,23 @@
+{
+  "rule_id": "PY_S2092",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_no_secure",
+      "file": "src/smelly.py",
+      "description": "Cookie without Secure should trigger PY_S2092",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S2092"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_with_secure",
+      "file": "src/clean.py",
+      "description": "Cookie with Secure should not trigger PY_S2092",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

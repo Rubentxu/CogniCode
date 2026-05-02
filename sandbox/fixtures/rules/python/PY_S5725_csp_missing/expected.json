@@ -1,0 +1,23 @@
+{
+  "rule_id": "PY_S5725",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_missing_csp",
+      "file": "src/smelly.py",
+      "description": "Missing CSP header should trigger PY_S5725",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S5725"],
+      "expected_severities": ["Minor"]
+    },
+    {
+      "name": "ignores_with_csp",
+      "file": "src/clean.py",
+      "description": "CSP header present should not trigger PY_S5725",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

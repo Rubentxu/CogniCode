@@ -273,7 +273,6 @@ fn test_java_rule_fixtures() {
 }
 
 #[test]
-#[ignore = "Python-specific rules not yet implemented — fixtures ready for when they are"]
 fn test_python_rule_fixtures() {
     let runner = RuleRunner::new();
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))

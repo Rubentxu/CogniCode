@@ -1,0 +1,23 @@
+{
+  "rule_id": "PY_S112",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_generic_raise",
+      "file": "src/smelly.py",
+      "description": "raise Exception() should trigger PY_S112",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["PY_S112"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_specific_raise",
+      "file": "src/clean.py",
+      "description": "Specific exception should not trigger PY_S112",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}
