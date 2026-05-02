@@ -32,6 +32,7 @@ dirs-next = "2"
 serde_yaml = "0.9"
 blake3.workspace = true
 chrono.workspace = true
+rusqlite.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -630,7 +630,6 @@ profiles:
                 let criticals = result.issues.iter().filter(|i| i.severity == "Critical").count();
                 
                 state.set_baseline(result.total_issues, 0, "B", blockers, criticals);
-                state.save();
                 
                 Ok(serde_json::to_string_pretty(&serde_json::json!({
                     "status": "baseline_set",
@@ -653,8 +652,8 @@ profiles:
                     "has_baseline": diff.is_some(),
                     "diff": diff,
                     "current_issues": result.total_issues,
-                    "history_snapshots": state.history.len(),
-                    "files_tracked": state.file_states.len(),
+                    "history_snapshots": state.get_run_history(50).len(),
+                    "files_tracked": 0,
                 }))?)
             }
             _ => Err(anyhow::anyhow!("Unknown tool: {}", name)),

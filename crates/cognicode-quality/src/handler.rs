@@ -207,7 +207,7 @@ impl QualityAnalysisHandler {
         for path in &all_files {
             if !changed_files.contains(path) {
                 let key = path.to_string_lossy().to_string();
-                if let Some(file_state) = state.file_states.get(&key) {
+                if state.get_file_state(&key).is_some() {
                     // Carry forward metrics from cached state
                     if let Ok(source) = std::fs::read_to_string(path) {
                         file_metrics_map.insert(
@@ -233,6 +233,18 @@ impl QualityAnalysisHandler {
         let criticals = all_issues.iter().filter(|i| matches!(i.severity, Severity::Critical)).count();
         let issues_by_severity = Self::aggregate_issues_by_severity(&all_issues);
 
+        // === Compute debt and rating BEFORE consuming all_issues ===
+        let debt: u64 = (code_smells as u64 * 5) + (bugs as u64 * 15) + (vulnerabilities as u64 * 30);
+        let rating = if blockers > 0 || bugs > 10 {
+            "F"
+        } else if code_smells > 50 || vulnerabilities > 5 {
+            "C"
+        } else if code_smells > 20 {
+            "B"
+        } else {
+            "A"
+        };
+
         // === New code issues (computed before consuming all_issues) ===
         let new_code_files = state.get_new_code_files();
         let new_code_issues = all_issues.iter()
@@ -244,27 +256,22 @@ impl QualityAnalysisHandler {
 
         let issues_result: Vec<IssueResult> = all_issues.into_iter().map(IssueResult::from).collect();
 
-        // === Compute metrics ===
-        let total_issues = issues_result.len();
-        // Debt estimation: simplified - 5 min per code smell, 15 min per bug, 30 min per vulnerability
-        let debt = (code_smells as u64 * 5) + (bugs as u64 * 15) + (vulnerabilities as u64 * 30);
-        let rating = if blockers > 0 || bugs > 10 {
-            "F"
-        } else if code_smells > 50 || vulnerabilities > 5 {
-            "C"
-        } else if code_smells > 25 {
-            "B"
-        } else {
-            "A"
-        };
-
         // === Persist state ===
+        let total_issues = issues_result.len();
+        let issues_for_db: Vec<cognicode_axiom::rules::types::Issue> = issues_result.iter().map(|ir| cognicode_axiom::rules::types::Issue::new(
+            &ir.rule_id, &ir.message,
+            match ir.severity.as_str() { "Info" => Severity::Info, "Minor" => Severity::Minor, "Major" => Severity::Major, "Critical" => Severity::Critical, _ => Severity::Minor },
+            cognicode_axiom::rules::Category::CodeSmell,
+            std::path::PathBuf::from(&ir.file), ir.line,
+        )).collect();
+        
         // Auto-set baseline on first analysis if not already set
-        if state.baseline.is_none() {
+        if state.get_baseline().is_none() {
             state.set_baseline(total_issues, debt, rating, blockers, criticals);
         }
         state.add_snapshot(total_issues, debt, rating, changed_count, 0, 0);
-        state.save();
+        let run_id = state.latest_run_id().unwrap_or(0);
+        if run_id > 0 { state.insert_issues(run_id, &issues_for_db); }
 
         // === Diff vs baseline ===
         let baseline_diff = state.diff_vs_baseline(total_issues, debt, rating, blockers);
