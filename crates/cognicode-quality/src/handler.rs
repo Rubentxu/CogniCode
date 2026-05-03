@@ -249,14 +249,28 @@ impl QualityAnalysisHandler {
             "A"
         };
 
-        // === New code issues (computed before consuming all_issues) ===
-        let new_code_files = state.get_new_code_files();
-        let new_code_issues = all_issues.iter()
+        // === New code issues (Clean as You Code) ===
+        // Use changed_files to determine which issues are in new code
+        let new_code_files_set: std::collections::HashSet<String> = changed_files.iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+
+        let new_code_issues_vec: Vec<&Issue> = all_issues.iter()
             .filter(|issue| {
-                let file_str = issue.file.to_string_lossy().to_string();
-                new_code_files.contains(&file_str)
+                new_code_files_set.contains(&issue.file.to_string_lossy().to_string())
             })
-            .count();
+            .collect();
+
+        let new_code_issues = new_code_issues_vec.len();
+        let legacy_issues = all_issues.len() - new_code_issues;
+
+        // Quality gate based on NEW CODE only (Clean as You Code)
+        let new_blockers = new_code_issues_vec.iter()
+            .filter(|i| matches!(i.severity, Severity::Blocker)).count();
+        let new_criticals = new_code_issues_vec.iter()
+            .filter(|i| matches!(i.severity, Severity::Critical)).count();
+
+        let clean_as_you_code = new_blockers == 0;
 
         let issues_result: Vec<IssueResult> = all_issues.into_iter().map(IssueResult::from).collect();
 
@@ -303,6 +317,8 @@ impl QualityAnalysisHandler {
                 files_reused: reused_count,
                 baseline_diff,
                 new_code_issues,
+                legacy_issues,
+                clean_as_you_code,
             },
         })
     }
@@ -469,6 +485,8 @@ pub struct IncrementalInfo {
     pub files_reused: usize,
     pub baseline_diff: Option<BaselineDiff>,
     pub new_code_issues: usize,
+    pub legacy_issues: usize,
+    pub clean_as_you_code: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

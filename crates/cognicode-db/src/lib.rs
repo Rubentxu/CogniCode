@@ -11,7 +11,7 @@ pub mod files;
 pub mod types;
 pub mod graph;
 
-pub use quality::QualityStore;
+pub use quality::{QualityStore, IssueKey, IssueRow, IssueStatus};
 pub use files::FileStore;
 pub use graph::SqliteGraphStore;
 pub use types::*;

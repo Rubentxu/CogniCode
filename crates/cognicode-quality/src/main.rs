@@ -642,16 +642,19 @@ profiles:
                 let params: GetDiffParams = serde_json::from_value(args).unwrap_or_default();
                 let project_path = params.project_path.unwrap_or_else(|| PathBuf::from("."));
                 let state = cognicode_quality::incremental::AnalysisState::load(&project_path);
-                
+
                 let result = self.analyze_project_impl(AnalyzeProjectParams { project_path })?;
                 let blockers = result.issues.iter().filter(|i| i.severity == "Blocker").count();
-                
+
                 let diff = state.diff_vs_baseline(result.total_issues, 0, "B", blockers);
-                
+
                 Ok(serde_json::to_string_pretty(&serde_json::json!({
                     "has_baseline": diff.is_some(),
                     "diff": diff,
                     "current_issues": result.total_issues,
+                    "legacy_issues": result.incremental.legacy_issues,
+                    "new_code_issues": result.incremental.new_code_issues,
+                    "clean_as_you_code": result.incremental.clean_as_you_code,
                     "history_snapshots": state.get_run_history(50).len(),
                     "files_tracked": 0,
                 }))?)

@@ -1,7 +1,37 @@
 //! Quality analysis persistence (issues, runs, baselines)
 
 use rusqlite::{Connection, params};
+use serde::{Serialize, Deserialize};
 use crate::types::*;
+use std::collections::HashSet;
+
+/// Issue status transitions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum IssueStatus {
+    Open,
+    Confirmed,
+    Fixed,
+    WontFix,
+    FalsePositive,
+}
+
+#[derive(Debug, Serialize)]
+pub struct IssueKey {
+    pub rule_id: String,
+    pub file: String,
+    pub line: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct IssueRow {
+    pub id: i64,
+    pub rule_id: String,
+    pub severity: String,
+    pub file: String,
+    pub line: usize,
+    pub message: String,
+    pub status: String,
+}
 
 pub struct QualityStore {
     db: Connection,
@@ -19,7 +49,7 @@ impl QualityStore {
     }
 
     // === Baseline ===
-    
+
     pub fn set_baseline(&self, total_issues: usize, debt_minutes: u64, rating: &str, blockers: usize, criticals: usize) {
         self.db.execute(
             "INSERT INTO baselines (timestamp, total_issues, debt_minutes, rating, blockers, criticals) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -83,7 +113,7 @@ impl QualityStore {
         for issue in issues {
             self.db.execute(
                 "INSERT INTO issues (run_id, rule_id, severity, category, file_path, line, message) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![run_id, 
+                params![run_id,
                     issue["rule_id"].as_str().unwrap_or(""),
                     issue["severity"].as_str().unwrap_or("Minor"),
                     issue["category"].as_str().unwrap_or("CodeSmell"),
@@ -97,5 +127,62 @@ impl QualityStore {
 
     pub fn get_open_issues_count(&self) -> usize {
         self.db.query_row("SELECT COUNT(*) FROM issues WHERE status='open'", [], |row| row.get::<_, i64>(0)).unwrap_or(0) as usize
+    }
+
+    /// Mark an issue as fixed
+    pub fn mark_issue_fixed(&self, issue_id: i64) {
+        self.db.execute(
+            "UPDATE issues SET status = 'fixed', fixed_in_run = (SELECT MAX(id) FROM analysis_runs) WHERE id = ?1",
+            params![issue_id]
+        ).ok();
+    }
+
+    /// Mark an issue as false positive
+    pub fn mark_issue_false_positive(&self, issue_id: i64, reason: &str) {
+        self.db.execute(
+            "UPDATE issues SET status = 'false_positive', message = message || ' [FP: ' || ?2 || ']' WHERE id = ?1",
+            params![issue_id, reason]
+        ).ok();
+    }
+
+    /// Auto-fix: issues that were in previous run but NOT in current run → marked as fixed
+    pub fn auto_fix_stale_issues(&self, current_run_id: i64, current_issues: &[IssueKey]) {
+        // Get all open issues from previous runs
+        let mut stmt = self.db.prepare(
+            "SELECT id, rule_id, file_path, line FROM issues WHERE status = 'open' AND run_id < ?1"
+        ).unwrap();
+        let open_issues: Vec<(i64, String, String, i64)> = stmt.query_map(params![current_run_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        }).unwrap().filter_map(|r| r.ok()).collect();
+
+        // Check which ones are NOT in the current run
+        let current_keys: HashSet<(String, String, i64)> = current_issues.iter()
+            .map(|k| (k.rule_id.clone(), k.file.clone(), k.line))
+            .collect();
+
+        for (id, rule_id, file, line) in open_issues {
+            if !current_keys.contains(&(rule_id, file, line)) {
+                self.db.execute(
+                    "UPDATE issues SET status = 'fixed', fixed_in_run = ?1 WHERE id = ?2",
+                    params![current_run_id, id]
+                ).ok();
+            }
+        }
+    }
+
+    /// Get issues by status
+    pub fn get_issues_by_status(&self, status: &str) -> Vec<IssueRow> {
+        let mut stmt = self.db.prepare(
+            "SELECT id, rule_id, severity, file_path, line, message, status FROM issues WHERE status = ?1 ORDER BY rule_id"
+        ).unwrap();
+        stmt.query_map(params![status], |row| Ok(IssueRow {
+            id: row.get(0)?,
+            rule_id: row.get(1)?,
+            severity: row.get(2)?,
+            file: row.get(3)?,
+            line: row.get::<_, i64>(4)? as usize,
+            message: row.get(5)?,
+            status: row.get(6)?,
+        })).unwrap().filter_map(|r| r.ok()).collect()
     }
 }
