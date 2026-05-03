@@ -9,6 +9,10 @@
 
 use std::path::{Path, PathBuf};
 use cognicode_quality::AnalysisState;
+use cognicode_axiom::rules::types::*;
+use cognicode_axiom::rules::RuleRegistry;
+use cognicode_core::domain::aggregates::call_graph::CallGraph;
+use cognicode_core::infrastructure::parser::Language;
 
 // ============================================================================
 // Helper Functions
@@ -574,4 +578,265 @@ fn test_no_false_positives_on_dependents() {
     );
 
     println!("PASS: test_no_false_positives_on_dependents");
+}
+
+// ============================================================================
+// Test 9: Full Pipeline — No Panics on Real Projects (Rust)
+// ============================================================================
+
+#[test]
+fn test_full_pipeline_rust_no_panics() {
+    let dir = tempfile::tempdir().unwrap();
+    copy_dir_all("../../sandbox/fixtures/rust-callgraph", dir.path()).unwrap();
+
+    let runner = cognicode_axiom::rules::RuleRegistry::discover();
+    let project_root = dir.path().to_path_buf();
+
+    let mut all_files = Vec::new();
+    for entry in walkdir::WalkDir::new(&project_root) {
+        let entry = entry.unwrap();
+        if entry.path().extension().map(|e| e == "rs").unwrap_or(false) {
+            all_files.push(entry.path().to_path_buf());
+        }
+    }
+
+    println!("Analyzing {} Rust files with {} rules...", all_files.len(), runner.all().len());
+
+    let mut total_issues = 0;
+    let mut files_analyzed = 0;
+    let start = std::time::Instant::now();
+
+    for file in &all_files {
+        let source = std::fs::read_to_string(file).unwrap();
+        let ext = file.extension().and_then(|e| e.to_str());
+        let language = Language::from_extension(ext.map(|e| std::ffi::OsStr::new(e))).unwrap_or(Language::Rust);
+
+        let mut parser = tree_sitter::Parser::new();
+        if parser.set_language(&language.to_ts_language()).is_ok() {
+            if let Some(tree) = parser.parse(&source, None) {
+                let graph = CallGraph::default();
+                let metrics = FileMetrics::default();
+                let ctx = RuleContext {
+                    tree: &tree, source: &source, file_path: file,
+                    language: &language, graph: &graph, metrics: &metrics,
+                };
+
+                let lang_name = &language.name().to_lowercase();
+                let rules = runner.for_language(lang_name);
+
+                let mut file_issues = 0;
+                for rule in &rules {
+                    let issues = rule.check(&ctx);
+                    file_issues += issues.len();
+                }
+                total_issues += file_issues;
+                files_analyzed += 1;
+            }
+        }
+    }
+
+    let elapsed = start.elapsed();
+    println!("Rust: {} files, {} issues, {:?}", files_analyzed, total_issues, elapsed);
+    // Just verify no panics — any issue count is fine
+}
+
+// ============================================================================
+// Test 10: Full Pipeline — No Panics on JS
+// ============================================================================
+
+#[test]
+fn test_full_pipeline_js_no_panics() {
+    let dir = tempfile::tempdir().unwrap();
+    // Use a simpler fixture without node_modules
+    let src_dir = dir.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+
+    // Create a realistic JS file with various patterns
+    std::fs::write(src_dir.join("app.js"), r#"
+import React from 'react';
+import { helper } from './utils';
+
+function App() {
+    const [count, setCount] = React.useState(0);
+    var oldStyle = "hello";
+    let password = "secret123";
+
+    useEffect(() => {
+        document.getElementById('root').innerHTML = '<p>' + count + '</p>';
+    });
+
+    debugger;
+    eval("alert('xss')");
+
+    return React.createElement('div', null, 'Hello');
+}
+"#).unwrap();
+
+    std::fs::write(src_dir.join("utils.js"), r#"
+export function helper(x) {
+    if (x == null) return 0;
+    return x * 2;
+}
+"#).unwrap();
+
+    let runner = cognicode_axiom::rules::RuleRegistry::discover();
+
+    let all_files: Vec<PathBuf> = walkdir::WalkDir::new(dir.path())
+        .into_iter().filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|e| e == "js").unwrap_or(false))
+        .map(|e| e.path().to_path_buf()).collect();
+
+    println!("JS files: {}, rules: {}", all_files.len(), runner.for_language("javascript").len());
+
+    let mut total_issues = 0;
+    for file in &all_files {
+        if let Ok(source) = std::fs::read_to_string(file) {
+            let lang = Language::JavaScript;
+            let mut parser = tree_sitter::Parser::new();
+            if parser.set_language(&lang.to_ts_language()).is_ok() {
+                if let Some(tree) = parser.parse(&source, None) {
+                    let ctx = RuleContext {
+                        tree: &tree, source: &source, file_path: file,
+                        language: &lang, graph: &CallGraph::default(),
+                        metrics: &FileMetrics::default(),
+                    };
+                    for rule in runner.for_language("javascript") {
+                        let issues = rule.check(&ctx);
+                        if !issues.is_empty() {
+                            println!("  {}: {} issues", rule.id(), issues.len());
+                            total_issues += issues.len();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    println!("JS total issues: {}", total_issues);
+    // Verify we found SOME issues (the fixture has intentional smells)
+    assert!(total_issues > 0, "Should detect issues in smelly JS code");
+}
+
+// ============================================================================
+// Test 11: Full Pipeline — No Panics on Python
+// ============================================================================
+
+#[test]
+fn test_full_pipeline_python_no_panics() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("app.py"), r#"
+import os
+from flask import Flask, request
+
+app = Flask(__name__)
+password = "admin123"
+
+@app.route('/login', methods=['POST'])
+def login():
+    user = request.form['username']
+    query = f"SELECT * FROM users WHERE name = '{user}'"
+    eval(user)
+    return "ok"
+"#).unwrap();
+
+    let runner = cognicode_axiom::rules::RuleRegistry::discover();
+    let files: Vec<PathBuf> = walkdir::WalkDir::new(dir.path())
+        .into_iter().filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|e| e == "py").unwrap_or(false))
+        .map(|e| e.path().to_path_buf()).collect();
+
+    let mut total = 0;
+    for f in &files {
+        if let Ok(source) = std::fs::read_to_string(f) {
+            let lang = Language::Python;
+            let mut parser = tree_sitter::Parser::new();
+            parser.set_language(&lang.to_ts_language()).unwrap();
+            if let Some(tree) = parser.parse(&source, None) {
+                let ctx = RuleContext { tree: &tree, source: &source, file_path: f, language: &lang, graph: &CallGraph::default(), metrics: &FileMetrics::default() };
+                for rule in runner.for_language("python") {
+                    total += rule.check(&ctx).len();
+                }
+            }
+        }
+    }
+    println!("Python: {} files, {} issues", files.len(), total);
+    assert!(total > 0, "Should detect issues in smelly Python code");
+}
+
+// ============================================================================
+// Test 12: Full Pipeline — No Panics on Java
+// ============================================================================
+
+#[test]
+fn test_full_pipeline_java_no_panics() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("Smelly.java"), r#"
+public class Smelly {
+    private String password = "secret123";
+
+    public void doStuff() {
+        System.out.println("debug");
+        try {
+            String query = "SELECT * FROM users WHERE id = " + userId;
+            stmt.executeQuery(query);
+        } catch (Exception e) {
+        }
+    }
+}
+"#).unwrap();
+
+    let runner = cognicode_axiom::rules::RuleRegistry::discover();
+    let files: Vec<PathBuf> = walkdir::WalkDir::new(dir.path())
+        .into_iter().filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|e| e == "java").unwrap_or(false))
+        .map(|e| e.path().to_path_buf()).collect();
+
+    let mut total = 0;
+    for f in &files {
+        if let Ok(source) = std::fs::read_to_string(f) {
+            let lang = Language::Java;
+            let mut parser = tree_sitter::Parser::new();
+            if parser.set_language(&lang.to_ts_language()).is_ok() {
+                if let Some(tree) = parser.parse(&source, None) {
+                    let ctx = RuleContext { tree: &tree, source: &source, file_path: f, language: &lang, graph: &CallGraph::default(), metrics: &FileMetrics::default() };
+                    for rule in runner.for_language("java") {
+                        total += rule.check(&ctx).len();
+                    }
+                }
+            }
+        }
+    }
+    println!("Java: {} files, {} issues", files.len(), total);
+    assert!(total > 0, "Should detect issues in smelly Java code");
+}
+
+// ============================================================================
+// Test 13: Incremental Full Pipeline with Caching
+// ============================================================================
+
+#[test]
+fn test_incremental_full_pipeline_cache_works() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("lib.rs");
+    std::fs::write(&file, "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+
+    let project_root = dir.path().to_path_buf();
+    let mut state = AnalysisState::load(&project_root);
+
+    let all_files = vec![file.clone()];
+
+    // First run: analyze
+    let first = state.find_changed_files(&all_files);
+    assert_eq!(first.len(), 1);
+    state.update_file_state(&file, 0);
+
+    // Second run: should be cached
+    let second_start = std::time::Instant::now();
+    let second = state.find_changed_files(&all_files);
+    let second_elapsed = second_start.elapsed();
+    assert_eq!(second.len(), 0);
+    println!("Cache lookup: {:?}", second_elapsed);
+
+    // Verify the SQLite file exists
+    let db_path = project_root.join(".cognicode/cognicode.db");
+    assert!(db_path.exists(), "SQLite DB should exist after analysis");
 }
