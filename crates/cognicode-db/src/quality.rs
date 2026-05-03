@@ -72,6 +72,11 @@ impl QualityStore {
         })).unwrap().filter_map(|r| r.ok()).collect()
     }
 
+    /// Get the latest run ID
+    pub fn get_latest_run_id(&self) -> Option<i64> {
+        self.db.query_row("SELECT MAX(id) FROM analysis_runs", [], |row| row.get(0)).ok()
+    }
+
     // === Issues ===
 
     pub fn insert_issues(&self, run_id: i64, issues: &[serde_json::Value]) {
