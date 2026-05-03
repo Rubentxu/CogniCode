@@ -8,6 +8,7 @@ pub mod handler;
 
 pub use handler::{
     QualityAnalysisHandler, AnalyzeFileParams, AnalyzeProjectParams,
+    CheckQualityParams,
     FileAnalysisResult, ProjectAnalysisResult, IssueResult,
     FileMetricsResult, ProjectMetricsResult,
 };

@@ -104,7 +104,7 @@ fn test_analyze_project_finds_issues() {
     writeln!(f2, "}}").unwrap();
 
     let handler = QualityAnalysisHandler::new(dir.path().to_path_buf());
-    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf() });
+    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf(), ..Default::default() });
 
     assert!(result.is_ok());
     let analysis = result.unwrap();
@@ -119,7 +119,7 @@ fn test_analyze_project_empty_directory() {
     // Create an empty directory with no code files
 
     let handler = QualityAnalysisHandler::new(dir.path().to_path_buf());
-    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf() });
+    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf(), ..Default::default() });
 
     assert!(result.is_ok());
     let analysis = result.unwrap();
@@ -162,7 +162,7 @@ fn test_get_technical_debt() {
     writeln!(f, "}}").unwrap();
 
     let handler = QualityAnalysisHandler::new(dir.path().to_path_buf());
-    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf() });
+    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf(), ..Default::default() });
 
     assert!(result.is_ok());
     let analysis = result.unwrap();
@@ -182,7 +182,7 @@ fn test_get_project_ratings() {
     writeln!(std::fs::File::create(&file).unwrap(), "fn main() {{}}").unwrap();
 
     let handler = QualityAnalysisHandler::new(dir.path().to_path_buf());
-    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf() });
+    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf(), ..Default::default() });
 
     assert!(result.is_ok());
     let analysis = result.unwrap();
@@ -216,7 +216,7 @@ fn common_helper() {
     let handler = QualityAnalysisHandler::new(dir.path().to_path_buf());
 
     // The handler should detect duplications via analyze_project
-    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf() });
+    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf(), ..Default::default() });
     assert!(result.is_ok());
 }
 
@@ -375,7 +375,7 @@ fn test_list_smells() {
     writeln!(f, "}}").unwrap();
 
     let handler = QualityAnalysisHandler::new(dir.path().to_path_buf());
-    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf() });
+    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf(), ..Default::default() });
 
     assert!(result.is_ok());
     let analysis = result.unwrap();
@@ -441,7 +441,7 @@ Consequences for ADR {}
     }
 
     let handler = QualityAnalysisHandler::new(dir.path().to_path_buf());
-    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf() });
+    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf(), ..Default::default() });
 
     assert!(result.is_ok());
 }
@@ -536,7 +536,7 @@ fn test_analyze_project_with_issues() {
     std::fs::write(&file, code).unwrap();
 
     let handler = QualityAnalysisHandler::new(dir.path().to_path_buf());
-    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf() });
+    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf(), ..Default::default() });
 
     assert!(result.is_ok());
     let analysis = result.unwrap();
@@ -571,7 +571,7 @@ fn test_get_technical_debt_with_issues() {
     writeln!(f, "}}").unwrap();
 
     let handler = QualityAnalysisHandler::new(dir.path().to_path_buf());
-    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf() });
+    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf(), ..Default::default() });
 
     assert!(result.is_ok());
     let analysis = result.unwrap();
@@ -598,7 +598,7 @@ fn test_get_project_ratings_with_issues() {
     std::fs::write(&file, code).unwrap();
 
     let handler = QualityAnalysisHandler::new(dir.path().to_path_buf());
-    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf() });
+    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf(), ..Default::default() });
 
     assert!(result.is_ok());
     let analysis = result.unwrap();
@@ -632,7 +632,7 @@ fn test_detect_duplications_real() {
     std::fs::write(&file2, duplicate_block).unwrap();
 
     let handler = QualityAnalysisHandler::new(dir.path().to_path_buf());
-    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf() });
+    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf(), ..Default::default() });
 
     assert!(result.is_ok());
 }
@@ -774,7 +774,7 @@ fn test_run_quality_gate_real() {
     std::fs::write(&file, "fn main() {}").unwrap();
 
     let handler = QualityAnalysisHandler::new(dir.path().to_path_buf());
-    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf() });
+    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf(), ..Default::default() });
 
     assert!(result.is_ok());
 }
@@ -865,7 +865,7 @@ fn test_list_smells_aggregation() {
     }
 
     let handler = QualityAnalysisHandler::new(dir.path().to_path_buf());
-    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf() });
+    let result = handler.analyze_project_impl(AnalyzeProjectParams { project_path: dir.path().to_path_buf(), ..Default::default() });
 
     assert!(result.is_ok());
     let analysis = result.unwrap();

@@ -17,7 +17,7 @@ use handler::{
     RemediationSuggestion, TechnicalDebtReportResult, ProjectRatingsResult,
     DuplicationResult, DuplicationGroupResult, DuplicationLocationResult,
     GetQualityProfileParams, AnalyzeComplexityParams, CheckNamingParams, GetFileMetricsParams,
-    SetBaselineParams, GetDiffParams,
+    SetBaselineParams, GetDiffParams, CheckQualityParams,
 };
 use cognicode_axiom::linters::{ClippyRunner, Linter};
 use cognicode_axiom::rules::types::{Issue, RuleContext, RuleRegistry, Severity};
@@ -92,7 +92,8 @@ impl QualityAnalysisHandler {
     fn list_tools(&self) -> Vec<Tool> {
         vec![
             Tool::new("analyze_file", "Run all quality rules on a single file", std::sync::Arc::new(serde_json::json!({"type": "object", "properties": {"file_path": {"type": "string"}}, "required": ["file_path"]}).as_object().cloned().unwrap())),
-            Tool::new("analyze_project", "Run all quality rules on an entire project", std::sync::Arc::new(serde_json::json!({"type": "object", "properties": {"project_path": {"type": "string"}}}).as_object().cloned().unwrap())),
+            Tool::new("analyze_project", "Run quality rules (quick mode by default: only Blockers/Criticals, only changed files)", std::sync::Arc::new(serde_json::json!({"type": "object", "properties": {"project_path": {"type": "string", "default": "."}, "quick": {"type": "boolean", "default": true, "description": "Only Blockers+Criticals"}, "max_duration_secs": {"type": "number", "default": 30, "description": "Max analysis time in seconds"}, "changed_only": {"type": "boolean", "default": true, "description": "Only analyze changed files"}}, "required": []}).as_object().cloned().unwrap())),
+            Tool::new("check_quality", "Get quality status from cache (instant, no analysis)", std::sync::Arc::new(serde_json::json!({"type": "object", "properties": {"project_path": {"type": "string", "default": "."}}}).as_object().cloned().unwrap())),
             Tool::new("get_rule_registry", "List all available code quality rules", std::sync::Arc::new(serde_json::json!({"type": "object", "properties": {}}).as_object().cloned().unwrap())),
             Tool::new("get_quality_gate", "Evaluate quality gate conditions", std::sync::Arc::new(serde_json::json!({"type": "object", "properties": {"gate_name": {"type": "string"}}}).as_object().cloned().unwrap())),
             Tool::new("get_technical_debt", "Calculate SQALE technical debt", std::sync::Arc::new(serde_json::json!({"type": "object", "properties": {"project_path": {"type": "string"}}}).as_object().cloned().unwrap())),
@@ -143,7 +144,7 @@ impl QualityAnalysisHandler {
                 let gate = self.default_gate();
 
                 let project_path = params.project_path.unwrap_or_else(|| self.cwd.clone());
-                let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path })?;
+                let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path, ..Default::default() })?;
 
                 let mut metrics = AxiomProjectMetrics::new();
                 metrics.code_smells = project_result.project_metrics.code_smells;
@@ -167,7 +168,7 @@ impl QualityAnalysisHandler {
             }
             "get_technical_debt" => {
                 let params: GetTechnicalDebtParams = serde_json::from_value(args).unwrap_or_default();
-                let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path: params.project_path })?;
+                let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path: params.project_path, ..Default::default() })?;
                 let calculator = cognicode_axiom::rules::TechnicalDebtCalculator::new();
                 let issues: Vec<Issue> = project_result.issues.iter().cloned().map(|i| Issue::new(&i.rule_id, &i.message, Severity::Minor, cognicode_axiom::rules::Category::CodeSmell, std::path::PathBuf::from(&i.file), i.line)).collect();
                 let debt = calculator.calculate(&issues, project_result.project_metrics.ncloc);
@@ -182,7 +183,7 @@ impl QualityAnalysisHandler {
             }
             "get_project_ratings" => {
                 let params: GetRatingsParams = serde_json::from_value(args).unwrap_or_default();
-                let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path: params.project_path })?;
+                let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path: params.project_path, ..Default::default() })?;
                 let issues: Vec<Issue> = project_result.issues.iter().cloned().map(|i| Issue::new(&i.rule_id, &i.message, Severity::Minor, cognicode_axiom::rules::Category::CodeSmell, std::path::PathBuf::from(&i.file), i.line)).collect();
                 let debt = cognicode_axiom::rules::TechnicalDebtCalculator::new().calculate(&issues, project_result.project_metrics.ncloc);
                 let ratings = cognicode_axiom::rules::ProjectRatings::compute(&issues, project_result.project_metrics.ncloc, &debt);
@@ -416,7 +417,7 @@ profiles:
                 let gate = self.default_gate();
 
                 let project_path = params.project_path.unwrap_or_else(|| self.cwd.clone());
-                let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path })?;
+                let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path, ..Default::default() })?;
 
                 let mut metrics = AxiomProjectMetrics::new();
                 metrics.code_smells = project_result.project_metrics.code_smells;
@@ -480,7 +481,7 @@ profiles:
             "get_remediation_suggestions" => {
                 let params: GetRemediationParams = serde_json::from_value(args).unwrap_or_default();
                 let max_issues = params.max_issues.unwrap_or(10) as usize;
-                let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path: params.project_path })?;
+                let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path: params.project_path, ..Default::default() })?;
                 let suggestions: Vec<_> = project_result.issues.into_iter().take(max_issues).map(|issue| RemediationSuggestion {
                     rule_id: issue.rule_id,
                     message: issue.message,
@@ -544,7 +545,7 @@ profiles:
             }
             "list_smells" => {
                 let params: ListSmellsParams = serde_json::from_value(args).unwrap_or_default();
-                let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path: params.project_path })?;
+                let project_result = self.analyze_project_impl(AnalyzeProjectParams { project_path: params.project_path, ..Default::default() })?;
 
                 let mut smell_counts: HashMap<String, usize> = HashMap::new();
                 let mut smell_details: HashMap<String, Vec<IssueResult>> = HashMap::new();
@@ -625,7 +626,7 @@ profiles:
                 let mut state = cognicode_quality::incremental::AnalysisState::load(&project_path);
                 
                 // Run analysis to get current metrics
-                let result = self.analyze_project_impl(AnalyzeProjectParams { project_path })?;
+                let result = self.analyze_project_impl(AnalyzeProjectParams { project_path, ..Default::default() })?;
                 let blockers = result.issues.iter().filter(|i| i.severity == "Blocker").count();
                 let criticals = result.issues.iter().filter(|i| i.severity == "Critical").count();
                 
@@ -643,7 +644,8 @@ profiles:
                 let project_path = params.project_path.unwrap_or_else(|| PathBuf::from("."));
                 let state = cognicode_quality::incremental::AnalysisState::load(&project_path);
 
-                let result = self.analyze_project_impl(AnalyzeProjectParams { project_path })?;
+                // Use default params which are now fast (quick=true, changed_only=true, max_duration=30s)
+                let result = self.analyze_project_impl(AnalyzeProjectParams { project_path, ..Default::default() })?;
                 let blockers = result.issues.iter().filter(|i| i.severity == "Blocker").count();
 
                 let diff = state.diff_vs_baseline(result.total_issues, 0, "B", blockers);
@@ -656,6 +658,24 @@ profiles:
                     "new_code_issues": result.incremental.new_code_issues,
                     "clean_as_you_code": result.incremental.clean_as_you_code,
                     "history_snapshots": state.get_run_history(50).len(),
+                    "files_tracked": 0,
+                }))?)
+            }
+            "check_quality" => {
+                let params: CheckQualityParams = serde_json::from_value(args).unwrap_or_default();
+                let project_path = params.project_path.unwrap_or_else(|| PathBuf::from("."));
+                let state = cognicode_quality::incremental::AnalysisState::load(&project_path);
+
+                let open_issues = state.get_open_issues().len();
+                let history = state.get_run_history(1);
+                let last = history.first();
+
+                Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "status": "cached",
+                    "open_issues": open_issues,
+                    "last_analysis": last.map(|s| s.timestamp.clone()),
+                    "last_rating": last.map(|s| s.rating.clone()),
+                    "last_debt": last.map(|s| s.debt_minutes),
                     "files_tracked": 0,
                 }))?)
             }

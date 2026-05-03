@@ -117,7 +117,9 @@ impl QualityAnalysisHandler {
     }
 
     pub fn analyze_project_impl(&self, params: AnalyzeProjectParams) -> Result<ProjectAnalysisResult> {
-        let root = params.project_path;
+        let root = params.project_path.clone();
+        let start_time = std::time::Instant::now();
+        let max_duration = params.max_duration_secs.unwrap_or(30);
 
         // === INCREMENTAL: Load state ===
         let mut state = AnalysisState::load(&root);
@@ -134,20 +136,36 @@ impl QualityAnalysisHandler {
             }
         }
 
-        // === INCREMENTAL: Find changed files (including dependents for cross-file rules) ===
-        let changed_files = state.find_changed_with_dependents(&all_files);
+        // === Find files to analyze ===
+        let files_to_analyze = if params.changed_only {
+            state.find_changed_with_dependents(&all_files)
+        } else {
+            all_files.clone()
+        };
+
         let total_files = all_files.len();
-        let changed_count = changed_files.len();
+        let changed_count = files_to_analyze.len();
         let reused_count = total_files - changed_count;
 
-        info!("Incremental: {}/{} files changed, {} reused from cache",
-              changed_count, total_files, reused_count);
+        info!("Analysis: {}/{} files to analyze (changed_only={}, quick={}), {} reused from cache",
+              changed_count, total_files, params.changed_only, params.quick, reused_count);
+
+        // === Quick mode: only Blocker + Critical rules ===
+        let min_severity = if params.quick { Severity::Critical } else { Severity::Info };
 
         // Only analyze changed files
         let mut all_issues = Vec::new();
         let mut file_metrics_map: HashMap<String, FileMetricsResult> = HashMap::new();
+        let mut timed_out = false;
 
-        for path in &changed_files {
+        for path in &files_to_analyze {
+            // Check timeout
+            if start_time.elapsed().as_secs() >= max_duration {
+                timed_out = true;
+                info!("Analysis timed out after {}s, returning partial results", max_duration);
+                break;
+            }
+
             let ext = path.extension();
             let language = match Language::from_extension(ext.map(OsStr::new)) {
                 Some(lang) => lang,
@@ -184,6 +202,10 @@ impl QualityAnalysisHandler {
             let lang_name = Self::language_name(language);
             let rules = self.rule_registry.for_language(&lang_name);
             for rule in rules {
+                // Quick mode: skip rules below Critical severity
+                if params.quick && rule.severity() < min_severity {
+                    continue;
+                }
                 let issues = rule.check(&ctx);
                 file_issues.extend(issues);
             }
@@ -209,7 +231,7 @@ impl QualityAnalysisHandler {
 
         // Recover cached issues for unchanged files
         for path in &all_files {
-            if !changed_files.contains(path) {
+            if !files_to_analyze.contains(path) {
                 let key = path.to_string_lossy().to_string();
                 if state.get_file_state(&key).is_some() {
                     // Carry forward metrics from cached state
@@ -250,8 +272,8 @@ impl QualityAnalysisHandler {
         };
 
         // === New code issues (Clean as You Code) ===
-        // Use changed_files to determine which issues are in new code
-        let new_code_files_set: std::collections::HashSet<String> = changed_files.iter()
+        // Use files_to_analyze to determine which issues are in new code
+        let new_code_files_set: std::collections::HashSet<String> = files_to_analyze.iter()
             .map(|p| p.to_string_lossy().to_string())
             .collect();
 
@@ -319,6 +341,7 @@ impl QualityAnalysisHandler {
                 new_code_issues,
                 legacy_issues,
                 clean_as_you_code,
+                timed_out,
             },
         })
     }
@@ -352,9 +375,28 @@ pub struct AnalyzeFileParams {
     pub file_path: PathBuf,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize)]
 pub struct AnalyzeProjectParams {
     pub project_path: PathBuf,
+    pub quick: bool,                    // Only run Blocker + Critical rules
+    pub max_duration_secs: Option<u64>, // Stop after N seconds
+    pub changed_only: bool,            // Only analyze files changed since last run
+}
+
+impl Default for AnalyzeProjectParams {
+    fn default() -> Self {
+        Self {
+            project_path: PathBuf::from("."),
+            quick: true,
+            max_duration_secs: Some(30),
+            changed_only: true,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct CheckQualityParams {
+    pub project_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -487,6 +529,7 @@ pub struct IncrementalInfo {
     pub new_code_issues: usize,
     pub legacy_issues: usize,
     pub clean_as_you_code: bool,
+    pub timed_out: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
