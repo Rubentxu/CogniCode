@@ -37,3 +37,4 @@ rusqlite.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+walkdir.workspace = true
