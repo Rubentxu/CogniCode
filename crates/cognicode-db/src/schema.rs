@@ -88,6 +88,14 @@ pub fn initialize_schema(db: &Connection) {
         CREATE INDEX IF NOT EXISTS idx_runs_timestamp ON analysis_runs(timestamp);
         CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
         CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path);
+
+        -- File import tracking for incremental analysis dependency resolution
+        CREATE TABLE IF NOT EXISTS file_imports (
+            source_file TEXT NOT NULL,
+            imported_file TEXT NOT NULL,
+            PRIMARY KEY (source_file, imported_file)
+        );
+        CREATE INDEX IF NOT EXISTS idx_imports_imported ON file_imports(imported_file);
     ").expect("Failed to initialize schema");
 }
 

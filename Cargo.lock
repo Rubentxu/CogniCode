@@ -628,6 +628,7 @@ dependencies = [
  "chrono",
  "cognicode-core",
  "cognicode-store-traits",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

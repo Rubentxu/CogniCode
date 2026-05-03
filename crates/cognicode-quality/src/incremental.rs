@@ -4,6 +4,7 @@
 use cognicode_db::quality::QualityStore;
 use cognicode_db::files::FileStore;
 pub use cognicode_db::types::{BaselineDiff, FileState, QualityBaseline, QualitySnapshot};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 pub struct AnalysisState {
@@ -75,6 +76,38 @@ impl AnalysisState {
 
     pub fn get_file_state(&self, path: &str) -> Option<FileState> {
         self.files.get_state(path)
+    }
+
+    /// Update file imports for dependency tracking
+    pub fn update_file_imports(&self, source_file: &str, imports: &[String]) {
+        self.files.update_imports(source_file, imports);
+    }
+
+    /// Extract imports from source content
+    pub fn extract_imports(source: &str, file_path: &str) -> Vec<String> {
+        FileStore::extract_imports(source, file_path)
+    }
+
+    /// Find changed files including their dependents (files that import any changed file)
+    pub fn find_changed_with_dependents(&self, all_files: &[PathBuf]) -> Vec<PathBuf> {
+        let mut changed = self.find_changed_files(all_files);
+
+        // Expand: add files that import any changed file
+        let mut expanded = changed.clone();
+        let mut visited: HashSet<PathBuf> = changed.iter().cloned().collect();
+
+        for changed_file in &changed {
+            let key = changed_file.to_string_lossy().to_string();
+            let dependents = self.files.get_dependents(&key);
+            for source in dependents {
+                let source_path = PathBuf::from(&source);
+                if visited.insert(source_path.clone()) {
+                    expanded.push(source_path);
+                }
+            }
+        }
+
+        expanded
     }
 }
 

@@ -134,8 +134,8 @@ impl QualityAnalysisHandler {
             }
         }
 
-        // === INCREMENTAL: Find changed files ===
-        let changed_files = state.find_changed_files(&all_files);
+        // === INCREMENTAL: Find changed files (including dependents for cross-file rules) ===
+        let changed_files = state.find_changed_with_dependents(&all_files);
         let total_files = all_files.len();
         let changed_count = changed_files.len();
         let reused_count = total_files - changed_count;
@@ -192,6 +192,10 @@ impl QualityAnalysisHandler {
 
             let issues_count = file_issues.len();
             state.update_file_state(path, issues_count);
+
+            // Store imports for dependency tracking
+            let imports = AnalysisState::extract_imports(&source, &path.to_string_lossy());
+            state.update_file_imports(&path.to_string_lossy(), &imports);
 
             file_metrics_map.insert(
                 path.display().to_string(),
