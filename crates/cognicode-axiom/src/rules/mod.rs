@@ -11,6 +11,7 @@
 //! - **store**: In-memory rule storage (legacy CRUD, kept for compatibility)
 //! - **validator**: Rule validation (kept for compatibility)
 //! - **adr_parser**: Architecture Decision Record parser
+//! - **regex_patterns**: Shared regex pattern constants for rules
 
 pub mod store;
 pub mod validator;
@@ -23,6 +24,7 @@ pub mod profiles;    // Quality Profiles with YAML (Section 5)
 pub mod debt;        // Technical Debt SQALE (Section 6)
 pub mod ratings;     // Project Ratings A-E (Section 7)
 pub mod duplication; // Duplication Detection with BLAKE3 (Section 3.1)
+pub mod regex_patterns; // Shared regex pattern constants
 
 #[cfg(feature = "scraper")]
 pub mod scraper;

@@ -444,7 +444,7 @@ impl ExtractStrategy {
         free_variables: &[String],
         return_var: Option<&str>,
     ) -> String {
-        let args: Vec<String> = free_variables.iter().cloned().collect();
+        let args: Vec<String> = free_variables.to_vec();
         let args_str = args.join(", ");
 
         if let Some(var) = return_var {

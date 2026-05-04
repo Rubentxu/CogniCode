@@ -39,7 +39,7 @@ fn main() {
                 let path = entry.path();
                 if path.is_file() && path.extension().map(|e| e == "rs").unwrap_or(false) {
                     if let Some(stem) = path.file_stem() {
-                        let name = format!("catalog/{}", stem.to_string_lossy().to_string());
+                        let name = format!("catalog/{}", stem.to_string_lossy());
                         modules.push(name);
                     }
                 }

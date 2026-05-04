@@ -5235,7 +5235,7 @@ declare_rule! {
                 // Skip small structs (< 3 fields, < 10 lines) - often simple DTOs
                 if trimmed.starts_with("pub struct ") {
                     let struct_end = (idx + 10).min(lines.len());
-                    let struct_body: String = lines[idx..struct_end].iter().cloned().collect::<Vec<_>>().join("\n");
+                    let struct_body: String = lines[idx..struct_end].join("\n");
                     let field_count = struct_body.matches(':').count();
                     let line_count = struct_body.lines().count();
                     if field_count < 3 && line_count < 10 {
@@ -20227,7 +20227,7 @@ declare_rule! {
             let t = line.trim();
             if t.starts_with("def ") {
                 let func_end = idx + 30.min(lines.len() - idx);
-                let func_body: String = lines[idx..func_end].iter().cloned().collect::<Vec<_>>().join("\n");
+                let func_body: String = lines[idx..func_end].join("\n");
                 let return_count = func_body.matches("return ").count();
                 if return_count > max_returns {
                     issues.push(Issue::new("PY_S109", format!("Function has {} return statements (max {})", return_count, max_returns), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
@@ -20491,7 +20491,7 @@ declare_rule! {
             let t = line.trim();
             if t.starts_with("def ") {
                 let func_end = idx + 50.min(lines.len() - idx);
-                let func_body: String = lines[idx..func_end].iter().cloned().collect::<Vec<_>>().join("\n");
+                let func_body: String = lines[idx..func_end].join("\n");
                 let branch_count = func_body.matches("if ").count()
                     + func_body.matches("elif ").count()
                     + func_body.matches("else:").count()
@@ -20527,7 +20527,7 @@ declare_rule! {
             let t = line.trim();
             if t.starts_with("def ") {
                 let func_end = idx + 100.min(lines.len() - idx);
-                let func_body: String = lines[idx..func_end].iter().cloned().collect::<Vec<_>>().join("\n");
+                let func_body: String = lines[idx..func_end].join("\n");
                 let statement_count = func_body.lines().count();
                 if statement_count > max_statements {
                     issues.push(Issue::new("PY_S118", format!("Function has {} statements (max {})", statement_count, max_statements), Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
@@ -20588,7 +20588,7 @@ declare_rule! {
             let t = line.trim();
             if t.starts_with("def ") {
                 let func_end = idx + 50.min(lines.len() - idx);
-                let func_body: String = lines[idx..func_end].iter().cloned().collect::<Vec<_>>().join("\n");
+                let func_body: String = lines[idx..func_end].join("\n");
                 let mut complexity = 0;
                 complexity += func_body.matches("if ").count() * 1;
                 complexity += func_body.matches("elif ").count() * 2;
@@ -20773,7 +20773,7 @@ declare_rule! {
         for (idx, line) in lines.iter().enumerate() {
             let t = line.trim();
             if t.starts_with("finally:") {
-                let finally_block: String = lines[idx..idx+20].iter().cloned().collect::<Vec<_>>().join("\n");
+                let finally_block: String = lines[idx..idx+20].join("\n");
                 if finally_block.contains("return ") {
                     issues.push(Issue::new("PY_S206", "Return in finally block can swallow exceptions", Severity::Critical, Category::Bug, ctx.file_path, idx+1));
                 }
@@ -20918,7 +20918,7 @@ declare_rule! {
         for (idx, line) in lines.iter().enumerate() {
             let t = line.trim();
             if t.starts_with("except") || t.starts_with("except:") {
-                let except_block: String = lines[idx..idx+10].iter().cloned().collect::<Vec<_>>().join("\n");
+                let except_block: String = lines[idx..idx+10].join("\n");
                 if !except_block.contains("log") && !except_block.contains("print") && !except_block.contains("raise") {
                     issues.push(Issue::new("PY_S211", "Exception caught but not logged or re-raised", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
                 }
@@ -20992,7 +20992,7 @@ declare_rule! {
         for (idx, line) in lines.iter().enumerate() {
             let t = line.trim();
             if t.contains("def __del__") || t.contains("def __delete__") {
-                let method_body: String = lines[idx..idx+20].iter().cloned().collect::<Vec<_>>().join("\n");
+                let method_body: String = lines[idx..idx+20].join("\n");
                 if method_body.contains("raise ") {
                     issues.push(Issue::new("PY_S214", "Exception raised in destructor - can cause crashes", Severity::Major, Category::Bug, ctx.file_path, idx+1));
                 }
