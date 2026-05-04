@@ -8,8 +8,8 @@
 //! # Usage
 //!
 //! ```rust
-//! use crate::rules::regex_patterns::patterns as re;
-//! let re = regex::Regex::new(re::TODO_COMMENT).unwrap();
+//! use cognicode_axiom::rules::regex_patterns::compile;
+//! let pattern = compile(r"(?i)TODO:?");
 //! ```
 
 use regex::Regex;

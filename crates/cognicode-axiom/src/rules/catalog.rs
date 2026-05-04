@@ -22262,7 +22262,8 @@ declare_rule! {
                                     Some(p.split(":").next().unwrap_or(p).trim())
                                 }
                             }).collect();
-                            let func_body: String = lines[idx..idx+30].join("\n");
+                            let end = std::cmp::min(idx + 30, lines.len());
+                            let func_body: String = lines[idx..end].join("\n");
                             for param in param_names {
                                 if !param.is_empty() && !param.starts_with("_") && !func_body.contains(&format!(" {} ", param)) && !func_body.contains(&format!("({}", param)) {
                                     issues.push(Issue::new("PY_N25", format!("Unused parameter '{}'", param), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
@@ -22441,7 +22442,7 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r#"(InsecureSkipVerify\s*[=:]\s*true|ClientConfig\s*{[^}]*InsecureSkipVerify[^}]*true)"#).unwrap();
+        let re = regex::Regex::new(r#"(InsecureSkipVerify\s*[=:]\s*true|ClientConfig\s*\{[^}]*InsecureSkipVerify[^}]*true)"#).unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
             if re.is_match(line) {
                 issues.push(Issue::new("GO_S4830", "TLS InsecureSkipVerify set to true - transport is insecure", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
