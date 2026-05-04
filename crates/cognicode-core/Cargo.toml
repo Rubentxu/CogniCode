@@ -96,3 +96,4 @@ rig-core = { workspace = true, optional = true }
 tokio-test.workspace = true
 mockall.workspace = true
 tempfile.workspace = true
+criterion = "0.5"

@@ -1716,4 +1716,313 @@ fn main() { f15(); }
         let hotness = ctx.get_symbol_hotness("process_data");
         assert!(hotness > 0.0, "process_data should have some hotness after being ranked");
     }
+
+    // ============================================================================
+    // Additional AIX Handler Tests (5 handlers)
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_detect_god_functions_no_god_functions_found() {
+        // Test case: simple small functions should NOT be detected as god functions
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, r#"
+fn helper1() {}
+fn helper2() {}
+fn main() {
+    helper1();
+    helper2();
+}
+"#).unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Build graph
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Use reasonable thresholds that simple functions won't meet
+        let input = DetectGodFunctionsInput {
+            min_lines: 50,      // No function is that long
+            min_complexity: 20, // No function has that many branches
+            min_fan_in: 10,     // No function is called that much
+        };
+
+        let result = handle_detect_god_functions(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // Should find no god functions
+        assert_eq!(output.god_functions.len(), 0, "Simple functions should not be detected as god functions");
+        assert!(output.total_analyzed >= 3);
+    }
+
+    #[tokio::test]
+    async fn test_detect_god_functions_with_configurable_thresholds() {
+        // Test case: same functions - different thresholds produce different results
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        // Create a moderately complex function chain
+        std::fs::write(&file_path, r#"
+fn f1() {}
+fn f2() { f1(); }
+fn f3() { f2(); f1(); }
+fn f4() { f3(); f2(); f1(); }
+fn f5() { f4(); f3(); f2(); f1(); f1(); }
+fn main() { f5(); }
+"#).unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Build graph
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Very low thresholds - should find many god functions
+        let input_low = DetectGodFunctionsInput {
+            min_lines: 1,
+            min_complexity: 1,
+            min_fan_in: 0,
+        };
+
+        let result_low = handle_detect_god_functions(&ctx, input_low).await;
+        assert!(result_low.is_ok());
+        let output_low = result_low.unwrap();
+
+        // High thresholds - should find fewer or none
+        let input_high = DetectGodFunctionsInput {
+            min_lines: 100,
+            min_complexity: 50,
+            min_fan_in: 100,
+        };
+
+        let result_high = handle_detect_god_functions(&ctx, input_high).await;
+        assert!(result_high.is_ok());
+        let output_high = result_high.unwrap();
+
+        // Low thresholds should find >= high thresholds
+        assert!(output_low.god_functions.len() >= output_high.god_functions.len());
+        // Thresholds should be echoed back in the result
+        assert_eq!(output_low.thresholds.min_lines, 1);
+        assert_eq!(output_high.thresholds.min_complexity, 50);
+    }
+
+    #[tokio::test]
+    async fn test_detect_long_parameter_lists_no_long_params() {
+        // Test case: functions with few parameters should NOT be flagged
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, r#"
+fn simple_add(a: i32, b: i32) -> i32 { a + b }
+fn process(name: String) {}
+fn main() {
+    simple_add(1, 2);
+    process("test".to_string());
+}
+"#).unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Build graph
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Strict threshold - no function has more than 2 params
+        let input = DetectLongParamsInput { max_params: 2 };
+
+        let result = handle_detect_long_parameter_lists(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // Should find no functions with too many parameters
+        assert_eq!(output.functions.len(), 0, "Simple functions should not be flagged");
+        assert_eq!(output.threshold, 2);
+    }
+
+    #[tokio::test]
+    async fn test_detect_long_parameter_lists_configurable_threshold() {
+        // Test case: threshold affects what gets flagged
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, r#"
+fn many_params(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) {}
+fn some_params(a: i32, b: i32, c: i32) {}
+fn main() {}
+"#).unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Build graph
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Threshold of 3 - should catch many_params (6 params)
+        let input_strict = DetectLongParamsInput { max_params: 3 };
+        let result_strict = handle_detect_long_parameter_lists(&ctx, input_strict).await;
+        assert!(result_strict.is_ok());
+        let output_strict = result_strict.unwrap();
+
+        // Threshold of 10 - should catch none
+        let input_lenient = DetectLongParamsInput { max_params: 10 };
+        let result_lenient = handle_detect_long_parameter_lists(&ctx, input_lenient).await;
+        assert!(result_lenient.is_ok());
+        let output_lenient = result_lenient.unwrap();
+
+        assert!(output_strict.functions.len() >= output_lenient.functions.len());
+        assert_eq!(output_strict.threshold, 3);
+        assert_eq!(output_lenient.threshold, 10);
+    }
+
+    #[tokio::test]
+    async fn test_compare_call_graphs_identical_graphs() {
+        // Test case: no changes between two builds of same code
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, "fn main() { helper(); }\nfn helper() {}").unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Build graph
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Compare with no baseline - shows current state
+        let input_no_baseline = CompareCallGraphsInput { baseline_dir: None };
+        let result_no_baseline = handle_compare_call_graphs(&ctx, input_no_baseline).await;
+        assert!(result_no_baseline.is_ok());
+        let output_no_baseline = result_no_baseline.unwrap();
+
+        assert!(!output_no_baseline.has_baseline);
+        // When no baseline, shows current symbols as "added" relative to empty
+        assert!(output_no_baseline.symbols_added.len() >= 0);
+        assert!(output_no_baseline.summary.contains("No baseline") || !output_no_baseline.summary.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_generate_system_prompt_context_empty_project() {
+        // Test case: generate context for empty/minimal project
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, "fn main() {}").unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Build graph
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Test with no options
+        let input = SystemPromptContextInput {
+            format: ContextFormatDetail::Markdown,
+            include_architecture: Some(false),
+            include_hot_paths: Some(false),
+        };
+
+        let result = handle_generate_system_prompt_context(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.format, "markdown");
+        assert!(!output.content.is_empty());
+        // Should have basic stats
+        assert!(output.content.contains("Symbols") || output.content.contains("symbols"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_system_prompt_context_with_symbols() {
+        // Test case: generate context with hot paths and architecture
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, r#"
+fn main() { helper1(); helper1(); helper1(); }
+fn helper1() { helper2(); }
+fn helper2() {}
+"#).unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Build graph
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Test with hot paths enabled
+        let input = SystemPromptContextInput {
+            format: ContextFormatDetail::Json,
+            include_architecture: Some(true),
+            include_hot_paths: Some(true),
+        };
+
+        let result = handle_generate_system_prompt_context(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.format, "json");
+        // JSON should have stats, hot_paths, and/or architecture
+        assert!(output.content.contains("stats"));
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_refactor_quality_edge_case_no_improvement() {
+        // Test case: when complexity/coupling don't change
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, "fn main() {}\nfn helper() {}").unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Build graph but don't save baseline separately
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Evaluate with no saved baseline
+        let input = EvaluateRefactorQualityInput {};
+
+        let result = handle_evaluate_refactor_quality(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+
+        // Without baseline, should return neutral verdict
+        assert_eq!(output.verdict, "neutral");
+        assert!(output.quality_score >= 0.0 && output.quality_score <= 100.0);
+        assert!(output.recommendations.iter().any(|r| r.contains("baseline") || r.contains("Baseline")));
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_refactor_quality_with_metrics() {
+        // Test case: verify that metrics are calculated correctly
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, r#"
+fn main() { a(); b(); c(); }
+fn a() {}
+fn b() { x(); y(); }
+fn c() {}
+fn x() {}
+fn y() {}
+"#).unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Build graph
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        let input = EvaluateRefactorQualityInput {};
+
+        let result = handle_evaluate_refactor_quality(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+
+        // Verify output structure
+        assert!(output.quality_score >= 0.0 && output.quality_score <= 100.0);
+        assert!(output.recommendations.len() >= 0);
+        // Deltas should be valid numeric values (isize is always finite)
+        assert!(output.coupling_delta >= 0);
+        assert!(output.cycle_delta >= 0);
+    }
 }

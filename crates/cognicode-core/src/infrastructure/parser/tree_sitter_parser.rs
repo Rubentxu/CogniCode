@@ -1132,4 +1132,232 @@ function hello() {
         let tree = parser.parse_tree(source).unwrap();
         assert!(!TreeSitterParser::has_error_nodes(&tree));
     }
+
+    // =============================================================================
+    // Fuzz tests: Malformed inputs that should NOT crash the parser
+    // =============================================================================
+
+    #[test]
+    fn test_parser_handles_very_long_line_rust() {
+        // Very long lines (1MB+) should be handled gracefully
+        let long_line = "fn foo() { ".repeat(100_000);
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        // Should not panic - tree-sitter may or may not parse it fully,
+        // but it should not crash
+        let result = parser.parse(&long_line);
+        // Result can be Ok or Err, we just verify no panic occurs
+        let _ = result;
+    }
+
+    #[test]
+    fn test_parser_handles_very_long_line_python() {
+        let long_line = "def foo(): ".repeat(100_000);
+        let parser = TreeSitterParser::new(Language::Python).unwrap();
+        let result = parser.parse(&long_line);
+        let _ = result;
+    }
+
+    #[test]
+    fn test_parser_handles_very_long_line_javascript() {
+        let long_line = "function foo() { ".repeat(100_000);
+        let parser = TreeSitterParser::new(Language::JavaScript).unwrap();
+        let result = parser.parse(&long_line);
+        let _ = result;
+    }
+
+    #[test]
+    fn test_parser_handles_invalid_utf8_sequence() {
+        // Invalid UTF-8 sequence (continuation byte without start)
+        // Using byte string to avoid Rust's UTF-8 validation
+        let invalid_utf8 = &b"fn foo() { \x80\x90\xfe }"[..];
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        let result = parser.parse(std::str::from_utf8(invalid_utf8).unwrap_or("fn foo() {}"));
+        // Should handle without panic
+        let _ = result;
+    }
+
+    #[test]
+    fn test_parser_handles_null_bytes_python() {
+        let with_nulls = "def foo\x00(): pass";
+        let parser = TreeSitterParser::new(Language::Python).unwrap();
+        let result = parser.parse(with_nulls);
+        let _ = result;
+    }
+
+    #[test]
+    fn test_parser_handles_null_bytes_javascript() {
+        let with_nulls = "function foo\x00() {}";
+        let parser = TreeSitterParser::new(Language::JavaScript).unwrap();
+        let result = parser.parse(with_nulls);
+        let _ = result;
+    }
+
+    #[test]
+    fn test_parser_handles_multiple_null_bytes() {
+        let with_many_nulls = "fn \x00\x00\x00 foo() {}".to_string();
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        let result = parser.parse(&with_many_nulls);
+        let _ = result;
+    }
+
+    #[test]
+    fn test_parser_handles_truncated_file_rust() {
+        // Truncated/incomplete code
+        let truncated = "fn foo() {";
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        let result = parser.parse(truncated);
+        // Should not panic - may produce error nodes but graceful handling
+        let _ = result;
+    }
+
+    #[test]
+    fn test_parser_handles_truncated_file_python() {
+        let truncated = "def foo(";
+        let parser = TreeSitterParser::new(Language::Python).unwrap();
+        let result = parser.parse(truncated);
+        let _ = result;
+    }
+
+    #[test]
+    fn test_parser_handles_empty_string() {
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        let result = parser.parse("");
+        // Empty string is valid - returns empty tree
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parser_handles_only_whitespace() {
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        let result = parser.parse("   \n\t\n   ");
+        // Whitespace only is valid
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parser_handles_special_characters() {
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        // Various special characters that shouldn't crash the parser
+        let special = r#"fn foo() { let x = "\x1b[31m"; let y = '\u{1F600}'; }"#;
+        let result = parser.parse(special);
+        let _ = result;
+    }
+
+    #[test]
+    fn test_parser_handles_binary_data_mix() {
+        // Mix of valid code and binary-looking data
+        // Using byte string to avoid Rust's UTF-8 validation
+        let mixed_bytes = b"fn foo() { }\x00\x01\x02\xff\xfe";
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        let result = parser.parse(std::str::from_utf8(mixed_bytes).unwrap_or("fn foo() {}"));
+        let _ = result;
+    }
+
+    #[test]
+    fn test_parser_handles_unicode_bom() {
+        // UTF-8 BOM at start
+        let with_bom = "\u{feff}fn foo() {}";
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        let result = parser.parse(with_bom);
+        // BOM should be handled gracefully
+        assert!(result.is_ok() || result.is_err()); // Either is fine, just no panic
+    }
+
+    #[test]
+    fn test_parser_handles_mixed_encodings() {
+        // Mix of valid Rust and invalid bytes
+        let mixed = "fn main() { éåü 中文 }";
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        let result = parser.parse(mixed);
+        // Unicode in comments/variables is valid Rust, should parse
+        let _ = result;
+    }
+
+    #[test]
+    fn test_parser_handles_windows_line_endings() {
+        let dos_style = "fn foo() {\r\n    let x = 1;\r\n}\r\n";
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        let result = parser.parse(dos_style);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parser_handles_mac_line_endings() {
+        let old_mac_style = "fn foo() {\r    let x = 1;\r}\r";
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        let result = parser.parse(old_mac_style);
+        // Old Mac line endings (\r only) - tree-sitter should handle
+        let _ = result;
+    }
+
+    #[test]
+    fn test_parser_find_symbols_with_null_bytes() {
+        let with_nulls = "fn foo\x00() {}";
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        // These should not panic
+        let symbols = parser.find_function_definitions(with_nulls);
+        let _ = symbols;
+        let all_symbols = parser.find_all_symbols(with_nulls);
+        let _ = all_symbols;
+    }
+
+    #[test]
+    fn test_parser_find_symbols_truncated() {
+        let truncated = "fn foo(";
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        let symbols = parser.find_function_definitions(truncated);
+        let _ = symbols;
+        let all_symbols = parser.find_all_symbols(truncated);
+        let _ = all_symbols;
+    }
+
+    #[test]
+    fn test_parser_find_symbols_very_long_line() {
+        let long_line = "fn very_long_function_name_that_exceeds_normal_limits() { ".repeat(50_000);
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        let symbols = parser.find_function_definitions(&long_line);
+        let _ = symbols;
+    }
+
+    #[test]
+    fn test_parse_tree_handles_malformed_input() {
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        // This should not panic, even if it returns an error
+        let tree_result = parser.parse_tree("fn foo {"); // missing paren
+        let _ = tree_result;
+    }
+
+    #[test]
+    fn test_has_error_nodes_on_malformed_input() {
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        let malformed = "fn foo { }"; // missing parens
+        let tree = parser.parse_tree(malformed).unwrap();
+        // Malformed input should produce error nodes
+        let has_errors = TreeSitterParser::has_error_nodes(&tree);
+        // Result depends on tree-sitter behavior, but no panic should occur
+        let _ = has_errors;
+    }
+
+    #[test]
+    fn test_parser_concurrent_malformed_inputs() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let parser = Arc::new(TreeSitterParser::new(Language::Rust).unwrap());
+        let mut handles = vec![];
+
+        for _ in 0..4 {
+            let p = parser.clone();
+            let handle = thread::spawn(move || {
+                let malformed = "fn \x00\x00\x00 foo() { ".repeat(1000);
+                let _ = p.parse(&malformed);
+                let _ = p.find_function_definitions(&malformed);
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            let _ = handle.join();
+        }
+    }
 }

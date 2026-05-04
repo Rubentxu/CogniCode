@@ -11,3 +11,7 @@ pub mod schemas;
 pub mod security;
 
 pub use rmcp_adapter::CogniCodeHandler;
+
+// E2E roundtrip tests for MCP protocol
+#[cfg(test)]
+mod mcp_roundtrip_tests;

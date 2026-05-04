@@ -829,7 +829,14 @@ impl RefactorService {
             .map_err(|e| AppError::AnalysisError(format!("Failed to create parser: {}", e)))?;
 
         match parser.parse_tree(&source) {
-            Ok(_) => Ok(true),
+            Ok(tree) => {
+                // Check if the parsed tree has any syntax errors
+                if tree.root_node().has_error() {
+                    Ok(false)
+                } else {
+                    Ok(true)
+                }
+            }
             Err(_) => Ok(false),
         }
     }

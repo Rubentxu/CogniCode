@@ -1270,4 +1270,321 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(result, Err(SecurityError::PathOutsideWorkspace)));
     }
+
+    // =============================================================================
+    // Property-Based Tests: Path Traversal Attempts
+    // =============================================================================
+
+    #[test]
+    fn test_property_path_traversal_standard_patterns() {
+        // Property: Any path containing ".." at any position should be rejected
+        let validator = InputValidator::new();
+
+        let traversal_patterns = [
+            "../../../etc",
+            "../etc",
+            "foo/../../etc/passwd",
+            "foo/bar/../../../etc/passwd",
+            "....//....//....//etc/passwd",
+            "..%2F..%2F..%2Fetc", // URL-encoded /
+            "..%2F..",
+            ".%2e/%2e.",
+            "%2e%2e/%2e%2e/%2e%2e/etc",
+        ];
+
+        for path in &traversal_patterns {
+            let result = validator.validate_file_path(path);
+            assert!(
+                result.is_err(),
+                "Path traversal '{}' should be rejected, got: {:?}",
+                path,
+                result
+            );
+            assert!(
+                matches!(result, Err(SecurityError::PathTraversalAttempt { .. })),
+                "Expected PathTraversalAttempt for '{}', got: {:?}",
+                path,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_property_path_traversal_url_encoded_variants() {
+        // Property: URL-encoded variants of ".." should be rejected regardless of encoding
+        let validator = InputValidator::new();
+
+        // URL-encoded path traversal patterns (various bypass attempts)
+        let url_encoded_patterns = [
+            "%2e%2e/etc/passwd",
+            "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd", // ../../../etc/passwd encoded
+            "%2E%2E/etc/passwd",                       // Uppercase
+            "%2e%2E/etc/passwd",                       // Mixed case
+            "%252e%252e/etc/passwd",                   // Double encoded
+            "..%5c..%5cetc%5cpasswd",                  // Backslash encoded as %5c
+            r"%2e%2e\%2e%2e\%2e%2e\etc",             // Mixed encoding
+            "..%2F..%2F..%2F..%2F..%2F",               // Deep traversal encoded
+        ];
+
+        for path in &url_encoded_patterns {
+            let result = validator.validate_file_path(path);
+            assert!(
+                result.is_err(),
+                "URL-encoded traversal '{}' should be rejected, got: {:?}",
+                path,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_property_path_traversal_backslash_variants() {
+        // Property: Backslash variants of ".." (Windows-style bypass) should be rejected
+        let validator = InputValidator::new();
+
+        let backslash_patterns = [
+            r"..\etc\passwd",
+            r"..\\\etc\\\passwd",
+            r"foo\..\..\etc\passwd",
+            r"C:\..\..\etc\passwd",
+            r"foo\bar\..\..\etc",
+            r"..%5c..%5cetc%5cpasswd", // URL-encoded backslash
+        ];
+
+        for path in &backslash_patterns {
+            let result = validator.validate_file_path(path);
+            assert!(
+                result.is_err(),
+                "Backslash traversal '{}' should be rejected, got: {:?}",
+                path,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_property_null_byte_rejection() {
+        // Property: Any path containing null byte should be rejected
+        let validator = InputValidator::new();
+
+        let null_byte_patterns = [
+            "file\0.txt",
+            "\0/etc/passwd",
+            "path/to/file\0",
+            "\0",
+            "normal.txt\0/extra",
+        ];
+
+        for path in &null_byte_patterns {
+            let result = validator.validate_file_path(path);
+            assert!(
+                result.is_err(),
+                "Null byte in '{}' should be rejected, got: {:?}",
+                path.replace('\0', "\\0"),
+                result
+            );
+            assert!(
+                matches!(result, Err(SecurityError::InvalidPathCharacters { .. })),
+                "Expected InvalidPathCharacters for '{}', got: {:?}",
+                path.replace('\0', "\\0"),
+                result
+            );
+        }
+    }
+
+    // =============================================================================
+    // Property-Based Tests: Mixed Validation Rules
+    // =============================================================================
+
+    #[test]
+    fn test_property_mixed_invalid_chars_and_traversal() {
+        // Property: Paths with invalid chars AND traversal attempts should be rejected
+        let validator = InputValidator::new();
+
+        let mixed_patterns = [
+            "../etc/passwd\0",   // traversal + null byte
+            "..\\etc\0\\passwd", // backslash traversal + null byte
+            "../../\0../../etc", // deep traversal + null byte
+        ];
+
+        for path in &mixed_patterns {
+            let result = validator.validate_file_path(path);
+            assert!(
+                result.is_err(),
+                "Mixed attack '{}' should be rejected, got: {:?}",
+                path.replace('\0', "\\0"),
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_property_path_with_invalid_chars() {
+        // Property: Paths with control characters should be rejected
+        let validator = InputValidator::new();
+
+        let invalid_char_patterns = [
+            "file\x01\x02.txt", // SOH, STX
+            "path/to\x00/file", // null in middle
+            "\x1b[0mfile",      // ANSI escape
+            "file\x7f.exe",     // DEL character
+        ];
+
+        for path in &invalid_char_patterns {
+            let result = validator.validate_file_path(path);
+            assert!(
+                result.is_err(),
+                "Invalid chars in '{}' should be rejected, got: {:?}",
+                path.replace('\0', "\\0"),
+                result
+            );
+        }
+    }
+
+    // =============================================================================
+    // Property-Based Tests: Boundary Conditions
+    // =============================================================================
+
+    #[test]
+    fn test_property_empty_string_handling() {
+        // Property: Empty string should be handled gracefully (not panic)
+        let validator = InputValidator::new();
+
+        let result = validator.validate_file_path("");
+        // Empty path may be invalid or may resolve to current dir
+        // The important thing is it doesn't panic
+        assert!(
+            result.is_ok() || result.is_err(),
+            "Empty string should be handled gracefully, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_property_max_length_boundary() {
+        // Property: Paths at exactly max length should be accepted if valid
+        // Paths exceeding max length should be rejected
+        let validator = InputValidator::with_limits(1024 * 1024, 1000, 500);
+
+        let valid_nested = (0..50)
+            .map(|i| format!("dir{}", i))
+            .collect::<Vec<_>>()
+            .join("/");
+        let result_valid = validator.validate_file_path(&valid_nested);
+        assert!(
+            result_valid.is_ok(),
+            "Valid 50-level nested path should be accepted"
+        );
+
+        let too_deep = (0..101)
+            .map(|i| format!("dir{}", i))
+            .collect::<Vec<_>>()
+            .join("/");
+        let result_deep = validator.validate_file_path(&too_deep);
+        assert!(
+            result_deep.is_err(),
+            "101-level nested path should be rejected"
+        );
+        assert!(
+            matches!(result_deep, Err(SecurityError::PathTooDeep { .. })),
+            "Expected PathTooDeep error"
+        );
+    }
+
+    #[test]
+    fn test_property_unicode_paths() {
+        // Property: Unicode paths should be handled correctly
+        let validator = InputValidator::new();
+
+        let unicode_paths = [
+            "文件.txt",                   // Chinese
+            "файл.txt",                   // Russian
+            "αρχείο.txt",                 // Greek
+            "ファイル.txt",               // Japanese
+            "🎉celebration.txt",          // Emoji
+            "path/to/日本語ファイル.txt", // Mixed
+            "ελληνικά/عربي/中文",         // Multi-script path
+        ];
+
+        for path in &unicode_paths {
+            // Unicode paths that don't contain traversal should not be rejected
+            let result = validator.validate_file_path(path);
+            // Should not crash and should return a valid result or PathNotAccessible (if doesn't exist)
+            // but NOT PathTraversalAttempt
+            if let Err(e) = &result {
+                assert!(
+                    !matches!(e, SecurityError::PathTraversalAttempt { .. }),
+                    "Unicode path '{}' should not be flagged as traversal",
+                    path
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_property_query_length_boundaries() {
+        // Property: Query length validation at boundaries
+        let validator = InputValidator::with_limits(1024 * 1024, 1000, 500);
+
+        // Exactly at boundary
+        let at_boundary = "a".repeat(500);
+        assert!(validator.validate_query(&at_boundary).is_ok());
+
+        // One over boundary
+        let over_boundary = "a".repeat(501);
+        assert!(validator.validate_query(&over_boundary).is_err());
+
+        // Well over boundary
+        let way_over = "a".repeat(10000);
+        assert!(validator.validate_query(&way_over).is_err());
+    }
+
+    #[test]
+    fn test_property_result_count_boundaries() {
+        // Property: Result count validation at boundaries
+        let validator = InputValidator::with_limits(1024 * 1024, 1000, 500);
+
+        // At boundary
+        assert!(validator.validate_result_count(1000).is_ok());
+
+        // One over boundary
+        assert!(validator.validate_result_count(1001).is_err());
+
+        // Zero should be allowed
+        assert!(validator.validate_result_count(0).is_ok());
+    }
+
+    #[test]
+    fn test_property_special_path_patterns() {
+        // Property: Special path patterns that might bypass validation
+        let validator = InputValidator::new();
+
+        let special_patterns = [
+            "././././etc/passwd", // Dot sequences
+            "/./././etc/passwd",  // Absolute with dots
+            "foo/./bar/./baz",    // Embedded dots
+            "///etc/passwd",      // Multiple slashes
+            "/etc///passwd///",   // Multiple slashes in path
+            "foo//bar//baz",      // Double slashes in relative
+            "foo/../bar/../baz",  // Alternating dot-dot
+        ];
+
+        // Some of these might be valid (like ././.), others should be blocked
+        for path in &special_patterns {
+            let result = validator.validate_file_path(path);
+            // The key invariant: no panic, and if error, correct error type
+            if result.is_err() {
+                let err = result.unwrap_err();
+                // Should not be an unexpected error variant
+                match &err {
+                    SecurityError::PathTraversalAttempt { .. }
+                    | SecurityError::PathNotAccessible { .. }
+                    | SecurityError::InvalidPathCharacters { .. }
+                    | SecurityError::PathTooDeep { .. }
+                    | SecurityError::PathOutsideWorkspace { .. } => {}
+                    _ => panic!("Unexpected error type for '{}': {:?}", path, err),
+                }
+            }
+        }
+    }
 }

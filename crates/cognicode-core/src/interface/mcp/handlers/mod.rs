@@ -63,6 +63,7 @@ pub use crate::interface::mcp::file_ops_handlers::*;
 
 use crate::infrastructure::persistence::InMemoryGraphStore;
 use crate::domain::traits::GraphStore;
+use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
 use crate::domain::traits::graph_store::StoreError;
 use crate::domain::value_objects::file_manifest::FileManifest;
 
@@ -105,6 +106,8 @@ pub struct HandlerContext {
     pub symbol_hotness: Arc<Mutex<HashMap<String, usize>>>,
     /// Optional persistent GraphStore (SQLite). Falls back to InMemoryGraphStore if None.
     pub graph_store: Option<Arc<dyn GraphStore>>,
+    /// Optional CodeIntelligenceProvider for LSP operations. Falls back to creating CompositeProvider if None.
+    pub code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -142,6 +145,7 @@ impl HandlerContext {
             log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
+            code_intelligence_provider: None,
         }
     }
 
@@ -161,6 +165,7 @@ impl HandlerContext {
             log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
+            code_intelligence_provider: None,
         }
     }
 
@@ -183,6 +188,7 @@ impl HandlerContext {
             log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
+            code_intelligence_provider: None,
         }
     }
 
@@ -205,6 +211,30 @@ impl HandlerContext {
             log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
+            code_intelligence_provider: None,
+        }
+    }
+
+    /// Create a HandlerContext with a pre-configured CodeIntelligenceProvider for testing
+    pub fn with_code_intelligence_provider(working_dir: PathBuf, provider: Arc<dyn CodeIntelligenceProvider>) -> Self {
+        let canonical_working_dir = std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
+
+        Self {
+            working_dir: canonical_working_dir.clone(),
+            validator: Arc::new(InputValidator::new().with_workspace(vec![canonical_working_dir])),
+            analysis_service: Arc::new(AnalysisService::new()),
+            refactor_service: Arc::new(RefactorService::new()),
+            compressor: Arc::new(ContextCompressorService::new()),
+            semantic_search: Arc::new(SemanticSearchService::new()),
+            symbol_code: Arc::new(SymbolCodeService::new()),
+            client_protocol_version: None,
+            client_name: None,
+            client_version: None,
+            cancellation_token: Arc::new(AtomicBool::new(false)),
+            log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
+            symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
+            graph_store: None,
+            code_intelligence_provider: Some(provider),
         }
     }
 
@@ -3194,5 +3224,217 @@ mod tests {
         // Should succeed with auto-built graph
         // (entry_points may be empty for simple files, but shouldn't error)
         assert!(result.total >= 0);
+    }
+
+    // =============================================================================
+    // HandlerError propagation tests
+    // =============================================================================
+
+    #[test]
+    fn test_handler_error_display_format() {
+        // Test that error messages are properly formatted via Display trait
+        let err = HandlerError::InvalidInput("Invalid query".into());
+        assert_eq!(err.to_string(), "Invalid input: Invalid query");
+
+        let err = HandlerError::NotFound("Symbol 'foo' not found".into());
+        assert_eq!(err.to_string(), "Not found: Symbol 'foo' not found");
+
+        let err = HandlerError::Internal("Something went wrong".into());
+        assert_eq!(err.to_string(), "Internal error: Something went wrong");
+    }
+
+    #[test]
+    fn test_handler_error_from_security_error() {
+        use crate::interface::mcp::security::SecurityError;
+        let security_err = SecurityError::PathTraversalAttempt {
+            path: "../../../etc/passwd".into(),
+        };
+        let handler_err: HandlerError = security_err.into();
+        let display = handler_err.to_string();
+        assert!(display.contains("Security"));
+        assert!(display.contains("../..") || display.contains("Path traversal"));
+    }
+
+    #[test]
+    fn test_handler_error_from_app_error() {
+        use crate::application::error::AppError;
+        let app_err = AppError::AnalysisError("Graph is empty".into());
+        let handler_err: HandlerError = app_err.into();
+        let display = handler_err.to_string();
+        assert!(display.contains("Application"));
+        assert!(display.contains("Graph is empty"));
+    }
+
+    #[test]
+    fn test_handler_error_to_mcp_error_conversion() {
+        // Test error code propagation for each HandlerError variant
+        let mcp_err: crate::interface::mcp::schemas::McpError =
+            HandlerError::Security(SecurityError::PathOutsideWorkspace).into();
+        assert_eq!(mcp_err.code, -32000);
+
+        let mcp_err: crate::interface::mcp::schemas::McpError =
+            HandlerError::App(AppError::AnalysisError("test".into())).into();
+        assert_eq!(mcp_err.code, -32001);
+
+        let mcp_err: crate::interface::mcp::schemas::McpError =
+            HandlerError::InvalidInput("bad input".into()).into();
+        assert_eq!(mcp_err.code, -32002);
+
+        let mcp_err: crate::interface::mcp::schemas::McpError =
+            HandlerError::NotFound("not found".into()).into();
+        assert_eq!(mcp_err.code, -32003);
+
+        let mcp_err: crate::interface::mcp::schemas::McpError =
+            HandlerError::Internal("internal error".into()).into();
+        assert_eq!(mcp_err.code, -32004);
+    }
+
+    #[test]
+    fn test_handler_error_code_values_are_unique() {
+        use std::collections::HashSet;
+        let codes = vec![
+            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::Security(SecurityError::PathOutsideWorkspace)).code,
+            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::App(AppError::AnalysisError("t".into()))).code,
+            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::InvalidInput("t".into())).code,
+            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::NotFound("t".into())).code,
+            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::Internal("t".into())).code,
+        ];
+        // All codes should be unique
+        let unique_codes: HashSet<i32> = codes.iter().copied().collect();
+        assert_eq!(unique_codes.len(), codes.len());
+    }
+
+    #[test]
+    fn test_handler_error_serialization_roundtrip() {
+        let handler_err = HandlerError::NotFound("Symbol 'foo' not found".into());
+        let mcp_err: crate::interface::mcp::schemas::McpError = handler_err.into();
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&mcp_err).unwrap();
+        assert!(json.contains("-32003"));
+        assert!(json.contains("Symbol 'foo' not found"));
+
+        // Deserialize back
+        let deserialized: crate::interface::mcp::schemas::McpError = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.code, -32003);
+        assert!(deserialized.message.contains("foo"));
+    }
+
+    #[test]
+    fn test_handler_result_ok_variant() {
+        // Test HandlerResult Ok path
+        let result: HandlerResult<i32> = Ok(42);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_handler_result_err_variant() {
+        // Test HandlerResult Err path
+        let result: HandlerResult<i32> = Err(HandlerError::InvalidInput("bad".into()));
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Invalid input: bad");
+    }
+
+    #[test]
+    fn test_handler_result_map_err() {
+        // Test HandlerResult map_err pattern
+        let result: HandlerResult<i32> = Err(HandlerError::NotFound("missing".into()));
+        let mapped = result.map_err(|e| HandlerError::Internal(format!("wrapped: {}", e)));
+        assert!(mapped.is_err());
+        let err = mapped.unwrap_err();
+        assert!(err.to_string().contains("wrapped"));
+        assert!(err.to_string().contains("missing"));
+    }
+
+    #[tokio::test]
+    async fn test_handler_error_propagation_in_handler() {
+        // Test that errors properly propagate through a handler
+        let ctx = HandlerContext::new(PathBuf::from("/nonexistent/path"));
+        let input = BuildGraphInput {
+            directory: Some("/nonexistent/path".to_string()),
+        };
+
+        let result = handle_build_graph(&ctx, input).await;
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        // Should be InvalidInput for non-existent directory
+        let mcp_err: crate::interface::mcp::schemas::McpError = err.into();
+        assert_eq!(mcp_err.code, -32002); // InvalidInput
+    }
+
+    #[tokio::test]
+    async fn test_handler_error_cancellation() {
+        // Test cancellation token propagation
+        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir_path = tempdir.path();
+        let rust_file = tempdir_path.join("test.rs");
+        std::fs::write(&rust_file, "fn test() {}").unwrap();
+
+        let ctx = HandlerContext::new(tempdir_path.to_path_buf());
+        ctx.cancellation_token.store(true, std::sync::atomic::Ordering::SeqCst);
+
+        let input = BuildGraphInput { directory: None };
+        let result = handle_build_graph(&ctx, input).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Cancel"));
+    }
+
+    #[test]
+    fn test_handler_error_debug_format() {
+        // Test Debug format includes variant information
+        let err = HandlerError::InvalidInput("test error".into());
+        let debug = format!("{:?}", err);
+        assert!(debug.contains("InvalidInput"));
+        assert!(debug.contains("test error"));
+    }
+
+    #[test]
+    fn test_mcp_error_with_data() {
+        // Test McpError with additional data
+        let mcp_err = crate::interface::mcp::schemas::McpError::new(
+            -32002,
+            "Invalid input",
+        ).with_data(serde_json::json!({
+            "field": "symbol_name",
+            "reason": "empty string"
+        }));
+
+        assert_eq!(mcp_err.code, -32002);
+        assert!(mcp_err.data.is_some());
+
+        let json = serde_json::to_string(&mcp_err).unwrap();
+        assert!(json.contains("\"data\""));
+        assert!(json.contains("field"));
+    }
+
+    #[tokio::test]
+    async fn test_handler_result_in_practice_error_path() {
+        // Integration test: handler returns error which converts to McpError
+        let ctx = HandlerContext::new(PathBuf::from("/invalid path with spaces"));
+        let input = GetCallHierarchyInput {
+            symbol_name: "test".to_string(),
+            depth: 1,
+            include_external: false,
+            compressed: false,
+            direction: crate::interface::mcp::schemas::CallDirection::Outgoing,
+        };
+
+        let result = handle_get_call_hierarchy(&ctx, input).await;
+        // This may succeed or fail depending on path validity, but tests HandlerResult pattern
+        match result {
+            Ok(output) => {
+                // If success, verify structure
+                assert!(output.calls.len() >= 0);
+            }
+            Err(e) => {
+                // If error, verify it's a proper HandlerError
+                let mcp_err: crate::interface::mcp::schemas::McpError = e.into();
+                assert!(mcp_err.code < 0); // All error codes should be negative
+            }
+        }
     }
 }

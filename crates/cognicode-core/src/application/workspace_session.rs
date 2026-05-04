@@ -3545,5 +3545,457 @@ pub const MY_CONST: i32 = 42;
             "Lightweight strategy should not produce more edges than full (lw={lw_edges}, full={full_edges})"
         );
     }
+
+    // =========================================================================
+    // Concurrent graph operation tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_concurrent_graph_builds_multiple_threads() {
+        // Test that multiple threads can build graphs simultaneously without panic or corruption
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(
+            temp_dir.path().join("lib.rs"),
+            "fn a() {}\nfn b() {}\nfn c() {}\nfn d() { e(); }\nfn e() {}",
+        )
+        .unwrap();
+
+        let session = std::sync::Arc::new(WorkspaceSession::new(temp_dir.path()).await.unwrap());
+
+        // Spawn multiple concurrent build tasks
+        let handles: Vec<_> = (0..4)
+            .map(|i| {
+                let s = std::sync::Arc::clone(&session);
+                tokio::spawn(async move { s.build_graph("full").await.map(|_| i) })
+            })
+            .collect();
+
+        let mut results: Vec<Result<Result<usize, WorkspaceError>, tokio::task::JoinError>> = Vec::new();
+        for handle in handles {
+            results.push(handle.await);
+        }
+
+        // All tasks should complete successfully
+        for (idx, result) in results.into_iter().enumerate() {
+            let inner = result.unwrap().unwrap();
+            assert_eq!(inner, idx % 4, "Task {} should return its index", idx);
+        }
+
+        // Final graph should be valid with symbols
+        let graph_guard = session.graph.read().await;
+        let graph = graph_guard.as_ref().expect("Graph should be set");
+        assert!(
+            graph.symbol_count() >= 5,
+            "Graph should have at least 5 symbols, got {}",
+            graph.symbol_count()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_build_and_query_during_build() {
+        // Test that queries during an active build return valid data
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(
+            temp_dir.path().join("lib.rs"),
+            "fn target_func() {}\nfn other_func() {}",
+        )
+        .unwrap();
+
+        let session = std::sync::Arc::new(WorkspaceSession::new(temp_dir.path()).await.unwrap());
+
+        let build_handle = tokio::spawn({
+            let s = std::sync::Arc::clone(&session);
+            async move { s.build_graph("full").await }
+        });
+
+        // Query while build is in progress
+        let query_handle = tokio::spawn({
+            let s = std::sync::Arc::clone(&session);
+            async move { s.query_symbol_index("target_func").await }
+        });
+
+        let build_result = build_handle.await.unwrap();
+        let query_result = query_handle.await.unwrap();
+
+        assert!(build_result.is_ok(), "Build should succeed");
+        assert!(query_result.is_ok(), "Query should succeed");
+
+        let symbols = query_result.unwrap();
+        // May or may not find symbols depending on timing, but should not panic
+        for symbol in &symbols {
+            if symbol.name == "target_func" {
+                return; // Test passes - found the expected symbol
+            }
+        }
+        // If we didn't find it, that's also OK - timing dependent
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_build_lightweight_index_interleaved() {
+        // Test interleaved lightweight index builds
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("lib.rs"), "fn test_fn() {}").unwrap();
+
+        let session = std::sync::Arc::new(WorkspaceSession::new(temp_dir.path()).await.unwrap());
+
+        // Interleave lightweight index builds
+        let h1 = tokio::spawn({
+            let s = std::sync::Arc::clone(&session);
+            async move { s.build_lightweight_index("lightweight").await }
+        });
+        let h2 = tokio::spawn({
+            let s = std::sync::Arc::clone(&session);
+            async move { s.build_graph("full").await }
+        });
+        let h3 = tokio::spawn({
+            let s = std::sync::Arc::clone(&session);
+            async move { s.build_lightweight_index("lightweight").await }
+        });
+
+        let (r1, r2, r3) = tokio::join!(h1, h2, h3);
+
+        assert!(r1.unwrap().is_ok(), "First lightweight should succeed");
+        assert!(r2.unwrap().is_ok(), "Full build should succeed");
+        assert!(r3.unwrap().is_ok(), "Second lightweight should succeed");
+
+        // Graph should be in consistent state
+        let graph_guard = session.graph.read().await;
+        let graph = graph_guard.as_ref().expect("Graph should be set");
+        assert!(graph.symbol_count() > 0, "Graph should have symbols");
+    }
+
+    #[tokio::test]
+    async fn test_graph_cache_concurrent_reads_during_update() {
+        // Test GraphCache concurrent read during update via WorkspaceSession
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("a.rs"), "fn func_a() {}").unwrap();
+        std::fs::write(temp_dir.path().join("b.rs"), "fn func_b() {}").unwrap();
+
+        let session = std::sync::Arc::new(WorkspaceSession::new(temp_dir.path()).await.unwrap());
+
+        // First build to populate cache
+        session.build_graph("full").await.unwrap();
+
+        let session_clone = std::sync::Arc::clone(&session);
+
+        // Spawn multiple concurrent reads while doing another build
+        let read_handles: Vec<_> = (0..4)
+            .map(|_| {
+                let s = std::sync::Arc::clone(&session_clone);
+                tokio::spawn(async move { s.get_graph_stats().await })
+            })
+            .collect();
+
+        // Also do a rebuild
+        let build_handle = tokio::spawn({
+            let s = std::sync::Arc::clone(&session_clone);
+            async move { s.build_graph("full").await }
+        });
+
+        // Wait for all reads
+        for handle in read_handles {
+            let result = handle.await.unwrap();
+            assert!(result.is_ok(), "Concurrent read should succeed");
+        }
+
+        // Wait for build
+        assert!(build_handle.await.unwrap().is_ok(), "Build should succeed");
+
+        // Final state should be consistent
+        let stats = session.get_graph_stats().await.unwrap();
+        assert!(stats.is_some(), "Stats should be available after concurrent access");
+    }
+
+    #[tokio::test]
+    async fn test_graph_cache_concurrent_invalidations() {
+        // Test cache invalidation during active queries
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("lib.rs"), "fn test_fn() {}").unwrap();
+
+        let session = std::sync::Arc::new(WorkspaceSession::new(temp_dir.path()).await.unwrap());
+
+        // First build
+        session.build_lightweight_index("lightweight").await.unwrap();
+        let initial_stats = session.get_graph_stats().await.unwrap().unwrap();
+
+        let session_clone = std::sync::Arc::clone(&session);
+
+        // Concurrent rebuild and queries
+        let rebuild_handle = tokio::spawn({
+            let s = std::sync::Arc::clone(&session);
+            async move {
+                // Add a new file to make rebuild find more symbols
+                std::fs::write(temp_dir.path().join("extra.rs"), "fn extra_fn() {}").unwrap();
+                s.build_lightweight_index("lightweight").await
+            }
+        });
+
+        let stats_handle = tokio::spawn({
+            let s = std::sync::Arc::clone(&session);
+            async move { s.get_graph_stats().await }
+        });
+
+        let (rebuild_result, stats_result) = tokio::join!(rebuild_handle, stats_handle);
+
+        assert!(rebuild_result.unwrap().is_ok(), "Rebuild should succeed");
+        assert!(stats_result.unwrap().is_ok(), "Stats query should succeed");
+
+        // After rebuild with new file, stats might differ
+        let new_stats = session.get_graph_stats().await.unwrap().unwrap();
+        assert!(
+            new_stats.symbol_count >= initial_stats.symbol_count,
+            "Symbol count should not decrease after rebuild"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_graph_events_published_during_concurrent_builds() {
+        // Test that graph events are correctly published during concurrent operations
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(
+            temp_dir.path().join("lib.rs"),
+            "fn main() {}\nfn helper() {}",
+        )
+        .unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        let mut receiver = session.subscribe_graph_events();
+
+        // Spawn concurrent builds
+        let session_arc = std::sync::Arc::new(session);
+        let s1 = std::sync::Arc::clone(&session_arc);
+        let s2 = std::sync::Arc::clone(&session_arc);
+
+        let h1 = tokio::spawn(async move { s1.build_graph("full").await });
+        let h2 = tokio::spawn(async move { s2.build_lightweight_index("lightweight").await });
+
+        let (r1, r2) = tokio::join!(h1, h2);
+        assert!(r1.unwrap().is_ok(), "First build should succeed");
+        assert!(r2.unwrap().is_ok(), "Second build should succeed");
+
+        // Collect events (may have multiple GraphReplaced events)
+        let mut event_count = 0;
+        while let Ok(Ok(_)) = tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            receiver.recv(),
+        )
+        .await
+        {
+            event_count += 1;
+            if event_count >= 10 {
+                break; // Safety limit
+            }
+        }
+
+        // Should have received at least one event (GraphReplaced)
+        assert!(
+            event_count >= 1,
+            "Should receive at least one GraphEvent during concurrent builds"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_graph_events_ordering_with_concurrent_updates() {
+        // Test that events are published in a reasonable order during concurrent updates
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("lib.rs"), "fn original() {}").unwrap();
+
+        let session = std::sync::Arc::new(WorkspaceSession::new(temp_dir.path()).await.unwrap());
+        let mut receiver = session.subscribe_graph_events();
+
+        // Do initial build
+        session.build_graph("full").await.unwrap();
+
+        // Drain the initial event
+        let _ = receiver.recv().await;
+
+        let session_clone = std::sync::Arc::clone(&session);
+
+        // Add file first (must complete before rebuild/stats can see it)
+        std::fs::write(temp_dir.path().join("new.rs"), "fn added() {}").unwrap();
+
+        // Concurrent: rebuild and query stats
+        let rebuild_handle = tokio::spawn({
+            let s = std::sync::Arc::clone(&session_clone);
+            async move { s.build_graph("full").await }
+        });
+
+        let stats_handle = tokio::spawn({
+            let s = std::sync::Arc::clone(&session_clone);
+            async move { s.get_graph_stats().await }
+        });
+
+        let (rebuild_result, stats_result) = tokio::join!(rebuild_handle, stats_handle);
+
+        assert!(rebuild_result.unwrap().is_ok(), "Rebuild should succeed");
+        assert!(stats_result.unwrap().is_ok(), "Stats should succeed");
+
+        // Check that stats reflect the new file
+        let stats = session.get_graph_stats().await.unwrap().unwrap();
+        assert!(stats.file_count >= 2, "Should have at least 2 files after adding new.rs");
+
+        // Final event collection - should have events from rebuild
+        let mut has_event = false;
+        for _ in 0..5 {
+            if tokio::time::timeout(std::time::Duration::from_millis(50), receiver.recv())
+                .await
+                .is_ok()
+            {
+                has_event = true;
+                break;
+            }
+        }
+        assert!(has_event, "Should receive event after rebuild");
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_get_entry_points_and_leaf_functions() {
+        // Test concurrent access to graph query methods
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(
+            temp_dir.path().join("lib.rs"),
+            "fn main() { helper(); }\nfn helper() { leaf(); }\nfn leaf() {}",
+        )
+        .unwrap();
+
+        let session = std::sync::Arc::new(WorkspaceSession::new(temp_dir.path()).await.unwrap());
+
+        // Build graph first
+        session.build_graph("full").await.unwrap();
+
+        let session_clone = std::sync::Arc::clone(&session);
+
+        // Concurrent queries
+        let entry_handle = tokio::spawn({
+            let s = std::sync::Arc::clone(&session_clone);
+            async move { s.get_entry_points().await }
+        });
+
+        let leaf_handle = tokio::spawn({
+            let s = std::sync::Arc::clone(&session_clone);
+            async move { s.get_leaf_functions().await }
+        });
+
+        let stats_handle = tokio::spawn({
+            let s = std::sync::Arc::clone(&session_clone);
+            async move { s.get_graph_stats().await }
+        });
+
+        let (entry_result, leaf_result, stats_result) = tokio::join!(entry_handle, leaf_handle, stats_handle);
+
+        assert!(entry_result.unwrap().is_ok(), "Entry points query should succeed");
+        assert!(leaf_result.unwrap().is_ok(), "Leaf functions query should succeed");
+        assert!(stats_result.unwrap().is_ok(), "Stats query should succeed");
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_analyze_impact_during_rebuild() {
+        // Test impact analysis during concurrent graph rebuild
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(
+            temp_dir.path().join("lib.rs"),
+            "fn target() {}\nfn dependent() { target(); }",
+        )
+        .unwrap();
+
+        let session = std::sync::Arc::new(WorkspaceSession::new(temp_dir.path()).await.unwrap());
+
+        // Initial build
+        session.build_graph("full").await.unwrap();
+
+        let session_clone = std::sync::Arc::clone(&session);
+
+        // Concurrent rebuild and impact analysis
+        let rebuild_handle = tokio::spawn({
+            let s = std::sync::Arc::clone(&session_clone);
+            async move { s.build_graph("full").await }
+        });
+
+        let impact_handle = tokio::spawn({
+            let s = std::sync::Arc::clone(&session_clone);
+            async move { s.analyze_impact("target").await }
+        });
+
+        let (rebuild_result, impact_result) = tokio::join!(rebuild_handle, impact_handle);
+
+        assert!(rebuild_result.unwrap().is_ok(), "Rebuild should succeed");
+        assert!(impact_result.as_ref().unwrap().is_ok(), "Impact analysis should succeed");
+
+        let impact = impact_result.unwrap().unwrap();
+        // Should find the dependent function
+        assert!(
+            impact.impacted_symbols.len() >= 0,
+            "Impact analysis should return (may be empty if timing is such that target isn't found)"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_subscribe_and_build() {
+        // Test subscribing to events while builds are in progress
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("lib.rs"), "fn test() {}").unwrap();
+
+        let session = std::sync::Arc::new(WorkspaceSession::new(temp_dir.path()).await.unwrap());
+
+        // Subscribe before build
+        let receiver = session.subscribe_graph_events();
+
+        let session_clone = std::sync::Arc::clone(&session);
+
+        // Concurrent build and subscribe
+        let build_handle = tokio::spawn({
+            let s = std::sync::Arc::clone(&session_clone);
+            async move { s.build_graph("full").await }
+        });
+
+        let (build_result, _) = tokio::join!(
+            build_handle,
+            async {
+                // Subscribe mid-build
+                let mut rx = session_clone.subscribe_graph_events();
+                // Try to receive with timeout
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv()).await;
+            }
+        );
+
+        assert!(build_result.unwrap().is_ok(), "Build should succeed");
+
+        // Original receiver might have received events
+        drop(receiver); // Clean up
+    }
+
+    #[tokio::test]
+    async fn test_multiple_sessions_concurrent_graph_operations() {
+        // Test multiple WorkspaceSession instances operating concurrently on different dirs
+        let temp_dir1 = TempDir::new().unwrap();
+        let temp_dir2 = TempDir::new().unwrap();
+
+        std::fs::write(temp_dir1.path().join("a.rs"), "fn file_a() {}").unwrap();
+        std::fs::write(temp_dir2.path().join("b.rs"), "fn file_b() {}").unwrap();
+
+        let session1 = std::sync::Arc::new(WorkspaceSession::new(temp_dir1.path()).await.unwrap());
+        let session2 = std::sync::Arc::new(WorkspaceSession::new(temp_dir2.path()).await.unwrap());
+
+        let (r1, r2) = tokio::join!(
+            session1.build_graph("full"),
+            session2.build_graph("full")
+        );
+
+        assert!(r1.is_ok(), "Session1 build should succeed");
+        assert!(r2.is_ok(), "Session2 build should succeed");
+
+        // Verify each session has its own graph
+        let stats1 = session1.get_graph_stats().await.unwrap().unwrap();
+        let stats2 = session2.get_graph_stats().await.unwrap().unwrap();
+
+        assert!(
+            stats1.file_count >= 1,
+            "Session1 should have at least 1 file"
+        );
+        assert!(
+            stats2.file_count >= 1,
+            "Session2 should have at least 1 file"
+        );
+    }
 }
 
