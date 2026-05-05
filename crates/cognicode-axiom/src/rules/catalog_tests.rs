@@ -485,7 +485,7 @@ fn main() {
     fn test_s4792_detects_des() {
         let source = r#"
 fn main() {
-    let cipher = des_encrypt(data, key);
+    let cipher = encrypt_with_des(data, key);
 }
 "#;
 
@@ -502,7 +502,7 @@ fn main() {
     fn test_s4792_detects_rc4() {
         let source = r#"
 fn main() {
-    let data = rc4_encrypt(input);
+    let data = encrypt_with_rc4(input);
 }
 "#;
 
@@ -524,6 +524,7 @@ fn main() {
     let hash = blake3("password");
     let encrypted = encrypt_aes(data, key);
 }
+//! This module provides functionality — the word 'provides' should NOT trigger S4792
 "#;
 
         let issues = with_rule_context(source, Language::Rust, |ctx| {

@@ -795,11 +795,11 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let weak_patterns = [
-            (r"md5", "MD5 hash function"),
-            (r"sha1", "SHA-1 hash function"),
-            (r"des\b", "DES block cipher"),
-            (r"rc4", "RC4 stream cipher"),
-            (r"crypt\b", "crypt(3) function"),
+            (r"(?:\b|_)md5\b", "MD5 hash function"),
+            (r"(?:\b|_)sha1\b", "SHA-1 hash function"),
+            (r"(?:\b|_)des\b", "DES block cipher"),
+            (r"(?:\b|_)rc4\b", "RC4 stream cipher"),
+            (r"(?:\b|_)crypt\b", "crypt(3) function"),
         ];
 
         for (line_idx, line) in ctx.source.lines().enumerate() {

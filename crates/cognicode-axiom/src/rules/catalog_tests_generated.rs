@@ -263,7 +263,7 @@ fn main() {
 
         #[test]
         fn test_s4792_detects_des() {
-            let source = r#"fn main() { let cipher = des_encrypt(data, key); }"#;
+            let source = r#"fn main() { let cipher = encrypt_with_des(data, key); }"#;
             let issues = with_rule_context(source, Language::Rust, |ctx| {
                 S4792Rule::new().check(ctx)
             });
@@ -272,7 +272,7 @@ fn main() {
 
         #[test]
         fn test_s4792_detects_rc4() {
-            let source = r#"fn main() { let data = rc4_encrypt(input); }"#;
+            let source = r#"fn main() { let data = encrypt_with_rc4(input); }"#;
             let issues = with_rule_context(source, Language::Rust, |ctx| {
                 S4792Rule::new().check(ctx)
             });
