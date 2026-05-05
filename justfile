@@ -248,11 +248,9 @@ status:
 # Stop the server
 stop:
     @echo "🛑 Stopping server..."
-    @pkill -f "cognicode-dashboard-server" 2>/dev/null || true
+    @fuser -k {{PORT}}/tcp 2>/dev/null || true
     @sleep 1
-    @curl -s --max-time 1 http://localhost:{{PORT}}/health > /dev/null 2>&1 && \
-        echo "⚠️  Force killing..." && kill -9 $$(pgrep -f cognicode-dashboard-server) 2>/dev/null || true
-    @echo "✅ Server stopped"
+    @echo "✅ Port {{PORT}} freed"
 
 # Install dependencies
 install:
