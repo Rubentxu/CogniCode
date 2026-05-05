@@ -6,7 +6,7 @@ use crate::state::{
     TechnicalDebt, GateCondition, QualityGateResult,
 };
 use crate::components::{
-    Shell, RatingCard, MetricCard, GateStatusBar,
+    Shell, RatingCard, MetricCard, GateStatusBar, IssueTable,
     Trend,
 };
 
@@ -133,6 +133,61 @@ fn mock_issues() -> Vec<IssueResult> {
             end_line: Some(92),
             remediation_hint: None,
         },
+        IssueResult {
+            rule_id: "java:S1197".to_string(),
+            message: "Array designators should be placed on the type, not the variable.".to_string(),
+            severity: Severity::Minor,
+            category: Category::Maintainability,
+            file: "src/main/java/com/example/Database.java".to_string(),
+            line: 34,
+            column: Some(10),
+            end_line: Some(34),
+            remediation_hint: None,
+        },
+        IssueResult {
+            rule_id: "java:S1481".to_string(),
+            message: "Unused method parameters should be removed.".to_string(),
+            severity: Severity::Info,
+            category: Category::Maintainability,
+            file: "src/main/java/com/example/Utils.java".to_string(),
+            line: 67,
+            column: Some(5),
+            end_line: Some(67),
+            remediation_hint: None,
+        },
+        IssueResult {
+            rule_id: "java:S1854".to_string(),
+            message: "Remove this useless assignment to variable 'result'.".to_string(),
+            severity: Severity::Major,
+            category: Category::Maintainability,
+            file: "src/main/java/com/example/Handler.java".to_string(),
+            line: 112,
+            column: Some(15),
+            end_line: Some(112),
+            remediation_hint: Some("The variable is assigned but its value is never used.".to_string()),
+        },
+        IssueResult {
+            rule_id: "java:S2201".to_string(),
+            message: "The return value of a method must be used.".to_string(),
+            severity: Severity::Minor,
+            category: Category::Reliability,
+            file: "src/main/java/com/example/ServiceImpl.java".to_string(),
+            line: 45,
+            column: Some(8),
+            end_line: Some(45),
+            remediation_hint: None,
+        },
+        IssueResult {
+            rule_id: "java:S2250".to_string(),
+            message: "The expression can be simplified.".to_string(),
+            severity: Severity::Info,
+            category: Category::Maintainability,
+            file: "src/main/java/com/example/Validator.java".to_string(),
+            line: 91,
+            column: Some(12),
+            end_line: Some(91),
+            remediation_hint: None,
+        },
     ]
 }
 
@@ -143,6 +198,9 @@ pub fn DashboardPage() -> impl IntoView {
     let gate = mock_gate();
     let issues = mock_issues();
 
+    // Show only first 5 recent issues on dashboard
+    let recent_issues: Vec<IssueResult> = issues.iter().take(5).cloned().collect();
+
     view! {
         <Shell>
             <div style="max-width: 1400px; margin: 0 auto;">
@@ -150,6 +208,10 @@ pub fn DashboardPage() -> impl IntoView {
                     <h1 class="text-h1">Quality Dashboard</h1>
                     <p class="text-body text-text-secondary" style="margin-top: 8px;">Last analysis: 2 hours ago - 847 lines of code</p>
                 </header>
+
+                <section style="margin-bottom: 48px;">
+                    <GateStatusBar gate={gate} />
+                </section>
 
                 <section style="margin-bottom: 48px;">
                     <h2 class="text-h2" style="margin-bottom: 24px;">Project Ratings</h2>
@@ -172,13 +234,13 @@ pub fn DashboardPage() -> impl IntoView {
                         />
                         <MetricCard
                             label="Issues Found"
-                            value="47".to_string()
+                            value="50".to_string()
                             trend={Some(Trend::down("12%"))}
                             icon={Some("M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2")}
                         />
                         <MetricCard
                             label="Code Coverage"
-                            value="73.2%".to_string()
+                            value="74.0%".to_string()
                             trend={Some(Trend::up("3.1%"))}
                             icon={Some("M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z")}
                         />
@@ -191,19 +253,19 @@ pub fn DashboardPage() -> impl IntoView {
                     </div>
                 </section>
 
-                <section style="margin-bottom: 48px;">
-                    <h2 class="text-h2" style="margin-bottom: 24px;">Quality Gate</h2>
-                    <GateStatusBar gate={gate} />
-                </section>
-
-                <section style="margin-bottom: 48px;">
-                    <h2 class="text-h2" style="margin-bottom: 24px;">
-                        Recent Issues
-                        <span class="text-body-sm text-text-muted" style="margin-left: 8px;">({issues.len()} issues)</span>
-                    </h2>
-                    <div class="card">
-                        <p class="text-body">{issues.len()} issues found</p>
+                <section>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                        <h2 class="text-h2">
+                            Recent Issues
+                        </h2>
+                        <a href="/issues" style="font-size: 14px; color: var(--color-text-link); text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                            View all {issues.len()} issues
+                            <svg style="width: 16px; height: 16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+                            </svg>
+                        </a>
                     </div>
+                    <IssueTable issues={recent_issues} />
                 </section>
             </div>
         </Shell>
