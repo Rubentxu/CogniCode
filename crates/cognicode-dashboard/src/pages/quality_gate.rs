@@ -1,7 +1,7 @@
 //! Quality gate page with conditions and status
 
 use leptos::prelude::*;
-use crate::state::{QualityGateResult, GateCondition};
+use crate::state::{GateCondition, QualityGateResult};
 use crate::components::{Shell, GateStatusBar};
 
 fn mock_gate() -> QualityGateResult {
@@ -48,14 +48,6 @@ fn mock_gate() -> QualityGateResult {
                 operator: "=".to_string(),
                 threshold: 0.0,
                 passed: true,
-            },
-            GateCondition {
-                id: "6".to_string(),
-                name: "Coverage on New Code".to_string(),
-                metric: "coverage_on_new_code".to_string(),
-                operator: ">=".to_string(),
-                threshold: 80.0,
-                passed: false,
             },
         ],
     }
@@ -109,7 +101,7 @@ pub fn QualityGatePage() -> impl IntoView {
                 </section>
             </div>
         </Shell>
-    }.into_view()
+    }
 }
 
 #[component]
@@ -152,8 +144,6 @@ fn GateCards() -> impl IntoView {
                 let gate_name = name.to_string();
                 let gate_desc = description.to_string();
                 let border_style = if *is_active { "var(--color-brand)" } else { "transparent" };
-                let active_bg = if *is_active { "var(--color-brand)" } else { "transparent" };
-                let active_color = if *is_active { "white" } else { "transparent" };
                 view! {
                     <div
                         class="card"
@@ -161,7 +151,10 @@ fn GateCards() -> impl IntoView {
                     >
                         <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px;">
                             <h3 style="margin: 0; font-size: 16px; font-weight: 600;">{gate_name}</h3>
-                            <span style={format!("font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 4px; background: {}; color: {}; text-transform: uppercase;", active_bg, active_color)}>
+                            <span style={format!("font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 4px; background: {}; color: {}; text-transform: uppercase;",
+                                if *is_active { "var(--color-brand)" } else { "transparent" },
+                                if *is_active { "white" } else { "transparent" }
+                            )}>
                                 {if *is_active { "Active" } else { "" }}
                             </span>
                         </div>

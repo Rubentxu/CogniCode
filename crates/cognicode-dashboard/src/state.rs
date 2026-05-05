@@ -2,6 +2,7 @@
 //!
 //! Contains both types for data structures and AppState for global reactive state.
 
+use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Dashboard configuration settings
@@ -40,64 +41,78 @@ impl Default for DashboardConfig {
     }
 }
 
+/// Analysis request for the server
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AnalysisRequest {
+    pub project_path: String,
+    pub quick: Option<bool>,
+}
+
 /// Application-wide reactive state
 /// Uses leptos signals for reactive updates
 #[derive(Clone, Debug)]
 pub struct AppState {
     /// Current project path being analyzed
-    pub project_path: String,
+    pub project_path: RwSignal<String>,
     /// Whether an analysis is currently running
-    pub is_loading: bool,
+    pub is_loading: RwSignal<bool>,
     /// Current error message, if any
-    pub error: Option<String>,
+    pub error: RwSignal<Option<String>>,
     /// Last analysis timestamp
-    pub last_analysis: Option<String>,
+    pub last_analysis: RwSignal<Option<String>>,
     /// Current configuration
-    pub config: DashboardConfig,
+    pub config: RwSignal<DashboardConfig>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
-        Self {
-            project_path: String::new(),
-            is_loading: false,
-            error: None,
-            last_analysis: None,
-            config: DashboardConfig::default(),
-        }
+        Self::new()
     }
 }
 
 impl AppState {
-    /// Create a new AppState with the given initial values
-    pub fn new(project_path: impl Into<String>) -> Self {
+    /// Create a new AppState with default values
+    pub fn new() -> Self {
         Self {
-            project_path: project_path.into(),
-            is_loading: false,
-            error: None,
-            last_analysis: None,
-            config: DashboardConfig::default(),
+            project_path: RwSignal::new(String::new()),
+            is_loading: RwSignal::new(false),
+            error: RwSignal::new(None),
+            last_analysis: RwSignal::new(None),
+            config: RwSignal::new(DashboardConfig::default()),
+        }
+    }
+
+    /// Create a new AppState with the given project path
+    pub fn with_project(project_path: impl Into<String>) -> Self {
+        let mut config = DashboardConfig::default();
+        config.project_path = project_path.into();
+        Self {
+            project_path: RwSignal::new(config.project_path.clone()),
+            is_loading: RwSignal::new(false),
+            error: RwSignal::new(None),
+            last_analysis: RwSignal::new(None),
+            config: RwSignal::new(config),
         }
     }
 
     /// Clear any current error
-    pub fn clear_error(&mut self) {
-        self.error = None;
+    pub fn clear_error(&self) {
+        self.error.set(None);
     }
 
     /// Set an error message
-    pub fn set_error(&mut self, msg: impl Into<String>) {
-        self.error = Some(msg.into());
+    pub fn set_error(&self, msg: impl Into<String>) {
+        self.error.set(Some(msg.into()));
     }
 
     /// Set loading state
-    pub fn set_loading(&mut self, loading: bool) {
-        self.is_loading = loading;
+    pub fn set_loading(&self, loading: bool) {
+        self.is_loading.set(loading);
     }
 
     /// Update the last analysis timestamp
-    pub fn update_last_analysis(&mut self) {
-        self.last_analysis = Some(chrono::Utc::now().to_rfc3339());
+    pub fn update_last_analysis(&self) {
+        self.last_analysis.set(Some(chrono::Utc::now().to_rfc3339()));
     }
 }
 
@@ -113,6 +128,16 @@ pub enum Severity {
 }
 
 impl Severity {
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "blocker" => Severity::Blocker,
+            "critical" => Severity::Critical,
+            "major" => Severity::Major,
+            "minor" => Severity::Minor,
+            _ => Severity::Info,
+        }
+    }
+
     pub fn color_class(&self) -> &'static str {
         match self {
             Severity::Blocker => "severity-blocker",
@@ -147,6 +172,17 @@ pub enum Category {
 }
 
 impl Category {
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "reliability" => Category::Reliability,
+            "security" => Category::Security,
+            "maintainability" => Category::Maintainability,
+            "coverage" => Category::Coverage,
+            "duplicate" => Category::Duplicate,
+            _ => Category::Complexity,
+        }
+    }
+
     pub fn label(&self) -> &'static str {
         match self {
             Category::Reliability => "Reliability",
@@ -207,4 +243,89 @@ pub struct QualityGateResult {
     pub name: String,
     pub status: String, // "PASSED" or "FAILED"
     pub conditions: Vec<GateCondition>,
+}
+
+/// Analysis summary returned by the server
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AnalysisSummary {
+    pub project_path: String,
+    pub timestamp: String,
+    pub lines_of_code: usize,
+    pub ratings: ProjectRatings,
+    pub technical_debt: TechnicalDebt,
+    pub total_issues: usize,
+    pub blocker_issues: usize,
+    pub critical_issues: usize,
+    pub major_issues: usize,
+    pub minor_issues: usize,
+    pub info_issues: usize,
+}
+
+/// Full analysis result with all details
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AnalysisResult {
+    pub summary: AnalysisSummary,
+    pub issues: Vec<IssueResult>,
+    pub quality_gate: QualityGateResult,
+}
+
+/// Issue filter parameters
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct IssueFilter {
+    pub project_path: String,
+    pub severity: Option<String>,
+    pub category: Option<String>,
+    pub rule_id: Option<String>,
+    pub file_path: Option<String>,
+    pub page: Option<usize>,
+    pub page_size: Option<usize>,
+}
+
+/// Paginated issue list response
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IssueListResponse {
+    pub issues: Vec<IssueResult>,
+    pub total_count: usize,
+    pub page: usize,
+    pub page_size: usize,
+    pub total_pages: usize,
+}
+
+/// Project metrics DTO
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProjectMetricsDto {
+    pub ncloc: usize,
+    pub functions: usize,
+    pub classes: usize,
+    pub code_smells: usize,
+    pub bugs: usize,
+    pub vulnerabilities: usize,
+    pub issues_by_severity: std::collections::HashMap<String, usize>,
+}
+
+/// Rule profile
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RuleProfile {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub rule_count: usize,
+}
+
+/// Quality gate definition
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct QualityGateDefinition {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub conditions: Vec<GateConditionTemplate>,
+}
+
+/// Template for a gate condition (before being evaluated)
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GateConditionTemplate {
+    pub metric: String,
+    pub name: String,
+    pub operator: String,
+    pub threshold: f64,
 }

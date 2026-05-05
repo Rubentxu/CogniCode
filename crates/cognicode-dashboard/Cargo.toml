@@ -12,6 +12,12 @@ leptos = { version = "0.7", features = ["csr"] }
 leptos_router = "0.7"
 leptos_meta = "0.7"
 
+# Server support
+leptos_axum = "0.7"
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["fs", "cors"] }
+
 # CogniCode Libraries (embedded, in-process)
 cognicode-quality = { path = "../cognicode-quality" }
 cognicode-core = { path = "../cognicode-core" }
@@ -26,12 +32,15 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Async runtime
 gloo-timers = "0.3"
+tokio = { version = "1", features = ["full"] }
 
 # Utils
 thiserror = "1"
 anyhow = "1"
 log = "0.4"
 env_logger = "0.11"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
@@ -40,3 +49,11 @@ wasm-bindgen-test = "0.3"
 opt-level = "s"
 lto = true
 codegen-units = 1
+
+[[bin]]
+name = "cognicode-dashboard-server"
+path = "src/server.rs"
+
+[[bin]]
+name = "cognicode-dashboard"
+path = "src/main.rs"

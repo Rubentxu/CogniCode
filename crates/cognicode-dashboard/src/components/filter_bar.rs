@@ -1,14 +1,13 @@
 //! Filter bar component
 
 use leptos::prelude::*;
-// Severity and Category types are defined in state.rs for future filter functionality
-#[allow(unused_imports)]
-use crate::state::{Severity, Category};
 
-/// FilterBar component with selects for severity and category plus search input.
-/// Returns filter values via event handlers.
 #[component]
-pub fn FilterBar() -> impl IntoView {
+pub fn FilterBar<F1, F2>(on_severity_change: F1, on_category_change: F2) -> impl IntoView
+where
+    F1: Fn(Option<String>) + 'static,
+    F2: Fn(Option<String>) + 'static,
+{
     let severity_options = vec![
         ("All Severities", "all"),
         ("Blocker", "blocker"),
@@ -33,6 +32,11 @@ pub fn FilterBar() -> impl IntoView {
             <select
                 class="input select"
                 style="min-width: 160px;"
+                on:change={move |e| {
+                    let value = event_target_value(&e);
+                    let filtered = if value == "all" { None } else { Some(value) };
+                    on_severity_change(filtered);
+                }}
             >
                 {severity_options.iter().map(|(label, value)| {
                     view! {
@@ -46,6 +50,11 @@ pub fn FilterBar() -> impl IntoView {
             <select
                 class="input select"
                 style="min-width: 160px;"
+                on:change={move |e| {
+                    let value = event_target_value(&e);
+                    let filtered = if value == "all" { None } else { Some(value) };
+                    on_category_change(filtered);
+                }}
             >
                 {category_options.iter().map(|(label, value)| {
                     view! {

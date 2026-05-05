@@ -5,19 +5,13 @@ use crate::components::Shell;
 
 #[component]
 pub fn ConfigurationPage() -> impl IntoView {
-    let rule_profiles = vec![
-        ("sonarqube", "SonarQube Default"),
-        ("security-first", "Security First"),
-        ("minimal", "Minimal Rules"),
-        ("strict", "Strict Mode"),
-    ];
-
-    let quality_gates = vec![
-        ("sonarqube-way", "SonarQube Way"),
-        ("sonarqube-way-strict", "SonarQube Way - Strict"),
-        ("security-defaults", "Security Defaults"),
-        ("production-prevents", "Production Prevents"),
-    ];
+    let (project_path, set_project_path) = signal("/home/user/project".to_string());
+    let (project_name, set_project_name) = signal("My Project".to_string());
+    let (rule_profile, set_rule_profile) = signal("sonarqube".to_string());
+    let (include_test_files, set_include_test_files) = signal(true);
+    let (analyze_dependencies, set_analyze_dependencies) = signal(true);
+    let (quality_gate, set_quality_gate) = signal("sonarqube-way".to_string());
+    let (fail_on_gate_failure, set_fail_on_gate_failure) = signal(true);
 
     view! {
         <Shell>
@@ -29,7 +23,7 @@ pub fn ConfigurationPage() -> impl IntoView {
                     </p>
                 </header>
 
-                <form on:submit=|_e| { /* prevent default */ }>
+                <form on:submit=|e| { e.prevent_default(); }>
                     <div style="display: flex; flex-direction: column; gap: 32px;">
                         <section class="card">
                             <h2 class="text-h3" style="margin-bottom: 24px;">Project Settings</h2>
@@ -43,7 +37,8 @@ pub fn ConfigurationPage() -> impl IntoView {
                                         id="project-path"
                                         type="text"
                                         class="input"
-                                        value="/home/user/project"
+                                        value={project_path.get()}
+                                        on:input={move |e| set_project_path.set(event_target_value(&e))}
                                         placeholder="Enter the path to your project directory"
                                         style="width: 100%;"
                                     />
@@ -60,7 +55,8 @@ pub fn ConfigurationPage() -> impl IntoView {
                                         id="project-name"
                                         type="text"
                                         class="input"
-                                        value="My Project"
+                                        value={project_name.get()}
+                                        on:input={move |e| set_project_name.set(event_target_value(&e))}
                                         placeholder="Enter a name for this project"
                                         style="width: 100%;"
                                     />
@@ -76,17 +72,24 @@ pub fn ConfigurationPage() -> impl IntoView {
                                     <label for="rule-profile" style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 8px; color: var(--color-text-primary);">
                                         Rule Profile
                                     </label>
-                                    <select id="rule-profile" class="input select" style="width: 100%;">
-                                        {rule_profiles.iter().map(|(value, label)| {
-                                            let is_selected = *value == "sonarqube";
-                                            let val = *value;
-                                            let lbl = *label;
-                                            view! {
-                                                <option value={val} selected={is_selected}>
-                                                    {lbl}
-                                                </option>
-                                            }
-                                        }).collect::<Vec<_>>()}
+                                    <select
+                                        id="rule-profile"
+                                        class="input select"
+                                        style="width: 100%;"
+                                        on:change={move |e| set_rule_profile.set(event_target_value(&e))}
+                                    >
+                                        <option value="sonarqube" selected={rule_profile.get() == "sonarqube"}>
+                                            SonarQube Default
+                                        </option>
+                                        <option value="security-first">
+                                            Security First
+                                        </option>
+                                        <option value="minimal">
+                                            Minimal Rules
+                                        </option>
+                                        <option value="strict">
+                                            Strict Mode
+                                        </option>
                                     </select>
                                     <p style="margin-top: 8px; font-size: 13px; color: var(--color-text-muted);">
                                         Determines which rules are applied during analysis
@@ -95,7 +98,11 @@ pub fn ConfigurationPage() -> impl IntoView {
 
                                 <div>
                                     <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                        <input type="checkbox" checked={true} />
+                                        <input
+                                            type="checkbox"
+                                            checked={include_test_files.get()}
+                                            on:change={move |e| set_include_test_files.set(event_target_checked(&e))}
+                                        />
                                         <span style="font-size: 14px; font-weight: 500; color: var(--color-text-primary);">
                                             Include test files in analysis
                                         </span>
@@ -104,7 +111,11 @@ pub fn ConfigurationPage() -> impl IntoView {
 
                                 <div>
                                     <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                        <input type="checkbox" checked={true} />
+                                        <input
+                                            type="checkbox"
+                                            checked={analyze_dependencies.get()}
+                                            on:change={move |e| set_analyze_dependencies.set(event_target_checked(&e))}
+                                        />
                                         <span style="font-size: 14px; font-weight: 500; color: var(--color-text-primary);">
                                             Analyze dependencies for known vulnerabilities
                                         </span>
@@ -121,17 +132,24 @@ pub fn ConfigurationPage() -> impl IntoView {
                                     <label for="quality-gate" style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 8px; color: var(--color-text-primary);">
                                         Default Quality Gate
                                     </label>
-                                    <select id="quality-gate" class="input select" style="width: 100%;">
-                                        {quality_gates.iter().map(|(value, label)| {
-                                            let is_selected = *value == "sonarqube-way";
-                                            let val = *value;
-                                            let lbl = *label;
-                                            view! {
-                                                <option value={val} selected={is_selected}>
-                                                    {lbl}
-                                                </option>
-                                            }
-                                        }).collect::<Vec<_>>()}
+                                    <select
+                                        id="quality-gate"
+                                        class="input select"
+                                        style="width: 100%;"
+                                        on:change={move |e| set_quality_gate.set(event_target_value(&e))}
+                                    >
+                                        <option value="sonarqube-way" selected={quality_gate.get() == "sonarqube-way"}>
+                                            SonarQube Way
+                                        </option>
+                                        <option value="sonarqube-way-strict">
+                                            SonarQube Way - Strict
+                                        </option>
+                                        <option value="security-defaults">
+                                            Security Defaults
+                                        </option>
+                                        <option value="production-prevents">
+                                            Production Prevents
+                                        </option>
                                     </select>
                                     <p style="margin-top: 8px; font-size: 13px; color: var(--color-text-muted);">
                                         The quality gate used to determine build success or failure
@@ -140,51 +158,13 @@ pub fn ConfigurationPage() -> impl IntoView {
 
                                 <div>
                                     <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                        <input type="checkbox" checked={true} />
+                                        <input
+                                            type="checkbox"
+                                            checked={fail_on_gate_failure.get()}
+                                            on:change={move |e| set_fail_on_gate_failure.set(event_target_checked(&e))}
+                                        />
                                         <span style="font-size: 14px; font-weight: 500; color: var(--color-text-primary);">
                                             Fail build on quality gate failure
-                                        </span>
-                                    </label>
-                                </div>
-
-                                <div>
-                                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                        <input type="checkbox" checked={false} />
-                                        <span style="font-size: 14px; font-weight: 500; color: var(--color-text-primary);">
-                                            Block deployment on gate failure
-                                        </span>
-                                    </label>
-                                </div>
-                            </div>
-                        </section>
-
-                        <section class="card">
-                            <h2 class="text-h3" style="margin-bottom: 24px;">Notifications</h2>
-
-                            <div style="display: flex; flex-direction: column; gap: 16px;">
-                                <div>
-                                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                        <input type="checkbox" checked={true} />
-                                        <span style="font-size: 14px; font-weight: 500; color: var(--color-text-primary);">
-                                            Notify on analysis completion
-                                        </span>
-                                    </label>
-                                </div>
-
-                                <div>
-                                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                        <input type="checkbox" checked={false} />
-                                        <span style="font-size: 14px; font-weight: 500; color: var(--color-text-primary);">
-                                            Alert when quality gate fails
-                                        </span>
-                                    </label>
-                                </div>
-
-                                <div>
-                                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                        <input type="checkbox" checked={true} />
-                                        <span style="font-size: 14px; font-weight: 500; color: var(--color-text-primary);">
-                                            Weekly summary report
                                         </span>
                                     </label>
                                 </div>
@@ -193,7 +173,7 @@ pub fn ConfigurationPage() -> impl IntoView {
 
                         <section style="display: flex; justify-content: flex-end; gap: 16px; padding-top: 16px; border-top: 1px solid var(--color-border);">
                             <button type="button" class="btn btn-secondary">
-                                Cancel
+                                Run Analysis
                             </button>
                             <button type="submit" class="btn btn-primary">
                                 Save Configuration
@@ -203,5 +183,5 @@ pub fn ConfigurationPage() -> impl IntoView {
                 </form>
             </div>
         </Shell>
-    }.into_view()
+    }
 }
