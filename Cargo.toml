@@ -13,6 +13,7 @@ members = [
     "crates/cognicode-axiom",
     "crates/cognicode-quality",
     "crates/cognicode-rule-test-harness",
+    "crates/cognicode-dashboard",
 ]
 
 [workspace.package]
