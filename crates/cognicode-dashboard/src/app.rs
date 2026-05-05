@@ -3,31 +3,34 @@
 //! Sets up the Leptos router with all pages.
 
 use leptos::prelude::*;
-use crate::pages::*;
-use crate::state::AppState;
+use leptos_router::components::{Route, Router, Routes};
+use leptos_router::path;
+use crate::state::ReactiveAppState;
+use crate::pages::{
+    DashboardPage, IssuesPage, IssueDetailPage,
+    MetricsPage, QualityGatePage, ConfigurationPage,
+    NotFoundPage, ProjectsPage,
+};
 
-/// Not found page component
-#[component]
-pub fn NotFoundPage() -> impl IntoView {
-    view! {
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; text-align: center;">
-            <h1 style="font-size: 96px; font-weight: 700; color: var(--color-text-muted); margin: 0;">404</h1>
-            <p style="font-size: 24px; color: var(--color-text-secondary); margin: 24px 0;">Page not found</p>
-            <a href="/" class="btn btn-primary">Go to Dashboard</a>
-        </div>
-    }
-}
-
-/// Main application component - renders dashboard for now
+/// Main application component with full routing
 #[component]
 pub fn App() -> impl IntoView {
     // Provide global app state
-    let app_state = AppState::new();
+    let app_state = ReactiveAppState::new();
     provide_context(app_state);
 
-    // For CSR, render the dashboard directly
-    // Full routing would be added with proper router setup
     view! {
-        <DashboardPage />
+        <Router>
+            <Routes fallback=NotFoundPage>
+                <Route path=path!("/") view=DashboardPage />
+                <Route path=path!("/projects") view=ProjectsPage />
+                <Route path=path!("/issues") view=IssuesPage />
+                <Route path=path!("/issues/:id") view=IssueDetailPage />
+                <Route path=path!("/metrics") view=MetricsPage />
+                <Route path=path!("/quality-gate") view=QualityGatePage />
+                <Route path=path!("/configuration") view=ConfigurationPage />
+                <Route path=path!("/*any") view=NotFoundPage />
+            </Routes>
+        </Router>
     }
 }

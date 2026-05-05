@@ -1,0 +1,90 @@
+{
+  "summary": {
+    "total": 13,
+    "passed": 13,
+    "failed": 0,
+    "warned": 0,
+    "score": 100
+  },
+  "results": [
+    {
+      "test": "Health endpoint",
+      "status": "PASS",
+      "detail": "",
+      "timestamp": "2026-05-05T16:08:02.978Z"
+    },
+    {
+      "test": "Homepage loads",
+      "status": "PASS",
+      "detail": "",
+      "timestamp": "2026-05-05T16:08:06.022Z"
+    },
+    {
+      "test": "Projects page loads",
+      "status": "PASS",
+      "detail": "",
+      "timestamp": "2026-05-05T16:08:09.108Z"
+    },
+    {
+      "test": "Issues page loads",
+      "status": "PASS",
+      "detail": "",
+      "timestamp": "2026-05-05T16:08:12.171Z"
+    },
+    {
+      "test": "Metrics page loads",
+      "status": "PASS",
+      "detail": "",
+      "timestamp": "2026-05-05T16:08:15.258Z"
+    },
+    {
+      "test": "Quality Gate page loads",
+      "status": "PASS",
+      "detail": "",
+      "timestamp": "2026-05-05T16:08:18.253Z"
+    },
+    {
+      "test": "Configuration page loads",
+      "status": "PASS",
+      "detail": "",
+      "timestamp": "2026-05-05T16:08:21.276Z"
+    },
+    {
+      "test": "404 page shows correctly",
+      "status": "PASS",
+      "detail": "",
+      "timestamp": "2026-05-05T16:08:24.322Z"
+    },
+    {
+      "test": "SPA navigation works",
+      "status": "PASS",
+      "detail": "",
+      "timestamp": "2026-05-05T16:08:28.614Z"
+    },
+    {
+      "test": "CSS file served correctly",
+      "status": "PASS",
+      "detail": "",
+      "timestamp": "2026-05-05T16:08:29.824Z"
+    },
+    {
+      "test": "Dark mode toggle works",
+      "status": "PASS",
+      "detail": "",
+      "timestamp": "2026-05-05T16:08:32.419Z"
+    },
+    {
+      "test": "Sidebar has all nav items",
+      "status": "PASS",
+      "detail": "Projects, Dashboard, Issues, Metrics, Quality Gate, Configuration",
+      "timestamp": "2026-05-05T16:08:35.417Z"
+    },
+    {
+      "test": "WASM binary loads",
+      "status": "PASS",
+      "detail": "",
+      "timestamp": "2026-05-05T16:08:38.354Z"
+    }
+  ],
+  "timestamp": "2026-05-05T16:08:38.359Z"
+}

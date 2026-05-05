@@ -5,6 +5,10 @@
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::api_client::{
+    ApiClient, AnalysisSummaryDto, IssueDto, DashboardConfigDto,
+};
+
 /// Dashboard configuration settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DashboardConfig {
@@ -328,4 +332,139 @@ pub struct GateConditionTemplate {
     pub name: String,
     pub operator: String,
     pub threshold: f64,
+}
+
+// ============================================================================
+// Reactive Application State (using API client)
+// ============================================================================
+
+/// Reactive application state using signals for real-time UI updates
+#[derive(Clone)]
+pub struct ReactiveAppState {
+    /// API client for server communication
+    pub api: ApiClient,
+    /// Current project path being analyzed
+    pub project_path: RwSignal<String>,
+    /// Dashboard configuration
+    pub config: RwSignal<DashboardConfigDto>,
+    /// Last analysis summary from the server
+    pub analysis: RwSignal<Option<AnalysisSummaryDto>>,
+    /// Current issues list
+    pub issues: RwSignal<Vec<IssueDto>>,
+    /// Total number of issues matching current filters
+    pub total_issues_count: RwSignal<usize>,
+    /// Total number of pages available
+    pub total_pages: RwSignal<usize>,
+    /// Whether an operation is currently in progress
+    pub loading: RwSignal<bool>,
+    /// Current error message, if any
+    pub error: RwSignal<Option<String>>,
+}
+
+impl ReactiveAppState {
+    /// Create a new ReactiveAppState with default values
+    pub fn new() -> Self {
+        Self {
+            api: ApiClient::new("http://localhost:3000"),
+            project_path: RwSignal::new(String::new()),
+            config: RwSignal::new(DashboardConfigDto::default()),
+            analysis: RwSignal::new(None),
+            issues: RwSignal::new(Vec::new()),
+            total_issues_count: RwSignal::new(0),
+            total_pages: RwSignal::new(1),
+            loading: RwSignal::new(false),
+            error: RwSignal::new(None),
+        }
+    }
+
+    /// Create a new ReactiveAppState with the given project path
+    pub fn with_project(project_path: impl Into<String>) -> Self {
+        let path = project_path.into();
+        Self {
+            api: ApiClient::new("http://localhost:3000"),
+            project_path: RwSignal::new(path.clone()),
+            config: RwSignal::new(DashboardConfigDto {
+                project_path: path,
+                ..Default::default()
+            }),
+            analysis: RwSignal::new(None),
+            issues: RwSignal::new(Vec::new()),
+            total_issues_count: RwSignal::new(0),
+            total_pages: RwSignal::new(1),
+            loading: RwSignal::new(false),
+            error: RwSignal::new(None),
+        }
+    }
+
+    /// Run analysis on the current project
+    pub async fn run_analysis(&self) {
+        self.loading.set(true);
+        self.error.set(None);
+
+        let path = self.project_path.get();
+        if path.is_empty() {
+            self.error.set(Some("Project path is empty".to_string()));
+            self.loading.set(false);
+            return;
+        }
+
+        match self.api.run_analysis(&path, true, true).await {
+            Ok(result) => {
+                self.analysis.set(Some(result));
+            }
+            Err(e) => {
+                self.error.set(Some(e));
+            }
+        }
+
+        self.loading.set(false);
+    }
+
+    /// Load issues with optional filters and pagination
+    pub async fn load_issues(
+        &self,
+        severity: Option<&str>,
+        category: Option<&str>,
+        file_filter: Option<&str>,
+        page: usize,
+    ) {
+        self.loading.set(true);
+        self.error.set(None);
+
+        let path = self.project_path.get();
+        if path.is_empty() {
+            self.error.set(Some("Project path is empty".to_string()));
+            self.loading.set(false);
+            return;
+        }
+
+        match self.api.get_issues(&path, severity, category, file_filter, page, 20).await {
+            Ok(response) => {
+                self.issues.set(response.issues);
+                self.total_issues_count.set(response.total_count);
+                self.total_pages.set(response.total_pages.max(1));
+            }
+            Err(e) => {
+                self.error.set(Some(e));
+            }
+        }
+
+        self.loading.set(false);
+    }
+
+    /// Clear any current error
+    pub fn clear_error(&self) {
+        self.error.set(None);
+    }
+
+    /// Set loading state
+    pub fn set_loading(&self, loading: bool) {
+        self.loading.set(loading);
+    }
+}
+
+impl Default for ReactiveAppState {
+    fn default() -> Self {
+        Self::new()
+    }
 }

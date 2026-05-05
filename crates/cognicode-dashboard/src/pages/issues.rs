@@ -1,125 +1,202 @@
-//! Issues page with filtering and pagination
+//! Issues Page — Real API data with filtering and pagination
 
 use leptos::prelude::*;
-use crate::state::IssueResult;
-use crate::components::{Shell, FilterBar, IssueTable};
+use wasm_bindgen_futures::spawn_local;
+use crate::state::ReactiveAppState;
+use crate::components::{Shell, IssueTable, LoadingSpinner};
 
-const PAGE_SIZE: usize = 10;
-
-fn mock_issues() -> Vec<IssueResult> {
-    vec![
-        IssueResult {
-            rule_id: "java:S1130".to_string(),
-            message: "Replace this generic exception declaration with a more specific one.".to_string(),
-            severity: crate::state::Severity::Minor,
-            category: crate::state::Category::Maintainability,
-            file: "src/main/java/com/example/Service.java".to_string(),
-            line: 42,
-            column: Some(13),
-            end_line: Some(42),
-            remediation_hint: Some("Consider using IllegalArgumentException".to_string()),
-        },
-        IssueResult {
-            rule_id: "java:S3752".to_string(),
-            message: "This URL should be parameterised to prevent SQL injection.".to_string(),
-            severity: crate::state::Severity::Major,
-            category: crate::state::Category::Security,
-            file: "src/main/java/com/example/Repository.java".to_string(),
-            line: 156,
-            column: Some(20),
-            end_line: Some(156),
-            remediation_hint: Some("Use PreparedStatement".to_string()),
-        },
-    ]
-}
-
+/// Issues page component
 #[component]
 pub fn IssuesPage() -> impl IntoView {
-    let all_issues = mock_issues();
-    let (current_page, set_current_page) = signal(0isize);
-    let total_issues = all_issues.len();
+    let state = expect_context::<ReactiveAppState>();
+    let (severity, set_severity) = signal(None::<String>);
+    let (category, set_category) = signal(None::<String>);
+    let (file, set_file) = signal(None::<String>);
+    let (page, set_page) = signal(1usize);
 
-    let paginated_issues = move || {
-        let page = current_page.get() as usize;
-        let start = page * PAGE_SIZE;
-        let end = (start + PAGE_SIZE).min(total_issues);
-        if start < total_issues {
-            all_issues[start..end].to_vec()
-        } else {
-            vec![]
+    // Load on mount with page 1
+    {
+        let st = state.clone();
+        spawn_local(async move {
+            st.load_issues(None, None, None, 1).await;
+        });
+    }
+
+    let load_issues = {
+        let st = state.clone();
+        move || {
+            let s = st.clone();
+            let sev = severity.get();
+            let cat = category.get();
+            let f = file.get();
+            let p = page.get();
+            spawn_local(async move {
+                s.load_issues(sev.as_deref(), cat.as_deref(), f.as_deref(), p).await;
+            });
         }
     };
 
-    let total_pages = ((total_issues + PAGE_SIZE - 1) / PAGE_SIZE) as isize;
-
-    let prev_disabled = move || current_page.get() == 0;
-    let next_disabled = move || current_page.get() >= total_pages - 1;
-
     view! {
         <Shell>
-            <div style="max-width: 1400px; margin: 0 auto;">
-                <header style="margin-bottom: 32px;">
-                    <h1 class="text-h1">Issues</h1>
-                    <p style="margin-top: 8px; color: var(--color-text-secondary);">
-                        Browse and filter code quality issues
-                    </p>
+            <div class="p-8">
+                <header class="mb-8">
+                    <h1 class="text-h1 text-text-primary">Issues</h1>
+                    <p class="text-body text-text-secondary mt-1">Browse and filter code quality issues</p>
                 </header>
 
-                <section style="margin-bottom: 32px;">
-                    <FilterBar on_severity_change={move |_| {}} on_category_change={move |_| {}} />
-                </section>
-
-                <section style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <span style="font-size: 14px; color: var(--color-text-secondary);">
-                            Showing {current_page.get() as usize * PAGE_SIZE + 1}-{((current_page.get() as usize + 1) * PAGE_SIZE).min(total_issues)} of {total_issues} issues
-                        </span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 16px;">
-                        <span style="font-size: 14px; color: var(--color-text-muted);">
-                            Page {current_page.get() + 1} of {total_pages}
-                        </span>
-                    </div>
-                </section>
-
-                <section style="margin-bottom: 32px;">
-                    <IssueTable issues={paginated_issues()} />
-                </section>
-
-                <section style="display: flex; justify-content: center; gap: 16px;">
-                    <button
-                        class="btn btn-secondary"
-                        disabled={prev_disabled()}
-                        on:click={move |_| {
-                            if !prev_disabled() {
-                                set_current_page.set(current_page.get() - 1);
-                            }
-                        }}
+                {/* Filters */}
+                <div class="card flex flex-wrap items-center gap-4 mb-6">
+                    <select class="input select w-40"
+                        on:change=move |e| {
+                            set_severity.set(if event_target_value(&e) == "all" { None } else { Some(event_target_value(&e)) });
+                        }
                     >
-                        <span style="display: inline-flex; align-items: center; gap: 8px;">
-                            <svg style="width: 16px; height: 16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
-                            </svg>
-                            Previous
-                        </span>
-                    </button>
-                    <button
-                        class="btn btn-primary"
-                        disabled={next_disabled()}
-                        on:click={move |_| {
-                            if !next_disabled() {
-                                set_current_page.set(current_page.get() + 1);
-                            }
-                        }}
+                        <option value="all">All</option>
+                        <option value="Blocker">Blocker</option>
+                        <option value="Critical">Critical</option>
+                        <option value="Major">Major</option>
+                        <option value="Minor">Minor</option>
+                        <option value="Info">Info</option>
+                    </select>
+
+                    <select class="input select w-48"
+                        on:change=move |e| {
+                            set_category.set(if event_target_value(&e) == "all" { None } else { Some(event_target_value(&e)) });
+                        }
                     >
-                        <span style="display: inline-flex; align-items: center; gap: 8px;">
-                            Next
-                            <svg style="width: 16px; height: 16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
-                            </svg>
-                        </span>
-                    </button>
-                </section>
+                        <option value="all">All</option>
+                        <option value="Reliability">Reliability</option>
+                        <option value="Security">Security</option>
+                        <option value="Maintainability">Maintainability</option>
+                        <option value="Coverage">Coverage</option>
+                    </select>
+
+                    <input type="text" class="input flex-1" placeholder="Search by file..."
+                        on:input=move |e| {
+                            let v = event_target_value(&e);
+                            set_file.set(if v.is_empty() { None } else { Some(v) });
+                        }
+                    />
+
+                    <button class="btn btn-primary" on:click=move |_| { set_page.set(1); load_issues(); }>Apply</button>
+                </div>
+
+                {/* Loading */}
+                {
+                    let st = state.clone();
+                    move || {
+                        if st.loading.get() {
+                            Some(view! { <LoadingSpinner message="Loading issues..." /> })
+                        } else {
+                            None
+                        }
+                    }
+                }
+
+                {/* Error */}
+                {
+                    let st = state.clone();
+                    move || {
+                        st.error.get().map(|msg| {
+                            view! {
+                                <div class="card bg-accent-sunset mb-6">
+                                    <p class="text-body text-severity-critical">{msg}</p>
+                                </div>
+                            }
+                        })
+                    }
+                }
+
+                {/* Count */}
+                {
+                    let st = state.clone();
+                    move || {
+                        let total = st.total_issues_count.get();
+                        let current = st.issues.get().len();
+                        view! {
+                            <p class="text-body-sm text-text-muted mb-4">
+                                "Showing " {current} " of " {total} " issues"
+                            </p>
+                        }
+                    }
+                }
+
+                {/* Table */}
+                {
+                    let st = state.clone();
+                    move || view! { <IssueTable issues={st.issues.get()} /> }
+                }
+
+                {/* Pagination */}
+                {
+                    let st = state.clone();
+                    move || {
+                        let current = page.get();
+                        let total = st.total_pages.get();
+                        if total > 1 {
+                            let on_prev = {
+                                let s = state.clone();
+                                let sev = severity;
+                                let cat = category;
+                                let f = file;
+                                move || {
+                                    let new_page = page.get().saturating_sub(1);
+                                    if new_page >= 1 {
+                                        set_page.set(new_page);
+                                        let s = s.clone();
+                                        let sev_v = sev.get();
+                                        let cat_v = cat.get();
+                                        let f_v = f.get();
+                                        let p = new_page;
+                                        spawn_local(async move {
+                                            s.load_issues(sev_v.as_deref(), cat_v.as_deref(), f_v.as_deref(), p).await;
+                                        });
+                                    }
+                                }
+                            };
+                            let on_next = {
+                                let s = state.clone();
+                                let sev = severity;
+                                let cat = category;
+                                let f = file;
+                                let total_p = total;
+                                move || {
+                                    let new_page = page.get() + 1;
+                                    if new_page <= total_p {
+                                        set_page.set(new_page);
+                                        let s = s.clone();
+                                        let sev_v = sev.get();
+                                        let cat_v = cat.get();
+                                        let f_v = f.get();
+                                        let p = new_page;
+                                        spawn_local(async move {
+                                            s.load_issues(sev_v.as_deref(), cat_v.as_deref(), f_v.as_deref(), p).await;
+                                        });
+                                    }
+                                }
+                            };
+                            Some(view! {
+                                <div class="flex items-center justify-center gap-2 mt-6">
+                                    <button class="btn btn-secondary btn-sm"
+                                        disabled=current == 1
+                                        on:click=move |_| on_prev()>
+                                        "← Prev"
+                                    </button>
+                                    <span class="text-body-sm text-text-muted px-4">
+                                        "Page " {current} " of " {total}
+                                    </span>
+                                    <button class="btn btn-secondary btn-sm"
+                                        disabled=current == total
+                                        on:click=move |_| on_next()>
+                                        "Next →"
+                                    </button>
+                                </div>
+                            })
+                        } else {
+                            None
+                        }
+                    }
+                }
             </div>
         </Shell>
     }

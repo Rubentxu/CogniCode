@@ -2,11 +2,10 @@
 //!
 //! This is a Leptos CSR (Client-Side Rendered) application.
 
-fn main() {
-    // Initialize logging
-    env_logger::init();
+use leptos::prelude::*;
+use cognicode_dashboard::app::App;
 
-    // For now, just verify the library compiles
-    println!("CogniCode Dashboard library compiled successfully");
-    println!("Run with: trunk serve --open");
+fn main() {
+    // Mount the app to the body
+    mount_to_body(App);
 }

@@ -2,7 +2,7 @@
 //! All analysis endpoints call cognicode-quality in-process
 
 use axum::{
-    extract::State,
+    extract::{Request, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -14,10 +14,12 @@ use cognicode_quality::handler::{
     ProjectMetricsResult,
 };
 use cognicode_axiom::rules::{QualityGate, GateCondition, CompareOperator, MetricValue};
+use cognicode_db::quality::QualityStore;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tower_http::cors::CorsLayer;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Request/Response DTOs
@@ -166,6 +168,68 @@ pub struct DashboardConfigDto {
     pub refresh_interval_secs: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssuesResponseDto {
+    pub issues: Vec<IssueDto>,
+    pub total_count: usize,
+    pub page: usize,
+    pub page_size: usize,
+    pub total_pages: usize,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Project Management DTOs
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterProjectRequest {
+    pub name: String,
+    pub path: String,
+}
+
+/// Project info from its .cognicode/cognicode.db
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectInfoDto {
+    pub id: String,             // path-based ID
+    pub name: String,
+    pub path: String,
+    pub has_cognicode_db: bool,
+    pub last_analysis: Option<String>,
+    pub total_issues: usize,
+    pub quality_gate_status: String,
+    pub rating: String,          // Overall rating (A-E)
+    pub debt_minutes: u64,
+    pub blockers: usize,
+    pub criticals: usize,
+    pub files_changed: usize,
+    pub files_total: usize,
+    pub history_count: usize,    // Number of analysis runs in DB
+}
+
+/// History for a specific project
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectHistoryDto {
+    pub project_id: String,
+    pub runs: Vec<HistoryEntryDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryEntryDto {
+    pub timestamp: String,
+    pub total_issues: usize,
+    pub debt_minutes: u64,
+    pub rating: String,
+    pub files_changed: usize,
+    pub new_issues: usize,
+    pub fixed_issues: usize,
+}
+
+/// Project list response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectListDto {
+    pub projects: Vec<ProjectInfoDto>,
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Application State
 // ─────────────────────────────────────────────────────────────────────────────
@@ -173,6 +237,33 @@ pub struct DashboardConfigDto {
 #[derive(Clone)]
 struct AppServerState {
     config: Arc<RwLock<DashboardConfigDto>>,
+    /// Cached analysis result for the last project analyzed
+    analysis_cache: Arc<RwLock<Option<CachedAnalysis>>>,
+    /// Registered projects (path → name)
+    registered_projects: Arc<RwLock<Vec<RegisteredProject>>>,
+}
+
+/// A project registered in the dashboard
+#[derive(Clone)]
+struct RegisteredProject {
+    name: String,
+    path: String,
+}
+
+/// Cached analysis with timestamp for TTL-based invalidation
+#[derive(Clone)]
+struct CachedAnalysis {
+    project_path: String,
+    timestamp: std::time::Instant,
+    summary: AnalysisSummaryDto,
+    issues: Vec<IssueDto>,
+    metrics: ProjectMetricsDto,
+}
+
+impl CachedAnalysis {
+    fn is_valid(&self, project_path: &str) -> bool {
+        self.project_path == project_path && self.timestamp.elapsed().as_secs() < 300 // 5 min TTL
+    }
 }
 
 impl AppServerState {
@@ -188,6 +279,8 @@ impl AppServerState {
                 auto_refresh: false,
                 refresh_interval_secs: 60,
             })),
+            analysis_cache: Arc::new(RwLock::new(None)),
+            registered_projects: Arc::new(RwLock::new(Vec::new())),
         }
     }
 }
@@ -203,7 +296,14 @@ struct ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(self)).into_response()
+        let status = if self.message.contains("not exist") {
+            StatusCode::NOT_FOUND
+        } else if self.message.contains("already") || self.message.contains("duplicate") {
+            StatusCode::CONFLICT
+        } else {
+            StatusCode::INTERNAL_SERVER_ERROR
+        };
+        (status, Json(self)).into_response()
     }
 }
 
@@ -334,7 +434,95 @@ fn convert_issue(issue: QualityIssueResult) -> IssueDto {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// API Handlers
+// Cache-aware analysis helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Get cached analysis if valid, otherwise run a new analysis
+/// Returns (summary, issues, metrics) from cache or new analysis
+async fn get_or_run_analysis(
+    state: &AppServerState,
+    project_path: &str,
+) -> Result<(AnalysisSummaryDto, Vec<IssueDto>, ProjectMetricsDto), String> {
+    // Check cache first
+    {
+        let cache = state.analysis_cache.read().await;
+        if let Some(ref cached) = *cache {
+            if cached.is_valid(project_path) {
+                return Ok((
+                    cached.summary.clone(),
+                    cached.issues.clone(),
+                    cached.metrics.clone(),
+                ));
+            }
+        }
+    }
+
+    // Run new analysis
+    let path = PathBuf::from(project_path);
+    let handler = QualityAnalysisHandler::new(path.clone());
+
+    let params = AnalyzeProjectParams {
+        project_path: path,
+        quick: true,
+        max_duration_secs: Some(60),
+        changed_only: true,
+    };
+
+    let result = handler.analyze_project_impl(params).map_err(|e| e.to_string())?;
+
+    // Build DTOs
+    let metrics = ProjectMetricsDto {
+        ncloc: result.project_metrics.ncloc,
+        functions: result.project_metrics.functions,
+        code_smells: result.project_metrics.code_smells,
+        bugs: result.project_metrics.bugs,
+        vulnerabilities: result.project_metrics.vulnerabilities,
+        issues_by_severity: result.project_metrics.issues_by_severity.clone(),
+    };
+
+    let ratings = compute_ratings(&result.project_metrics);
+    let debt = compute_technical_debt(&result.project_metrics);
+    let gate = evaluate_quality_gate(&result.project_metrics);
+
+    let issues: Vec<IssueDto> = result.issues.into_iter().map(convert_issue).collect();
+
+    let summary = AnalysisSummaryDto {
+        project_path: project_path.to_string(),
+        total_files: result.total_files,
+        total_issues: issues.len(),
+        ratings,
+        metrics: metrics.clone(),
+        technical_debt: debt,
+        quality_gate: gate,
+        incremental: IncrementalInfoDto {
+            files_total: result.incremental.files_total,
+            files_changed: result.incremental.files_changed,
+            files_reused: result.incremental.files_reused,
+            new_code_issues: result.incremental.new_code_issues,
+            legacy_issues: result.incremental.legacy_issues,
+            clean_as_you_code: result.incremental.clean_as_you_code,
+            timed_out: result.incremental.timed_out,
+        },
+    };
+
+    // Update cache
+    {
+        let mut cache = state.analysis_cache.write().await;
+        // Re-count issues from the summary
+        *cache = Some(CachedAnalysis {
+            project_path: project_path.to_string(),
+            timestamp: std::time::Instant::now(),
+            summary: summary.clone(),
+            issues: issues.clone(),
+            metrics: metrics.clone(),
+        });
+    }
+
+    Ok((summary, issues, metrics))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Route Handlers
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Health check endpoint
@@ -356,11 +544,10 @@ async fn run_analysis(
     }
 
     let handler = QualityAnalysisHandler::new(project_path.clone());
-
     let params = AnalyzeProjectParams {
-        project_path,
+        project_path: project_path.clone(),
         quick: req.quick.unwrap_or(true),
-        max_duration_secs: Some(120),
+        max_duration_secs: Some(60),
         changed_only: req.changed_only.unwrap_or(true),
     };
 
@@ -368,23 +555,25 @@ async fn run_analysis(
         message: format!("Analysis failed: {}", e),
     })?;
 
+    let metrics = ProjectMetricsDto {
+        ncloc: result.project_metrics.ncloc,
+        functions: result.project_metrics.functions,
+        code_smells: result.project_metrics.code_smells,
+        bugs: result.project_metrics.bugs,
+        vulnerabilities: result.project_metrics.vulnerabilities,
+        issues_by_severity: result.project_metrics.issues_by_severity.clone(),
+    };
     let ratings = compute_ratings(&result.project_metrics);
     let debt = compute_technical_debt(&result.project_metrics);
     let gate = evaluate_quality_gate(&result.project_metrics);
+    let issues: Vec<IssueDto> = result.issues.into_iter().map(convert_issue).collect();
 
     let summary = AnalysisSummaryDto {
-        project_path: result.project_path,
+        project_path: req.project_path.clone(),
         total_files: result.total_files,
-        total_issues: result.total_issues,
+        total_issues: issues.len(),
         ratings,
-        metrics: ProjectMetricsDto {
-            ncloc: result.project_metrics.ncloc,
-            functions: result.project_metrics.functions,
-            code_smells: result.project_metrics.code_smells,
-            bugs: result.project_metrics.bugs,
-            vulnerabilities: result.project_metrics.vulnerabilities,
-            issues_by_severity: result.project_metrics.issues_by_severity,
-        },
+        metrics: metrics.clone(),
         technical_debt: debt,
         quality_gate: gate,
         incremental: IncrementalInfoDto {
@@ -398,36 +587,28 @@ async fn run_analysis(
         },
     };
 
+    // Cache the result
+    {
+        let mut cache = state.analysis_cache.write().await;
+        *cache = Some(CachedAnalysis {
+            project_path: req.project_path,
+            timestamp: std::time::Instant::now(),
+            summary: summary.clone(),
+            issues,
+            metrics,
+        });
+    }
+
     Ok(Json(summary))
 }
 
 /// Get issues for a project with filtering
 async fn get_issues(
-    State(_state): State<AppServerState>,
+    State(state): State<AppServerState>,
     Json(req): Json<IssuesRequest>,
-) -> ApiResult<Json<Vec<IssueDto>>> {
-    let project_path = PathBuf::from(&req.project_path);
-
-    if !project_path.exists() {
-        return Err(ApiError {
-            message: format!("Project path does not exist: {}", req.project_path),
-        });
-    }
-
-    let handler = QualityAnalysisHandler::new(project_path.clone());
-
-    let params = AnalyzeProjectParams {
-        project_path,
-        quick: false,
-        max_duration_secs: Some(120),
-        changed_only: false,
-    };
-
-    let result = handler.analyze_project_impl(params).map_err(|e| ApiError {
-        message: format!("Analysis failed: {}", e),
-    })?;
-
-    let mut issues: Vec<IssueDto> = result.issues.into_iter().map(convert_issue).collect();
+) -> ApiResult<Json<IssuesResponseDto>> {
+    let (_, mut issues, _) = get_or_run_analysis(&state, &req.project_path).await
+        .map_err(|e| ApiError { message: e })?;
 
     // Apply filters
     if let Some(severity) = &req.severity {
@@ -441,112 +622,74 @@ async fn get_issues(
     }
 
     // Apply pagination
-    let page = req.page.unwrap_or(1);
-    let page_size = req.page_size.unwrap_or(50);
+    let total_count = issues.len();
+    let page = req.page.unwrap_or(1).max(1);
+    let page_size = req.page_size.unwrap_or(20).max(1);
     let start = (page - 1) * page_size;
     let end = start + page_size;
+    let total_pages = (total_count + page_size - 1) / page_size;
 
-    if start < issues.len() {
-        issues = issues[start..end.min(issues.len())].to_vec();
+    let paged = if start < total_count {
+        issues[start..end.min(total_count)].to_vec()
     } else {
-        issues = vec![];
-    }
+        vec![]
+    };
 
-    Ok(Json(issues))
+    Ok(Json(IssuesResponseDto {
+        issues: paged,
+        total_count,
+        page,
+        page_size,
+        total_pages,
+    }))
 }
 
 /// Get project metrics
 async fn get_metrics(
-    State(_state): State<AppServerState>,
+    State(state): State<AppServerState>,
     Json(req): Json<MetricsRequest>,
 ) -> ApiResult<Json<ProjectMetricsDto>> {
-    let project_path = PathBuf::from(&req.project_path);
-
-    if !project_path.exists() {
-        return Err(ApiError {
-            message: format!("Project path does not exist: {}", req.project_path),
-        });
-    }
-
-    let handler = QualityAnalysisHandler::new(project_path.clone());
-
-    let params = AnalyzeProjectParams {
-        project_path,
-        quick: true,
-        max_duration_secs: Some(60),
-        changed_only: true,
-    };
-
-    let result = handler.analyze_project_impl(params).map_err(|e| ApiError {
-        message: format!("Analysis failed: {}", e),
-    })?;
-
-    Ok(Json(ProjectMetricsDto {
-        ncloc: result.project_metrics.ncloc,
-        functions: result.project_metrics.functions,
-        code_smells: result.project_metrics.code_smells,
-        bugs: result.project_metrics.bugs,
-        vulnerabilities: result.project_metrics.vulnerabilities,
-        issues_by_severity: result.project_metrics.issues_by_severity,
-    }))
+    let (_, _, metrics) = get_or_run_analysis(&state, &req.project_path).await
+        .map_err(|e| ApiError { message: e })?;
+    Ok(Json(metrics))
 }
 
 /// Get quality gate status
 async fn get_quality_gate(
-    State(_state): State<AppServerState>,
+    State(state): State<AppServerState>,
     Json(req): Json<QualityGateRequest>,
 ) -> ApiResult<Json<QualityGateResultDto>> {
-    let project_path = PathBuf::from(&req.project_path);
-
-    if !project_path.exists() {
-        return Err(ApiError {
-            message: format!("Project path does not exist: {}", req.project_path),
-        });
-    }
-
-    let handler = QualityAnalysisHandler::new(project_path.clone());
-
-    let params = AnalyzeProjectParams {
-        project_path,
-        quick: true,
-        max_duration_secs: Some(60),
-        changed_only: true,
+    let (_, _, metrics) = get_or_run_analysis(&state, &req.project_path).await
+        .map_err(|e| ApiError { message: e })?;
+    let pm = ProjectMetricsResult {
+        ncloc: metrics.ncloc,
+        functions: metrics.functions,
+        classes: 0,
+        code_smells: metrics.code_smells,
+        bugs: metrics.bugs,
+        vulnerabilities: metrics.vulnerabilities,
+        issues_by_severity: metrics.issues_by_severity,
     };
-
-    let result = handler.analyze_project_impl(params).map_err(|e| ApiError {
-        message: format!("Analysis failed: {}", e),
-    })?;
-
-    Ok(Json(evaluate_quality_gate(&result.project_metrics)))
+    Ok(Json(evaluate_quality_gate(&pm)))
 }
 
 /// Get project ratings
 async fn get_ratings(
-    State(_state): State<AppServerState>,
+    State(state): State<AppServerState>,
     Json(req): Json<RatingsRequest>,
 ) -> ApiResult<Json<ProjectRatingsDto>> {
-    let project_path = PathBuf::from(&req.project_path);
-
-    if !project_path.exists() {
-        return Err(ApiError {
-            message: format!("Project path does not exist: {}", req.project_path),
-        });
-    }
-
-    let handler = QualityAnalysisHandler::new(project_path.clone());
-
-    let params = AnalyzeProjectParams {
-        project_path,
-        quick: true,
-        max_duration_secs: Some(60),
-        changed_only: true,
+    let (_, _, metrics) = get_or_run_analysis(&state, &req.project_path).await
+        .map_err(|e| ApiError { message: e })?;
+    let pm = ProjectMetricsResult {
+        ncloc: metrics.ncloc,
+        functions: metrics.functions,
+        classes: 0,
+        code_smells: metrics.code_smells,
+        bugs: metrics.bugs,
+        vulnerabilities: metrics.vulnerabilities,
+        issues_by_severity: metrics.issues_by_severity,
     };
-
-    let result = handler.analyze_project_impl(params).map_err(|e| ApiError {
-        message: format!("Analysis failed: {}", e),
-    })?;
-
-    Ok(Json(compute_ratings(&result.project_metrics)))
+    Ok(Json(compute_ratings(&pm)))
 }
 
 /// Validate project path
@@ -616,6 +759,152 @@ async fn save_config(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Project Management Handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// List all registered projects with their latest analysis data from cognicode.db
+async fn list_projects(
+    State(state): State<AppServerState>,
+) -> Json<ProjectListDto> {
+    let projects = state.registered_projects.read().await;
+    let mut project_infos = Vec::new();
+
+    for p in projects.iter() {
+        project_infos.push(build_project_info(&p.name, &p.path));
+    }
+
+    Json(ProjectListDto { projects: project_infos })
+}
+
+/// Register a new project by adding it to the dashboard
+async fn register_project(
+    State(state): State<AppServerState>,
+    Json(req): Json<RegisterProjectRequest>,
+) -> ApiResult<Json<ProjectInfoDto>> {
+    let path = req.path.trim().to_string();
+    let project_path = PathBuf::from(&path);
+
+    if !project_path.exists() {
+        return Err(ApiError { message: format!("Project path does not exist: {}", path) });
+    }
+
+    // Check for duplicate
+    {
+        let projects = state.registered_projects.read().await;
+        if projects.iter().any(|p| p.path == path) {
+            return Err(ApiError { message: "Project already registered".to_string() });
+        }
+    }
+
+    let mut projects = state.registered_projects.write().await;
+    let name = if req.name.is_empty() {
+        project_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.clone())
+    } else {
+        req.name.clone()
+    };
+
+    projects.push(RegisteredProject { name: name.clone(), path: path.clone() });
+    let info = build_project_info(&name, &path);
+    Ok(Json(info))
+}
+
+/// Get analysis history for a project
+async fn get_project_history(
+    State(state): State<AppServerState>,
+    axum::extract::Path(project_id): axum::extract::Path<String>,
+) -> ApiResult<Json<ProjectHistoryDto>> {
+    // Find project by ID (the path URL-encoded)
+    let projects = state.registered_projects.read().await;
+    let found = projects.iter().find(|p| p.path == project_id || url_decode(&p.path) == project_id);
+
+    let project = match found {
+        Some(p) => p.clone(),
+        None => return Err(ApiError { message: format!("Project not found: {}", project_id) }),
+    };
+
+    let store = QualityStore::open(&PathBuf::from(&project.path));
+    let runs: Vec<HistoryEntryDto> = store.get_run_history(30).into_iter().map(|s| HistoryEntryDto {
+        timestamp: s.timestamp,
+        total_issues: s.total_issues,
+        debt_minutes: s.debt_minutes,
+        rating: s.rating,
+        files_changed: s.files_changed,
+        new_issues: s.new_issues,
+        fixed_issues: s.fixed_issues,
+    }).collect();
+
+    Ok(Json(ProjectHistoryDto {
+        project_id: project.path.clone(),
+        runs,
+    }))
+}
+
+/// Build project info from a path — reads cognicode.db if available
+fn build_project_info(name: &str, path: &str) -> ProjectInfoDto {
+    let project_path = PathBuf::from(path);
+    let db_path = project_path.join(".cognicode").join("cognicode.db");
+    let has_cognicode_db = db_path.exists();
+
+    if !has_cognicode_db {
+        return ProjectInfoDto {
+            id: path.to_string(),
+            name: name.to_string(),
+            path: path.to_string(),
+            has_cognicode_db: false,
+            last_analysis: None,
+            total_issues: 0,
+            quality_gate_status: "UNKNOWN".to_string(),
+            rating: "?".to_string(),
+            debt_minutes: 0,
+            blockers: 0,
+            criticals: 0,
+            files_changed: 0,
+            files_total: 0,
+            history_count: 0,
+        };
+    }
+
+    let store = QualityStore::open(&project_path);
+    let history = store.get_run_history(1); // Latest run only
+    let latest = history.first();
+
+    ProjectInfoDto {
+        id: path.to_string(),
+        name: name.to_string(),
+        path: path.to_string(),
+        has_cognicode_db: true,
+        last_analysis: latest.map(|r| r.timestamp.clone()),
+        total_issues: latest.map(|r| r.total_issues).unwrap_or(0),
+        quality_gate_status: "PASSED".to_string(),  // Computed separately when needed
+        rating: latest.as_ref().map(|r| r.rating.clone()).unwrap_or_else(|| "?".to_string()),
+        debt_minutes: latest.map(|r| r.debt_minutes).unwrap_or(0),
+        blockers: 0,   // Would need separate query, simplified for now
+        criticals: 0,
+        files_changed: latest.map(|r| r.files_changed).unwrap_or(0),
+        files_total: 0,
+        history_count: store.get_run_history(100).len(),
+    }
+}
+
+fn url_decode(s: &str) -> String {
+    let mut result = String::new();
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(hex) = u8::from_str_radix(&s[i+1..i+3], 16) {
+                result.push(hex as char);
+                i += 3;
+                continue;
+            }
+        }
+        result.push(bytes[i] as char);
+        i += 1;
+    }
+    result
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Server Setup
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -633,11 +922,74 @@ pub async fn start_server(port: u16) {
         .route("/api/rule-profiles", get(get_rule_profiles))
         .route("/api/config", get(get_config))
         .route("/api/config", post(save_config))
+        .route("/api/projects", get(list_projects))
+        .route("/api/projects/register", post(register_project))
+        .route("/api/projects/:id/history", get(get_project_history))
+        .layer(CorsLayer::permissive())
         .with_state(app_state);
+
+    // Serve static files + SPA fallback
+    let dist_dir = std::env::var("DIST_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("dist"));
+    let dist_dir2 = dist_dir.clone();
+    
+    let app = app.fallback_service(tower::service_fn(move |req: Request| {
+        let dist = dist_dir2.clone();
+        async move {
+            let path = req.uri().path().trim_start_matches('/');
+            let file_path = if path.is_empty() || !path.contains('.') {
+                // SPA fallback: routes without extension go to index.html
+                dist.join("index.html")
+            } else {
+                dist.join(path)
+            };
+
+            match tokio::fs::read(&file_path).await {
+                Ok(content) => {
+                    let ext = file_path.extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("");
+                    let mime = match ext {
+                        "wasm" => "application/wasm",
+                        "js" => "application/javascript",
+                        "css" => "text/css",
+                        "html" => "text/html; charset=utf-8",
+                        "png" => "image/png",
+                        "svg" => "image/svg+xml",
+                        "ico" => "image/x-icon",
+                        _ => "application/octet-stream",
+                    };
+                    Ok::<_, std::convert::Infallible>((
+                        StatusCode::OK,
+                        [("content-type", mime)],
+                        content,
+                    ).into_response())
+                }
+                Err(_) => {
+                    // SPA fallback: serve index.html
+                    match tokio::fs::read(dist.join("index.html")).await {
+                        Ok(content) => Ok((
+                            StatusCode::OK,
+                            [("content-type", "text/html; charset=utf-8")],
+                            content,
+                        ).into_response()),
+                        Err(_) => Ok((StatusCode::NOT_FOUND, "Not Found").into_response()),
+                    }
+                }
+            }
+        }
+    }));
 
     let addr = format!("0.0.0.0:{}", port);
     println!("CogniCode Dashboard Server running on http://{}", addr);
     println!("Health check: http://{}/health", addr);
+    println!("API: http://{}/api/...", addr);
+    println!("");
+    println!("To serve the frontend, run in another terminal:");
+    println!("  cd crates/cognicode-dashboard && trunk serve --no-default-features");
+    println!("Or serve static files:");
+    println!("  DIST_DIR=crates/cognicode-dashboard/dist python3 -m http.server 8080 -d \\$DIST_DIR");
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

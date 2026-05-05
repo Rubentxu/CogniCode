@@ -6,22 +6,27 @@ description = "CogniCode Dashboard — Web UI for code quality analysis"
 authors = ["CogniCode Team"]
 license = "MIT"
 
+[features]
+default = ["server"]
+server = ["dep:leptos_axum", "dep:axum", "dep:tower", "dep:tower-http", "dep:tokio", "dep:tracing-subscriber", "dep:env_logger", "dep:cognicode-quality", "dep:cognicode-core", "dep:cognicode-axiom", "dep:cognicode-db"]
+
 [dependencies]
 # Leptos Web Framework
-leptos = { version = "0.7", features = ["csr"] }
-leptos_router = "0.7"
-leptos_meta = "0.7"
+leptos = { version = "0.8", features = ["csr"] }
+leptos_router = "0.8"
+leptos_meta = "0.8"
 
-# Server support
-leptos_axum = "0.7"
-axum = "0.7"
-tower = "0.4"
-tower-http = { version = "0.5", features = ["fs", "cors"] }
+# Server support (optional - only for server binary)
+leptos_axum = { version = "0.8", optional = true }
+axum = { version = "0.7", optional = true }
+tower = { version = "0.4", optional = true }
+tower-http = { version = "0.5", features = ["fs", "cors"], optional = true }
 
-# CogniCode Libraries (embedded, in-process)
-cognicode-quality = { path = "../cognicode-quality" }
-cognicode-core = { path = "../cognicode-core" }
-cognicode-axiom = { path = "../cognicode-axiom" }
+# CogniCode Libraries (optional - only for server binary)
+cognicode-quality = { path = "../cognicode-quality", optional = true }
+cognicode-core = { path = "../cognicode-core", optional = true }
+cognicode-axiom = { path = "../cognicode-axiom", optional = true }
+cognicode-db = { path = "../cognicode-db", optional = true }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -30,17 +35,21 @@ serde_json = "1"
 # Date/Time
 chrono = { version = "0.4", features = ["serde"] }
 
-# Async runtime
+# Async runtime (WASM-compatible)
 gloo-timers = "0.3"
-tokio = { version = "1", features = ["full"] }
+gloo-net = "0.6"
+wasm-bindgen-futures = "0.4"
+
+# Server async runtime (optional)
+tokio = { version = "1", features = ["full"], optional = true }
 
 # Utils
 thiserror = "1"
 anyhow = "1"
 log = "0.4"
-env_logger = "0.11"
+env_logger = { version = "0.11", optional = true }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
@@ -53,6 +62,7 @@ codegen-units = 1
 [[bin]]
 name = "cognicode-dashboard-server"
 path = "src/server.rs"
+required-features = ["server"]
 
 [[bin]]
 name = "cognicode-dashboard"

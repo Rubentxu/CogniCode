@@ -3,81 +3,66 @@
 use leptos::prelude::*;
 
 #[component]
-pub fn FilterBar<F1, F2>(on_severity_change: F1, on_category_change: F2) -> impl IntoView
+pub fn FilterBar<F>(
+    _severity: Signal<Option<String>>,
+    _category: Signal<Option<String>>,
+    _file_filter: Signal<Option<String>>,
+    on_apply: F,
+) -> impl IntoView
 where
-    F1: Fn(Option<String>) + 'static,
-    F2: Fn(Option<String>) + 'static,
+    F: Fn() + 'static,
 {
-    let severity_options = vec![
-        ("All Severities", "all"),
-        ("Blocker", "blocker"),
-        ("Critical", "critical"),
-        ("Major", "major"),
-        ("Minor", "minor"),
-        ("Info", "info"),
-    ];
-
-    let category_options = vec![
-        ("All Categories", "all"),
-        ("Reliability", "reliability"),
-        ("Security", "security"),
-        ("Maintainability", "maintainability"),
-        ("Coverage", "coverage"),
-        ("Duplicates", "duplicate"),
-        ("Complexity", "complexity"),
-    ];
-
     view! {
-        <div style="display: flex; align-items: center; gap: 16px; padding: 24px; background: var(--color-surface-raised); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); flex-wrap: wrap;">
-            <select
-                class="input select"
-                style="min-width: 160px;"
-                on:change={move |e| {
-                    let value = event_target_value(&e);
-                    let filtered = if value == "all" { None } else { Some(value) };
-                    on_severity_change(filtered);
-                }}
-            >
-                {severity_options.iter().map(|(label, value)| {
-                    view! {
-                        <option value={*value}>
-                            {*label}
-                        </option>
+        <div class="card flex flex-wrap items-center gap-4">
+            {/* Severity Filter */}
+            <div class="flex flex-col gap-1">
+                <label class="text-caption text-text-muted uppercase tracking-wider">Severity</label>
+                <select class="input select w-40"
+                    on:change=move |_e| {
+                        // Filter logic handled by parent
                     }
-                }).collect::<Vec<_>>()}
-            </select>
+                >
+                    <option value="all">All</option>
+                    <option value="Blocker">Blocker</option>
+                    <option value="Critical">Critical</option>
+                    <option value="Major">Major</option>
+                    <option value="Minor">Minor</option>
+                    <option value="Info">Info</option>
+                </select>
+            </div>
 
-            <select
-                class="input select"
-                style="min-width: 160px;"
-                on:change={move |e| {
-                    let value = event_target_value(&e);
-                    let filtered = if value == "all" { None } else { Some(value) };
-                    on_category_change(filtered);
-                }}
-            >
-                {category_options.iter().map(|(label, value)| {
-                    view! {
-                        <option value={*value}>
-                            {*label}
-                        </option>
+            {/* Category Filter */}
+            <div class="flex flex-col gap-1">
+                <label class="text-caption text-text-muted uppercase tracking-wider">Category</label>
+                <select class="input select w-48"
+                    on:change=move |_e| {
+                        // Filter logic handled by parent
                     }
-                }).collect::<Vec<_>>()}
-            </select>
+                >
+                    <option value="all">All</option>
+                    <option value="Reliability">Reliability</option>
+                    <option value="Security">Security</option>
+                    <option value="Maintainability">Maintainability</option>
+                    <option value="Coverage">Coverage</option>
+                    <option value="Duplicate">Duplicates</option>
+                    <option value="Complexity">Complexity</option>
+                </select>
+            </div>
 
-            <input
-                type="text"
-                class="input"
-                placeholder="Search issues..."
-                style="flex: 1; min-width: 200px;"
-            />
+            {/* Search */}
+            <div class="flex flex-col gap-1 flex-1 min-w-64">
+                <label class="text-caption text-text-muted uppercase tracking-wider">Search</label>
+                <input
+                    type="text"
+                    class="input"
+                    placeholder="Search by file..."
+                />
+            </div>
 
-            <div style="display: flex; gap: 8px;">
-                <button class="btn btn-primary btn-sm">
+            {/* Apply Button */}
+            <div class="flex items-end">
+                <button class="btn btn-primary" on:click=move |_| on_apply()>
                     Apply Filters
-                </button>
-                <button class="btn btn-secondary btn-sm">
-                    Clear
                 </button>
             </div>
         </div>

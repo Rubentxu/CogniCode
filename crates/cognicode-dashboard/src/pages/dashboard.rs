@@ -1,158 +1,167 @@
-//! Dashboard page with analysis overview
+//! Dashboard Page — Main overview with real API data
 
 use leptos::prelude::*;
-use crate::state::{
-    IssueResult, ProjectRatings, TechnicalDebt, GateCondition, QualityGateResult,
-};
-use crate::components::{
-    Shell, RatingCard, MetricCard, GateStatusBar, IssueTable,
-};
+use wasm_bindgen_futures::spawn_local;
+use crate::state::ReactiveAppState;
+use crate::components::{Shell, RatingCard, MetricCard, GateStatusBar, IssueTable, LoadingSpinner};
 
-fn mock_ratings() -> ProjectRatings {
-    ProjectRatings {
-        reliability: 'A',
-        security: 'B',
-        maintainability: 'B',
-        coverage: 'C',
-    }
-}
-
-fn mock_debt() -> TechnicalDebt {
-    TechnicalDebt {
-        total_minutes: 245,
-        rating: 'C',
-        label: "4h 5min".to_string(),
-    }
-}
-
-fn mock_gate() -> QualityGateResult {
-    QualityGateResult {
-        name: "SonarQube Way".to_string(),
-        status: "PASSED".to_string(),
-        conditions: vec![
-            GateCondition {
-                id: "1".to_string(),
-                name: "Reliability Rating".to_string(),
-                metric: "reliability_rating".to_string(),
-                operator: "<=".to_string(),
-                threshold: 1.0,
-                passed: true,
-            },
-            GateCondition {
-                id: "2".to_string(),
-                name: "Security Rating".to_string(),
-                metric: "security_rating".to_string(),
-                operator: "<=".to_string(),
-                threshold: 2.0,
-                passed: true,
-            },
-        ],
-    }
-}
-
-fn mock_issues() -> Vec<IssueResult> {
-    vec![
-        IssueResult {
-            rule_id: "java:S1130".to_string(),
-            message: "Replace this generic exception declaration with a more specific one.".to_string(),
-            severity: crate::state::Severity::Minor,
-            category: crate::state::Category::Maintainability,
-            file: "src/main/java/com/example/Service.java".to_string(),
-            line: 42,
-            column: Some(13),
-            end_line: Some(42),
-            remediation_hint: Some("Consider using IllegalArgumentException".to_string()),
-        },
-        IssueResult {
-            rule_id: "java:S3752".to_string(),
-            message: "This URL should be parameterised to prevent SQL injection.".to_string(),
-            severity: crate::state::Severity::Major,
-            category: crate::state::Category::Security,
-            file: "src/main/java/com/example/Repository.java".to_string(),
-            line: 156,
-            column: Some(20),
-            end_line: Some(156),
-            remediation_hint: Some("Use PreparedStatement".to_string()),
-        },
-    ]
-}
-
+/// Dashboard page component
 #[component]
 pub fn DashboardPage() -> impl IntoView {
-    let ratings = mock_ratings();
-    let debt = mock_debt();
-    let gate = mock_gate();
-    let issues = mock_issues();
-    let recent_issues: Vec<IssueResult> = issues.iter().take(5).cloned().collect();
+    let state = expect_context::<ReactiveAppState>();
+
+    // Set default project path on mount
+    {
+        let st = state.clone();
+        spawn_local(async move {
+            if st.project_path.get().is_empty() {
+                st.project_path.set(std::env::current_dir()
+                    .unwrap_or_default()
+                    .display()
+                    .to_string());
+            }
+        });
+    }
+
+    let run_analysis = {
+        let st = state.clone();
+        move || {
+            let s = st.clone();
+            spawn_local(async move {
+                s.run_analysis().await;
+            });
+        }
+    };
 
     view! {
         <Shell>
-            <div style="max-width: 1400px; margin: 0 auto;">
-                <header style="margin-bottom: 48px;">
-                    <h1 class="text-h1">Quality Dashboard</h1>
-                    <p class="text-body text-text-secondary" style="margin-top: 8px;">
-                        Last analysis: Just now - 847 lines of code
-                    </p>
-                </header>
+            <div class="p-8">
+                {/* Project Path Bar */}
+                <div class="flex items-center gap-4 mb-8">
+                    <input
+                        type="text"
+                        class="input flex-1"
+                        placeholder="Enter project path..."
+                        prop:value={move || state.project_path.get()}
+                        on:change=move |ev| {
+                            state.project_path.set(event_target_value(&ev));
+                        }
+                    />
+                    <button class="btn btn-primary" on:click=move |_| run_analysis()>
+                        Run Analysis
+                    </button>
+                </div>
 
-                <section style="margin-bottom: 48px;">
-                    <GateStatusBar gate={gate} />
-                </section>
+                {/* Loading */}
+                {
+                    let st = state.clone();
+                    move || {
+                        if st.loading.get() {
+                            Some(view! { <LoadingSpinner message="Analyzing project..." /> })
+                        } else {
+                            None
+                        }
+                    }
+                }
 
-                <section style="margin-bottom: 48px;">
-                    <h2 class="text-h2" style="margin-bottom: 24px;">Project Ratings</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 24px;">
-                        <RatingCard rating={ratings.reliability} label="Reliability" />
-                        <RatingCard rating={ratings.security} label="Security" />
-                        <RatingCard rating={ratings.maintainability} label="Maintainability" />
-                        <RatingCard rating={ratings.coverage} label="Coverage" />
-                    </div>
-                </section>
+                {/* Error */}
+                {
+                    let st = state.clone();
+                    move || {
+                        st.error.get().map(|msg| {
+                            let s = st.clone();
+                            view! {
+                                <div class="card bg-accent-sunset mb-6">
+                                    <p class="text-body text-severity-critical">{msg}</p>
+                                    <button class="btn btn-secondary btn-sm mt-2"
+                                        on:click=move |_| s.clear_error()>
+                                        Dismiss
+                                    </button>
+                                </div>
+                            }
+                        })
+                    }
+                }
 
-                <section style="margin-bottom: 48px;">
-                    <h2 class="text-h2" style="margin-bottom: 24px;">Key Metrics</h2>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px;">
-                        <MetricCard
-                            label="Technical Debt"
-                            value={debt.label.clone()}
-                            trend={None}
-                            icon={None}
-                        />
-                        <MetricCard
-                            label="Issues Found"
-                            value="50".to_string()
-                            trend={None}
-                            icon={None}
-                        />
-                        <MetricCard
-                            label="Lines of Code"
-                            value="847".to_string()
-                            trend={None}
-                            icon={None}
-                        />
-                        <MetricCard
-                            label="Blocker Issues"
-                            value="0".to_string()
-                            trend={None}
-                            icon={None}
-                        />
-                    </div>
-                </section>
+                {/* Analysis Results */}
+                {
+                    let st = state.clone();
+                    move || {
+                        st.analysis.get().map(|summary| {
+                            view! {
+                                <div>
+                                    <header class="mb-8">
+                                        <h1 class="text-h1 text-text-primary">Dashboard</h1>
+                                        <p class="text-body text-text-secondary mt-1">
+                                            {summary.project_path.clone()} " - " {summary.total_files} " files - " {summary.total_issues} " issues"
+                                        </p>
+                                    </header>
 
-                <section>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                        <h2 class="text-h2">
-                            Recent Issues
-                        </h2>
-                        <a href="/issues" style="font-size: 14px; color: var(--color-text-link); text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
-                            View all 50 issues
-                            <svg style="width: 16px; height: 16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
-                            </svg>
-                        </a>
-                    </div>
-                    <IssueTable issues={recent_issues} />
-                </section>
+                                    <section class="mb-8">
+                                        <GateStatusBar gate={summary.quality_gate.clone()} />
+                                    </section>
+
+                                    <section class="mb-8">
+                                        <h2 class="text-h3 text-text-primary mb-4">Project Ratings</h2>
+                                        <div class="grid grid-cols-4 gap-4">
+                                            <RatingCard rating={summary.ratings.reliability} label="Reliability" />
+                                            <RatingCard rating={summary.ratings.security} label="Security" />
+                                            <RatingCard rating={summary.ratings.maintainability} label="Maintainability" />
+                                            <RatingCard rating={summary.ratings.coverage} label="Coverage" />
+                                        </div>
+                                    </section>
+
+                                    <section class="mb-8">
+                                        <h2 class="text-h3 text-text-primary mb-4">Metrics</h2>
+                                        <div class="grid grid-cols-4 gap-4">
+                                            <MetricCard label="Total Issues" value={summary.total_issues.to_string()} />
+                                            <MetricCard label="Code Smells" value={summary.metrics.code_smells.to_string()} />
+                                            <MetricCard label="Bugs" value={summary.metrics.bugs.to_string()} />
+                                            <MetricCard label="Vulnerabilities" value={summary.metrics.vulnerabilities.to_string()} />
+                                        </div>
+                                    </section>
+
+                                    <section class="mb-8">
+                                        <div class="card">
+                                            <h2 class="text-h3 text-text-primary mb-4">Technical Debt</h2>
+                                            <div class="flex items-center gap-6">
+                                                <span class="text-display font-bold">{summary.technical_debt.total_minutes} " min"</span>
+                                                <span class="badge badge-info">{summary.technical_debt.label.clone()}</span>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    <section>
+                                        <div class="flex items-center justify-between mb-4">
+                                            <h2 class="text-h3 text-text-primary">Recent Issues</h2>
+                                            <a href="/issues" class="text-body-sm text-brand font-medium hover:underline">
+                                                "View all ->"
+                                            </a>
+                                        </div>
+                                        <IssueTable issues={st.issues.get()} />
+                                    </section>
+                                </div>
+                            }
+                        })
+                    }
+                }
+
+                {/* Empty State */}
+                {
+                    let st = state.clone();
+                    move || {
+                        if st.analysis.get().is_none() && !st.loading.get() {
+                            Some(view! {
+                                <div class="card text-center py-12">
+                                    <p class="text-h3 text-text-muted">"No analysis yet"</p>
+                                    <p class="text-body text-text-secondary mt-2">"Enter a project path and click Run Analysis"</p>
+                                </div>
+                            })
+                        } else {
+                            None
+                        }
+                    }
+                }
             </div>
         </Shell>
     }

@@ -85,7 +85,7 @@ pub fn ErrorBoundary(children: ChildrenFn) -> impl IntoView {
         <Suspense fallback={move || {
             view! {
                 <div style="display: flex; align-items: center; justify-content: center; min-height: 200px;">
-                    <LoadingSpinner message={Some("Loading...".to_string())} />
+                    <LoadingSpinner message="Loading..." />
                 </div>
             }
         }}>

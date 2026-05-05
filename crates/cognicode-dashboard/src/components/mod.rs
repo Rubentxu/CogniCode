@@ -13,7 +13,7 @@ pub mod error_boundary;
 
 pub use shell::Shell;
 pub use rating_card::RatingCard;
-pub use metric_card::{MetricCard, Trend, TrendDirection};
+pub use metric_card::MetricCard;
 pub use severity_badge::SeverityBadge;
 pub use gate_status_bar::GateStatusBar;
 pub use issue_table::IssueTable;
