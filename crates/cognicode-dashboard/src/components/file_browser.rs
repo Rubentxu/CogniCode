@@ -88,7 +88,35 @@ pub fn FileBrowser(
                 </button>
             </div>
 
-            {/* Up directory */}
+            {/* Quick access bar */}
+            <div class="flex items-center gap-2 mb-3 pb-3 border-b border-border">
+                <button class="btn btn-secondary btn-sm"
+                    on:click={let n = navigate_to.clone(); move |_| n("/home".to_string())}>
+                    "🏠 Home"
+                </button>
+                {move || {
+                    let home = "/home/".to_string();
+                    let user = browser_path.get();
+                    if user.starts_with("/home/") {
+                        let parts: Vec<&str> = user.split('/').collect();
+                        if parts.len() >= 3 {
+                            let user_home = format!("/home/{}", parts[2]);
+                            let n = navigate_to.clone();
+                            Some(view! {
+                                <button class="btn btn-secondary btn-sm"
+                                    on:click=move |_| n(user_home.clone())>
+                                    "👤 /home/" {parts[2].to_string()}
+                                </button>
+                            }.into_any())
+                        } else { None }
+                    } else { None }
+                }}
+                <button class="btn btn-secondary btn-sm"
+                    on:click={let n = navigate_to.clone(); move |_| n("/".to_string())}>
+                    "📂 /"
+                </button>
+            </div>
+
             {move || {
                 let path = browser_path.get();
                 if path != "/" && !path.is_empty() {
