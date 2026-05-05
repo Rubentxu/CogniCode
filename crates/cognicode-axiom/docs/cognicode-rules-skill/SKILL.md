@@ -3,25 +3,87 @@ name: cognicode-rules
 description: >
   Master skill for developing, testing, and auditing CogniCode quality rules.
   Covers SonarQube-derived best practices, tree-sitter AST analysis, regex safety,
-  test strategies (unit/integration/false-positive), and the full rule lifecycle.
+  test strategies (unit/integration/false-positive), self-improvement loops via
+  dashboard feedback, and full ecosystem integration (axiom → quality → dashboard).
   Trigger: When creating, modifying, testing, or auditing CogniCode detection rules,
-  or when working with cognicode-axiom, cognicode-quality, or rule catalogs.
+  fixing false positives, migrating regex to tree-sitter, or working with
+  cognicode-axiom, cognicode-quality, rule catalogs, or dashboard issue reports.
 license: Apache-2.0
 metadata:
   author: gentleman-programming
-  version: "2.0"
+  version: "2.1"
 ---
 
-# CogniCode Rules — Development & Testing Skill
+# CogniCode Rules — Master Skill (v2.1)
 
 ## When to Use
 
-- Creating a **new detection rule** (catalog.rs)
-- **Fixing a false positive** in an existing rule
+- Creating a **new detection rule** (catalog.rs or `rules/` module)
+- **Fixing a false positive** reported by dashboard or users
 - **Writing tests** for rules (unit, integration, FP prevention)
-- **Auditing** rules for correctness or performance
-- **Migrating** rules from regex to tree-sitter AST
-- **Reviewing** rule PRs for quality
+- **Auditing** rules for correctness, performance, or FP risk
+- **Migrating** rules from regex line-scanning to tree-sitter AST queries
+- **Self-improving** rules using dashboard feedback loop
+- **Reviewing** rule PRs for quality against this skill's standards
+
+## Ecosystem Integration Map
+
+```
+User reports issue (Dashboard)
+        │
+        ▼
+┌──────────────────┐     ┌─────────────────┐     ┌──────────────────┐
+│  cognicode-rules │────▶│ cognicode-axiom │────▶│ cognicode-quality │
+│  (this skill)    │     │  (rule engine)   │     │  (analysis)       │
+└──────────────────┘     └────────┬────────┘     └────────┬─────────┘
+                                  │                        │
+                                  │    ┌───────────────────┘
+                                  ▼    ▼
+                         ┌──────────────────┐
+                         │ .cognicode/      │
+                         │ cognicode.db     │ ← SQLite persistence
+                         └────────┬─────────┘
+                                  │
+                                  ▼
+                         ┌──────────────────┐
+                         │ Dashboard        │
+                         │ (visualization)  │
+                         └────────┬─────────┘
+                                  │
+                    ┌─────────────┘
+                    ▼
+              User sees issue → Reports FP → Back to top
+```
+
+## Self-Improvement Loop (Auto-Fix)
+
+When a false positive is detected via dashboard or user report:
+
+```
+1. Identify the FP pattern
+   curl http://dashboard/api/issues?rule_id=SXXXX
+
+2. Read the rule source
+   grep -A30 'id: "SXXXX"' crates/cognicode-axiom/src/rules/catalog.rs
+
+3. Apply the fix
+   A. Add word boundaries (\b) to regex patterns
+   B. Add comment/string skipping logic
+   C. Migrate to tree-sitter query if structural
+
+4. Add FP regression test
+   #[test] fn test_SXXXX_no_fp_{description}() { ... }
+
+5. Run tests
+   cargo test -p cognicode-axiom --lib SXXXX
+
+6. Verify on dashboard
+   curl -X POST http://dashboard/api/analysis -d '{...}' | jq '.issues'
+   → Confirm the FP no longer appears
+
+7. Commit with traceability
+   git commit -m "fix(axiom): SXXXX — {what was fixed} (reported via dashboard)"
+```
 
 ## Architecture Overview
 
@@ -32,12 +94,11 @@ cognicode-axiom/src/rules/
 ├── catalog_tests_generated.rs ← Auto-generated tests
 ├── types.rs            ← RuleContext, Issue, Severity, Category
 ├── mod.rs              ← RuleRegistry, inventory
-├── rules/              ← Separate rule files (style.rs, complexity.rs, etc.)
-│   ├── style.rs
-│   ├── complexity.rs
-│   ├── security.rs
-│   └── ...
-└── rule_factory.rs     ← Factory pattern for rule creation
+├── rule_factory.rs     ← Factory pattern for rule creation
+└── rules/              ← Separate rule files
+    ├── style.rs
+    ├── complexity.rs
+    └── security.rs
 ```
 
 ### RuleContext — Available Data
@@ -51,6 +112,22 @@ pub struct RuleContext<'a> {
     pub graph: &'a CallGraph,            // Project call graph
     pub metrics: &'a FileMetrics,        // Pre-computed file metrics
 }
+```
+
+### The Quality Handler Flow
+
+```
+QualityAnalysisHandler::analyze_project_impl()
+  │
+  ├─ Load AnalysisState (from .cognicode/cognicode.db)
+  ├─ Find changed files (BLAKE3 hashes)
+  ├─ For each file:
+  │   ├─ Parse with tree-sitter → RuleContext { tree, source, ... }
+  │   ├─ Register rules from catalog (filtered by language)
+  │   ├─ Run each rule: rule.check(&ctx) → Vec<Issue>
+  │   └─ Collect issues
+  ├─ Persist to SQLite (analysis_runs, issues)
+  └─ Return ProjectAnalysisResult → Dashboard reads this
 ```
 
 ## Critical Decision: Regex vs Tree-Sitter
@@ -74,17 +151,6 @@ pub struct RuleContext<'a> {
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
-### When to Use Which
-
-| Pattern | Regex | Tree-Sitter | Why |
-|---------|-------|-------------|-----|
-| `password = "xxx"` | ✅ with FP guards | — | Simple pattern, no structure needed |
-| `format!("SELECT...")` | ❌ | ✅ | Needs AST to find `format!` macro + check content |
-| `if x { if y { if z {} } }` | ❌ | ✅ | Nesting depth requires tree traversal |
-| `let unused_var = ...` | ❌ | ✅ | Needs scope analysis + usage tracking |
-| `TODO: fix this` | ✅ | — | Textual pattern, intentionally in comments |
-| `http://example.com` | ✅ with FP guards | — | URL pattern, but skip lines with `https://` |
-
 ## Regex Safety Protocol (MANDATORY)
 
 ### 1. Word Boundaries
@@ -104,31 +170,24 @@ pub struct RuleContext<'a> {
 ### 2. Comment Skipping
 
 ```rust
-// ❌ WRONG — matches patterns in comments
-for (line_idx, line) in ctx.source.lines().enumerate() {
-    if re.is_match(line) { ... }
-}
-
-// ✅ CORRECT — skip comment lines
+// ✅ ALWAYS do this when scanning ctx.source.lines()
 for (line_idx, line) in ctx.source.lines().enumerate() {
     let trimmed = line.trim();
+    if trimmed.is_empty() { continue; }
     if trimmed.starts_with("//") || trimmed.starts_with("///") 
     || trimmed.starts_with("//!") || trimmed.starts_with("#") 
     || trimmed.starts_with("/*") || trimmed.starts_with("*") {
         continue;
     }
-    if re.is_match(line) { ... }
+    if re.is_match(trimmed) { ... }
 }
 ```
 
 ### 3. String Literal Exclusion
 
 ```rust
-// For security rules (S2068, S4792), also skip lines that are string literals
 fn is_inside_string(line: &str) -> bool {
-    let line = line.trim();
-    // Skip lines that are part of a multi-line string
-    line.starts_with('"') && !line.contains('=')
+    line.trim().starts_with('"') && !line.contains('=')
 }
 ```
 
@@ -144,32 +203,49 @@ let query = tree_sitter::Query::new(
         function: (identifier) @func
         arguments: (arguments (string) @arg))"#
 )?;
-
-let mut cursor = tree_sitter::QueryCursor::new();
-let matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
-
-for m in matches {
-    for cap in m.captures {
-        let node = cap.node;
-        // Only matches actual code, not comments or strings
-    }
-}
+// Only matches actual code, never comments or strings
 ```
 
 ### Node Traversal for Structural Rules
 
 ```rust
-fn check_nesting(node: &tree_sitter::Node, depth: usize, max: usize) -> Vec<Issue> {
+fn walk_nodes(node: &tree_sitter::Node, depth: usize, max: usize, 
+              source: &str, file: &Path) -> Vec<Issue> {
     let mut issues = Vec::new();
-    if node.kind() == "if_statement" || node.kind() == "for_statement" {
-        if depth > max {
-            issues.push(/* create issue */);
-        }
+    let kind = node.kind();
+    
+    // Check this node
+    if kind == "if_statement" && depth > max {
+        issues.push(Issue::new(...));
     }
-    for child in node.children(&mut node.walk()) {
-        issues.extend(check_nesting(&child, depth + 1, max));
+    
+    // Recurse into children
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        issues.extend(walk_nodes(&child, depth + 1, max, source, file));
     }
     issues
+}
+```
+
+### Finding Functions/Methods
+
+```rust
+fn query_functions(tree: &tree_sitter::Tree, source: &str) -> Vec<tree_sitter::Node> {
+    let query = tree_sitter::Query::new(
+        &language,
+        r#"(function_item name: (identifier) @name)"#
+    ).unwrap();
+    
+    let mut cursor = tree_sitter::QueryCursor::new();
+    let mut functions = Vec::new();
+    
+    for m in cursor.matches(&query, tree.root_node(), source.as_bytes()) {
+        for cap in m.captures {
+            functions.push(cap.node);
+        }
+    }
+    functions
 }
 ```
 
@@ -179,7 +255,7 @@ fn check_nesting(node: &tree_sitter::Node, depth: usize, max: usize) -> Vec<Issu
 
 ```
         ┌─────────┐
-        │   E2E    │  ← analyze real project, check dashboard
+        │   E2E    │  ← analyze real project via dashboard
         ├─────────┤
         │Integration│ ← multi-file, multi-rule, call graph
         ├───────────┤
@@ -198,57 +274,6 @@ fn check_nesting(node: &tree_sitter::Node, depth: usize, max: usize) -> Vec<Issu
 | **Edge Case** | 1+ | Boundary condition (empty file, single char) |
 | **Rule Properties** | 1 | id(), name(), severity(), category(), language() |
 
-### Test Template
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_sXXXX_detects_pattern() {
-        let source = r#"
-fn main() {
-    let password = "secret123";  // Should detect
-}
-"#;
-        let issues = with_rule_context(source, Language::Rust, |ctx| {
-            SXXXXRule::new().check(ctx)
-        });
-        assert!(!issues.is_empty(), "Expected SXXXX to detect hardcoded password");
-        assert_eq!(issues[0].rule_id, "SXXXX");
-    }
-
-    #[test]
-    fn test_sXXXX_no_fp_in_comment() {
-        let source = r#"
-// Example: let password = "secret";
-//! This module provides password hashing
-fn main() {
-    let hash = argon2("data");
-}
-"#;
-        let issues = with_rule_context(source, Language::Rust, |ctx| {
-            SXXXXRule::new().check(ctx)
-        });
-        assert!(issues.is_empty(), "SXXXX should NOT trigger on comments");
-    }
-
-    #[test]
-    fn test_sXXXX_no_fp_in_variable_name() {
-        let source = r#"
-fn main() {
-    let password_hash = get_env("SECRET");
-}
-"#;
-        let issues = with_rule_context(source, Language::Rust, |ctx| {
-            SXXXXRule::new().check(ctx)
-        });
-        assert!(issues.is_empty(), "SXXXX should NOT trigger on env vars");
-    }
-}
-```
-
 ## Common Anti-Patterns
 
 ### ❌ Scanning raw lines without comment filtering
@@ -256,34 +281,26 @@ fn main() {
 // 100+ rules do this — causes FP on documentation
 for line in ctx.source.lines() { ... }
 ```
+**Fix**: Add comment/string skip (see Protocol above)
 
 ### ❌ Regex without word boundaries
 ```rust
 (r"des", ...)  // Matches "provides", "design", "destination"
 ```
+**Fix**: `r"(?:\b|_)des\b"` (word boundary before/underscore, word boundary after)
 
 ### ❌ No false positive tests
-```rust
-// Only tests that the rule triggers, never tests it doesn't
-assert!(!issues.is_empty())
-```
+**Fix**: Add 3 FP test categories (see Test Templates)
 
 ### ❌ Using regex when tree-sitter would be better
-```rust
-// Trying to detect function calls with regex
-r"\w+\s*\(.*\)"  // Matches any parenthesized expression
-```
+**Fix**: Use tree-sitter queries for structural patterns (SQL injection, nesting, unused vars)
 
-### ✅ The SonarQube Way: detect structure, not text
-```rust
-// Use tree-sitter to find actual function calls
-let query = tree_sitter::Query::new(&lang, "(call_expression) @call")?;
-```
+### ❌ No self-improvement feedback loop
+**Fix**: Monitor dashboard for user-reported FPs, fix + add regression test in same commit
 
 ## Rule Development Checklist
 
 Before submitting a rule PR:
-
 - [ ] **Approach**: Is regex or tree-sitter the right tool?
 - [ ] **Regex safety**: Word boundaries (`\b`), prefix handling (`(?:\b|_)`)
 - [ ] **Comment skip**: Does the rule skip `//`, `///`, `//!`, `/*` comments?
@@ -294,8 +311,32 @@ Before submitting a rule PR:
 - [ ] **Properties test**: id, name, severity, category
 - [ ] **No hardcoded paths**: Use `ctx.file_path`, not absolute paths
 - [ ] **Remediation message**: Clear, actionable guidance
+- [ ] **Dashboard verified**: Check that issue appears correctly in dashboard
+- [ ] **Self-improvement trace**: FP fix includes dashboard issue reference
 
-## Commands
+## Dashboard Integration Commands
+
+```bash
+# Register project in dashboard
+curl -X POST http://localhost:3000/api/projects/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"CogniCode","path":"/home/rubentxu/Proyectos/rust/CogniCode"}'
+
+# Run analysis and check issues
+curl -X POST http://localhost:3000/api/analysis \
+  -H "Content-Type: application/json" \
+  -d '{"project_path":"/home/rubentxu/Proyectos/rust/CogniCode","quick":true}'
+
+# Check specific rule issues in dashboard
+curl -X POST http://localhost:3000/api/issues \
+  -H "Content-Type: application/json" \
+  -d '{"project_path":"/home/rubentxu/Proyectos/rust/CogniCode","rule_id":"SXXXX"}'
+
+# Verify FP is fixed (should return 0 issues)
+curl -s ... | jq '.issues | length'
+```
+
+## Development Commands
 
 ```bash
 # Run all tests for a specific rule
@@ -307,11 +348,11 @@ cargo test -p cognicode-axiom --lib
 # Run with output to debug FP issues  
 cargo test -p cognicode-axiom --lib SXXXX -- --nocapture
 
-# Format code
-cargo fmt -p cognicode-axiom
+# Full quality analysis (test your rule on real code)
+cargo run -p cognicode-quality -- analyze /path/to/project
 
-# Check compilation
-cargo check -p cognicode-axiom
+# Check what rules fire on a specific file
+cargo test -p cognicode-axiom --lib SXXXX -- --nocapture 2>&1 | grep "assert"
 ```
 
 ## Resources
@@ -321,3 +362,22 @@ cargo check -p cognicode-axiom
 - **Parser**: `crates/cognicode-core/src/infrastructure/parser/` (tree-sitter infra)
 - **Handler**: `crates/cognicode-quality/src/handler.rs` (analysis flow)
 - **Dashboard**: `crates/cognicode-dashboard/` (visualization of issues)
+- **References**: See [references/](references/) for detailed patterns
+  - [sonarqube-patterns.md](references/sonarqube-patterns.md) — SonarQube architecture
+  - [test-patterns.md](references/test-patterns.md) — Test templates
+  - [tree-sitter-queries.md](references/tree-sitter-queries.md) — Query patterns
+
+## Compact Rules (for agent injection)
+
+```
+- ALWAYS use word boundaries in regex: (?:\b|_)des\b not just "des"
+- ALWAYS skip comment lines in line-scanning rules (//, ///, //!, #, /*)
+- ALWAYS add 3+ false positive tests per rule (comment, identifier, English word)
+- RuleContext has tree_sitter::Tree available — use queries instead of regex for structural patterns
+- Dashboard is the feedback loop: monitor issues, fix FPs, add regression tests
+- Self-improvement: FP report → fix rule → add test → verify on dashboard → commit
+- Tree-sitter queries match actual code nodes, never comments or strings
+- 854 rules exist; only 11 have tests; prioritize security/vulnerability rules for testing
+- Use ctx.graph (CallGraph) and ctx.metrics (FileMetrics) for semantic analysis
+- cognicode-quality handler: analyze_project_impl() → RuleContext → rule.check() → Issue → SQLite → Dashboard
+```

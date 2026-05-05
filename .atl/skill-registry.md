@@ -55,4 +55,36 @@ judgment-day, skill-creator
 
 bug-find, rust-ddd-expert, ralph-rust, pretty-mermaid, product-owner,
 documentacion, investigacion, review-wasm, frontend-design, pruebas-cli,
-refactor, git-versioning, doc-writer
+refactor, git-versioning, doc-writer, cognicode-rules
+
+## CogniCode Rules Development
+
+**Skill**: `cognicode-rules` (`.claude/skills/cognicode-rules/SKILL.md`)
+**Trigger**: When creating, modifying, testing, or auditing CogniCode detection rules in cognicode-axiom,
+fixing false positives detected by dashboard, migrating regex rules to tree-sitter, or working with
+rule catalogs and the quality analysis pipeline.
+
+### Compact Rules (inject for rule development, testing, audit)
+
+```
+- ALWAYS use word boundaries in regex: (?:\b|_)des\b not just "des" or "sha1"
+- ALWAYS skip comment lines in line-scanning rules (//, ///, //!, #, /*)
+- ALWAYS add 3+ false positive tests per rule (comment, identifier, English word)
+- RuleContext has tree_sitter::Tree — prefer queries over regex for structural patterns
+- Dashboard is the FP feedback loop: monitor issues → fix rule → add test → verify on dashboard
+- Tree-sitter queries match actual code nodes, never comments or strings
+- 854 rules exist; <2% have tests; prioritize security/vulnerability rules for test coverage
+- Use ctx.graph (CallGraph) and ctx.metrics (FileMetrics) for semantic context
+- Self-improvement loop: FP report → fix rule → add regression test → verify → commit
+- Migrate security rules (S2068, S4792, S5332) from regex to tree-sitter for accuracy
+```
+
+### Ecosystem Integration
+
+| Component | Role |
+|-----------|------|
+| `cognicode-axiom` | Rule engine (854 rules, catalog, types) |
+| `cognicode-quality` | Analysis handler (parses files, runs rules, persists to SQLite) |
+| `cognicode-db` | Persistence (analysis_runs, issues table with status tracking) |
+| `cognicode-dashboard` | Visualization (issue browser, metrics, quality gate, FP reports) |
+| `cognicode-core` | Infrastructure (tree-sitter parser, call graph, semantic analysis) |
