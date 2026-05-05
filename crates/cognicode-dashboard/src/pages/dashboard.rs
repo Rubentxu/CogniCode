@@ -10,19 +10,6 @@ use crate::components::{Shell, RatingCard, MetricCard, GateStatusBar, IssueTable
 pub fn DashboardPage() -> impl IntoView {
     let state = expect_context::<ReactiveAppState>();
 
-    // Set default project path on mount
-    {
-        let st = state.clone();
-        spawn_local(async move {
-            if st.project_path.get().is_empty() {
-                st.project_path.set(std::env::current_dir()
-                    .unwrap_or_default()
-                    .display()
-                    .to_string());
-            }
-        });
-    }
-
     let run_analysis = {
         let st = state.clone();
         move || {
@@ -36,21 +23,15 @@ pub fn DashboardPage() -> impl IntoView {
     view! {
         <Shell>
             <div class="p-8">
-                {/* Project Path Bar */}
-                <div class="flex items-center gap-4 mb-8">
-                    <input
-                        type="text"
-                        class="input flex-1"
-                        placeholder="Enter project path..."
-                        prop:value={move || state.project_path.get()}
-                        on:change=move |ev| {
-                            state.project_path.set(event_target_value(&ev));
-                        }
-                    />
-                    <button class="btn btn-primary" on:click=move |_| run_analysis()>
-                        Run Analysis
-                    </button>
-                </div>
+                {/* Header: show selected project or link to Projects */}
+                <header class="mb-8">
+                    <h1 class="text-h1 text-text-primary">Dashboard</h1>
+                    {
+                        let st = state.clone();
+                        let ra = run_analysis.clone();
+                        move || render_header_info(st.clone(), ra.clone())
+                    }
+                </header>
 
                 {/* Loading */}
                 {
@@ -58,9 +39,7 @@ pub fn DashboardPage() -> impl IntoView {
                     move || {
                         if st.loading.get() {
                             Some(view! { <LoadingSpinner message="Analyzing project..." /> })
-                        } else {
-                            None
-                        }
+                        } else { None }
                     }
                 }
 
@@ -90,13 +69,6 @@ pub fn DashboardPage() -> impl IntoView {
                         st.analysis.get().map(|summary| {
                             view! {
                                 <div>
-                                    <header class="mb-8">
-                                        <h1 class="text-h1 text-text-primary">Dashboard</h1>
-                                        <p class="text-body text-text-secondary mt-1">
-                                            {summary.project_path.clone()} " - " {summary.total_files} " files - " {summary.total_issues} " issues"
-                                        </p>
-                                    </header>
-
                                     <section class="mb-8">
                                         <GateStatusBar gate={summary.quality_gate.clone()} />
                                     </section>
@@ -150,19 +122,48 @@ pub fn DashboardPage() -> impl IntoView {
                 {
                     let st = state.clone();
                     move || {
-                        if st.analysis.get().is_none() && !st.loading.get() {
+                        if st.analysis.get().is_none() && st.selected_project_name.get().is_some() && !st.loading.get() {
                             Some(view! {
                                 <div class="card text-center py-12">
                                     <p class="text-h3 text-text-muted">"No analysis yet"</p>
-                                    <p class="text-body text-text-secondary mt-2">"Enter a project path and click Run Analysis"</p>
+                                    <p class="text-body text-text-secondary mt-2">"Click 'Run Analysis' above to analyze this project"</p>
                                 </div>
                             })
-                        } else {
-                            None
-                        }
+                        } else { None }
                     }
                 }
             </div>
         </Shell>
+    }
+}
+
+fn render_header_info(state: ReactiveAppState, run_analysis: impl Fn() + Clone + Send + 'static) -> impl IntoView {
+    move || {
+        let name = state.selected_project_name.get();
+        let path = state.project_path.get();
+        let ra = run_analysis.clone();
+        if let Some(ref n) = name {
+            view! {
+                <div class="flex items-center gap-4 mt-2">
+                    <span class="text-body text-text-secondary">
+                        "Project: " <strong class="text-text-primary">{n.clone()}</strong>
+                    </span>
+                    <span class="text-mono text-body-sm text-text-muted">{path}</span>
+                    <button class="btn btn-secondary btn-sm" on:click=move |_| ra()>
+                        Run Analysis
+                    </button>
+                </div>
+            }.into_any()
+        } else {
+            view! {
+                <p class="text-body text-text-secondary mt-2">
+                    "No project selected. " 
+                    <a href="/projects" class="text-brand font-medium hover:underline">
+                        "Go to Projects →"
+                    </a>
+                    " to register or select one."
+                </p>
+            }.into_any()
+        }
     }
 }

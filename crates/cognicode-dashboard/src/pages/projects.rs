@@ -1,10 +1,10 @@
-//! Projects Page — SonarQube-style list with register
+//! Projects Page — SonarQube-style list with register + file browser
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use crate::state::ReactiveAppState;
 use crate::api_client::ProjectInfoDto;
-use crate::components::{Shell, LoadingSpinner};
+use crate::components::{Shell, LoadingSpinner, FileBrowser};
 
 #[component]
 pub fn ProjectsPage() -> impl IntoView {
@@ -12,7 +12,6 @@ pub fn ProjectsPage() -> impl IntoView {
     let (projects, set_projects) = signal(Vec::<ProjectInfoDto>::new());
     let (show_register, set_show_register) = signal(false);
 
-    // Load on mount
     {
         let st = state.clone();
         spawn_local(async move {  
@@ -35,21 +34,24 @@ pub fn ProjectsPage() -> impl IntoView {
                         {move || if show_register.get() { "Cancel" } else { "+ Add Project" }}
                     </button>
                 </header>
-                <div>
-                    {move || state.loading.get().then(|| view! {
-                        <LoadingSpinner message="Loading..." />
-                    })}
-                </div>
-                <div>
-                    {move || show_register.get().then(|| view! {
+                {
+                    let st = state.clone();
+                    move || st.loading.get().then(|| view! { <LoadingSpinner message="Loading..." /> })
+                }
+                {
+                    let st = state.clone();
+                    move || show_register.get().then(|| view! {
                         <RegisterForm
-                            state=state.clone()
+                            state=st.clone()
                             set_projects=set_projects
                             set_show_register=set_show_register
                         />
-                    })}
-                </div>
-                <ProjectList projects=projects />
+                    })
+                }
+                {
+                    let st = state.clone();
+                    view! { <ProjectList projects=projects state=st /> }
+                }
             </div>
         </Shell>
     }
@@ -63,9 +65,12 @@ fn RegisterForm(
 ) -> impl IntoView {
     let (register_name, set_register_name) = signal(String::new());
     let (register_path, set_register_path) = signal(String::new());
+    let (show_browser, set_show_browser) = signal(false);
 
     let do_register = {
         let st = state;
+        let _ = register_name;
+        let _ = register_path;
         move |_| {
             let s = st.clone();
             let name = register_name.get();
@@ -74,6 +79,8 @@ fn RegisterForm(
                 s.loading.set(true);
                 match s.api.register_project(&name, &path).await {
                     Ok(info) => {
+                        s.selected_project_name.set(Some(info.name.clone()));
+                        s.project_path.set(info.path.clone());
                         set_projects.update(|l| l.push(info));
                         set_show_register.set(false);
                     }
@@ -88,19 +95,47 @@ fn RegisterForm(
         <div class="card mb-8">
             <h3 class="text-h3 text-text-primary mb-4">Register New Project</h3>
             <p class="text-body-sm text-text-secondary mb-4">
-                "Enter the project path. The dashboard reads from " <code class="text-mono">".cognicode/cognicode.db"</code>
+                "Select a project directory. The dashboard will read from its " <code class="text-mono">".cognicode/cognicode.db"</code> " file."
             </p>
             <div class="space-y-4">
                 <div>
-                    <label class="text-caption text-text-muted uppercase mb-1 block">Name</label>
-                    <input type="text" class="input" placeholder="My Project"
-                        on:input=move |e| set_register_name.set(event_target_value(&e)) />
+                    <label class="text-caption text-text-muted uppercase mb-1 block">Project Name</label>
+                    <input type="text" class="input" placeholder="Auto-detected from path"
+                        prop:value={move || register_name.get()}
+                        on:input=move |e| set_register_name.set(event_target_value(&e))
+                    />
                 </div>
                 <div>
-                    <label class="text-caption text-text-muted uppercase mb-1 block">Path</label>
-                    <input type="text" class="input" placeholder="/path/to/project"
-                        on:input=move |e| set_register_path.set(event_target_value(&e)) />
+                    <label class="text-caption text-text-muted uppercase mb-1 block">Project Path</label>
+                    <div class="flex gap-2">
+                        <input type="text" class="input flex-1" placeholder="/path/to/project"
+                            prop:value={move || register_path.get()}
+                            on:input=move |e| {
+                                let val = event_target_value(&e);
+                                // Auto-detect name from path
+                                if let Some(n) = val.rsplit('/').next() {
+                                    if !n.is_empty() {
+                                        set_register_name.set(n.to_string());
+                                    }
+                                }
+                                set_register_path.set(val);
+                            }
+                        />
+                        <button class="btn btn-secondary btn-sm"
+                            on:click=move |_| set_show_browser.set(!show_browser.get())>
+                            {move || if show_browser.get() { "Hide" } else { "Browse" }}
+                        </button>
+                    </div>
                 </div>
+
+                {move || show_browser.get().then(|| view! {
+                    <FileBrowser
+                        current_path=register_path
+                        on_select=set_register_path
+                        on_close=set_show_browser
+                    />
+                })}
+
                 <button class="btn btn-primary" on:click=do_register>Register</button>
             </div>
         </div>
@@ -108,7 +143,7 @@ fn RegisterForm(
 }
 
 #[component]
-fn ProjectList(projects: ReadSignal<Vec<ProjectInfoDto>>) -> impl IntoView {
+fn ProjectList(projects: ReadSignal<Vec<ProjectInfoDto>>, state: ReactiveAppState) -> impl IntoView {
     move || {
         let list = projects.get();
         if list.is_empty() {
@@ -123,8 +158,16 @@ fn ProjectList(projects: ReadSignal<Vec<ProjectInfoDto>>) -> impl IntoView {
                 let rc = match p.rating.as_str() { "A"|"B" => "bg-rating-a", "C" => "bg-rating-c", _ => "bg-rating-e" };
                 let gc = if p.quality_gate_status == "PASSED" { "badge-success" } else { "badge-error" };
                 let ts = p.last_analysis.as_ref().map(|t| t[..19].to_string()).unwrap_or_else(|| "Never".to_string());
+                let name = p.name.clone();
+                let path = p.path.clone();
+                let st = state.clone();
                 view! {
-                    <div class="card">
+                    <div class="card hover:shadow-elevated transition-shadow cursor-pointer"
+                        on:click=move |_| {
+                            // Select this project for the dashboard
+                            st.selected_project_name.set(Some(name.clone()));
+                            st.project_path.set(path.clone());
+                        }>
                         <div class="flex items-start justify-between mb-4">
                             <div class="flex items-center gap-4">
                                 <span class={format!("w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold {}", rc)}>{p.rating}</span>

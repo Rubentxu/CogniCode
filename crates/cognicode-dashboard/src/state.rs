@@ -345,6 +345,8 @@ pub struct ReactiveAppState {
     pub api: ApiClient,
     /// Current project path being analyzed
     pub project_path: RwSignal<String>,
+    /// Name of the selected project (shown in Dashboard header)
+    pub selected_project_name: RwSignal<Option<String>>,
     /// Dashboard configuration
     pub config: RwSignal<DashboardConfigDto>,
     /// Last analysis summary from the server
@@ -367,6 +369,7 @@ impl ReactiveAppState {
         Self {
             api: ApiClient::new("http://localhost:3000"),
             project_path: RwSignal::new(String::new()),
+            selected_project_name: RwSignal::new(None),
             config: RwSignal::new(DashboardConfigDto::default()),
             analysis: RwSignal::new(None),
             issues: RwSignal::new(Vec::new()),
@@ -383,6 +386,7 @@ impl ReactiveAppState {
         Self {
             api: ApiClient::new("http://localhost:3000"),
             project_path: RwSignal::new(path.clone()),
+            selected_project_name: RwSignal::new(None),
             config: RwSignal::new(DashboardConfigDto {
                 project_path: path,
                 ..Default::default()

@@ -63,6 +63,26 @@ pub struct ValidatePathRequest {
     pub project_path: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FsLsRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FsEntryDto {
+    pub name: String,
+    pub is_dir: bool,
+    pub has_cognicode: bool,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FsLsResponseDto {
+    pub path: String,
+    pub parent: Option<String>,
+    pub entries: Vec<FsEntryDto>,
+}
+
 // DTO for frontend (matches state.rs types)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IssueDto {
@@ -722,6 +742,65 @@ async fn validate_project_path(
     }))
 }
 
+/// Browse filesystem directories (for project path selection)
+async fn browse_filesystem(
+    Json(req): Json<FsLsRequest>,
+) -> ApiResult<Json<FsLsResponseDto>> {
+    let target_path = PathBuf::from(&req.path);
+    let path = if req.path.is_empty() || !target_path.exists() {
+        std::env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/"))
+    } else {
+        target_path
+    };
+
+    if !path.is_dir() {
+        return Err(ApiError { message: format!("Not a directory: {}", req.path) });
+    }
+
+    let parent = path.parent().map(|p| p.to_string_lossy().to_string());
+
+    let mut entries: Vec<FsEntryDto> = Vec::new();
+    if let Ok(readdir) = std::fs::read_dir(&path) {
+        for entry in readdir.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let entry_path = entry.path();
+            let is_dir = entry_path.is_dir();
+            
+            // Skip hidden files/dirs (except .cognicode detection)
+            if name.starts_with('.') && name != ".cognicode" {
+                continue;
+            }
+
+            let has_cognicode = if is_dir {
+                entry_path.join(".cognicode").join("cognicode.db").exists()
+            } else {
+                false
+            };
+
+            entries.push(FsEntryDto {
+                name,
+                is_dir,
+                has_cognicode,
+                path: entry_path.to_string_lossy().to_string(),
+            });
+        }
+    }
+
+    // Sort: directories first, then alphabetically
+    entries.sort_by(|a, b| {
+        b.is_dir.cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    Ok(Json(FsLsResponseDto {
+        path: path.to_string_lossy().to_string(),
+        parent,
+        entries,
+    }))
+}
+
 /// Get available rule profiles
 async fn get_rule_profiles() -> Json<Vec<RuleProfileDto>> {
     Json(vec![
@@ -919,6 +998,7 @@ pub async fn start_server(port: u16) {
         .route("/api/quality-gate", post(get_quality_gate))
         .route("/api/ratings", post(get_ratings))
         .route("/api/validate-path", post(validate_project_path))
+        .route("/api/fs/ls", post(browse_filesystem))
         .route("/api/rule-profiles", get(get_rule_profiles))
         .route("/api/config", get(get_config))
         .route("/api/config", post(save_config))

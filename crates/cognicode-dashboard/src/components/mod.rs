@@ -10,6 +10,7 @@ pub mod issue_row;
 pub mod filter_bar;
 pub mod loading_spinner;
 pub mod error_boundary;
+pub mod file_browser;
 
 pub use shell::Shell;
 pub use rating_card::RatingCard;
@@ -22,3 +23,4 @@ pub use issue_row::IssueRow;
 pub use filter_bar::FilterBar;
 pub use loading_spinner::LoadingSpinner;
 pub use error_boundary::{ErrorBoundary, ErrorFallback, ErrorInfo};
+pub use file_browser::FileBrowser;
