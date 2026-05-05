@@ -64,13 +64,19 @@ clean:
 # ─── Run ──────────────────────────────────────────────────────────────────────
 
 # Build and start the dashboard server
-run: build copy-assets
+run: stop build copy-assets
     @echo "🚀 Starting dashboard on http://localhost:{{PORT}}"
+    @if curl -s --max-time 1 http://localhost:{{PORT}}/health > /dev/null 2>&1; then \
+        echo "❌ Port {{PORT}} still in use. Try: just stop && just run"; exit 1; \
+    fi
     DIST_DIR={{DIST_DIR}} cargo run --bin cognicode-dashboard-server
 
 # Start server (without rebuilding)
-start:
+start: stop
     @echo "🚀 Starting dashboard (no rebuild)..."
+    @if curl -s --max-time 1 http://localhost:{{PORT}}/health > /dev/null 2>&1; then \
+        echo "❌ Port {{PORT}} still in use. Try: lsof -i :{{PORT}}"; exit 1; \
+    fi
     DIST_DIR={{DIST_DIR}} ./{{SERVER_BIN}}
 
 # Run in dev mode (trunk serve for frontend + cargo run for server)
@@ -242,7 +248,11 @@ status:
 # Stop the server
 stop:
     @echo "🛑 Stopping server..."
-    pkill -f cognicode-dashboard-server || echo "No server running"
+    @pkill -x cognicode-dashboard-server 2>/dev/null || true
+    @sleep 1
+    @curl -s --max-time 1 http://localhost:{{PORT}}/health > /dev/null 2>&1 && \
+        echo "⚠️  Server still running on port {{PORT}}" || \
+        echo "✅ Server stopped"
 
 # Install dependencies
 install:
