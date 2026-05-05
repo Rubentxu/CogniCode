@@ -6,11 +6,13 @@
 pub mod state;
 pub mod components;
 pub mod pages;
+pub mod api;
 
 // Re-export for convenience
 pub use state::{
     Severity, Category, IssueResult, ProjectRatings,
     TechnicalDebt, GateCondition, QualityGateResult,
+    AppState, DashboardConfig,
 };
 pub use components::*;
 pub use pages::*;
