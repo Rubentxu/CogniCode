@@ -656,7 +656,13 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("#[deprecated") || line.contains("@Deprecated") {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("//") 
+            || trimmed.starts_with("///") || trimmed.starts_with("//!")
+            || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            { continue; }
+            
+            if trimmed.contains("#[deprecated") || trimmed.contains("@Deprecated") {
                 issues.push(Issue::new(
                     "S1134",
                     "Deprecated attribute detected",
@@ -898,8 +904,15 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"http://[^\s""']+"#).unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(m) = re.find(line) {
-                if !line.contains("https://") && !line.contains("localhost") {
+            let trimmed = line.trim();
+            if trimmed.is_empty() 
+            || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*")
+            || trimmed.starts_with("*") || trimmed.starts_with("#")
+            { continue; }
+            
+            if let Some(m) = re.find(trimmed) {
+                if !trimmed.contains("https://") && !trimmed.contains("localhost") {
                     issues.push(Issue::new(
                         "S5332",
                         format!("Clear-text HTTP URL found: {}", m.as_str()),
@@ -1284,7 +1297,14 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#""\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}""#).unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(m) = re.find(line) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("//") 
+            || trimmed.starts_with("///") || trimmed.starts_with("//!")
+            || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            || trimmed.starts_with("#")
+            { continue; }
+            
+            if let Some(m) = re.find(trimmed) {
                 issues.push(Issue::new(
                     "S1313",
                     format!("Hardcoded IP address: {}", m.as_str()),
