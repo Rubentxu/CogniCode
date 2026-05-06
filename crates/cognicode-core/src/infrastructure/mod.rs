@@ -3,6 +3,7 @@
 //! This module implements the domain traits using concrete technologies
 //! such as tree-sitter for parsing and petgraph for dependency graphs.
 
+pub mod avc;
 pub mod graph;
 pub mod lsp;
 pub mod mermaid;
