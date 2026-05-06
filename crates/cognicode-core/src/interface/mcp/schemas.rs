@@ -1519,6 +1519,28 @@ pub struct FileEntry {
 }
 
 // ============================================================================
+// AVC Tool Schemas
+// ============================================================================
+
+// AVC-1: Generate Contract
+
+/// Input for generate_contract tool
+#[derive(Debug, Deserialize)]
+pub struct GenerateContractInput {
+    pub function_name: String,
+    pub file_path: String,
+}
+
+// AVC-2: Validate Contract
+
+/// Input for validate_contract tool
+#[derive(Debug, Deserialize)]
+pub struct ValidateContractInput {
+    pub contract_id: String,
+    pub generated_code: String,
+}
+
+// ============================================================================
 // AIX Tool Input Schemas
 // ============================================================================
 

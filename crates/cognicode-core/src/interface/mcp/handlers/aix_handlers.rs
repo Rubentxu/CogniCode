@@ -5,6 +5,9 @@
 //! suggest_refactor_plan, nl_to_symbol, ask_about_code, find_pattern_by_intent,
 //! compare_call_graphs, detect_api_breaks, generate_system_prompt_context,
 //! detect_god_functions, detect_long_parameter_lists.
+//!
+//! Plus 2 AVC tool handlers:
+//! generate_contract, validate_contract.
 
 use super::*;
 
@@ -1344,6 +1347,51 @@ fn build_review_plan(_ctx: &HandlerContext) -> HandlerResult<Vec<OnboardingStep>
         },
     ];
     Ok(steps)
+}
+
+// ============================================================================
+// AVC Tool Handlers
+// ============================================================================
+
+use crate::infrastructure::avc::{AvcGenerator, AvcValidator, AvcContract, AvcValidationResult};
+use crate::interface::mcp::schemas::{GenerateContractInput, ValidateContractInput};
+
+/// Handler for generate_contract tool (AVC-1)
+pub async fn handle_generate_contract(
+    ctx: &HandlerContext,
+    input: GenerateContractInput,
+) -> HandlerResult<AvcContract> {
+    // Validate file path
+    let resolved_path = ctx.validator.validate_file_path(&input.file_path)
+        .map_err(|e| HandlerError::InvalidInput(format!("Invalid file path: {}", e)))?;
+
+    // Read file content
+    let source = std::fs::read_to_string(&resolved_path)
+        .map_err(|e| HandlerError::NotFound(format!("File not found: {}", e)))?;
+
+    // Generate AVC contract
+    let contract = AvcGenerator::generate_from_source(&source, &input.function_name, &input.file_path)
+        .ok_or_else(|| HandlerError::NotFound(format!(
+            "Function '{}' not found in {}",
+            input.function_name, input.file_path
+        )))?;
+
+    Ok(contract)
+}
+
+/// Handler for validate_contract tool (AVC-2)
+pub async fn handle_validate_contract(
+    _ctx: &HandlerContext,
+    input: ValidateContractInput,
+) -> HandlerResult<AvcValidationResult> {
+    // For now, create a simple contract for validation
+    // In production, this would load from the database
+    let contract = AvcContract::new(&input.contract_id, "generated.rs")
+        .with_description("Agent-generated code validation");
+
+    let result = AvcValidator::validate(&contract, &input.generated_code);
+
+    Ok(result)
 }
 
 #[cfg(test)]

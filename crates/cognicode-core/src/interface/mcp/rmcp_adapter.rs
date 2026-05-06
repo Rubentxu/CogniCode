@@ -649,6 +649,31 @@ impl ServerHandler for CogniCodeHandler {
                         }
                     }).as_object().cloned().unwrap()),
                 ),
+                // AVC: Agent-Verifiable Context tools
+                Tool::new(
+                    "generate_contract",
+                    "Generate an AVC truth contract from an existing function. Returns syntax, semantic, and safety constraints.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "function_name": { "type": "string", "description": "Name of the function to generate a contract for" },
+                            "file_path": { "type": "string", "description": "Path to the source file containing the function" }
+                        },
+                        "required": ["function_name", "file_path"]
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "validate_contract",
+                    "Validate generated code against an AVC truth contract. Returns pass/fail with violations and fix suggestions.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "contract_id": { "type": "string", "description": "ID of the contract to validate against" },
+                            "generated_code": { "type": "string", "description": "The code to validate" }
+                        },
+                        "required": ["contract_id", "generated_code"]
+                    }).as_object().cloned().unwrap()),
+                ),
             ];
 
             // Paginate
@@ -1016,6 +1041,19 @@ async fn call_tool_handler(
             let input: crate::interface::mcp::schemas::GetHotSymbolsInput =
                 serde_json::from_value(arguments.into())?;
             let output = crate::interface::mcp::handlers::handle_get_hot_symbols(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        // AVC: Agent-Verifiable Context tools
+        "generate_contract" => {
+            let input: crate::interface::mcp::schemas::GenerateContractInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_generate_contract(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        "validate_contract" => {
+            let input: crate::interface::mcp::schemas::ValidateContractInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_validate_contract(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         _ => anyhow::bail!("Unknown tool: {}", tool_name),
