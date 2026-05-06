@@ -259,7 +259,7 @@ impl AvcGenerator {
     }
 
     /// Extract docstring/comment text above a function node
-    fn extract_docstring(node: &tree_sitter::Node, source: &str) -> String {
+    pub fn extract_docstring(node: &tree_sitter::Node, source: &str) -> String {
         let pos = node.start_position();
         if pos.row == 0 {
             return String::new();
@@ -288,7 +288,7 @@ impl AvcGenerator {
     }
 
     /// Extract the body of a function as text
-    fn extract_body_text(node: &tree_sitter::Node, source: &str) -> String {
+    pub fn extract_body_text(node: &tree_sitter::Node, source: &str) -> String {
         if let Some(body) = node.child_by_field_name("body") {
             body.utf8_text(source.as_bytes()).unwrap_or("").to_string()
         } else {

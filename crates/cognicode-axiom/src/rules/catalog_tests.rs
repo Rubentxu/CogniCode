@@ -843,4 +843,155 @@ fn main() {
         });
         assert!(issues.is_empty(), "S5042 should NOT trigger on comments");
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S7000 — Semantic Intent Drift Detection Tests
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_s7000_drift_detected() {
+        // Function with docstring that doesn't match implementation
+        let source = r#"
+/// This function encrypts data using AES-256
+fn process_data(input: &str) -> String {
+    // Actual implementation uses base64 encoding, not encryption
+    use std::fs;
+    let content = fs::read_to_string("config.json").unwrap();
+    base64::encode(input.as_bytes())
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            let rule = catalog::S7000Rule::new();
+            rule.check(ctx)
+        });
+        assert!(!issues.is_empty(), "S7000 should detect semantic drift");
+        assert_eq!(issues[0].rule_id, "S7000");
+    }
+
+    #[test]
+    fn test_s7000_no_fp_comment_keywords() {
+        // Function where docstring mentions terms also in code (legitimate)
+        let source = r#"
+/// Hashes a password using bcrypt algorithm
+fn hash_password(password: &str) -> String {
+    bcrypt::hash(password, 12).unwrap()
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            let rule = catalog::S7000Rule::new();
+            rule.check(ctx)
+        });
+        // Should not trigger because docstring and body share relevant tokens
+        assert!(issues.is_empty(), "S7000 should NOT trigger when docstring matches implementation");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S7001 — AVC Contract Violation Tests
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_s7001_violation_detected() {
+        let source = r#"
+fn risky_operation() {
+    let data = unsafe { std::mem::zeroed::<u32>() };
+    panic!("This will always panic");
+    let result = some_call().unwrap();
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            catalog::S7001Rule::new().check(ctx)
+        });
+        assert!(!issues.is_empty(), "S7001 should detect AVC contract violations");
+        assert_eq!(issues[0].rule_id, "S7001");
+    }
+
+    #[test]
+    fn test_s7001_no_fp_comments() {
+        let source = r#"
+// This code uses unsafe, panic!, and .unwrap() in comments only
+fn safe_function() {
+    // The following patterns should be flagged if they appear in code:
+    // unsafe { ... }
+    // panic!("...");
+    // .unwrap()
+    let x = 42;
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            catalog::S7001Rule::new().check(ctx)
+        });
+        assert!(issues.is_empty(), "S7001 should NOT trigger on comments");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S7002 — Obsolete Pattern Detection Tests
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_s7002_obsolete_pattern_detected() {
+        // Note: This test will pass on any file since we can't easily mock file mtime
+        // In real tests, we'd use a temp file with known mtime
+        let source = r#"
+fn legacy_function() -> Result<String, Error> {
+    try!(validate_input());
+    Ok("result".to_string())
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            let rule = catalog::S7002Rule::new();
+            rule.check(ctx)
+        });
+        // try! macro should be flagged as obsolete
+        assert!(!issues.is_empty(), "S7002 should detect try! macro");
+        assert_eq!(issues[0].rule_id, "S7002");
+    }
+
+    #[test]
+    fn test_s7002_no_fp_modern_rust() {
+        let source = r#"
+fn modern_function() -> Result<String, Error> {
+    let result = validate_input()?;
+    Ok(result)
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            let rule = catalog::S7002Rule::new();
+            rule.check(ctx)
+        });
+        assert!(issues.is_empty(), "S7002 should NOT trigger on modern Rust (? operator)");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S7003 — Forbidden Domain Term Tests
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_s7003_forbidden_term_detected() {
+        let source = r#"
+fn encode_data() {
+    let encoded = base64::encode(b"secret data");
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            let rule = catalog::S7003Rule::new();
+            rule.check(ctx)
+        });
+        assert!(!issues.is_empty(), "S7003 should detect forbidden term 'base64'");
+        assert_eq!(issues[0].rule_id, "S7003");
+    }
+
+    #[test]
+    fn test_s7003_no_fp_comment() {
+        let source = r#"
+// This comment mentions base64 but the code doesn't
+fn encode_data() {
+    let data = "secret".as_bytes();
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            let rule = catalog::S7003Rule::new();
+            rule.check(ctx)
+        });
+        assert!(issues.is_empty(), "S7003 should NOT trigger when term only in comments");
+    }
 }

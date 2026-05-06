@@ -846,6 +846,225 @@ declare_rule! {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// S7000 — Semantic Intent Drift Detection Rule
+// Detects when a function's docstring doesn't match its implementation
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S7000"
+    name: "Semantic intent drift detected — code does not match documentation"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: { drift_threshold: f32 = 0.3 }
+    check: => {
+        let threshold = self.drift_threshold;
+        let min_lines = 5; // Skip very short functions
+
+        // Walk the tree to find function definitions
+        fn walk_functions(node: tree_sitter::Node, source: &str, threshold: f32, min_lines: usize, file_path: &std::path::Path) -> Vec<Issue> {
+            let mut issues = Vec::new();
+            if node.kind() == "function_item" || node.kind() == "function_definition" {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    if let Ok(name) = name_node.utf8_text(source.as_bytes()) {
+                        if let Some(body) = node.child_by_field_name("body") {
+                            let body_text = body.utf8_text(source.as_bytes()).unwrap_or("");
+                            let line_count = body_text.lines().count();
+                            if line_count >= min_lines {
+                                // Extract docstring by looking backwards
+                                let doc = crate::rules::subscription_engine::extract_docstring_above(&node, source);
+                                let body_tokens = crate::rules::subscription_engine::tokenize_code(&body_text);
+                                let doc_tokens = crate::rules::subscription_engine::tokenize_code(&doc);
+
+                                if !doc_tokens.is_empty() {
+                                    let intersection = doc_tokens.intersection(&body_tokens).count() as f32;
+                                    let union = doc_tokens.union(&body_tokens).count() as f32;
+                                    let similarity = if union > 0.0 { intersection / union } else { 0.0 };
+
+                                    if similarity < threshold {
+                                        issues.push(Issue::new(
+                                            "S7000",
+                                            format!("Semantic drift: function '{}' docstring and body have {:.0}% similarity (threshold: {:.0}%)",
+                                                    name, similarity * 100.0, threshold * 100.0),
+                                            Severity::Minor,
+                                            Category::CodeSmell,
+                                            file_path,
+                                            name_node.start_position().row + 1,
+                                        ).with_remediation(Remediation::moderate(
+                                            "Update the docstring to match the implementation, or refactor the code to match the intent"
+                                        )));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                issues.extend(walk_functions(child, source, threshold, min_lines, file_path));
+            }
+            issues
+        }
+
+        walk_functions(ctx.tree.root_node(), ctx.source, threshold, min_lines, ctx.file_path)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S7001 — AVC Contract Violation Rule
+// Detects forbidden patterns that violate AVC contracts
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S7001"
+    name: "AVC contract violation detected"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        // Check for common forbidden patterns that AVC contracts enforce
+        let forbidden = [("unsafe", "unsafe block without justification"),
+                         ("panic!", "panic! macro in production code"),
+                         (".unwrap()", ".unwrap() without error handling"),
+                         (".expect(", ".expect() without proper message")];
+
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            { continue; }
+
+            for (pattern, desc) in &forbidden {
+                if trimmed.contains(pattern) {
+                    issues.push(Issue::new(
+                        "S7001",
+                        format!("AVC contract violation: {}", desc),
+                        Severity::Minor,
+                        Category::CodeSmell,
+                        ctx.file_path,
+                        idx + 1,
+                    ).with_remediation(Remediation::moderate(
+                        "Review the AVC contract requirements for this function"
+                    )));
+                    break;
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S7002 — Obsolete Pattern Detection Rule
+// Detects deprecated patterns in recently modified files
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S7002"
+    name: "Obsolete pattern detected in recently modified file"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: { max_age_days: u64 = 30 }
+    check: => {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let mut issues = Vec::new();
+        let max_age_secs = self.max_age_days as u64 * 24 * 60 * 60;
+
+        // Check file modification time
+        let file_mtime = std::fs::metadata(ctx.file_path)
+            .and_then(|m| m.modified())
+            .ok();
+
+        let file_is_stale = file_mtime.map(|t| {
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+            let mtime = t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+            now.saturating_sub(mtime) > max_age_secs
+        }).unwrap_or(false);
+
+        // Only check if file is NOT stale (recently modified)
+        if !file_is_stale {
+            let obsolete_patterns = [
+                (r"\btry!\s*\(", "try! macro is obsolete, use ? operator"),
+                (r"#\[allow\(deprecated\)\]", "#[allow(deprecated)] suppresses deprecation warnings"),
+            ];
+
+            for (idx, line) in ctx.source.lines().enumerate() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
+                || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
+                { continue; }
+
+                for (pattern, desc) in &obsolete_patterns {
+                    if let Ok(re) = regex::Regex::new(pattern) {
+                        if re.is_match(trimmed) {
+                            issues.push(Issue::new(
+                                "S7002",
+                                format!("Obsolete pattern: {}", desc),
+                                Severity::Minor,
+                                Category::CodeSmell,
+                                ctx.file_path,
+                                idx + 1,
+                            ).with_remediation(Remediation::moderate(
+                                "Replace with modern Rust idioms"
+                            )));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S7003 — Forbidden Domain Term Detection Rule
+// Detects forbidden terms in non-comment code
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S7003"
+    name: "Forbidden domain term detected"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: { forbidden_terms: Vec<String> = vec!["base64".to_string()] }
+    check: => {
+        let mut issues = Vec::new();
+
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            // Skip comments and empty lines
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            { continue; }
+
+            for term in &self.forbidden_terms {
+                if trimmed.contains(term.as_str()) {
+                    issues.push(Issue::new(
+                        "S7003",
+                        format!("Forbidden domain term '{}' found in code", term),
+                        Severity::Minor,
+                        Category::CodeSmell,
+                        ctx.file_path,
+                        idx + 1,
+                    ).with_remediation(Remediation::moderate(
+                        "Review if this term is appropriate in this context"
+                    )));
+                    break;
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // S1484 — Unused Function Rule (Dead Code Detection)
 // ─────────────────────────────────────────────────────────────────────────────
 

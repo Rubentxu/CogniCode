@@ -25,6 +25,7 @@
 
 use crate::{Issue, RuleContext};
 use tree_sitter::Node;
+use std::collections::HashSet;
 
 /// A rule that uses the SubscriptionVisitor pattern — subscribes to AST node types.
 /// This is the SonarQube-approved approach. Rules that use this NEVER get false positives
@@ -100,6 +101,30 @@ pub fn non_comment_lines(source: &str) -> impl Iterator<Item = (usize, &str)> + 
         .filter(|(_, line)| !is_comment_line(line))
         .map(|(i, line)| (i, line.trim()))
         .filter(|(_, line)| !line.is_empty())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: Intent-Drift Analysis Functions
+// Used by S7000 (Semantic Intent Drift Detection)
+// ─────────────────────────────────────────────────────────────────────────────
+
+use cognicode_core::infrastructure::avc::AvcGenerator;
+
+/// Extract docstring/comment text above a function node.
+/// Looks backwards from the function for doc comments (/// or //).
+pub fn extract_docstring_above(node: &tree_sitter::Node, source: &str) -> String {
+    AvcGenerator::extract_docstring(node, source)
+}
+
+/// Extract the body of a function as text.
+pub fn extract_body_text(node: &tree_sitter::Node, source: &str) -> String {
+    AvcGenerator::extract_body_text(node, source)
+}
+
+/// Tokenize code text into a HashSet of lowercase tokens.
+/// Uses the same stop-word filtering as AvcGenerator::tokenize.
+pub fn tokenize_code(text: &str) -> HashSet<String> {
+    AvcGenerator::tokenize(text)
 }
 
 #[cfg(test)]
