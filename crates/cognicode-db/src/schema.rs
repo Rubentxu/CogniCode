@@ -96,6 +96,33 @@ pub fn initialize_schema(db: &Connection) {
             PRIMARY KEY (source_file, imported_file)
         );
         CREATE INDEX IF NOT EXISTS idx_imports_imported ON file_imports(imported_file);
+
+        -- AVC Contracts
+        CREATE TABLE IF NOT EXISTS avc_contracts (
+            id TEXT PRIMARY KEY,
+            source_file TEXT NOT NULL,
+            function_name TEXT NOT NULL,
+            contract_json TEXT NOT NULL,
+            generated_at TEXT NOT NULL,
+            compliance_score REAL DEFAULT 1.0
+        );
+
+        -- Intent-Drift events
+        CREATE TABLE IF NOT EXISTS drift_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            function_name TEXT NOT NULL,
+            drift_score REAL NOT NULL,
+            intent TEXT,
+            severity TEXT DEFAULT 'warning'
+        );
+
+        -- BM25 Symbol Index (FTS5)
+        CREATE VIRTUAL TABLE IF NOT EXISTS symbol_index USING fts5(
+            symbol_name, symbol_kind, file_path, docstring, body_tokens,
+            tokenize='porter unicode61'
+        );
     ").expect("Failed to initialize schema");
 }
 

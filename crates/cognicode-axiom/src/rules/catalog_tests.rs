@@ -730,4 +730,117 @@ fn main() {
         assert_eq!(rule.severity(), Severity::Blocker);
         assert_eq!(rule.category(), Category::Vulnerability);
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S2077 — SQL injection via format! (FP regression tests)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_S2077_no_fp_comment() {
+        let source = r#"
+// This pattern in a comment should NOT trigger S2077
+fn main() {
+    // SELECT * FROM users - this is just a comment
+    let query = format!("Hello world");
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            catalog::S2077Rule::new().check(ctx)
+        });
+        assert!(issues.is_empty(), "S2077 should NOT trigger on comments");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S3649 — SQL via string concatenation (FP regression tests)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_S3649_no_fp_comment() {
+        let source = r#"
+// Example: SELECT * FROM users WHERE id = 1 + 2
+fn main() {
+    // valid code here
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            catalog::S3649Rule::new().check(ctx)
+        });
+        assert!(issues.is_empty(), "S3649 should NOT trigger on comments");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S4423 — Weak TLS protocol (FP regression tests)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_S4423_no_fp_comment() {
+        let source = r#"
+// Example: Tlsv1_0 should not be used in production
+// Note: Sslv23 is also weak
+fn main() {
+    // valid code here
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            catalog::S4423Rule::new().check(ctx)
+        });
+        assert!(issues.is_empty(), "S4423 should NOT trigger on comments");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S4426 — Weak cryptographic key generation (FP regression tests)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_S4426_no_fp_comment() {
+        let source = r#"
+// Example: RSA(1024) is considered weak
+// DSA(1024) should also be avoided
+fn main() {
+    // valid code here
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            catalog::S4426Rule::new().check(ctx)
+        });
+        assert!(issues.is_empty(), "S4426 should NOT trigger on comments");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S4507 — Debug mode in production (FP regression tests)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_S4507_no_fp_comment() {
+        let source = r#"
+// Example: #[cfg(debug_assertions)] with secret in comments
+// The next lines contain secret/password/token references
+fn main() {
+    // valid code here
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            catalog::S4507Rule::new().check(ctx)
+        });
+        assert!(issues.is_empty(), "S4507 should NOT trigger on comments");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S5042 — Expanding archive files (FP regression tests)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_S5042_no_fp_comment() {
+        let source = r#"
+// Example: .zip( or ZipArchive without limit
+// tar::Archive should also check size
+fn main() {
+    // valid code here
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            catalog::S5042Rule::new().check(ctx)
+        });
+        assert!(issues.is_empty(), "S5042 should NOT trigger on comments");
+    }
 }

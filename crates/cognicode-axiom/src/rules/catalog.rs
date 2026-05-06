@@ -2952,7 +2952,11 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER"];
-        for (idx, line) in ctx.source.lines().enumerate() {
+        for (line_num, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            || trimmed.starts_with("#") { continue; }
             let has_sql = sql_keywords.iter().any(|kw| line.contains(kw));
             let has_format = line.contains("format!");
             if has_sql && has_format && !line.contains("bind") && !line.contains("prepared") && !line.contains("parameter") {
@@ -2962,7 +2966,7 @@ declare_rule! {
                     Severity::Blocker,
                     Category::Vulnerability,
                     ctx.file_path,
-                    idx + 1,
+                    line_num + 1,
                 ).with_remediation(Remediation::moderate("Use prepared statements or an ORM with parameter binding")));
             }
         }
@@ -3197,7 +3201,11 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER"];
-        for (idx, line) in ctx.source.lines().enumerate() {
+        for (line_num, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            || trimmed.starts_with("#") { continue; }
             for kw in &sql_keywords {
                 if line.contains(kw) && (line.contains("+") || line.contains(".as_str()")) {
                     if !line.contains("bind") && !line.contains("prepared") && !line.contains("parameter") {
@@ -3207,7 +3215,7 @@ declare_rule! {
                             Severity::Blocker,
                             Category::Vulnerability,
                             ctx.file_path,
-                            idx + 1,
+                            line_num + 1,
                         ));
                         break;
                     }
@@ -3232,7 +3240,11 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Tlsv1_0|Sslv3|Sslv23|TLSv1\.0|SSLv3").unwrap();
-        for (idx, line) in ctx.source.lines().enumerate() {
+        for (line_num, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            || trimmed.starts_with("#") { continue; }
             if re.is_match(line) {
                 issues.push(Issue::new(
                     "S4423",
@@ -3240,7 +3252,7 @@ declare_rule! {
                     Severity::Critical,
                     Category::Vulnerability,
                     ctx.file_path,
-                    idx + 1,
+                    line_num + 1,
                 ));
             }
         }
@@ -3262,7 +3274,11 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(RSA|DSA|DH)\w*\s*\(\s*1024\s*\)").unwrap();
-        for (idx, line) in ctx.source.lines().enumerate() {
+        for (line_num, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            || trimmed.starts_with("#") { continue; }
             if re.is_match(line) {
                 issues.push(Issue::new(
                     "S4426",
@@ -3270,7 +3286,7 @@ declare_rule! {
                     Severity::Critical,
                     Category::Vulnerability,
                     ctx.file_path,
-                    idx + 1,
+                    line_num + 1,
                 ));
             }
         }
@@ -3291,9 +3307,13 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        for (idx, line) in ctx.source.lines().enumerate() {
+        for (line_num, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            || trimmed.starts_with("#") { continue; }
             if line.contains("#[cfg(debug_assertions)]") && !line.contains("test") {
-                let next_lines: String = ctx.source.lines().skip(idx + 1).take(5).collect::<Vec<_>>().join("\n");
+                let next_lines: String = ctx.source.lines().skip(line_num + 1).take(5).collect::<Vec<_>>().join("\n");
                 if next_lines.contains("secret") || next_lines.contains("password") || next_lines.contains("token") {
                     issues.push(Issue::new(
                         "S4507",
@@ -3301,7 +3321,7 @@ declare_rule! {
                         Severity::Critical,
                         Category::Vulnerability,
                         ctx.file_path,
-                        idx + 1,
+                        line_num + 1,
                     ));
                 }
             }
@@ -3362,10 +3382,14 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        for (idx, line) in ctx.source.lines().enumerate() {
+        for (line_num, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            || trimmed.starts_with("#") { continue; }
             let has_archive = line.contains(".zip(") || line.contains("ZipArchive") || line.contains("tar::") || line.contains("Archive::");
             if has_archive && !line.contains("limit") && !line.contains("max_") {
-                let context: String = ctx.source.lines().skip(idx.saturating_sub(3)).take(10).collect::<Vec<_>>().join("\n");
+                let context: String = ctx.source.lines().skip(line_num.saturating_sub(3)).take(10).collect::<Vec<_>>().join("\n");
                 if !context.contains("size") && !context.contains("limit") && !context.contains("max_size") {
                     issues.push(Issue::new(
                         "S5042",
@@ -3373,7 +3397,7 @@ declare_rule! {
                         Severity::Major,
                         Category::Vulnerability,
                         ctx.file_path,
-                        idx + 1,
+                        line_num + 1,
                     ));
                 }
             }
