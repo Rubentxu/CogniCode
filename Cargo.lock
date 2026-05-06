@@ -746,6 +746,7 @@ dependencies = [
  "regex",
  "rig-core",
  "rmcp",
+ "rusqlite",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -801,6 +802,7 @@ dependencies = [
 name = "cognicode-db"
 version = "0.4.0"
 dependencies = [
+ "anyhow",
  "bincode",
  "blake3",
  "chrono",

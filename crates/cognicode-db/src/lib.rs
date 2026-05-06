@@ -10,8 +10,12 @@ pub mod quality;
 pub mod files;
 pub mod types;
 pub mod graph;
+pub mod avc_contracts;
+pub mod fts5_index;
 
 pub use quality::{QualityStore, IssueKey, IssueRow, IssueStatus};
 pub use files::FileStore;
 pub use graph::SqliteGraphStore;
+pub use avc_contracts::AvcContractStore;
+pub use fts5_index::Fts5Index;
 pub use types::*;

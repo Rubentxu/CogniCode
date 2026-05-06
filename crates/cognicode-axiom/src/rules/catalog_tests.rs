@@ -994,4 +994,92 @@ fn encode_data() {
         });
         assert!(issues.is_empty(), "S7003 should NOT trigger when term only in comments");
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S2076 — FP Regression Tests
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_s2076_no_false_positive_comment_with_sql_format() {
+        // Comment line with SQL format string should NOT trigger
+        let source = r#"
+fn main() {
+    // This is safe: format!("SELECT * FROM {}", table)
+    // let query = format!("SELECT * FROM users WHERE id = {}", user_id);
+}
+"#;
+
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            let rule = catalog::S2076Rule::new();
+            rule.check(ctx)
+        });
+        assert!(issues.is_empty(), "S2076 should NOT trigger for comment lines with SQL format");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S2091 — FP Regression Tests
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_s2091_no_false_positive_comment_with_execute() {
+        // Comment line with EXECUTE should NOT trigger
+        let source = r#"
+fn main() {
+    // TODO: execute a query like EXECUTE sp_get_data
+    // let sql = format!("EXECUTE sp_get_data {}", query);
+}
+"#;
+
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            let rule = catalog::S2091Rule::new();
+            rule.check(ctx)
+        });
+        assert!(issues.is_empty(), "S2091 should NOT trigger for comment lines with EXECUTE");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S2631 — FP Regression Tests
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_s2631_no_false_positive_comment_with_loop_concat() {
+        // Comment mentioning loop concat should NOT trigger
+        let source = r#"
+fn main() {
+    // This loop builds SQL: for item in items { query.push_str(&format!("id = {}", item)); }
+    let items = vec![1, 2, 3];
+    for item in items {
+        println!("{}", item);
+    }
+}
+"#;
+
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            let rule = catalog::S2631Rule::new();
+            rule.check(ctx)
+        });
+        assert!(issues.is_empty(), "S2631 should NOT trigger when SQL concat is only in comments");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // S4834 — FP Regression Tests
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_s4834_no_false_positive_comment_with_verify_false() {
+        // Comment with verify=false should NOT trigger
+        let source = r#"
+fn main() {
+    // Note: verify = false is needed for testing
+    // let config = SSLConfig { verify: false };
+    let safe_config = SSLConfig { verify: true };
+}
+"#;
+
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            let rule = catalog::S4834Rule::new();
+            rule.check(ctx)
+        });
+        assert!(issues.is_empty(), "S4834 should NOT trigger for comment lines with verify=false");
+    }
 }

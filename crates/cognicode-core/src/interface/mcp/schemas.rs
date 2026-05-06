@@ -1538,6 +1538,9 @@ pub struct GenerateContractInput {
 pub struct ValidateContractInput {
     pub contract_id: String,
     pub generated_code: String,
+    /// Source file path for audit trail (optional)
+    #[serde(default)]
+    pub source_file: Option<String>,
 }
 
 // ============================================================================

@@ -1356,6 +1356,15 @@ fn build_review_plan(_ctx: &HandlerContext) -> HandlerResult<Vec<OnboardingStep>
 use crate::infrastructure::avc::{AvcGenerator, AvcValidator, AvcContract, AvcValidationResult};
 use crate::interface::mcp::schemas::{GenerateContractInput, ValidateContractInput};
 
+/// Opens a SQLite connection to the cognicode database
+fn open_db(working_dir: &std::path::Path) -> Result<rusqlite::Connection, String> {
+    let db_dir = working_dir.join(".cognicode");
+    std::fs::create_dir_all(&db_dir).map_err(|e| e.to_string())?;
+    let db_path = db_dir.join("cognicode.db");
+    let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
+    Ok(conn)
+}
+
 /// Handler for generate_contract tool (AVC-1)
 pub async fn handle_generate_contract(
     ctx: &HandlerContext,
@@ -1376,18 +1385,47 @@ pub async fn handle_generate_contract(
             input.function_name, input.file_path
         )))?;
 
+    // Persist contract to database
+    if let Ok(conn) = open_db(&ctx.working_dir) {
+        let json = serde_json::to_string(&contract).unwrap_or_default();
+        if let Err(e) = conn.execute(
+            "INSERT OR REPLACE INTO avc_contracts (id, source_file, function_name, contract_json, generated_at, compliance_score) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                contract.contract_id,
+                contract.source_of_truth,
+                "",
+                json,
+                chrono::Utc::now().to_rfc3339(),
+                1.0
+            ],
+        ) {
+            tracing::warn!("Failed to persist contract: {}", e);
+        }
+    }
+
     Ok(contract)
 }
 
 /// Handler for validate_contract tool (AVC-2)
 pub async fn handle_validate_contract(
-    _ctx: &HandlerContext,
+    ctx: &HandlerContext,
     input: ValidateContractInput,
 ) -> HandlerResult<AvcValidationResult> {
-    // For now, create a simple contract for validation
-    // In production, this would load from the database
-    let contract = AvcContract::new(&input.contract_id, "generated.rs")
-        .with_description("Agent-generated code validation");
+    // Load contract from database
+    let contract_json = open_db(&ctx.working_dir)
+        .map_err(|e| HandlerError::Internal(format!("DB error: {}", e)))?
+        .query_row(
+            "SELECT contract_json FROM avc_contracts WHERE id = ?1",
+            rusqlite::params![input.contract_id],
+            |row| {
+                let json: String = row.get(0)?;
+                Ok(json)
+            },
+        )
+        .map_err(|_| HandlerError::NotFound(format!("Contract {} not found", input.contract_id)))?;
+
+    let contract: AvcContract = serde_json::from_str(&contract_json)
+        .map_err(|e| HandlerError::Internal(format!("Invalid contract JSON: {}", e)))?;
 
     let result = AvcValidator::validate(&contract, &input.generated_code);
 

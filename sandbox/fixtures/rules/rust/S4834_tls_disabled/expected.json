@@ -1,0 +1,23 @@
+{
+  "rule_id": "S4834",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_tls_disabled",
+      "file": "src/smelly.rs",
+      "description": "Disabled TLS verification triggers S4834",
+      "expected_min_issues": 4,
+      "expected_max_issues": 4,
+      "expected_rule_ids": ["S4834"],
+      "expected_severities": ["Critical"]
+    },
+    {
+      "name": "ignores_safe_config",
+      "file": "src/clean.rs",
+      "description": "Safe TLS config does not trigger S4834",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

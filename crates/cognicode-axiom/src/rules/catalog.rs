@@ -3194,6 +3194,205 @@ declare_rule! {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// S2076 — Dynamic SQL Injection via format!
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S2076"
+    name: "SQL queries built with format! should use parameterized queries"
+    severity: Blocker
+    category: Vulnerability
+    language: "rust"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (line_num, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            // Skip comments
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            || trimmed.starts_with("#") { continue; }
+
+            // Check for format! with SQL keywords
+            let has_format = line.contains("format!");
+            if !has_format { continue; }
+
+            let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER"];
+            let has_sql = sql_keywords.iter().any(|kw| {
+                // Check for keyword after format! opening
+                if let Some(pos) = line.find("format!") {
+                    let after_format = &line[pos..];
+                    after_format.contains(kw)
+                } else {
+                    false
+                }
+            });
+
+            if has_sql {
+                // Check it has variable interpolation (the vulnerability)
+                if line.contains("{") && line.contains("}") && !line.contains("bind") && !line.contains("prepared") && !line.contains("parameter") {
+                    issues.push(Issue::new(
+                        "S2076",
+                        "SQL query built with format! string interpolation - use parameterized queries",
+                        Severity::Blocker,
+                        Category::Vulnerability,
+                        ctx.file_path,
+                        line_num + 1,
+                    ).with_remediation(Remediation::moderate("Use prepared statements or an ORM with parameter binding")));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S2091 — Executable SQL Injection (EXECUTE/EXEC)
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S2091"
+    name: "EXECUTE statements with string concatenation are vulnerable to SQL injection"
+    severity: Blocker
+    category: Vulnerability
+    language: "rust"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (line_num, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            // Skip comments
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            || trimmed.starts_with("#") { continue; }
+
+            // Check for EXECUTE or EXEC keywords
+            if line.contains("EXECUTE") || line.contains("EXEC") {
+                // Check for string concatenation (the vulnerability)
+                if line.contains("format!") || line.contains("+") || line.contains("concat") {
+                    issues.push(Issue::new(
+                        "S2091",
+                        "EXECUTE statement with string concatenation - use parameterized queries",
+                        Severity::Blocker,
+                        Category::Vulnerability,
+                        ctx.file_path,
+                        line_num + 1,
+                    ).with_remediation(Remediation::moderate("Use parameterized EXECUTE statements")));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S2631 — SQL Injection via loop concatenation
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S2631"
+    name: "SQL queries should not be built by concatenating strings in loops"
+    severity: Critical
+    category: Vulnerability
+    language: "rust"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+
+        for (line_num, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            // Skip comments
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            || trimmed.starts_with("#") { continue; }
+
+            // Check if this line is inside a for loop
+            let in_loop = line_num > 0 && {
+                let prev_lines = &lines[..line_num];
+                prev_lines.iter().rposition(|l| {
+                    l.contains("for ") || l.contains("for(")
+                }).is_some()
+            };
+
+            if !in_loop { continue; }
+
+            // Check for string concatenation with interpolation in a loop
+            // This is a common pattern for SQL injection: push_str(&format!("...{}...", x))
+            let has_concat_with_interpolation =
+                (line.contains("push_str") && line.contains("format!")) ||
+                (line.contains("push_str") && line.contains("{") && line.contains("}")) ||
+                (line.contains("format!") && line.contains("{") && line.contains("}"));
+
+            if has_concat_with_interpolation {
+                issues.push(Issue::new(
+                    "S2631",
+                    "String concatenation with interpolation in a loop - this pattern can lead to SQL injection if building SQL",
+                    Severity::Critical,
+                    Category::Vulnerability,
+                    ctx.file_path,
+                    line_num + 1,
+                ).with_remediation(Remediation::moderate("Refactor to avoid building strings with interpolation in loops")));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S4834 — Disabled TLS Certificate Validation
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S4834"
+    name: "TLS certificate validation should not be disabled"
+    severity: Critical
+    category: Vulnerability
+    language: "rust"
+    params: {}
+    check: => {
+        let mut issues = Vec::new();
+        for (line_num, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            // Skip comments
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            || trimmed.starts_with("#") { continue; }
+
+            // Check for disabled TLS verification patterns
+            let tls_disable_patterns = [
+                "verify",
+                "NoVerify",
+                "ALLOW_SELF_SIGNED",
+                "danger_accept_invalid_certs",
+            ];
+
+            let has_verify_disable = tls_disable_patterns.iter().any(|pattern| {
+                if *pattern == "verify" {
+                    // Match verify\s*=\s*false or verify\s*:\s*false
+                    let re = regex::Regex::new(r"verify\s*[=:]\s*false").unwrap();
+                    re.is_match(line)
+                } else {
+                    line.contains(pattern)
+                }
+            });
+
+            if has_verify_disable {
+                issues.push(Issue::new(
+                    "S4834",
+                    "TLS certificate verification is disabled - this creates a security vulnerability",
+                    Severity::Critical,
+                    Category::Vulnerability,
+                    ctx.file_path,
+                    line_num + 1,
+                ).with_remediation(Remediation::substantial("Enable TLS certificate validation and use valid certificates")));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // S2092 — Cookie without Secure flag
 // ─────────────────────────────────────────────────────────────────────────────
 

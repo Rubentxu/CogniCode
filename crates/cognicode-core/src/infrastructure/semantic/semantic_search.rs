@@ -10,7 +10,7 @@ use crate::infrastructure::parser::Language;
 use dashmap::DashMap;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// Represents a search query with filters
@@ -325,6 +325,7 @@ fn fuzzy_score(query: &str, target: &str) -> f32 {
 /// Search service that provides symbol search functionality
 pub struct SemanticSearchService {
     index: Arc<SearchIndex>,
+    db_path: Option<PathBuf>,
 }
 
 impl SemanticSearchService {
@@ -332,7 +333,19 @@ impl SemanticSearchService {
     pub fn new() -> Self {
         Self {
             index: Arc::new(SearchIndex::new()),
+            db_path: None,
         }
+    }
+
+    /// Sets the database path for FTS5 persistence
+    pub fn with_db_path(mut self, db_path: PathBuf) -> Self {
+        self.db_path = Some(db_path);
+        self
+    }
+
+    /// Sets the database path for FTS5 persistence (mutable version)
+    pub fn set_db_path(&mut self, db_path: PathBuf) {
+        self.db_path = Some(db_path);
     }
 
     /// Returns a reference to the search index
@@ -340,7 +353,17 @@ impl SemanticSearchService {
         &self.index
     }
 
-    /// Indexes a file's symbols
+    /// Opens a FTS5 database connection if configured
+    fn open_fts_db(&self) -> Option<rusqlite::Connection> {
+        let db_path = self.db_path.as_ref()?;
+        let db_dir = db_path.join(".cognicode");
+        std::fs::create_dir_all(&db_dir).ok()?;
+        let db_file = db_dir.join("cognicode.db");
+        let conn = rusqlite::Connection::open(db_file).ok()?;
+        Some(conn)
+    }
+
+    /// Indexes a file's symbols (dual-write to DashMap and FTS5)
     pub fn index_file(
         &self,
         file_path: &str,
@@ -352,7 +375,24 @@ impl SemanticSearchService {
 
         let symbols = parser.find_all_symbols(source).map_err(|e| e.to_string())?;
 
-        self.index.index_file(file_path, symbols);
+        // Write to DashMap (existing behavior)
+        self.index.index_file(file_path, symbols.clone());
+
+        // Dual-write to FTS5 if db_path is configured
+        if let Some(conn) = self.open_fts_db() {
+            for symbol in symbols {
+                let kind_str = format!("{:?}", symbol.kind());
+                let docstring = String::new(); // Symbols don't have docstrings by default
+                let tokens = format!("{} {}", symbol.name(), kind_str);
+                if let Err(e) = conn.execute(
+                    "INSERT OR REPLACE INTO symbol_index (symbol_name, symbol_kind, file_path, docstring, body_tokens) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![symbol.name(), kind_str, file_path, docstring, tokens],
+                ) {
+                    tracing::warn!("Failed to index symbol to FTS5: {}", e);
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -370,9 +410,72 @@ impl SemanticSearchService {
         self.index_file(&file_path.to_string_lossy(), &source, language)
     }
 
-    /// Searches for symbols
+    /// Searches for symbols (FTS5 with DashMap fallback)
     pub fn search(&self, query: SearchQuery) -> Vec<SearchResult> {
+        // Try FTS5 first if db_path is configured
+        if let Some(conn) = self.open_fts_db() {
+            let fts_results = self.search_fts5(&conn, &query);
+            if !fts_results.is_empty() {
+                return fts_results;
+            }
+            tracing::debug!("FTS5 returned no results, falling back to DashMap");
+        }
+
+        // Fall back to DashMap search
         self.index.search(&query)
+    }
+
+    /// Search using FTS5 with BM25 ranking
+    fn search_fts5(&self, conn: &rusqlite::Connection, query: &SearchQuery) -> Vec<SearchResult> {
+        let search_pattern = format!("{}*", query.query.to_lowercase());
+        let limit = query.max_results as i64;
+
+        let mut stmt = match conn.prepare(
+            "SELECT bm25(symbol_index), symbol_name, symbol_kind, file_path FROM symbol_index WHERE symbol_index MATCH ?1 ORDER BY bm25 LIMIT ?2"
+        ) {
+            Ok(stmt) => stmt,
+            Err(e) => {
+                tracing::warn!("FTS5 query prepare failed: {}", e);
+                return Vec::new();
+            }
+        };
+
+        let results = stmt.query_map(rusqlite::params![search_pattern, limit], |row| {
+            let rank: f64 = row.get(0)?;
+            let name: String = row.get(1)?;
+            let kind_str: String = row.get(2)?;
+            let file: String = row.get(3)?;
+            Ok((rank, name, kind_str, file))
+        });
+
+        match results {
+            Ok(rows) => {
+                let mut search_results = Vec::new();
+                for row in rows.flatten() {
+                    let (rank, name, kind_str, file) = row;
+                    let kind = match kind_str.as_str() {
+                        "Function" => SymbolKind::Function,
+                        "Struct" => SymbolKind::Struct,
+                        "Enum" => SymbolKind::Enum,
+                        "Trait" => SymbolKind::Trait,
+                        "Method" => SymbolKind::Method,
+                        "Module" => SymbolKind::Module,
+                        "Variable" => SymbolKind::Variable,
+                        "Constant" => SymbolKind::Constant,
+                        _ => SymbolKind::Function,
+                    };
+                    let location = Location::new(&file, 1, 1);
+                    let symbol = Symbol::new(name.clone(), kind, location);
+                    let score = (1.0 / (1.0 + rank.abs())) as f32; // Convert BM25 to similar score range
+                    search_results.push(SearchResult::new(symbol, score, MatchType::Fuzzy));
+                }
+                search_results
+            }
+            Err(e) => {
+                tracing::warn!("FTS5 query execution failed: {}", e);
+                Vec::new()
+            }
+        }
     }
 
     /// Clears the search index

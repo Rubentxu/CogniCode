@@ -88,6 +88,7 @@ process-wrap.workspace = true
 
 # Store traits (extracted to break circular deps)
 cognicode-store-traits = { workspace = true }
+rusqlite.workspace = true
 
 # Rig-core (optional)
 rig-core = { workspace = true, optional = true }

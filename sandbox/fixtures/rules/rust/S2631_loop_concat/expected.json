@@ -1,0 +1,23 @@
+{
+  "rule_id": "S2631",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_loop_concat",
+      "file": "src/smelly.rs",
+      "description": "SQL concat in loop triggers S2631",
+      "expected_min_issues": 2,
+      "expected_max_issues": 2,
+      "expected_rule_ids": ["S2631"],
+      "expected_severities": ["Critical"]
+    },
+    {
+      "name": "ignores_clean_code",
+      "file": "src/clean.rs",
+      "description": "Non-SQL loop operations do not trigger S2631",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

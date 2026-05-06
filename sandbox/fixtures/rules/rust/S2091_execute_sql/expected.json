@@ -1,0 +1,23 @@
+{
+  "rule_id": "S2091",
+  "language": "rust",
+  "test_cases": [
+    {
+      "name": "detects_execute_sql",
+      "file": "src/smelly.rs",
+      "description": "EXECUTE/EXEC with concat triggers S2091",
+      "expected_min_issues": 3,
+      "expected_max_issues": 3,
+      "expected_rule_ids": ["S2091"],
+      "expected_severities": ["Blocker"]
+    },
+    {
+      "name": "ignores_clean_code",
+      "file": "src/clean.rs",
+      "description": "Code without EXECUTE does not trigger S2091",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}
