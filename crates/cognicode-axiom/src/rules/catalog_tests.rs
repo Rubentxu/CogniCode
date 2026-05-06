@@ -401,6 +401,48 @@ fn main() {
         assert!(issues.is_empty(), "Expected S2068 NOT to trigger for function call");
     }
 
+    #[test]
+    fn test_s2068_no_fp_in_comment() {
+        // Comments containing credential patterns should NOT trigger
+        let source = r#"
+fn main() {
+    // Example credentials: password = "test123"
+    //! Module configuration: secret = "abc123"
+    /// API docs: set api_key = "sk-example"
+    let hash = argon2("data");
+}
+"#;
+
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            let rule = catalog::S2068Rule::new();
+            rule.check(ctx)
+        });
+
+        assert!(issues.is_empty(), "S2068 should NOT trigger on comments");
+    }
+
+    #[test]
+    fn test_s2068_no_fp_in_docstring() {
+        // Docstrings with example credentials should NOT trigger
+        let source = r#"
+/// Configuration example:
+/// ```
+/// password = "mysecret123"
+/// api_key = "sk-test123"
+/// ```
+fn configure() {
+    let pass = std::env::var("PASSWORD").unwrap();
+}
+"#;
+
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            let rule = catalog::S2068Rule::new();
+            rule.check(ctx)
+        });
+
+        assert!(issues.is_empty(), "S2068 should NOT trigger in docstrings");
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // S5122 — SQL Injection Tests
     // ═══════════════════════════════════════════════════════════════════════════

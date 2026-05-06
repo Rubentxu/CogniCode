@@ -25,6 +25,7 @@ pub mod debt;        // Technical Debt SQALE (Section 6)
 pub mod ratings;     // Project Ratings A-E (Section 7)
 pub mod duplication; // Duplication Detection with BLAKE3 (Section 3.1)
 pub mod regex_patterns; // Shared regex pattern constants
+pub mod subscription_engine; // Deterministic SubscriptionVisitor pattern (SonarQube-aligned)
 
 #[cfg(feature = "scraper")]
 pub mod scraper;

@@ -695,8 +695,16 @@ declare_rule! {
         let regexes: Vec<_> = patterns.iter().map(|(p, _)| regex::Regex::new(p).unwrap()).collect();
         
         for (line_num, line) in ctx.source.lines().enumerate() {
+            // Skip comments, docstrings, and empty lines to avoid false positives
+            let trimmed = line.trim();
+            if trimmed.is_empty() 
+            || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*")
+            || trimmed.starts_with("*") || trimmed.starts_with("#")
+            { continue; }
+            
             for re in &regexes {
-                if re.is_match(line) {
+                if re.is_match(trimmed) {
                     issues.push(Issue::new(
                         "S2068",
                         format!("Hard-coded credential detected on line {}", line_num + 1),
