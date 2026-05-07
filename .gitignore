@@ -4,6 +4,7 @@
 **/*.pdb
 **/*.exp
 **/*.lib
+**/*.rlib
 
 # IDE
 /.idea/

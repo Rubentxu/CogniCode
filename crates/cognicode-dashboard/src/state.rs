@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::api_client::{
     ApiClient, AnalysisSummaryDto, IssueDto, DashboardConfigDto,
+    HistoryEntryDto,
 };
 
 /// Dashboard configuration settings
@@ -361,6 +362,8 @@ pub struct ReactiveAppState {
     pub loading: RwSignal<bool>,
     /// Current error message, if any
     pub error: RwSignal<Option<String>>,
+    /// History data for trend charts
+    pub trend_data: RwSignal<Option<Vec<HistoryEntryDto>>>,
 }
 
 impl ReactiveAppState {
@@ -377,6 +380,7 @@ impl ReactiveAppState {
             total_pages: RwSignal::new(1),
             loading: RwSignal::new(false),
             error: RwSignal::new(None),
+            trend_data: RwSignal::new(None),
         }
     }
 
@@ -397,6 +401,7 @@ impl ReactiveAppState {
             total_pages: RwSignal::new(1),
             loading: RwSignal::new(false),
             error: RwSignal::new(None),
+            trend_data: RwSignal::new(None),
         }
     }
 
@@ -450,6 +455,31 @@ impl ReactiveAppState {
             }
             Err(e) => {
                 self.error.set(Some(e));
+            }
+        }
+
+        self.loading.set(false);
+    }
+
+    /// Load project analysis history for trend charts
+    pub async fn load_history(&self) {
+        self.loading.set(true);
+        self.error.set(None);
+
+        let project_id = self.project_path.get();
+        if project_id.is_empty() {
+            self.error.set(Some("Project path is empty".to_string()));
+            self.loading.set(false);
+            return;
+        }
+
+        match self.api.get_project_history(&project_id).await {
+            Ok(history) => {
+                self.trend_data.set(Some(history.runs));
+            }
+            Err(e) => {
+                self.error.set(Some(e));
+                self.trend_data.set(None);
             }
         }
 

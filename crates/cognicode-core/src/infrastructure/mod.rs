@@ -4,6 +4,7 @@
 //! such as tree-sitter for parsing and petgraph for dependency graphs.
 
 pub mod avc;
+pub mod git;
 pub mod graph;
 pub mod lsp;
 pub mod mermaid;

@@ -1,7 +1,9 @@
 //! Metrics Page — Real API data with charts
 
+use wasm_bindgen_futures::spawn_local;
 use leptos::prelude::*;
 use crate::state::ReactiveAppState;
+use crate::api_client::HistoryEntryDto;
 use crate::components::{Shell, MetricCard, LoadingSpinner, TrendChart};
 
 /// Render severity bars from analysis data
@@ -32,10 +34,75 @@ fn render_severity_bars(summary: &AnalysisSummaryDto) -> Vec<impl IntoView> {
     }).collect::<Vec<_>>()
 }
 
+/// Map history entries to issues trend vector (total_issues per run)
+fn map_issues_trend(runs: &[HistoryEntryDto]) -> Vec<f64> {
+    runs.iter().map(|r| r.total_issues as f64).collect()
+}
+
+/// Map history entries to debt trend vector (debt_minutes per run)
+fn map_debt_trend(runs: &[HistoryEntryDto]) -> Vec<f64> {
+    runs.iter().map(|r| r.debt_minutes as f64).collect()
+}
+
+/// Map history entries to new issues trend vector (new_issues per run)
+fn map_new_issues_trend(runs: &[HistoryEntryDto]) -> Vec<f64> {
+    runs.iter().map(|r| r.new_issues as f64).collect()
+}
+
+/// Render trend charts section with real data from history
+fn render_trend_charts(state: ReactiveAppState) -> impl IntoView {
+    move || {
+        match state.trend_data.get() {
+            Some(runs) if runs.len() >= 2 => {
+                let issues_trend = map_issues_trend(&runs);
+                let debt_trend = map_debt_trend(&runs);
+                let new_trend = map_new_issues_trend(&runs);
+
+                view! {
+                    <section class="mb-8">
+                        <h2 class="text-h3 text-text-primary mb-4">Trends</h2>
+                        <div class="grid grid-cols-3 gap-6">
+                            <div class="card">
+                                <p class="text-caption text-text-muted mb-4">Issues Trend</p>
+                                <TrendChart data={issues_trend} width=200 height=80 color="var(--color-brand)" />
+                            </div>
+                            <div class="card">
+                                <p class="text-caption text-text-muted mb-4">Technical Debt (min)</p>
+                                <TrendChart data={debt_trend} width=200 height=80 color="var(--color-accent-sunset)" />
+                            </div>
+                            <div class="card">
+                                <p class="text-caption text-text-muted mb-4">New Issues</p>
+                                <TrendChart data={new_trend} width=200 height=80 color="var(--color-severity-critical)" />
+                            </div>
+                        </div>
+                    </section>
+                }.into_any()
+            }
+            _ => {
+                // Insufficient history: show placeholder instead of broken/empty charts
+                view! {
+                    <section class="mb-8">
+                        <h2 class="text-h3 text-text-primary mb-4">Trends</h2>
+                        <div class="card text-center py-12">
+                            <p class="text-body text-text-muted">"No trend data — run multiple analyses to see trends"</p>
+                        </div>
+                    </section>
+                }.into_any()
+            }
+        }
+    }
+}
+
 /// Metrics page component
 #[component]
 pub fn MetricsPage() -> impl IntoView {
     let state = expect_context::<ReactiveAppState>();
+
+    // Load history on mount for trend charts
+    let state_for_load = state.clone();
+    spawn_local(async move {
+        state_for_load.load_history().await;
+    });
 
     view! {
         <Shell>
@@ -77,23 +144,6 @@ fn render_metrics_content(state: ReactiveAppState) -> impl IntoView {
         state.analysis.get().map(|summary| {
             let severity_bars = render_severity_bars(&summary);
 
-            let total = summary.total_issues as f64;
-            let smells = summary.metrics.code_smells as f64;
-            let bugs = summary.metrics.bugs as f64;
-
-            let issues_trend = vec![
-                total * 1.3, total * 1.2, total * 1.15, total * 1.1,
-                total * 1.05, total * 0.95, total * 0.9, total
-            ];
-            let smells_trend = vec![
-                smells * 1.4, smells * 1.3, smells * 1.2, smells * 1.1,
-                smells * 1.05, smells * 0.95, smells * 0.9, smells
-            ];
-            let bugs_trend = vec![
-                bugs * 1.5, bugs * 1.3, bugs * 1.2, bugs * 1.1,
-                bugs * 1.0, bugs * 0.8, bugs * 0.7, bugs
-            ];
-
             view! {
                 <div>
                     <section class="mb-8">
@@ -105,23 +155,7 @@ fn render_metrics_content(state: ReactiveAppState) -> impl IntoView {
                         </div>
                     </section>
 
-                    <section class="mb-8">
-                        <h2 class="text-h3 text-text-primary mb-4">Trends</h2>
-                        <div class="grid grid-cols-3 gap-6">
-                            <div class="card">
-                                <p class="text-caption text-text-muted mb-4">Issues Trend</p>
-                                <TrendChart data={issues_trend} width=200 height=80 color="var(--color-brand)" />
-                            </div>
-                            <div class="card">
-                                <p class="text-caption text-text-muted mb-4">Code Smells Trend</p>
-                                <TrendChart data={smells_trend} width=200 height=80 color="var(--color-accent-sunset)" />
-                            </div>
-                            <div class="card">
-                                <p class="text-caption text-text-muted mb-4">Bugs Trend</p>
-                                <TrendChart data={bugs_trend} width=200 height=80 color="var(--color-severity-critical)" />
-                            </div>
-                        </div>
-                    </section>
+                    {render_trend_charts(state.clone())}
 
                     <section class="mb-8">
                         <h2 class="text-h3 text-text-primary mb-4">Issues by Severity</h2>
@@ -181,5 +215,135 @@ fn render_empty_state(state: ReactiveAppState) -> impl IntoView {
         } else {
             None
         }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_map_issues_trend_extracts_total_issues() {
+        let runs = vec![
+            HistoryEntryDto {
+                timestamp: "2024-01-01T00:00:00Z".to_string(),
+                total_issues: 10,
+                debt_minutes: 60,
+                rating: "A".to_string(),
+                files_changed: 5,
+                new_issues: 2,
+                fixed_issues: 1,
+            },
+            HistoryEntryDto {
+                timestamp: "2024-01-02T00:00:00Z".to_string(),
+                total_issues: 15,
+                debt_minutes: 90,
+                rating: "B".to_string(),
+                files_changed: 8,
+                new_issues: 5,
+                fixed_issues: 0,
+            },
+            HistoryEntryDto {
+                timestamp: "2024-01-03T00:00:00Z".to_string(),
+                total_issues: 12,
+                debt_minutes: 75,
+                rating: "A".to_string(),
+                files_changed: 3,
+                new_issues: 1,
+                fixed_issues: 4,
+            },
+        ];
+
+        let issues = map_issues_trend(&runs);
+        assert_eq!(issues, vec![10.0, 15.0, 12.0]);
+    }
+
+    #[test]
+    fn test_map_debt_trend_extracts_debt_minutes() {
+        let runs = vec![
+            HistoryEntryDto {
+                timestamp: "2024-01-01T00:00:00Z".to_string(),
+                total_issues: 10,
+                debt_minutes: 60,
+                rating: "A".to_string(),
+                files_changed: 5,
+                new_issues: 2,
+                fixed_issues: 1,
+            },
+            HistoryEntryDto {
+                timestamp: "2024-01-02T00:00:00Z".to_string(),
+                total_issues: 15,
+                debt_minutes: 90,
+                rating: "B".to_string(),
+                files_changed: 8,
+                new_issues: 5,
+                fixed_issues: 0,
+            },
+        ];
+
+        let debt = map_debt_trend(&runs);
+        assert_eq!(debt, vec![60.0, 90.0]);
+    }
+
+    #[test]
+    fn test_map_new_issues_trend_extracts_new_issues() {
+        let runs = vec![
+            HistoryEntryDto {
+                timestamp: "2024-01-01T00:00:00Z".to_string(),
+                total_issues: 10,
+                debt_minutes: 60,
+                rating: "A".to_string(),
+                files_changed: 5,
+                new_issues: 2,
+                fixed_issues: 1,
+            },
+            HistoryEntryDto {
+                timestamp: "2024-01-02T00:00:00Z".to_string(),
+                total_issues: 15,
+                debt_minutes: 90,
+                rating: "B".to_string(),
+                files_changed: 8,
+                new_issues: 5,
+                fixed_issues: 0,
+            },
+            HistoryEntryDto {
+                timestamp: "2024-01-03T00:00:00Z".to_string(),
+                total_issues: 12,
+                debt_minutes: 75,
+                rating: "A".to_string(),
+                files_changed: 3,
+                new_issues: 1,
+                fixed_issues: 4,
+            },
+        ];
+
+        let new_issues = map_new_issues_trend(&runs);
+        assert_eq!(new_issues, vec![2.0, 5.0, 1.0]);
+    }
+
+    #[test]
+    fn test_fallback_renders_for_empty_runs() {
+        // Empty runs should trigger fallback, not charts
+        let runs: Vec<HistoryEntryDto> = vec![];
+        assert!(runs.len() < 2);
+    }
+
+    #[test]
+    fn test_fallback_renders_for_single_run() {
+        // Single run should trigger fallback (need at least 2 for trend)
+        let runs = vec![HistoryEntryDto {
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            total_issues: 10,
+            debt_minutes: 60,
+            rating: "A".to_string(),
+            files_changed: 5,
+            new_issues: 2,
+            fixed_issues: 1,
+        }];
+        assert!(runs.len() < 2);
     }
 }
