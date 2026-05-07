@@ -118,11 +118,32 @@ pub fn initialize_schema(db: &Connection) {
             severity TEXT DEFAULT 'warning'
         );
 
+        -- Agent Interactions Telemetry (Phase 3A)
+        CREATE TABLE IF NOT EXISTS agent_interactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            contract_id TEXT,
+            result_summary TEXT NOT NULL,
+            duration_ms REAL
+        );
+
         -- BM25 Symbol Index (FTS5)
         CREATE VIRTUAL TABLE IF NOT EXISTS symbol_index USING fts5(
             symbol_name, symbol_kind, file_path, docstring, body_tokens,
             tokenize='porter unicode61'
         );
+
+        -- Symbol Timestamps (BM25 Temporal Indexing)
+        /* Stores per-symbol modification timestamps for temporal ranking boost */
+        CREATE TABLE IF NOT EXISTS symbol_timestamps (
+            file_path       TEXT NOT NULL,
+            symbol_name     TEXT NOT NULL,
+            last_modified   INTEGER NOT NULL,
+            source          TEXT NOT NULL,
+            PRIMARY KEY (file_path, symbol_name)
+        );
+        CREATE INDEX IF NOT EXISTS idx_timestamps_mtime ON symbol_timestamps(last_modified);
     ").expect("Failed to initialize schema");
 }
 

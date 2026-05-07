@@ -8,6 +8,13 @@ use anyhow::Result;
 /// FTS5 index for symbol search
 pub struct Fts5Index;
 
+/// Timestamp entry returned by get_timestamp
+#[derive(Debug, Clone)]
+pub struct TimestampEntry {
+    pub last_modified: i64,
+    pub source: String,
+}
+
 /// Search result from FTS5 index
 #[derive(Debug, Clone)]
 pub struct SymbolSearchResult {
@@ -60,5 +67,43 @@ impl Fts5Index {
             params![name],
         )?;
         Ok(())
+    }
+}
+
+/// Upsert a timestamp entry for a symbol
+pub fn upsert_timestamp(
+    conn: &Connection,
+    file_path: &str,
+    symbol_name: &str,
+    last_modified: i64,
+    source: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO symbol_timestamps (file_path, symbol_name, last_modified, source) VALUES (?1, ?2, ?3, ?4)",
+        params![file_path, symbol_name, last_modified, source],
+    )?;
+    Ok(())
+}
+
+/// Get the timestamp entry for a symbol
+pub fn get_timestamp(
+    conn: &Connection,
+    file_path: &str,
+    symbol_name: &str,
+) -> Result<Option<(i64, String)>> {
+    let result = conn.query_row(
+        "SELECT last_modified, source FROM symbol_timestamps WHERE file_path = ?1 AND symbol_name = ?2",
+        params![file_path, symbol_name],
+        |row| {
+            let last_modified: i64 = row.get(0)?;
+            let source: String = row.get(1)?;
+            Ok((last_modified, source))
+        },
+    );
+
+    match result {
+        Ok(entry) => Ok(Some(entry)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
     }
 }

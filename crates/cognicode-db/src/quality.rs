@@ -48,6 +48,11 @@ impl QualityStore {
         Self { db }
     }
 
+    /// Get a reference to the underlying SQLite connection
+    pub fn connection(&self) -> &Connection {
+        &self.db
+    }
+
     // === Baseline ===
 
     pub fn set_baseline(&self, total_issues: usize, debt_minutes: u64, rating: &str, blockers: usize, criticals: usize) {

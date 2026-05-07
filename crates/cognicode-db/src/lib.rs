@@ -12,10 +12,16 @@ pub mod types;
 pub mod graph;
 pub mod avc_contracts;
 pub mod fts5_index;
+pub mod agent_interactions;
+pub mod drift_events;
+pub mod tool_names;
 
 pub use quality::{QualityStore, IssueKey, IssueRow, IssueStatus};
 pub use files::FileStore;
 pub use graph::SqliteGraphStore;
-pub use avc_contracts::AvcContractStore;
+pub use avc_contracts::{AvcContractStore, ContractRow};
 pub use fts5_index::Fts5Index;
+pub use agent_interactions::{AgentInteractionStore, AgentInteraction, ToolStats, classify_result_status, ResultStatus};
+pub use drift_events::{DriftEventStore, DriftEvent};
+pub use tool_names::*;
 pub use types::*;
