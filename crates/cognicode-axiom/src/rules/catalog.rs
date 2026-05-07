@@ -853,18 +853,19 @@ declare_rule! {
 declare_rule! {
     id: "S7000"
     name: "Semantic intent drift detected — code does not match documentation"
-    severity: Minor
+    severity: Major
     category: CodeSmell
-    language: "rust"
+    language: "*"
     params: { drift_threshold: f32 = 0.3 }
     check: => {
         let threshold = self.drift_threshold;
-        let min_lines = 5; // Skip very short functions
+        let min_lines = 3; // Skip very short functions
+        let fn_node_type = ctx.language.function_node_type();
 
         // Walk the tree to find function definitions
-        fn walk_functions(node: tree_sitter::Node, source: &str, threshold: f32, min_lines: usize, file_path: &std::path::Path) -> Vec<Issue> {
+        fn walk_functions(node: tree_sitter::Node, source: &str, threshold: f32, min_lines: usize, file_path: &std::path::Path, fn_node_type: &str) -> Vec<Issue> {
             let mut issues = Vec::new();
-            if node.kind() == "function_item" || node.kind() == "function_definition" {
+            if node.kind() == fn_node_type {
                 if let Some(name_node) = node.child_by_field_name("name") {
                     if let Ok(name) = name_node.utf8_text(source.as_bytes()) {
                         if let Some(body) = node.child_by_field_name("body") {
@@ -873,7 +874,16 @@ declare_rule! {
                             if line_count >= min_lines {
                                 // Extract docstring by looking backwards
                                 let doc = crate::rules::subscription_engine::extract_docstring_above(&node, source);
-                                let body_tokens = crate::rules::subscription_engine::tokenize_code(&body_text);
+
+                                // For body tokens, we must exclude the docstring content from the body text
+                                // to avoid artificially inflating similarity (docstring tokens appear in both
+                                // doc_tokens and body_tokens when docstring is inside the body)
+                                let body_for_tokenize: String = if doc.is_empty() {
+                                    body_text.to_string()
+                                } else {
+                                    body_text.replace(&doc, "")
+                                };
+                                let body_tokens = crate::rules::subscription_engine::tokenize_code(&body_for_tokenize);
                                 let doc_tokens = crate::rules::subscription_engine::tokenize_code(&doc);
 
                                 if !doc_tokens.is_empty() {
@@ -886,7 +896,7 @@ declare_rule! {
                                             "S7000",
                                             format!("Semantic drift: function '{}' docstring and body have {:.0}% similarity (threshold: {:.0}%)",
                                                     name, similarity * 100.0, threshold * 100.0),
-                                            Severity::Minor,
+                                            Severity::Major,
                                             Category::CodeSmell,
                                             file_path,
                                             name_node.start_position().row + 1,
@@ -902,12 +912,12 @@ declare_rule! {
             }
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                issues.extend(walk_functions(child, source, threshold, min_lines, file_path));
+                issues.extend(walk_functions(child, source, threshold, min_lines, file_path, fn_node_type));
             }
             issues
         }
 
-        walk_functions(ctx.tree.root_node(), ctx.source, threshold, min_lines, ctx.file_path)
+        walk_functions(ctx.tree.root_node(), ctx.source, threshold, min_lines, ctx.file_path, fn_node_type)
     }
 }
 
@@ -919,8 +929,8 @@ declare_rule! {
 declare_rule! {
     id: "S7001"
     name: "AVC contract violation detected"
-    severity: Minor
-    category: CodeSmell
+    severity: Blocker
+    category: Bug
     language: "rust"
     params: {}
     check: => {
@@ -942,8 +952,8 @@ declare_rule! {
                     issues.push(Issue::new(
                         "S7001",
                         format!("AVC contract violation: {}", desc),
-                        Severity::Minor,
-                        Category::CodeSmell,
+                        Severity::Blocker,
+                        Category::Bug,
                         ctx.file_path,
                         idx + 1,
                     ).with_remediation(Remediation::moderate(
@@ -1030,8 +1040,8 @@ declare_rule! {
 declare_rule! {
     id: "S7003"
     name: "Forbidden domain term detected"
-    severity: Minor
-    category: CodeSmell
+    severity: Major
+    category: SecurityHotspot
     language: "rust"
     params: { forbidden_terms: Vec<String> = vec!["base64".to_string()] }
     check: => {
@@ -1049,8 +1059,8 @@ declare_rule! {
                     issues.push(Issue::new(
                         "S7003",
                         format!("Forbidden domain term '{}' found in code", term),
-                        Severity::Minor,
-                        Category::CodeSmell,
+                        Severity::Major,
+                        Category::SecurityHotspot,
                         ctx.file_path,
                         idx + 1,
                     ).with_remediation(Remediation::moderate(

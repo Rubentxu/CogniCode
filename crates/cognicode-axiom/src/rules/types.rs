@@ -339,9 +339,20 @@ impl RuleRegistry {
             let lang = registry.rules[idx].language().to_lowercase();
             registry
                 .by_language
-                .entry(lang)
+                .entry(lang.clone())
                 .or_default()
                 .push(idx);
+
+            // If language is "*", also index under every supported language key
+            if lang == "*" {
+                for supported_lang in ["python", "javascript", "typescript", "go", "java", "rust"] {
+                    registry
+                        .by_language
+                        .entry(supported_lang.to_string())
+                        .or_default()
+                        .push(idx);
+                }
+            }
 
             // Index by category
             let cat = registry.rules[idx].category();

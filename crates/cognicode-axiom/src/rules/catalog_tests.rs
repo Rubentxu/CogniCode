@@ -866,15 +866,22 @@ fn process_data(input: &str) -> String {
         });
         assert!(!issues.is_empty(), "S7000 should detect semantic drift");
         assert_eq!(issues[0].rule_id, "S7000");
+        assert_eq!(issues[0].severity, Severity::Major);
+        assert_eq!(issues[0].category, Category::CodeSmell);
     }
 
     #[test]
     fn test_s7000_no_fp_comment_keywords() {
         // Function where docstring mentions terms also in code (legitimate)
+        // Expanded to 5 lines to work with min_lines=3
+        // Uses exact token matching between docstring and body
         let source = r#"
-/// Hashes a password using bcrypt algorithm
-fn hash_password(password: &str) -> String {
-    bcrypt::hash(password, 12).unwrap()
+/// Hash password with bcrypt cost and verify
+fn hash_password(password: &str) -> bool {
+    let cost = 12;
+    let hash_result = bcrypt::hash(password, cost).unwrap();
+    let verified = bcrypt::verify(password, &hash_result).unwrap();
+    verified
 }
 "#;
         let issues = with_rule_context(source, Language::Rust, |ctx| {
@@ -883,6 +890,67 @@ fn hash_password(password: &str) -> String {
         });
         // Should not trigger because docstring and body share relevant tokens
         assert!(issues.is_empty(), "S7000 should NOT trigger when docstring matches implementation");
+    }
+
+    #[test]
+    fn test_s7000_drift_short_function() {
+        // 3-line body with clear drift: doc claims hashing, body uses base64
+        // This verifies min_lines=3 actually catches the case
+        let source = r#"
+/// Hash token using bcrypt
+fn hash_token(token: &str) -> String {
+    base64::encode(token.as_bytes())
+}
+"#;
+        let issues = with_rule_context(source, Language::Rust, |ctx| {
+            let rule = catalog::S7000Rule::new();
+            rule.check(ctx)
+        });
+        // Should trigger because docstring (bcrypt) doesn't match body (base64)
+        assert!(!issues.is_empty(), "S7000 should detect drift in 3-line function");
+        assert_eq!(issues[0].rule_id, "S7000");
+        assert_eq!(issues[0].severity, Severity::Major);
+        assert_eq!(issues[0].category, Category::CodeSmell);
+    }
+
+    #[test]
+    fn test_s7000_python_drift_detected() {
+        // Python function with docstring-body mismatch
+        let source = r#"
+def process_data(input_str):
+    '''This function encrypts data using AES-256'''
+    # Actual implementation uses base64 encoding, not encryption
+    result = base64.b64encode(input_str.encode())
+    return result
+"#;
+        let issues = with_rule_context(source, Language::Python, |ctx| {
+            let rule = catalog::S7000Rule::new();
+            rule.check(ctx)
+        });
+        assert!(!issues.is_empty(), "S7000 should detect semantic drift in Python");
+        assert_eq!(issues[0].rule_id, "S7000");
+        assert_eq!(issues[0].severity, Severity::Major);
+        assert_eq!(issues[0].category, Category::CodeSmell);
+    }
+
+    #[test]
+    fn test_s7000_javascript_drift_detected() {
+        // JavaScript function with docstring-body mismatch
+        let source = r#"
+function processData(input) {
+    /** This function encrypts data using AES-256 */
+    // Actual implementation uses base64 encoding, not encryption
+    return Buffer.from(input).toString('base64');
+}
+"#;
+        let issues = with_rule_context(source, Language::JavaScript, |ctx| {
+            let rule = catalog::S7000Rule::new();
+            rule.check(ctx)
+        });
+        assert!(!issues.is_empty(), "S7000 should detect semantic drift in JavaScript");
+        assert_eq!(issues[0].rule_id, "S7000");
+        assert_eq!(issues[0].severity, Severity::Major);
+        assert_eq!(issues[0].category, Category::CodeSmell);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -903,6 +971,8 @@ fn risky_operation() {
         });
         assert!(!issues.is_empty(), "S7001 should detect AVC contract violations");
         assert_eq!(issues[0].rule_id, "S7001");
+        assert_eq!(issues[0].severity, Severity::Blocker);
+        assert_eq!(issues[0].category, Category::Bug);
     }
 
     #[test]
@@ -944,6 +1014,8 @@ fn legacy_function() -> Result<String, Error> {
         // try! macro should be flagged as obsolete
         assert!(!issues.is_empty(), "S7002 should detect try! macro");
         assert_eq!(issues[0].rule_id, "S7002");
+        assert_eq!(issues[0].severity, Severity::Minor);
+        assert_eq!(issues[0].category, Category::CodeSmell);
     }
 
     #[test]
@@ -978,6 +1050,8 @@ fn encode_data() {
         });
         assert!(!issues.is_empty(), "S7003 should detect forbidden term 'base64'");
         assert_eq!(issues[0].rule_id, "S7003");
+        assert_eq!(issues[0].severity, Severity::Major);
+        assert_eq!(issues[0].category, Category::SecurityHotspot);
     }
 
     #[test]

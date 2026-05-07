@@ -60,7 +60,10 @@ impl AvcGenerator {
         name: &str,
         source: &str,
     ) -> Option<tree_sitter::Node<'a>> {
-        if node.kind() == "function_item" || node.kind() == "function_definition" {
+        // Match Rust function_item/function_definition AND JavaScript function_declaration
+        if node.kind() == "function_item"
+            || node.kind() == "function_definition"
+            || node.kind() == "function_declaration" {
             // Check if this is our target
             if let Some(child) = node.child_by_field_name("name") {
                 if let Ok(n) = child.utf8_text(source.as_bytes()) {
@@ -260,6 +263,97 @@ impl AvcGenerator {
 
     /// Extract docstring/comment text above a function node
     pub fn extract_docstring(node: &tree_sitter::Node, source: &str) -> String {
+        // ========================================
+        // PASS 1: AST child walk (inline docstrings)
+        // ========================================
+        // Check function body children for inline docstrings first
+        // This catches Python triple-quoted and JSDoc inside function body
+
+        // Helper to extract triple-quoted string content
+        fn extract_triple_quoted(node: &tree_sitter::Node, source: &str) -> Option<String> {
+            let text = node.utf8_text(source.as_bytes()).ok()?;
+            let trimmed = text.trim();
+            if (trimmed.starts_with("\"\"\"") && trimmed.ends_with("\"\"\""))
+                || (trimmed.starts_with("'''") && trimmed.ends_with("'''")) {
+                let inner = if trimmed.starts_with("\"\"\"") {
+                    trimmed.trim_start_matches("\"\"\"").trim_end_matches("\"\"\"")
+                } else {
+                    trimmed.trim_start_matches("'''").trim_end_matches("'''")
+                };
+                return Some(inner.to_string());
+            }
+            None
+        }
+
+        // Helper to extract JSDoc content from comment node
+        fn extract_jsdoc(node: &tree_sitter::Node, source: &str) -> Option<String> {
+            let text = node.utf8_text(source.as_bytes()).ok()?;
+            let trimmed = text.trim();
+            if trimmed.starts_with("/**") && trimmed.ends_with("*/") {
+                let inner = trimmed
+                    .trim_start_matches("/**")
+                    .trim_end_matches("*/")
+                    .lines()
+                    .map(|line| line.trim_start_matches('*').trim())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                return Some(inner.trim().to_string());
+            }
+            None
+        }
+
+        // First, check direct children of function node
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "string" | "string_content" => {
+                    if let Some(content) = extract_triple_quoted(&child, source) {
+                        return content;
+                    }
+                }
+                "comment" => {
+                    if let Some(content) = extract_jsdoc(&child, source) {
+                        return content;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // For languages where body is a separate field (Python, JS), check body children
+        if let Some(body) = node.child_by_field_name("body") {
+            let mut body_cursor = body.walk();
+            for child in body.children(&mut body_cursor) {
+                match child.kind() {
+                    // Expression statement containing a string
+                    "expression_statement" | "string" | "string_content" => {
+                        // For expression_statement, get its string child
+                        if child.kind() == "expression_statement" {
+                            let mut stmt_cursor = child.walk();
+                            for stmt_child in child.children(&mut stmt_cursor) {
+                                if stmt_child.kind() == "string" || stmt_child.kind() == "string_content" {
+                                    if let Some(content) = extract_triple_quoted(&stmt_child, source) {
+                                        return content;
+                                    }
+                                }
+                            }
+                        } else if let Some(content) = extract_triple_quoted(&child, source) {
+                            return content;
+                        }
+                    }
+                    "comment" => {
+                        if let Some(content) = extract_jsdoc(&child, source) {
+                            return content;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // ========================================
+        // PASS 2: Backwards line scan (above-function comments)
+        // ========================================
         let pos = node.start_position();
         if pos.row == 0 {
             return String::new();
@@ -267,24 +361,94 @@ impl AvcGenerator {
 
         let lines: Vec<&str> = source.lines().collect();
         let mut doc_lines = Vec::new();
+        let mut jsdoc_lines: Vec<String> = Vec::new();
+        let mut in_jsdoc = false;
 
         // Look backwards from the function for doc comments
         for i in (0..pos.row).rev() {
             if i >= lines.len() { break; }
             let line = lines[i].trim();
+
+            // Check for JSDoc block closing marker (when not already in block)
+            // This handles the case where we see `*/` first while scanning backwards
+            if !in_jsdoc && line.ends_with("*/") && !line.starts_with("/**") {
+                in_jsdoc = true;
+                jsdoc_lines.clear();
+                // Don't add the end marker line itself
+                continue;
+            }
+
+            // If we're in a JSDoc block
+            if in_jsdoc {
+                if line.starts_with("/**") {
+                    // Found the start - extract content from the line after /**
+                    let inner = line.trim_start_matches("/**").trim();
+                    if !inner.is_empty() && !inner.starts_with("*/") {
+                        jsdoc_lines.push(inner.to_string());
+                    }
+                    // Also check if there's content on the /** line itself (single-line JSDoc)
+                    // The inner we pushed is everything after /**
+                    // Now reverse and join
+                    jsdoc_lines.reverse();
+                    let jsdoc_result = jsdoc_lines.join(" ");
+                    if !jsdoc_result.is_empty() {
+                        return jsdoc_result;
+                    }
+                    in_jsdoc = false;
+                    jsdoc_lines.clear();
+                } else if line.starts_with('*') {
+                    // Continuation line (e.g., ` * content` or `* content`)
+                    let inner = line.trim_start_matches('*').trim().to_string();
+                    jsdoc_lines.push(inner);
+                } else if line.is_empty() || line.starts_with("*") {
+                    // Empty line or line starting with * (continuation)
+                    if line.starts_with("*") {
+                        let inner = line.trim_start_matches('*').trim().to_string();
+                        if !inner.is_empty() {
+                            jsdoc_lines.push(inner);
+                        }
+                    }
+                    // Don't break - continue scanning
+                } else {
+                    // Non-doc content in a JSDoc-looking block - reset
+                    in_jsdoc = false;
+                    jsdoc_lines.clear();
+                }
+                continue;
+            }
+
+            // Rust doc comments
             if line.starts_with("///") || line.starts_with("//!") {
                 doc_lines.push(line.trim_start_matches("///").trim_start_matches("//!").trim());
             } else if line.starts_with("//") {
                 doc_lines.push(line.trim_start_matches("//").trim());
-            } else if line.is_empty() || line.starts_with("#[") || line.starts_with("pub") {
+            }
+            // Python # comments (but NOT shebang #!)
+            else if line.starts_with('#') && !line.starts_with("#!") {
+                doc_lines.push(line.trim_start_matches('#').trim());
+            }
+            // Skip empty lines and common non-doc patterns
+            else if line.is_empty() || line.starts_with("#[") || line.starts_with("pub") || line.starts_with("fn") {
                 continue;
             } else {
+                // Non-doc line, stop scanning
                 break;
             }
         }
 
         doc_lines.reverse();
-        doc_lines.join(" ")
+        let result = doc_lines.join(" ");
+        if !result.is_empty() {
+            return result;
+        }
+
+        // If we have accumulated JSDoc content
+        if !jsdoc_lines.is_empty() {
+            jsdoc_lines.reverse();
+            return jsdoc_lines.join(" ").trim().to_string();
+        }
+
+        String::new()
     }
 
     /// Extract the body of a function as text
@@ -435,5 +599,100 @@ pub fn encrypt_data(data: &[u8]) -> String {
             // Just verify score exists and is reasonable
             assert!(score >= 0.0 && score <= 1.0);
         }
+    }
+
+    // ========================================
+    // Phase 3: Multi-language docstring tests
+    // ========================================
+
+    #[test]
+    fn test_python_triple_quote_docstring_from_body() {
+        // Python triple-quoted docstring extracted from function body child
+        let source = r#"
+def encrypt_data(data):
+    """Encrypts data with AES-256"""
+    return base64.b64encode(data)
+"#;
+        let parser = crate::infrastructure::parser::TreeSitterParser::new(
+            crate::infrastructure::parser::Language::Python
+        ).unwrap();
+        let tree = parser.parse_tree(source).unwrap();
+        let func_node = AvcGenerator::find_function(&tree.root_node(), "encrypt_data", source).unwrap();
+        let doc = AvcGenerator::extract_docstring(&func_node, source);
+        assert_eq!(doc, "Encrypts data with AES-256");
+    }
+
+    #[test]
+    fn test_python_hash_comment_above_def() {
+        // Python # comment extracted from line above def
+        let source = r#"
+# Hashes input using bcrypt
+def hash_password(password):
+    return bcrypt.hashpw(password, bcrypt.gensalt())
+"#;
+        let parser = crate::infrastructure::parser::TreeSitterParser::new(
+            crate::infrastructure::parser::Language::Python
+        ).unwrap();
+        let tree = parser.parse_tree(source).unwrap();
+        let func_node = AvcGenerator::find_function(&tree.root_node(), "hash_password", source).unwrap();
+        let doc = AvcGenerator::extract_docstring(&func_node, source);
+        assert_eq!(doc, "Hashes input using bcrypt");
+    }
+
+    #[test]
+    fn test_jsdoc_block_above_function() {
+        // JSDoc block extracted from lines above function
+        let source = r#"
+/**
+ * Encrypts data with AES-256
+ */
+function processData(input) {
+    return Buffer.from(input).toString('base64');
+}
+"#;
+        let parser = crate::infrastructure::parser::TreeSitterParser::new(
+            crate::infrastructure::parser::Language::JavaScript
+        ).unwrap();
+        let tree = parser.parse_tree(source).unwrap();
+        let func_node = AvcGenerator::find_function(&tree.root_node(), "processData", source).unwrap();
+        let doc = AvcGenerator::extract_docstring(&func_node, source);
+        assert_eq!(doc, "Encrypts data with AES-256");
+    }
+
+    #[test]
+    fn test_jsdoc_block_inside_function_body() {
+        // JSDoc block as first statement inside function body (AST child walk)
+        let source = r#"
+function processData(input) {
+    /** Encrypts data with AES-256 */
+    return Buffer.from(input).toString('base64');
+}
+"#;
+        let parser = crate::infrastructure::parser::TreeSitterParser::new(
+            crate::infrastructure::parser::Language::JavaScript
+        ).unwrap();
+        let tree = parser.parse_tree(source).unwrap();
+        let func_node = AvcGenerator::find_function(&tree.root_node(), "processData", source).unwrap();
+        let doc = AvcGenerator::extract_docstring(&func_node, source);
+        assert_eq!(doc, "Encrypts data with AES-256");
+    }
+
+    #[test]
+    fn test_shebang_line_not_docstring() {
+        // Shebang line should NOT be treated as docstring
+        let source = r#"
+#!/usr/bin/env python3
+# Hashes input using bcrypt
+def hash_password(password):
+    return bcrypt.hashpw(password, bcrypt.gensalt())
+"#;
+        let parser = crate::infrastructure::parser::TreeSitterParser::new(
+            crate::infrastructure::parser::Language::Python
+        ).unwrap();
+        let tree = parser.parse_tree(source).unwrap();
+        let func_node = AvcGenerator::find_function(&tree.root_node(), "hash_password", source).unwrap();
+        let doc = AvcGenerator::extract_docstring(&func_node, source);
+        // Shebang should be skipped, only # comment should be captured
+        assert_eq!(doc, "Hashes input using bcrypt");
     }
 }
