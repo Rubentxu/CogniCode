@@ -32,7 +32,7 @@ pub use api_client::{
     ApiClient, AnalysisSummaryDto, IssueDto, DashboardConfigDto,
     ProjectRatingsDto, TechnicalDebtDto,
     GateConditionDto, QualityGateResultDto, IncrementalInfoDto,
-    PathValidationDto,
+    PathValidationDto, ProjectHistoryDto, HistoryEntryDto,
 };
 
 // Re-export components

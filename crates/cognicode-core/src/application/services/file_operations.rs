@@ -10,7 +10,8 @@
 use crate::application::dto::{
     ContentMatch, EditFileRequest, EditFileResult, EditValidation, FileEntry,
     FileMetadata, ListFilesRequest, ListFilesResult, ReadFileRequest, ReadFileResult,
-    SearchContentRequest, SearchContentResult, WriteFileRequest, WriteFileResult,
+    RetrieveAndVerifyRequest, RetrieveAndVerifyResult, SearchContentRequest, SearchContentResult,
+    VerificationStatus, VerifiedMatchDto, WriteFileRequest, WriteFileResult,
 };
 use crate::application::error::{AppError, AppResult};
 use crate::domain::traits::Parser;
@@ -1433,6 +1434,292 @@ impl FileOperationsService {
             depth_traversed: Some(max_depth_reached),
         })
     }
+
+    /// Verifies a Rust file by compiling it with rustc in a sandboxed temp directory.
+    ///
+    /// Returns the verification status, stdout (if verified), and error snippet (if rejected).
+    fn verify_rust_file(
+        &self,
+        file_path: &str,
+        _timeout_secs: u64,
+    ) -> AppResult<(VerificationStatus, Option<String>, Option<String>, Option<String>)> {
+        use crate::application::dto::VerificationStatus as Vs;
+        use std::io::Write;
+        use tempfile::TempDir;
+
+        // Check if file extension is .rs
+        let path = std::path::Path::new(file_path);
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            return Ok((Vs::Skipped, None, None, Some("not-rust".to_string())));
+        }
+
+        // Read the file content
+        let content = fs::read_to_string(file_path).map_err(|e| {
+            AppError::InvalidParameter(format!("Failed to read file for verification: {}", e))
+        })?;
+
+        // Create a temp directory for sandboxed compilation
+        let temp_dir = TempDir::with_prefix("cognicode_rust_verify_")
+            .map_err(|e| AppError::InternalError(format!("Failed to create temp dir: {}", e)))?;
+
+        // Get the file name and create the temp file path
+        let file_name = path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("lib.rs");
+        let temp_file_path = temp_dir.path().join(file_name);
+
+        // Write content to temp file
+        {
+            let mut file = File::create(&temp_file_path).map_err(|e| {
+                AppError::InvalidParameter(format!("Failed to create temp file: {}", e))
+            })?;
+            file.write_all(content.as_bytes()).map_err(|e| {
+                AppError::InvalidParameter(format!("Failed to write to temp file: {}", e))
+            })?;
+        }
+
+        // Run rustc --edition 2021 --crate-type lib
+        let output = std::process::Command::new("rustc")
+            .args(["--edition", "2021", "--crate-type", "lib"])
+            .arg(&temp_file_path)
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() => {
+                // Compilation succeeded
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                Ok((Vs::Verified, Some(stdout), None, None))
+            }
+            Ok(output) => {
+                // Compilation failed - truncate stderr to 200 chars
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                let error_snippet = if stderr.len() > 200 {
+                    stderr[..200].to_string()
+                } else {
+                    stderr
+                };
+                Ok((Vs::Rejected, None, Some(error_snippet), None))
+            }
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    Err(AppError::InvalidParameter("rustc not found".to_string()))
+                } else {
+                    Err(AppError::InternalError(format!("rustc execution failed: {}", e)))
+                }
+            }
+        }
+    }
+
+    /// Verifies a Rust file with a timeout (async wrapper).
+    ///
+    /// Runs `verify_rust_file` with a timeout using tokio's timeout.
+    /// The sync work is run in spawn_blocking to avoid blocking the async runtime.
+    async fn verify_rust_file_with_timeout(
+        &self,
+        file_path: &str,
+        timeout_secs: u64,
+    ) -> AppResult<(VerificationStatus, Option<String>, Option<String>, Option<String>)> {
+        let file_path = file_path.to_string();
+        let timeout = std::time::Duration::from_secs(timeout_secs);
+        let workspace_root = self.workspace_root.clone();
+
+        tokio::time::timeout(timeout, async move {
+            tokio::task::spawn_blocking(move || {
+                let svc = FileOperationsService::new(workspace_root);
+                svc.verify_rust_file(&file_path, timeout_secs)
+            })
+            .await
+            .map_err(|e| AppError::InternalError(format!("spawn_blocking failed: {}", e)))?
+        })
+        .await
+        .map_err(|_| AppError::InvalidParameter("Verification timed out".to_string()))?
+    }
+
+    /// Performs retrieve and verify operation: searches for content and optionally verifies Rust files.
+    ///
+    /// Uses existing `search_content` for lexical retrieval, then verifies `.rs` candidates
+    /// via `rustc --edition 2021 --crate-type lib` with a 10s timeout per file.
+    pub async fn retrieve_and_verify(
+        &self,
+        input: RetrieveAndVerifyRequest,
+    ) -> AppResult<RetrieveAndVerifyResult> {
+        use crate::application::dto::VerificationStatus as Vs;
+
+        // Validate query is not empty
+        if input.query.trim().is_empty() {
+            return Err(AppError::InvalidParameter(
+                "Empty query not allowed".to_string(),
+            ));
+        }
+
+        // Early check: verify rustc is available before doing any verification work
+        // This implements the spec requirement: "rustc not found → error 'rustc not found'"
+        if input.verify {
+            let rustc_check = std::process::Command::new("rustc")
+                .arg("--version")
+                .output();
+            if rustc_check.is_err() {
+                return Err(AppError::InvalidParameter(
+                    "rustc not found".to_string(),
+                ));
+            }
+        }
+
+        // Perform lexical search for .rs files matching the query
+        let search_input = SearchContentRequest {
+            pattern: input.query.clone(),
+            path: None,
+            file_glob: Some("*.rs".to_string()),
+            regex: Some(false), // Literal search
+            case_insensitive: Some(false),
+            max_results: Some(input.max_results as usize),
+            context_lines: Some(2),
+        };
+
+        let search_result = self.search_content(search_input)?;
+
+        // Group matches by file to avoid verifying the same file multiple times
+        let mut file_matches: std::collections::HashMap<String, Vec<ContentMatch>> =
+            std::collections::HashMap::new();
+        for m in search_result.matches {
+            file_matches.entry(m.file.clone()).or_default().push(m);
+        }
+
+        let mut verified_results: Vec<VerifiedMatchDto> = Vec::new();
+        let mut verified_count = 0u32;
+        let mut rejected_count = 0u32;
+        let mut skipped_count = 0u32;
+
+        // Process each unique file
+        for (file, matches) in file_matches {
+            // If verify is disabled, mark all as skipped
+            if !input.verify {
+                for m in &matches {
+                    verified_results.push(VerifiedMatchDto {
+                        file: m.file.clone(),
+                        line: m.line,
+                        col: m.col,
+                        matched_text: m.text.clone(),
+                        context: m.context.clone(),
+                        status: Vs::Skipped,
+                        check_output: None,
+                        error_snippet: None,
+                        reason: Some("verify-disabled".to_string()),
+                    });
+                    skipped_count += 1;
+                }
+                continue;
+            }
+
+            // Check file extension - non-Rust files are skipped
+            let path = std::path::Path::new(&file);
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                for m in &matches {
+                    verified_results.push(VerifiedMatchDto {
+                        file: m.file.clone(),
+                        line: m.line,
+                        col: m.col,
+                        matched_text: m.text.clone(),
+                        context: m.context.clone(),
+                        status: Vs::Skipped,
+                        check_output: None,
+                        error_snippet: None,
+                        reason: Some("not-rust".to_string()),
+                    });
+                    skipped_count += 1;
+                }
+                continue;
+            }
+
+            // Verify the Rust file with timeout (async with spawn_blocking)
+            let file_path = file.clone();
+            let verify_result = self.verify_rust_file_with_timeout(&file_path, 10).await;
+
+            match verify_result {
+                Ok((status, check_output, error_snippet, reason)) => {
+                    // Add all matches from this file with the same verification result
+                    for m in &matches {
+                        let (vc, rc, sc) = match status {
+                            Vs::Verified => (1u32, 0u32, 0u32),
+                            Vs::Rejected => (0u32, 1u32, 0u32),
+                            Vs::Skipped => (0u32, 0u32, 1u32),
+                        };
+                        verified_count += vc;
+                        rejected_count += rc;
+                        skipped_count += sc;
+
+                        verified_results.push(VerifiedMatchDto {
+                            file: m.file.clone(),
+                            line: m.line,
+                            col: m.col,
+                            matched_text: m.text.clone(),
+                            context: m.context.clone(),
+                            status,
+                            check_output: check_output.clone(),
+                            error_snippet: error_snippet.clone(),
+                            reason: reason.clone(),
+                        });
+                    }
+                }
+                Err(e) => {
+                    // rustc not found or other error - skip all matches from this file
+                    for m in &matches {
+                        skipped_count += 1;
+                        verified_results.push(VerifiedMatchDto {
+                            file: m.file.clone(),
+                            line: m.line,
+                            col: m.col,
+                            matched_text: m.text.clone(),
+                            context: m.context.clone(),
+                            status: Vs::Skipped,
+                            check_output: None,
+                            error_snippet: None,
+                            reason: Some(format!("error: {}", e)),
+                        });
+                    }
+                }
+            }
+        }
+
+        // Sort deterministically: match count desc, then path asc
+        // Group results by file first to ensure consistent sorting
+        // Use BTreeMap for deterministic ordering by file path
+        use std::collections::BTreeMap;
+        let mut file_results: BTreeMap<String, Vec<VerifiedMatchDto>> = BTreeMap::new();
+        for r in verified_results {
+            file_results.entry(r.file.clone()).or_default().push(r);
+        }
+
+        // Count matches per file and sort files by match count desc, then path asc
+        let mut sorted_files: Vec<String> = file_results.keys().cloned().collect();
+        sorted_files.sort_by(|a, b| {
+            let results_a = file_results.get(a).map(|v| v.len()).unwrap_or(0);
+            let results_b = file_results.get(b).map(|v| v.len()).unwrap_or(0);
+            // Primary: more matches first (descending)
+            // Secondary: path ascending (lexicographic)
+            results_b.cmp(&results_a).then_with(|| a.cmp(b))
+        });
+
+        // Rebuild results in sorted file order
+        let mut sorted_results: Vec<VerifiedMatchDto> = Vec::new();
+        for file in sorted_files {
+            if let Some(results) = file_results.remove(&file) {
+                sorted_results.extend(results);
+            }
+        }
+
+        verified_results = sorted_results;
+
+        let total = verified_results.len() as u32;
+
+        Ok(RetrieveAndVerifyResult {
+            results: verified_results,
+            total,
+            verified_count,
+            rejected_count,
+            skipped_count,
+        })
+    }
 }
 
 impl Default for FileOperationsService {
@@ -2370,6 +2657,311 @@ mod tests {
         assert!(
             result.content.len() > 0,
             "Non-raw mode should return content"
+        );
+    }
+
+    // ========================================================================
+    // Retrieve and Verify Tests
+    // ========================================================================
+
+    #[test]
+    fn test_verify_rust_file_compilable_rust() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("valid.rs");
+        fs::write(&file_path, "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
+
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let result = service.verify_rust_file(file_path.to_str().unwrap(), 10);
+
+        assert!(result.is_ok(), "Verification should succeed");
+        let (status, check_output, error_snippet, reason) = result.unwrap();
+        assert_eq!(status, VerificationStatus::Verified, "Status should be Verified");
+        assert!(check_output.is_some(), "check_output should be present");
+        assert!(error_snippet.is_none(), "error_snippet should be None");
+        assert!(reason.is_none(), "reason should be None");
+    }
+
+    #[test]
+    fn test_verify_rust_file_broken_rust() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("broken.rs");
+        // Missing closing brace
+        fs::write(&file_path, "pub fn add(a: i32, b: i32) -> i32 { a + b").unwrap();
+
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let result = service.verify_rust_file(file_path.to_str().unwrap(), 10);
+
+        assert!(result.is_ok(), "Verification should return result");
+        let (status, check_output, error_snippet, reason) = result.unwrap();
+        assert_eq!(status, VerificationStatus::Rejected, "Status should be Rejected");
+        assert!(check_output.is_none(), "check_output should be None");
+        assert!(error_snippet.is_some(), "error_snippet should be present");
+        // Error snippet should be truncated to 200 chars
+        assert!(error_snippet.unwrap().len() <= 200, "error_snippet should be <= 200 chars");
+        assert!(reason.is_none(), "reason should be None");
+    }
+
+    #[test]
+    fn test_verify_rust_file_non_rust_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("script.py");
+        fs::write(&file_path, "def hello():\n    print('world')").unwrap();
+
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let result = service.verify_rust_file(file_path.to_str().unwrap(), 10);
+
+        assert!(result.is_ok(), "Verification should return result");
+        let (status, check_output, error_snippet, reason) = result.unwrap();
+        assert_eq!(status, VerificationStatus::Skipped, "Status should be Skipped");
+        assert!(check_output.is_none(), "check_output should be None");
+        assert!(error_snippet.is_none(), "error_snippet should be None");
+        assert_eq!(reason, Some("not-rust".to_string()), "reason should be 'not-rust'");
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_and_verify_empty_query() {
+        let temp_dir = TempDir::new().unwrap();
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+
+        let input = RetrieveAndVerifyRequest {
+            query: "".to_string(),
+            language: "rust".to_string(),
+            max_results: 20,
+            verify: true,
+        };
+
+        let result = service.retrieve_and_verify(input).await;
+        assert!(result.is_err(), "Empty query should return error");
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_and_verify_no_matches() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.rs");
+        fs::write(&file_path, "fn main() {}").unwrap();
+
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+
+        let input = RetrieveAndVerifyRequest {
+            query: "nonexistent_pattern_xyz123".to_string(),
+            language: "rust".to_string(),
+            max_results: 20,
+            verify: true,
+        };
+
+        let result = service.retrieve_and_verify(input).await;
+        assert!(result.is_ok(), "Should return ok result");
+        let output = result.unwrap();
+        assert_eq!(output.total, 0, "Total should be 0");
+        assert_eq!(output.verified_count, 0, "Verified count should be 0");
+        assert_eq!(output.rejected_count, 0, "Rejected count should be 0");
+        assert_eq!(output.skipped_count, 0, "Skipped count should be 0");
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_and_verify_verify_disabled() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.rs");
+        fs::write(&file_path, "fn hello() { println!(\"hi\"); }").unwrap();
+
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+
+        let input = RetrieveAndVerifyRequest {
+            query: "hello".to_string(),
+            language: "rust".to_string(),
+            max_results: 20,
+            verify: false, // Verification disabled
+        };
+
+        let result = service.retrieve_and_verify(input).await;
+        assert!(result.is_ok(), "Should return ok result");
+        let output = result.unwrap();
+        assert_eq!(output.total, 1, "Should have 1 result");
+        assert_eq!(output.verified_count, 0, "Verified count should be 0");
+        assert_eq!(output.rejected_count, 0, "Rejected count should be 0");
+        assert_eq!(output.skipped_count, 1, "Skipped count should be 1");
+        assert_eq!(output.results[0].status, VerificationStatus::Skipped, "Status should be Skipped");
+        assert_eq!(output.results[0].reason, Some("verify-disabled".to_string()), "Reason should be 'verify-disabled'");
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_and_verify_deterministic() {
+        let temp_dir = TempDir::new().unwrap();
+        // Create multiple files with different match counts
+        // Note: Each function must have a unique name for valid Rust
+        let file_a = temp_dir.path().join("a.rs");
+        fs::write(&file_a, "fn hello1() {}\nfn hello2() {}\nfn hello3() {}").unwrap(); // 3 distinct functions
+
+        let file_b = temp_dir.path().join("b.rs");
+        fs::write(&file_b, "fn hello() {}").unwrap(); // 1 function
+
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+
+        let input = RetrieveAndVerifyRequest {
+            query: "fn hello".to_string(), // Search for function definitions
+            language: "rust".to_string(),
+            max_results: 20,
+            verify: true,
+        };
+
+        // Call twice to verify determinism
+        let result1 = service.retrieve_and_verify(input.clone()).await;
+        let result2 = service.retrieve_and_verify(input).await;
+
+        assert!(result1.is_ok(), "Should return ok result");
+        assert!(result2.is_ok(), "Should return ok result");
+
+        let output1 = result1.unwrap();
+        let output2 = result2.unwrap();
+
+        // Results should be identical across calls (deterministic)
+        assert_eq!(output1.total, output2.total, "Total should be same");
+        assert_eq!(output1.verified_count, output2.verified_count, "Verified count should be same");
+        assert_eq!(output1.results.len(), output2.results.len(), "Results count should be same");
+
+        // All individual results should match in order
+        for (r1, r2) in output1.results.iter().zip(output2.results.iter()) {
+            assert_eq!(r1.file, r2.file, "Files should match in order");
+            assert_eq!(r1.line, r2.line, "Lines should match in order");
+            assert_eq!(r1.status, r2.status, "Status should match in order");
+        }
+
+        // Verify we have exactly 4 total results (3 from a.rs, 1 from b.rs)
+        assert_eq!(output1.total, 4, "Should have 4 total matches");
+        assert_eq!(output1.verified_count, 4, "All should be verified");
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_and_verify_rust_file_verified() {
+        let temp_dir = TempDir::new().unwrap();
+        let rs_file = temp_dir.path().join("test.rs");
+        // Write to file and sync to ensure it's visible to search
+        let mut file = std::fs::File::create(&rs_file).unwrap();
+        use std::io::Write;
+        writeln!(file, "pub fn greet() -> String {{ String::from(\"hello\") }}").unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+
+        let input = RetrieveAndVerifyRequest {
+            query: "fn greet".to_string(),
+            language: "rust".to_string(),
+            max_results: 20,
+            verify: true,
+        };
+
+        let result = service.retrieve_and_verify(input).await;
+        assert!(result.is_ok(), "Should return ok result: {:?}", result);
+        let output = result.unwrap();
+
+        assert_eq!(output.total, 1, "Should have 1 result, got total={}", output.total);
+        assert_eq!(output.verified_count, 1, "Should be verified");
+        assert_eq!(output.rejected_count, 0, "Should have no rejected");
+        assert_eq!(output.skipped_count, 0, "Should have no skipped");
+        assert_eq!(output.results[0].status, VerificationStatus::Verified, "Status should be Verified");
+        assert!(output.results[0].check_output.is_some(), "Should have check_output");
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_and_verify_rust_file_rejected() {
+        let temp_dir = TempDir::new().unwrap();
+        let rs_file = temp_dir.path().join("broken.rs");
+        // Missing closing brace - syntax error
+        fs::write(&rs_file, "pub fn greet() -> String { String::from(\"hello\")").unwrap();
+
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+
+        let input = RetrieveAndVerifyRequest {
+            query: "fn greet".to_string(),
+            language: "rust".to_string(),
+            max_results: 20,
+            verify: true,
+        };
+
+        let result = service.retrieve_and_verify(input).await;
+        assert!(result.is_ok(), "Should return ok result");
+        let output = result.unwrap();
+
+        assert_eq!(output.total, 1, "Should have 1 result");
+        assert_eq!(output.verified_count, 0, "Should have no verified");
+        assert_eq!(output.rejected_count, 1, "Should be rejected");
+        assert_eq!(output.skipped_count, 0, "Should have no skipped");
+        assert_eq!(output.results[0].status, VerificationStatus::Rejected, "Status should be Rejected");
+        assert!(output.results[0].error_snippet.is_some(), "Should have error_snippet");
+    }
+
+    /// Test that a compilation that takes longer than the timeout is rejected with reason "timeout".
+    /// Uses a 1ms timeout on a normal file (should complete fast) vs using a deliberately
+    /// slow compilation. Since we can't easily make rustc hang, we test the timeout wrapper
+    /// behavior by verifying that a file that would take >1ms is rejected when timeout is 0.
+    /// Actually, we test with a file that exists and is valid, but verify the timeout path
+    /// is exercised by using an impossibly short timeout (0s = immediate timeout).
+    #[tokio::test]
+    async fn test_verify_rust_file_timeout_rejected() {
+        let temp_dir = TempDir::new().unwrap();
+        let rs_file = temp_dir.path().join("slow.rs");
+        fs::write(&rs_file, "pub fn greet() -> String { String::from(\"hello\") }").unwrap();
+
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+
+        // Use 0 second timeout - should always trigger timeout for any actual work
+        let result = service.verify_rust_file_with_timeout(rs_file.to_str().unwrap(), 0).await;
+
+        assert!(result.is_err(), "Timeout should cause error");
+        let err = result.unwrap_err();
+        // The error should indicate timeout
+        let err_msg = format!("{}", err);
+        assert!(
+            err_msg.contains("timed out") || err_msg.contains("timeout"),
+            "Error should mention timeout, got: {}",
+            err_msg
+        );
+    }
+
+    /// Test that rustc not found results in an error with the expected message.
+    /// Saves and restores PATH around the async call to ensure rustc is not found.
+    #[tokio::test]
+    async fn test_retrieve_and_verify_rustc_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let rs_file = temp_dir.path().join("test.rs");
+        fs::write(&rs_file, "pub fn greet() -> String { String::from(\"hello\") }").unwrap();
+
+        // Save original PATH and remove rustc from it
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        let new_path: std::collections::HashSet<String> = std::env::split_paths(&original_path)
+            .filter(|p| {
+                // Filter out directories that contain rustc
+                !p.join("rustc").exists() && !p.join("rustc.exe").exists()
+            })
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+        let new_path_str = std::env::join_paths(new_path).unwrap().to_string_lossy().to_string();
+
+        // Set modified PATH (unsafe in multi-threaded context but OK for tests)
+        unsafe { std::env::set_var("PATH", &new_path_str); }
+
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+
+        let input = RetrieveAndVerifyRequest {
+            query: "fn greet".to_string(),
+            language: "rust".to_string(),
+            max_results: 20,
+            verify: true,
+        };
+
+        let result = service.retrieve_and_verify(input).await;
+
+        // Restore PATH
+        unsafe { std::env::set_var("PATH", &original_path); }
+
+        // Should get an error about rustc not found
+        assert!(result.is_err(), "Should error when rustc not found");
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.to_lowercase().contains("rustc") && err_msg.to_lowercase().contains("not found"),
+            "Error should mention 'rustc not found', got: {}",
+            err_msg
         );
     }
 }

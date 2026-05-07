@@ -15,6 +15,7 @@ use cognicode_quality::handler::{
 };
 use cognicode_axiom::rules::{QualityGate, GateCondition, CompareOperator, MetricValue};
 use cognicode_db::quality::QualityStore;
+use cognicode_db::drift_events::DriftEventStore;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -248,6 +249,85 @@ pub struct HistoryEntryDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectListDto {
     pub projects: Vec<ProjectInfoDto>,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Telemetry Endpoint DTOs (Phase 3B)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// GET /api/contracts response — list of AVC contract summaries
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractDto {
+    pub id: String,
+    pub source_file: String,
+    pub function_name: String,
+    pub compliance_score: f64,
+    pub generated_at: String,
+}
+
+/// Query params for GET /api/contracts
+#[derive(Debug, Clone, Deserialize)]
+pub struct ContractsQuery {
+    pub limit: Option<usize>,
+}
+
+/// GET /api/agent-stats response — aggregated tool usage telemetry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentStatDto {
+    pub tool_name: String,
+    pub count: usize,
+    pub avg_duration_ms: f64,
+    pub result_status_breakdown: ResultStatusBreakdown,
+}
+
+/// Result status breakdown counts
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResultStatusBreakdown {
+    pub success: usize,
+    pub error: usize,
+    pub other: usize,
+}
+
+/// Query params for GET /api/agent-stats
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentStatsQuery {
+    pub since: Option<String>,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Drift Events Endpoint DTOs
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Query params for GET /api/drift
+#[derive(Debug, Clone, Deserialize)]
+pub struct DriftQuery {
+    pub file: Option<String>,
+    pub function: Option<String>,
+    pub severity: Option<String>,
+    pub min_score: Option<f64>,
+    pub offset: Option<usize>,
+    pub limit: Option<usize>,
+}
+
+/// Response DTO for a single drift event
+#[derive(Debug, Clone, Serialize)]
+pub struct DriftEventDto {
+    pub id: i64,
+    pub timestamp: String,
+    pub file_path: String,
+    pub function_name: String,
+    pub drift_score: f64,
+    pub intent: Option<String>,
+    pub severity: String,
+}
+
+/// Response DTO for GET /api/drift
+#[derive(Debug, Clone, Serialize)]
+pub struct DriftResponseDto {
+    pub events: Vec<DriftEventDto>,
+    pub total_count: usize,
+    pub offset: usize,
+    pub limit: usize,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -965,6 +1045,113 @@ fn build_project_info(name: &str, path: &str) -> ProjectInfoDto {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Telemetry Handlers (Phase 3B)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// GET /api/contracts — list AVC contract summaries from the database
+async fn get_contracts(
+    State(state): State<AppServerState>,
+    axum::extract::Query(query): axum::extract::Query<ContractsQuery>,
+) -> Json<Vec<ContractDto>> {
+    let limit = query.limit.unwrap_or(1000);
+    let config = state.config.read().await;
+    let project_path = PathBuf::from(&config.project_path);
+    drop(config);
+
+    let store = QualityStore::open(&project_path);
+    let conn = store.connection();
+
+    use cognicode_db::AvcContractStore;
+    let rows = AvcContractStore::list_all(conn, limit).unwrap_or_default();
+
+    let dtos: Vec<ContractDto> = rows.into_iter().map(|r| ContractDto {
+        id: r.id,
+        source_file: r.source_file,
+        function_name: r.function_name,
+        compliance_score: r.compliance_score,
+        generated_at: r.generated_at,
+    }).collect();
+
+    Json(dtos)
+}
+
+/// GET /api/agent-stats — aggregate tool usage statistics from the database
+async fn get_agent_stats(
+    State(state): State<AppServerState>,
+    axum::extract::Query(query): axum::extract::Query<AgentStatsQuery>,
+) -> Json<Vec<AgentStatDto>> {
+    let config = state.config.read().await;
+    let project_path = PathBuf::from(&config.project_path);
+    drop(config);
+
+    let store = QualityStore::open(&project_path);
+    let conn = store.connection();
+
+    use cognicode_db::AgentInteractionStore;
+    let stats = AgentInteractionStore::aggregate_stats(conn, query.since.as_deref()).unwrap_or_default();
+
+    let dtos: Vec<AgentStatDto> = stats.into_iter().map(|s| AgentStatDto {
+        tool_name: s.tool_name,
+        count: s.count,
+        avg_duration_ms: s.avg_duration_ms,
+        result_status_breakdown: ResultStatusBreakdown {
+            success: s.success_count,
+            error: s.error_count,
+            other: s.other_count,
+        },
+    }).collect();
+
+    Json(dtos)
+}
+
+/// GET /api/drift — list drift detection events with filtering and pagination
+pub async fn get_drift_events(
+    State(state): State<AppServerState>,
+    axum::extract::Query(query): axum::extract::Query<DriftQuery>,
+) -> Json<DriftResponseDto> {
+    let config = state.config.read().await;
+    let project_path = PathBuf::from(&config.project_path);
+    drop(config);
+
+    let store = QualityStore::open(&project_path);
+    let conn = store.connection();
+
+    let offset = query.offset.unwrap_or(0);
+    let requested_limit = query.limit.unwrap_or(20);
+    // actual_limit is 0 means use DEFAULT_LIMIT (20)
+    let actual_limit = if requested_limit == 0 { 20 } else { requested_limit };
+
+    let filter = cognicode_db::drift_events::DriftFilter {
+        file: query.file.clone(),
+        function_name: query.function.clone(),
+        severity: query.severity.clone(),
+        min_score: query.min_score,
+        offset,
+        limit: requested_limit, // pass raw value; query_filtered handles limit=0 → DEFAULT_LIMIT
+    };
+
+    let (events, total_count) = DriftEventStore::query_filtered(conn, &filter)
+        .unwrap_or_else(|_| (Vec::new(), 0));
+
+    let dtos: Vec<DriftEventDto> = events.into_iter().map(|e| DriftEventDto {
+        id: e.id,
+        timestamp: e.timestamp,
+        file_path: e.file_path,
+        function_name: e.function_name,
+        drift_score: e.drift_score,
+        intent: e.intent,
+        severity: e.severity,
+    }).collect();
+
+    Json(DriftResponseDto {
+        events: dtos,
+        total_count,
+        offset,
+        limit: actual_limit,
+    })
+}
+
 fn url_decode(s: &str) -> String {
     let mut result = String::new();
     let bytes = s.as_bytes();
@@ -1005,6 +1192,9 @@ pub async fn start_server(port: u16) {
         .route("/api/projects", get(list_projects))
         .route("/api/projects/register", post(register_project))
         .route("/api/projects/:id/history", get(get_project_history))
+        .route("/api/contracts", get(get_contracts))
+        .route("/api/agent-stats", get(get_agent_stats))
+        .route("/api/drift", get(get_drift_events))
         .layer(CorsLayer::permissive())
         .with_state(app_state);
 

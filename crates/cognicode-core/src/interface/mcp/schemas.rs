@@ -4,7 +4,7 @@
 //! the JSON-RPC 2.0 specification.
 
 use serde::{Deserialize, Serialize};
-use crate::application::dto::OverviewDetail;
+use crate::application::dto::{OverviewDetail, OverviewMeta};
 
 /// Default depth for call hierarchy traversal
 fn default_depth() -> u8 {
@@ -1784,4 +1784,283 @@ pub struct DetectLongParamsInput {
     /// Maximum number of parameters allowed
     #[serde(default = "default_max_params")]
     pub max_params: usize,
+}
+
+// ============================================================================
+// Phase 3A: Proactive Tools
+// ============================================================================
+
+/// Input for suggest_context tool (Phase 3A)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SuggestContextInput {
+    /// Maximum number of results to return (default: 10, max: 50)
+    #[serde(default)]
+    pub limit: Option<usize>,
+
+    /// Project path to search within (optional, defaults to workspace root)
+    #[serde(default)]
+    pub project_path: Option<String>,
+}
+
+/// A single suggested context item
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuggestContextItem {
+    /// Symbol or file name
+    pub name: String,
+    /// Kind of item (file, function, struct, etc.)
+    pub kind: String,
+    /// File path where this item is defined
+    pub file: String,
+    /// Line number
+    pub line: u32,
+    /// Relevance score (0.0 - 1.0)
+    pub score: f32,
+    /// Context snippet or description
+    pub context: String,
+}
+
+/// Output for suggest_context tool (Phase 3A)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SuggestContextOutput {
+    /// Suggested context items ranked by relevance
+    pub items: Vec<SuggestContextItem>,
+    /// Total number of items returned
+    pub total: usize,
+    /// Source of results (e.g., "fts5_hotpath", "fts5_only")
+    pub source: String,
+    /// Metadata about the generation
+    pub metadata: AnalysisMetadata,
+    /// Token estimate for LLM consumption
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<OverviewMeta>,
+}
+
+/// Input for reparse_on_edit tool (Phase 3A)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReparseOnEditInput {
+    /// File paths that were edited (required)
+    pub file_paths: Vec<String>,
+    /// Optional edit ranges for more precise reindexing
+    #[serde(default)]
+    pub edit_ranges: Option<Vec<EditRange>>,
+}
+
+/// Edit range within a file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EditRange {
+    /// File path
+    pub file: String,
+    /// Start line (1-indexed)
+    pub start_line: u32,
+    /// End line (1-indexed)
+    pub end_line: u32,
+}
+
+/// Output for reparse_on_edit tool (Phase 3A)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReparseOnEditOutput {
+    /// Number of files that were parsed
+    pub files_parsed: usize,
+    /// Number of files that were skipped (unchanged)
+    pub files_skipped: usize,
+    /// Number of files that were removed from the graph
+    pub files_removed: usize,
+    /// Number of symbols added
+    pub symbols_added: usize,
+    /// Number of symbols removed
+    pub symbols_removed: usize,
+    /// Whether the graph was actually updated
+    pub graph_updated: bool,
+    /// Metadata about the operation
+    pub metadata: AnalysisMetadata,
+    /// Token estimate for LLM consumption
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub _meta: Option<OverviewMeta>,
+}
+
+// ============================================================================
+// Detect Drift MCP Tool
+// ============================================================================
+
+/// Input for detect_drift tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DetectDriftInput {
+    /// Path to the source file to analyze (required)
+    pub file_path: String,
+
+    /// Minimum drift score threshold (default: 0.5)
+    /// Only findings with drift_score >= threshold are included
+    #[serde(default = "default_drift_threshold")]
+    pub threshold: f32,
+
+    /// Optional function name to scope analysis to a single function
+    pub function_name: Option<String>,
+}
+
+fn default_drift_threshold() -> f32 {
+    0.5
+}
+
+/// Severity level for drift findings
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DriftSeverity {
+    Info,
+    Warning,
+    Critical,
+}
+
+impl DriftSeverity {
+    /// Derive severity from a drift score
+    /// info: < 0.3, warning: 0.3–0.7, critical: > 0.7
+    pub fn from_score(score: f32) -> Self {
+        if score < 0.3 {
+            DriftSeverity::Info
+        } else if score <= 0.7 {
+            DriftSeverity::Warning
+        } else {
+            DriftSeverity::Critical
+        }
+    }
+
+    /// Convert to string for persistence
+    pub fn as_str(&self) -> &str {
+        match self {
+            DriftSeverity::Info => "info",
+            DriftSeverity::Warning => "warning",
+            DriftSeverity::Critical => "critical",
+        }
+    }
+}
+
+/// A single drift finding
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriftFinding {
+    /// Name of the function where drift was detected
+    pub function_name: String,
+
+    /// Drift score (0.0–1.0, higher = more severe)
+    pub drift_score: f32,
+
+    /// Rule ID that triggered this finding (S7000, S7001, S7002, S7003)
+    pub rule_id: String,
+
+    /// Severity level
+    pub severity: DriftSeverity,
+
+    /// Line number where drift was detected (1-indexed)
+    pub line: u32,
+
+    /// Human-readable message describing the finding
+    pub message: String,
+}
+
+/// Output for detect_drift tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DetectDriftOutput {
+    /// All drift findings above the threshold
+    pub findings: Vec<DriftFinding>,
+
+    /// Human-readable summary of the analysis
+    pub summary: String,
+
+    /// Number of findings that were persisted to the database
+    pub persisted_count: usize,
+}
+
+// ============================================================================
+// Retrieve and Verify (Verified RAG Sandbox)
+// ============================================================================
+
+/// Input for retrieve_and_verify tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RetrieveAndVerifyInput {
+    /// Search query string (required)
+    pub query: String,
+
+    /// Language filter (reserved for future use, defaults to "rust")
+    #[serde(default = "default_rv_language")]
+    pub language: String,
+
+    /// Maximum number of results to return (default: 20)
+    #[serde(default = "default_rv_max_results")]
+    pub max_results: u32,
+
+    /// Whether to verify Rust files via rustc compilation (default: true)
+    #[serde(default = "default_rv_verify")]
+    pub verify: bool,
+}
+
+fn default_rv_language() -> String {
+    "rust".to_string()
+}
+
+fn default_rv_max_results() -> u32 {
+    20
+}
+
+fn default_rv_verify() -> bool {
+    true
+}
+
+/// Verification status for a matched file
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum VerificationStatus {
+    Verified,
+    Rejected,
+    Skipped,
+}
+
+/// A single verified match result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifiedMatch {
+    /// File path containing the match
+    pub file: String,
+
+    /// Line number (1-indexed)
+    pub line: u32,
+
+    /// Column number (1-indexed)
+    pub col: u32,
+
+    /// The matched text
+    pub matched_text: String,
+
+    /// Surrounding context lines
+    pub context: Vec<String>,
+
+    /// Verification status
+    pub status: VerificationStatus,
+
+    /// stdout from rustc (verified only)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check_output: Option<String>,
+
+    /// First 200 chars of stderr (rejected only)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_snippet: Option<String>,
+
+    /// Skip reason (skipped only)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Output for retrieve_and_verify tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RetrieveAndVerifyOutput {
+    /// All verification results
+    pub results: Vec<VerifiedMatch>,
+
+    /// Total number of matches
+    pub total: u32,
+
+    /// Count of verified matches
+    pub verified_count: u32,
+
+    /// Count of rejected matches
+    pub rejected_count: u32,
+
+    /// Count of skipped matches
+    pub skipped_count: u32,
 }

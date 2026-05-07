@@ -43,11 +43,18 @@ use crate::interface::mcp::schemas::{
     SymbolKind as McpSymbolKind, SymbolCodeInput, SymbolCodeOutput, SymbolLocationEntry,
     TracePathInput, TracePathOutput, UsageEntry, UsageWithContextEntry, ValidateSyntaxInput,
     ValidateSyntaxOutput, ValidationResult, FindUsagesWithContextInput, FindUsagesWithContextOutput,
+    // Phase 3A proactive tool schemas
+    SuggestContextInput, SuggestContextOutput, SuggestContextItem,
+    ReparseOnEditInput, ReparseOnEditOutput,
     // AIX Input schemas
     AskAboutCodeInput, AutoDiagnoseInput, CompareCallGraphsInput,
     ContextFormatDetail, DetectApiBreaksInput, DetectGodFunctionsInput, DetectLongParamsInput,
     EvaluateRefactorQualityInput, FindPatternByIntentInput, NlToSymbolInput, OnboardingGoalDetail, OnboardingPlanInput,
     RankedSymbolsInput, SmartOverviewInput, SuggestRefactorPlanInput, SystemPromptContextInput,
+    // Detect Drift schemas
+    DetectDriftInput, DetectDriftOutput, DriftFinding, DriftSeverity,
+    // Retrieve and Verify schemas
+    RetrieveAndVerifyInput, RetrieveAndVerifyOutput, VerifiedMatch, VerificationStatus,
 };
 use crate::interface::mcp::security::{InputValidator, SecurityError};
 use crate::application::error::AppError;
@@ -108,6 +115,9 @@ pub struct HandlerContext {
     pub graph_store: Option<Arc<dyn GraphStore>>,
     /// Optional CodeIntelligenceProvider for LSP operations. Falls back to creating CompositeProvider if None.
     pub code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
+    /// Optional database connection for agent telemetry (Phase 3A)
+    /// Wrapped in Mutex because rusqlite::Connection is not Sync
+    pub db_conn: Option<Arc<Mutex<Option<rusqlite::Connection>>>>,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -146,6 +156,7 @@ impl HandlerContext {
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
             code_intelligence_provider: None,
+            db_conn: None,
         }
     }
 
@@ -166,6 +177,7 @@ impl HandlerContext {
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
             code_intelligence_provider: None,
+            db_conn: None,
         }
     }
 
@@ -189,6 +201,7 @@ impl HandlerContext {
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
             code_intelligence_provider: None,
+            db_conn: None,
         }
     }
 
@@ -212,6 +225,7 @@ impl HandlerContext {
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
             code_intelligence_provider: None,
+            db_conn: None,
         }
     }
 
@@ -235,6 +249,7 @@ impl HandlerContext {
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
             code_intelligence_provider: Some(provider),
+            db_conn: None,
         }
     }
 
@@ -288,6 +303,86 @@ impl HandlerContext {
             count as f64 / max as f64 // normalized 0.0-1.0
         } else {
             0.0
+        }
+    }
+
+    /// Create a HandlerContext with a pre-configured database connection for telemetry
+    pub fn with_db_conn(working_dir: PathBuf, conn: rusqlite::Connection) -> Self {
+        let mut ctx = Self::new(working_dir);
+        ctx.db_conn = Some(Arc::new(Mutex::new(Some(conn))));
+        ctx
+    }
+
+    /// Records an MCP tool usage event to the database (best-effort).
+    ///
+    /// This is a fire-and-forget operation: failures are logged but not propagated.
+    /// If no database connection is configured, this is a no-op.
+    ///
+    /// # Arguments
+    /// * `tool_name` - Name of the MCP tool
+    /// * `result_summary` - Truncated JSON summary of the result (max 256 chars)
+    /// * `duration_ms` - Tool execution duration in milliseconds
+    /// * `contract_id` - Optional contract ID for AVC tools
+    pub fn record_tool_usage(
+        &self,
+        tool_name: &str,
+        result_summary: &str,
+        duration_ms: f64,
+        contract_id: Option<&str>,
+    ) {
+        let Some(ref conn_arc) = self.db_conn else {
+            // No database connection configured - graceful degradation
+            tracing::debug!("No db_conn configured, skipping tool telemetry for {}", tool_name);
+            return;
+        };
+
+        let conn_guard = match conn_arc.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                tracing::warn!("Failed to lock db_conn for {}: {}", tool_name, e);
+                return;
+            }
+        };
+
+        let conn = match conn_guard.as_ref() {
+            Some(conn) => conn,
+            None => {
+                // Connection was dropped/taken
+                tracing::debug!("db_conn was None, skipping tool telemetry for {}", tool_name);
+                return;
+            }
+        };
+
+        // Truncate result_summary to max 256 chars
+        const MAX_SUMMARY_LEN: usize = 256;
+        let summary = if result_summary.len() > MAX_SUMMARY_LEN {
+            &result_summary[..MAX_SUMMARY_LEN]
+        } else {
+            result_summary
+        };
+
+        // Best-effort insert - errors logged but not propagated
+        let result = conn.execute(
+            "INSERT INTO agent_interactions (timestamp, tool_name, contract_id, result_summary, duration_ms) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                chrono::Utc::now().to_rfc3339(),
+                tool_name,
+                contract_id,
+                summary,
+                duration_ms,
+            ],
+        );
+
+        if let Err(e) = result {
+            // Check for "no such table" error (pre-migration state)
+            if matches!(e, rusqlite::Error::SqliteFailure(_, _)) {
+                tracing::debug!(
+                    "agent_interactions table not available, skipping telemetry: {}",
+                    e
+                );
+                return;
+            }
+            tracing::warn!("Failed to record tool usage for {}: {}", tool_name, e);
         }
     }
 }

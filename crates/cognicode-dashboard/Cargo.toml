@@ -53,6 +53,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = tr
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+rusqlite = "0.31"
+cognicode-db = { path = "../cognicode-db" }
 
 [profile.release]
 opt-level = "s"

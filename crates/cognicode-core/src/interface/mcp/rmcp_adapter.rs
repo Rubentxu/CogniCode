@@ -428,6 +428,20 @@ impl ServerHandler for CogniCodeHandler {
                         }
                     }).as_object().cloned().unwrap()),
                 ),
+                Tool::new(
+                    "retrieve_and_verify",
+                    "Search for code matching a query and verify Rust files via sandboxed rustc compilation. Combines lexical search with compile-check verification.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "query": { "type": "string", "description": "Search query string (required)" },
+                            "language": { "type": "string", "description": "Language filter (reserved for future use, defaults to 'rust')" },
+                            "max_results": { "type": "integer", "description": "Maximum number of results to return (default: 20)" },
+                            "verify": { "type": "boolean", "description": "Whether to verify Rust files via rustc compilation (default: true)" }
+                        },
+                        "required": ["query"]
+                    }).as_object().cloned().unwrap()),
+                ),
                 // Modification tools (destructive)
                 Tool::new(
                     "write_file",
@@ -672,6 +686,69 @@ impl ServerHandler for CogniCodeHandler {
                             "generated_code": { "type": "string", "description": "The code to validate" }
                         },
                         "required": ["contract_id", "generated_code"]
+                    }).as_object().cloned().unwrap()),
+                ),
+                // Phase 3A: Proactive Tools
+                Tool::new(
+                    "suggest_context",
+                    "Zero-query proactive context suggestion. Returns ranked files/symbols relevant to an agent's current task without explicit search queries. Uses FTS5 search and call-graph hot-path analysis.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "limit": { "type": "integer", "description": "Maximum number of results to return (default: 10, max: 50)" },
+                            "project_path": { "type": "string", "description": "Project path to search within (optional, defaults to workspace root)" }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
+                #[cfg(feature = "persistence")]
+                Tool::new(
+                    "reparse_on_edit",
+                    "MCP-triggered incremental reindex of changed files. Accepts explicit file paths and optional edit ranges to inform the reindex scope.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "file_paths": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "description": "File paths that were edited (required)"
+                            },
+                            "edit_ranges": {
+                                "type": "array",
+                                "description": "Optional edit ranges for more precise reindexing",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "file": { "type": "string" },
+                                        "start_line": { "type": "integer" },
+                                        "end_line": { "type": "integer" }
+                                    }
+                                }
+                            }
+                        },
+                        "required": ["file_paths"]
+                    }).as_object().cloned().unwrap()),
+                ),
+                // Detect Drift tool (S7000-S7003 intent drift detection)
+                Tool::new(
+                    "detect_drift",
+                    "Analyze a source file for intent drift (S7000: docstring-body mismatch), AVC violations (S7001: unsafe/panic/unwrap), obsolete patterns (S7002: try! macro), and forbidden terms (S7003). Persists high-drift findings to the drift_events store.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "file_path": {
+                                "type": "string",
+                                "description": "Path to the source file to analyze (required)"
+                            },
+                            "threshold": {
+                                "type": "number",
+                                "description": "Minimum drift score threshold (default: 0.5). Only findings with drift_score >= threshold are included."
+                            },
+                            "function_name": {
+                                "type": "string",
+                                "description": "Optional function name to scope analysis to a single function"
+                            }
+                        },
+                        "required": ["file_path"]
                     }).as_object().cloned().unwrap()),
                 ),
             ];
@@ -947,6 +1024,12 @@ async fn call_tool_handler(
             let output = crate::interface::mcp::handlers::handle_list_files(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
+        "retrieve_and_verify" => {
+            let input: crate::interface::mcp::schemas::RetrieveAndVerifyInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_retrieve_and_verify(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
         // AIX-1: Smart Overview & Ranked Symbols
         "smart_overview" => {
             let input: crate::interface::mcp::schemas::SmartOverviewInput =
@@ -1054,6 +1137,45 @@ async fn call_tool_handler(
             let input: crate::interface::mcp::schemas::ValidateContractInput =
                 serde_json::from_value(arguments.into())?;
             let output = crate::interface::mcp::handlers::aix_handlers::handle_validate_contract(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        // Phase 3A: Proactive Tools
+        "suggest_context" => {
+            let input: crate::interface::mcp::schemas::SuggestContextInput =
+                serde_json::from_value(arguments.into())?;
+            let start = std::time::Instant::now();
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_suggest_context(ctx, input).await?;
+            let duration_ms = start.elapsed().as_millis() as f64;
+            // Best-effort telemetry recording
+            ctx.record_tool_usage(
+                "suggest_context",
+                &serde_json::to_string(&output).unwrap_or_default(),
+                duration_ms,
+                None,
+            );
+            Ok(serde_json::to_string(&output)?)
+        }
+        #[cfg(feature = "persistence")]
+        "reparse_on_edit" => {
+            let input: crate::interface::mcp::schemas::ReparseOnEditInput =
+                serde_json::from_value(arguments.into())?;
+            let start = std::time::Instant::now();
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_reparse_on_edit(ctx, input).await?;
+            let duration_ms = start.elapsed().as_millis() as f64;
+            // Best-effort telemetry recording
+            ctx.record_tool_usage(
+                "reparse_on_edit",
+                &serde_json::to_string(&output).unwrap_or_default(),
+                duration_ms,
+                None,
+            );
+            Ok(serde_json::to_string(&output)?)
+        }
+        // Detect Drift tool (S7000-S7003)
+        "detect_drift" => {
+            let input: crate::interface::mcp::schemas::DetectDriftInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_detect_drift(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         _ => anyhow::bail!("Unknown tool: {}", tool_name),

@@ -15,7 +15,8 @@ use crate::infrastructure::telemetry::{get_global_metrics, instrument_tool, Tool
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::mcp::schemas::{
     EditFileInput, EditFileOutput, ListFilesInput, ListFilesOutput, ReadFileInput,
-    ReadFileOutput, SearchContentInput, SearchContentOutput, WriteFileInput, WriteFileOutput,
+    ReadFileOutput, RetrieveAndVerifyInput, RetrieveAndVerifyOutput,
+    SearchContentInput, SearchContentOutput, WriteFileInput, WriteFileOutput,
 };
 
 /// Converts AppError to ToolError for use with instrument_tool
@@ -228,6 +229,71 @@ pub async fn handle_list_files(
         }
         Err(e) => Err(HandlerError::App(AppError::InternalError(e.message))),
     }
+}
+
+/// Handler for retrieve_and_verify tool
+///
+/// Combines lexical search with sandboxed rustc verification:
+/// - Uses existing search_content for retrieval (respects .gitignore)
+/// - Verifies each .rs candidate via `rustc --edition 2021 --crate-type lib`
+/// - Per-candidate timeout: 10s | Total timeout: 60s
+/// - Returns verified/rejected/skipped status per match
+pub async fn handle_retrieve_and_verify(
+    ctx: &HandlerContext,
+    input: RetrieveAndVerifyInput,
+) -> HandlerResult<RetrieveAndVerifyOutput> {
+    // Validate query is not empty
+    if input.query.trim().is_empty() {
+        return Err(HandlerError::InvalidInput(
+            "Empty query not allowed".to_string(),
+        ));
+    }
+
+    let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
+
+    // Convert MCP input to DTO
+    let dto_input = crate::application::dto::RetrieveAndVerifyRequest {
+        query: input.query,
+        language: input.language,
+        max_results: input.max_results,
+        verify: input.verify,
+    };
+
+    // Call the service (async with per-candidate 10s timeout)
+    let dto_result = service.retrieve_and_verify(dto_input)
+        .await
+        .map_err(HandlerError::App)?;
+
+    // Convert DTO result to MCP output
+    let output = RetrieveAndVerifyOutput {
+        results: dto_result.results.into_iter().map(|r| {
+            let status = match r.status {
+                crate::application::dto::VerificationStatus::Verified =>
+                    crate::interface::mcp::schemas::VerificationStatus::Verified,
+                crate::application::dto::VerificationStatus::Rejected =>
+                    crate::interface::mcp::schemas::VerificationStatus::Rejected,
+                crate::application::dto::VerificationStatus::Skipped =>
+                    crate::interface::mcp::schemas::VerificationStatus::Skipped,
+            };
+            crate::interface::mcp::schemas::VerifiedMatch {
+                file: r.file,
+                line: r.line,
+                col: r.col,
+                matched_text: r.matched_text,
+                context: r.context,
+                status,
+                check_output: r.check_output,
+                error_snippet: r.error_snippet,
+                reason: r.reason,
+            }
+        }).collect(),
+        total: dto_result.total,
+        verified_count: dto_result.verified_count,
+        rejected_count: dto_result.rejected_count,
+        skipped_count: dto_result.skipped_count,
+    };
+
+    Ok(output)
 }
 
 // ============================================================================

@@ -268,3 +268,71 @@ pub struct ListFilesResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depth_traversed: Option<usize>,
 }
+
+// ============================================================================
+// Retrieve and Verify
+// ============================================================================
+
+/// Verification status for a matched file
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum VerificationStatus {
+    Verified,
+    Rejected,
+    Skipped,
+}
+
+/// Request for retrieve_and_verify operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrieveAndVerifyRequest {
+    /// Search query string (required)
+    pub query: String,
+    /// Language filter (reserved, defaults to "rust")
+    #[serde(default = "default_rv_language")]
+    pub language: String,
+    /// Maximum number of results (default: 20)
+    #[serde(default = "default_rv_max_results")]
+    pub max_results: u32,
+    /// Whether to verify via rustc (default: true)
+    #[serde(default = "default_rv_verify")]
+    pub verify: bool,
+}
+
+fn default_rv_language() -> String {
+    "rust".to_string()
+}
+
+fn default_rv_max_results() -> u32 {
+    20
+}
+
+fn default_rv_verify() -> bool {
+    true
+}
+
+/// A single verified match DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifiedMatchDto {
+    pub file: String,
+    pub line: u32,
+    pub col: u32,
+    pub matched_text: String,
+    pub context: Vec<String>,
+    pub status: VerificationStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check_output: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_snippet: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Result of retrieve_and_verify operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrieveAndVerifyResult {
+    pub results: Vec<VerifiedMatchDto>,
+    pub total: u32,
+    pub verified_count: u32,
+    pub rejected_count: u32,
+    pub skipped_count: u32,
+}
