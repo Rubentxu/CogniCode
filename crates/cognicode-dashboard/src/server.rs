@@ -368,19 +368,49 @@ impl CachedAnalysis {
 
 impl AppServerState {
     fn new() -> Self {
+        let mut initial_projects = Vec::new();
+
+        // Auto-discover: if COGNICODE_PROJECT_PATH is set, register that project
+        if let Ok(project_path) = std::env::var("COGNICODE_PROJECT_PATH") {
+            let path = PathBuf::from(&project_path);
+            if path.exists() && path.join(".cognicode").join("cognicode.db").exists() {
+                let name = path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| project_path.clone());
+                tracing::info!("Auto-discovered project: {} at {}", name, project_path);
+                initial_projects.push(RegisteredProject { name, path: project_path.clone() });
+            }
+        }
+
+        // Also try CWD if it has a cognicode.db
+        if let Ok(cwd) = std::env::current_dir() {
+            if cwd.join(".cognicode").join("cognicode.db").exists() {
+                let path_str = cwd.display().to_string();
+                if !initial_projects.iter().any(|p| p.path == path_str) {
+                    let name = cwd.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| path_str.clone());
+                    tracing::info!("Auto-discovered project from CWD: {} at {}", name, path_str);
+                    initial_projects.push(RegisteredProject { name, path: path_str.clone() });
+                }
+            }
+        }
+
+        // Set config.project_path to first discovered project (or CWD fallback)
+        let default_project_path = initial_projects.first()
+            .map(|p| p.path.clone())
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().display().to_string());
+
         Self {
             config: Arc::new(RwLock::new(DashboardConfigDto {
-                project_path: std::env::current_dir()
-                    .unwrap_or_default()
-                    .display()
-                    .to_string(),
+                project_path: default_project_path,
                 quick_analysis: true,
                 changed_only: true,
                 auto_refresh: false,
                 refresh_interval_secs: 60,
             })),
             analysis_cache: Arc::new(RwLock::new(None)),
-            registered_projects: Arc::new(RwLock::new(Vec::new())),
+            registered_projects: Arc::new(RwLock::new(initial_projects)),
         }
     }
 }
