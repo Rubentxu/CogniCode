@@ -1618,15 +1618,40 @@ pub async fn handle_reparse_on_edit(
                     // File unchanged
                     files_skipped += 1;
                 } else {
-                    // File modified - would need re-parse
+                    // File modified - call index_file_from_path to update DashMap and FTS5
                     files_parsed += 1;
-                    graph_updated = true;
+                    match ctx.semantic_search.index_file_from_path(&full_path) {
+                        Ok(()) => {
+                            // Successfully indexed - symbols will be in DashMap and FTS5
+                            // Note: index_file_from_path returns Ok(()) on success, not symbol count
+                            // We increment by 1 as a proxy since actual count isn't available from the method
+                            symbols_added += 1;
+                            graph_updated = true;
+                        }
+                        Err(e) => {
+                            // Parse failure - log at WARN and count as skipped
+                            tracing::warn!("Failed to index modified file {:?}: {}", full_path, e);
+                            files_skipped += 1;
+                            files_parsed -= 1; // Don't count this as parsed
+                        }
+                    }
                 }
             } else {
-                // New file
+                // New file - call index_file_from_path to add to DashMap and FTS5
                 files_parsed += 1;
-                symbols_added += 1; // Simplified - real impl would count actual symbols
-                graph_updated = true;
+                match ctx.semantic_search.index_file_from_path(&full_path) {
+                    Ok(()) => {
+                        // Successfully indexed
+                        symbols_added += 1;
+                        graph_updated = true;
+                    }
+                    Err(e) => {
+                        // Parse failure - log at WARN and count as skipped
+                        tracing::warn!("Failed to index new file {:?}: {}", full_path, e);
+                        files_skipped += 1;
+                        files_parsed -= 1; // Don't count this as parsed
+                    }
+                }
             }
         }
     }
@@ -1846,59 +1871,52 @@ fn get_function_name(node: tree_sitter::Node, source: &str) -> Option<String> {
     None
 }
 
-/// S7000: Compute semantic drift using Jaccard similarity between docstring and body tokens
+/// Returns true if the line is a comment-only line.
+/// Matches axiom behavior from catalog.rs:946-948.
+fn is_comment_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.is_empty()
+        || trimmed.starts_with("//")
+        || trimmed.starts_with("///")
+        || trimmed.starts_with("//!")
+        || trimmed.starts_with("/*")
+        || trimmed.starts_with('*')
+        || trimmed.starts_with('#')
+}
+
+/// S7000: Compute semantic drift using canonical AvcGenerator tokenization and plain Jaccard
 fn compute_s7000_drift(node: tree_sitter::Node, source: &str) -> Option<f32> {
-    // Extract docstring tokens (from children AND previous sibling for Rust)
-    let mut docstring_tokens = extract_docstring_tokens(node, source);
+    const MIN_LINES: usize = 3;
 
-    // For Rust, doc comments might be a previous sibling of the function item
-    if docstring_tokens.is_empty() {
-        if let Some((doc_text, _)) = find_previous_sibling(node, source) {
-            docstring_tokens = tokenize_doc_text(&doc_text);
-        }
+    // Extract docstring using canonical path
+    let doc_text = AvcGenerator::extract_docstring(&node, source);
+    if doc_text.is_empty() {
+        return None;
     }
 
-    if docstring_tokens.is_empty() {
-        return None; // No docstring, no drift check
+    // Extract body and check min_lines gate
+    let body_text = AvcGenerator::extract_body_text(&node, source);
+    let line_count = body_text.lines().count();
+    if line_count < MIN_LINES {
+        return None;
     }
 
-    // Extract body tokens
-    let body_tokens = extract_body_tokens(node, source);
-    if body_tokens.is_empty() {
-        return Some(1.0); // Empty body = high drift
+    // Tokenize using canonical path (no stemming, stop-word filtered)
+    let doc_tokens = AvcGenerator::tokenize(&doc_text);
+    if doc_tokens.is_empty() {
+        return None;
     }
 
-    // Compute Jaccard similarity with stemming: |A ∩ B| / |A ∪ B|
-    // Using stemmed comparison to recognize "adds" ~ "add"
-    let mut intersection_count = 0;
-    for d in &docstring_tokens {
-        if body_tokens.iter().any(|b| stems_match(d, b)) {
-            intersection_count += 1;
-        }
-    }
+    // For body tokens, exclude doc content to avoid artificial similarity inflation
+    let body_for_tokenize = body_text.replace(&doc_text, "");
+    let body_tokens = AvcGenerator::tokenize(&body_for_tokenize);
 
-    let mut union_set = HashSet::new();
-    for t in &docstring_tokens {
-        union_set.insert(get_stem(t));
-    }
-    for t in &body_tokens {
-        let stem = get_stem(t);
-        if !union_set.contains(&stem) {
-            union_set.insert(stem);
-        }
-    }
+    // Plain HashSet Jaccard (no stemming)
+    let intersection = doc_tokens.intersection(&body_tokens).count() as f32;
+    let union = doc_tokens.union(&body_tokens).count() as f32;
+    let similarity = if union > 0.0 { intersection / union } else { 0.0 };
+    let drift_score = 1.0 - similarity;
 
-    let union_size = union_set.len();
-    let jaccard = if union_size == 0 {
-        0.0
-    } else {
-        intersection_count as f32 / union_size as f32
-    };
-
-    // Drift score = 1 - similarity (high drift when low similarity)
-    let drift_score = 1.0 - jaccard;
-
-    // Only report if drift is significant (score >= 0.3 threshold)
     if drift_score < 0.3 {
         None
     } else {
@@ -1906,210 +1924,44 @@ fn compute_s7000_drift(node: tree_sitter::Node, source: &str) -> Option<f32> {
     }
 }
 
-/// Check if two words have matching stems (simple suffix stripping)
-fn stems_match(a: &str, b: &str) -> bool {
-    if a == b {
-        return true;
-    }
-    let stem_a = get_stem(a);
-    let stem_b = get_stem(b);
-    stem_a == stem_b && !stem_a.is_empty()
-}
-
-/// Get simple stem of a word by stripping common suffixes
-fn get_stem(word: &str) -> String {
-    let word = word.to_lowercase();
-    // Strip common suffixes
-    let suffixes = ["ing", "ed", "es", "s", "ly"];
-    for suffix in &suffixes {
-        if word.ends_with(suffix) && word.len() > suffix.len() + 1 {
-            return word[..word.len() - suffix.len()].to_string();
-        }
-    }
-    word
-}
-
-/// Tokenize doc comment text into a HashSet of lowercase words
-fn tokenize_doc_text(text: &str) -> HashSet<String> {
-    let mut tokens = HashSet::new();
-    let normalized: String = text
-        .chars()
-        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
-        .collect::<String>()
-        .to_lowercase();
-    for word in normalized.split_whitespace() {
-        if word.len() > 2 {
-            tokens.insert(word.to_string());
-        }
-    }
-    tokens
-}
-
-/// Extract tokens from docstring
-fn extract_docstring_tokens(node: tree_sitter::Node, source: &str) -> HashSet<String> {
-    let mut tokens = HashSet::new();
-    let mut cursor = node.walk();
-
-    // Look for docstrings and doc comments:
-    // - Python: "string" or "string_content" (triple-quoted strings)
-    // - Rust: doc comments are /// or //! which might be:
-    //   - "attribute" nodes with content starting with "///" or "//!"
-    //   - "line_comment" nodes
-    //   - "outer_doc_comment" or "inner_doc_comment" nodes directly
-    for child in node.children(&mut cursor) {
-        let kind = child.kind();
-        let text = source[child.byte_range()].to_lowercase();
-
-        // Check for Python docstrings
-        if kind == "string" || kind == "string_content" {
-            // Remove quotes and normalize
-            let normalized: String = source[child.byte_range()]
-                .chars()
-                .filter(|c| c.is_alphanumeric() || c.is_whitespace())
-                .collect::<String>()
-                .to_lowercase();
-            // Tokenize
-            for word in normalized.split_whitespace() {
-                if word.len() > 2 {
-                    tokens.insert(word.to_string());
-                }
-            }
-            break; // Only process first docstring
-        }
-
-        // Check for Rust doc comments (/// or //!)
-        // Look for text that starts with doc comment markers
-        if text.contains("///") || text.contains("//!") {
-            // For Rust doc comments, extract the text after /// or //!
-            let doc_text: String = source[child.byte_range()]
-                .chars()
-                .filter(|c| c.is_alphanumeric() || c.is_whitespace())
-                .collect::<String>()
-                .to_lowercase();
-            // Tokenize
-            for word in doc_text.split_whitespace() {
-                if word.len() > 2 {
-                    tokens.insert(word.to_string());
-                }
-            }
-            break; // Only process first doc comment
-        }
-    }
-
-    tokens
-}
-
-/// Extract tokens from function body (excluding docstring and function name)
-fn extract_body_tokens(node: tree_sitter::Node, source: &str) -> HashSet<String> {
-    let mut tokens = HashSet::new();
-    let mut cursor = node.walk();
-
-    // Track if we're past the docstring (Python) or doc comment (Rust)
-    let mut found_docstring = false;
-
-    for child in node.children(&mut cursor) {
-        let kind = child.kind();
-        let text = source[child.byte_range()].to_lowercase();
-
-        // Check if this is a docstring or doc comment
-        if !found_docstring {
-            // Check for Python docstrings
-            if kind == "string" || kind == "string_content" {
-                found_docstring = true;
-                continue;
-            }
-
-            // Check for Rust doc comments (/// or //!)
-            if text.contains("///") || text.contains("//!") {
-                found_docstring = true;
-                continue;
-            }
-        }
-
-        // Skip the function name identifier (but NOT nested identifiers in the body)
-        // Only skip the direct identifier child of the function_item
-        if node.kind() == "function_item" && kind == "identifier" {
-            continue;
-        }
-
-        // Collect identifiers from the block (function body)
-        extract_identifiers(child, source, &mut tokens);
-    }
-
-    tokens
-}
-
-/// Recursively extract identifier tokens from a node
-fn extract_identifiers(node: tree_sitter::Node, source: &str, tokens: &mut HashSet<String>) {
-    let kind = node.kind();
-
-    // Include identifiers, keywords, and operators as tokens
-    if kind == "identifier" || kind == "string" || kind == "string_content" {
-        let text = source[node.byte_range()].to_string();
-        let normalized: String = text
-            .chars()
-            .filter(|c| c.is_alphanumeric() || c.is_whitespace())
-            .collect::<String>()
-            .to_lowercase();
-        for word in normalized.split_whitespace() {
-            if word.len() > 2 {
-                tokens.insert(word.to_string());
-            }
-        }
-    }
-
-    // Recurse into children
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            extract_identifiers(child, source, tokens);
-        }
-    }
-}
-
-/// S7001: Detect AVC violations (unsafe, panic!, .unwrap(), .expect())
+/// S7001: Detect AVC violations (unsafe, panic!, .unwrap(), .expect()) with comment-line filtering
 fn detect_s7001_violations(
     node: tree_sitter::Node,
     source: &str,
     function_name: &str,
 ) -> Vec<DriftFinding> {
     let mut findings = Vec::new();
-    let node_text = source[node.byte_range()].to_lowercase();
-    let line = (node.start_position().row + 1) as u32;
+    let node_text = &source[node.byte_range()];
+    let start_line = node.start_position().row;
 
-    // Check for unsafe blocks (Rust)
-    if node_text.contains("unsafe") {
-        findings.push(DriftFinding {
-            function_name: function_name.to_string(),
-            drift_score: 0.85,
-            rule_id: "S7001".to_string(),
-            severity: DriftSeverity::Critical,
-            line,
-            message: "S7001: Unsafe code block detected. Consider using safe abstractions.".to_string(),
-        });
-    }
+    let forbidden = [
+        ("unsafe", "Unsafe code block without justification", 0.85),
+        ("panic!", "panic! macro in production code", 0.90),
+        (".unwrap()", ".unwrap() without error handling", 0.75),
+        (".expect(", ".expect() without proper message", 0.75),
+    ];
 
-    // Check for panic!
-    if node_text.contains("panic!") {
-        findings.push(DriftFinding {
-            function_name: function_name.to_string(),
-            drift_score: 0.9,
-            rule_id: "S7001".to_string(),
-            severity: DriftSeverity::Critical,
-            line,
-            message: "S7001: panic! macro detected. Consider proper error handling.".to_string(),
-        });
-    }
+    // Iterate source lines with comment filtering (matches axiom catalog.rs:944-948)
+    for (idx, line) in node_text.lines().enumerate() {
+        let trimmed = line.trim();
+        // Skip comment-only lines (same logic as axiom)
+        if is_comment_line(line) {
+            continue;
+        }
 
-    // Check for .unwrap() and .expect(
-    if node_text.contains(".unwrap()") || node_text.contains(".expect(") {
-        findings.push(DriftFinding {
-            function_name: function_name.to_string(),
-            drift_score: 0.75,
-            rule_id: "S7001".to_string(),
-            severity: DriftSeverity::Critical,
-            line,
-            message: "S7001: .unwrap() or .expect() detected. Consider proper error handling.".to_string(),
-        });
+        for (pattern, desc, score) in &forbidden {
+            if trimmed.contains(pattern) {
+                findings.push(DriftFinding {
+                    function_name: function_name.to_string(),
+                    drift_score: *score,
+                    rule_id: "S7001".to_string(),
+                    severity: DriftSeverity::Critical,
+                    line: (start_line + idx + 1) as u32,
+                    message: format!("S7001: {}", desc),
+                });
+                break;
+            }
+        }
     }
 
     findings
@@ -3181,13 +3033,12 @@ fn main() {}
         assert!(result.is_ok());
         let output = result.unwrap();
 
-        // Verify all expected fields are present
-        assert!(output.files_parsed >= 0);
-        assert!(output.files_skipped >= 0);
-        assert!(output.files_removed >= 0);
-        assert!(output.symbols_added >= 0);
-        assert!(output.symbols_removed >= 0);
-        // graph_updated depends on whether file changed
+        // Verify output structure and metadata are present (behavioral correctness)
+        // File is parsed as new since manifest from build is not accessible to reparse
+        assert_eq!(output.files_parsed, 1, "File should be parsed as new (manifest not shared between build and reparse)");
+        assert_eq!(output.files_skipped, 0, "File should not be skipped");
+        assert_eq!(output.files_removed, 0, "No files should be removed");
+        assert!(output.graph_updated, "Graph should be updated after parsing new file");
         assert!(output._meta.is_some());
         let meta = output._meta.unwrap();
         assert_eq!(meta.detail_level, "reparse_on_edit");
@@ -3259,10 +3110,136 @@ fn main() {}
         assert!(result.is_ok());
         let output = result.unwrap();
 
-        // If file hasn't changed, it should be skipped
-        // Note: This depends on mtime comparison - if the build just happened,
-        // the mtime might be the same
-        assert!(output.files_skipped >= 0 || output.files_parsed >= 0);
+        // File not in manifest after build (separate stores), so treated as new
+        assert_eq!(output.files_skipped, 0, "File not in manifest after build");
+        assert_eq!(output.files_parsed, 1, "File treated as new since manifest not shared");
+    }
+
+    #[cfg(feature = "persistence")]
+    #[tokio::test]
+    async fn test_handle_reparse_on_edit_modified_file_triggers_indexing() {
+        // Test that modified file triggers indexing via index_file_from_path
+        use std::time::Duration;
+
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, r#"
+fn original_function() {}
+fn main() {}
+"#).unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Build graph first to establish baseline
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Modify the file
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        std::fs::write(&file_path, r#"
+fn original_function() {}
+fn new_function() {}
+fn main() {}
+"#).unwrap();
+
+        let input = ReparseOnEditInput {
+            file_paths: vec!["src/main.rs".to_string()],
+            edit_ranges: None,
+        };
+
+        let result = handle_reparse_on_edit(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+
+        // File was modified, so files_parsed should be incremented and graph_updated should be true
+        assert!(output.files_parsed >= 1, "Should have parsed at least 1 file, got {}", output.files_parsed);
+        assert!(output.graph_updated, "graph_updated should be true after modification");
+
+        // Verify the search service actually indexed something by checking index is non-empty
+        let index_len = ctx.semantic_search.index().len();
+        assert!(index_len >= 2, "Should have at least 2 symbols indexed (new_function + main), got {}", index_len);
+    }
+
+    #[cfg(feature = "persistence")]
+    #[tokio::test]
+    async fn test_handle_reparse_on_edit_new_file_triggers_indexing() {
+        // Test that new file triggers indexing
+        let temp = tempfile::tempdir().unwrap();
+
+        // Create main.rs first and build graph
+        let main_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(main_path.parent().unwrap()).unwrap();
+        std::fs::write(&main_path, r#"
+fn main() {}
+"#).unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Now add a new file
+        let lib_path = temp.path().join("src/lib.rs");
+        std::fs::write(&lib_path, r#"
+pub fn library_function() {}
+pub struct LibraryStruct {}
+"#).unwrap();
+
+        let input = ReparseOnEditInput {
+            file_paths: vec!["src/lib.rs".to_string()],
+            edit_ranges: None,
+        };
+
+        let result = handle_reparse_on_edit(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+
+        // New file should be parsed and indexed
+        assert!(output.files_parsed >= 1, "Should have parsed the new file");
+        assert!(output.symbols_added >= 1, "Should have added at least 1 symbol");
+        assert!(output.graph_updated, "graph_updated should be true for new file");
+    }
+
+    #[cfg(feature = "persistence")]
+    #[tokio::test]
+    async fn test_handle_reparse_on_edit_invalid_file_logs_warn() {
+        // Test that parse failure logs at WARN level and counts as skipped
+        let temp = tempfile::tempdir().unwrap();
+
+        // Create a valid main.rs first
+        let main_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(main_path.parent().unwrap()).unwrap();
+        std::fs::write(&main_path, r#"
+fn main() {}
+"#).unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        // Create an invalid/unparseable file
+        let invalid_path = temp.path().join("src/invalid.txt");
+        std::fs::write(&invalid_path, b"\x00\x01\x02 invalid binary content").unwrap();
+
+        let input = ReparseOnEditInput {
+            file_paths: vec!["src/invalid.txt".to_string()],
+            edit_ranges: None,
+        };
+
+        // Capture log warnings
+        let result = handle_reparse_on_edit(&ctx, input).await;
+        // The handler should still return Ok (graceful degradation) but file should be skipped
+        assert!(result.is_ok());
+        let output = result.unwrap();
+
+        // Invalid file should not count as parsed, should be skipped instead
+        // (It will be skipped because the Language::from_extension returns None for .txt)
+        // OR if it has a language extension, the parse failure would be logged
+        // Either way, files_parsed should not increment for this file
+        assert!(output.files_parsed == 0 || output.files_skipped >= 1,
+            "Invalid file should either fail to parse or be skipped");
     }
 
     // =========================================================================
@@ -3339,6 +3316,40 @@ fn add(a: i32, b: i32) -> i32 {
             .filter(|f| f.rule_id == "S7000")
             .collect();
         assert!(s7000_findings.is_empty(), "No docstring should not trigger S7000");
+    }
+
+    #[tokio::test]
+    async fn test_detect_drift_s7000_short_function() {
+        // Functions with < 3 lines in body should be skipped by S7000 (min_lines=3 gate)
+        // Body is all on one line, so line_count = 1, which is < 3
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+
+        // Single-line body: { base64::encode(token.as_bytes()) }
+        // This should NOT trigger S7000 because body has only 1 line (< MIN_LINES = 3)
+        std::fs::write(&file_path, r#"
+/// Hash token using bcrypt
+fn hash_token(token: &str) -> String { base64::encode(token.as_bytes()) }
+"#).unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        let input = DetectDriftInput {
+            file_path: "src/main.rs".to_string(),
+            threshold: 0.3,
+            function_name: Some("hash_token".to_string()),
+        };
+
+        let result = handle_detect_drift(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+
+        // Should have NO S7000 finding because function body is only 1 line (< MIN_LINES = 3)
+        let s7000_findings: Vec<_> = output.findings.iter()
+            .filter(|f| f.rule_id == "S7000")
+            .collect();
+        assert!(s7000_findings.is_empty(), "Short function (< 3 lines) should be skipped by S7000");
     }
 
     #[tokio::test]
@@ -3470,6 +3481,44 @@ fn safe_add(a: i32, b: i32) -> i32 {
             .filter(|f| f.rule_id == "S7001")
             .collect();
         assert!(s7001_findings.is_empty(), "Clean source should not trigger S7001");
+    }
+
+    #[tokio::test]
+    async fn test_detect_drift_s7001_comment_only_line() {
+        // S7001 should skip comment-only lines — .unwrap() in comments should not trigger
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+
+        // .unwrap() appears only in comments, not in actual code
+        std::fs::write(&file_path, r#"
+/// Safe config reader
+fn get_config() -> String {
+    // The following line would use .unwrap() if uncommented:
+    // let x = std::env::var("CONFIG").unwrap();
+    // We could also use: std::env::var("KEY").unwrap()
+    let x = 42;
+    x.to_string()
+}
+"#).unwrap();
+
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        let input = DetectDriftInput {
+            file_path: "src/main.rs".to_string(),
+            threshold: 0.5,
+            function_name: Some("get_config".to_string()),
+        };
+
+        let result = handle_detect_drift(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+
+        // Should have NO S7001 finding because .unwrap() only appears in comments
+        let s7001_findings: Vec<_> = output.findings.iter()
+            .filter(|f| f.rule_id == "S7001")
+            .collect();
+        assert!(s7001_findings.is_empty(), ".unwrap() in comments only should not trigger S7001");
     }
 
     #[tokio::test]

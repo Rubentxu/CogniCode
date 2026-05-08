@@ -1042,7 +1042,10 @@ declare_rule! {
     name: "Forbidden domain term detected"
     severity: Major
     category: SecurityHotspot
-    language: "rust"
+    // Language-agnostic: substring scan works on any source.
+    // Note: line-based comment skip only handles Rust syntax (//, ///, //!, /*).
+    // Non-Rust files rely on MCP handler's tree-sitter comment skip for FP reduction.
+    language: "*"
     params: { forbidden_terms: Vec<String> = vec!["base64".to_string()] }
     check: => {
         let mut issues = Vec::new();

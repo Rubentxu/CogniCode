@@ -489,13 +489,13 @@ impl SemanticSearchService {
     fn write_symbols_to_fts(
         conn: &rusqlite::Connection,
         symbols: &[Symbol],
+        docstrings: &[String],
         file_path: &str,
         mtime: i64,
         mtime_source: &str,
     ) -> Result<(), String> {
-        for symbol in symbols {
+        for (symbol, docstring) in symbols.iter().zip(docstrings.iter()) {
             let kind_str = format!("{:?}", symbol.kind());
-            let docstring = String::new(); // Symbols don't have docstrings by default
             let tokens = format!("{} {}", symbol.name(), kind_str);
             if let Err(e) = conn.execute(
                 "INSERT OR REPLACE INTO symbol_index (symbol_name, symbol_kind, file_path, docstring, body_tokens) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -527,6 +527,19 @@ impl SemanticSearchService {
 
         let symbols = parser.find_all_symbols(source).map_err(|e| e.to_string())?;
 
+        // Extract docstrings for each symbol using the existing line-based extractor
+        // Location::line() is zero-indexed; extract_docstring expects 1-indexed
+        let docstrings: Vec<String> = symbols
+            .iter()
+            .map(|s| {
+                crate::infrastructure::semantic::symbol_code::extract_docstring(
+                    source,
+                    s.location().line() + 1,
+                )
+                .unwrap_or_default()
+            })
+            .collect();
+
         // Write to DashMap (existing behavior)
         self.index.index_file(file_path, symbols.clone());
 
@@ -542,7 +555,7 @@ impl SemanticSearchService {
                 tracing::warn!("Failed to begin FTS5 transaction: {}", e);
                 return Ok(());
             }
-            let result = Self::write_symbols_to_fts(&conn, &symbols, file_path, mtime, &mtime_source);
+            let result = Self::write_symbols_to_fts(&conn, &symbols, &docstrings, file_path, mtime, &mtime_source);
             if let Err(e) = result {
                 if let Err(rollback_err) = conn.execute("ROLLBACK", []) {
                     tracing::warn!("Failed to rollback FTS5 transaction: {}", rollback_err);
@@ -806,6 +819,19 @@ impl SemanticSearchService {
                         }
                     };
 
+                    // Extract docstrings for each symbol using the existing line-based extractor
+                    // Location::line() is zero-indexed; extract_docstring expects 1-indexed
+                    let docstrings: Vec<String> = symbols
+                        .iter()
+                        .map(|s| {
+                            crate::infrastructure::semantic::symbol_code::extract_docstring(
+                                &source,
+                                s.location().line() + 1,
+                            )
+                            .unwrap_or_default()
+                        })
+                        .collect();
+
                     // Write to DashMap index (always, regardless of FTS5)
                     self.index.index_file(&path.to_string_lossy(), symbols.clone());
 
@@ -822,7 +848,7 @@ impl SemanticSearchService {
                             tracing::warn!("Failed to create savepoint {}: {}", sp_name, e);
                             // Fall back to continuing without savepoint
                         } else {
-                            let sp_result = Self::write_symbols_to_fts(&conn, &symbols, &path.to_string_lossy(), mtime, &mtime_source);
+                            let sp_result = Self::write_symbols_to_fts(&conn, &symbols, &docstrings, &path.to_string_lossy(), mtime, &mtime_source);
                             if let Err(e) = sp_result {
                                 tracing::warn!("Failed to write symbols for {:?}: {}", path, e);
                                 if let Err(rb_err) = conn.execute(&format!("ROLLBACK TO {}", sp_name), []) {
@@ -839,7 +865,7 @@ impl SemanticSearchService {
                         }
                     } else {
                         // ≤1 symbol: write directly without savepoint overhead
-                        if let Err(e) = Self::write_symbols_to_fts(&conn, &symbols, &path.to_string_lossy(), mtime, &mtime_source) {
+                        if let Err(e) = Self::write_symbols_to_fts(&conn, &symbols, &docstrings, &path.to_string_lossy(), mtime, &mtime_source) {
                             tracing::warn!("Failed to write symbols for {:?}: {}", path, e);
                             continue;
                         }
@@ -1136,6 +1162,7 @@ mod fts5_batching_tests {
         let result = SemanticSearchService::write_symbols_to_fts(
             &conn,
             &symbols,
+            &vec![String::new(); symbols.len()],
             "src/lib.rs",
             1700000000,
             "git",
@@ -1171,7 +1198,7 @@ mod fts5_batching_tests {
             SymbolKind::Function,
             Location::new("src/a.rs", 1, 0),
         )];
-        SemanticSearchService::write_symbols_to_fts(&conn, &symbols1, "src/a.rs", 1000, "git").unwrap();
+        SemanticSearchService::write_symbols_to_fts(&conn, &symbols1, &vec![String::new(); symbols1.len()], "src/a.rs", 1000, "git").unwrap();
         conn.execute("RELEASE SAVEPOINT sp1", []).unwrap();
 
         // Second savepoint with more data
@@ -1181,7 +1208,7 @@ mod fts5_batching_tests {
             SymbolKind::Function,
             Location::new("src/b.rs", 1, 0),
         )];
-        SemanticSearchService::write_symbols_to_fts(&conn, &symbols2, "src/b.rs", 1000, "git").unwrap();
+        SemanticSearchService::write_symbols_to_fts(&conn, &symbols2, &vec![String::new(); symbols2.len()], "src/b.rs", 1000, "git").unwrap();
 
         // Rollback second savepoint
         conn.execute("ROLLBACK TO sp2", []).unwrap();
@@ -1225,7 +1252,7 @@ mod fts5_batching_tests {
 
         // Write with transaction wrapping (simulating what index_file does)
         conn.execute("BEGIN", []).unwrap();
-        SemanticSearchService::write_symbols_to_fts(&conn, &symbols, "src/lib.rs", 1000, "git").unwrap();
+        SemanticSearchService::write_symbols_to_fts(&conn, &symbols, &vec![String::new(); symbols.len()], "src/lib.rs", 1000, "git").unwrap();
         conn.execute("COMMIT", []).unwrap();
 
         // Verify rows in symbol_index
@@ -1241,7 +1268,7 @@ mod fts5_batching_tests {
             Symbol::new("fn_d", SymbolKind::Function, Location::new("src/other.rs", 5, 0)),
             Symbol::new("fn_e", SymbolKind::Function, Location::new("src/other.rs", 10, 0)),
         ];
-        SemanticSearchService::write_symbols_to_fts(&conn, &symbols2, "src/other.rs", 1000, "git").unwrap();
+        SemanticSearchService::write_symbols_to_fts(&conn, &symbols2, &vec![String::new(); symbols2.len()], "src/other.rs", 1000, "git").unwrap();
         conn.execute("COMMIT", []).unwrap();
 
         // Should have 5 total symbols across 2 files
@@ -1304,7 +1331,7 @@ mod fts5_batching_tests {
                     )
                 })
                 .collect();
-            SemanticSearchService::write_symbols_to_fts(&conn, &symbols, file_path, 1000, "git").unwrap();
+            SemanticSearchService::write_symbols_to_fts(&conn, &symbols, &vec![String::new(); symbols.len()], file_path, 1000, "git").unwrap();
         }
         conn.execute("COMMIT", []).unwrap();
 
@@ -1315,5 +1342,176 @@ mod fts5_batching_tests {
 
         // 3 files × 5 symbols each = 15 expected
         assert_eq!(count, 15, "Should have 15 symbols indexed from 3 files");
+    }
+
+    #[test]
+    fn test_index_file_populates_docstring_column() {
+        // R7/R9: Verify docstring column is populated for symbols with doc comments
+        use crate::infrastructure::parser::Language;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_root = temp_dir.path().to_path_buf();
+
+        // Create FTS5 schema
+        let fts_db_path = db_root.join(".cognicode").join("cognicode.db");
+        std::fs::create_dir_all(fts_db_path.parent().unwrap()).unwrap();
+        let conn = rusqlite::Connection::open(&fts_db_path).unwrap();
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS symbol_index USING fts5(
+                symbol_name, symbol_kind, file_path, docstring, body_tokens,
+                tokenize='porter unicode61'
+            );
+            CREATE TABLE IF NOT EXISTS symbol_timestamps (
+                file_path TEXT NOT NULL,
+                symbol_name TEXT NOT NULL,
+                last_modified INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                PRIMARY KEY (file_path, symbol_name)
+            );",
+        )
+        .unwrap();
+        drop(conn);
+
+        let service = SemanticSearchService::new().with_db_path(db_root);
+
+        // Rust source with doc comment above the function
+        let source = "/// Adds two numbers\nfn add(a: i32, b: i32) -> i32 {\n    a + b\n}";
+
+        let result = service.index_file("src/math.rs", source, Language::Rust);
+        assert!(result.is_ok(), "index_file should succeed");
+
+        // Verify docstring is populated via FTS5 query
+        let conn = rusqlite::Connection::open(&fts_db_path).unwrap();
+        let docstring: String = conn
+            .query_row(
+                "SELECT docstring FROM symbol_index WHERE symbol_name = 'add'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            docstring.contains("Adds two numbers"),
+            "docstring should contain 'Adds two numbers', got: '{}'",
+            docstring
+        );
+    }
+
+    #[test]
+    fn test_docstring_empty_for_undocumented_symbol() {
+        // R7: Verify docstring is empty for symbols without doc comments
+        use crate::infrastructure::parser::Language;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_root = temp_dir.path().to_path_buf();
+
+        // Create FTS5 schema
+        let fts_db_path = db_root.join(".cognicode").join("cognicode.db");
+        std::fs::create_dir_all(fts_db_path.parent().unwrap()).unwrap();
+        let conn = rusqlite::Connection::open(&fts_db_path).unwrap();
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS symbol_index USING fts5(
+                symbol_name, symbol_kind, file_path, docstring, body_tokens,
+                tokenize='porter unicode61'
+            );
+            CREATE TABLE IF NOT EXISTS symbol_timestamps (
+                file_path TEXT NOT NULL,
+                symbol_name TEXT NOT NULL,
+                last_modified INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                PRIMARY KEY (file_path, symbol_name)
+            );",
+        )
+        .unwrap();
+        drop(conn);
+
+        let service = SemanticSearchService::new().with_db_path(db_root);
+
+        // Rust source without any doc comment
+        let source = "fn raw(a: i32) -> i32 {\n    a\n}";
+
+        let result = service.index_file("src/raw.rs", source, Language::Rust);
+        assert!(result.is_ok(), "index_file should succeed");
+
+        // Verify docstring is empty via FTS5 query
+        let conn = rusqlite::Connection::open(&fts_db_path).unwrap();
+        let docstring: String = conn
+            .query_row(
+                "SELECT docstring FROM symbol_index WHERE symbol_name = 'raw'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(docstring, "", "docstring should be empty for undocumented symbol, got: '{}'", docstring);
+    }
+
+    #[test]
+    fn test_populate_from_directory_docstrings_mixed() {
+        // R7/R9: 3 files, assert 4 rows with non-empty docstring, 2 with empty
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_root = temp_dir.path().to_path_buf();
+
+        // Create FTS5 schema
+        let fts_db_path = db_root.join(".cognicode").join("cognicode.db");
+        std::fs::create_dir_all(fts_db_path.parent().unwrap()).unwrap();
+        let conn = rusqlite::Connection::open(&fts_db_path).unwrap();
+        conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS symbol_index USING fts5(
+                symbol_name, symbol_kind, file_path, docstring, body_tokens,
+                tokenize='porter unicode61'
+            );
+            CREATE TABLE IF NOT EXISTS symbol_timestamps (
+                file_path TEXT NOT NULL,
+                symbol_name TEXT NOT NULL,
+                last_modified INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                PRIMARY KEY (file_path, symbol_name)
+            );",
+        )
+        .unwrap();
+        drop(conn);
+
+        let service = SemanticSearchService::new().with_db_path(db_root);
+
+        // Create 3 files:
+        // File A: 3 symbols with doc comments
+        // File B: 2 symbols without doc comments
+        // File C: 1 symbol with doc comment
+        // Total: 4 with docstrings, 2 without
+
+        let file_a = temp_dir.path().join("math.rs");
+        std::fs::write(&file_a, "/// Adds two numbers\nfn add(a: i32, b: i32) -> i32 { a + b }\n/// Subtracts two numbers\nfn sub(a: i32, b: i32) -> i32 { a - b }\n/// Multiplies two numbers\nfn mul(a: i32, b: i32) -> i32 { a * b }").unwrap();
+
+        let file_b = temp_dir.path().join("raw.rs");
+        std::fs::write(&file_b, "fn raw_no_doc(a: i32) -> i32 { a }\nfn another_raw(a: i32) -> i32 { a }").unwrap();
+
+        let file_c = temp_dir.path().join("string.rs");
+        std::fs::write(&file_c, "/// Reverses a string\nfn reverse(s: &str) -> String { s.chars().rev().collect() }").unwrap();
+
+        let result = service.populate_from_directory(temp_dir.path());
+        assert!(result.is_ok(), "populate_from_directory should succeed");
+
+        // Verify docstring counts via FTS5 query
+        let conn = rusqlite::Connection::open(&fts_db_path).unwrap();
+
+        // Count rows with non-empty docstring
+        let non_empty_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM symbol_index WHERE length(docstring) > 0",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(non_empty_count, 4, "Should have 4 symbols with non-empty docstrings");
+
+        // Count rows with empty docstring
+        let empty_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM symbol_index WHERE length(docstring) = 0",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(empty_count, 2, "Should have 2 symbols with empty docstrings");
     }
 }

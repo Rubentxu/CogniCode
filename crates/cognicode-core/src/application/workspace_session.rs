@@ -493,6 +493,30 @@ impl WorkspaceSession {
             .save_manifest(&new_manifest)
             .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Failed to save manifest: {}", e)))?;
 
+        // FTS5 sync: ensure semantic search is initialized and index changed files
+        // This ensures FTS5 tables stay in sync with the rebuilt call graph
+        if let Err(e) = self.ensure_semantic_search().await {
+            tracing::warn!("Failed to initialize semantic search for FTS5 sync: {}", e);
+        } else {
+            let search_guard = self.semantic_search.read().await;
+            if let Some(ref semantic_search) = *search_guard {
+                // Index new files
+                for rel_path in &new_files {
+                    let full_path = self.workspace_root.join(rel_path);
+                    if let Err(e) = semantic_search.index_file_from_path(&full_path) {
+                        tracing::warn!("Failed to index new file {:?} to FTS5: {}", full_path, e);
+                    }
+                }
+                // Index modified files
+                for rel_path in &modified_files {
+                    let full_path = self.workspace_root.join(rel_path);
+                    if let Err(e) = semantic_search.index_file_from_path(&full_path) {
+                        tracing::warn!("Failed to index modified file {:?} to FTS5: {}", full_path, e);
+                    }
+                }
+            }
+        }
+
         // Update result with symbol counts
         result.symbols_added = updated_entries.iter().map(|(_, _, _, c)| *c).sum();
         result.symbols_removed = deleted_files.len() * 2; // Approximate
@@ -3259,6 +3283,61 @@ pub const MY_CONST: i32 = 42;
             !result2.graph_updated,
             "Should not rebuild graph when no changes"
         );
+    }
+
+    #[tokio::test]
+    async fn test_incremental_reindex_modifed_file_syncs_semantic_index() {
+        // Test that incremental_reindex syncs the semantic search index (DashMap + FTS5)
+        use crate::infrastructure::persistence::InMemoryGraphStore;
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test.rs");
+        std::fs::write(&test_file, "fn original_function() {}").unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+
+        // Set up in-memory graph store
+        let store = Arc::new(InMemoryGraphStore::new());
+        session.set_graph_store(store.clone());
+
+        // Build initial graph
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
+
+        // First incremental reindex
+        let _result = session.incremental_reindex().await.unwrap();
+
+        // Modify the file to add a new function
+        std::fs::write(&test_file, "fn original_function() {}\nfn new_semantic_function() {}").unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+
+        // Second incremental reindex - should sync semantic index
+        let result = session.incremental_reindex().await.unwrap();
+
+        // Should detect the change
+        assert!(
+            result.files_parsed > 0 || result.graph_updated,
+            "Should detect file modification"
+        );
+
+        // Verify the semantic search index has the new symbol
+        // Access semantic_search through the internal method
+        let search_guard = session.semantic_search.read().await;
+        if let Some(ref semantic_search) = *search_guard {
+            // Check that the index has the new function
+            let index_len = semantic_search.index().len();
+            assert!(
+                index_len >= 2,
+                "Should have at least 2 symbols in semantic index (original + new), got {}",
+                index_len
+            );
+        } else {
+            panic!("Semantic search should be initialized after incremental_reindex");
+        }
     }
 
     // =========================================================================

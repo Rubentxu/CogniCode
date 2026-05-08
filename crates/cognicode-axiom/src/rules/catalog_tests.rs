@@ -1069,6 +1069,16 @@ fn encode_data() {
         assert!(issues.is_empty(), "S7003 should NOT trigger when term only in comments");
     }
 
+    #[test]
+    fn test_s7003_rule_properties() {
+        // Verify S7003 metadata: language should be wildcard (language-agnostic rule)
+        let rule = catalog::S7003Rule::new();
+        assert_eq!(rule.id(), "S7003");
+        assert_eq!(rule.severity(), Severity::Major);
+        assert_eq!(rule.category(), Category::SecurityHotspot);
+        assert_eq!(rule.language(), "*"); // Language-agnostic: substring scan works on any source
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // S2076 — FP Regression Tests
     // ═══════════════════════════════════════════════════════════════════════════
