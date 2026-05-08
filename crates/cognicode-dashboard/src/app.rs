@@ -7,9 +7,9 @@ use leptos_router::components::{Route, Router, Routes};
 use leptos_router::path;
 use crate::state::ReactiveAppState;
 use crate::pages::{
-    DashboardPage, IssuesPage, IssueDetailPage,
+    DashboardPage, DriftPage, ContractsPage, IssuesPage, IssueDetailPage,
     MetricsPage, QualityGatePage, ConfigurationPage,
-    NotFoundPage, ProjectsPage,
+    NotFoundPage, ProjectsPage, AgentStatsPage,
 };
 
 /// Main application component with full routing
@@ -24,6 +24,9 @@ pub fn App() -> impl IntoView {
             <Routes fallback=NotFoundPage>
                 <Route path=path!("/") view=DashboardPage />
                 <Route path=path!("/projects") view=ProjectsPage />
+                <Route path=path!("/drift") view=DriftPage />
+                <Route path=path!("/contracts") view=ContractsPage />
+                <Route path=path!("/agent-stats") view=AgentStatsPage />
                 <Route path=path!("/issues") view=IssuesPage />
                 <Route path=path!("/issues/:id") view=IssueDetailPage />
                 <Route path=path!("/metrics") view=MetricsPage />

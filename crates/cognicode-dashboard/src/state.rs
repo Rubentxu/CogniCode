@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::api_client::{
     ApiClient, AnalysisSummaryDto, IssueDto, DashboardConfigDto,
-    HistoryEntryDto,
+    HistoryEntryDto, DriftEventDto, ContractDto, AgentStatDto,
 };
 
 /// Dashboard configuration settings
@@ -364,6 +364,18 @@ pub struct ReactiveAppState {
     pub error: RwSignal<Option<String>>,
     /// History data for trend charts
     pub trend_data: RwSignal<Option<Vec<HistoryEntryDto>>>,
+    /// Drift events list
+    pub drift_events: RwSignal<Vec<DriftEventDto>>,
+    /// Total number of drift events matching current filters
+    pub drift_total_count: RwSignal<usize>,
+    /// Contracts list
+    pub contracts: RwSignal<Vec<ContractDto>>,
+    /// Total number of contracts
+    pub contracts_count: RwSignal<usize>,
+    /// Agent stats list
+    pub agent_stats: RwSignal<Vec<AgentStatDto>>,
+    /// Total number of agent stats
+    pub agent_stats_count: RwSignal<usize>,
 }
 
 impl ReactiveAppState {
@@ -381,6 +393,12 @@ impl ReactiveAppState {
             loading: RwSignal::new(false),
             error: RwSignal::new(None),
             trend_data: RwSignal::new(None),
+            drift_events: RwSignal::new(Vec::new()),
+            drift_total_count: RwSignal::new(0),
+            contracts: RwSignal::new(Vec::new()),
+            contracts_count: RwSignal::new(0),
+            agent_stats: RwSignal::new(Vec::new()),
+            agent_stats_count: RwSignal::new(0),
         }
     }
 
@@ -402,6 +420,12 @@ impl ReactiveAppState {
             loading: RwSignal::new(false),
             error: RwSignal::new(None),
             trend_data: RwSignal::new(None),
+            drift_events: RwSignal::new(Vec::new()),
+            drift_total_count: RwSignal::new(0),
+            contracts: RwSignal::new(Vec::new()),
+            contracts_count: RwSignal::new(0),
+            agent_stats: RwSignal::new(Vec::new()),
+            agent_stats_count: RwSignal::new(0),
         }
     }
 
@@ -480,6 +504,89 @@ impl ReactiveAppState {
             Err(e) => {
                 self.error.set(Some(e));
                 self.trend_data.set(None);
+            }
+        }
+
+        self.loading.set(false);
+    }
+
+    /// Load drift events with optional filters
+    pub async fn load_drift(
+        &self,
+        file: Option<&str>,
+        function: Option<&str>,
+        severity: Option<&str>,
+        min_score: Option<f64>,
+        offset: usize,
+        limit: usize,
+    ) {
+        self.loading.set(true);
+        self.error.set(None);
+
+        let path = self.project_path.get();
+        if path.is_empty() {
+            self.error.set(Some("Project path is empty".to_string()));
+            self.loading.set(false);
+            return;
+        }
+
+        match self.api.get_drift_events(&path, file, function, severity, min_score, offset, limit).await {
+            Ok(response) => {
+                self.drift_events.set(response.events);
+                self.drift_total_count.set(response.total_count);
+            }
+            Err(e) => {
+                self.error.set(Some(e));
+            }
+        }
+
+        self.loading.set(false);
+    }
+
+    /// Load contracts from the server
+    pub async fn load_contracts(&self, limit: usize) {
+        self.loading.set(true);
+        self.error.set(None);
+
+        let path = self.project_path.get();
+        if path.is_empty() {
+            self.error.set(Some("Project path is empty".to_string()));
+            self.loading.set(false);
+            return;
+        }
+
+        match self.api.get_contracts(&path, limit).await {
+            Ok(contracts) => {
+                self.contracts.set(contracts);
+                self.contracts_count.set(self.contracts.get().len());
+            }
+            Err(e) => {
+                self.error.set(Some(e));
+            }
+        }
+
+        self.loading.set(false);
+    }
+
+    /// Load agent stats from the server
+    pub async fn load_agent_stats(&self, since: Option<&str>) {
+        self.loading.set(true);
+        self.error.set(None);
+
+        let path = self.project_path.get();
+        if path.is_empty() {
+            self.error.set(Some("Project path is empty".to_string()));
+            self.loading.set(false);
+            return;
+        }
+
+        match self.api.get_agent_stats(&path, since).await {
+            Ok(stats) => {
+                self.agent_stats.set(stats);
+                self.agent_stats_count.set(self.agent_stats.get().len());
+            }
+            Err(e) => {
+                self.error.set(Some(e));
             }
         }
 

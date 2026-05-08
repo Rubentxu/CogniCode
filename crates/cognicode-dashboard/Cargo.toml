@@ -50,6 +50,7 @@ log = "0.4"
 env_logger = { version = "0.11", optional = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+urlencoding = "2"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

@@ -183,6 +183,54 @@ pub struct IssuesResponseDto {
     pub total_pages: usize,
 }
 
+/// A single drift detection event
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriftEventDto {
+    pub id: i64,
+    pub timestamp: String,
+    pub file_path: String,
+    pub function_name: String,
+    pub drift_score: f64,
+    pub intent: Option<String>,
+    pub severity: String,
+}
+
+/// Paginated drift events response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriftResponseDto {
+    pub events: Vec<DriftEventDto>,
+    pub total_count: usize,
+    pub offset: usize,
+    pub limit: usize,
+}
+
+/// A single contract from the AVC analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractDto {
+    pub id: i64,
+    pub source_file: String,
+    pub function_name: String,
+    pub compliance_score: f64,
+    pub generated_at: String,
+}
+
+/// Result status breakdown counts
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResultStatusBreakdown {
+    pub success: usize,
+    pub error: usize,
+    pub other: usize,
+}
+
+/// Agent tool usage statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentStatDto {
+    pub tool_name: String,
+    pub count: usize,
+    pub avg_duration_ms: f64,
+    pub result_status_breakdown: ResultStatusBreakdown,
+}
+
 /// Analysis request body
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisRequestDto {
@@ -474,6 +522,107 @@ impl ApiClient {
             .await
             .map_err(|e| format!("Failed to parse response: {}", e))
     }
+
+    /// Get drift events with optional filters — GET /api/drift
+    pub async fn get_drift_events(
+        &self,
+        project_path: &str,
+        file: Option<&str>,
+        function: Option<&str>,
+        severity: Option<&str>,
+        min_score: Option<f64>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<DriftResponseDto, String> {
+        let mut url = format!("{}/api/drift", self.base_url);
+
+        // Build query params
+        let mut params: Vec<String> = vec![
+            format!("project_path={}", urlencoding::encode(project_path)),
+            format!("offset={}", offset),
+            format!("limit={}", limit),
+        ];
+
+        if let Some(f) = file {
+            if !f.is_empty() {
+                params.push(format!("file={}", urlencoding::encode(f)));
+            }
+        }
+
+        if let Some(fn_) = function {
+            if !fn_.is_empty() {
+                params.push(format!("function={}", urlencoding::encode(fn_)));
+            }
+        }
+
+        if let Some(sev) = severity {
+            if !sev.is_empty() {
+                params.push(format!("severity={}", urlencoding::encode(sev)));
+            }
+        }
+
+        if let Some(score) = min_score {
+            params.push(format!("min_score={}", score));
+        }
+
+        url = format!("{}?{}", url, params.join("&"));
+
+        Request::get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {}", e))
+    }
+
+    /// Get contracts — GET /api/contracts
+    pub async fn get_contracts(
+        &self,
+        project_path: &str,
+        limit: usize,
+    ) -> Result<Vec<ContractDto>, String> {
+        let mut url = format!("{}/api/contracts", self.base_url);
+
+        let params = format!(
+            "project_path={}&limit={}",
+            urlencoding::encode(project_path),
+            limit
+        );
+        url = format!("{}?{}", url, params);
+
+        Request::get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {}", e))
+    }
+
+    /// Get agent stats — GET /api/agent-stats
+    pub async fn get_agent_stats(
+        &self,
+        project_path: &str,
+        since: Option<&str>,
+    ) -> Result<Vec<AgentStatDto>, String> {
+        let mut url = format!("{}/api/agent-stats", self.base_url);
+
+        let params = format!("project_path={}", urlencoding::encode(project_path));
+        if let Some(since) = since {
+            url = format!("{}?{}&since={}", url, params, urlencoding::encode(since));
+        } else {
+            url = format!("{}?{}", url, params);
+        }
+
+        Request::get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {}", e))
+    }
 }
 
 #[cfg(test)]
@@ -528,5 +677,279 @@ mod tests {
         assert_eq!(dto.project_path, "/test/project");
         assert_eq!(dto.total_issues, 50);
         assert_eq!(dto.ratings.reliability, 'A');
+    }
+
+    #[test]
+    fn test_drift_event_dto_deserialize() {
+        let json = r#"{
+            "id": 42,
+            "timestamp": "2026-05-07T10:30:00Z",
+            "file_path": "src/main.rs",
+            "function_name": "process_data",
+            "drift_score": 0.75,
+            "intent": "Refactoring needed",
+            "severity": "major"
+        }"#;
+
+        let dto: DriftEventDto = serde_json::from_str(json).unwrap();
+        assert_eq!(dto.id, 42);
+        assert_eq!(dto.timestamp, "2026-05-07T10:30:00Z");
+        assert_eq!(dto.file_path, "src/main.rs");
+        assert_eq!(dto.function_name, "process_data");
+        assert_eq!(dto.drift_score, 0.75);
+        assert_eq!(dto.intent, Some("Refactoring needed".to_string()));
+        assert_eq!(dto.severity, "major");
+    }
+
+    #[test]
+    fn test_drift_event_dto_without_intent() {
+        let json = r#"{
+            "id": 99,
+            "timestamp": "2026-05-07T12:00:00Z",
+            "file_path": "lib.rs",
+            "function_name": "helper",
+            "drift_score": 0.25,
+            "intent": null,
+            "severity": "minor"
+        }"#;
+
+        let dto: DriftEventDto = serde_json::from_str(json).unwrap();
+        assert_eq!(dto.id, 99);
+        assert_eq!(dto.intent, None);
+        assert_eq!(dto.drift_score, 0.25);
+    }
+
+    #[test]
+    fn test_drift_response_dto_deserialize() {
+        let json = r#"{
+            "events": [
+                {
+                    "id": 1,
+                    "timestamp": "2026-05-07T10:00:00Z",
+                    "file_path": "a.rs",
+                    "function_name": "func_a",
+                    "drift_score": 0.8,
+                    "intent": "Test",
+                    "severity": "critical"
+                },
+                {
+                    "id": 2,
+                    "timestamp": "2026-05-07T11:00:00Z",
+                    "file_path": "b.rs",
+                    "function_name": "func_b",
+                    "drift_score": 0.5,
+                    "intent": null,
+                    "severity": "major"
+                }
+            ],
+            "total_count": 10,
+            "offset": 0,
+            "limit": 2
+        }"#;
+
+        let dto: DriftResponseDto = serde_json::from_str(json).unwrap();
+        assert_eq!(dto.events.len(), 2);
+        assert_eq!(dto.total_count, 10);
+        assert_eq!(dto.offset, 0);
+        assert_eq!(dto.limit, 2);
+        assert_eq!(dto.events[0].id, 1);
+        assert_eq!(dto.events[1].id, 2);
+    }
+
+    #[test]
+    fn test_get_drift_events_url_construction() {
+        // Verify URL construction with query params using a local helper
+        // that mirrors the get_drift_events logic without making HTTP calls
+        let base_url = "http://localhost:3000";
+        let project_path = "/test/project";
+        let file = Some("src/main.rs");
+        let function = Some("process");
+        let severity = Some("major");
+        let min_score = Some(0.5);
+        let offset = 10;
+        let limit = 20;
+
+        // Reconstruct URL building logic from get_drift_events
+        let mut params: Vec<String> = vec![
+            format!("project_path={}", urlencoding::encode(project_path)),
+            format!("offset={}", offset),
+            format!("limit={}", limit),
+        ];
+        if let Some(f) = file {
+            if !f.is_empty() {
+                params.push(format!("file={}", urlencoding::encode(f)));
+            }
+        }
+        if let Some(fn_) = function {
+            if !fn_.is_empty() {
+                params.push(format!("function={}", urlencoding::encode(fn_)));
+            }
+        }
+        if let Some(sev) = severity {
+            if !sev.is_empty() {
+                params.push(format!("severity={}", urlencoding::encode(sev)));
+            }
+        }
+        if let Some(score) = min_score {
+            params.push(format!("min_score={}", score));
+        }
+        let url = format!("{}/api/drift?{}", base_url, params.join("&"));
+
+        assert_eq!(url, "http://localhost:3000/api/drift?project_path=%2Ftest%2Fproject&offset=10&limit=20&file=src%2Fmain.rs&function=process&severity=major&min_score=0.5");
+        // Verify param count
+        assert_eq!(params.len(), 7);
+    }
+
+    #[test]
+    fn test_contract_dto_deserialize() {
+        let json = r#"{
+            "id": 42,
+            "source_file": "src/auth/validator.rs",
+            "function_name": "validate_token",
+            "compliance_score": 0.85,
+            "generated_at": "2026-05-07T10:30:00Z"
+        }"#;
+
+        let dto: ContractDto = serde_json::from_str(json).unwrap();
+        assert_eq!(dto.id, 42);
+        assert_eq!(dto.source_file, "src/auth/validator.rs");
+        assert_eq!(dto.function_name, "validate_token");
+        assert_eq!(dto.compliance_score, 0.85);
+        assert_eq!(dto.generated_at, "2026-05-07T10:30:00Z");
+    }
+
+    #[test]
+    fn test_contract_dto_multiple_contracts() {
+        let json = r#"[
+            {
+                "id": 1,
+                "source_file": "a.rs",
+                "function_name": "func_a",
+                "compliance_score": 0.9,
+                "generated_at": "2026-05-07T10:00:00Z"
+            },
+            {
+                "id": 2,
+                "source_file": "b.rs",
+                "function_name": "func_b",
+                "compliance_score": 0.75,
+                "generated_at": "2026-05-07T11:00:00Z"
+            }
+        ]"#;
+
+        let dtos: Vec<ContractDto> = serde_json::from_str(json).unwrap();
+        assert_eq!(dtos.len(), 2);
+        assert_eq!(dtos[0].id, 1);
+        assert_eq!(dtos[0].compliance_score, 0.9);
+        assert_eq!(dtos[1].id, 2);
+        assert_eq!(dtos[1].compliance_score, 0.75);
+    }
+
+    #[test]
+    fn test_get_contracts_url_construction() {
+        let base_url = "http://localhost:3000";
+        let project_path = "/test/project";
+        let limit = 50;
+
+        let url = format!(
+            "{}/api/contracts?project_path={}&limit={}",
+            base_url,
+            urlencoding::encode(project_path),
+            limit
+        );
+
+        assert_eq!(url, "http://localhost:3000/api/contracts?project_path=%2Ftest%2Fproject&limit=50");
+    }
+
+    #[test]
+    fn test_agent_stat_dto_deserialize() {
+        let json = r#"{
+            "tool_name": "grep",
+            "count": 42,
+            "avg_duration_ms": 15.3,
+            "result_status_breakdown": {
+                "success": 30,
+                "error": 8,
+                "other": 4
+            }
+        }"#;
+
+        let dto: AgentStatDto = serde_json::from_str(json).unwrap();
+        assert_eq!(dto.tool_name, "grep");
+        assert_eq!(dto.count, 42);
+        assert_eq!(dto.avg_duration_ms, 15.3);
+        assert_eq!(dto.result_status_breakdown.success, 30);
+        assert_eq!(dto.result_status_breakdown.error, 8);
+        assert_eq!(dto.result_status_breakdown.other, 4);
+    }
+
+    #[test]
+    fn test_agent_stat_dto_empty_response() {
+        let json = r#"[]"#;
+        let dtos: Vec<AgentStatDto> = serde_json::from_str(json).unwrap();
+        assert_eq!(dtos.len(), 0);
+    }
+
+    #[test]
+    fn test_agent_stat_dto_multiple_stats() {
+        let json = r#"[
+            {
+                "tool_name": "grep",
+                "count": 100,
+                "avg_duration_ms": 10.5,
+                "result_status_breakdown": {
+                    "success": 80,
+                    "error": 15,
+                    "other": 5
+                }
+            },
+            {
+                "tool_name": "file_search",
+                "count": 50,
+                "avg_duration_ms": 25.0,
+                "result_status_breakdown": {
+                    "success": 45,
+                    "error": 3,
+                    "other": 2
+                }
+            }
+        ]"#;
+
+        let dtos: Vec<AgentStatDto> = serde_json::from_str(json).unwrap();
+        assert_eq!(dtos.len(), 2);
+        assert_eq!(dtos[0].tool_name, "grep");
+        assert_eq!(dtos[0].count, 100);
+        assert_eq!(dtos[1].tool_name, "file_search");
+        assert_eq!(dtos[1].count, 50);
+    }
+
+    #[test]
+    fn test_get_agent_stats_url_construction_without_since() {
+        let base_url = "http://localhost:3000";
+        let project_path = "/test/project";
+
+        let url = format!(
+            "{}/api/agent-stats?project_path={}",
+            base_url,
+            urlencoding::encode(project_path)
+        );
+
+        assert_eq!(url, "http://localhost:3000/api/agent-stats?project_path=%2Ftest%2Fproject");
+    }
+
+    #[test]
+    fn test_get_agent_stats_url_construction_with_since() {
+        let base_url = "http://localhost:3000";
+        let project_path = "/test/project";
+        let since = "2026-05-01T00:00:00Z";
+
+        let url = format!(
+            "{}/api/agent-stats?project_path={}&since={}",
+            base_url,
+            urlencoding::encode(project_path),
+            urlencoding::encode(since)
+        );
+
+        assert_eq!(url, "http://localhost:3000/api/agent-stats?project_path=%2Ftest%2Fproject&since=2026-05-01T00%3A00%3A00Z");
     }
 }
