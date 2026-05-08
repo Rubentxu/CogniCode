@@ -95,7 +95,7 @@ pub fn FileBrowser(
                     "🏠 Home"
                 </button>
                 {move || {
-                    let home = "/home/".to_string();
+                    let _home = "/home/".to_string();
                     let user = browser_path.get();
                     if user.starts_with("/home/") {
                         let parts: Vec<&str> = user.split('/').collect();

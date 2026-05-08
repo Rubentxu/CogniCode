@@ -5,6 +5,7 @@
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 // ============================================================================
 // DTOs matching server responses
@@ -243,6 +244,76 @@ pub struct AnalysisRequestDto {
     pub changed_only: bool,
 }
 
+
+
+// ============================================================================
+// Trends and Agent Tasks DTOs
+// ============================================================================
+
+/// Trend data point
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrendEntryDto {
+    pub date: String,
+    pub total_issues: usize,
+    pub debt_minutes: u64,
+    pub rating: String,
+}
+
+/// Baseline comparison data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BaselineComparisonDto {
+    pub baseline_timestamp: String,
+    pub issues_delta: i64,
+    pub debt_delta: i64,
+    pub rating_before: String,
+    pub rating_after: String,
+}
+
+/// Trends response DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrendsResponseDto {
+    pub trends: Vec<TrendEntryDto>,
+    pub baseline: Option<BaselineComparisonDto>,
+}
+
+/// Agent task DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTaskDto {
+    pub id: i64,
+    pub task_type: String,
+    pub priority: i32,
+    pub payload_json: String,
+    pub status: String,
+    pub created_by: String,
+    pub created_at: String,
+    pub assigned_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub result_json: Option<String>,
+    pub error_message: Option<String>,
+}
+
+/// Create task request DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTaskRequest {
+    pub task_type: String,
+    pub priority: Option<i32>,
+    pub payload_json: String,
+    pub created_by: Option<String>,
+}
+
+/// Create task response DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTaskResponse {
+    pub task_id: i64,
+    pub status: String,
+}
+
+/// Task list response DTO
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskListResponse {
+    pub tasks: Vec<AgentTaskDto>,
+    pub total: usize,
+}
 // ============================================================================
 // Project Management DTOs
 // ============================================================================
@@ -300,14 +371,14 @@ pub struct HistoryEntryDto {
 /// API client for calling the CogniCode server
 #[derive(Clone)]
 pub struct ApiClient {
-    base_url: String,
+    base_url: Arc<String>,
 }
 
 impl ApiClient {
     /// Create a new API client
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
-            base_url: base_url.into(),
+            base_url: Arc::new(base_url.into()),
         }
     }
 
@@ -638,6 +709,74 @@ impl ApiClient {
             url = format!("{}?{}&since={}", url, params, urlencoding::encode(since));
         } else {
             url = format!("{}?{}", url, params);
+        }
+
+        Request::get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {}", e))
+    }
+
+    /// Get trends — GET /api/trends
+    pub async fn get_trends(&self, project_path: &str, limit: Option<usize>) -> Result<TrendsResponseDto, String> {
+        let mut url = format!("{}/api/trends", self.base_url);
+
+        let params = format!("project_path={}", urlencoding::encode(project_path));
+        if let Some(l) = limit {
+            url = format!("{}?{}&limit={}", url, params, l);
+        } else {
+            url = format!("{}?{}", url, params);
+        }
+
+        Request::get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {}", e))
+    }
+
+    /// Create an agent task — POST /api/tasks
+    pub async fn create_task(&self, request: &CreateTaskRequest) -> Result<CreateTaskResponse, String> {
+        let url = format!("{}/api/tasks", self.base_url);
+
+        Request::post(&url)
+            .json(request)
+            .map_err(|e| format!("Failed to serialize request: {}", e))?
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {}", e))
+    }
+
+    /// List agent tasks — GET /api/tasks
+    pub async fn list_tasks(
+        &self,
+        status: Option<&str>,
+        task_type: Option<&str>,
+    ) -> Result<TaskListResponse, String> {
+        let mut url = format!("{}/api/tasks", self.base_url);
+        let mut params: Vec<String> = Vec::new();
+
+        if let Some(s) = status {
+            if !s.is_empty() {
+                params.push(format!("status={}", urlencoding::encode(s)));
+            }
+        }
+        if let Some(t) = task_type {
+            if !t.is_empty() {
+                params.push(format!("task_type={}", urlencoding::encode(t)));
+            }
+        }
+
+        if !params.is_empty() {
+            url = format!("{}?{}", url, params.join("&"));
         }
 
         Request::get(&url)

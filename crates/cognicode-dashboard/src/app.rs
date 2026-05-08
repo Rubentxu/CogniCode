@@ -9,7 +9,8 @@ use crate::state::ReactiveAppState;
 use crate::pages::{
     DashboardPage, DriftPage, ContractsPage, IssuesPage, IssueDetailPage,
     MetricsPage, QualityGatePage, ConfigurationPage,
-    NotFoundPage, ProjectsPage, AgentStatsPage,
+    NotFoundPage, ProjectsPage, AgentStatsPage, CodeExplorerPage, ActivityPage,
+    TrendsPage, KanbanPage,
 };
 
 /// Main application component with full routing
@@ -27,11 +28,15 @@ pub fn App() -> impl IntoView {
                 <Route path=path!("/drift") view=DriftPage />
                 <Route path=path!("/contracts") view=ContractsPage />
                 <Route path=path!("/agent-stats") view=AgentStatsPage />
+                <Route path=path!("/code-explorer") view=CodeExplorerPage />
+                <Route path=path!("/activity") view=ActivityPage />
                 <Route path=path!("/issues") view=IssuesPage />
                 <Route path=path!("/issues/:id") view=IssueDetailPage />
                 <Route path=path!("/metrics") view=MetricsPage />
                 <Route path=path!("/quality-gate") view=QualityGatePage />
                 <Route path=path!("/configuration") view=ConfigurationPage />
+                <Route path=path!("/trends") view=TrendsPage />
+                <Route path=path!("/kanban") view=KanbanPage />
                 <Route path=path!("/*any") view=NotFoundPage />
             </Routes>
         </Router>
