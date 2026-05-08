@@ -881,6 +881,84 @@ async fn browse_filesystem(
     }))
 }
 
+/// Open a native OS directory picker and return the selected path.
+/// Uses zenity on Linux, osascript on macOS, and PowerShell on Windows.
+async fn pick_directory() -> ApiResult<Json<serde_json::Value>> {
+    let path = tokio::task::spawn_blocking(|| -> Result<String, String> {
+        #[cfg(target_os = "linux")]
+        {
+            let output = std::process::Command::new("zenity")
+                .args(["--file-selection", "--directory", "--title=Select Project Directory"])
+                .output()
+                .map_err(|e| format!("zenity not available: {}", e))?;
+            if !output.status.success() {
+                // User cancelled or no zenity
+                return Err("cancelled".to_string());
+            }
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if path.is_empty() {
+                return Err("cancelled".to_string());
+            }
+            Ok(path)
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let output = std::process::Command::new("osascript")
+                .args(["-e", r#"POSIX path of (choose folder with prompt "Select Project Directory")"#])
+                .output()
+                .map_err(|e| format!("osascript not available: {}", e))?;
+            if !output.status.success() {
+                return Err("cancelled".to_string());
+            }
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if path.is_empty() {
+                return Err("cancelled".to_string());
+            }
+            Ok(path)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let script = r#"$shell = New-Object -ComObject Shell.Application; $folder = $shell.BrowseForFolder(0, 'Select Project Directory', 0); if ($folder) { $folder.Self.Path }"#;
+            let output = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-Command", script])
+                .output()
+                .map_err(|e| format!("powershell not available: {}", e))?;
+            if !output.status.success() {
+                return Err("cancelled".to_string());
+            }
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if path.is_empty() {
+                return Err("cancelled".to_string());
+            }
+            Ok(path)
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        {
+            Err("native directory picker not supported on this OS".to_string())
+        }
+    })
+    .await
+    .map_err(|e| ApiError { message: format!("task error: {}", e) })?;
+
+    match path {
+        Ok(p) => {
+            // Validate that the selected path exists and is a directory
+            let pb = std::path::PathBuf::from(&p);
+            if !pb.exists() {
+                return Err(ApiError { message: format!("Path does not exist: {}", p) });
+            }
+            if !pb.is_dir() {
+                return Err(ApiError { message: format!("Not a directory: {}", p) });
+            }
+            Ok(Json(serde_json::json!({ "path": p })))
+        }
+        Err(e) if e == "cancelled" => {
+            Err(ApiError { message: "cancelled".to_string() })
+        }
+        Err(e) => Err(ApiError { message: e }),
+    }
+}
+
 /// Get available rule profiles
 async fn get_rule_profiles() -> Json<Vec<RuleProfileDto>> {
     Json(vec![
@@ -1186,6 +1264,7 @@ pub async fn start_server(port: u16) {
         .route("/api/ratings", post(get_ratings))
         .route("/api/validate-path", post(validate_project_path))
         .route("/api/fs/ls", post(browse_filesystem))
+        .route("/api/fs/pick-directory", get(pick_directory))
         .route("/api/rule-profiles", get(get_rule_profiles))
         .route("/api/config", get(get_config))
         .route("/api/config", post(save_config))

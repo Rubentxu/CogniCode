@@ -673,7 +673,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "cognicode-core",
@@ -685,7 +685,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-axiom"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -713,7 +713,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-cli"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -728,7 +728,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -814,7 +814,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-db"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -839,7 +839,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-mcp"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -860,7 +860,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-quality"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -888,7 +888,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-rule-test-harness"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "cognicode-axiom",
@@ -901,7 +901,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-sandbox"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -921,7 +921,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-store-traits"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "bincode",
  "serde",

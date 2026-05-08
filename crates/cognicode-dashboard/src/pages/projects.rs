@@ -1,10 +1,10 @@
-//! Projects Page — SonarQube-style list with register + file browser
+//! Projects Page — SonarQube-style list with register + native directory picker
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use crate::state::ReactiveAppState;
 use crate::api_client::ProjectInfoDto;
-use crate::components::{Shell, LoadingSpinner, FileBrowser};
+use crate::components::{Shell, LoadingSpinner};
 
 #[component]
 pub fn ProjectsPage() -> impl IntoView {
@@ -65,10 +65,40 @@ fn RegisterForm(
 ) -> impl IntoView {
     let (register_name, set_register_name) = signal(String::new());
     let (register_path, set_register_path) = signal(String::new());
-    let (show_browser, set_show_browser) = signal(false);
+    let (picking, set_picking) = signal(false);
+    let (pick_error, set_pick_error) = signal(None::<String>);
+
+    let do_pick = {
+        let st = state.clone();
+        move |_| {
+            set_picking.set(true);
+            set_pick_error.set(None);
+            let st = st.clone();
+            spawn_local(async move {
+                match st.api.pick_directory().await {
+                    Ok(path) => {
+                        // Auto-detect name from path
+                        if let Some(name) = path.rsplit('/').next() {
+                            if !name.is_empty() {
+                                set_register_name.set(name.to_string());
+                            }
+                        }
+                        set_register_path.set(path);
+                    }
+                    Err(e) if e == "cancelled" => {
+                        // User cancelled the dialog, no error to show
+                    }
+                    Err(e) => {
+                        set_pick_error.set(Some(e));
+                    }
+                }
+                set_picking.set(false);
+            });
+        }
+    };
 
     let do_register = {
-        let st = state;
+        let st = state.clone();
         let _ = register_name;
         let _ = register_path;
         move |_| {
@@ -95,7 +125,7 @@ fn RegisterForm(
         <div class="card mb-8">
             <h3 class="text-h3 text-text-primary mb-4">Register New Project</h3>
             <p class="text-body-sm text-text-secondary mb-4">
-                "Select a project directory. The dashboard will read from its " <code class="text-mono">".cognicode/cognicode.db"</code> " file."
+                "Click Browse to select a project directory using the native file picker, or type a path manually."
             </p>
             <div class="space-y-4">
                 <div>
@@ -121,20 +151,16 @@ fn RegisterForm(
                                 set_register_path.set(val);
                             }
                         />
-                        <button class="btn btn-secondary btn-sm"
-                            on:click=move |_| set_show_browser.set(!show_browser.get())>
-                            {move || if show_browser.get() { "Hide" } else { "Browse" }}
+                        <button class="btn btn-primary btn-sm whitespace-nowrap"
+                            disabled=move || picking.get()
+                            on:click=do_pick>
+                            {move || if picking.get() { "Opening..." } else { "📂 Browse" }}
                         </button>
                     </div>
+                    {move || pick_error.get().map(|e| view! {
+                        <p class="text-body-sm text-red-500 mt-1">{e}</p>
+                    })}
                 </div>
-
-                {move || show_browser.get().then(|| view! {
-                    <FileBrowser
-                        current_path=register_path
-                        on_select=set_register_path
-                        on_close=set_show_browser
-                    />
-                })}
 
                 <button class="btn btn-primary" on:click=do_register>Register</button>
             </div>

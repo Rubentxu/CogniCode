@@ -450,6 +450,29 @@ impl ApiClient {
             .map_err(|e| format!("Failed to parse response: {}", e))
     }
 
+    /// Open native OS directory picker and return selected path
+    pub async fn pick_directory(&self) -> Result<String, String> {
+        let url = format!("{}/api/fs/pick-directory", self.base_url);
+        let resp = Request::get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
+
+        if !resp.ok() {
+            return Err(format!("Request failed with status: {}", resp.status()));
+        }
+
+        #[derive(Deserialize)]
+        struct PickDirectoryResponse {
+            path: String,
+        }
+
+        resp.json::<PickDirectoryResponse>()
+            .await
+            .map(|r| r.path)
+            .map_err(|e| format!("Failed to parse response: {}", e))
+    }
+
     /// Get dashboard configuration
     pub async fn get_config(&self) -> Result<DashboardConfigDto, String> {
         let url = format!("{}/api/config", self.base_url);
