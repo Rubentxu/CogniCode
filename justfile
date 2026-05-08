@@ -19,8 +19,9 @@ set positional-arguments := false
 
 DASHBOARD_DIR := "crates/cognicode-dashboard"
 DIST_DIR := DASHBOARD_DIR / "dist"
-SERVER_BIN := "target/debug/cognicode-dashboard-server"
+SERVER_BIN := "target/release/cognicode-dashboard-server"
 PORT := env_var_or_default("PORT", "3000")
+PROJECT_PATH := env_var_or_default("COGNICODE_PROJECT_PATH", "")
 
 # ─── Default ──────────────────────────────────────────────────────────────────
 
@@ -64,12 +65,15 @@ clean:
 # ─── Run ──────────────────────────────────────────────────────────────────────
 
 # Build and start the dashboard server
-run: stop build copy-assets
+run: stop build-release copy-assets
     @echo "🚀 Starting dashboard on http://localhost:{{PORT}}"
     @if curl -s --max-time 1 http://localhost:{{PORT}}/health > /dev/null 2>&1; then \
         echo "❌ Port {{PORT}} still in use. Try: just stop && just run"; exit 1; \
     fi
-    DIST_DIR={{DIST_DIR}} cargo run --bin cognicode-dashboard-server
+    @if [ "{{PROJECT_PATH}}" != "" ]; then \
+        echo "📂 Auto-discovering project: {{PROJECT_PATH}}"; \
+    fi
+    DIST_DIR={{DIST_DIR}} COGNICODE_PROJECT_PATH={{PROJECT_PATH}} ./{{SERVER_BIN}}
 
 # Start server (without rebuilding)
 start: stop
@@ -77,7 +81,10 @@ start: stop
     @if curl -s --max-time 1 http://localhost:{{PORT}}/health > /dev/null 2>&1; then \
         echo "❌ Port {{PORT}} still in use. Try: lsof -i :{{PORT}}"; exit 1; \
     fi
-    DIST_DIR={{DIST_DIR}} ./{{SERVER_BIN}}
+    @if [ "{{PROJECT_PATH}}" != "" ]; then \
+        echo "📂 Auto-discovering project: {{PROJECT_PATH}}"; \
+    fi
+    DIST_DIR={{DIST_DIR}} COGNICODE_PROJECT_PATH={{PROJECT_PATH}} ./{{SERVER_BIN}}
 
 # Run in dev mode (trunk serve for frontend + cargo run for server)
 dev:
@@ -137,7 +144,7 @@ start-server:
         echo "🔄 Server already running"; \
     else \
         echo "🔄 Starting server..."; \
-        DIST_DIR={{DIST_DIR}} nohup ./{{SERVER_BIN}} > /tmp/cognicode-server.log 2>&1 & \
+        DIST_DIR={{DIST_DIR}} COGNICODE_PROJECT_PATH={{PROJECT_PATH}} nohup ./{{SERVER_BIN}} > /tmp/cognicode-server.log 2>&1 & \
         sleep 2; \
         echo "Server started"; \
     fi
