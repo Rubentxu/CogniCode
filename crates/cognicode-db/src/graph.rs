@@ -120,11 +120,11 @@ impl SqliteGraphStore {
 
 impl GraphStore for SqliteGraphStore {
     fn save_graph(&self, graph: &CallGraph) -> Result<(), StoreError> {
-        SqliteGraphStore::save_graph(self, graph).map_err(|e| StoreError::Database(e))
+        SqliteGraphStore::save_graph(self, graph).map_err(StoreError::Database)
     }
 
     fn load_graph(&self) -> Result<Option<CallGraph>, StoreError> {
-        SqliteGraphStore::load_graph(self).map_err(|e| StoreError::Database(e))
+        SqliteGraphStore::load_graph(self).map_err(StoreError::Database)
     }
 
     fn save_manifest(&self, manifest: &FileManifest) -> Result<(), StoreError> {
@@ -151,10 +151,10 @@ impl GraphStore for SqliteGraphStore {
     }
 
     fn clear(&self) -> Result<(), StoreError> {
-        SqliteGraphStore::clear(self).map_err(|e| StoreError::Database(e))
+        SqliteGraphStore::clear(self).map_err(StoreError::Database)
     }
 
     fn exists(&self) -> Result<bool, StoreError> {
-        SqliteGraphStore::exists(self).map_err(|e| StoreError::Database(e))
+        SqliteGraphStore::exists(self).map_err(StoreError::Database)
     }
 }

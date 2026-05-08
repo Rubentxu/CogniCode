@@ -95,13 +95,11 @@ impl ExtractStrategy {
                 let child_kind = child.kind();
 
                 // Check if this is a block that contains multiple statements
-                if block_types.contains(&child_kind) && child.child_count() > 1 {
-                    if let Some(block) = self.analyze_block(child, source, file_path) {
-                        if block.code.lines().count() >= 2 {
+                if block_types.contains(&child_kind) && child.child_count() > 1
+                    && let Some(block) = self.analyze_block(child, source, file_path)
+                        && block.code.lines().count() >= 2 {
                             blocks.push(block);
                         }
-                    }
-                }
 
                 self.find_statement_blocks(child, source, file_path, blocks);
             }
@@ -171,14 +169,13 @@ impl ExtractStrategy {
             // Find the identifier being assigned
             for i in 0..node.child_count() {
                 if let Some(child) = node.child(i) {
-                    if child.kind() == "identifier" || child.kind() == "pattern" {
-                        if let Ok(name) = child.utf8_text(source.as_bytes()) {
+                    if (child.kind() == "identifier" || child.kind() == "pattern")
+                        && let Ok(name) = child.utf8_text(source.as_bytes()) {
                             // Skip self/box etc.
                             if !name.is_empty() && !["self", "box", "ref", "mut"].contains(&name) {
                                 defined_vars.insert(name.to_string());
                             }
                         }
-                    }
                     // Handle patterns like `let x = ...` or `let (a, b) = ...`
                     if child.kind() == "pattern" {
                         self.collect_pattern_identifiers(child, source, defined_vars);
@@ -194,9 +191,9 @@ impl ExtractStrategy {
             if let Some(parent) = node.parent() {
                 let parent_kind = parent.kind();
                 // Skip if this identifier is being defined (left side of assignment)
-                if parent_kind != "identifier" && parent_kind != "pattern" {
-                    if let Ok(name) = node.utf8_text(source.as_bytes()) {
-                        if !name.is_empty()
+                if parent_kind != "identifier" && parent_kind != "pattern"
+                    && let Ok(name) = node.utf8_text(source.as_bytes())
+                        && !name.is_empty()
                             && ![
                                 "self", "box", "ref", "mut", "let", "const", "var", "fn", "def",
                                 "class",
@@ -205,8 +202,6 @@ impl ExtractStrategy {
                         {
                             used_vars.insert(name.to_string());
                         }
-                    }
-                }
             }
         }
 
@@ -261,11 +256,10 @@ impl ExtractStrategy {
         }
 
         for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                if let Some(name) = self.find_identifier_in_node(child, source) {
+            if let Some(child) = node.child(i)
+                && let Some(name) = self.find_identifier_in_node(child, source) {
                     return Some(name);
                 }
-            }
         }
 
         None
@@ -278,13 +272,11 @@ impl ExtractStrategy {
         source: &str,
         defined_vars: &mut std::collections::HashSet<String>,
     ) {
-        if node.kind() == "identifier" {
-            if let Ok(name) = node.utf8_text(source.as_bytes()) {
-                if !name.is_empty() && !["self", "box"].contains(&name) {
+        if node.kind() == "identifier"
+            && let Ok(name) = node.utf8_text(source.as_bytes())
+                && !name.is_empty() && !["self", "box"].contains(&name) {
                     defined_vars.insert(name.to_string());
                 }
-            }
-        }
 
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {

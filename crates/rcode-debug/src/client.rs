@@ -452,6 +452,7 @@ pub struct BreakpointStatus {
 
 /// Launch configuration
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct LaunchConfig {
     /// Program to debug
     pub program: String,
@@ -465,17 +466,6 @@ pub struct LaunchConfig {
     pub no_debug: bool,
 }
 
-impl Default for LaunchConfig {
-    fn default() -> Self {
-        Self {
-            program: String::new(),
-            args: vec![],
-            cwd: None,
-            env: HashMap::new(),
-            no_debug: false,
-        }
-    }
-}
 
 impl LaunchConfig {
     /// Create a new launch config with required program

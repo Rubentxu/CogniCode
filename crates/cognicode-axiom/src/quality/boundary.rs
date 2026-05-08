@@ -192,7 +192,7 @@ impl BoundaryChecker {
         for v in violations {
             by_boundary
                 .entry(v.from_boundary.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(v.clone());
         }
 

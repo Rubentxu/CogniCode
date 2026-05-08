@@ -180,7 +180,7 @@ impl ParseCache {
             .map_err(|e| format!("Cannot read {}: {}", path.display(), e))?;
         let ext = path.extension();
         let language = Language::from_extension(ext)
-            .ok_or_else(|| format!("Unknown language"))?;
+            .ok_or_else(|| "Unknown language".to_string())?;
         let mut parser = tree_sitter::Parser::new();
         parser.set_language(&language.to_ts_language())
             .map_err(|e| format!("{}", e))?;
@@ -732,7 +732,7 @@ impl<'a> RuleContext<'a> {
             for capture in m.captures {
                 let pt = capture.node.start_position();
                 if let Ok(text) = capture.node.utf8_text(self.source.as_bytes()) {
-                    results.push((pt.row + 1, pt.column as usize, text.to_string()));
+                    results.push((pt.row + 1, pt.column, text.to_string()));
                 }
             }
         }
@@ -764,13 +764,11 @@ fn compute_complexity_recursive(
     }
     
     // Increment for boolean operators in binary expressions
-    if kind == "binary_expression" {
-        if let Ok(text) = node.utf8_text(source) {
-            if text.contains("&&") || text.contains("||") {
+    if kind == "binary_expression"
+        && let Ok(text) = node.utf8_text(source)
+            && (text.contains("&&") || text.contains("||")) {
                 *complexity += 1;
             }
-        }
-    }
     
     // Recurse into children
     for i in 0..node.child_count() {

@@ -307,18 +307,16 @@ fn detect_workspace_languages(workspace_path: &Path) -> Vec<Language> {
     let mut seen = HashSet::new();
 
     // Check for Cargo.toml -> Rust
-    if workspace_path.join("Cargo.toml").exists() {
-        if seen.insert(Language::Rust) {
+    if workspace_path.join("Cargo.toml").exists()
+        && seen.insert(Language::Rust) {
             languages.push(Language::Rust);
         }
-    }
 
     // Check for go.mod -> Go
-    if workspace_path.join("go.mod").exists() {
-        if seen.insert(Language::Go) {
+    if workspace_path.join("go.mod").exists()
+        && seen.insert(Language::Go) {
             languages.push(Language::Go);
         }
-    }
 
     // Check for package.json -> JavaScript/TypeScript
     if workspace_path.join("package.json").exists() {
@@ -331,17 +329,15 @@ fn detect_workspace_languages(workspace_path: &Path) -> Vec<Language> {
     }
 
     // Check for pom.xml or *.java -> Java
-    if workspace_path.join("pom.xml").exists()
+    if (workspace_path.join("pom.xml").exists()
         || glob::glob(&workspace_path.join("**/*.java").to_string_lossy())
             .ok()
             .map(|g| g.count())
             .unwrap_or(0)
-            > 0
-    {
-        if seen.insert(Language::Java) {
+            > 0)
+        && seen.insert(Language::Java) {
             languages.push(Language::Java);
         }
-    }
 
     // Check for *.py files -> Python
     if glob::glob(&workspace_path.join("**/*.py").to_string_lossy())
@@ -349,11 +345,9 @@ fn detect_workspace_languages(workspace_path: &Path) -> Vec<Language> {
         .map(|g| g.count())
         .unwrap_or(0)
         > 0
-    {
-        if seen.insert(Language::Python) {
+        && seen.insert(Language::Python) {
             languages.push(Language::Python);
         }
-    }
 
     languages
 }
@@ -449,13 +443,12 @@ pub fn format_doctor_text(report: &DoctorReport) -> String {
     output.push_str(&format_section_text(&report.sections.parsers));
 
     // Workspace info
-    if let Some(ref ws) = report.workspace {
-        if !ws.languages.is_empty() {
+    if let Some(ref ws) = report.workspace
+        && !ws.languages.is_empty() {
             output.push_str("\nℹ️  Workspace languages detected: ");
             output.push_str(&ws.languages.join(", "));
             output.push('\n');
         }
-    }
 
     // Summary
     output.push_str("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");

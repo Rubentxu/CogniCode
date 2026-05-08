@@ -101,7 +101,7 @@ impl AnalysisState {
 
     /// Find changed files including their dependents (files that import any changed file)
     pub fn find_changed_with_dependents(&self, all_files: &[PathBuf]) -> Vec<PathBuf> {
-        let mut changed = self.find_changed_files(all_files);
+        let changed = self.find_changed_files(all_files);
 
         // Expand: add files that import any changed file
         let mut expanded = changed.clone();

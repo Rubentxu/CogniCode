@@ -61,9 +61,9 @@ impl RenameStrategy {
         occurrences: &mut Vec<Occurrence>,
     ) {
         // Check if this node is an identifier matching our target
-        if node.kind() == "identifier" || node.kind() == "type_identifier" {
-            if let Ok(text) = node.utf8_text(source_bytes) {
-                if text == target_name {
+        if (node.kind() == "identifier" || node.kind() == "type_identifier")
+            && let Ok(text) = node.utf8_text(source_bytes)
+                && text == target_name {
                     let start = node.start_position();
                     let end = node.end_position();
                     occurrences.push(Occurrence {
@@ -75,8 +75,6 @@ impl RenameStrategy {
                         context: self.extract_context(lines, start.row as u32),
                     });
                 }
-            }
-        }
 
         // Recurse into children
         for i in 0..node.child_count() {

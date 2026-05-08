@@ -4,7 +4,6 @@
 //! and Rust's type system for safety invariants.
 
 use super::contract::*;
-use crate::domain::value_objects::{Location, SymbolKind};
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -65,13 +64,11 @@ impl AvcGenerator {
             || node.kind() == "function_definition"
             || node.kind() == "function_declaration" {
             // Check if this is our target
-            if let Some(child) = node.child_by_field_name("name") {
-                if let Ok(n) = child.utf8_text(source.as_bytes()) {
-                    if n == name {
+            if let Some(child) = node.child_by_field_name("name")
+                && let Ok(n) = child.utf8_text(source.as_bytes())
+                    && n == name {
                         return Some(*node);
                     }
-                }
-            }
         }
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
@@ -89,14 +86,14 @@ impl AvcGenerator {
         file_path: &str,
     ) -> SyntaxContract {
         let mut required_types = Vec::new();
-        let mut forbidden_patterns = vec![
+        let forbidden_patterns = vec![
             "unsafe".to_string(),
             "panic!".to_string(),
             ".unwrap()".to_string(),
             ".expect(".to_string(),
         ];
         let mut target_function = None;
-        let mut param_count = 0usize;
+        let _param_count = 0usize;
         let mut return_seen = false;
 
         // Walk the function node to extract type info
@@ -104,8 +101,8 @@ impl AvcGenerator {
         for child in node.children(&mut cursor) {
             match child.kind() {
                 "identifier" | "name" => {
-                    if let Ok(text) = child.utf8_text(source.as_bytes()) {
-                        if target_function.is_none() {
+                    if let Ok(text) = child.utf8_text(source.as_bytes())
+                        && target_function.is_none() {
                             target_function = Some(FunctionSignature {
                                 name: text.to_string(),
                                 params: Vec::new(),
@@ -114,7 +111,6 @@ impl AvcGenerator {
                                 line: child.start_position().row + 1,
                             });
                         }
-                    }
                 }
                 "parameters" => {
                     // Extract parameter types
@@ -197,17 +193,15 @@ impl AvcGenerator {
         file_path: &str,
     ) -> Vec<RequiredCall> {
         let mut calls = Vec::new();
-        if node.kind() == "call_expression" {
-            if let Some(func) = node.child_by_field_name("function") {
-                if let Ok(name) = func.utf8_text(source.as_bytes()) {
+        if node.kind() == "call_expression"
+            && let Some(func) = node.child_by_field_name("function")
+                && let Ok(name) = func.utf8_text(source.as_bytes()) {
                     calls.push(RequiredCall {
                         function_name: name.to_string(),
                         file: file_path.to_string(),
-                        reason: format!("Called from function body"),
+                        reason: "Called from function body".to_string(),
                     });
                 }
-            }
-        }
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             calls.extend(Self::extract_required_calls(&child, source, file_path));
@@ -331,11 +325,10 @@ impl AvcGenerator {
                         if child.kind() == "expression_statement" {
                             let mut stmt_cursor = child.walk();
                             for stmt_child in child.children(&mut stmt_cursor) {
-                                if stmt_child.kind() == "string" || stmt_child.kind() == "string_content" {
-                                    if let Some(content) = extract_triple_quoted(&stmt_child, source) {
+                                if (stmt_child.kind() == "string" || stmt_child.kind() == "string_content")
+                                    && let Some(content) = extract_triple_quoted(&stmt_child, source) {
                                         return content;
                                     }
-                                }
                             }
                         } else if let Some(content) = extract_triple_quoted(&child, source) {
                             return content;
@@ -489,35 +482,28 @@ impl AvcGenerator {
     fn extract_safety(node: &tree_sitter::Node, source: &str) -> SafetyContract {
         let mut invariants = Vec::new();
         let mut requires_error_handling = false;
-        let mut has_unwrap = false;
-        let mut has_unsafe = false;
 
         // Check return type for Result
-        if let Some(ret) = node.child_by_field_name("return_type") {
-            if let Ok(text) = ret.utf8_text(source.as_bytes()) {
-                if text.contains("Result") {
+        if let Some(ret) = node.child_by_field_name("return_type")
+            && let Ok(text) = ret.utf8_text(source.as_bytes())
+                && text.contains("Result") {
                     requires_error_handling = true;
                     invariants.push(format!("Function returns {} — error handling is MANDATORY", text.trim()));
                 }
-            }
-        }
 
         // Check body for unsafe/unwrap patterns
-        if let Some(body) = node.child_by_field_name("body") {
-            if let Ok(text) = body.utf8_text(source.as_bytes()) {
+        if let Some(body) = node.child_by_field_name("body")
+            && let Ok(text) = body.utf8_text(source.as_bytes()) {
                 if text.contains("unsafe") {
-                    has_unsafe = true;
                     invariants.push("Contains unsafe block — must be justified".to_string());
                 }
                 if text.contains(".unwrap()") {
-                    has_unwrap = true;
                     invariants.push("Contains .unwrap() — replace with proper error handling".to_string());
                 }
                 if text.contains("panic!") {
                     invariants.push("Contains panic! — use Result instead".to_string());
                 }
             }
-        }
 
         SafetyContract {
             invariants,

@@ -735,8 +735,8 @@ pub async fn handle_compare_call_graphs(
         .collect();
     let current_edges: HashSet<(String, String)> = current_graph.all_dependencies()
         .filter_map(|(src, tgt, _)| {
-            let src_name = current_graph.get_symbol(&src).map(|s| s.name().to_string())?;
-            let tgt_name = current_graph.get_symbol(&tgt).map(|s| s.name().to_string())?;
+            let src_name = current_graph.get_symbol(src).map(|s| s.name().to_string())?;
+            let tgt_name = current_graph.get_symbol(tgt).map(|s| s.name().to_string())?;
             Some((src_name, tgt_name))
         })
         .collect();
@@ -753,8 +753,8 @@ pub async fn handle_compare_call_graphs(
                     .collect();
                 let edges: HashSet<(String, String)> = baseline_graph.all_dependencies()
                     .filter_map(|(src, tgt, _)| {
-                        let src_name = baseline_graph.get_symbol(&src).map(|s| s.name().to_string())?;
-                        let tgt_name = baseline_graph.get_symbol(&tgt).map(|s| s.name().to_string())?;
+                        let src_name = baseline_graph.get_symbol(src).map(|s| s.name().to_string())?;
+                        let tgt_name = baseline_graph.get_symbol(tgt).map(|s| s.name().to_string())?;
                         Some((src_name, tgt_name))
                     })
                     .collect();
@@ -767,8 +767,8 @@ pub async fn handle_compare_call_graphs(
     };
 
     // Calculate diff
-    let symbols_added: Vec<String> = current_symbols.difference(&baseline_symbols).into_iter().cloned().collect();
-    let symbols_removed: Vec<String> = baseline_symbols.difference(&current_symbols).into_iter().cloned().collect();
+    let symbols_added: Vec<String> = current_symbols.difference(&baseline_symbols).cloned().collect();
+    let symbols_removed: Vec<String> = baseline_symbols.difference(&current_symbols).cloned().collect();
     let edges_added: Vec<(String, String)> = current_edges.difference(&baseline_edges).cloned().collect();
     let edges_removed: Vec<(String, String)> = baseline_edges.difference(&current_edges).cloned().collect();
 
@@ -996,7 +996,7 @@ pub async fn handle_detect_god_functions(
         let symbol_id = SymbolId::new(symbol.fully_qualified_name());
 
         // Get metrics
-        let lines = get_symbol_lines(&symbol);
+        let lines = get_symbol_lines(symbol);
         let complexity = get_symbol_complexity(&graph, &symbol_id).unwrap_or(0);
         let fan_in = graph.callers(&symbol_id).len();
         let fan_out = graph.callees(&symbol_id).len();
@@ -1081,7 +1081,7 @@ pub async fn handle_detect_long_parameter_lists(
                 line: symbol.location().line() + 1,
                 parameter_count: param_count,
                 parameter_names: vec![],
-                suggestion: format!("Consider grouping parameters into a struct"),
+                suggestion: "Consider grouping parameters into a struct".to_string(),
             });
         }
     }
@@ -1193,7 +1193,7 @@ pub async fn handle_evaluate_refactor_quality(
     let complexity_delta = current_complexity - baseline_complexity;
     let coupling_delta = current_edges as isize - baseline_edges as isize;
     let cycle_delta = current_cycles as isize - baseline_cycles as isize;
-    let dead_code_delta = current_dead_code as isize - baseline_dead_code as isize;
+    let dead_code_delta = current_dead_code as isize - baseline_dead_code;
 
     // Calculate penalties
     let complexity_penalty = (complexity_delta * 5.0).max(0.0).min(30.0);
@@ -1714,7 +1714,7 @@ pub async fn handle_suggest_context(
                     kind: format!("{:?}", result.symbol.kind()).to_lowercase(),
                     file: result.symbol.location().file().to_string(),
                     line: result.symbol.location().line() + 1,
-                    score: ((result.score as f32) * 0.6 + hotness_score * 0.4).min(1.0),
+                    score: (result.score * 0.6 + hotness_score * 0.4).min(1.0),
                     context: format!("Score: {:.2}, fan_in: {}", result.score, fan_in),
                 });
             }
@@ -1991,8 +1991,8 @@ fn walk_function_nodes(
         // Get function name
         if let Some(name) = get_function_name(node, source) {
             // If function_name filter is specified, skip non-matching functions
-            if let Some(ref target_fn) = input.function_name {
-                if name != *target_fn {
+            if let Some(ref target_fn) = input.function_name
+                && name != *target_fn {
                     // Visit children anyway to find nested functions
                     for i in 0..node.child_count() {
                         if let Some(child) = node.child(i) {
@@ -2001,7 +2001,6 @@ fn walk_function_nodes(
                     }
                     return;
                 }
-            }
 
             let line = (node.start_position().row + 1) as u32; // 1-indexed
 

@@ -162,7 +162,7 @@ impl LcomCalculator {
                     // Heuristic: variables in the same file that might be fields
                     let name = symbol.name();
                     name.starts_with(&format!("{}.", type_name))
-                        || name.starts_with(&format!("self."))
+                        || name.starts_with(&"self.".to_string())
                         || (name.starts_with(|c: char| c.is_lowercase())
                             && name.chars().next().map(|c| c.is_ascii_lowercase()).unwrap_or(false))
                 }

@@ -260,8 +260,7 @@ impl AnalysisService {
                     let cache = self.file_cache.lock().unwrap();
                     if let Some((cached_mtime, cached_symbols, cached_relationships)) =
                         cache.get(&file_path)
-                    {
-                        if *cached_mtime == mtime {
+                        && *cached_mtime == mtime {
                             return Some((
                                 file_path,
                                 mtime,
@@ -270,7 +269,6 @@ impl AnalysisService {
                                 false, // from_cache = true
                             ));
                         }
-                    }
                 }
 
                 let source = std::fs::read_to_string(&path).ok()?;
@@ -435,13 +433,11 @@ impl AnalysisService {
         if let Ok(entries) = std::fs::read_dir(project_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() {
-                    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                        if supported_extensions.contains(&ext) {
+                if path.is_file()
+                    && let Some(ext) = path.extension().and_then(|e| e.to_str())
+                        && supported_extensions.contains(&ext) {
                             let _ = cache.get_or_build(&path); // best-effort; ignore parse errors
                         }
-                    }
-                }
             }
         }
 
@@ -527,8 +523,7 @@ impl AnalysisService {
                     let cache = self.file_cache.lock().unwrap();
                     if let Some((cached_mtime, cached_symbols, cached_relationships)) =
                         cache.get(&file_path)
-                    {
-                        if *cached_mtime == mtime {
+                        && *cached_mtime == mtime {
                             return Some((
                                 file_path,
                                 mtime,
@@ -537,7 +532,6 @@ impl AnalysisService {
                                 false, // from_cache = true
                             ));
                         }
-                    }
                 }
 
                 let source = std::fs::read_to_string(&path).ok()?;
@@ -684,8 +678,7 @@ impl AnalysisService {
                         let cache = file_cache.lock().unwrap();
                         if let Some((cached_mtime, cached_symbols, cached_relationships)) =
                             cache.get(&file_path)
-                        {
-                            if *cached_mtime == mtime {
+                            && *cached_mtime == mtime {
                                 return Some((
                                     file_path,
                                     mtime,
@@ -694,7 +687,6 @@ impl AnalysisService {
                                     false, // from_cache = true
                                 ));
                             }
-                        }
                     }
 
                 let source = std::fs::read_to_string(&path).ok()?;

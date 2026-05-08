@@ -13,6 +13,12 @@ pub struct TreesitterFallbackProvider {
     index: Option<Arc<LightweightIndex>>,
 }
 
+impl Default for TreesitterFallbackProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TreesitterFallbackProvider {
     pub fn new() -> Self {
         Self { index: None }

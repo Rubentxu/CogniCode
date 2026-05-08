@@ -275,11 +275,10 @@ impl CallGraph {
             let base_name_lower = base_name.to_lowercase();
             if let Some(symbol_ids) = self.name_index.get(&base_name_lower) {
                 for symbol_id in symbol_ids {
-                    if !result.contains(symbol_id) && symbol_id != &current {
-                        if result.insert(symbol_id.clone()) {
+                    if !result.contains(symbol_id) && symbol_id != &current
+                        && result.insert(symbol_id.clone()) {
                             to_visit.push(symbol_id.clone());
                         }
-                    }
                 }
             }
         }

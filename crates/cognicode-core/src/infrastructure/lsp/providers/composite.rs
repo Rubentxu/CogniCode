@@ -133,8 +133,8 @@ impl CodeIntelligenceProvider for CompositeProvider {
     ) -> Result<Vec<Reference>, CodeIntelligenceError> {
         let file = location.file().to_string();
 
-        if let Some(lang) = Self::language_from_location(location) {
-            if let Err(e) = self
+        if let Some(lang) = Self::language_from_location(location)
+            && let Err(e) = self
                 .wait_for_lsp_ready(lang, None)
                 .await
             {
@@ -147,7 +147,6 @@ impl CodeIntelligenceProvider for CompositeProvider {
                     .find_references(location, include_declaration)
                     .await;
             }
-        }
 
         match self.lsp.find_references(location, include_declaration).await {
             Ok(refs) if !refs.is_empty() => Ok(refs),

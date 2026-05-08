@@ -115,13 +115,11 @@ impl QualityConfig {
             .unwrap_or_else(|| PathBuf::from("."))
             .join(".cognicode/config/cognicode-quality.yaml");
 
-        if config_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&config_path) {
-                if let Ok(config) = serde_yaml::from_str(&content) {
+        if config_path.exists()
+            && let Ok(content) = std::fs::read_to_string(&config_path)
+                && let Ok(config) = serde_yaml::from_str(&content) {
                     return config;
                 }
-            }
-        }
         Self::default()
     }
 
@@ -132,7 +130,7 @@ impl QualityConfig {
             std::fs::create_dir_all(&config_dir)?;
             let config_path = config_dir.join("cognicode-quality.yaml");
             let yaml = serde_yaml::to_string(&Self::default())
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                .map_err(|e| std::io::Error::other(e))?;
             std::fs::write(&config_path, yaml)?;
         }
         Ok(())

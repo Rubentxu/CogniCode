@@ -663,7 +663,7 @@ impl SemanticSearchService {
                     let symbol = Symbol::new(name.clone(), kind, location);
                     
                     // Convert BM25 rank to score (lower rank = higher score)
-                    let base_score = (1.0 / (1.0 + rank.abs())) as f64;
+                    let base_score = (1.0 / (1.0 + rank.abs()));
                     
                     // Apply temporal boost if available and alpha > 0
                     let boosted_score = if alpha > 0.0 {
@@ -752,11 +752,10 @@ impl SemanticSearchService {
                     let extension = path.extension().and_then(|e| e.to_str());
                     if let Some(_lang) = crate::infrastructure::parser::Language::from_extension(
                         extension.as_ref().map(std::ffi::OsStr::new),
-                    ) {
-                        if let Err(_e) = self.index_file_from_path(path) {
+                    )
+                        && let Err(_e) = self.index_file_from_path(path) {
                             continue;
                         }
-                    }
                 }
                 return Ok(());
             }

@@ -19,14 +19,13 @@ fn main() {
     if let Ok(entries) = fs::read_dir(rules_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_file() && path.extension().map(|e| e == "rs").unwrap_or(false) {
-                if let Some(stem) = path.file_stem() {
+            if path.is_file() && path.extension().map(|e| e == "rs").unwrap_or(false)
+                && let Some(stem) = path.file_stem() {
                     let name = stem.to_string_lossy().to_string();
                     if name != "mod" {
                         modules.push(name);
                     }
                 }
-            }
         }
     }
 
@@ -37,12 +36,11 @@ fn main() {
         if let Ok(entries) = fs::read_dir(&catalog_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() && path.extension().map(|e| e == "rs").unwrap_or(false) {
-                    if let Some(stem) = path.file_stem() {
+                if path.is_file() && path.extension().map(|e| e == "rs").unwrap_or(false)
+                    && let Some(stem) = path.file_stem() {
                         let name = format!("catalog/{}", stem.to_string_lossy());
                         modules.push(name);
                     }
-                }
             }
         }
     }

@@ -211,6 +211,12 @@ pub struct LanguageBreakdown {
     pub timing_p99_ms: Option<u64>,
 }
 
+impl Default for LanguageBreakdown {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LanguageBreakdown {
     pub fn new() -> Self {
         Self {
@@ -238,6 +244,12 @@ pub struct ToolBreakdown {
     pub timing_p95_ms: Option<u64>,
     /// p99 timing in milliseconds
     pub timing_p99_ms: Option<u64>,
+}
+
+impl Default for ToolBreakdown {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ToolBreakdown {

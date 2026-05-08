@@ -234,28 +234,26 @@ pub fn compute_dimension_averages(
     let (mut con_sum, mut con_count) = (0.0, 0);
     let (mut rob_sum, mut rob_count) = (0.0, 0);
 
-    for ds_opt in dimension_scores_list {
-        if let Some(ds) = ds_opt {
-            if let Some(v) = ds.correctitud {
-                corr_sum += v;
-                corr_count += 1;
-            }
-            if let Some(v) = ds.latencia {
-                lat_sum += v;
-                lat_count += 1;
-            }
-            if let Some(v) = ds.escalabilidad {
-                esc_sum += v;
-                esc_count += 1;
-            }
-            if let Some(v) = ds.consistencia {
-                con_sum += v;
-                con_count += 1;
-            }
-            if let Some(v) = ds.robustez {
-                rob_sum += v;
-                rob_count += 1;
-            }
+    for ds in dimension_scores_list.iter().flatten() {
+        if let Some(v) = ds.correctitud {
+            corr_sum += v;
+            corr_count += 1;
+        }
+        if let Some(v) = ds.latencia {
+            lat_sum += v;
+            lat_count += 1;
+        }
+        if let Some(v) = ds.escalabilidad {
+            esc_sum += v;
+            esc_count += 1;
+        }
+        if let Some(v) = ds.consistencia {
+            con_sum += v;
+            con_count += 1;
+        }
+        if let Some(v) = ds.robustez {
+            rob_sum += v;
+            rob_count += 1;
         }
     }
 

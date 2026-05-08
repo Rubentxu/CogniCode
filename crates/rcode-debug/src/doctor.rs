@@ -159,7 +159,7 @@ impl Doctor {
     /// Check if toolchain is available
     async fn check_toolchain(&self, language: &Language) -> (bool, Option<String>) {
         let cmd = self.toolchain_command(language);
-        match tokio::process::Command::new(&cmd).arg("--version").output().await {
+        match tokio::process::Command::new(cmd).arg("--version").output().await {
             Ok(output) if output.status.success() => {
                 let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 (true, Some(version))

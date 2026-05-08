@@ -126,7 +126,7 @@ pub fn Shell(children: Children) -> impl IntoView {
 
             {/* Desktop sidebar */}
             <aside class="sidebar-desktop" style="position: fixed; left: 0; top: 0; bottom: 0; width: var(--sidebar-width); background: var(--color-surface-raised); border-right: 1px solid var(--color-border); display: flex; flex-direction: column; z-index: 100;">
-                <SidebarContent dark_mode=dark_mode on_toggle_dark=on_toggle.clone() />
+                <SidebarContent dark_mode=dark_mode on_toggle_dark=on_toggle />
             </aside>
 
             {/* Mobile sidebar (slide-in) */}

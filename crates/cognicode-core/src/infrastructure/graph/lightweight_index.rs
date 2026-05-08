@@ -179,11 +179,10 @@ impl LightweightIndex {
                     let location =
                         SymbolLocation::from_location(symbol.location(), *symbol.kind());
 
-                    if let Some(file_names) = self.file_index.get_mut(&file_path) {
-                        if file_name_set.insert(name_lower.clone()) {
+                    if let Some(file_names) = self.file_index.get_mut(&file_path)
+                        && file_name_set.insert(name_lower.clone()) {
                             file_names.push(name_lower.clone());
                         }
-                    }
 
                     self.index
                         .entry(name_lower)
@@ -228,11 +227,10 @@ impl LightweightIndex {
                     let location =
                         SymbolLocation::from_location(symbol.location(), *symbol.kind());
 
-                    if let Some(file_names) = self.file_index.get_mut(file_path) {
-                        if !file_names.contains(&name_lower) {
+                    if let Some(file_names) = self.file_index.get_mut(file_path)
+                        && !file_names.contains(&name_lower) {
                             file_names.push(name_lower.clone());
                         }
-                    }
 
                     self.index
                         .entry(name_lower)

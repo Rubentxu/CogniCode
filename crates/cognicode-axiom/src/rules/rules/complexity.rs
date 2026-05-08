@@ -36,6 +36,12 @@ impl Rule for S138Rule {
     fn category(&self) -> Category { Category::CodeSmell }
     fn language(&self) -> &str { "rust" }
 
+    fn ui_category(&self) -> Option<&str> { Some("Code Structure") }
+    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
+    fn display_icon(&self) -> Option<&str> { Some("function") }
+    fn tags(&self) -> Vec<&str> { vec!["complexity", "refactoring"] }
+    fn effort_category(&self) -> Option<&str> { Some("moderate") }
+
     fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
         let mut issues = Vec::new();
         let threshold = self.threshold;
@@ -109,6 +115,12 @@ impl Rule for S3776Rule {
     fn severity(&self) -> Severity { Severity::Major }
     fn category(&self) -> Category { Category::CodeSmell }
     fn language(&self) -> &str { "rust" }
+
+    fn ui_category(&self) -> Option<&str> { Some("Code Structure") }
+    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
+    fn display_icon(&self) -> Option<&str> { Some("function") }
+    fn tags(&self) -> Vec<&str> { vec!["complexity", "cognitive", "maintainability"] }
+    fn effort_category(&self) -> Option<&str> { Some("moderate") }
 
     fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
         let mut issues = Vec::new();

@@ -179,15 +179,13 @@ impl WorkspaceSession {
         #[cfg(feature = "persistence")]
         {
             let store_guard = self.graph_store.read().await;
-            if let Some(store) = store_guard.as_ref() {
-                if let Ok(Some(graph)) = store.load_graph() {
-                    if graph.symbol_count() > 0 {
+            if let Some(store) = store_guard.as_ref()
+                && let Ok(Some(graph)) = store.load_graph()
+                    && graph.symbol_count() > 0 {
                         let mut graph_guard = self.graph.write().await;
                         *graph_guard = Some(Arc::new(graph));
                         return Ok(());
                     }
-                }
-            }
         }
 
         // Build fresh — build_project_graph is CPU-bound + blocking I/O; use spawn_blocking
@@ -292,9 +290,7 @@ impl WorkspaceSession {
             .filter_map(|e| {
                 let path = e.path();
                 let language = Language::from_extension(path.extension());
-                if language.is_none() {
-                    return None;
-                }
+                language?;
                 let content = std::fs::read_to_string(path).ok()?;
                 let content_hash = blake3::hash(content.as_bytes()).to_string();
                 let mtime = std::fs::metadata(path)
@@ -375,9 +371,7 @@ impl WorkspaceSession {
             .filter_map(|e| {
                 let path = e.path();
                 let language = Language::from_extension(path.extension());
-                if language.is_none() {
-                    return None;
-                }
+                language?;
                 let content = std::fs::read_to_string(path).ok()?;
                 let content_hash = blake3::hash(content.as_bytes()).to_string();
                 let mtime = std::fs::metadata(path)
@@ -695,8 +689,8 @@ impl WorkspaceSession {
         func_end_line: &mut u32,
         current_nesting: u32,
     ) {
-        if node.kind() == function_type {
-            if let Some(name) = self.find_identifier_in_node(node, source) {
+        if node.kind() == function_type
+            && let Some(name) = self.find_identifier_in_node(node, source) {
                 let should_process = match target_name {
                     Some(target) => name == target,
                     None => *func_start_line == 0,
@@ -709,7 +703,6 @@ impl WorkspaceSession {
                     self.process_decision_points(node, source, max_nesting, decision_points, current_nesting);
                 }
             }
-        }
 
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
@@ -742,11 +735,10 @@ impl WorkspaceSession {
             if let Some(child) = node.child(i) {
                 if child.kind() == "parameters" {
                     for j in 0..child.child_count() {
-                        if let Some(param) = child.child(j) {
-                            if param.kind() == "identifier" {
+                        if let Some(param) = child.child(j)
+                            && param.kind() == "identifier" {
                                 count += 1;
                             }
-                        }
                     }
                 }
                 if child.kind() == "identifier" {
@@ -1189,8 +1181,8 @@ impl WorkspaceSession {
         // Check if graph is already built (idempotency guard)
         {
             let graph_guard = self.graph.read().await;
-            if let Some(ref graph) = *graph_guard {
-                if graph.symbol_count() > 0 {
+            if let Some(ref graph) = *graph_guard
+                && graph.symbol_count() > 0 {
                     return Ok(crate::application::dto::BuildIndexResult {
                         success: true,
                         strategy: strategy.to_string(),
@@ -1199,7 +1191,6 @@ impl WorkspaceSession {
                         message: format!("Cached (already indexed {} symbols)", graph.symbol_count()),
                     });
                 }
-            }
         }
 
         // Not cached — build_project_graph is CPU-bound + blocking I/O; use spawn_blocking
@@ -1394,10 +1385,7 @@ impl WorkspaceSession {
         let hot_paths = self.get_hot_paths(10, 2).await.unwrap_or_default();
 
         // Try to get architecture check result (wrapped to prevent partial failure)
-        let architecture = match self.check_architecture(None).await {
-            Ok(result) => Some(result),
-            Err(_) => None,
-        };
+        let architecture = (self.check_architecture(None).await).ok();
 
         // Try to compute complexity
         let complexity = {
@@ -1899,8 +1887,8 @@ impl WorkspaceSession {
     /// Answer natural language questions about the codebase using call graph analysis.
     pub async fn ask_about_code(&self, question: &str) -> WorkspaceResult<serde_json::Value> {
         self.ensure_graph_built().await?;
-        let graph = self.graph.read().await;
-        let graph = graph.as_ref()
+        let _graph = self.graph.read().await;
+        let _ = _graph.as_ref()
             .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
 
         let words: Vec<&str> = question.split_whitespace().collect();
@@ -1926,8 +1914,8 @@ impl WorkspaceSession {
         if words.len() >= 2 {
             let src = words.first().unwrap();
             let tgt = words.last().unwrap();
-            if let Ok(path) = self.trace_path(src, tgt, 10).await {
-                if !path.is_empty() {
+            if let Ok(path) = self.trace_path(src, tgt, 10).await
+                && !path.is_empty() {
                     answers.push(serde_json::json!({
                         "explanation": format!("Path from '{}' to '{}': {}", src, tgt, path.join(" → ")),
                         "path": path,
@@ -1935,7 +1923,6 @@ impl WorkspaceSession {
                         "confidence": 0.7
                     }));
                 }
-            }
         }
 
         if answers.is_empty() {

@@ -254,11 +254,10 @@ impl CallGraph {
             let base_name_lower = base_name.to_lowercase();
             if let Some(symbol_ids) = self.name_index.get(&base_name_lower) {
                 for symbol_id in symbol_ids {
-                    if !result.contains(symbol_id) && symbol_id != &current {
-                        if result.insert(symbol_id.clone()) {
+                    if !result.contains(symbol_id) && symbol_id != &current
+                        && result.insert(symbol_id.clone()) {
                             to_visit.push(symbol_id.clone());
                         }
-                    }
                 }
             }
         }
@@ -717,7 +716,7 @@ impl CallGraph {
             graph.add_node(());
         }
         // Add edges
-        for ((src, dst), _) in &module_edges {
+        for (src, dst) in module_edges.keys() {
             if let (Some(&si), Some(&di)) = (module_index.get(src), module_index.get(dst)) {
                 graph.add_edge(NodeIndex::new(si), NodeIndex::new(di), ());
             }

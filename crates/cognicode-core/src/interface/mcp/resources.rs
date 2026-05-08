@@ -45,9 +45,9 @@ pub fn handle_resources_list(workspace: &str, cursor: Option<&str>) -> Value {
             break;
         }
 
-        if let Ok(entry) = entry {
-            if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
-                if let Ok(path) = entry.path().strip_prefix(workspace_path) {
+        if let Ok(entry) = entry
+            && entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
+                && let Ok(path) = entry.path().strip_prefix(workspace_path) {
                     let path_str = path.to_string_lossy();
                     let uri = format!("file:///{}", path_str.replace('\\', "/"));
 
@@ -60,8 +60,6 @@ pub fn handle_resources_list(workspace: &str, cursor: Option<&str>) -> Value {
                         "size": entry.metadata().map(|m| m.len()).unwrap_or(0)
                     }));
                 }
-            }
-        }
         count += 1;
     }
 
@@ -80,8 +78,8 @@ pub fn handle_resources_list(workspace: &str, cursor: Option<&str>) -> Value {
 /// Reads file at URI, detects binary vs text
 pub fn handle_resources_read(workspace: &str, uri: &str) -> Result<Value, String> {
     // Parse URI - expected format: file:///path/to/file
-    let path = if uri.starts_with("file:///") {
-        let path_str = &uri[8..]; // Remove "file:///" prefix
+    let path = if let Some(path_str) = uri.strip_prefix("file:///") {
+        // Remove "file:///" prefix
         Path::new(workspace).join(path_str)
     } else {
         return Err("Invalid URI format: must start with file:///".to_string());

@@ -119,39 +119,27 @@ pub fn IssueDetailPage() -> impl IntoView {
                                         <p class="text-caption text-text-muted uppercase font-semibold mb-1">Severity</p>
                                         <p class="text-body text-text-primary">{issue.severity.clone()}</p>
                                     </div>
-                                    {if let Some(col) = issue.column {
-                                        Some(view! {
+                                    {issue.column.map(|col| view! {
                                             <div>
                                                 <p class="text-caption text-text-muted uppercase font-semibold mb-1">Column</p>
                                                 <p class="text-mono text-body-sm text-text-primary">{col}</p>
                                             </div>
-                                        }.into_any())
-                                    } else {
-                                        None
-                                    }}
-                                    {if let Some(end_line) = issue.end_line {
-                                        Some(view! {
+                                        }.into_any())}
+                                    {issue.end_line.map(|end_line| view! {
                                             <div>
                                                 <p class="text-caption text-text-muted uppercase font-semibold mb-1">End Line</p>
                                                 <p class="text-mono text-body-sm text-text-primary">{end_line}</p>
                                             </div>
-                                        }.into_any())
-                                    } else {
-                                        None
-                                    }}
+                                        }.into_any())}
                                 </div>
 
                                 {/* Remediation */}
-                                {if let Some(remediation) = &issue.remediation_hint {
-                                    Some(view! {
+                                {issue.remediation_hint.as_ref().map(|remediation| view! {
                                         <div class="mt-6 p-4 bg-brand/10 rounded-lg border-l-4 border-brand">
                                             <p class="text-caption text-brand uppercase font-semibold mb-2">Remediation</p>
                                             <p class="text-body text-text-primary">{remediation.clone()}</p>
                                         </div>
-                                    }.into_any())
-                                } else {
-                                    None
-                                }}
+                                    }.into_any())}
                             </div>
                         }.into_any())
                     }

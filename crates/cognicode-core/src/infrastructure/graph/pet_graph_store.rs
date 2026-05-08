@@ -80,13 +80,12 @@ impl PetGraphStore {
         let mut call_graph = CallGraph::new();
 
         for node_idx in self.graph.node_indices() {
-            if let Some(node_data) = self.graph.node_weight(node_idx) {
-                if let Some(symbol_id_str) = self.index_to_symbol.get(&node_idx) {
+            if let Some(node_data) = self.graph.node_weight(node_idx)
+                && let Some(symbol_id_str) = self.index_to_symbol.get(&node_idx) {
                     let mut sym = node_data.symbol.clone();
                     sym.set_fqn_override(symbol_id_str);
                     call_graph.add_symbol(sym);
                 }
-            }
         }
 
         for edge in self.graph.edge_references() {

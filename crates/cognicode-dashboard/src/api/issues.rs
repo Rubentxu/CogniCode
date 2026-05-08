@@ -24,7 +24,7 @@ pub async fn get_issues(filter: IssueFilter) -> Result<IssueListResponse, String
     let total_count = issues.len();
     let page = filter.page.unwrap_or(1).max(1);
     let page_size = filter.page_size.unwrap_or(20).max(1);
-    let total_pages = (total_count + page_size - 1) / page_size;
+    let total_pages = total_count.div_ceil(page_size);
 
     let start = (page - 1) * page_size;
     let end = (start + page_size).min(total_count);

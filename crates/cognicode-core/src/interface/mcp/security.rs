@@ -204,14 +204,13 @@ impl InputValidator {
 
         // CRITICAL: Check for symlinks BEFORE canonicalization using symlink_metadata()
         // (std::fs::metadata follows symlinks, so it CANNOT detect symlinks — must use symlink_metadata)
-        if let Ok(metadata) = std::fs::symlink_metadata(&resolved) {
-            if metadata.file_type().is_symlink() {
+        if let Ok(metadata) = std::fs::symlink_metadata(&resolved)
+            && metadata.file_type().is_symlink() {
                 warn!("Symlink detected in path: {}", path);
                 return Err(SecurityError::SymlinkDetected {
                     path: path.to_string(),
                 });
             }
-        }
 
         // Also check if any parent component is a symlink
         let mut current = PathBuf::from(&resolved);
@@ -219,14 +218,13 @@ impl InputValidator {
             if parent.as_os_str().is_empty() {
                 break;
             }
-            if let Ok(metadata) = std::fs::symlink_metadata(parent) {
-                if metadata.file_type().is_symlink() {
+            if let Ok(metadata) = std::fs::symlink_metadata(parent)
+                && metadata.file_type().is_symlink() {
                     warn!("Symlink detected in parent path: {}", parent.display());
                     return Err(SecurityError::SymlinkDetected {
                         path: parent.display().to_string(),
                     });
                 }
-            }
             current = parent.to_path_buf();
         }
 
@@ -238,16 +236,14 @@ impl InputValidator {
                 // But we still need to validate the parent directory
                 if let Some(parent) = resolved.parent() {
                     // Check parent for symlinks too
-                    if parent.exists() {
-                        if let Ok(metadata) = std::fs::symlink_metadata(parent) {
-                            if metadata.file_type().is_symlink() {
+                    if parent.exists()
+                        && let Ok(metadata) = std::fs::symlink_metadata(parent)
+                            && metadata.file_type().is_symlink() {
                                 warn!("Symlink detected in parent path: {}", parent.display());
                                 return Err(SecurityError::SymlinkDetected {
                                     path: parent.display().to_string(),
                                 });
                             }
-                        }
-                    }
 
                     match std::fs::canonicalize(parent) {
                         Ok(c) => c,

@@ -65,9 +65,9 @@ impl InlineStrategy {
         call_type: &str,
         call_sites: &mut Vec<CallSite>,
     ) {
-        if node.kind() == call_type {
-            if let Some(callee_name) = self.extract_callee_name(node, source_bytes) {
-                if callee_name == target_name {
+        if node.kind() == call_type
+            && let Some(callee_name) = self.extract_callee_name(node, source_bytes)
+                && callee_name == target_name {
                     let start = node.start_position();
                     let end = node.end_position();
                     let arguments = self.extract_arguments(node, source_bytes);
@@ -81,8 +81,6 @@ impl InlineStrategy {
                         context: self.extract_context(lines, start.row as u32),
                     });
                 }
-            }
-        }
 
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
@@ -109,11 +107,10 @@ impl InlineStrategy {
         // For languages where call has function field
         if language.call_has_function_field() {
             for i in 0..call_node.child_count() {
-                if let Some(child) = call_node.child(i) {
-                    if child.kind() == "function" {
+                if let Some(child) = call_node.child(i)
+                    && child.kind() == "function" {
                         return self.find_identifier_in_node(child, source_bytes);
                     }
-                }
             }
         }
 
@@ -141,11 +138,10 @@ impl InlineStrategy {
             return node.utf8_text(source_bytes).ok().map(|s| s.to_string());
         }
         for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                if let Some(name) = self.find_identifier_in_node(child, source_bytes) {
+            if let Some(child) = node.child(i)
+                && let Some(name) = self.find_identifier_in_node(child, source_bytes) {
                     return Some(name);
                 }
-            }
         }
         None
     }
@@ -154,20 +150,18 @@ impl InlineStrategy {
     fn extract_arguments(&self, call_node: tree_sitter::Node, source_bytes: &[u8]) -> Vec<String> {
         let mut arguments = Vec::new();
         for i in 0..call_node.child_count() {
-            if let Some(child) = call_node.child(i) {
-                if child.kind() == "arguments" {
+            if let Some(child) = call_node.child(i)
+                && child.kind() == "arguments" {
                     for j in 0..child.child_count() {
-                        if let Some(arg) = child.child(j) {
-                            if let Ok(text) = arg.utf8_text(source_bytes) {
+                        if let Some(arg) = child.child(j)
+                            && let Ok(text) = arg.utf8_text(source_bytes) {
                                 let trimmed = text.trim();
                                 if !trimmed.is_empty() && trimmed != "," {
                                     arguments.push(trimmed.to_string());
                                 }
                             }
-                        }
                     }
                 }
-            }
         }
         arguments
     }
@@ -213,9 +207,9 @@ impl InlineStrategy {
         function_type: &str,
         result: &mut Option<FunctionDefinition>,
     ) {
-        if node.kind() == function_type {
-            if let Some(name) = self.find_function_name(node, source_bytes) {
-                if name == target_name {
+        if node.kind() == function_type
+            && let Some(name) = self.find_function_name(node, source_bytes)
+                && name == target_name {
                     let start = node.start_position();
                     let end = node.end_position();
                     let params = self.extract_parameters(node, source_bytes);
@@ -236,8 +230,6 @@ impl InlineStrategy {
                     });
                     return;
                 }
-            }
-        }
 
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
@@ -259,11 +251,10 @@ impl InlineStrategy {
         source_bytes: &[u8],
     ) -> Option<String> {
         for i in 0..func_node.child_count() {
-            if let Some(child) = func_node.child(i) {
-                if child.kind() == "identifier" || child.kind() == "type_identifier" {
+            if let Some(child) = func_node.child(i)
+                && (child.kind() == "identifier" || child.kind() == "type_identifier") {
                     return child.utf8_text(source_bytes).ok().map(|s| s.to_string());
                 }
-            }
         }
         None
     }
@@ -272,20 +263,18 @@ impl InlineStrategy {
     fn extract_parameters(&self, func_node: tree_sitter::Node, source_bytes: &[u8]) -> Vec<String> {
         let mut params = Vec::new();
         for i in 0..func_node.child_count() {
-            if let Some(child) = func_node.child(i) {
-                if child.kind() == "parameters" {
+            if let Some(child) = func_node.child(i)
+                && child.kind() == "parameters" {
                     for j in 0..child.child_count() {
-                        if let Some(param) = child.child(j) {
-                            if let Ok(text) = param.utf8_text(source_bytes) {
+                        if let Some(param) = child.child(j)
+                            && let Ok(text) = param.utf8_text(source_bytes) {
                                 let trimmed = text.trim();
                                 if !trimmed.is_empty() && trimmed != "," {
                                     params.push(trimmed.to_string());
                                 }
                             }
-                        }
                     }
                 }
-            }
         }
         params
     }
@@ -293,11 +282,10 @@ impl InlineStrategy {
     /// Extracts the body from a function definition
     fn extract_body(&self, func_node: tree_sitter::Node, source_bytes: &[u8]) -> Option<String> {
         for i in 0..func_node.child_count() {
-            if let Some(child) = func_node.child(i) {
-                if child.kind() == "block" {
+            if let Some(child) = func_node.child(i)
+                && child.kind() == "block" {
                     return child.utf8_text(source_bytes).ok().map(|s| s.to_string());
                 }
-            }
         }
         None
     }

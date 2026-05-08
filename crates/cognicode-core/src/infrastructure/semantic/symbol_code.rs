@@ -164,7 +164,7 @@ impl SymbolCodeService {
             .map_err(|e| format!("Failed to parse: {}", e))?;
 
         let target_line = line.saturating_sub(1);
-        let node = find_node_at_position(tree.root_node(), target_line as u32, column);
+        let node = find_node_at_position(tree.root_node(), target_line, column);
 
         if let Some(node) = node {
             // Walk ancestors to find enclosing function/class/method instead of
@@ -234,11 +234,10 @@ fn find_node_at_position(
         // Check if this node contains the position
         if start.row <= line as usize && line as usize <= end.row {
             // For single-line nodes, also check column
-            if start.row == line as usize && end.row == line as usize {
-                if column < start.column as u32 || column > end.column as u32 {
+            if start.row == line as usize && end.row == line as usize
+                && (column < start.column as u32 || column > end.column as u32) {
                     return;
                 }
-            }
 
             // This node contains the position, but we want the most specific node
             // So continue searching children

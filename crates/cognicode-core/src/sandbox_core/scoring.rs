@@ -256,18 +256,16 @@ fn parse_returned_symbols(response: &Value) -> Vec<ReturnedSymbol> {
     }
 
     // Try nested in "result"
-    if let Some(result_obj) = response.get("result") {
-        if let Some(arr) = result_obj.get("symbols").and_then(|v| v.as_array()) {
+    if let Some(result_obj) = response.get("result")
+        && let Some(arr) = result_obj.get("symbols").and_then(|v| v.as_array()) {
             return parse_symbols_from_array(arr);
         }
-    }
 
     // Try nested in "content"
-    if let Some(content_obj) = response.get("content") {
-        if let Some(arr) = content_obj.get("symbols").and_then(|v| v.as_array()) {
+    if let Some(content_obj) = response.get("content")
+        && let Some(arr) = content_obj.get("symbols").and_then(|v| v.as_array()) {
             return parse_symbols_from_array(arr);
         }
-    }
 
     // 5. Try MCP content format: {"content": [{"text": "<JSON string>"}]}
     if let Some(content_arr) = response.get("content").and_then(|v| v.as_array()) {
@@ -293,25 +291,22 @@ fn parse_returned_symbols(response: &Value) -> Vec<ReturnedSymbol> {
 fn unwrap_mcp_content(response: &Value) -> Value {
     if let Some(content_arr) = response.get("content").and_then(|v| v.as_array()) {
         for item in content_arr {
-            if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                if let Ok(parsed) = serde_json::from_str::<Value>(text) {
+            if let Some(text) = item.get("text").and_then(|t| t.as_str())
+                && let Ok(parsed) = serde_json::from_str::<Value>(text) {
                     return parsed;
                 }
-            }
         }
     }
     // Check for direct result nesting: {"result": {"content": [...]}}
-    if let Some(result) = response.get("result") {
-        if let Some(content_arr) = result.get("content").and_then(|v| v.as_array()) {
+    if let Some(result) = response.get("result")
+        && let Some(content_arr) = result.get("content").and_then(|v| v.as_array()) {
             for item in content_arr {
-                if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                    if let Ok(parsed) = serde_json::from_str::<Value>(text) {
+                if let Some(text) = item.get("text").and_then(|t| t.as_str())
+                    && let Ok(parsed) = serde_json::from_str::<Value>(text) {
                         return parsed;
                     }
-                }
             }
         }
-    }
     response.clone()
 }
 
@@ -676,8 +671,8 @@ fn unwrap_response_text(response: &Value) -> String {
         }
     }
     // Try result.content
-    if let Some(result) = response.get("result") {
-        if let Some(content_arr) = result.get("content").and_then(|v| v.as_array()) {
+    if let Some(result) = response.get("result")
+        && let Some(content_arr) = result.get("content").and_then(|v| v.as_array()) {
             let texts: Vec<String> = content_arr
                 .iter()
                 .filter_map(|item| item.get("text").and_then(|t| t.as_str()).map(String::from))
@@ -686,7 +681,6 @@ fn unwrap_response_text(response: &Value) -> String {
                 return texts.join(" ");
             }
         }
-    }
     // Fallback: serialize the whole response
     response.to_string()
 }
@@ -1121,16 +1115,13 @@ pub fn compute_scalability_score(
     metrics: &Option<MetricsDefinition>,
 ) -> f64 {
     // If we have a single measurement, use the expected classification from metrics
-    if let Some(m) = metrics {
-        if let Some(s) = &m.scalability {
-            if let Some(class_str) = &s.classification {
-                if let Some(class) = ScalabilityClass::from_str(class_str) {
+    if let Some(m) = metrics
+        && let Some(s) = &m.scalability
+            && let Some(class_str) = &s.classification
+                && let Some(class) = ScalabilityClass::from_str(class_str) {
                     // Single point - use expected classification
                     return class.base_score();
                 }
-            }
-        }
-    }
 
     // Single point without metrics - return neutral score
     if workspace_size_kb == 0 {
@@ -1167,8 +1158,8 @@ pub fn compute_scalability_score_from_measurements(
     let result = classify_scalability(measurements);
 
     // If an expected classification was provided, adjust the score
-    if let Some(class_str) = expected_classification {
-        if let Some(expected) = ScalabilityClass::from_str(class_str) {
+    if let Some(class_str) = expected_classification
+        && let Some(expected) = ScalabilityClass::from_str(class_str) {
             if result.classification == expected {
                 // Perfect match - full score
                 return result;
@@ -1201,7 +1192,6 @@ pub fn compute_scalability_score_from_measurements(
             };
             return adjusted_result;
         }
-    }
 
     result
 }
@@ -1878,7 +1868,7 @@ fn iso8601_now() -> String {
         .unwrap_or_default();
     let secs = now.as_secs();
     let nanos = now.subsec_nanos();
-    let t = std::time::UNIX_EPOCH + std::time::Duration::new(secs as u64, nanos);
+    let t = std::time::UNIX_EPOCH + std::time::Duration::new(secs, nanos);
     let datetime: chrono::DateTime<chrono::Utc> = t.into();
     datetime.format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }

@@ -34,381 +34,10 @@
 use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use cognicode_macros::declare_rule;
 use inventory::submit;
-use std::collections::HashMap;
 use streaming_iterator::StreamingIterator;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper: Calculate cognitive complexity (SonarSource algorithm)
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn calculate_cognitive_complexity(node: tree_sitter::Node, source: &[u8]) -> i32 {
-    let mut complexity = 0;
-    compute_complexity_impl(node, source, 0, &mut complexity, false);
-    complexity
-}
-
-fn compute_complexity_impl(
-    node: tree_sitter::Node,
-    source: &[u8],
-    depth: usize,
-    complexity: &mut i32,
-    _in_loop: bool,
-) {
-    let kind = node.kind();
-
-    // Increment for control structures
-    if matches!(kind,
-        "if_expression" | "match_expression" | "match_arm" |
-        "for_expression" | "while_expression" | "loop_expression"
-    ) {
-        *complexity += 1 + depth as i32;
-    }
-
-    // Increment for boolean operators in binary expressions
-    if kind == "binary_expression" {
-        if let Ok(text) = node.utf8_text(source) {
-            if text.contains("&&") || text.contains("||") {
-                *complexity += 1;
-            }
-        }
-    }
-
-    // Recurse into children
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            let is_loop = matches!(kind,
-                "for_expression" | "while_expression" | "loop_expression"
-            );
-            compute_complexity_impl(child, source, depth + 1, complexity, is_loop);
-        }
-    }
-}
-
-// Helper functions removed — functionality moved to RuleContext methods:
-// - find_function_body → ctx.query_functions() + ctx.line_count()
-// - calculate_nesting_depth → ctx.nesting_depth()
-// - count_parameters → ctx.query_functions() + named_child_count()
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper: Collect string literals
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn collect_string_literals(
-    node: tree_sitter::Node,
-    source: &[u8],
-    locations: &mut HashMap<String, Vec<(usize, usize)>>,
-) {
-    if node.kind() == "string_literal" {
-        if let Ok(text) = node.utf8_text(source) {
-            let point = node.start_position();
-            let row = point.row;
-            let col = point.column;
-            locations
-                .entry(text.to_string())
-                .or_default()
-                .push((row + 1, col + 1));
-        }
-    }
-
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            collect_string_literals(child, source, locations);
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// S138 — Long Method Rule
-// ─────────────────────────────────────────────────────────────────────────────
-
-pub struct S138Rule {
-    threshold: usize,
-}
-
-impl S138Rule {
-    pub fn new(threshold: usize) -> Self {
-        Self { threshold }
-    }
-}
-
-impl Default for S138Rule {
-    fn default() -> Self {
-        Self::new(50)
-    }
-}
-
-impl Rule for S138Rule {
-    fn id(&self) -> &str { "S138" }
-    fn name(&self) -> &str { "Functions should not be too long" }
-    fn severity(&self) -> Severity { Severity::Major }
-    fn category(&self) -> Category { Category::CodeSmell }
-    fn language(&self) -> &str { "rust" }
-
-    // UI Metadata — Dashboard integration
-    fn ui_category(&self) -> Option<&str> { Some("Code Structure") }
-    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
-    fn display_icon(&self) -> Option<&str> { Some("function") }
-    fn tags(&self) -> Vec<&str> { vec!["complexity", "refactoring"] }
-    fn effort_category(&self) -> Option<&str> { Some("moderate") }
-
-    fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
-        let mut issues = Vec::new();
-        let threshold = self.threshold;
-
-        let query_str = format!("({}) @func", ctx.language.function_node_type());
-        let query = match tree_sitter::Query::new(&ctx.language.to_ts_language(), &query_str) {
-            Ok(q) => q,
-            Err(_) => return Vec::new(),
-        };
-        let mut cursor = tree_sitter::QueryCursor::new();
-        let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
-
-        while let Some(m) = matches.next() {
-            for cap in m.captures {
-                let func_node = cap.node;
-                let line_count = ctx.line_count(func_node);
-
-                if line_count > threshold {
-                    let pt = func_node.start_position();
-                    let start_row = pt.row;
-                    let start_col = pt.column;
-                    let func_name = ctx.function_name(func_node)
-                        .unwrap_or("anonymous")
-                        .to_string();
-
-                    issues.push(Issue::new(
-                        "S138",
-                        format!(
-                            "Function `{}` has {} lines, exceeds threshold of {}",
-                            func_name, line_count, threshold
-                        ),
-                        Severity::Major,
-                        Category::CodeSmell,
-                        ctx.file_path,
-                        start_row + 1,
-                    ).with_column(start_col)
-                    .with_remediation(Remediation::moderate(
-                        "Extract helper functions to reduce method length"
-                    )));
-                }
-            }
-        }
-
-        issues
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// S3776 — Cognitive Complexity Rule
-// ─────────────────────────────────────────────────────────────────────────────
-
-pub struct S3776Rule {
-    threshold: i32,
-}
-
-impl S3776Rule {
-    pub fn new(threshold: i32) -> Self {
-        Self { threshold }
-    }
-}
-
-impl Default for S3776Rule {
-    fn default() -> Self {
-        Self::new(20)
-    }
-}
-
-impl Rule for S3776Rule {
-    fn id(&self) -> &str { "S3776" }
-    fn name(&self) -> &str { "Cognitive complexity should not be too high" }
-    fn severity(&self) -> Severity { Severity::Major }
-    fn category(&self) -> Category { Category::CodeSmell }
-    fn language(&self) -> &str { "rust" }
-
-    // UI Metadata — Dashboard integration
-    fn ui_category(&self) -> Option<&str> { Some("Code Structure") }
-    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
-    fn display_icon(&self) -> Option<&str> { Some("function") }
-    fn tags(&self) -> Vec<&str> { vec!["complexity", "cognitive", "maintainability"] }
-    fn effort_category(&self) -> Option<&str> { Some("moderate") }
-
-    fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
-        let mut issues = Vec::new();
-        let threshold = self.threshold;
-
-        let query_str = format!("({}) @func", ctx.language.function_node_type());
-        let query = match tree_sitter::Query::new(&ctx.language.to_ts_language(), &query_str) {
-            Ok(q) => q,
-            Err(_) => return Vec::new(),
-        };
-        let mut cursor = tree_sitter::QueryCursor::new();
-        let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
-
-        while let Some(m) = matches.next() {
-            for cap in m.captures {
-                let func_node = cap.node;
-                let complexity = calculate_cognitive_complexity(func_node, ctx.source.as_bytes());
-
-                if complexity > threshold {
-                    let pt = func_node.start_position();
-                    let start_row = pt.row;
-                    let start_col = pt.column;
-                    let func_name = ctx.function_name(func_node)
-                        .unwrap_or("anonymous")
-                        .to_string();
-
-                    issues.push(Issue::new(
-                        "S3776",
-                        format!(
-                            "Function `{}` has cognitive complexity of {}, exceeds threshold of {}",
-                            func_name, complexity, threshold
-                        ),
-                        Severity::Major,
-                        Category::CodeSmell,
-                        ctx.file_path,
-                        start_row + 1,
-                    ).with_column(start_col)
-                    .with_remediation(Remediation::substantial(
-                        "Consider extracting helper functions or simplifying logic flow"
-                    )));
-                }
-            }
-        }
-
-        issues
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// S2306 — God Class Rule
-// ─────────────────────────────────────────────────────────────────────────────
-
-pub struct S2306Rule {
-    method_threshold: usize,
-    field_threshold: usize,
-    wmc_threshold: usize,
-}
-
-impl S2306Rule {
-    pub fn new(method_threshold: usize, field_threshold: usize, wmc_threshold: usize) -> Self {
-        Self { method_threshold, field_threshold, wmc_threshold }
-    }
-}
-
-impl Default for S2306Rule {
-    fn default() -> Self {
-        Self::new(10, 10, 50)
-    }
-}
-
-impl Rule for S2306Rule {
-    fn id(&self) -> &str { "S2306" }
-    fn name(&self) -> &str { "Classes should not be too large" }
-    fn severity(&self) -> Severity { Severity::Critical }
-    fn category(&self) -> Category { Category::CodeSmell }
-    fn language(&self) -> &str { "rust" }
-
-    fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
-        let mut issues = Vec::new();
-
-        let query_str = format!("({}) @func", ctx.language.function_node_type());
-        let query = match tree_sitter::Query::new(&ctx.language.to_ts_language(), &query_str) {
-            Ok(q) => q,
-            Err(_) => return Vec::new(),
-        };
-        let mut cursor = tree_sitter::QueryCursor::new();
-        let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
-
-        while let Some(m) = matches.next() {
-            for cap in m.captures {
-                let item_node = cap.node;
-
-                // Count public methods
-                let method_query = match tree_sitter::Query::new(&ctx.language.to_ts_language(), "(function_item (visibility_modifier) @vis) @method") {
-                    Ok(q) => q,
-                    Err(_) => continue,
-                };
-                let mut method_cursor = tree_sitter::QueryCursor::new();
-                let mut method_matches = method_cursor.matches(&method_query, item_node, ctx.source.as_bytes());
-                let mut public_methods = 0;
-                while let Some(_mm) = method_matches.next() {
-                    public_methods += 1;
-                }
-
-                // Count fields
-                let mut fields = 0;
-                for i in 0..item_node.child_count() {
-                    if let Some(child) = item_node.child(i) {
-                        if child.kind() == "field_declaration" {
-                            fields += 1;
-                        }
-                    }
-                }
-
-                // Calculate WMC
-                let func_query = match tree_sitter::Query::new(&ctx.language.to_ts_language(), "(function_item) @func") {
-                    Ok(q) => q,
-                    Err(_) => continue,
-                };
-                let mut func_cursor = tree_sitter::QueryCursor::new();
-                let mut func_matches = func_cursor.matches(&func_query, item_node, ctx.source.as_bytes());
-                let mut wmc = 0;
-                while let Some(fm) = func_matches.next() {
-                    for fcap in fm.captures {
-                        let func_node = fcap.node;
-                        let bin_query = match tree_sitter::Query::new(&ctx.language.to_ts_language(), "(binary_expression) @bin") {
-                            Ok(q) => q,
-                            Err(_) => continue,
-                        };
-                        let mut bin_cursor = tree_sitter::QueryCursor::new();
-                        let mut bin_matches = bin_cursor.matches(&bin_query, func_node, ctx.source.as_bytes());
-                        let mut bin_count = 0;
-                        while let Some(_bm) = bin_matches.next() {
-                            bin_count += 1;
-                        }
-                        wmc += bin_count + 1;
-                    }
-                }
-
-                let is_god_class = public_methods > self.method_threshold
-                    && fields > self.field_threshold
-                    && wmc > self.wmc_threshold;
-
-                if is_god_class {
-                    let pt = item_node.start_position();
-                    let start_row = pt.row;
-                    let start_col = pt.column;
-                    let class_name = ctx.function_name(item_node)
-                        .unwrap_or("unknown")
-                        .to_string();
-
-                    issues.push(Issue::new(
-                        "S2306",
-                        format!(
-                            "Class `{}` has {} public methods, {} fields, WMC={}. Consider splitting into smaller units",
-                            class_name, public_methods, fields, wmc
-                        ),
-                        Severity::Critical,
-                        Category::CodeSmell,
-                        ctx.file_path,
-                        start_row + 1,
-                    ).with_column(start_col)
-                    .with_remediation(Remediation::substantial(
-                        "Split this class into smaller, focused units following Single Responsibility Principle"
-                    )));
-                }
-            }
-        }
-
-        issues
-    }
-
-    fn ui_category(&self) -> Option<&str> { Some("Code Structure") }
-    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
-    fn display_icon(&self) -> Option<&str> { Some("class") }
-    fn tags(&self) -> Vec<&str> { vec!["complexity", "oop", "class"] }
-    fn effort_category(&self) -> Option<&str> { Some("moderate") }
-}
+// Re-export extracted rules for backward compatibility
+pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S134 — Deep Nesting Rule
@@ -436,7 +65,7 @@ declare_rule! {
                         Category::CodeSmell,
                         ctx.file_path,
                         pt.row + 1,
-                    ).with_column(pt.column as usize)
+                    ).with_column(pt.column)
                     .with_remediation(Remediation::moderate(
                         "Extract nested logic into separate functions or use early returns"
                     )));
@@ -469,7 +98,7 @@ declare_rule! {
                 for capture in m.captures {
                     // Count named children (parameters) inside the parameters node
                     let params_node = capture.node;
-                    let param_count = params_node.named_child_count() as usize;
+                    let param_count = params_node.named_child_count();
                     if param_count > self.threshold {
                         let pt = params_node.start_position();
                         // Try to get the function name from the parent node
@@ -483,7 +112,7 @@ declare_rule! {
                             Category::CodeSmell,
                             ctx.file_path,
                             pt.row + 1,
-                        ).with_column(pt.column as usize)
+                        ).with_column(pt.column)
                         .with_remediation(Remediation::moderate(
                             "Consider grouping related parameters into a struct"
                         )));
@@ -493,155 +122,6 @@ declare_rule! {
         }
         issues
     }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// S1066 — Collapsible If Statements Rule
-// ─────────────────────────────────────────────────────────────────────────────
-
-pub struct S1066Rule;
-
-impl S1066Rule {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl Default for S1066Rule {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Rule for S1066Rule {
-    fn id(&self) -> &str { "S1066" }
-    fn name(&self) -> &str { "Collapsible if statements should be merged" }
-    fn severity(&self) -> Severity { Severity::Minor }
-    fn category(&self) -> Category { Category::CodeSmell }
-    fn language(&self) -> &str { "rust" }
-
-    fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
-        let mut issues = Vec::new();
-
-        let query = match tree_sitter::Query::new(
-            &ctx.language.to_ts_language(),
-            "(if_expression) @if"
-        ) {
-            Ok(q) => q,
-            Err(_) => return Vec::new(),
-        };
-        let mut cursor = tree_sitter::QueryCursor::new();
-        let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
-
-        while let Some(m) = matches.next() {
-            for cap in m.captures {
-                let if_node = cap.node;
-
-                // Check if this if has no else
-                let has_else = if_node.child_by_field_name("alternative").is_some();
-                if has_else {
-                    continue;
-                }
-
-                // Find the consequence (then branch)
-                if let Some(cons) = if_node.child_by_field_name("consequence") {
-                    // Check if the consequence is another if without else
-                    if cons.kind() == "if_expression" {
-                        let inner_has_else = cons.child_by_field_name("alternative").is_some();
-                        if !inner_has_else {
-                            let pt = if_node.start_position();
-                            let start_row = pt.row;
-                            let start_col = pt.column;
-                            issues.push(Issue::new(
-                                "S1066",
-                                "These nested if statements can be collapsed into a single if with &&",
-                                Severity::Minor,
-                                Category::CodeSmell,
-                                ctx.file_path,
-                                start_row + 1,
-                            ).with_column(start_col)
-                            .with_remediation(Remediation::quick(
-                                "Combine the conditions with && operator"
-                            )));
-                        }
-                    }
-                }
-            }
-        }
-
-        issues
-    }
-
-    fn ui_category(&self) -> Option<&str> { Some("Code Style") }
-    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
-    fn display_icon(&self) -> Option<&str> { Some("code") }
-    fn tags(&self) -> Vec<&str> { vec!["style", "if-statement"] }
-    fn effort_category(&self) -> Option<&str> { Some("quick_fix") }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// S1192 — String Literal Duplicates Rule
-// ─────────────────────────────────────────────────────────────────────────────
-
-pub struct S1192Rule {
-    min_occurrences: usize,
-}
-
-impl S1192Rule {
-    pub fn new(min_occurrences: usize) -> Self {
-        Self { min_occurrences }
-    }
-}
-
-impl Default for S1192Rule {
-    fn default() -> Self {
-        Self::new(3)
-    }
-}
-
-impl Rule for S1192Rule {
-    fn id(&self) -> &str { "S1192" }
-    fn name(&self) -> &str { "String literals should not be duplicated" }
-    fn severity(&self) -> Severity { Severity::Major }
-    fn category(&self) -> Category { Category::CodeSmell }
-    fn language(&self) -> &str { "rust" }
-
-    fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
-        let mut issues = Vec::new();
-        let min_occurrences = self.min_occurrences;
-
-        let mut string_locations: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
-        collect_string_literals(ctx.tree.root_node(), ctx.source.as_bytes(), &mut string_locations);
-
-        for (text, locations) in string_locations {
-            if locations.len() >= min_occurrences {
-                for (line, col) in &locations {
-                    issues.push(Issue::new(
-                        "S1192",
-                        format!(
-                            "String literal \"{}\" is duplicated {} times",
-                            text, locations.len()
-                        ),
-                        Severity::Major,
-                        Category::CodeSmell,
-                        ctx.file_path,
-                        *line,
-                    ).with_column(*col)
-                    .with_remediation(Remediation::moderate(
-                        "Extract this string to a named constant"
-                    )));
-                }
-            }
-        }
-
-        issues
-    }
-
-    fn ui_category(&self) -> Option<&str> { Some("Code Style") }
-    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
-    fn display_icon(&self) -> Option<&str> { Some("text") }
-    fn tags(&self) -> Vec<&str> { vec!["duplication", "strings"] }
-    fn effort_category(&self) -> Option<&str> { Some("quick_fix") }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -789,11 +269,11 @@ declare_rule! {
 
         while let Some(m) = matches.next() {
             for cap in m.captures {
-                if cap.node.kind() == "identifier" {
-                    if let Ok(macro_name) = cap.node.utf8_text(ctx.source.as_bytes()) {
-                        if macro_name == "format" || macro_name == "format_args" {
-                            if let Some(args_node) = m.captures.iter().find(|c| c.node.kind() == "token_tree") {
-                                if let Ok(args_text) = args_node.node.utf8_text(ctx.source.as_bytes()) {
+                if cap.node.kind() == "identifier"
+                    && let Ok(macro_name) = cap.node.utf8_text(ctx.source.as_bytes())
+                        && (macro_name == "format" || macro_name == "format_args")
+                            && let Some(args_node) = m.captures.iter().find(|c| c.node.kind() == "token_tree")
+                                && let Ok(args_text) = args_node.node.utf8_text(ctx.source.as_bytes()) {
                                     let args_upper = args_text.to_uppercase();
                                     for keyword in &sql_keywords {
                                         if args_upper.contains(keyword) {
@@ -816,10 +296,6 @@ declare_rule! {
                                         }
                                     }
                                 }
-                            }
-                        }
-                    }
-                }
             }
         }
 
@@ -850,8 +326,8 @@ declare_rule! {
 
         for (line_idx, line) in ctx.source.lines().enumerate() {
             for (pattern, description) in &weak_patterns {
-                if let Ok(re) = regex::Regex::new(pattern) {
-                    if re.is_match(line) {
+                if let Ok(re) = regex::Regex::new(pattern)
+                    && re.is_match(line) {
                         let pt = line.find(|c: char| !c.is_whitespace()).unwrap_or(0);
                         issues.push(Issue::new(
                             "S4792",
@@ -869,7 +345,6 @@ declare_rule! {
                         )));
                         break;
                     }
-                }
             }
         }
 
@@ -897,10 +372,10 @@ declare_rule! {
         // Walk the tree to find function definitions
         fn walk_functions(node: tree_sitter::Node, source: &str, threshold: f32, min_lines: usize, file_path: &std::path::Path, fn_node_type: &str) -> Vec<Issue> {
             let mut issues = Vec::new();
-            if node.kind() == fn_node_type {
-                if let Some(name_node) = node.child_by_field_name("name") {
-                    if let Ok(name) = name_node.utf8_text(source.as_bytes()) {
-                        if let Some(body) = node.child_by_field_name("body") {
+            if node.kind() == fn_node_type
+                && let Some(name_node) = node.child_by_field_name("name")
+                    && let Ok(name) = name_node.utf8_text(source.as_bytes())
+                        && let Some(body) = node.child_by_field_name("body") {
                             let body_text = body.utf8_text(source.as_bytes()).unwrap_or("");
                             let line_count = body_text.lines().count();
                             if line_count >= min_lines {
@@ -939,9 +414,6 @@ declare_rule! {
                                 }
                             }
                         }
-                    }
-                }
-            }
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 issues.extend(walk_functions(child, source, threshold, min_lines, file_path, fn_node_type));
@@ -1015,7 +487,7 @@ declare_rule! {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let mut issues = Vec::new();
-        let max_age_secs = self.max_age_days as u64 * 24 * 60 * 60;
+        let max_age_secs = self.max_age_days * 24 * 60 * 60;
 
         // Check file modification time
         let file_mtime = std::fs::metadata(ctx.file_path)
@@ -1042,8 +514,8 @@ declare_rule! {
                 { continue; }
 
                 for (pattern, desc) in &obsolete_patterns {
-                    if let Ok(re) = regex::Regex::new(pattern) {
-                        if re.is_match(trimmed) {
+                    if let Ok(re) = regex::Regex::new(pattern)
+                        && re.is_match(trimmed) {
                             issues.push(Issue::new(
                                 "S7002",
                                 format!("Obsolete pattern: {}", desc),
@@ -1056,7 +528,6 @@ declare_rule! {
                             )));
                             break;
                         }
-                    }
                 }
             }
         }
@@ -1175,8 +646,8 @@ declare_rule! {
             || trimmed.starts_with("*") || trimmed.starts_with("#")
             { continue; }
             
-            if let Some(m) = re.find(trimmed) {
-                if !trimmed.contains("https://") && !trimmed.contains("localhost") {
+            if let Some(m) = re.find(trimmed)
+                && !trimmed.contains("https://") && !trimmed.contains("localhost") {
                     issues.push(Issue::new(
                         "S5332",
                         format!("Clear-text HTTP URL found: {}", m.as_str()),
@@ -1188,7 +659,6 @@ declare_rule! {
                         "Use HTTPS instead of HTTP for secure communications"
                     )));
                 }
-            }
         }
         issues
     }
@@ -1213,8 +683,8 @@ declare_rule! {
         let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
         while let Some(m) = matches.next() {
             for capture in m.captures {
-                if let Ok(name) = capture.node.utf8_text(ctx.source.as_bytes()) {
-                    if name == "unwrap" {
+                if let Ok(name) = capture.node.utf8_text(ctx.source.as_bytes())
+                    && name == "unwrap" {
                         let pt = capture.node.start_position();
                         issues.push(Issue::new(
                             "S5631",
@@ -1223,12 +693,11 @@ declare_rule! {
                             Category::Bug,
                             ctx.file_path,
                             pt.row + 1,
-                        ).with_column(pt.column as usize)
+                        ).with_column(pt.column)
                         .with_remediation(Remediation::moderate(
                             "Replace unwrap() with ? operator, expect(), or proper error handling"
                         )));
                     }
-                }
             }
         }
         issues
@@ -1368,8 +837,8 @@ declare_rule! {
                 let mut matches2 = cursor2.matches(&query2, ctx.tree.root_node(), ctx.source.as_bytes());
                 while let Some(m) = matches2.next() {
                     for capture in m.captures {
-                        if let Ok(name) = capture.node.utf8_text(ctx.source.as_bytes()) {
-                            if params.contains(name) {
+                        if let Ok(name) = capture.node.utf8_text(ctx.source.as_bytes())
+                            && params.contains(name) {
                                 let pt = capture.node.start_position();
                                 issues.push(Issue::new(
                                     "S1226",
@@ -1379,7 +848,6 @@ declare_rule! {
                                     "Use a new local variable instead of reassigning the parameter"
                                 )));
                             }
-                        }
                     }
                 }
             }
@@ -1411,8 +879,8 @@ declare_rule! {
                     let node = capture.node;
                     // Check if the block body has no meaningful children (only comment/doc nodes)
                     let named_children = node.named_child_count();
-                    if named_children == 0 {
-                        if let Some(name) = ctx.function_name(node.parent().unwrap_or(node)) {
+                    if named_children == 0
+                        && let Some(name) = ctx.function_name(node.parent().unwrap_or(node)) {
                             let pt = node.start_position();
                             issues.push(Issue::new(
                                 "S1186",
@@ -1422,7 +890,6 @@ declare_rule! {
                                 "Implement the function body or remove it if not needed"
                             )));
                         }
-                    }
                 }
             }
         }
@@ -1469,8 +936,8 @@ declare_rule! {
                         }
                     }
                 }
-                if let (Some(then), Some(else_t)) = (then_text, else_text) {
-                    if then == else_t && !then.is_empty() {
+                if let (Some(then), Some(else_t)) = (then_text, else_text)
+                    && then == else_t && !then.is_empty() {
                         issues.push(Issue::new(
                             "S1871",
                             format!("Duplicate branches at line {}", then_line),
@@ -1479,7 +946,6 @@ declare_rule! {
                             "Merge duplicate branches into a single block or refactor the condition"
                         )));
                     }
-                }
             }
         }
         issues
@@ -1677,8 +1143,8 @@ declare_rule! {
             let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
             while let Some(m) = matches.next() {
                 for capture in m.captures {
-                    if let Ok(name) = capture.node.utf8_text(ctx.source.as_bytes()) {
-                        if name.contains(char::is_uppercase) || name.contains('-') {
+                    if let Ok(name) = capture.node.utf8_text(ctx.source.as_bytes())
+                        && (name.contains(char::is_uppercase) || name.contains('-')) {
                             let pt = capture.node.start_position();
                             issues.push(Issue::new(
                                 "S116",
@@ -1689,7 +1155,6 @@ declare_rule! {
                                 pt.row + 1,
                             ));
                         }
-                    }
                 }
             }
         }
@@ -1862,11 +1327,10 @@ declare_rule! {
                 for capture in m.captures {
                     if capture.node.named_child_count() <= 1 {
                         let pt = capture.node.start_position();
-                        if let Some(prev_line) = ctx.source.lines().nth(pt.row.saturating_sub(1)) {
-                            if !prev_line.contains("///") && !prev_line.contains("//!") {
+                        if let Some(prev_line) = ctx.source.lines().nth(pt.row.saturating_sub(1))
+                            && !prev_line.contains("///") && !prev_line.contains("//!") {
                                 issues.push(Issue::new("S1118", "Empty or undocumented struct", Severity::Minor, Category::CodeSmell, ctx.file_path, pt.row + 1));
                             }
-                        }
                     }
                 }
             }
@@ -1892,8 +1356,8 @@ declare_rule! {
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
             // Look for patterns like: x = x; where x is the same identifier on both sides
-            if let Some(eq_pos) = trimmed.find('=') {
-                if eq_pos > 0 {
+            if let Some(eq_pos) = trimmed.find('=')
+                && eq_pos > 0 {
                     let lhs = trimmed[..eq_pos].trim();
                     let rhs = trimmed[eq_pos + 1..].trim().trim_end_matches(';').trim();
                     if lhs == rhs && !lhs.is_empty() && !rhs.is_empty() {
@@ -1903,7 +1367,6 @@ declare_rule! {
                         }
                     }
                 }
-            }
         }
         issues
     }
@@ -1929,8 +1392,8 @@ declare_rule! {
                 continue;
             }
             for op in &comparison_ops {
-                if let Some(pos) = line.find(op) {
-                    if pos > 0 {
+                if let Some(pos) = line.find(op)
+                    && pos > 0 {
                         let before = line[..pos].trim();
                         let after = line[pos + op.len()..].trim();
                         if before == after && !before.is_empty() {
@@ -1938,7 +1401,6 @@ declare_rule! {
                             break;
                         }
                     }
-                }
             }
         }
         issues
@@ -1958,7 +1420,7 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let mut locked_mutexes = vec![false; 50];
+        let mut locked_mutexes = [false; 50];
         for (idx, line) in ctx.source.lines().enumerate() {
             let idx_mod = idx % 50;
             if line.contains(".lock()") || line.contains(".lock().unwrap()") {
@@ -1994,15 +1456,14 @@ declare_rule! {
             let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
             while let Some(m) = matches.next() {
                 for capture in m.captures {
-                    if let Ok(name) = capture.node.utf8_text(ctx.source.as_bytes()) {
-                        if name.starts_with("test_") || name.contains("test") {
+                    if let Ok(name) = capture.node.utf8_text(ctx.source.as_bytes())
+                        && (name.starts_with("test_") || name.contains("test")) {
                             let func_text = capture.node.utf8_text(ctx.source.as_bytes()).unwrap_or("");
                             if !func_text.contains("assert") && !func_text.contains("panic") && !func_text.contains("unwrap") {
                                 let pt = capture.node.start_position();
                                 issues.push(Issue::new("S2187", format!("Test '{}' has no assertions", name), Severity::Major, Category::CodeSmell, ctx.file_path, pt.row + 1));
                             }
                         }
-                    }
                 }
             }
         }
@@ -2033,11 +1494,10 @@ declare_rule! {
                 && !trimmed.contains("impl ")
                 && !trimmed.contains("pub fn")
                 && !trimmed.contains("pub trait")
-                && !trimmed.contains("pub struct") {
-                if (trimmed.contains("Result<") || trimmed.contains(".map(") || trimmed.contains(".and_then(")) && !trimmed.contains("?") && !trimmed.contains(".unwrap") && !trimmed.contains(".expect") && !trimmed.contains("if let") && !trimmed.contains(".ok()") {
+                && !trimmed.contains("pub struct")
+                && (trimmed.contains("Result<") || trimmed.contains(".map(") || trimmed.contains(".and_then(")) && !trimmed.contains("?") && !trimmed.contains(".unwrap") && !trimmed.contains(".expect") && !trimmed.contains("if let") && !trimmed.contains(".ok()") {
                     issues.push(Issue::new("S2201", "Return value of a function call is not used", Severity::Major, Category::Bug, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Use '?' operator, '.unwrap()', or assign to a variable")));
                 }
-            }
         }
         issues
     }
@@ -2123,22 +1583,6 @@ declare_rule! {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helper: Count branches in a node tree
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn count_branches_impl(node: tree_sitter::Node, count: &mut usize) {
-    let branch_kinds = ["if_expression", "match_arm", "while_expression", "for_expression", "loop_expression"];
-    if branch_kinds.contains(&node.kind()) {
-        *count += 1;
-    }
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            count_branches_impl(child, count);
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // S1541 — High cyclomatic complexity (simplified)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2153,7 +1597,7 @@ declare_rule! {
         let mut issues = Vec::new();
         for func_node in ctx.query_functions() {
             let mut branch_count = 0;
-            count_branches_impl(func_node, &mut branch_count);
+            crate::rules::helpers::count_branches_impl(func_node, &mut branch_count);
             if branch_count > self.threshold {
                 let pt = func_node.start_position();
                 if let Some(name) = ctx.function_name(func_node) {
@@ -2499,8 +1943,8 @@ declare_rule! {
             if line.contains("for ") || line.contains("while ") || line.contains("loop {") {
                 in_loop = true;
             }
-            if in_loop {
-                if line.contains("+=") && (line.contains("String") || line.contains("str")) && !line.contains("push_str") {
+            if in_loop
+                && line.contains("+=") && (line.contains("String") || line.contains("str")) && !line.contains("push_str") {
                     issues.push(Issue::new(
                         "S1643",
                         "String concatenation in loop - use .push_str() or collect()",
@@ -2510,7 +1954,6 @@ declare_rule! {
                         idx + 1,
                     ));
                 }
-            }
             if line.trim() == "}" {
                 in_loop = false;
             }
@@ -2694,8 +2137,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"pub\s+([a-z])\s*:").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     issues.push(Issue::new(
                         "S111",
                         format!("Field '{}' has a non-descriptive single-letter name", name.as_str()),
@@ -2705,7 +2148,6 @@ declare_rule! {
                         idx + 1,
                     ));
                 }
-            }
         }
         issues
     }
@@ -2966,8 +2408,8 @@ declare_rule! {
                 for capture in m.captures {
                     let node = capture.node;
                     let named_children = node.named_child_count();
-                    if named_children == 0 {
-                        if let Some(name) = ctx.function_name(node.parent().unwrap_or(node)) {
+                    if named_children == 0
+                        && let Some(name) = ctx.function_name(node.parent().unwrap_or(node)) {
                             let pt = node.start_position();
                             issues.push(Issue::new(
                                 "S154",
@@ -2978,7 +2420,6 @@ declare_rule! {
                                 pt.row + 1,
                             ).with_remediation(Remediation::quick("Implement the function body or remove it")));
                         }
-                    }
                 }
             }
         }
@@ -3106,8 +2547,8 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for i in 0..lines.len().saturating_sub(1) {
             let next = lines[i + 1].trim();
-            if next.starts_with("impl") && next.contains("Default") && !next.contains("for") {
-                if i > 0 {
+            if next.starts_with("impl") && next.contains("Default") && !next.contains("for")
+                && i > 0 {
                     let prev = lines[i].trim();
                     if !prev.starts_with("///") && !prev.starts_with("//!") && !prev.starts_with("/*") {
                         issues.push(Issue::new(
@@ -3120,7 +2561,6 @@ declare_rule! {
                         ));
                     }
                 }
-            }
         }
         issues
     }
@@ -3203,8 +2643,8 @@ declare_rule! {
             }
             
             let text = func_node.utf8_text(ctx.source.as_bytes()).unwrap_or("");
-            if text.contains("-> Result<") || text.contains("-> Option<") {
-                if !text.contains("#[must_use]") {
+            if (text.contains("-> Result<") || text.contains("-> Option<"))
+                && !text.contains("#[must_use]") {
                     let pt = func_node.start_position();
                     if let Some(name) = ctx.function_name(func_node) {
                         issues.push(Issue::new(
@@ -3217,7 +2657,6 @@ declare_rule! {
                         ));
                     }
                 }
-            }
         }
         issues
     }
@@ -3472,8 +2911,8 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("Set-Cookie") || line.contains(".cookie(") {
-                if !line.contains("Secure") && !line.contains("secure") {
+            if (line.contains("Set-Cookie") || line.contains(".cookie("))
+                && !line.contains("Secure") && !line.contains("secure") {
                     issues.push(Issue::new(
                         "S2092",
                         "Cookie without Secure flag",
@@ -3483,7 +2922,6 @@ declare_rule! {
                         idx + 1,
                     ));
                 }
-            }
         }
         issues
     }
@@ -3542,8 +2980,8 @@ declare_rule! {
         ];
         for (idx, line) in ctx.source.lines().enumerate() {
             let has_xml_parser = xxe_patterns.iter().any(|p| line.contains(p));
-            if has_xml_parser {
-                if line.contains("DTD") || line.contains("dtd") || line.contains("entity") || line.contains("external") {
+            if has_xml_parser
+                && (line.contains("DTD") || line.contains("dtd") || line.contains("entity") || line.contains("external")) {
                     issues.push(Issue::new(
                         "S2755",
                         "Potential XXE vulnerability - external entity parsing detected",
@@ -3553,7 +2991,6 @@ declare_rule! {
                         idx + 1,
                     ).with_remediation(Remediation::substantial("Disable DTD processing and external entities in XML parser configuration")));
                 }
-            }
         }
         issues
     }
@@ -3573,8 +3010,8 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains(".cookie(") || line.contains("Set-Cookie") {
-                if !line.contains("HttpOnly") && !line.contains("http_only") {
+            if (line.contains(".cookie(") || line.contains("Set-Cookie"))
+                && !line.contains("HttpOnly") && !line.contains("http_only") {
                     issues.push(Issue::new(
                         "S3330",
                         "Cookie without HttpOnly flag - vulnerable to XSS",
@@ -3584,7 +3021,6 @@ declare_rule! {
                         idx + 1,
                     ));
                 }
-            }
         }
         issues
     }
@@ -3691,8 +3127,8 @@ declare_rule! {
             || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
             || trimmed.starts_with("#") { continue; }
             for kw in &sql_keywords {
-                if line.contains(kw) && (line.contains("+") || line.contains(".as_str()")) {
-                    if !line.contains("bind") && !line.contains("prepared") && !line.contains("parameter") {
+                if line.contains(kw) && (line.contains("+") || line.contains(".as_str()"))
+                    && !line.contains("bind") && !line.contains("prepared") && !line.contains("parameter") {
                         issues.push(Issue::new(
                             "S3649",
                             "SQL built with string ops - use parameterized queries",
@@ -3703,7 +3139,6 @@ declare_rule! {
                         ));
                         break;
                     }
-                }
             }
         }
         issues
@@ -4196,8 +3631,8 @@ declare_rule! {
         for cap in re.captures_iter(&source_text) {
             if let Some(name) = cap.get(1) {
                 let name_str = name.as_str();
-                if !name_str.ends_with("Error") && !name_str.ends_with("Err") {
-                    if let Some(pos) = source_text.find(name_str) {
+                if !name_str.ends_with("Error") && !name_str.ends_with("Err")
+                    && let Some(pos) = source_text.find(name_str) {
                         let line_num = source_text[..pos].matches('\n').count() + 1;
                         issues.push(Issue::new(
                             "S1170",
@@ -4208,7 +3643,6 @@ declare_rule! {
                             line_num,
                         ));
                     }
-                }
             }
         }
         issues
@@ -4277,10 +3711,10 @@ declare_rule! {
                 in_mod = true;
                 mod_line = idx;
             }
-            if in_mod {
-                if trimmed.contains("pub mod ") || trimmed.contains("mod ") {
-                    if let Some(next_line) = lines.get(mod_line + 1) {
-                        if !next_line.trim().starts_with("//!") && !next_line.trim().starts_with("/*") {
+            if in_mod
+                && (trimmed.contains("pub mod ") || trimmed.contains("mod ")) {
+                    if let Some(next_line) = lines.get(mod_line + 1)
+                        && !next_line.trim().starts_with("//!") && !next_line.trim().starts_with("/*") {
                             issues.push(Issue::new(
                                 "S1200",
                                 "Module is missing documentation comment (!//)",
@@ -4290,10 +3724,8 @@ declare_rule! {
                                 mod_line + 1,
                             ));
                         }
-                    }
                     in_mod = false;
                 }
-            }
         }
         issues
     }
@@ -4349,8 +3781,8 @@ declare_rule! {
         let re = regex::Regex::new(r"impl\s+\w+\s+for\s+").unwrap();
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
-            if re.is_match(line) {
-                if idx > 0 {
+            if re.is_match(line)
+                && idx > 0 {
                     let prev = lines[idx - 1].trim();
                     if !prev.starts_with("///") && !prev.starts_with("//!") && !prev.starts_with("/*") && !prev.starts_with("#[") {
                         issues.push(Issue::new(
@@ -4363,7 +3795,6 @@ declare_rule! {
                         ));
                     }
                 }
-            }
         }
         issues
     }
@@ -4385,8 +3816,8 @@ declare_rule! {
         let re = regex::Regex::new(r"impl\s+\w+\s+for\s+\w+").unwrap();
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
-            if re.is_match(line) && !line.contains("for<T>") {
-                if let Some(prev_line) = lines.get(idx.saturating_sub(1)) {
+            if re.is_match(line) && !line.contains("for<T>")
+                && let Some(prev_line) = lines.get(idx.saturating_sub(1)) {
                     let prev_trim = prev_line.trim();
                     if !prev_trim.starts_with("///") && !prev_trim.starts_with("//!") && !prev_trim.starts_with("/*") {
                         issues.push(Issue::new(
@@ -4399,7 +3830,6 @@ declare_rule! {
                         ).with_remediation(Remediation::quick("Add documentation comment above the impl block")));
                     }
                 }
-            }
         }
         issues
     }
@@ -4555,8 +3985,8 @@ declare_rule! {
             if line.contains("for ") || line.contains("while ") || line.contains("loop {") {
                 in_loop = true;
             }
-            if in_loop {
-                if line.contains(".clone()") {
+            if in_loop
+                && line.contains(".clone()") {
                     issues.push(Issue::new(
                         "S1700",
                         "Cloning inside a loop - consider using references or iterators",
@@ -4566,7 +3996,6 @@ declare_rule! {
                         idx + 1,
                     ).with_remediation(Remediation::moderate("Use a reference (&) or restructure to avoid cloning in loop")));
                 }
-            }
             if line.trim() == "}" {
                 in_loop = false;
             }
@@ -4655,8 +4084,8 @@ declare_rule! {
         // Check for redundant type casts without using backreferences
         for (idx, line) in ctx.source.lines().enumerate() {
             if let Some(as_pos) = line.find(" as ") {
-                let before_as = line[..as_pos].trim().split_whitespace().last().unwrap_or("");
-                let after_as = line[as_pos + 4..].trim().split_whitespace().next().unwrap_or("");
+                let before_as = line[..as_pos].split_whitespace().last().unwrap_or("");
+                let after_as = line[as_pos + 4..].split_whitespace().next().unwrap_or("");
                 // Extract the type name (remove any leading `&` or `*`)
                 let type_before = before_as.trim_start_matches('&').trim_start_matches('*');
                 let type_after = after_as.trim_start_matches('&').trim_start_matches('*').split_whitespace().next().unwrap_or("");
@@ -4775,8 +4204,8 @@ declare_rule! {
             if line.contains("for ") || line.contains("while ") || line.contains("loop {") {
                 in_loop = true;
             }
-            if in_loop {
-                if (line.contains("vec![]") || line.contains("Vec::new()") || line.contains("String::new()"))
+            if in_loop
+                && (line.contains("vec![]") || line.contains("Vec::new()") || line.contains("String::new()"))
                    && (line.contains(".push(") || line.contains(".insert(") || line.contains(".push_str(")) {
                     issues.push(Issue::new(
                         "S1943",
@@ -4787,7 +4216,6 @@ declare_rule! {
                         idx + 1,
                     ).with_remediation(Remediation::moderate("Initialize outside loop or use iterator methods")));
                 }
-            }
             if line.trim() == "}" {
                 in_loop = false;
             }
@@ -4811,10 +4239,10 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Vec::with_capacity\((\d+)\)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(size_str) = cap.get(1) {
-                    if let Ok(size) = size_str.as_str().parse::<usize>() {
-                        if size <= self.max_size {
+            if let Some(cap) = re.captures(line)
+                && let Some(size_str) = cap.get(1)
+                    && let Ok(size) = size_str.as_str().parse::<usize>()
+                        && size <= self.max_size {
                             issues.push(Issue::new(
                                 "S1998",
                                 format!("Vec with small fixed capacity ({}) - consider using an array", size),
@@ -4824,9 +4252,6 @@ declare_rule! {
                                 idx + 1,
                             ).with_remediation(Remediation::quick("Use a fixed-size array instead of Vec")));
                         }
-                    }
-                }
-            }
         }
         issues
     }
@@ -5334,8 +4759,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fn\s+([a-z_][a-zA-Z_]*)\s*\(\s*\)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("#[test]") || line.contains("#[tokio::test]") {
-                if let Some(cap) = re.captures(line) {
+            if (line.contains("#[test]") || line.contains("#[tokio::test]"))
+                && let Some(cap) = re.captures(line) {
                     let name = cap.get(1).unwrap().as_str();
                     if !name.starts_with("test_") && name != "main" {
                         issues.push(Issue::new(
@@ -5348,7 +4773,6 @@ declare_rule! {
                         ).with_remediation(Remediation::quick("Prefix the function name with 'test_'")));
                     }
                 }
-            }
         }
         issues
     }
@@ -5556,8 +4980,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fn\s+([A-Z][a-zA-Z0-9_]*|[a-z]+[A-Z])").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     let name_str = name.as_str();
                     // Skip test functions
                     if name_str.starts_with("test_") || name_str.contains("_test_") {
@@ -5576,7 +5000,6 @@ declare_rule! {
                         idx + 1,
                     ));
                 }
-            }
         }
         issues
     }
@@ -5597,8 +5020,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"struct\s+([a-z][a-z0-9_]*)\s*(<|\{|;)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     let name_str = name.as_str();
                     // Skip single-letter generic type parameters (T, E, K, V, etc.)
                     if name_str.len() == 1 {
@@ -5613,7 +5036,6 @@ declare_rule! {
                         idx + 1,
                     ));
                 }
-            }
         }
         issues
     }
@@ -5634,8 +5056,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"trait\s+([a-z][a-z0-9_]*)\s*(<|\{|;)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     issues.push(Issue::new(
                         "S102",
                         format!("Trait '{}' should use CamelCase", name.as_str()),
@@ -5645,7 +5067,6 @@ declare_rule! {
                         idx + 1,
                     ));
                 }
-            }
         }
         issues
     }
@@ -5696,8 +5117,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?:^|\s)mod\s+([A-Z][a-zA-Z0-9_]*|[a-z]+[A-Z])").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     issues.push(Issue::new(
                         "S106",
                         format!("Module '{}' should use snake_case", name.as_str()),
@@ -5707,7 +5128,6 @@ declare_rule! {
                         idx + 1,
                     ));
                 }
-            }
         }
         issues
     }
@@ -5728,8 +5148,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"trait\s+(\w+)\s*(<|\{|;)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     let name_str = name.as_str();
                     if name_str.chars().next().map(|c| c.is_lowercase()).unwrap_or(false) {
                         issues.push(Issue::new(
@@ -5742,7 +5162,6 @@ declare_rule! {
                         ));
                     }
                 }
-            }
         }
         issues
     }
@@ -5846,8 +5265,8 @@ declare_rule! {
         let re = regex::Regex::new(r"impl\s+(?:\w+\s+for\s+)?\w+").unwrap();
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
-            if re.is_match(line) && !line.contains("where") {
-                if let Some(prev_line) = lines.get(idx.saturating_sub(1)) {
+            if re.is_match(line) && !line.contains("where")
+                && let Some(prev_line) = lines.get(idx.saturating_sub(1)) {
                     let prev_trim = prev_line.trim();
                     if !prev_trim.starts_with("///") && !prev_trim.starts_with("//!") && !prev_trim.starts_with("/*") && !prev_trim.starts_with("#[") {
                         issues.push(Issue::new(
@@ -5860,7 +5279,6 @@ declare_rule! {
                         ));
                     }
                 }
-            }
         }
         issues
     }
@@ -6025,8 +5443,8 @@ declare_rule! {
         for (idx, line) in lines.iter().enumerate() {
             if let Some(cap) = re.captures(line) {
                 let fn_name = cap.get(1).unwrap().as_str();
-                if !fn_name.starts_with("test_") && !fn_name.starts_with("set_") && !fn_name.starts_with("get_") {
-                    if idx == 0 || (!lines[idx - 1].trim().starts_with("///") && !lines[idx - 1].trim().starts_with("//!") && !lines[idx - 1].trim().starts_with("/*")) {
+                if !fn_name.starts_with("test_") && !fn_name.starts_with("set_") && !fn_name.starts_with("get_")
+                    && (idx == 0 || (!lines[idx - 1].trim().starts_with("///") && !lines[idx - 1].trim().starts_with("//!") && !lines[idx - 1].trim().starts_with("/*"))) {
                         issues.push(Issue::new(
                             "S230",
                             format!("Public function '{}' should have documentation comment", fn_name),
@@ -6036,7 +5454,6 @@ declare_rule! {
                             idx + 1,
                         ));
                     }
-                }
             }
         }
         issues
@@ -6393,8 +5810,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Box::pin\s*\(\s*(\w+)\s*\)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(var) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(var) = cap.get(1) {
                     let var_name = var.as_str();
                     if !var_name.contains("::") && !var_name.contains("new(") {
                         issues.push(Issue::new(
@@ -6407,7 +5824,6 @@ declare_rule! {
                         ).with_remediation(Remediation::moderate("Pin data on the heap with Box::pin(Box::new(...))")));
                     }
                 }
-            }
         }
         issues
     }
@@ -6674,8 +6090,8 @@ declare_rule! {
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
             // Check for basic pattern structure
-            if trimmed.starts_with("if let Ok(") && trimmed.contains("} else { None }") {
-                if let Some(start) = trimmed.find("Ok(") {
+            if trimmed.starts_with("if let Ok(") && trimmed.contains("} else { None }")
+                && let Some(start) = trimmed.find("Ok(") {
                     let after_ok = &trimmed[start + 3..];
                     if let Some(end) = after_ok.find(')') {
                         let var_name = after_ok[..end].trim();
@@ -6698,7 +6114,6 @@ declare_rule! {
                         }
                     }
                 }
-            }
         }
         issues
     }
@@ -6888,8 +6303,8 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("cookie") || line.contains("Cookie") {
-                if !line.contains("HttpOnly") && !line.contains("httpOnly") {
+            if (line.contains("cookie") || line.contains("Cookie"))
+                && !line.contains("HttpOnly") && !line.contains("httpOnly") {
                     issues.push(Issue::new(
                         "JS_S3330",
                         "Cookie without HttpOnly flag - vulnerable to XSS attacks",
@@ -6901,7 +6316,6 @@ declare_rule! {
                         "Set the HttpOnly flag on cookies to prevent JavaScript access"
                     )));
                 }
-            }
         }
         issues
     }
@@ -7386,8 +6800,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"["']http://[^"']+["']"#).unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(m) = re.find(line) {
-                if !line.contains("localhost") && !line.contains("127.0.0.1") {
+            if let Some(m) = re.find(line)
+                && !line.contains("localhost") && !line.contains("127.0.0.1") {
                     issues.push(Issue::new(
                         "JS_S5730",
                         format!("Mixed content: HTTP URL {} on HTTPS page", m.as_str()),
@@ -7399,7 +6813,6 @@ declare_rule! {
                         "Replace HTTP URLs with HTTPS to prevent mixed content issues"
                     )));
                 }
-            }
         }
         issues
     }
@@ -7513,8 +6926,8 @@ declare_rule! {
         for (idx, line) in ctx.source.lines().enumerate() {
             if line.contains("new RegExp") || line.contains("RegExp(") || line.contains("/^") || line.contains("/.*/") {
                 for pattern in &redos_patterns {
-                    if let Ok(re) = regex::Regex::new(pattern) {
-                        if re.is_match(line) {
+                    if let Ok(re) = regex::Regex::new(pattern)
+                        && re.is_match(line) {
                             issues.push(Issue::new(
                                 "JS_S5852",
                                 "Potential ReDoS vulnerability - nested quantifiers can cause catastrophic backtracking",
@@ -7527,7 +6940,6 @@ declare_rule! {
                             )));
                             break;
                         }
-                    }
                 }
             }
         }
@@ -7618,8 +7030,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?:const|let|var)\s+([A-Z][a-zA-Z0-9_]*|[a-z]+[A-Z])").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     issues.push(Issue::new(
                         "JS_S117",
                         format!("Variable '{}' does not follow camelCase convention", name.as_str()),
@@ -7629,7 +7041,6 @@ declare_rule! {
                         idx + 1,
                     ));
                 }
-            }
         }
         issues
     }
@@ -7650,8 +7061,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"function\s+([A-Z][a-zA-Z0-9_]*|[a-z]+[A-Z])\s*\(").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     issues.push(Issue::new(
                         "JS_S118",
                         format!("Function '{}' does not follow camelCase convention", name.as_str()),
@@ -7661,7 +7072,6 @@ declare_rule! {
                         idx + 1,
                     ));
                 }
-            }
         }
         issues
     }
@@ -7682,8 +7092,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"class\s+([a-z][a-z0-9_]*)\b").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     issues.push(Issue::new(
                         "JS_S119",
                         format!("Class '{}' should use PascalCase", name.as_str()),
@@ -7693,7 +7103,6 @@ declare_rule! {
                         idx + 1,
                     ));
                 }
-            }
         }
         issues
     }
@@ -7908,8 +7317,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"parseInt\s*\(\s*[^,)]+\s*\)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) && !line.contains("parseInt(") || (re.is_match(line) && !line.contains(",") && !line.contains("10")) {
-                if let Some(cap) = re.captures(line) {
+            if (re.is_match(line) && !line.contains("parseInt(") || (re.is_match(line) && !line.contains(",") && !line.contains("10")))
+                && let Some(cap) = re.captures(line) {
                     let full_match = cap.get(0).unwrap().as_str();
                     if !full_match.contains(",") {
                         issues.push(Issue::new(
@@ -7924,7 +7333,6 @@ declare_rule! {
                         )));
                     }
                 }
-            }
         }
         issues
     }
@@ -8350,14 +7758,14 @@ declare_rule! {
         for idx in 0..lines.len() {
             let line = lines[idx].trim();
             // Look for else if pattern
-            if line.starts_with("else if (") {
-                if let Some(cond_end) = line.find(") {") {
+            if line.starts_with("else if (")
+                && let Some(cond_end) = line.find(") {") {
                     let condition = &line[9..cond_end]; // Skip "else if ("
                     // Look back for the matching if statement
                     if idx > 0 {
                         let prev_line = lines[idx - 1].trim();
-                        if prev_line.starts_with("if (") {
-                            if let Some(prev_cond_end) = prev_line.find(") {") {
+                        if prev_line.starts_with("if (")
+                            && let Some(prev_cond_end) = prev_line.find(") {") {
                                 let prev_condition = &prev_line[4..prev_cond_end]; // Skip "if ("
                                 if condition == prev_condition {
                                     issues.push(Issue::new(
@@ -8372,10 +7780,8 @@ declare_rule! {
                                     )));
                                 }
                             }
-                        }
                     }
                 }
-            }
         }
         issues
     }
@@ -8532,8 +7938,8 @@ declare_rule! {
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
             // Look for patterns like: x = x; where x is the same identifier on both sides
-            if let Some(eq_pos) = trimmed.find('=') {
-                if eq_pos > 0 {
+            if let Some(eq_pos) = trimmed.find('=')
+                && eq_pos > 0 {
                     let lhs = trimmed[..eq_pos].trim();
                     let rhs = trimmed[eq_pos + 1..].trim().trim_end_matches(';').trim();
                     if lhs == rhs && !lhs.is_empty() && !rhs.is_empty() {
@@ -8552,7 +7958,6 @@ declare_rule! {
                         }
                     }
                 }
-            }
         }
         issues
     }
@@ -8778,8 +8183,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"delete\s+(\w+)\s*;").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     issues.push(Issue::new(
                         "JS_S150",
                         format!("delete on variable '{}' has no effect - use undefined or null", name.as_str()),
@@ -8791,7 +8196,6 @@ declare_rule! {
                         "Assign undefined or null instead of using delete on variables"
                     )));
                 }
-            }
         }
         issues
     }
@@ -9141,12 +8545,11 @@ declare_rule! {
                     if l.contains("}") { brace_count -= l.matches("}").count() as isize; }
                     if found_open {
                         for cap in re.captures_iter(l) {
-                            if let Some(name) = cap.get(1) {
-                                if !name.as_str().contains("_") && name.as_str().chars().next().map(|c| c.is_lowercase()).unwrap_or(false) {
+                            if let Some(name) = cap.get(1)
+                                && !name.as_str().contains("_") && name.as_str().chars().next().map(|c| c.is_lowercase()).unwrap_or(false) {
                                     local_vars.insert(name.as_str().to_string());
                                     var_count += 1;
                                 }
-                            }
                         }
                     }
                     if brace_count <= 0 && found_open { break; }
@@ -9351,8 +8754,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"function\s+\w+\s*\(([^)]+)\)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(params) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(params) = cap.get(1) {
                     let param_str = params.as_str();
                     let context: String = ctx.source.lines().skip(idx).take(30).collect::<Vec<_>>().join("\n");
                     for param in param_str.split(',') {
@@ -9369,7 +8772,6 @@ declare_rule! {
                         }
                     }
                 }
-            }
         }
         issues
     }
@@ -9391,8 +8793,8 @@ declare_rule! {
         let re = regex::Regex::new(r"var\s+(\w+)\s*=").unwrap();
         let mut last_var = std::collections::HashMap::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     let n = name.as_str();
                     if let Some(&first_line) = last_var.get(n) {
                         issues.push(Issue::new(
@@ -9406,7 +8808,6 @@ declare_rule! {
                     }
                     last_var.insert(n, idx + 1);
                 }
-            }
         }
         issues
     }
@@ -9473,8 +8874,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\{([^}]+)\}").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(props) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(props) = cap.get(1) {
                     let prop_re = regex::Regex::new(r"(\w+)\s*:").unwrap();
                     let keys: Vec<_> = prop_re.captures_iter(props.as_str()).filter_map(|c| c.get(1).map(|m| m.as_str().to_string())).collect();
                     let sorted = {
@@ -9493,7 +8894,6 @@ declare_rule! {
                         ).with_remediation(Remediation::quick("Sort object keys alphabetically for consistency")));
                     }
                 }
-            }
         }
         issues
     }
@@ -9820,8 +9220,8 @@ declare_rule! {
             if trimmed.starts_with("//") || trimmed.starts_with("*") {
                 continue;
             }
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     let var_name = name.as_str();
                     let remaining: String = lines.iter().skip(idx + 1).take(50).cloned().collect::<Vec<_>>().join("\n");
                     if !remaining.contains(&format!("{} =", var_name)) && !remaining.contains(&format!("{}++", var_name)) && !remaining.contains(&format!("++{}", var_name)) {
@@ -9835,7 +9235,6 @@ declare_rule! {
                         ).with_remediation(Remediation::quick("Replace let with const")));
                     }
                 }
-            }
         }
         issues
     }
@@ -10111,8 +9510,8 @@ declare_rule! {
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
             // Look for { var: var } pattern
-            if let Some(start) = trimmed.find('{') {
-                if let Some(end) = trimmed.rfind('}') {
+            if let Some(start) = trimmed.find('{')
+                && let Some(end) = trimmed.rfind('}') {
                     let content = &trimmed[start + 1..end];
                     // Look for pattern: identifier: identifier
                     if let Some(colon_pos) = content.find(':') {
@@ -10130,7 +9529,6 @@ declare_rule! {
                         }
                     }
                 }
-            }
         }
         issues
     }
@@ -10535,8 +9933,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"const\s+\[(\w+),\s*set(\w+)\]\s*=\s*useState").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let (Some(state_name), Some(setter_name)) = (cap.get(1), cap.get(2)) {
+            if let Some(cap) = re.captures(line)
+                && let (Some(state_name), Some(setter_name)) = (cap.get(1), cap.get(2)) {
                     let setter = format!("set{}", state_name.as_str());
                     let remaining: String = ctx.source.lines().skip(idx + 1).take(50).collect::<Vec<_>>().join("\n");
                     if !remaining.contains(&setter) {
@@ -10550,7 +9948,6 @@ declare_rule! {
                         ).with_remediation(Remediation::quick("Use the setter or remove the unused state")));
                     }
                 }
-            }
         }
         issues
     }
@@ -10670,8 +10067,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"const\s+\[(\w+),").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     let remaining: String = ctx.source.lines().skip(idx + 1).take(30).collect::<Vec<_>>().join("\n");
                     if !remaining.contains(&format!(" {} ", name.as_str())) && !remaining.contains(&format!("({}", name.as_str())) {
                         issues.push(Issue::new(
@@ -10684,7 +10081,6 @@ declare_rule! {
                         ).with_remediation(Remediation::quick("Remove unused state variable or use it")));
                     }
                 }
-            }
         }
         issues
     }
@@ -11060,8 +10456,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"useContext\s*\(\s*(\w+)\s*\)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     let context: String = ctx.source.lines().skip(idx.saturating_sub(5)).take(10).collect::<Vec<_>>().join("\n");
                     if context.contains("useState") || context.contains("useReducer") {
                         issues.push(Issue::new(
@@ -11074,7 +10470,6 @@ declare_rule! {
                         ).with_remediation(Remediation::moderate("Split context or use useMemo to stabilize context value")));
                     }
                 }
-            }
         }
         issues
     }
@@ -11335,7 +10730,7 @@ declare_rule! {
                 let after_as = trimmed[as_pos + 4..].trim();
                 // Check if the part before " as " contains a type annotation
                 if let Some(colon_pos) = before_as.find(':') {
-                    let declared_type = before_as[colon_pos + 1..].trim().split_whitespace().next().unwrap_or("");
+                    let declared_type = before_as[colon_pos + 1..].split_whitespace().next().unwrap_or("");
                     let asserted_type = after_as.split_whitespace().next().unwrap_or("");
                     if declared_type == asserted_type && !declared_type.is_empty() {
                         issues.push(Issue::new("JS_S185", "Unnecessary type assertion - type already known", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Remove the unnecessary 'as Type' assertion")));
@@ -12120,14 +11515,13 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"function\s+\w+\s*\(\s*\{([^}]+)\}\s*\)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(props) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(props) = cap.get(1) {
                     let prop_count = props.as_str().split(',').filter(|p| !p.trim().is_empty()).count();
                     if prop_count > self.max_props {
                         issues.push(Issue::new("JS_RX40", format!("Component has {} props exceeding threshold of {}", prop_count, self.max_props), Severity::Major, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::moderate("Group props into objects or split into smaller components")));
                     }
                 }
-            }
         }
         issues
     }
@@ -13260,10 +12654,10 @@ declare_rule! {
         for (idx, line) in ctx.source.lines().enumerate() {
             if let Some(cap) = re.find(line) {
                 let hsts = cap.as_str();
-                if let Some(max_age_match) = regex::Regex::new(r"max-age\s*=\s*(\d+)").unwrap().find(hsts) {
-                    if let Some(val) = max_age_match.as_str().split('=').nth(1) {
-                        if let Ok(val_int) = val.parse::<i64>() {
-                            if val_int < 31536000 {
+                if let Some(max_age_match) = regex::Regex::new(r"max-age\s*=\s*(\d+)").unwrap().find(hsts)
+                    && let Some(val) = max_age_match.as_str().split('=').nth(1)
+                        && let Ok(val_int) = val.parse::<i64>()
+                            && val_int < 31536000 {
                                 issues.push(Issue::new(
                                     "JS_SEC4",
                                     format!("HSTS max-age is {} seconds (minimum: 31536000)", val_int),
@@ -13273,9 +12667,6 @@ declare_rule! {
                                     idx + 1,
                                 ).with_remediation(Remediation::moderate("Set max-age to at least 31536000 (1 year)")));
                             }
-                        }
-                    }
-                }
             }
         }
         issues
@@ -13655,11 +13046,10 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if (line.contains("executeQuery") || line.contains("executeUpdate") || line.contains("execute(")) && (line.contains("+") || line.contains("String.format") || line.contains("concat(")) {
-                if !line.contains("PreparedStatement") && !line.contains("?") {
+            if (line.contains("executeQuery") || line.contains("executeUpdate") || line.contains("execute(")) && (line.contains("+") || line.contains("String.format") || line.contains("concat("))
+                && !line.contains("PreparedStatement") && !line.contains("?") {
                     issues.push(Issue::new("JAVA_S2077", "SQL query built with string concatenation", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx + 1));
                 }
-            }
         }
         issues
     }
@@ -13777,11 +13167,10 @@ declare_rule! {
             if re.is_match(line) && (line.contains("Serializable") || line.contains("serialVersionUID")) {
                 in_serializable = true;
             }
-            if in_serializable && (line.contains("ArrayList") || line.contains("HashMap") || line.contains("HashSet") || line.contains("Date") || line.contains("SimpleDateFormat")) {
-                if !line.contains("final") && !line.contains("volatile") {
+            if in_serializable && (line.contains("ArrayList") || line.contains("HashMap") || line.contains("HashSet") || line.contains("Date") || line.contains("SimpleDateFormat"))
+                && !line.contains("final") && !line.contains("volatile") {
                     issues.push(Issue::new("JAVA_S2384", "Mutable member in serializable class", Severity::Major, Category::Bug, ctx.file_path, idx + 1));
                 }
-            }
             if in_serializable && line.trim() == "}" && !line.contains("{") {
                 in_serializable = false;
             }
@@ -13861,14 +13250,13 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"synchronized\s*\(\s*\w+\s*\)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(field) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(field) = cap.get(1) {
                     let field_name = field.as_str();
                     if !field_name.chars().all(|c| c.is_uppercase()) && !field_name.contains("this") {
                         issues.push(Issue::new("JAVA_S2445", "Synchronizing on non-final field", Severity::Major, Category::Bug, ctx.file_path, idx + 1));
                     }
                 }
-            }
         }
         issues
     }
@@ -13914,14 +13302,13 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(public|private|protected)?\s*boolean\s+(\w+)\s*\(").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(2) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(2) {
                     let method_name = name.as_str();
                     if !method_name.starts_with("is") && !method_name.starts_with("has") && !method_name.starts_with("can") && !method_name.starts_with("should") {
                         issues.push(Issue::new("JAVA_S2447", format!("Boolean method '{}' should start with is/has/can/should", method_name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                     }
                 }
-            }
         }
         issues
     }
@@ -14040,11 +13427,10 @@ declare_rule! {
         let dangerous_patterns = [r".*", r".*.*", r"(.+)+", r"(.+)+.*", r"(\[.*\])+\)"];
         for (idx, line) in ctx.source.lines().enumerate() {
             for pattern in &dangerous_patterns {
-                if let Ok(re) = regex::Regex::new(pattern) {
-                    if re.is_match(line) && line.contains("Pattern") && !line.contains("//") {
+                if let Ok(re) = regex::Regex::new(pattern)
+                    && re.is_match(line) && line.contains("Pattern") && !line.contains("//") {
                         issues.push(Issue::new("JAVA_S2639", "Catastrophic backtracking regex pattern", Severity::Major, Category::Bug, ctx.file_path, idx + 1));
                     }
-                }
             }
         }
         issues
@@ -14297,13 +13683,11 @@ declare_rule! {
         let re = regex::Regex::new(r"(private|protected|public)?\s+\w+\s+\w+\s*[=;]").unwrap();
         let mut fields: Vec<String> = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) && !line.contains("(") && !line.contains("{") {
-                if let Some(cap) = re.captures(line) {
-                    if let Some(name) = cap.get(2) {
+            if re.is_match(line) && !line.contains("(") && !line.contains("{")
+                && let Some(cap) = re.captures(line)
+                    && let Some(name) = cap.get(2) {
                         fields.push(name.as_str().to_string());
                     }
-                }
-            }
             for field in &fields {
                 let local_re = regex::Regex::new(&format!(r"this\.{}\s*=", field)).unwrap();
                 if local_re.is_match(line) {
@@ -14330,14 +13714,13 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"interface\s+(\w+)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     let interface_name = name.as_str();
                     if !interface_name.starts_with("I") && !interface_name.starts_with("Abstract") {
                         issues.push(Issue::new("JAVA_S114", format!("Interface '{}' should start with 'I'", interface_name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                     }
                 }
-            }
         }
         issues
     }
@@ -14363,14 +13746,13 @@ declare_rule! {
             if line.contains("final") {
                 continue;
             }
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(2) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(2) {
                     let field_name = name.as_str();
                     if field_name.contains('_') || (field_name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) && !field_name.starts_with("m_")) {
                         issues.push(Issue::new("JAVA_S116", format!("Field '{}' should be camelCase", field_name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                     }
                 }
-            }
         }
         issues
     }
@@ -14391,14 +13773,13 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\b(int|String|boolean|double|float|long|char|byte|short|List|Map|Set|Object)\s+([A-Z][a-zA-Z0-9_]*)\s*[=;]").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(2) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(2) {
                     let var_name = name.as_str();
                     if var_name.contains('_') {
                         issues.push(Issue::new("JAVA_S117", format!("Local variable '{}' should be camelCase", var_name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                     }
                 }
-            }
         }
         issues
     }
@@ -14419,14 +13800,13 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"abstract\s+class\s+(\w+)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     let class_name = name.as_str();
                     if !class_name.starts_with("Abstract") {
                         issues.push(Issue::new("JAVA_S118", format!("Abstract class '{}' should start with 'Abstract'", class_name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                     }
                 }
-            }
         }
         issues
     }
@@ -14447,14 +13827,13 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"<(\w\w+)>").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     let type_param = name.as_str();
                     if type_param.len() > 1 {
                         issues.push(Issue::new("JAVA_S119", format!("Type parameter '{}' should be a single letter", type_param), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                     }
                 }
-            }
         }
         issues
     }
@@ -14475,14 +13854,13 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"package\s+([a-z][a-zA-Z0-9_]*(?:\.[a-z][a-zA-Z0-9_]*)*)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     let pkg_name = name.as_str();
                     if pkg_name.contains('A') || pkg_name.contains('B') || pkg_name.contains('C') || pkg_name.contains('D') || pkg_name.contains('E') || pkg_name.contains('F') || pkg_name.contains('G') || pkg_name.contains('H') || pkg_name.contains('I') || pkg_name.contains('J') || pkg_name.contains('K') || pkg_name.contains('L') || pkg_name.contains('M') || pkg_name.contains('N') || pkg_name.contains('O') || pkg_name.contains('P') || pkg_name.contains('Q') || pkg_name.contains('R') || pkg_name.contains('S') || pkg_name.contains('T') || pkg_name.contains('U') || pkg_name.contains('V') || pkg_name.contains('W') || pkg_name.contains('X') || pkg_name.contains('Y') || pkg_name.contains('Z') {
                         issues.push(Issue::new("JAVA_S120", format!("Package '{}' should be lowercase", pkg_name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                     }
                 }
-            }
         }
         issues
     }
@@ -14601,14 +13979,13 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(public|private|protected)?\s+\w+\s+\w+\s*\(([^)]*)\)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(params) = cap.get(2) {
+            if let Some(cap) = re.captures(line)
+                && let Some(params) = cap.get(2) {
                     let param_count = params.as_str().split(',').filter(|s| !s.trim().is_empty()).count();
                     if param_count > 7 {
                         issues.push(Issue::new("JAVA_S147", format!("Method has {} parameters (max 7)", param_count), Severity::Major, Category::CodeSmell, ctx.file_path, idx + 1));
                     }
                 }
-            }
         }
         issues
     }
@@ -14733,14 +14110,13 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\b(int|String|boolean|double|float|long|char|byte|short|List|Map|Set|Object)\s+(\w+)\s*=\s*[^;]+;").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(var_name) = cap.get(2) {
+            if let Some(cap) = re.captures(line)
+                && let Some(var_name) = cap.get(2) {
                     let remaining: String = ctx.source.lines().skip(idx + 1).take(50).collect::<Vec<_>>().join("\n");
                     if !remaining.contains(&format!("{} ", var_name.as_str())) && !remaining.contains(&format!("{}(", var_name.as_str())) {
                         issues.push(Issue::new("JAVA_S185", format!("Variable '{}' is assigned but never used", var_name.as_str()), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                     }
                 }
-            }
         }
         issues
     }
@@ -14784,15 +14160,14 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"if\s*\([^)]+\)\s*\{([^}]+)\}\s*else\s*\{([^}]+)\}").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let (Some(if_body), Some(else_body)) = (cap.get(1), cap.get(2)) {
+            if let Some(cap) = re.captures(line)
+                && let (Some(if_body), Some(else_body)) = (cap.get(1), cap.get(2)) {
                     let if_text = if_body.as_str().trim();
                     let else_text = else_body.as_str().trim();
                     if !if_text.is_empty() && if_text == else_text {
                         issues.push(Issue::new("JAVA_S187", "Duplicate branches in if/else", Severity::Major, Category::Bug, ctx.file_path, idx + 1));
                     }
                 }
-            }
         }
         issues
     }
@@ -14860,11 +14235,10 @@ declare_rule! {
         let re = regex::Regex::new(r"private\s+\w+\s+(\w+)\s*\([^)]*\)").unwrap();
         let mut private_methods: Vec<String> = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     private_methods.push(name.as_str().to_string());
                 }
-            }
         }
         let source = ctx.source.to_string();
         for method in private_methods {
@@ -14942,11 +14316,10 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(public|private|protected)?\s+\w+\s+([a-z]+[A-Z]\w*)\s*\(").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(2) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(2) {
                     issues.push(Issue::new("JAVA_S100", format!("Method '{}' should be camelCase", name.as_str()), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
-            }
         }
         issues
     }
@@ -14967,11 +14340,10 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(class|interface|enum)\s+([a-z]\w*)\b").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(2) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(2) {
                     issues.push(Issue::new("JAVA_S101", format!("Class '{}' should be PascalCase", name.as_str()), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
-            }
         }
         issues
     }
@@ -15127,7 +14499,7 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(private|public|protected)?\s+\w+\s+\w+\s*;").unwrap();
-        let field_count = re.find_iter(&ctx.source).count();
+        let field_count = re.find_iter(ctx.source).count();
         if field_count > self.max_fields {
             issues.push(Issue::new("JAVA_S110", format!("Class has {} fields (max {})", field_count, self.max_fields), Severity::Minor, Category::CodeSmell, ctx.file_path, 1));
         }
@@ -15206,14 +14578,13 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"static\s+final\s+\w+\s+([a-z][a-zA-Z0-9_]*)\s*=").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(name) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
                     let n = name.as_str();
                     if n != n.to_uppercase() {
                         issues.push(Issue::new("JAVA_S115", format!("Constant '{}' should be UPPER_CASE", n), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                     }
                 }
-            }
         }
         issues
     }
@@ -15253,8 +14624,8 @@ declare_rule! {
     language: "java"
     params: {}
     check: => {
-        let issues = Vec::new();
-        issues
+        
+        Vec::new()
     }
 }
 
@@ -15398,7 +14769,7 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(public|private|protected)?\s+\w+\s+\w+\s*\([^)]*\)\s*\{").unwrap();
-        let method_count = re.find_iter(&ctx.source).count();
+        let method_count = re.find_iter(ctx.source).count();
         if method_count > self.max_methods {
             issues.push(Issue::new("JAVA_S130", format!("Class has {} methods (max {})", method_count, self.max_methods), Severity::Minor, Category::CodeSmell, ctx.file_path, 1));
         }
@@ -15439,8 +14810,8 @@ declare_rule! {
     language: "java"
     params: {}
     check: => {
-        let issues = Vec::new();
-        issues
+        
+        Vec::new()
     }
 }
 
@@ -15484,8 +14855,8 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let has_equals = regex::Regex::new(r"public\s+boolean\s+equals\s*\(\s*Object\s+").unwrap().is_match(&ctx.source);
-        let has_hashcode = regex::Regex::new(r"public\s+int\s+hashCode\s*\(\s*\)").unwrap().is_match(&ctx.source);
+        let has_equals = regex::Regex::new(r"public\s+boolean\s+equals\s*\(\s*Object\s+").unwrap().is_match(ctx.source);
+        let has_hashcode = regex::Regex::new(r"public\s+int\s+hashCode\s*\(\s*\)").unwrap().is_match(ctx.source);
         if has_equals && !has_hashcode {
             issues.push(Issue::new("JAVA_S136", "equals() is overridden but hashCode() is not", Severity::Major, Category::CodeSmell, ctx.file_path, 1));
         }
@@ -15904,8 +15275,8 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let has_equals = regex::Regex::new(r"public\s+boolean\s+equals\s*\(\s*Object\s+").unwrap().is_match(&ctx.source);
-        let has_compare = regex::Regex::new(r"public\s+int\s+compareTo\s*\(\s*\w+\s+").unwrap().is_match(&ctx.source);
+        let has_equals = regex::Regex::new(r"public\s+boolean\s+equals\s*\(\s*Object\s+").unwrap().is_match(ctx.source);
+        let has_compare = regex::Regex::new(r"public\s+int\s+compareTo\s*\(\s*\w+\s+").unwrap().is_match(ctx.source);
         if has_equals && has_compare {
             issues.push(Issue::new("JAVA_S2154", "compareTo() should return 0 for objects that equals() considers equal", Severity::Major, Category::CodeSmell, ctx.file_path, 1));
         }
@@ -16039,14 +15410,13 @@ declare_rule! {
         let re = regex::Regex::new(r"(public\s+)?\w+\s+(toString|equals|hashCode|getMessage|getLocalizedMessage)\s*\([^)]*\)").unwrap();
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
-            if re.is_match(line) {
-                if idx == 0 || !lines[idx - 1].contains("@Override") {
+            if re.is_match(line)
+                && (idx == 0 || !lines[idx - 1].contains("@Override")) {
                     let next_lines: String = lines.iter().skip(idx).take(5).cloned().collect::<Vec<_>>().join("\n");
                     if !next_lines.contains("@Override") {
                         issues.push(Issue::new("JAVA_S1161", "Method overrides inherited method but lacks @Override annotation", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Add @Override annotation before the method")));
                     }
                 }
-            }
         }
         issues
     }
@@ -16118,7 +15488,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("catch") {
-                let block: String = lines.iter().skip(idx).take(10).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let block: String = lines.iter().skip(idx).take(10).copied().collect::<Vec<_>>().join("\n");
                 if re.is_match(&block) {
                     issues.push(Issue::new("JAVA_S1164", "printStackTrace() in catch block - use a proper logger", Severity::Major, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Replace with logger.error(\"message\", exception)")));
                 }
@@ -16145,12 +15515,11 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("catch") {
-                let block: String = lines.iter().skip(idx).take(8).map(|s| *s).collect::<Vec<_>>().join("\n");
-                if block.contains("}") && !block.contains("log") && !block.contains("throw") && !block.contains("return") && !block.contains("e.printStackTrace") && block.matches("catch").count() <= 1 {
-                    if block.contains("} catch") || block.contains("} // end catch") {
+                let block: String = lines.iter().skip(idx).take(8).copied().collect::<Vec<_>>().join("\n");
+                if block.contains("}") && !block.contains("log") && !block.contains("throw") && !block.contains("return") && !block.contains("e.printStackTrace") && block.matches("catch").count() <= 1
+                    && (block.contains("} catch") || block.contains("} // end catch")) {
                         issues.push(Issue::new("JAVA_S1165", "Empty catch block or exception swallowed without logging", Severity::Major, Category::Bug, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Add logging or rethrow the exception")));
                     }
-                }
             }
         }
         issues
@@ -16198,7 +15567,7 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"synchronized\s*\(\s*\w+\s*Class\s*\)").unwrap();
-        let has_volatile = regex::Regex::new(r"volatile\s+").unwrap().is_match(&ctx.source);
+        let has_volatile = regex::Regex::new(r"volatile\s+").unwrap().is_match(ctx.source);
         for (idx, line) in ctx.source.lines().enumerate() {
             if re.is_match(line) && !has_volatile {
                 issues.push(Issue::new("JAVA_S2161", "Double-checked locking pattern without volatile is unsafe", Severity::Critical, Category::Bug, ctx.file_path, idx + 1).with_remediation(Remediation::moderate("Add volatile to the field or use Bill Pugh Singleton idiom")));
@@ -16226,7 +15595,7 @@ declare_rule! {
         for (idx, line) in lines.iter().enumerate() {
             if re.is_match(line) {
                 let var_name = line.split_whitespace().last().unwrap_or("").trim_end_matches(';');
-                let following: String = lines.iter().skip(idx).take(20).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let following: String = lines.iter().skip(idx).take(20).copied().collect::<Vec<_>>().join("\n");
                 if following.contains(&format!("{}\\+\\+", var_name)) || following.contains(&format!("++{}", var_name)) {
                     issues.push(Issue::new("JAVA_S2162", format!("volatile field '{}' incremented with ++ is not atomic", var_name), Severity::Critical, Category::Bug, ctx.file_path, idx + 1).with_remediation(Remediation::moderate("Use AtomicInteger/AtomicLong or synchronize the increment")));
                 }
@@ -16253,8 +15622,8 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if re.is_match(line) {
-                let prev_lines: String = lines.iter().take(idx + 1).rev().take(10).map(|s| *s).collect::<Vec<_>>().join("\n");
-                let next_lines: String = lines.iter().skip(idx).take(5).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let prev_lines: String = lines.iter().take(idx + 1).rev().take(10).copied().collect::<Vec<_>>().join("\n");
+                let next_lines: String = lines.iter().skip(idx).take(5).copied().collect::<Vec<_>>().join("\n");
                 if !prev_lines.contains("while") && !next_lines.contains("while") && !next_lines.contains("if") {
                     issues.push(Issue::new("JAVA_S2163", "wait() should be called inside a while loop to handle spurious wakeups", Severity::Major, Category::Bug, ctx.file_path, idx + 1).with_remediation(Remediation::moderate("Wrap wait() in a while loop checking the condition")));
                 }
@@ -16278,7 +15647,7 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Thread\s+\w+\s*=\s*new\s+Thread").unwrap();
-        let has_start = regex::Regex::new(r"\.start\s*\(").unwrap().is_match(&ctx.source);
+        let has_start = regex::Regex::new(r"\.start\s*\(").unwrap().is_match(ctx.source);
         for (idx, line) in ctx.source.lines().enumerate() {
             if re.is_match(line) && !has_start {
                 issues.push(Issue::new("JAVA_S2164", "Thread created but start() never called - thread will not run", Severity:: Major, Category::Bug, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Call start() on the Thread to begin execution")));
@@ -16373,10 +15742,10 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let has_sync = regex::Regex::new(r"synchronized").unwrap().is_match(&ctx.source);
-        let has_volatile = regex::Regex::new(r"volatile").unwrap().is_match(&ctx.source);
-        let has_enum = regex::Regex::new(r"enum\s+\w+\s*\{").unwrap().is_match(&ctx.source);
-        let has_holder = regex::Regex::new(r"private\s+static\s+class\s+\w*Holder").unwrap().is_match(&ctx.source);
+        let has_sync = regex::Regex::new(r"synchronized").unwrap().is_match(ctx.source);
+        let has_volatile = regex::Regex::new(r"volatile").unwrap().is_match(ctx.source);
+        let has_enum = regex::Regex::new(r"enum\s+\w+\s*\{").unwrap().is_match(ctx.source);
+        let has_holder = regex::Regex::new(r"private\s+static\s+class\s+\w*Holder").unwrap().is_match(ctx.source);
         if !has_sync && !has_volatile && !has_enum && !has_holder {
             let re = regex::Regex::new(r"private\s+static\s+\w+\s+instance\s*=").unwrap();
             for (idx, line) in ctx.source.lines().enumerate() {
@@ -16429,8 +15798,8 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(&ctx.source);
-        let has_suid = regex::Regex::new(r"private\s+static\s+final\s+long\s+serialVersionUID").unwrap().is_match(&ctx.source);
+        let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(ctx.source);
+        let has_suid = regex::Regex::new(r"private\s+static\s+final\s+long\s+serialVersionUID").unwrap().is_match(ctx.source);
         if implements_serial && !has_suid {
             issues.push(Issue::new("JAVA_S2055", "Serializable class should declare serialVersionUID", Severity::Major, Category::Bug, ctx.file_path, 1).with_remediation(Remediation::moderate("Add: private static final long serialVersionUID = 1L;")));
         }
@@ -16451,7 +15820,7 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(&ctx.source);
+        let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(ctx.source);
         if implements_serial {
             let re = regex::Regex::new(r"(private|public|protected)\s+(\w+)\s+(\w+)\s*;").unwrap();
             for (idx, line) in ctx.source.lines().enumerate() {
@@ -16504,9 +15873,9 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let has_singleton = regex::Regex::new(r"private\s+static\s+\w+\s+instance").unwrap().is_match(&ctx.source);
-        let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(&ctx.source);
-        let has_read_resolve = regex::Regex::new(r"protected\s+Object\s+readResolve\s*\(\s*\)").unwrap().is_match(&ctx.source);
+        let has_singleton = regex::Regex::new(r"private\s+static\s+\w+\s+instance").unwrap().is_match(ctx.source);
+        let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(ctx.source);
+        let has_read_resolve = regex::Regex::new(r"protected\s+Object\s+readResolve\s*\(\s*\)").unwrap().is_match(ctx.source);
         if has_singleton && implements_serial && !has_read_resolve {
             issues.push(Issue::new("JAVA_S2060", "Singleton with Serializable should implement readResolve to maintain singleton", Severity::Major, Category::Bug, ctx.file_path, 1).with_remediation(Remediation::moderate("Add readResolve method that returns the singleton instance")));
         }
@@ -16527,8 +15896,8 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let implements_externalizable = regex::Regex::new(r"implements\s+(java\.io\.)?Externalizable").unwrap().is_match(&ctx.source);
-        let has_noarg_constructor = regex::Regex::new(r"public\s+\w+\s*\(\s*\)\s*\{").unwrap().is_match(&ctx.source);
+        let implements_externalizable = regex::Regex::new(r"implements\s+(java\.io\.)?Externalizable").unwrap().is_match(ctx.source);
+        let has_noarg_constructor = regex::Regex::new(r"public\s+\w+\s*\(\s*\)\s*\{").unwrap().is_match(ctx.source);
         if implements_externalizable && !has_noarg_constructor {
             issues.push(Issue::new("JAVA_S2061", "Externalizable class requires a public no-arg constructor", Severity::Major, Category::Bug, ctx.file_path, 1).with_remediation(Remediation::quick("Add a public no-arg constructor to the class")));
         }
@@ -16549,7 +15918,7 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(&ctx.source);
+        let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(ctx.source);
         if implements_serial {
             let re = regex::Regex::new(r"(private|public|protected)\s+(\w+)\s+(\w+)\s*;").unwrap();
             for (idx, line) in ctx.source.lines().enumerate() {
@@ -16580,7 +15949,7 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"class\s+\w+\s+implements\s+Comparator[^\{]*\{").unwrap();
-        let has_ser = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(&ctx.source);
+        let has_ser = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(ctx.source);
         for (idx, line) in ctx.source.lines().enumerate() {
             if re.is_match(line) && !has_ser {
                 issues.push(Issue::new("JAVA_S2063", "Comparator used in TreeSet/TreeMap should implement Serializable", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Add 'implements Serializable' to the comparator")));
@@ -16603,7 +15972,7 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(&ctx.source);
+        let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(ctx.source);
         if implements_serial {
             // Check for non-serializable fields, excluding transient fields
             let re = regex::Regex::new(r"(private|public|protected)\s+(\w+)\s+(\w+)\s*;").unwrap();
@@ -16638,10 +16007,10 @@ declare_rule! {
     params: {}
     check: => {
         let mut issues = Vec::new();
-        let has_serializable = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(&ctx.source);
-        let has_custom_fields = regex::Regex::new(r"transient\s+").unwrap().is_match(&ctx.source);
-        let has_read_obj = regex::Regex::new(r"private\s+void\s+readObject").unwrap().is_match(&ctx.source);
-        let has_write_obj = regex::Regex::new(r"private\s+void\s+writeObject").unwrap().is_match(&ctx.source);
+        let has_serializable = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(ctx.source);
+        let has_custom_fields = regex::Regex::new(r"transient\s+").unwrap().is_match(ctx.source);
+        let has_read_obj = regex::Regex::new(r"private\s+void\s+readObject").unwrap().is_match(ctx.source);
+        let has_write_obj = regex::Regex::new(r"private\s+void\s+writeObject").unwrap().is_match(ctx.source);
         if has_serializable && has_custom_fields && (!has_read_obj || !has_write_obj) {
             issues.push(Issue::new("JAVA_S2066", "Class with transient fields should implement custom readObject/writeObject", Severity::Minor, Category::CodeSmell, ctx.file_path, 1).with_remediation(Remediation::moderate("Add private readObject() and writeObject() methods for custom serialization")));
         }
@@ -16721,7 +16090,7 @@ declare_rule! {
             if let Some(cap) = re.captures(line) {
                 let cast_type = cap.get(1).unwrap().as_str();
                 if !cast_type.contains("<") && !line.contains("@SuppressWarnings") {
-                    let prev_context: String = lines.iter().take(idx + 1).rev().take(3).map(|s| *s).collect::<Vec<_>>().join("\n");
+                    let prev_context: String = lines.iter().take(idx + 1).rev().take(3).copied().collect::<Vec<_>>().join("\n");
                     if prev_context.contains("Object") || prev_context.contains("Collection") || prev_context.contains("Map") {
                         issues.push(Issue::new("JAVA_S2171", format!("Unchecked cast to '{}' - add @SuppressWarnings or use Optional", cast_type), Severity::Major, Category::Bug, ctx.file_path, idx + 1).with_remediation(Remediation::moderate("Use instanceof check before cast or consider redesign")));
                     }
@@ -16748,8 +16117,8 @@ declare_rule! {
         // Detect <T, T> patterns in generics without backreference
         for (idx, line) in ctx.source.lines().enumerate() {
             // Look for <something, something> pattern
-            if let Some(lt_pos) = line.find('<') {
-                if let Some(gt_pos) = line[lt_pos..].find('>') {
+            if let Some(lt_pos) = line.find('<')
+                && let Some(gt_pos) = line[lt_pos..].find('>') {
                     let generics_content = &line[lt_pos + 1..lt_pos + gt_pos];
                     // Split by comma and trim
                     let parts: Vec<&str> = generics_content.split(',').map(|s| s.trim()).collect();
@@ -16757,7 +16126,6 @@ declare_rule! {
                         issues.push(Issue::new("JAVA_S2172", "Type parameter shadows another type parameter with the same name", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Rename one of the type parameters to a different letter")));
                     }
                 }
-            }
         }
         issues
     }
@@ -16802,22 +16170,20 @@ declare_rule! {
         // Detect (Type) Type(...) patterns without backreference
         for (idx, line) in ctx.source.lines().enumerate() {
             // Look for (Type) pattern
-            if let Some(open_paren) = line.find('(') {
-                if open_paren > 0 {
+            if let Some(open_paren) = line.find('(')
+                && open_paren > 0 {
                     let before_paren = line[..open_paren].trim();
                     if let Some(close_paren) = line[open_paren + 1..].find(')') {
                         let type_name = line[open_paren + 1..open_paren + 1 + close_paren].trim();
                         let after_cast = line[open_paren + close_paren + 2..].trim();
                         // Check if the next token is the same type name followed by (
-                        if after_cast.starts_with(&type_name) {
-                            let remainder = &after_cast[type_name.len()..];
+                        if let Some(remainder) = after_cast.strip_prefix(type_name) {
                             if remainder.trim().starts_with('(') {
                                 issues.push(Issue::new("JAVA_S2174", "Cast to the same type is unnecessary", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Remove the redundant cast")));
                             }
                         }
                     }
                 }
-            }
         }
         issues
     }
@@ -16841,13 +16207,12 @@ declare_rule! {
         for (idx, line) in lines.iter().enumerate() {
             if let Some(cap) = re.captures(line) {
                 let target_type = cap.get(1).unwrap().as_str();
-                let prev_context: String = lines.iter().take(idx).rev().take(10).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let prev_context: String = lines.iter().take(idx).rev().take(10).copied().collect::<Vec<_>>().join("\n");
                 let incompatible = ["String", "Integer", "Long", "Double", "Boolean", "Float", "Byte", "Short", "Character"];
-                if incompatible.contains(&target_type) && !prev_context.contains("Object") && !prev_context.contains("Number") && !prev_context.contains("Comparable") {
-                    if prev_context.contains("instanceof") {
+                if incompatible.contains(&target_type) && !prev_context.contains("Object") && !prev_context.contains("Number") && !prev_context.contains("Comparable")
+                    && prev_context.contains("instanceof") {
                         issues.push(Issue::new("JAVA_S2175", format!("instanceof '{}' in a chain with incompatible types", target_type), Severity::Major, Category::Bug, ctx.file_path, idx + 1).with_remediation(Remediation::moderate("Review the instanceof chain for type compatibility")));
                     }
-                }
             }
         }
         issues
@@ -16897,7 +16262,7 @@ declare_rule! {
                 let var_name = cap.get(1).unwrap().as_str();
                 let next_line = lines.get(idx + 1).unwrap_or(&"");
                 if !next_line.contains(var_name) && !next_line.contains("null") && !next_line.contains("if") && !next_line.contains("Optional") {
-                    let next_context: String = lines.iter().skip(idx).take(3).map(|s| *s).collect::<Vec<_>>().join("\n");
+                    let next_context: String = lines.iter().skip(idx).take(3).copied().collect::<Vec<_>>().join("\n");
                     if next_context.contains(var_name) && !next_context.contains("== null") && !next_context.contains("!= null") && !next_context.contains("Optional") {
                         issues.push(Issue::new("JAVA_S2177", format!("Result of get() assigned to '{}' but may be null", var_name), Severity::Major, Category::Bug, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Check if get() returns null or use getOrDefault()")));
                     }
@@ -16976,15 +16341,14 @@ declare_rule! {
         for (idx, line) in lines.iter().enumerate() {
             if let Some(cap) = re.captures(line) {
                 let enum_name = cap.get(1).unwrap().as_str();
-                let enum_body: String = lines.iter().skip(idx).take(30).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let enum_body: String = lines.iter().skip(idx).take(30).copied().collect::<Vec<_>>().join("\n");
                 let constant_re = regex::Regex::new(r"\b([A-Z][a-z]+|[A-Z]{2,})([A-Z][a-z]*|[0-9_]*)*\b").unwrap();
                 for c in constant_re.find_iter(&enum_body) {
                     let const_val = c.as_str();
-                    if const_val.contains('_') || (const_val.chars().next().map(|f| f.is_uppercase()).unwrap_or(false) && const_val.chars().any(|c| c.is_lowercase())) {
-                        if const_val.contains('_') {
+                    if (const_val.contains('_') || (const_val.chars().next().map(|f| f.is_uppercase()).unwrap_or(false) && const_val.chars().any(|c| c.is_lowercase())))
+                        && const_val.contains('_') {
                             issues.push(Issue::new("JAVA_S2102", format!("Enum constant '{}' should be PascalCase, not UPPER_SNAKE_CASE", const_val), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Use PascalCase for enum constants")));
                         }
-                    }
                 }
                 break;
             }
@@ -17010,11 +16374,10 @@ declare_rule! {
         for (idx, line) in ctx.source.lines().enumerate() {
             if let Some(cap) = re.captures(line) {
                 let name = cap.get(1).unwrap().as_str();
-                if name.contains('_') || name.chars().any(|c| c.is_uppercase() && c.is_ascii()) {
-                    if name != name.chars().map(|c| if c == '_' { 'A' } else { c }).collect::<String>().chars().take(1).collect::<String>() {
+                if (name.contains('_') || name.chars().any(|c| c.is_uppercase() && c.is_ascii()))
+                    && name != name.chars().map(|c| if c == '_' { 'A' } else { c }).collect::<String>().chars().take(1).collect::<String>() {
                         issues.push(Issue::new("JAVA_S2104", format!("Annotation '{}' should use PascalCase", name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1).with_remediation(Remediation::quick("Rename annotation to use PascalCase")));
                     }
-                }
             }
         }
         issues
@@ -17252,13 +16615,11 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("class") && line.contains("implements") {
-                if line.contains("execute") || line.contains("process") || line.contains("apply") {
-                    if !line.contains("Strategy") && !line.contains("Handler") {
+            if line.contains("class") && line.contains("implements")
+                && (line.contains("execute") || line.contains("process") || line.contains("apply"))
+                    && !line.contains("Strategy") && !line.contains("Handler") {
                         issues.push(Issue::new("JAVA_D4", "Strategy class should implement Strategy interface", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                     }
-                }
-            }
         }
         issues
     }
@@ -17279,13 +16640,11 @@ declare_rule! {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
-            if line.contains("addListener") || line.contains("removeListener") || line.contains("notifyListener") {
-                if idx + 1 < lines.len() && lines[idx + 1].contains("class") && lines[idx + 1].contains("implements") {
-                    if !lines[idx + 1].ends_with("Listener") && !lines[idx + 1].ends_with("Handler") {
+            if (line.contains("addListener") || line.contains("removeListener") || line.contains("notifyListener"))
+                && idx + 1 < lines.len() && lines[idx + 1].contains("class") && lines[idx + 1].contains("implements")
+                    && !lines[idx + 1].ends_with("Listener") && !lines[idx + 1].ends_with("Handler") {
                         issues.push(Issue::new("JAVA_D5", "Observer class should end with Listener", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                     }
-                }
-            }
         }
         issues
     }
@@ -17305,11 +16664,10 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("extends") && line.contains("Decorator") {
-                if !line.ends_with("Decorator") && !line.ends_with("Wrapper") {
+            if line.contains("extends") && line.contains("Decorator")
+                && !line.ends_with("Decorator") && !line.ends_with("Wrapper") {
                     issues.push(Issue::new("JAVA_D6", "Decorator class should end with Decorator", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
-            }
         }
         issues
     }
@@ -17329,11 +16687,10 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if (line.contains("implements") || line.contains("extends")) && line.contains("Adapter") {
-                if !line.ends_with("Adapter") && !line.ends_with("Wrapper") && !line.ends_with("Handler") {
+            if (line.contains("implements") || line.contains("extends")) && line.contains("Adapter")
+                && !line.ends_with("Adapter") && !line.ends_with("Wrapper") && !line.ends_with("Handler") {
                     issues.push(Issue::new("JAVA_D7", "Adapter class should end with Adapter", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
-            }
         }
         issues
     }
@@ -17377,7 +16734,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("class") && line.contains("Dto") && !line.contains("implements") {
-                let body: String = lines.iter().skip(idx).take(50).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let body: String = lines.iter().skip(idx).take(50).copied().collect::<Vec<_>>().join("\n");
                 if (body.contains("if (") || body.contains("for (") || body.contains("while (")) && !body.contains("validation") {
                     issues.push(Issue::new("JAVA_D9", "DTO contains business logic", Severity::Major, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
@@ -17403,7 +16760,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("class") && line.contains("Service") && !line.contains("implements") {
-                let body: String = lines.iter().skip(idx).take(60).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let body: String = lines.iter().skip(idx).take(60).copied().collect::<Vec<_>>().join("\n");
                 let field_count = body.matches("private").count() + body.matches("protected").count();
                 if field_count > 2 {
                     issues.push(Issue::new("JAVA_D10", "Service class appears stateful", Severity::Major, Category::CodeSmell, ctx.file_path, idx + 1));
@@ -17430,7 +16787,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("class") && line.contains("Repository") && !line.contains("implements") {
-                let body: String = lines.iter().skip(idx).take(50).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let body: String = lines.iter().skip(idx).take(50).copied().collect::<Vec<_>>().join("\n");
                 if body.contains("if (") && body.contains("return") && !body.contains("findBy") && !body.contains("save") {
                     issues.push(Issue::new("JAVA_D11", "Repository contains business logic", Severity::Major, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
@@ -17456,12 +16813,11 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("class") && line.contains("Controller") && !line.contains("implements") {
-                let body: String = lines.iter().skip(idx).take(80).map(|s| *s).collect::<Vec<_>>().join("\n");
-                if body.contains("calculate") || body.contains("compute") || body.contains("process") {
-                    if body.contains("new ") && body.contains("return") {
+                let body: String = lines.iter().skip(idx).take(80).copied().collect::<Vec<_>>().join("\n");
+                if (body.contains("calculate") || body.contains("compute") || body.contains("process"))
+                    && body.contains("new ") && body.contains("return") {
                         issues.push(Issue::new("JAVA_D12", "Controller contains business logic", Severity::Major, Category::CodeSmell, ctx.file_path, idx + 1));
                     }
-                }
             }
         }
         issues
@@ -17488,7 +16844,7 @@ declare_rule! {
                 continue;
             }
             if (line.contains("class") || line.contains("interface")) && (line.contains("Util") || line.contains("Helper") || line.contains("Constants")) {
-                let context: String = lines.iter().skip(idx).take(30).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let context: String = lines.iter().skip(idx).take(30).copied().collect::<Vec<_>>().join("\n");
                 if context.contains("public") && !context.contains("private") && !context.contains("protected") {
                     issues.push(Issue::new("JAVA_D13", "Utility class has public constructor", Severity::Major, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
@@ -17514,12 +16870,11 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("enum ") {
-                let body: String = lines.iter().skip(idx).take(40).map(|s| *s).collect::<Vec<_>>().join("\n");
-                if body.contains("List") || body.contains("Map") || body.contains("Set") || body.contains("Date") {
-                    if !body.contains("final") && !body.contains("Mutable") {
+                let body: String = lines.iter().skip(idx).take(40).copied().collect::<Vec<_>>().join("\n");
+                if (body.contains("List") || body.contains("Map") || body.contains("Set") || body.contains("Date"))
+                    && !body.contains("final") && !body.contains("Mutable") {
                         issues.push(Issue::new("JAVA_D14", "Enum has mutable fields", Severity::Critical, Category::Bug, ctx.file_path, idx + 1));
                     }
-                }
             }
         }
         issues
@@ -17542,7 +16897,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("interface ") {
-                let body: String = lines.iter().skip(idx).take(30).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let body: String = lines.iter().skip(idx).take(30).copied().collect::<Vec<_>>().join("\n");
                 let has_methods = body.contains("void ") || body.contains("String ") || body.contains("int ") || body.contains("boolean ");
                 if !has_methods && (body.contains("public static final") || body.matches("String ").count() > 1) {
                     issues.push(Issue::new("JAVA_D15", "Interface only has constants", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
@@ -17569,7 +16924,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("abstract class") {
-                let body: String = lines.iter().skip(idx).take(50).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let body: String = lines.iter().skip(idx).take(50).copied().collect::<Vec<_>>().join("\n");
                 if !body.contains("abstract void") && !body.contains("abstract int") && !body.contains("abstract String") {
                     issues.push(Issue::new("JAVA_D16", "Abstract class has no abstract methods", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
@@ -17593,11 +16948,10 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("class") && line.contains("Impl") && !line.contains("abstract") {
-                if line.ends_with("Impl") || line.contains("Impl ") {
+            if line.contains("class") && line.contains("Impl") && !line.contains("abstract")
+                && (line.ends_with("Impl") || line.contains("Impl ")) {
                     issues.push(Issue::new("JAVA_D17", "Class uses Impl suffix", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
-            }
         }
         issues
     }
@@ -17619,7 +16973,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("class ") && !line.contains("abstract") {
-                let body: String = lines.iter().skip(idx).take(200).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let body: String = lines.iter().skip(idx).take(200).copied().collect::<Vec<_>>().join("\n");
                 let method_count = body.matches("void ").count() + body.matches("int ").count() + body.matches("String ").count() + body.matches("boolean ").count();
                 if method_count > 50 {
                     issues.push(Issue::new("JAVA_D18", "Class has too many methods", Severity::Critical, Category::CodeSmell, ctx.file_path, idx + 1));
@@ -17647,7 +17001,7 @@ declare_rule! {
         let mut param_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for line in &lines {
             if line.contains("public ") || line.contains("private ") {
-                let params = line.split('(').nth(1).map(|p| p.split(')').next()).flatten().unwrap_or("");
+                let params = line.split('(').nth(1).and_then(|p| p.split(')').next()).unwrap_or("");
                 if params.len() > 5 && params.matches(',').count() >= 2 {
                     *param_counts.entry(params.to_string()).or_insert(0) += 1;
                 }
@@ -17679,7 +17033,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("public ") || line.contains("private ") {
-                let body: String = lines.iter().skip(idx).take(30).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let body: String = lines.iter().skip(idx).take(30).copied().collect::<Vec<_>>().join("\n");
                 let this_refs = body.matches("this.").count();
                 let external_refs = body.matches(".get").count() + body.matches(".set").count() + body.matches(".calculate").count();
                 if external_refs > this_refs * 2 && this_refs < 3 && external_refs > 5 {
@@ -17730,7 +17084,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("class ") && !line.contains("abstract") {
-                let body: String = lines.iter().skip(idx).take(50).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let body: String = lines.iter().skip(idx).take(50).copied().collect::<Vec<_>>().join("\n");
                 let delegation = body.matches("return ").count();
                 let methods = body.matches("void ").count() + body.matches("int ").count() + body.matches("String ").count();
                 if delegation == methods && methods > 2 {
@@ -17781,7 +17135,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("extends ") && !line.contains("Exception") && !line.contains("Throwable") {
-                let body: String = lines.iter().skip(idx).take(60).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let body: String = lines.iter().skip(idx).take(60).copied().collect::<Vec<_>>().join("\n");
                 let overrides = body.matches("@Override").count();
                 if overrides == 0 {
                     issues.push(Issue::new("JAVA_D24", "Subclass overrides nothing", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
@@ -17845,7 +17199,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("class ") {
-                let body: String = lines.iter().skip(idx).take(80).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let body: String = lines.iter().skip(idx).take(80).copied().collect::<Vec<_>>().join("\n");
                 let has_getter = body.contains("get") && body.contains("return");
                 let has_setter = body.contains("set") && body.contains("void");
                 let has_other = body.contains("if (") || body.contains("for (") || body.contains("calculate");
@@ -17879,7 +17233,7 @@ declare_rule! {
             if line.contains("private ") && !line.contains("final") {
                 let field_name = line.split_whitespace().last().unwrap_or("").trim_end_matches(';');
                 if !field_name.is_empty() && field_name.len() > 1 {
-                    let body: String = lines.iter().skip(idx).take(100).map(|s| *s).collect::<Vec<_>>().join("\n");
+                    let body: String = lines.iter().skip(idx).take(100).copied().collect::<Vec<_>>().join("\n");
                     let usages = body.matches(&format!("this.{}", field_name)).count();
                     if usages <= 2 && !field_name.contains("temp") && !field_name.contains("cache") {
                         issues.push(Issue::new("JAVA_D27", "Field appears temporary", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
@@ -17907,7 +17261,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("switch (") {
-                let body: String = lines.iter().skip(idx).take(30).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let body: String = lines.iter().skip(idx).take(30).copied().collect::<Vec<_>>().join("\n");
                 let case_count = body.matches("case ").count();
                 if case_count > 4 && !body.contains("enum") && !body.contains("String") {
                     issues.push(Issue::new("JAVA_D28", "Switch with many cases", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
@@ -17934,15 +17288,14 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         let mut suffixes: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
         for (idx, line) in lines.iter().enumerate() {
-            if line.contains("extends ") {
-                if line.contains("A ") || line.contains("B ") || line.contains("Base ") {
+            if line.contains("extends ")
+                && (line.contains("A ") || line.contains("B ") || line.contains("Base ")) {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() >= 2 {
                         let suffix = if parts[1].ends_with("A") { "A" } else if parts[1].ends_with("B") { "B" } else { "Base" };
                         suffixes.entry(suffix.to_string()).or_default().push(idx);
                     }
                 }
-            }
         }
         if suffixes.len() >= 2 && suffixes.values().any(|v| v.len() > 1) {
             issues.push(Issue::new("JAVA_D29", "Parallel inheritance hierarchies detected", Severity::Minor, Category::CodeSmell, ctx.file_path, 1));
@@ -18108,7 +17461,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("== null") || line.contains("!= null") {
-                let next_lines: String = lines.iter().skip(idx).take(5).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let next_lines: String = lines.iter().skip(idx).take(5).copied().collect::<Vec<_>>().join("\n");
                 if next_lines.contains("if") && next_lines.contains("return") && !next_lines.contains("Optional") {
                     issues.push(Issue::new("JAVA_N6", "Null check could use Optional", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
@@ -18181,7 +17534,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("return null") || line.contains("return (null)") {
-                let prev: String = lines.iter().take(idx).rev().take(5).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let prev: String = lines.iter().take(idx).rev().take(5).copied().collect::<Vec<_>>().join("\n");
                 if !prev.contains("@Nullable") && !prev.contains("@CheckForNull") {
                     issues.push(Issue::new("JAVA_N9", "Missing Nullable annotation", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
@@ -18484,7 +17837,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains(".stream()") || line.contains(".parallelStream()") {
-                let context: String = lines.iter().skip(idx).take(15).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let context: String = lines.iter().skip(idx).take(15).copied().collect::<Vec<_>>().join("\n");
                 if context.contains(".add(") || context.contains(".put(") {
                     issues.push(Issue::new("JAVA_L7", "Stream uses stateful lambda", Severity::Major, Category::Bug, ctx.file_path, idx + 1));
                 }
@@ -18691,7 +18044,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("@Test") && (line.contains("void test") || line.contains("void ")) {
-                let body: String = lines.iter().skip(idx).take(30).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let body: String = lines.iter().skip(idx).take(30).copied().collect::<Vec<_>>().join("\n");
                 if !body.contains("assert") && !body.contains("verify") {
                     issues.push(Issue::new("JAVA_T1", "Test without assertions", Severity::Major, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
@@ -18871,7 +18224,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("System.setProperty(") {
-                let next: String = lines.iter().skip(idx).take(30).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let next: String = lines.iter().skip(idx).take(30).copied().collect::<Vec<_>>().join("\n");
                 if !next.contains("clearProperty") && !next.contains("@After") && !next.contains("restore") {
                     issues.push(Issue::new("JAVA_T9", "System.setProperty without cleanup", Severity::Major, Category::Bug, ctx.file_path, idx + 1));
                 }
@@ -18897,7 +18250,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("@Mock") || line.contains("mock(") || line.contains("Mockito.mock(") {
-                let body: String = lines.iter().skip(idx).take(40).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let body: String = lines.iter().skip(idx).take(40).copied().collect::<Vec<_>>().join("\n");
                 if !body.contains("verify(") && !body.contains("thenReturn") && !body.contains("thenThrow") {
                     issues.push(Issue::new("JAVA_T10", "Mock without verification", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
@@ -18923,7 +18276,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("new Date()") && !line.contains("Clock") && !line.contains("Instant") {
-                let prev: String = lines.iter().take(idx).rev().take(5).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let prev: String = lines.iter().take(idx).rev().take(5).copied().collect::<Vec<_>>().join("\n");
                 if prev.contains("@Test") || prev.contains("@Before") {
                     issues.push(Issue::new("JAVA_T11", "new Date() in test", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
@@ -18949,7 +18302,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("new Random()") {
-                let prev: String = lines.iter().take(idx).rev().take(5).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let prev: String = lines.iter().take(idx).rev().take(5).copied().collect::<Vec<_>>().join("\n");
                 if prev.contains("@Test") || prev.contains("@Before") {
                     issues.push(Issue::new("JAVA_T12", "Random in test", Severity::Critical, Category::Bug, ctx.file_path, idx + 1));
                 }
@@ -19019,7 +18372,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("class ") && line.contains("Test") && !line.contains("abstract") {
-                let header: String = lines.iter().take(idx).rev().take(5).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let header: String = lines.iter().take(idx).rev().take(5).copied().collect::<Vec<_>>().join("\n");
                 if !header.contains("@ExtendWith") && !header.contains("@RunWith") && !header.contains("@SpringBootTest") {
                     issues.push(Issue::new("JAVA_T15", "Test class needs annotation", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
@@ -19101,7 +18454,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("new ArrayList()") || line.contains("new ArrayList<") {
-                let next: String = lines.iter().skip(idx).take(20).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let next: String = lines.iter().skip(idx).take(20).copied().collect::<Vec<_>>().join("\n");
                 let add_count = next.matches(".add(").count();
                 if add_count > 5 {
                     issues.push(Issue::new("JAVA_P3", format!("ArrayList with {} adds", add_count), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
@@ -19337,7 +18690,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains("public Object clone()") || line.contains("public clone(") {
-                let header: String = lines.iter().take(idx).take(20).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let header: String = lines.iter().take(idx).take(20).copied().collect::<Vec<_>>().join("\n");
                 if !header.contains("Cloneable") && !header.contains("implements Cloneable") {
                     issues.push(Issue::new("JAVA_P13", "clone without Cloneable", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
@@ -19363,7 +18716,7 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             if line.contains(".iterator()") && !line.contains("for (") {
-                let next: String = lines.iter().skip(idx).take(5).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let next: String = lines.iter().skip(idx).take(5).copied().collect::<Vec<_>>().join("\n");
                 if next.contains(".iterator()") {
                     issues.push(Issue::new("JAVA_P14", "iterator called multiple times", Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
                 }
@@ -19415,11 +18768,10 @@ declare_rule! {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
             let t = line.trim();
-            if (t.contains("password") || t.contains("secret") || t.contains("api_key")) && (t.contains("= \"") || t.contains("= '")) {
-                if !t.contains("getenv") && !t.contains("environ") && !t.contains("os.environ") {
+            if (t.contains("password") || t.contains("secret") || t.contains("api_key")) && (t.contains("= \"") || t.contains("= '"))
+                && !t.contains("getenv") && !t.contains("environ") && !t.contains("os.environ") {
                     issues.push(Issue::new("PY_S2068", "Hardcoded credential detected", Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
                 }
-            }
         }
         issues
     }
@@ -20295,15 +19647,14 @@ declare_rule! {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
             let t = line.trim();
-            if let Some(eq_pos) = t.find("=") {
-                if eq_pos > 0 {
+            if let Some(eq_pos) = t.find("=")
+                && eq_pos > 0 {
                     let lhs = t[..eq_pos].trim();
                     let rhs = t[eq_pos + 1..].trim().trim_end_matches(";").trim();
                     if lhs == rhs && !lhs.is_empty() {
                         issues.push(Issue::new("PY_S1656", "Self-assignment detected", Severity::Major, Category::Bug, ctx.file_path, idx+1));
                     }
                 }
-            }
         }
         issues
     }
@@ -20325,8 +19676,8 @@ declare_rule! {
         let comparison_ops = ["==", "!=", ">=", "<=", ">", "<"];
         for (idx, line) in ctx.source.lines().enumerate() {
             for op in &comparison_ops {
-                if let Some(pos) = line.find(op) {
-                    if pos > 0 {
+                if let Some(pos) = line.find(op)
+                    && pos > 0 {
                         let before = line[..pos].trim();
                         let after = line[pos + op.len()..].trim();
                         if before == after && !before.is_empty() {
@@ -20334,7 +19685,6 @@ declare_rule! {
                             break;
                         }
                     }
-                }
             }
         }
         issues
@@ -20462,11 +19812,10 @@ declare_rule! {
         let re = regex::Regex::new(r"^\s*(\w+)\s*\([^)]*\)\s*$").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
             let t = line.trim();
-            if t.ends_with(";") && !t.starts_with("return") && !t.starts_with("if") && !t.starts_with("for") && !t.starts_with("while") {
-                if (t.contains("get(") || t.contains("find(") || t.contains("index(")) && !t.contains("result") && !t.contains("value") {
+            if t.ends_with(";") && !t.starts_with("return") && !t.starts_with("if") && !t.starts_with("for") && !t.starts_with("while")
+                && (t.contains("get(") || t.contains("find(") || t.contains("index(")) && !t.contains("result") && !t.contains("value") {
                     issues.push(Issue::new("PY_S2201", "Return value ignored", Severity::Major, Category::Bug, ctx.file_path, idx+1));
                 }
-            }
         }
         issues
     }
@@ -20515,8 +19864,8 @@ declare_rule! {
         let ops = ["==", "!=", "+", "-", "*", "/", "//", "%", "**", "and", "or", "<<", ">>"];
         for (idx, line) in ctx.source.lines().enumerate() {
             for op in &ops {
-                if let Some(pos) = line.find(op) {
-                    if pos > 2 && pos < line.len() - 2 {
+                if let Some(pos) = line.find(op)
+                    && pos > 2 && pos < line.len() - 2 {
                         let left = line[..pos].trim();
                         let right = line[pos + op.len()..].trim();
                         if left == right && !left.is_empty() && !left.starts_with("//") && !left.starts_with("#") {
@@ -20524,7 +19873,6 @@ declare_rule! {
                             break;
                         }
                     }
-                }
             }
         }
         issues
@@ -20547,14 +19895,13 @@ declare_rule! {
         let lines: Vec<&str> = ctx.source.lines().collect();
         for (idx, line) in lines.iter().enumerate() {
             let t = line.trim();
-            if t.starts_with("except") || t.starts_with("except:") {
-                if idx + 1 < lines.len() {
+            if (t.starts_with("except") || t.starts_with("except:"))
+                && idx + 1 < lines.len() {
                     let next = lines[idx + 1].trim();
                     if next == "pass" || next == "..." || next.is_empty() {
                         issues.push(Issue::new("PY_S102", "Empty except clause", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
                     }
                 }
-            }
         }
         issues
     }
@@ -20613,11 +19960,10 @@ declare_rule! {
 
         let all_code: String = lines.join("\n");
         for (name, line_num) in imports {
-            if name != "*" && !all_code.matches(&format!(" {} ", name)).collect::<Vec<_>>().is_empty() == false {
-                if !all_code.contains(&format!(".{}{}", name, "(")) && !all_code.contains(&format!("{}()", name)) {
+            if name != "*" && all_code.matches(&format!(" {} ", name)).collect::<Vec<_>>().is_empty()
+                && !all_code.contains(&format!(".{}{}", name, "(")) && !all_code.contains(&format!("{}()", name)) {
                     issues.push(Issue::new("PY_S104", format!("Unused import: {}", name), Severity::Minor, Category::CodeSmell, ctx.file_path, line_num+1));
                 }
-            }
         }
         issues
     }
@@ -20850,22 +20196,18 @@ declare_rule! {
             let t = line.trim();
             // import X as X (redundant alias)
             let re_import = regex::Regex::new(r"import\s+(\w+)\s+as\s+(\w+)").unwrap();
-            if let Some(caps) = re_import.captures(t) {
-                if let (Some(name1), Some(name2)) = (caps.get(1), caps.get(2)) {
-                    if name1.as_str() == name2.as_str() {
+            if let Some(caps) = re_import.captures(t)
+                && let (Some(name1), Some(name2)) = (caps.get(1), caps.get(2))
+                    && name1.as_str() == name2.as_str() {
                         issues.push(Issue::new("PY_S220", format!("Redundant import alias: {}", caps.get(0).unwrap().as_str()), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
                     }
-                }
-            }
             // from X import Y as Y (redundant alias)
             let re_from = regex::Regex::new(r"from\s+\w+\s+import\s+(\w+)\s+as\s+(\w+)").unwrap();
-            if let Some(caps) = re_from.captures(t) {
-                if let (Some(name1), Some(name2)) = (caps.get(1), caps.get(2)) {
-                    if name1.as_str() == name2.as_str() {
+            if let Some(caps) = re_from.captures(t)
+                && let (Some(name1), Some(name2)) = (caps.get(1), caps.get(2))
+                    && name1.as_str() == name2.as_str() {
                         issues.push(Issue::new("PY_S220", format!("Redundant import alias: {}", caps.get(0).unwrap().as_str()), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
                     }
-                }
-            }
         }
         issues
     }
@@ -20919,11 +20261,10 @@ declare_rule! {
             if t.starts_with("def ") || t.starts_with("class ") { continue; }
             if let Some(cap) = re.captures(t) {
                 let name = cap.get(1).unwrap().as_str();
-                if !name.contains("_") && name.chars().all(|c| c.is_uppercase() || c.is_numeric()) == false {
-                    if name.chars().filter(|c| c.is_uppercase()).count() > name.len() / 2 {
+                if !name.contains("_") && !name.chars().all(|c| c.is_uppercase() || c.is_numeric())
+                    && name.chars().filter(|c| c.is_uppercase()).count() > name.len() / 2 {
                         issues.push(Issue::new("PY_S114", format!("Constant '{}' should be UPPER_CASE", name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
                     }
-                }
             }
         }
         issues
@@ -20948,17 +20289,15 @@ declare_rule! {
 
         for (idx, line) in lines.iter().enumerate() {
             let t = line.trim();
-            if t.starts_with("def ") {
-                if let Some(name) = t.split_whitespace().nth(1) {
+            if t.starts_with("def ")
+                && let Some(name) = t.split_whitespace().nth(1) {
                     let clean = name.split('(').next().unwrap_or(name);
                     names.push((clean.to_string(), idx));
                 }
-            }
-            if t.starts_with("class ") {
-                if let Some(name) = t.split_whitespace().nth(1) {
+            if t.starts_with("class ")
+                && let Some(name) = t.split_whitespace().nth(1) {
                     names.push((name.to_string(), idx));
                 }
-            }
         }
 
         for (i, (name1, line1)) in names.iter().enumerate() {
@@ -20994,14 +20333,13 @@ declare_rule! {
 
         for (idx, line) in lines.iter().enumerate() {
             let t = line.trim();
-            if t.starts_with("def ") && !t.contains("-> None") && !t.contains("async def") {
-                if idx + 1 < lines.len() {
+            if t.starts_with("def ") && !t.contains("-> None") && !t.contains("async def")
+                && idx + 1 < lines.len() {
                     let next = lines[idx + 1].trim();
                     if next == "pass" || next == "..." {
                         issues.push(Issue::new("PY_S116", "Empty function body - did you forget to implement?", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
                     }
                 }
-            }
         }
         issues
     }
@@ -21091,14 +20429,13 @@ declare_rule! {
 
         for (idx, line) in lines.iter().enumerate() {
             let t = line.trim();
-            if t.starts_with("class ") {
-                if idx + 1 < lines.len() {
+            if t.starts_with("class ")
+                && idx + 1 < lines.len() {
                     let next = lines[idx + 1].trim();
                     if next == "pass" || next == "..." {
                         issues.push(Issue::new("PY_S119", "Empty class body", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
                     }
                 }
-            }
         }
         issues
     }
@@ -21126,12 +20463,12 @@ declare_rule! {
                 let func_end = idx + 50.min(lines.len() - idx);
                 let func_body: String = lines[idx..func_end].join("\n");
                 let mut complexity = 0;
-                complexity += func_body.matches("if ").count() * 1;
+                complexity += func_body.matches("if ").count();
                 complexity += func_body.matches("elif ").count() * 2;
-                complexity += func_body.matches("for ").count() * 1;
+                complexity += func_body.matches("for ").count();
                 complexity += func_body.matches("while ").count() * 2;
-                complexity += func_body.matches("except ").count() * 1;
-                complexity += func_body.matches(" with ").count() * 1;
+                complexity += func_body.matches("except ").count();
+                complexity += func_body.matches(" with ").count();
                 complexity += func_body.matches(" and ").count() + func_body.matches(" or ").count();
                 if complexity > max_complexity {
                     issues.push(Issue::new("PY_S120", format!("Cognitive complexity is {} (max {})", complexity, max_complexity), Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
@@ -21222,7 +20559,7 @@ declare_rule! {
             if (t.contains("return -1") || t.contains("return None") || t.contains("return false") || t.contains("return False")) &&
                !t.contains("raise ") && !line.contains("#") {
                 let all_lines: Vec<&str> = ctx.source.lines().collect();
-                let prev_lines: String = all_lines[..idx].iter().rev().take(10).map(|s| *s).collect::<Vec<_>>().join("\n");
+                let prev_lines: String = all_lines[..idx].iter().rev().take(10).copied().collect::<Vec<_>>().join("\n");
                 if prev_lines.contains("try") || prev_lines.contains("except") {
                     issues.push(Issue::new("PY_S203", "Should raise exception instead of returning error value", Severity::Major, Category::Bug, ctx.file_path, idx+1));
                 }
@@ -21249,14 +20586,13 @@ declare_rule! {
 
         for (idx, line) in lines.iter().enumerate() {
             let t = line.trim();
-            if t.starts_with("except") || t.starts_with("except:") {
-                if idx + 1 < lines.len() {
+            if (t.starts_with("except") || t.starts_with("except:"))
+                && idx + 1 < lines.len() {
                     let next = lines[idx + 1].trim();
                     if next == "pass" || next == "..." {
                         issues.push(Issue::new("PY_S204", "Exception silently swallowed", Severity::Major, Category::Bug, ctx.file_path, idx+1));
                     }
                 }
-            }
         }
         issues
     }
@@ -21359,14 +20695,13 @@ declare_rule! {
 
         for (idx, line) in lines.iter().enumerate() {
             let t = line.trim();
-            if t.starts_with("except") {
-                if idx + 1 < lines.len() {
+            if t.starts_with("except")
+                && idx + 1 < lines.len() {
                     let next = lines[idx + 1].trim();
                     if next == "pass" {
                         issues.push(Issue::new("PY_S208", "Empty except with pass - should at least log", Severity::Minor, Category:: CodeSmell, ctx.file_path, idx+1));
                     }
                 }
-            }
         }
         issues
     }
@@ -21387,11 +20722,10 @@ declare_rule! {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
             let t = line.trim();
-            if t.starts_with("raise ") && (t.contains("err") || t.contains("e.") || t.contains("ex.")) {
-                if !t.contains(" from ") {
+            if t.starts_with("raise ") && (t.contains("err") || t.contains("e.") || t.contains("ex."))
+                && !t.contains(" from ") {
                     issues.push(Issue::new("PY_S209", "Use 'raise ... from ...' for exception chaining", Severity::Major, Category:: Bug, ctx.file_path, idx+1));
                 }
-            }
         }
         issues
     }
@@ -21424,9 +20758,8 @@ declare_rule! {
                     max_depth_line = idx;
                 }
             }
-            if t.starts_with("except") || t.starts_with("finally") {
-                if try_depth > 0 { try_depth -= 1; }
-            }
+            if (t.starts_with("except") || t.starts_with("finally"))
+                && try_depth > 0 { try_depth -= 1; }
         }
 
         if max_try_depth > 3 {
@@ -21948,14 +21281,13 @@ declare_rule! {
             if t.starts_with("class Test") || t.contains("(unittest.TestCase)") || t.contains("TestCase") {
                 continue;
             }
-            if t.starts_with("def ") && !t.starts_with("def test_") && !t.starts_with("def setUp") && !t.starts_with("def tearDown") && !t.starts_with("def testClass") && !t.starts_with("def __init__") {
-                if idx > 0 {
+            if t.starts_with("def ") && !t.starts_with("def test_") && !t.starts_with("def setUp") && !t.starts_with("def tearDown") && !t.starts_with("def testClass") && !t.starts_with("def __init__")
+                && idx > 0 {
                     let prev_lines: String = lines[..idx].join("\n");
                     if prev_lines.contains("class Test") || prev_lines.contains("TestCase") {
                         issues.push(Issue::new("PY_T6", "Test method must start with 'test_'", Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
                     }
                 }
-            }
         }
         issues
     }
@@ -22370,14 +21702,13 @@ declare_rule! {
                        "__eq__", "__ne__", "__lt__", "__gt__", "__le__", "__ge__", "__hash__"];
         let re = regex::Regex::new(r"def\s+__\w+__").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(caps) = re.captures(line) {
-                if let Some(m) = caps.get(0) {
+            if let Some(caps) = re.captures(line)
+                && let Some(m) = caps.get(0) {
                     let dunder = m.as_str();
-                    if !allowed.iter().any(|&s| dunder == s) {
+                    if !allowed.contains(&dunder) {
                         issues.push(Issue::new("PY_N10", "Custom dunder method may conflict with built-in behavior", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
                     }
                 }
-            }
         }
         issues
     }
@@ -22424,8 +21755,8 @@ declare_rule! {
             let t = line.trim();
             if t.starts_with("def ") && !t.contains("__") {
                 let re = regex::Regex::new(r"def\s+(\w+)\s*\(").unwrap();
-                if let Some(cap) = re.captures(t) {
-                    if let Some(name) = cap.get(1) {
+                if let Some(cap) = re.captures(t)
+                    && let Some(name) = cap.get(1) {
                         let n = name.as_str();
                         if !n.starts_with("is_") && !n.starts_with("has_") && !n.starts_with("_") && !n.starts_with("test_") && !n.starts_with("set_") && !n.starts_with("get_") {
                             // Check if it's inside a class
@@ -22435,7 +21766,6 @@ declare_rule! {
                             }
                         }
                     }
-                }
             }
         }
         issues
@@ -22786,8 +22116,8 @@ declare_rule! {
             let t = line.trim();
             if t.starts_with("def ") && t.contains("(") {
                 let re = regex::Regex::new(r"def\s+\w+\s*\(([^)]*)\)").unwrap();
-                if let Some(cap) = re.captures(t) {
-                    if let Some(params) = cap.get(1) {
+                if let Some(cap) = re.captures(t)
+                    && let Some(params) = cap.get(1) {
                         let param_str = params.as_str();
                         if param_str.contains(",") {
                             let param_names: Vec<&str> = param_str.split(",").filter_map(|p| {
@@ -22807,7 +22137,6 @@ declare_rule! {
                             }
                         }
                     }
-                }
             }
         }
         issues
@@ -22956,11 +22285,10 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"http://[^\s""']+"#).unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(m) = re.find(line) {
-                if !line.contains("https://") && !line.contains("localhost") {
+            if let Some(m) = re.find(line)
+                && !line.contains("https://") && !line.contains("localhost") {
                     issues.push(Issue::new("GO_S5332", format!("Clear-text HTTP URL: {}", m.as_str()), Severity::Blocker, Category::Vulnerability, ctx.file_path, idx+1));
                 }
-            }
         }
         issues
     }
@@ -23094,11 +22422,7 @@ declare_rule! {
             // Split on := or =
             let assign_idx = if let Some(pos) = trimmed.find(":=") {
                 Some(pos)
-            } else if let Some(pos) = trimmed.find('=') {
-                Some(pos)
-            } else {
-                None
-            };
+            } else { trimmed.find('=').map(|pos| pos) };
             if let Some(idx) = assign_idx {
                 let left = trimmed[..idx].trim();
                 let right = trimmed[idx + if trimmed[..idx].ends_with(':') { 1 } else { 1 }..].trim().trim_end_matches(';').trim();
@@ -23124,7 +22448,7 @@ declare_rule! {
     check: => {
         // Note: Proper detection of unused variables requires dataflow analysis.
         // This rule provides a simplified check for obviously dead code patterns.
-        let mut issues = Vec::new();
+        let issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
             // Detect shadowing of the blank identifier (using a named var where _ would be appropriate)
@@ -23187,8 +22511,8 @@ declare_rule! {
         let ops = ["==", "!=", ">=", "<=", ">", "<"];
         for (idx, line) in ctx.source.lines().enumerate() {
             for op in &ops {
-                if let Some(pos) = line.find(op) {
-                    if pos > 0 {
+                if let Some(pos) = line.find(op)
+                    && pos > 0 {
                         let before = line[..pos].trim();
                         let after = line[pos+op.len()..].trim();
                         if before == after && !before.is_empty() {
@@ -23196,7 +22520,6 @@ declare_rule! {
                             break;
                         }
                     }
-                }
             }
         }
         issues
@@ -23361,8 +22684,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"func\s+\w+\s*\(([^)]*)\)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(cap) = re.captures(line) {
-                if let Some(params) = cap.get(1) {
+            if let Some(cap) = re.captures(line)
+                && let Some(params) = cap.get(1) {
                     let param_str = params.as_str();
                     // Count commas + 1 to get parameter count
                     let param_count = param_str.matches(',').count() + 1;
@@ -23372,7 +22695,6 @@ declare_rule! {
                         issues.push(Issue::new("GO_S107", format!("Function has {} parameters (max {})", actual_count, self.max_params), Severity::Major, Category::CodeSmell, ctx.file_path, idx+1));
                     }
                 }
-            }
         }
         issues
     }
@@ -24194,7 +23516,7 @@ declare_rule! {
             if line.contains("@Service") && line.contains("public class") {
                 // Look for public/protected field assignments in this class
                 // Simple heuristic: find lines with "= new" that aren't preceded by "private" or "protected"
-                let mut in_class = true;
+                let in_class = true;
                 let mut brace_count = line.matches('{').count() as i32 - line.matches('}').count() as i32;
                 for (j, class_line) in lines.iter().enumerate().skip(idx) {
                     if j > idx {
@@ -25021,8 +24343,8 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"const\s+(\w+)\s*=\s*useRef\s*\([^)]+\)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if let Some(caps) = re.captures(line) {
-                if let Some(var_name) = caps.get(1) {
+            if let Some(caps) = re.captures(line)
+                && let Some(var_name) = caps.get(1) {
                     let var_str = var_name.as_str();
                     // Check if .current is accessed anywhere in the source
                     let current_access = format!("{}.current", var_str);
@@ -25030,7 +24352,6 @@ declare_rule! {
                         issues.push(Issue::new("JS_RX47", "useRef created but .current not accessed", Severity::Minor, Category::CodeSmell, ctx.file_path, idx+1));
                     }
                 }
-            }
         }
         issues
     }
@@ -25606,11 +24927,10 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"transmute\s*<").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                if !ctx.source.lines().nth(idx.saturating_sub(1)).unwrap_or("").contains("unsafe") {
+            if re.is_match(line)
+                && !ctx.source.lines().nth(idx.saturating_sub(1)).unwrap_or("").contains("unsafe") {
                     issues.push(Issue::new("R027", "transmute without unsafe block", Severity::Critical, Category::Bug, ctx.file_path, idx+1));
                 }
-            }
         }
         issues
     }
@@ -25640,36 +24960,36 @@ declare_rule! {
 
 submit! {
     RuleEntry {
-        factory: || Box::new(S138Rule::default())
+        factory: || Box::new(crate::rules::rules::S138Rule::default())
     }
 }
 
 submit! {
     RuleEntry {
-        factory: || Box::new(S3776Rule::default())
+        factory: || Box::new(crate::rules::rules::S3776Rule::default())
     }
 }
 
 submit! {
     RuleEntry {
-        factory: || Box::new(S2306Rule::default())
+        factory: || Box::new(crate::rules::rules::S2306Rule::default())
     }
 }
 
 submit! {
     RuleEntry {
-        factory: || Box::new(S1066Rule::default())
+        factory: || Box::new(crate::rules::rules::S1066Rule)
     }
 }
 
 submit! {
     RuleEntry {
-        factory: || Box::new(S1192Rule::default())
+        factory: || Box::new(crate::rules::rules::S1192Rule::default())
     }
 }
 
 submit! {
     RuleEntry {
-        factory: || Box::new(S125Rule::default())
+        factory: || Box::new(S125Rule)
     }
 }

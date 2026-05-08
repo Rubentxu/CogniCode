@@ -203,11 +203,11 @@ impl LspProxyService {
         match operation {
             "hover" | "textDocument/hover" => {
                 let result = provider.hover(&location).await?;
-                Ok(result.map(|h| serde_json::to_value(h).ok()).flatten())
+                Ok(result.and_then(|h| serde_json::to_value(h).ok()))
             }
             "textDocument/definition" | "goto_definition" => {
                 let result = provider.get_definition(&location).await?;
-                Ok(result.map(|l| serde_json::to_value(l).ok()).flatten())
+                Ok(result.and_then(|l| serde_json::to_value(l).ok()))
             }
             "textDocument/references" | "find_references" => {
                 let result = provider.find_references(&location, true).await?;

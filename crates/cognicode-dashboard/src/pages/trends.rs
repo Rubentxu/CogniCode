@@ -254,8 +254,7 @@ pub fn TrendsPage() -> impl IntoView {
                                         {/* Baseline comparison */}
                                         {
                                             let b = baseline.clone();
-                                            if let Some(baseline_data) = &b {
-                                                Some(view! {
+                                            b.as_ref().map(|baseline_data| view! {
                                                     <div class="card bg-accent-pale mb-8 p-4">
                                                         <h3 class="text-h4 text-text-primary mb-2">Baseline Comparison</h3>
                                                         <div class="grid grid-cols-2 gap-4">
@@ -274,9 +273,6 @@ pub fn TrendsPage() -> impl IntoView {
                                                         </div>
                                                     </div>
                                                 })
-                                            } else {
-                                                None
-                                            }
                                         }
 
                                         {/* Charts */}

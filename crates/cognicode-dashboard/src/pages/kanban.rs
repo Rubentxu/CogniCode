@@ -53,9 +53,9 @@ pub fn KanbanPage() -> impl IntoView {
     // Load data
     let load_data = {
         let state = state.clone();
-        let set_issues = set_issues.clone();
-        let set_loading = set_loading.clone();
-        let set_error = set_error.clone();
+        let set_issues = set_issues;
+        let set_loading = set_loading;
+        let set_error = set_error;
         move || {
             let project_path = state.project_path.get();
             if project_path.is_empty() {
@@ -125,15 +125,15 @@ pub fn KanbanPage() -> impl IntoView {
     // Fix issue action wrapped in Arc<Box<dyn Fn + Send + Sync>> for cheap cloning
     let fix_issue_action: Arc<Box<dyn Fn(KanbanCard) + Send + Sync>> = Arc::new(Box::new({
         let state = state.clone();
-        let set_error = set_error.clone();
-        let set_issues = set_issues.clone();
-        let set_loading = set_loading.clone();
+        let set_error = set_error;
+        let set_issues = set_issues;
+        let set_loading = set_loading;
         move |card: KanbanCard| {
             let _project_path = state.project_path.get();
             let api = state.api.clone();
-            let se = set_error.clone();
-            let si = set_issues.clone();
-            let sl = set_loading.clone();
+            let se = set_error;
+            let si = set_issues;
+            let sl = set_loading;
 
             let payload = serde_json::json!({
                 "rule_id": card.rule_id,
@@ -292,7 +292,7 @@ pub fn KanbanPage() -> impl IntoView {
                                                                     card
                                                                         .file
                                                                         .split('/')
-                                                                        .last()
+                                                                        .next_back()
                                                                         .unwrap_or(&card.file),
                                                                     card.line
                                                                 )}

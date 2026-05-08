@@ -63,9 +63,9 @@ impl ChangeSignatureStrategy {
     ) {
         let call_type = self.parser.language().call_node_type();
 
-        if node.kind() == call_type {
-            if let Some(callee_name) = self.extract_callee_name(node, source_bytes) {
-                if callee_name == target_function {
+        if node.kind() == call_type
+            && let Some(callee_name) = self.extract_callee_name(node, source_bytes)
+                && callee_name == target_function {
                     let start = node.start_position();
                     let end = node.end_position();
 
@@ -83,8 +83,6 @@ impl ChangeSignatureStrategy {
                         context: self.extract_context(lines, start.row as u32),
                     });
                 }
-            }
-        }
 
         // Recurse into children
         for i in 0..node.child_count() {
@@ -111,11 +109,10 @@ impl ChangeSignatureStrategy {
         // For languages where the function is a direct child (Python, JS/TS)
         if language.call_has_function_field() {
             for i in 0..call_node.child_count() {
-                if let Some(child) = call_node.child(i) {
-                    if child.kind() == "function" {
+                if let Some(child) = call_node.child(i)
+                    && child.kind() == "function" {
                         return self.find_identifier_in_node(child, source_bytes);
                     }
-                }
             }
         }
 
@@ -149,11 +146,10 @@ impl ChangeSignatureStrategy {
         }
 
         for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                if let Some(name) = self.find_identifier_in_node(child, source_bytes) {
+            if let Some(child) = node.child(i)
+                && let Some(name) = self.find_identifier_in_node(child, source_bytes) {
                     return Some(name);
                 }
-            }
         }
 
         None
@@ -199,11 +195,10 @@ impl ChangeSignatureStrategy {
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
                 let kind = child.kind();
-                if argument_kinds.contains(&kind) || kind.contains("argument") {
-                    if let Ok(text) = child.utf8_text(source_bytes) {
+                if (argument_kinds.contains(&kind) || kind.contains("argument"))
+                    && let Ok(text) = child.utf8_text(source_bytes) {
                         arguments.push(text.to_string());
                     }
-                }
                 // Recurse to handle nested structures
                 if child.child_count() > 0 {
                     self.extract_arguments_from_node(child, source_bytes, arguments);
@@ -246,9 +241,9 @@ impl ChangeSignatureStrategy {
         function_name: &str,
         function_type: &str,
     ) -> Result<Option<ParsedFunctionInfo>, RefactorError> {
-        if node.kind() == function_type {
-            if let Some(name) = self.find_identifier_in_node(node, source_bytes) {
-                if name == function_name {
+        if node.kind() == function_type
+            && let Some(name) = self.find_identifier_in_node(node, source_bytes)
+                && name == function_name {
                     let start = node.start_position();
                     let end = node.end_position();
 
@@ -265,12 +260,10 @@ impl ChangeSignatureStrategy {
                         parameters,
                     }));
                 }
-            }
-        }
 
         for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                if let Some(result) = self.find_function_definition(
+            if let Some(child) = node.child(i)
+                && let Some(result) = self.find_function_definition(
                     child,
                     source_bytes,
                     function_name,
@@ -278,7 +271,6 @@ impl ChangeSignatureStrategy {
                 )? {
                     return Ok(Some(result));
                 }
-            }
         }
 
         Ok(None)
@@ -342,8 +334,8 @@ impl ChangeSignatureStrategy {
                     }
                 } else if kind == "identifier" || kind == "type_identifier" {
                     // Some parameter nodes directly contain identifiers
-                    if let Ok(text) = child.utf8_text(source_bytes) {
-                        if !text.is_empty() && text != "," && text != "(" && text != ")" {
+                    if let Ok(text) = child.utf8_text(source_bytes)
+                        && !text.is_empty() && text != "," && text != "(" && text != ")" {
                             parameters.push(ParsedParameter {
                                 name: text.to_string(),
                                 type_annotation: None,
@@ -351,7 +343,6 @@ impl ChangeSignatureStrategy {
                                 raw_text: text.to_string(),
                             });
                         }
-                    }
                 }
             }
         }
@@ -388,11 +379,10 @@ impl ChangeSignatureStrategy {
                     has_default = true;
                 }
                 // Also check if the raw text contains '=' which indicates a default
-                if let Ok(text) = child.utf8_text(source_bytes) {
-                    if text.contains('=') {
+                if let Ok(text) = child.utf8_text(source_bytes)
+                    && text.contains('=') {
                         has_default = true;
                     }
-                }
             }
         }
 
@@ -480,17 +470,15 @@ impl RefactorStrategy for ChangeSignatureStrategy {
         let _safety_result = self.safety_gate.validate(&safety_op);
 
         // Check for breaking changes
-        if target_symbol.is_callable() {
-            if let Some(old_sig) = target_symbol.signature() {
-                if old_sig.arity() != new_signature.arity() {
+        if target_symbol.is_callable()
+            && let Some(old_sig) = target_symbol.signature()
+                && old_sig.arity() != new_signature.arity() {
                     warnings.push(format!(
                         "Parameter count changed from {} to {}",
                         old_sig.arity(),
                         new_signature.arity()
                     ));
                 }
-            }
-        }
 
         if !errors.is_empty() {
             return RefactorValidation::failure(errors, refactor.clone());
@@ -728,8 +716,8 @@ impl ChangeSignatureStrategy {
         // For simplicity, we'll use a regex to find the arguments
         let args_pattern = regex::Regex::new(r"\(([^)]*)\)").ok();
 
-        if let Some(re) = args_pattern {
-            if let Some(caps) = re.captures(call_site_text) {
+        if let Some(re) = args_pattern
+            && let Some(caps) = re.captures(call_site_text) {
                 let args_str = &caps[1];
                 let args: Vec<&str> = args_str.split(',').map(|s| s.trim()).collect();
 
@@ -764,7 +752,6 @@ impl ChangeSignatureStrategy {
                     return format!("{}{}{}", prefix, new_args_str, after_args);
                 }
             }
-        }
 
         // Fallback: return original call site if we couldn't parse it
         call_site_text.to_string()

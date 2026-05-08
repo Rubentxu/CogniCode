@@ -34,7 +34,7 @@ pub fn git_log_mtime(path: &Path) -> Result<Option<i64>> {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let trimmed = stdout.trim();
             
-            if trimmed.is_empty() || trimmed == "" {
+            if trimmed.is_empty() || trimmed.is_empty() {
                 // File exists but no git history (possibly not committed yet)
                 tracing::debug!("No git history for {}, falling back to mtime", path_str);
                 return Ok(None);

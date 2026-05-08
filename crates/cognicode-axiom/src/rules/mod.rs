@@ -18,6 +18,8 @@ pub mod validator;
 pub mod adr_parser;
 pub mod types;
 pub mod catalog;
+pub mod helpers;   // Shared helper functions for rules
+pub mod rules;     // Extracted rules from catalog.rs (S138, S3776, S2306, S1066, S1192)
 pub mod importer; // SonarQube rule importer
 pub mod gates;      // Quality Gate System (Section 4)
 pub mod profiles;    // Quality Profiles with YAML (Section 5)

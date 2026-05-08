@@ -170,11 +170,11 @@ fn extract_title(body: &str) -> Option<String> {
 /// Extract a named section from markdown body
 fn extract_section(body: &str, section_name: &str) -> Option<String> {
     let section_header = format!("## {}", section_name);
-    let mut lines = body.lines();
+    let lines = body.lines();
     let mut found = false;
     let mut content = String::new();
 
-    while let Some(line) = lines.next() {
+    for line in lines {
         if line.trim() == section_header {
             found = true;
             continue;

@@ -221,12 +221,11 @@ impl QualityProfileEngine {
         let mut resolved_rules: HashMap<String, ResolvedRuleConfig> = HashMap::new();
 
         // Process inheritance chain
-        if let Some(ref extends) = profile.extends {
-            if let Some(parent) = self.profiles.get(extends) {
+        if let Some(ref extends) = profile.extends
+            && let Some(parent) = self.profiles.get(extends) {
                 let parent_resolved = self.resolve_profile_internal(parent);
                 resolved_rules = parent_resolved.rules;
             }
-        }
 
         // Apply this profile's rules (override inherited)
         for rule_config in &profile.rules {

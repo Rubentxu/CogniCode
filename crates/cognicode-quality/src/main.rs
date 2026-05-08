@@ -12,18 +12,17 @@ use handler::{
     GetTechnicalDebtParams, GetRatingsParams, DetectDuplicationsParams,
     CheckCodeSmellParams, GetQualityGateParams, RunQualityGateParams,
     CheckLintParams, GetRemediationParams, TestRuleParams, ListSmellsParams,
-    LoadAdrParams, FileAnalysisResult, IssueResult, FileMetricsResult,
-    ProjectMetricsResult, RuleInfo, ComplexityResult, NamingIssue,
+    LoadAdrParams, IssueResult, FileMetricsResult, RuleInfo, ComplexityResult, NamingIssue,
     RemediationSuggestion, TechnicalDebtReportResult, ProjectRatingsResult,
     DuplicationResult, DuplicationGroupResult, DuplicationLocationResult,
     GetQualityProfileParams, AnalyzeComplexityParams, CheckNamingParams, GetFileMetricsParams,
     SetBaselineParams, GetDiffParams, CheckQualityParams,
 };
 use cognicode_axiom::linters::{ClippyRunner, Linter};
-use cognicode_axiom::rules::types::{Issue, RuleContext, RuleRegistry, Severity};
+use cognicode_axiom::rules::types::{Issue, RuleContext, Severity};
 use cognicode_axiom::rules::{
-    CompareOperator, DuplicationDetector, FileMetrics, GateCondition, MetricValue,
-    ProjectMetrics as AxiomProjectMetrics, QualityGate,
+    DuplicationDetector, FileMetrics,
+    ProjectMetrics as AxiomProjectMetrics,
 };
 use cognicode_core::domain::aggregates::call_graph::CallGraph;
 use cognicode_core::infrastructure::parser::Language;
@@ -31,7 +30,6 @@ use rayon::ThreadPoolBuilder;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{CallToolRequestParams, CallToolResult, Content, ListToolsResult, ServerCapabilities, ServerInfo, Tool};
 use rmcp::service::{RequestContext, RoleServer};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::PathBuf;
@@ -203,17 +201,13 @@ impl QualityAnalysisHandler {
                     let walker = ignore::WalkBuilder::new(&project_path).hidden(false).git_ignore(true).build();
                     for entry in walker.flatten() {
                         let path = entry.path();
-                        if path.is_file() {
-                            if let Some(ext) = path.extension() {
-                                if let Some(lang) = Language::from_extension(Some(ext)) {
-                                    if !lang.name().is_empty() {
-                                        if let Ok(content) = std::fs::read_to_string(path) {
+                        if path.is_file()
+                            && let Some(ext) = path.extension()
+                                && let Some(lang) = Language::from_extension(Some(ext))
+                                    && !lang.name().is_empty()
+                                        && let Ok(content) = std::fs::read_to_string(path) {
                                             files.push((path.display().to_string(), content));
                                         }
-                                    }
-                                }
-                            }
-                        }
                     }
                     let groups = detector.detect_multi_file_duplications(&files);
                     let dup_result = DuplicationResult {
@@ -599,9 +593,9 @@ profiles:
                         for entry in std::fs::read_dir(&dir_path)? {
                             let entry = entry?;
                             let path = entry.path();
-                            if path.extension().map(|e| e == "md").unwrap_or(false) {
-                                if let Ok(content) = std::fs::read_to_string(&path) {
-                                    if let Ok(adr) = cognicode_axiom::rules::AdrParser::parse(&content) {
+                            if path.extension().map(|e| e == "md").unwrap_or(false)
+                                && let Ok(content) = std::fs::read_to_string(&path)
+                                    && let Ok(adr) = cognicode_axiom::rules::AdrParser::parse(&content) {
                                         results.push(serde_json::json!({
                                             "file": path.display().to_string(),
                                             "title": adr.title,
@@ -609,8 +603,6 @@ profiles:
                                             "decision": adr.decision,
                                         }));
                                     }
-                                }
-                            }
                         }
                     }
                 }
@@ -623,7 +615,7 @@ profiles:
             "set_quality_baseline" => {
                 let params: SetBaselineParams = serde_json::from_value(args).unwrap_or_default();
                 let project_path = params.project_path.unwrap_or_else(|| PathBuf::from("."));
-                let mut state = cognicode_quality::incremental::AnalysisState::load(&project_path);
+                let state = cognicode_quality::incremental::AnalysisState::load(&project_path);
                 
                 // Run analysis to get current metrics
                 let result = self.analyze_project_impl(AnalyzeProjectParams { project_path, ..Default::default() })?;

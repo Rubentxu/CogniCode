@@ -51,12 +51,6 @@ use crate::interface::mcp::schemas::{
     ContextFormatDetail, DetectApiBreaksInput, DetectGodFunctionsInput, DetectLongParamsInput,
     EvaluateRefactorQualityInput, FindPatternByIntentInput, NlToSymbolInput, OnboardingGoalDetail, OnboardingPlanInput,
     RankedSymbolsInput, SmartOverviewInput, SuggestRefactorPlanInput, SystemPromptContextInput,
-    // Detect Drift schemas
-    DetectDriftInput, DetectDriftOutput, DriftFinding, DriftSeverity,
-    // Retrieve and Verify schemas
-    RetrieveAndVerifyInput, RetrieveAndVerifyOutput, VerifiedMatch, VerificationStatus,
-    // Agent Task schemas (Batch D - Bidirectional Interaction)
-    AgentTaskDto, CompleteTaskInput, CompleteTaskOutput, PollTasksInput, PollTasksOutput,
 };
 use crate::interface::mcp::security::{InputValidator, SecurityError};
 use crate::application::error::AppError;
@@ -620,12 +614,11 @@ pub async fn handle_build_graph(
             Err(_) => true,    // Error reading → rebuild
         };
 
-        if !is_stale {
-            if let Ok(Some(graph)) = store.load_graph() {
+        if !is_stale
+            && let Ok(Some(graph)) = store.load_graph() {
                 ctx.analysis_service.graph_cache().set(graph);
                 loaded_from_cache = true;
             }
-        }
     }
 
     // Build from source if cache miss
@@ -1425,11 +1418,10 @@ fn count_parameters(node: tree_sitter::Node, _source: &str) -> u32 {
             // Handle Python parameters (within parentheses after function name)
             if child.kind() == "parameters" {
                 for j in 0..child.child_count() {
-                    if let Some(param) = child.child(j) {
-                        if param.kind() == "identifier" {
+                    if let Some(param) = child.child(j)
+                        && param.kind() == "identifier" {
                             count += 1;
                         }
-                    }
                 }
             }
             // Handle Rust/JS parameters (identifier list)
@@ -1732,11 +1724,10 @@ pub async fn handle_export_mermaid(
     for symbol_id in &symbol_ids {
         if let Some(symbol) = graph.get_symbol(symbol_id) {
             // Apply module filter - skip symbols whose file path doesn't contain the filter string
-            if let Some(filter_str) = module_filter {
-                if !symbol.location().file().contains(filter_str) {
+            if let Some(filter_str) = module_filter
+                && !symbol.location().file().contains(filter_str) {
                     continue;
                 }
-            }
             let node_id = sanitize_mermaid_id(symbol.name());
             mermaid_lines.push(format!("    {}[{}]", node_id, symbol.name()));
             node_count += 1;
@@ -1755,19 +1746,17 @@ pub async fn handle_export_mermaid(
         for symbol_id in &symbol_ids {
             if let Some(symbol) = graph.get_symbol(symbol_id) {
                 // Skip source symbol if it doesn't match filter
-                if let Some(filter_str) = module_filter {
-                    if !symbol.location().file().contains(filter_str) {
+                if let Some(filter_str) = module_filter
+                    && !symbol.location().file().contains(filter_str) {
                         continue;
                     }
-                }
                 for (callee_id, _) in graph.callees(symbol_id) {
                     if let Some(callee) = graph.get_symbol(&callee_id) {
                         // Skip callee if it doesn't match module filter
-                        if let Some(filter_str) = module_filter {
-                            if !callee.location().file().contains(filter_str) {
+                        if let Some(filter_str) = module_filter
+                            && !callee.location().file().contains(filter_str) {
                                 continue;
                             }
-                        }
                         let from_id = sanitize_mermaid_id(symbol.name());
                         let to_id = sanitize_mermaid_id(callee.name());
                         mermaid_lines.push(format!("    {} --> {}", from_id, to_id));
@@ -2119,28 +2108,25 @@ fn collect_edges_recursive(
 
     if let Some(symbol) = graph.get_symbol(symbol_id) {
         // Skip if symbol doesn't match module filter
-        if let Some(filter_str) = module_filter {
-            if !symbol.location().file().contains(filter_str) {
+        if let Some(filter_str) = module_filter
+            && !symbol.location().file().contains(filter_str) {
                 return;
             }
-        }
 
         for (callee_id, _) in graph.callees(symbol_id) {
-            if !visited.contains(&callee_id) {
-                if let Some(callee) = graph.get_symbol(&callee_id) {
+            if !visited.contains(&callee_id)
+                && let Some(callee) = graph.get_symbol(&callee_id) {
                     // Skip callee if it doesn't match module filter
-                    if let Some(filter_str) = module_filter {
-                        if !callee.location().file().contains(filter_str) {
+                    if let Some(filter_str) = module_filter
+                        && !callee.location().file().contains(filter_str) {
                             continue;
                         }
-                    }
                     let from_id = sanitize_mermaid_id(symbol.name());
                     let to_id = sanitize_mermaid_id(callee.name());
                     lines.push(format!("    {} --> {}", from_id, to_id));
                     *edge_count += 1;
                     collect_edges_recursive(graph, &callee_id, visited, remaining_depth - 1, lines, edge_count, module_filter);
                 }
-            }
         }
     }
 }

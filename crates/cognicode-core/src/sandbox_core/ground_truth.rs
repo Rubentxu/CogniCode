@@ -1436,22 +1436,20 @@ pub fn unwrap_response(response: &Value) -> Value {
     // Try content array first
     if let Some(content_arr) = response.get("content").and_then(|v| v.as_array()) {
         for item in content_arr {
-            if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                if let Ok(parsed) = serde_json::from_str::<Value>(text) {
+            if let Some(text) = item.get("text").and_then(|t| t.as_str())
+                && let Ok(parsed) = serde_json::from_str::<Value>(text) {
                     return parsed;
                 }
-            }
         }
     }
     // Try result.content
     if let Some(result) = response.get("result") {
         if let Some(content_arr) = result.get("content").and_then(|v| v.as_array()) {
             for item in content_arr {
-                if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                    if let Ok(parsed) = serde_json::from_str::<Value>(text) {
+                if let Some(text) = item.get("text").and_then(|t| t.as_str())
+                    && let Ok(parsed) = serde_json::from_str::<Value>(text) {
                         return parsed;
                     }
-                }
             }
         }
         // result itself might be the direct response

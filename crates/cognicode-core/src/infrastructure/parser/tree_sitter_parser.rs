@@ -305,11 +305,10 @@ impl TreeSitterParser {
         while let Some(current) = stack.pop() {
             let kind = current.kind();
 
-            if kind == function_type || kind == class_type || kind == variable_type {
-                if let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path) {
+            if (kind == function_type || kind == class_type || kind == variable_type)
+                && let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path) {
                     symbols.push(symbol);
                 }
-            }
 
             let cc = current.child_count();
             for i in (0..cc).rev() {
@@ -335,11 +334,10 @@ impl TreeSitterParser {
         stack.push(node);
 
         while let Some(current) = stack.pop() {
-            if current.kind() == target_type {
-                if let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path) {
+            if current.kind() == target_type
+                && let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path) {
                     symbols.push(symbol);
                 }
-            }
 
             let cc = current.child_count();
             for i in (0..cc).rev() {
@@ -383,8 +381,8 @@ impl TreeSitterParser {
         {
             let cc = node.child_count();
             for i in 0..cc {
-                if let Some(child) = node.child(i) {
-                    if child.kind() == "identifier" || child.kind() == "type_identifier" {
+                if let Some(child) = node.child(i)
+                    && (child.kind() == "identifier" || child.kind() == "type_identifier") {
                         return Some(
                             child
                                 .utf8_text(source.as_bytes())
@@ -392,7 +390,6 @@ impl TreeSitterParser {
                                 .to_string(),
                         );
                     }
-                }
             }
         }
 
@@ -498,11 +495,10 @@ impl TreeSitterParser {
         stack.push(node);
 
         while let Some(current) = stack.pop() {
-            if current.kind() == call_type {
-                if let Some(callee_name) = self.extract_callee_name(current, source) {
+            if current.kind() == call_type
+                && let Some(callee_name) = self.extract_callee_name(current, source) {
                     relationships.push((caller_symbol.clone(), callee_name));
                 }
-            }
 
             let cc = current.child_count();
             for i in (0..cc).rev() {
@@ -518,12 +514,11 @@ impl TreeSitterParser {
         // For languages where the function is a direct child (Python, JS/TS)
         if self.language.call_has_function_field() {
             for i in 0..call_node.child_count() {
-                if let Some(child) = call_node.child(i) {
-                    if child.kind() == "function" {
+                if let Some(child) = call_node.child(i)
+                    && child.kind() == "function" {
                         // The function child should have an identifier
                         return self.find_identifier_in_node(child, source);
                     }
-                }
             }
         }
 
@@ -646,9 +641,9 @@ impl TreeSitterParser {
         stack.push(node);
 
         while let Some(current) = stack.pop() {
-            if current.kind() == "identifier" || current.kind() == "type_identifier" {
-                if let Ok(text) = current.utf8_text(source.as_bytes()) {
-                    if text == target_identifier {
+            if (current.kind() == "identifier" || current.kind() == "type_identifier")
+                && let Ok(text) = current.utf8_text(source.as_bytes())
+                    && text == target_identifier {
                         let start = current.start_position();
                         let end = current.end_position();
                         let context =
@@ -660,8 +655,6 @@ impl TreeSitterParser {
                             context,
                         });
                     }
-                }
-            }
 
             let cc = current.child_count();
             for i in (0..cc).rev() {

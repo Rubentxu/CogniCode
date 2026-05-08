@@ -191,8 +191,8 @@ impl AvcValidator {
         let total = contract.safety.invariants.len() + 1; // +1 for error handling check
         
         // Check error handling if required
-        if contract.safety.requires_error_handling {
-            if !code.contains('?') && !code.contains("match") && !code.contains("if let Err") {
+        if contract.safety.requires_error_handling
+            && !code.contains('?') && !code.contains("match") && !code.contains("if let Err") {
                 violations.push(AvcViolation {
                     layer: "safety".to_string(),
                     severity: ViolationSeverity::Blocker,
@@ -202,7 +202,6 @@ impl AvcValidator {
                 suggestions.push("Add '?' operator or explicit match on Result".to_string());
                 issues += 1;
             }
-        }
 
         // Check invariants
         for invariant in &contract.safety.invariants {

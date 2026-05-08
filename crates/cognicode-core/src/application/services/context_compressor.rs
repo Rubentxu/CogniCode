@@ -276,7 +276,7 @@ fn extract_type_name(file_path: &str) -> String {
 
     // Convert snake_case or kebab-case to PascalCase
     let mut result = String::new();
-    for part in stem.split(|c: char| c == '_' || c == '-') {
+    for part in stem.split(['_', '-']) {
         let mut chars = part.chars();
         if let Some(first) = chars.next() {
             result.push(first.to_ascii_uppercase());

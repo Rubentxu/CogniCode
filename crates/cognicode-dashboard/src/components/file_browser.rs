@@ -37,7 +37,7 @@ pub fn FileBrowser(
         let dir = if curr.is_empty() { "/".to_string() } else { curr };
         spawn_local(async move {
             set_loading.set(true);
-            let url = format!("http://localhost:3000/api/fs/ls");
+            let url = "http://localhost:3000/api/fs/ls".to_string();
             if let Ok(req) = Request::post(&url)
                 .json(&serde_json::json!({"path": dir}))
             {
@@ -59,7 +59,7 @@ pub fn FileBrowser(
         move |path: String| {
             spawn_local(async move {
                 set_ld.set(true);
-                let url = format!("http://localhost:3000/api/fs/ls");
+                let url = "http://localhost:3000/api/fs/ls".to_string();
                 if let Ok(req) = Request::post(&url)
                     .json(&serde_json::json!({"path": path}))
                 {
@@ -91,7 +91,7 @@ pub fn FileBrowser(
             {/* Quick access bar */}
             <div class="flex items-center gap-2 mb-3 pb-3 border-b border-border">
                 <button class="btn btn-secondary btn-sm"
-                    on:click={let n = navigate_to.clone(); move |_| n("/home".to_string())}>
+                    on:click={let n = navigate_to; move |_| n("/home".to_string())}>
                     "🏠 Home"
                 </button>
                 {move || {
@@ -101,7 +101,7 @@ pub fn FileBrowser(
                         let parts: Vec<&str> = user.split('/').collect();
                         if parts.len() >= 3 {
                             let user_home = format!("/home/{}", parts[2]);
-                            let n = navigate_to.clone();
+                            let n = navigate_to;
                             Some(view! {
                                 <button class="btn btn-secondary btn-sm"
                                     on:click=move |_| n(user_home.clone())>
@@ -112,7 +112,7 @@ pub fn FileBrowser(
                     } else { None }
                 }}
                 <button class="btn btn-secondary btn-sm"
-                    on:click={let n = navigate_to.clone(); move |_| n("/".to_string())}>
+                    on:click={let n = navigate_to; move |_| n("/".to_string())}>
                     "📂 /"
                 </button>
             </div>
@@ -120,11 +120,11 @@ pub fn FileBrowser(
             {move || {
                 let path = browser_path.get();
                 if path != "/" && !path.is_empty() {
-                    let parent = path.rsplitn(2, '/').nth(1)
+                    let parent = path.rsplit_once('/').map(|x| x.0)
                         .map(|p| if p.is_empty() { "/" } else { p })
                         .unwrap_or("/")
                         .to_string();
-                    let nav = navigate_to.clone();
+                    let nav = navigate_to;
                     Some(view! {
                         <div class="flex items-center gap-2 px-3 py-2 hover:bg-surface cursor-pointer rounded border-b border-border mb-2"
                             on:click=move |_| nav(parent.clone())>
@@ -154,13 +154,13 @@ pub fn FileBrowser(
                         let name = entry.name.clone();
                         let is_dir = entry.is_dir;
                         let entry_path = entry.path.clone();
-                        let nav = navigate_to.clone();
+                        let nav = navigate_to;
                         // Clone signals for this entry (they're cheap to clone)
                         let on_sel = on_select;
                         let on_cl = on_close;
 
                         let click_path = entry_path.clone();
-                        let nav2 = nav.clone();
+                        let nav2 = nav;
                         // Clone again for the Select button
                         let sel_path = click_path.clone();
                         let sel = on_sel;

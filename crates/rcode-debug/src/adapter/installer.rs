@@ -77,7 +77,7 @@ impl AdapterInstaller {
 
         // Create install directory
         tokio::fs::create_dir_all(&self.install_dir).await
-            .map_err(|e| DebugError::Io(e))?;
+            .map_err(DebugError::Io)?;
 
         // Download the file
         tracing::info!("Downloading {} from {}", config.name, download_config.url);
@@ -98,11 +98,11 @@ impl AdapterInstaller {
             {
                 use std::os::unix::fs::PermissionsExt;
                 let metadata = tokio::fs::metadata(&install_path).await
-                    .map_err(|e| DebugError::Io(e))?;
+                    .map_err(DebugError::Io)?;
                 let mut perms = metadata.permissions();
                 perms.set_mode(0o755);
                 tokio::fs::set_permissions(&install_path, perms).await
-                    .map_err(|e| DebugError::Io(e))?;
+                    .map_err(DebugError::Io)?;
             }
         }
 
@@ -131,11 +131,11 @@ impl AdapterInstaller {
             .map_err(|e| DebugError::Configuration(format!("Failed to read response: {}", e)))?;
 
         let mut file = tokio::fs::File::create(&temp_file).await
-            .map_err(|e| DebugError::Io(e))?;
+            .map_err(DebugError::Io)?;
         tokio::io::AsyncWriteExt::write_all(&mut file, &bytes).await
-            .map_err(|e| DebugError::Io(e))?;
+            .map_err(DebugError::Io)?;
         tokio::io::AsyncWriteExt::flush(&mut file).await
-            .map_err(|e| DebugError::Io(e))?;
+            .map_err(DebugError::Io)?;
 
         Ok(temp_file)
     }
@@ -145,7 +145,7 @@ impl AdapterInstaller {
         use sha2::{Sha256, Digest};
 
         let data = tokio::fs::read(file_path).await
-            .map_err(|e| DebugError::Io(e))?;
+            .map_err(DebugError::Io)?;
 
         let mut hasher = Sha256::new();
         hasher.update(&data);
@@ -175,7 +175,7 @@ impl AdapterInstaller {
         };
 
         tokio::fs::create_dir_all(&target_dir).await
-            .map_err(|e| DebugError::Io(e))?;
+            .map_err(DebugError::Io)?;
 
         match extension {
             "vsix" | "zip" => {
@@ -189,7 +189,7 @@ impl AdapterInstaller {
                     .current_dir(&target_dir)
                     .status()
                     .await
-                    .map_err(|e| DebugError::Io(e))?;
+                    .map_err(DebugError::Io)?;
 
                 if !status.success() {
                     return Err(DebugError::Configuration(
@@ -204,7 +204,7 @@ impl AdapterInstaller {
                         .ok_or_else(|| DebugError::Configuration("Invalid filename".to_string()))?
                 );
                 tokio::fs::copy(archive_path, &dest).await
-                    .map_err(|e| DebugError::Io(e))?;
+                    .map_err(DebugError::Io)?;
             }
         }
 
@@ -216,7 +216,7 @@ impl AdapterInstaller {
 
         // Read file into memory synchronously (zip crate is sync)
         let file_data = std::fs::read(archive_path)
-            .map_err(|e| DebugError::Io(e))?;
+            .map_err(DebugError::Io)?;
 
         let cursor = std::io::Cursor::new(file_data);
         let mut archive = zip::ZipArchive::new(cursor)
@@ -233,18 +233,18 @@ impl AdapterInstaller {
 
             if file.name().ends_with('/') {
                 std::fs::create_dir_all(&outpath)
-                    .map_err(|e| DebugError::Io(e))?;
+                    .map_err(DebugError::Io)?;
             } else {
                 if let Some(parent) = outpath.parent() {
                     if !parent.exists() {
                         std::fs::create_dir_all(parent)
-                            .map_err(|e| DebugError::Io(e))?;
+                            .map_err(DebugError::Io)?;
                     }
                 }
                 let mut outfile = std::fs::File::create(&outpath)
-                    .map_err(|e| DebugError::Io(e))?;
+                    .map_err(DebugError::Io)?;
                 std::io::copy(&mut file, &mut outfile)
-                    .map_err(|e| DebugError::Io(e))?;
+                    .map_err(DebugError::Io)?;
             }
         }
 

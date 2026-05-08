@@ -512,7 +512,7 @@ impl CommandExecutor {
                     .collect();
 
                 println!("\nHot paths (most called functions):");
-                println!("{:<40} {:>8} {:>8}  {}", "Function", "Fan-in", "Fan-out", "Location");
+                println!("{:<40} {:>8} {:>8}  Location", "Function", "Fan-in", "Fan-out");
                 println!("{}", "-".repeat(80));
 
                 for hp in &filtered {
@@ -1029,12 +1029,9 @@ impl CommandExecutor {
         .unwrap_or_default();
 
         for name in &file_names {
-            match session_ref.get_complexity(name, None).await {
-                Ok(c) => {
-                    println!("  {}: cyclomatic={}, cognitive={}, loc={}",
-                        name, c.cyclomatic, c.cognitive, c.lines_of_code);
-                }
-                Err(_) => {}
+            if let Ok(c) = session_ref.get_complexity(name, None).await {
+                println!("  {}: cyclomatic={}, cognitive={}, loc={}",
+                    name, c.cyclomatic, c.cognitive, c.lines_of_code);
             }
         }
 

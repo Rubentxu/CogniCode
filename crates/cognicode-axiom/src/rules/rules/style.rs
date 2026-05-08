@@ -39,6 +39,12 @@ impl Rule for S2306Rule {
     fn category(&self) -> Category { Category::CodeSmell }
     fn language(&self) -> &str { "rust" }
 
+    fn ui_category(&self) -> Option<&str> { Some("Code Structure") }
+    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
+    fn display_icon(&self) -> Option<&str> { Some("class") }
+    fn tags(&self) -> Vec<&str> { vec!["complexity", "oop", "class"] }
+    fn effort_category(&self) -> Option<&str> { Some("moderate") }
+
     fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
         let mut issues = Vec::new();
 
@@ -69,11 +75,10 @@ impl Rule for S2306Rule {
                 // Count fields
                 let mut fields = 0;
                 for i in 0..item_node.child_count() {
-                    if let Some(child) = item_node.child(i) {
-                        if child.kind() == "field_declaration" {
+                    if let Some(child) = item_node.child(i)
+                        && child.kind() == "field_declaration" {
                             fields += 1;
                         }
-                    }
                 }
 
                 // Calculate WMC
@@ -160,6 +165,12 @@ impl Rule for S1066Rule {
     fn category(&self) -> Category { Category::CodeSmell }
     fn language(&self) -> &str { "rust" }
 
+    fn ui_category(&self) -> Option<&str> { Some("Code Style") }
+    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
+    fn display_icon(&self) -> Option<&str> { Some("code") }
+    fn tags(&self) -> Vec<&str> { vec!["style", "if-statement"] }
+    fn effort_category(&self) -> Option<&str> { Some("quick_fix") }
+
     fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
         let mut issues = Vec::new();
 
@@ -239,6 +250,12 @@ impl Rule for S1192Rule {
     fn severity(&self) -> Severity { Severity::Major }
     fn category(&self) -> Category { Category::CodeSmell }
     fn language(&self) -> &str { "rust" }
+
+    fn ui_category(&self) -> Option<&str> { Some("Code Style") }
+    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
+    fn display_icon(&self) -> Option<&str> { Some("text") }
+    fn tags(&self) -> Vec<&str> { vec!["duplication", "strings"] }
+    fn effort_category(&self) -> Option<&str> { Some("quick_fix") }
 
     fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
         let mut issues = Vec::new();

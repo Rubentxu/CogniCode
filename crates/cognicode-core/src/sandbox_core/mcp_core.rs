@@ -209,11 +209,10 @@ impl McpServer {
                         continue;
                     }
 
-                    if let Ok(msg) = serde_json::from_str::<Value>(trimmed) {
-                        if msg.get("id").is_none() {
+                    if let Ok(msg) = serde_json::from_str::<Value>(trimmed)
+                        && msg.get("id").is_none() {
                             notifications.push(msg);
                         }
-                    }
                 }
                 Err(_) => break, // Error reading, stop draining
             }
@@ -238,11 +237,10 @@ impl McpServer {
         if let Some(ref mut stderr) = self.stderr {
             let mut buf = String::new();
             // Use read_to_string to drain the stderr pipe
-            if let Ok(n) = stderr.read_to_string(&mut buf) {
-                if n > 0 {
+            if let Ok(n) = stderr.read_to_string(&mut buf)
+                && n > 0 {
                     return buf;
                 }
-            }
         }
         String::new()
     }

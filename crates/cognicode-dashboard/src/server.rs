@@ -897,7 +897,7 @@ async fn get_issues(
     let page_size = req.page_size.unwrap_or(20).max(1);
     let start = (page - 1) * page_size;
     let end = start + page_size;
-    let total_pages = (total_count + page_size - 1) / page_size;
+    let total_pages = total_count.div_ceil(page_size);
 
     let paged = if start < total_count {
         issues[start..end.min(total_count)].to_vec()
@@ -1504,7 +1504,7 @@ async fn list_tasks(
         all_tasks.into_iter()
             .filter(|t| {
                 let status_match = t.status == status_filter;
-                let type_match = task_type_filter.map(|ft| &t.task_type == ft).unwrap_or(true);
+                let type_match = task_type_filter.map(|ft| t.task_type == ft).unwrap_or(true);
                 status_match && type_match
             })
             .collect()
@@ -1843,7 +1843,7 @@ pub async fn start_server(port: u16) {
     println!("CogniCode Dashboard Server running on http://{}", addr);
     println!("Health check: http://{}/health", addr);
     println!("API: http://{}/api/...", addr);
-    println!("");
+    println!();
     println!("To serve the frontend, run in another terminal:");
     println!("  cd crates/cognicode-dashboard && trunk serve --no-default-features");
     println!("Or serve static files:");

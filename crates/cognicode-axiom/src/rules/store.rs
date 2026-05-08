@@ -118,21 +118,18 @@ impl RuleStore {
             Some(f) => values
                 .into_iter()
                 .filter(|r| {
-                    if let Some(enabled) = f.enabled {
-                        if r.enabled != enabled {
+                    if let Some(enabled) = f.enabled
+                        && r.enabled != enabled {
                             return false;
                         }
-                    }
-                    if let Some(ref tags) = f.tags {
-                        if !tags.iter().any(|t| r.tags.contains(t)) {
+                    if let Some(ref tags) = f.tags
+                        && !tags.iter().any(|t| r.tags.contains(t)) {
                             return false;
                         }
-                    }
-                    if let Some(ref name) = f.name_contains {
-                        if !r.name.to_lowercase().contains(&name.to_lowercase()) {
+                    if let Some(ref name) = f.name_contains
+                        && !r.name.to_lowercase().contains(&name.to_lowercase()) {
                             return false;
                         }
-                    }
                     true
                 })
                 .collect(),

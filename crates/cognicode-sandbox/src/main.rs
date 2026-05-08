@@ -289,12 +289,11 @@ fn load_manifests(paths: &[String]) -> Result<Vec<Manifest>, String> {
             for entry in glob::glob(&path_pattern.to_string())
                 .map_err(|e| format!("invalid glob pattern: {e}"))?
             {
-                if let Ok(entry_path) = entry {
-                    if entry_path.is_file() {
+                if let Ok(entry_path) = entry
+                    && entry_path.is_file() {
                         let m = Manifest::from_path(&entry_path).map_err(|e| e.to_string())?;
                         manifests.push(m);
                     }
-                }
             }
         } else {
             return Err(format!("manifest path does not exist: {path_pattern}"));
@@ -317,14 +316,13 @@ fn expand_manifests(manifests: &[Manifest]) -> Vec<ExpandedScenario> {
 fn compute_dir_size_kb(path: &Path) -> u64 {
     let mut total_size: u64 = 0;
     for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
-        if entry.file_type().is_file() {
-            if let Ok(metadata) = entry.metadata() {
+        if entry.file_type().is_file()
+            && let Ok(metadata) = entry.metadata() {
                 total_size += metadata.len();
             }
-        }
     }
     // Convert bytes to kilobytes (round up)
-    (total_size + 1023) / 1024
+    total_size.div_ceil(1024)
 }
 
 /// Execute a single scenario and return the result along with captured call artifacts.
@@ -616,11 +614,10 @@ fn execute_scenario(
 
     // Phase 1: Reset git repo to pristine state before tool execution
     // This ensures corrupted/unclean repos don't affect scenario results
-    if let Err(e) = reset_git_repo(&workspace_path) {
-        if verbose {
+    if let Err(e) = reset_git_repo(&workspace_path)
+        && verbose {
             eprintln!("  [WARN] Failed to reset git repo: {}", e);
         }
-    }
 
     // For mutation scenarios, run pre-mutation baseline validation first
     let mut baseline_passed = true;
@@ -634,11 +631,10 @@ fn execute_scenario(
         }
         baseline_result = Some(run_validation_pipeline(scenario, &workspace_path, verbose));
         baseline_passed = baseline_result.as_ref().map(|r| r.passed).unwrap_or(true);
-        if !baseline_passed {
-            if verbose {
+        if !baseline_passed
+            && verbose {
                 eprintln!("  [BASELINE] Pre-mutation validation FAILED - classifying as preexisting_repo_failure");
             }
-        }
     }
 
     // Execute MCP call
@@ -656,8 +652,8 @@ fn execute_scenario(
     call_arguments.insert("action".into(), serde_json::json!(scenario.action));
 
     // For edit_file tool when MCP server is unavailable, apply edit directly
-    if scenario.tool == "edit_file" && server.is_none() {
-        if let (Some(path), Some(old_text), Some(new_text)) = (
+    if scenario.tool == "edit_file" && server.is_none()
+        && let (Some(path), Some(old_text), Some(new_text)) = (
             call_arguments.get("path").and_then(|v| v.as_str()),
             call_arguments.get("old_text").and_then(|v| v.as_str()),
             call_arguments.get("new_text").and_then(|v| v.as_str()),
@@ -687,10 +683,8 @@ fn execute_scenario(
                                     }]
                                 }));
                             }
-                        } else {
-                            if verbose {
-                                eprintln!("  [MUTATION] old_text not found in file, skipping edit");
-                            }
+                        } else if verbose {
+                            eprintln!("  [MUTATION] old_text not found in file, skipping edit");
                         }
                     }
                     Err(e) => {
@@ -701,7 +695,6 @@ fn execute_scenario(
                 }
             }
         }
-    }
 
     // Phase B: Handle debug_analyze and debug_doctor tools directly (no MCP needed)
     // These tools are handled differently because they don't require file mutation
@@ -916,8 +909,8 @@ fn execute_scenario(
         }
 
         // Validate root_cause against manifest specification
-        if let Some(ref rcv) = scenario.root_cause_validation {
-            if let Some(ref resp) = tool_response {
+        if let Some(ref rcv) = scenario.root_cause_validation
+            && let Some(ref resp) = tool_response {
                 let result_obj = resp.get("result").and_then(|v| v.as_object());
                 if let Some(rc) = result_obj.and_then(|r| r.get("root_cause")).and_then(|v| v.as_object()) {
                     let actual_kind = rc.get("kind").and_then(|v| v.as_str()).unwrap_or("");
@@ -935,8 +928,8 @@ fn execute_scenario(
                     }
 
                     // Check summary_contains if specified
-                    if root_cause_validation_passed {
-                        if let Some(ref contains) = rcv.summary_contains {
+                    if root_cause_validation_passed
+                        && let Some(ref contains) = rcv.summary_contains {
                             let contains_lower = contains.to_lowercase();
                             if !actual_summary.to_lowercase().contains(contains_lower.as_str()) {
                                 root_cause_validation_passed = false;
@@ -948,7 +941,6 @@ fn execute_scenario(
                                 }
                             }
                         }
-                    }
                 } else {
                     // No root_cause in response - validation fails
                     root_cause_validation_passed = false;
@@ -957,12 +949,11 @@ fn execute_scenario(
                     }
                 }
             }
-        }
     }
 
     // Only use MCP if tool_response hasn't been set by direct handlers (debug_analyze, debug_doctor)
-    if tool_response.is_none() {
-        if let Some(ref mut srv) = server {
+    if tool_response.is_none()
+        && let Some(ref mut srv) = server {
             let method = "tools/call".to_string();
 
             // Transform manifest-style edit arguments to MCP schema.
@@ -1031,7 +1022,6 @@ fn execute_scenario(
                 }
             }
         }
-    }
 
     // Phase B5: Capture resource snapshot after MCP call completes
     let res_end = take_snapshot();
@@ -1147,8 +1137,8 @@ fn execute_scenario(
     };
 
     // Apply root_cause_validation result if this is a debug_analyze scenario
-    if scenario.tool == "debug_analyze" && scenario.root_cause_validation.is_some() {
-        if !root_cause_validation_passed {
+    if scenario.tool == "debug_analyze" && scenario.root_cause_validation.is_some()
+        && !root_cause_validation_passed {
             validation_result.passed = false;
             validation_result.stages.push(PipelineStageResult {
                 stage: "root_cause_validation".to_string(),
@@ -1159,19 +1149,17 @@ fn execute_scenario(
                 stderr_excerpt: None,
             });
         }
-    }
 
     // Compute validation_ms from stage durations
     let validation_ms = validation_result.stages.iter().map(|s| s.duration_ms).sum();
 
     // Check for resource limit exceeded (SIGKILL = exit code 137) in validation stages
     for stage in &validation_result.stages {
-        if let Some(code) = stage.exit_code {
-            if code == 137 {
+        if let Some(code) = stage.exit_code
+            && code == 137 {
                 resource_limit_exceeded = true;
                 break;
             }
-        }
     }
 
     // Classify outcome - handle preexisting failure first
@@ -1212,7 +1200,7 @@ fn execute_scenario(
         scenario_id: scenario.id.clone(),
         language: scenario.language.clone(),
         tier: scenario.tier.clone(),
-        repo: scenario.repo.clone().unwrap_or_else(|| repo_name.into()),
+        repo: scenario.repo.clone().unwrap_or(repo_name),
         commit: scenario.commit.clone().unwrap_or_else(|| "unknown".into()),
         tool: scenario.tool.clone(),
         action: scenario.action.clone(),
@@ -1520,11 +1508,10 @@ fn classify_outcome(
                 .and_then(|item| item.get("text"))
                 .and_then(|t| t.as_str())
                 .map(|t| t.to_lowercase())
-        }) {
-            if is_expected_tool_rejection(&scenario.id, &error_text) {
+        })
+            && is_expected_tool_rejection(&scenario.id, &error_text) {
                 return "pass".into();
             }
-        }
         // Distinguish path safety rejections from other errors
         if is_path_safety_rejection {
             return "path_safety_rejection".into();
@@ -1564,8 +1551,8 @@ fn classify_outcome(
     // This can happen when tree-sitter's parse() returns None for the modified content,
     // so the edit is rejected before syntax error detection can fire. The file stays
     // unchanged, validation passes on the clean file.
-    if scenario.tool == "edit_file" {
-        if let Some(response) = response {
+    if scenario.tool == "edit_file"
+        && let Some(response) = response {
             let edit_rejected = response
                 .get("result")
                 .and_then(|r| r.get("content"))
@@ -1591,7 +1578,6 @@ fn classify_outcome(
                 }
             }
         }
-    }
 
     // Check validation pipeline — detect specific stage failures
     if !validation.passed {
@@ -1753,25 +1739,24 @@ fn aggregate_summary(results: &[ScenarioResult]) -> Summary {
         let lang_entry = summary
             .by_language
             .entry(r.language.clone())
-            .or_insert_with(cognicode_core::sandbox_core::artifacts::LanguageBreakdown::new);
+            .or_default();
         lang_entry.total += 1;
         if r.outcome == "pass" || r.outcome == "expected_fail" || r.outcome == "preexisting_fail" {
             lang_entry.passed += 1;
         } else {
             lang_entry.failed += 1;
             // Count CI-blocking failures
-            if let Some(fc) = &r.failure_class {
-                if fc.is_ci_blocking() {
+            if let Some(fc) = &r.failure_class
+                && fc.is_ci_blocking() {
                     summary.ci_blocking += 1;
                 }
-            }
         }
 
         // By tool — use ToolBreakdown::new()
         let tool_entry = summary
             .by_tool
             .entry(r.tool.clone())
-            .or_insert_with(cognicode_core::sandbox_core::artifacts::ToolBreakdown::new);
+            .or_default();
         tool_entry.total += 1;
         if r.outcome == "pass" || r.outcome == "expected_fail" || r.outcome == "preexisting_fail" {
             tool_entry.passed += 1;
@@ -1888,8 +1873,8 @@ fn write_result(
 
     // Write validation.log for failed scenarios (not pass, not expected_fail)
     let is_actual_failure = result.outcome != "pass" && result.outcome != "expected_fail";
-    if is_actual_failure {
-        if let Some(validation) = &result.validation {
+    if is_actual_failure
+        && let Some(validation) = &result.validation {
             let validation_log_path = scenario_dir.join("validation.log");
             let mut log_content = String::new();
 
@@ -1907,13 +1892,12 @@ fn write_result(
                 if let Some(stderr) = &stage.stderr_excerpt {
                     log_content.push_str(&format!("\nSTDERR:\n{}\n", stderr));
                 }
-                log_content.push_str("\n");
+                log_content.push('\n');
             }
 
             fs::write(&validation_log_path, log_content)?;
             artifacts.push("validation.log".to_string());
         }
-    }
 
     Ok((result_path, artifacts))
 }
@@ -2090,7 +2074,7 @@ fn iso8601_now() -> String {
     let secs = now.as_secs();
     let nanos = now.subsec_nanos();
     // Simple ISO 8601: YYYY-MM-DDTHH:MM:SSZ
-    let t = std::time::UNIX_EPOCH + std::time::Duration::new(secs as u64, nanos);
+    let t = std::time::UNIX_EPOCH + std::time::Duration::new(secs, nanos);
     let datetime: chrono::DateTime<chrono::Utc> = t.into();
     datetime.format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
@@ -2139,15 +2123,12 @@ fn parse_test_results(output: &str) -> String {
     // Parse lines like "test result: ok. 832 passed; 0 failed; 5 ignored"
     let mut total_passed = 0;
     for line in output.lines() {
-        if line.contains("test result:") && line.contains("passed") {
-            if let Some(passed) = line.split("passed").next() {
-                if let Some(num_str) = passed.split_whitespace().last() {
-                    if let Ok(n) = num_str.parse::<usize>() {
+        if line.contains("test result:") && line.contains("passed")
+            && let Some(passed) = line.split("passed").next()
+                && let Some(num_str) = passed.split_whitespace().last()
+                    && let Ok(n) = num_str.parse::<usize>() {
                         total_passed += n;
                     }
-                }
-            }
-        }
     }
     if total_passed > 0 {
         total_passed.to_string()
@@ -2585,7 +2566,7 @@ fn report(args: ReportArgs) -> Result<i32, String> {
     for r in results {
         let key = r.scenario_id.clone();
         let existing = latest.get(&key);
-        if !existing.is_some_and(|e| r.completed_at <= e.completed_at) {
+        if existing.is_none_or(|e| r.completed_at > e.completed_at) {
             latest.insert(key, r);
         }
     }

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 /// Each variant corresponds to a specific failure mode discovered during execution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum FailureClass {
     /// Scenario passed with expected outcome
     Pass,
@@ -60,6 +61,7 @@ pub enum FailureClass {
     /// Scenario expected to fail but passed (unexpected pass)
     UnexpectedPass,
     /// Scenario failed with no classified reason
+    #[default]
     UnexpectedFail,
 }
 
@@ -124,11 +126,6 @@ impl std::fmt::Display for FailureClass {
     }
 }
 
-impl Default for FailureClass {
-    fn default() -> Self {
-        FailureClass::UnexpectedFail
-    }
-}
 
 #[cfg(test)]
 mod tests {

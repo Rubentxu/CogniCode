@@ -160,7 +160,7 @@ impl ConnascenceAnalyzer {
             if !source_module.is_empty() && !target_module.is_empty() {
                 module_deps
                     .entry(source_module)
-                    .or_insert_with(HashSet::new)
+                    .or_default()
                     .insert(target_module);
             }
         }
@@ -195,7 +195,7 @@ impl ConnascenceAnalyzer {
             }
             name_to_modules
                 .entry(symbol.name().to_string())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(module);
         }
 
@@ -265,7 +265,7 @@ impl ConnascenceAnalyzer {
                     .unwrap_or_default();
                 type_dependencies
                     .entry(key)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(target_name);
             }
         }
@@ -320,7 +320,7 @@ impl ConnascenceAnalyzer {
             let key = (module, arity);
             arity_by_module
                 .entry(key)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(symbol.name().to_string());
         }
 

@@ -58,11 +58,10 @@ impl PerFileGraphCache {
         // Check cache first
         {
             let cache = self.cache.read().unwrap();
-            if let Some(entry) = cache.get(&path_str) {
-                if entry.valid {
+            if let Some(entry) = cache.get(&path_str)
+                && entry.valid {
                     return Ok(Arc::new(entry.graph.clone()));
                 }
-            }
         }
 
         // Build the graph for this file
@@ -95,11 +94,10 @@ impl PerFileGraphCache {
     /// Invalidates the cache entry for a specific file
     pub fn invalidate(&self, file_path: &Path) {
         let path_str = file_path.to_string_lossy().to_string();
-        if let Ok(mut cache) = self.cache.write() {
-            if let Some(entry) = cache.get_mut(&path_str) {
+        if let Ok(mut cache) = self.cache.write()
+            && let Some(entry) = cache.get_mut(&path_str) {
                 entry.valid = false;
             }
-        }
     }
 
     /// Clears all cached entries

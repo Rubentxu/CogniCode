@@ -79,11 +79,10 @@ impl FileStore {
                 }
             }
             // Rust: use crate::module::Type;
-            else if trimmed.starts_with("use ") {
-                if let Some(module) = Self::extract_rust_import(trimmed, dir) {
+            else if trimmed.starts_with("use ")
+                && let Some(module) = Self::extract_rust_import(trimmed, dir) {
                     imports.push(module);
                 }
-            }
         }
         imports
     }

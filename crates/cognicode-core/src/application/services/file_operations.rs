@@ -437,8 +437,8 @@ impl FileOperationsService {
             _ => None,
         });
 
-        if let Some(language) = lang {
-            if let Ok(parser) = TreeSitterParser::new(language) {
+        if let Some(language) = lang
+            && let Ok(parser) = TreeSitterParser::new(language) {
                 // Use tree-sitter to extract symbols and compress
                 if let Ok(symbols) = parser.find_all_symbols(&lines_slice.join("\n")) {
                     let mut compressed = String::new();
@@ -539,7 +539,6 @@ impl FileOperationsService {
                     return Ok(compressed);
                 }
             }
-        }
 
         // Fallback: basic compression without tree-sitter
         let lang_str = lang.map(|l| format!("{:?}", l)).unwrap_or_default();
@@ -796,13 +795,12 @@ impl FileOperationsService {
                     })?
             };
 
-            if let Some(parent) = absolute_path.parent() {
-                if !parent.exists() {
+            if let Some(parent) = absolute_path.parent()
+                && !parent.exists() {
                     fs::create_dir_all(parent).map_err(|e| {
                         AppError::InvalidParameter(format!("Failed to create directories: {}", e))
                     })?;
                 }
-            }
             input.path.clone()
         } else {
             input.path.clone()
@@ -1039,14 +1037,13 @@ impl FileOperationsService {
         let is_regex = input.regex.unwrap_or(true);
 
         // Validate regex pattern if regex mode is enabled
-        if is_regex {
-            if let Err(msg) = Self::validate_regex_pattern(&input.pattern) {
+        if is_regex
+            && let Err(msg) = Self::validate_regex_pattern(&input.pattern) {
                 return Err(AppError::InvalidParameter(format!(
                     "Invalid regex pattern: {}",
                     msg
                 )));
             }
-        }
 
         // Build walker with gitignore awareness
         let mut walker = WalkBuilder::new(&search_path);
@@ -1075,11 +1072,10 @@ impl FileOperationsService {
             }
 
             // Apply glob filter if provided
-            if let Some(glob) = &input.file_glob {
-                if !Self::path_matches_glob(path, glob) {
+            if let Some(glob) = &input.file_glob
+                && !Self::path_matches_glob(path, glob) {
                     continue;
                 }
-            }
 
             files_scanned += 1;
 
@@ -1273,8 +1269,8 @@ impl FileOperationsService {
 
         // Handle prefix*suffix pattern (e.g., test*.py) - asterisk in middle
         // This is: starts with prefix, ends with suffix, * matches anything in between
-        if pattern.contains('*') && !pattern.starts_with('*') && !pattern.ends_with('*') {
-            if let Some(star_pos) = pattern.find('*') {
+        if pattern.contains('*') && !pattern.starts_with('*') && !pattern.ends_with('*')
+            && let Some(star_pos) = pattern.find('*') {
                 let prefix = &pattern[..star_pos];
                 let suffix = &pattern[star_pos + 1..];
                 // text must start with prefix and end with suffix
@@ -1286,7 +1282,6 @@ impl FileOperationsService {
                     return true;
                 }
             }
-        }
 
         // Handle *suffix pattern (e.g., *test.py)
         if let Some(stripped) = pattern.strip_prefix('*') {
@@ -1394,11 +1389,10 @@ impl FileOperationsService {
             max_depth_reached = max_depth_reached.max(depth);
 
             // Apply glob filter if provided
-            if let Some(glob) = &input.glob {
-                if !Self::path_matches_glob(path, glob) {
+            if let Some(glob) = &input.glob
+                && !Self::path_matches_glob(path, glob) {
                     continue;
                 }
-            }
 
             let metadata = match fs::metadata(path) {
                 Ok(m) => m,

@@ -320,13 +320,11 @@ impl GraphStrategy for PerFileStrategy {
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    if matches!(ext.to_str(), Some("rs" | "py" | "js" | "ts")) {
+            if path.is_file()
+                && let Some(ext) = path.extension()
+                    && matches!(ext.to_str(), Some("rs" | "py" | "js" | "ts")) {
                         paths.push(path.to_path_buf());
                     }
-                }
-            }
         }
 
         let path_refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();

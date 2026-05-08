@@ -3,15 +3,13 @@
 //! Contains the QualityAnalysisHandler and all related types.
 
 use anyhow::Result;
-use cognicode_axiom::linters::{ClippyRunner, Linter};
-use cognicode_axiom::rules::types::{Category, Issue, Remediation, RuleContext, RuleRegistry, Severity};
+use cognicode_axiom::linters::Linter;
+use cognicode_axiom::rules::types::{Issue, RuleContext, RuleRegistry, Severity};
 use cognicode_axiom::rules::{
-    CompareOperator, DuplicationDetector, FileMetrics, GateCondition, MetricValue,
-    ProjectMetrics as AxiomProjectMetrics, QualityGate,
+    CompareOperator, FileMetrics, GateCondition, MetricValue, QualityGate,
 };
 use cognicode_core::domain::aggregates::call_graph::CallGraph;
 use cognicode_core::infrastructure::parser::Language;
-use rayon::ThreadPoolBuilder;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -122,7 +120,7 @@ impl QualityAnalysisHandler {
         let max_duration = params.max_duration_secs.unwrap_or(30);
 
         // === INCREMENTAL: Load state ===
-        let mut state = AnalysisState::load(&root);
+        let state = AnalysisState::load(&root);
 
         // Collect all files
         let mut all_files = Vec::new();
@@ -289,7 +287,7 @@ impl QualityAnalysisHandler {
         // Quality gate based on NEW CODE only (Clean as You Code)
         let new_blockers = new_code_issues_vec.iter()
             .filter(|i| matches!(i.severity, Severity::Blocker)).count();
-        let new_criticals = new_code_issues_vec.iter()
+        let _new_criticals = new_code_issues_vec.iter()
             .filter(|i| matches!(i.severity, Severity::Critical)).count();
 
         let clean_as_you_code = new_blockers == 0;

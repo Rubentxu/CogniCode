@@ -74,24 +74,21 @@ impl MoveStrategy {
         ];
 
         for node_type in &node_types {
-            if node.kind() == *node_type {
-                if let Some(name) = self.extract_definition_name(node, source_bytes) {
-                    if name == symbol_name {
+            if node.kind() == *node_type
+                && let Some(name) = self.extract_definition_name(node, source_bytes)
+                    && name == symbol_name {
                         return Some((node.start_position(), node.end_position()));
                     }
-                }
-            }
         }
 
         // Recurse into children
         for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                if let Some(result) =
+            if let Some(child) = node.child(i)
+                && let Some(result) =
                     self.find_symbol_definition_node(child, source_bytes, symbol_name)
                 {
                     return Some(result);
                 }
-            }
         }
 
         None
@@ -106,11 +103,10 @@ impl MoveStrategy {
         // Look for identifier or type_identifier child
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
-                if child.kind() == "identifier" || child.kind() == "type_identifier" {
-                    if let Ok(text) = child.utf8_text(source_bytes) {
+                if (child.kind() == "identifier" || child.kind() == "type_identifier")
+                    && let Ok(text) = child.utf8_text(source_bytes) {
                         return Some(text.to_string());
                     }
-                }
             }
         }
         None
@@ -173,11 +169,10 @@ impl MoveStrategy {
         imports: &mut Vec<ImportInfo>,
     ) {
         // Check for import/use declarations
-        if node.kind() == "import_statement" || node.kind() == "use_declaration" {
-            if let Some(import_info) = self.extract_import_info(node, lines) {
+        if (node.kind() == "import_statement" || node.kind() == "use_declaration")
+            && let Some(import_info) = self.extract_import_info(node, lines) {
                 imports.push(import_info);
             }
-        }
 
         // Recurse into children
         for i in 0..node.child_count() {
@@ -218,14 +213,13 @@ impl MoveStrategy {
     /// Validates that moving to target location won't cause issues
     pub fn validate_target_location(&self, target_path: &Path) -> Result<(), RefactorError> {
         // Check if target directory exists or can be created
-        if let Some(parent) = target_path.parent() {
-            if !parent.exists() {
+        if let Some(parent) = target_path.parent()
+            && !parent.exists() {
                 return Err(RefactorError::PreparationFailed(format!(
                     "Target directory does not exist and cannot be created: {}",
                     parent.display()
                 )));
             }
-        }
 
         // Check if target file already exists
         if target_path.exists() {

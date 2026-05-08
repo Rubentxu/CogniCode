@@ -165,19 +165,18 @@ impl SolidChecker {
 
         // Find if this type implements any traits
         for (dep_id, dep_type) in graph.dependencies(&id) {
-            if matches!(dep_type, cognicode_core::domain::value_objects::DependencyType::Inherits) {
-                if let Some(dep_symbol) = graph.get_symbol(dep_id) {
-                    if dep_symbol.kind() == &SymbolKind::Trait {
+            if matches!(dep_type, cognicode_core::domain::value_objects::DependencyType::Inherits)
+                && let Some(dep_symbol) = graph.get_symbol(dep_id)
+                    && dep_symbol.kind() == &SymbolKind::Trait {
                         // Check if methods have consistent signatures
                         let trait_methods = graph.callees(&id);
                         let mut arities: HashSet<usize> = HashSet::new();
 
                         for (method_id, _) in trait_methods {
-                            if let Some(method) = graph.get_symbol(&method_id) {
-                                if let Some(sig) = method.signature() {
+                            if let Some(method) = graph.get_symbol(&method_id)
+                                && let Some(sig) = method.signature() {
                                     arities.insert(sig.arity());
                                 }
-                            }
                         }
 
                         // If there's high variance in arity, might indicate LSP issues
@@ -192,8 +191,6 @@ impl SolidChecker {
                             });
                         }
                     }
-                }
-            }
         }
 
         violations
@@ -208,9 +205,9 @@ impl SolidChecker {
 
         // Find trait implementations
         for (dep_id, dep_type) in graph.dependencies(&id) {
-            if matches!(dep_type, cognicode_core::domain::value_objects::DependencyType::Inherits) {
-                if let Some(dep_symbol) = graph.get_symbol(dep_id) {
-                    if dep_symbol.kind() == &SymbolKind::Trait {
+            if matches!(dep_type, cognicode_core::domain::value_objects::DependencyType::Inherits)
+                && let Some(dep_symbol) = graph.get_symbol(dep_id)
+                    && dep_symbol.kind() == &SymbolKind::Trait {
                         // Count trait methods vs actual callees
                         let callees: Vec<(SymbolId, cognicode_core::domain::value_objects::DependencyType)> = graph.callees(&id);
                         let callee_ids: HashSet<SymbolId> = callees
@@ -230,8 +227,6 @@ impl SolidChecker {
                             });
                         }
                     }
-                }
-            }
         }
 
         violations
