@@ -58,8 +58,19 @@ impl AnalysisState {
         self.quality.get_latest_run_id()
     }
 
-    pub fn insert_issues(&self, _run_id: i64, _issues: &[cognicode_axiom::rules::types::Issue]) {
-        // Delegated to QualityStore
+    pub fn insert_issues(&self, run_id: i64, issues: &[cognicode_axiom::rules::types::Issue]) {
+        // Convert Issue structs to serde_json::Value with the keys QualityStore expects
+        let json_issues: Vec<serde_json::Value> = issues.iter().map(|issue| {
+            serde_json::json!({
+                "rule_id": &issue.rule_id,
+                "message": &issue.message,
+                "severity": format!("{:?}", issue.severity),
+                "category": format!("{:?}", issue.category),
+                "file": issue.file.to_string_lossy(),
+                "line": issue.line as i64,
+            })
+        }).collect();
+        self.quality.insert_issues(run_id, &json_issues);
     }
 
     pub fn get_open_issues(&self) -> Vec<cognicode_axiom::rules::types::Issue> {

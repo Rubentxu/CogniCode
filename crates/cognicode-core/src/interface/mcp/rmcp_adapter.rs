@@ -1130,13 +1130,32 @@ async fn call_tool_handler(
         "generate_contract" => {
             let input: crate::interface::mcp::schemas::GenerateContractInput =
                 serde_json::from_value(arguments.into())?;
+            let start = std::time::Instant::now();
             let output = crate::interface::mcp::handlers::aix_handlers::handle_generate_contract(ctx, input).await?;
+            let duration_ms = start.elapsed().as_millis() as f64;
+            // Best-effort telemetry recording
+            ctx.record_tool_usage(
+                "generate_contract",
+                &serde_json::to_string(&output).unwrap_or_default(),
+                duration_ms,
+                Some(&output.contract_id),
+            );
             Ok(serde_json::to_string(&output)?)
         }
         "validate_contract" => {
             let input: crate::interface::mcp::schemas::ValidateContractInput =
                 serde_json::from_value(arguments.into())?;
+            let contract_id = input.contract_id.clone();
+            let start = std::time::Instant::now();
             let output = crate::interface::mcp::handlers::aix_handlers::handle_validate_contract(ctx, input).await?;
+            let duration_ms = start.elapsed().as_millis() as f64;
+            // Best-effort telemetry recording
+            ctx.record_tool_usage(
+                "validate_contract",
+                &serde_json::to_string(&output).unwrap_or_default(),
+                duration_ms,
+                Some(&contract_id),
+            );
             Ok(serde_json::to_string(&output)?)
         }
         // Phase 3A: Proactive Tools
@@ -1175,7 +1194,16 @@ async fn call_tool_handler(
         "detect_drift" => {
             let input: crate::interface::mcp::schemas::DetectDriftInput =
                 serde_json::from_value(arguments.into())?;
+            let start = std::time::Instant::now();
             let output = crate::interface::mcp::handlers::aix_handlers::handle_detect_drift(ctx, input).await?;
+            let duration_ms = start.elapsed().as_millis() as f64;
+            // Best-effort telemetry recording
+            ctx.record_tool_usage(
+                "detect_drift",
+                &serde_json::to_string(&output).unwrap_or_default(),
+                duration_ms,
+                None,
+            );
             Ok(serde_json::to_string(&output)?)
         }
         _ => anyhow::bail!("Unknown tool: {}", tool_name),

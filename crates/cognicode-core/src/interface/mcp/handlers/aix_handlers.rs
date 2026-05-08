@@ -1577,6 +1577,8 @@ pub async fn handle_reparse_on_edit(
     let mut symbols_added = 0;
     let mut symbols_removed = 0;
     let mut graph_updated = false;
+    // Track changed absolute paths for graph rebuild
+    let mut changed_abs_paths: Vec<PathBuf> = Vec::new();
 
     for file_path in &input.file_paths {
         let full_path = if Path::new(file_path).is_absolute() {
@@ -1612,6 +1614,7 @@ pub async fn handle_reparse_on_edit(
                 .map(|e| e.symbol_count)
                 .unwrap_or(0);
             graph_updated = true;
+            changed_abs_paths.push(full_path);
         } else if file_mtime > 0 {
             if let Some(entry) = existing_manifest.entries.get(&rel_path) {
                 if entry.mtime == file_mtime {
@@ -1627,6 +1630,7 @@ pub async fn handle_reparse_on_edit(
                             // We increment by 1 as a proxy since actual count isn't available from the method
                             symbols_added += 1;
                             graph_updated = true;
+                            changed_abs_paths.push(full_path);
                         }
                         Err(e) => {
                             // Parse failure - log at WARN and count as skipped
@@ -1644,6 +1648,7 @@ pub async fn handle_reparse_on_edit(
                         // Successfully indexed
                         symbols_added += 1;
                         graph_updated = true;
+                        changed_abs_paths.push(full_path);
                     }
                     Err(e) => {
                         // Parse failure - log at WARN and count as skipped
@@ -1657,6 +1662,28 @@ pub async fn handle_reparse_on_edit(
     }
 
     let elapsed_ms = start.elapsed().as_millis() as u64;
+
+    // Rebuild call graph if files were actually modified
+    // This ensures the graph stays in sync with FTS5/DashMap after code changes
+    if graph_updated && !changed_abs_paths.is_empty() {
+        tracing::debug!(
+            "Rebuilding call graph for {} changed files in reparse_on_edit",
+            changed_abs_paths.len()
+        );
+
+        // Invalidate file cache so changed files are re-parsed
+        ctx.analysis_service.invalidate_file_cache_for(&changed_abs_paths);
+
+        // Rebuild the project graph to reflect the changes
+        if let Err(e) = ctx
+            .analysis_service
+            .build_project_graph_async(&ctx.working_dir)
+            .await
+        {
+            tracing::warn!("Failed to rebuild call graph in reparse_on_edit: {}", e);
+            // Don't fail the whole operation - FTS5/DashMap are already updated
+        }
+    }
 
     Ok(ReparseOnEditOutput {
         files_parsed,

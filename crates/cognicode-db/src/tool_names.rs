@@ -42,6 +42,9 @@ pub const TOOL_GENERATE_CONTRACT: &str = "generate_contract";
 /// Tool name for validate_contract MCP tool
 pub const TOOL_VALIDATE_CONTRACT: &str = "validate_contract";
 
+/// Tool name for detect_drift MCP tool
+pub const TOOL_DETECT_DRIFT: &str = "detect_drift";
+
 /// All known tool names as a slice (useful for validation)
 pub const ALL_TOOL_NAMES: &[&str] = &[
     TOOL_SUGGEST_CONTEXT,
@@ -57,6 +60,7 @@ pub const ALL_TOOL_NAMES: &[&str] = &[
     TOOL_RANKED_SYMBOLS,
     TOOL_GENERATE_CONTRACT,
     TOOL_VALIDATE_CONTRACT,
+    TOOL_DETECT_DRIFT,
 ];
 
 /// Check if a tool name is a known/valid tool name
