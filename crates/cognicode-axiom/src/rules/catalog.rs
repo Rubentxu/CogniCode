@@ -402,6 +402,12 @@ impl Rule for S2306Rule {
 
         issues
     }
+
+    fn ui_category(&self) -> Option<&str> { Some("Code Structure") }
+    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
+    fn display_icon(&self) -> Option<&str> { Some("class") }
+    fn tags(&self) -> Vec<&str> { vec!["complexity", "oop", "class"] }
+    fn effort_category(&self) -> Option<&str> { Some("moderate") }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -565,6 +571,12 @@ impl Rule for S1066Rule {
 
         issues
     }
+
+    fn ui_category(&self) -> Option<&str> { Some("Code Style") }
+    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
+    fn display_icon(&self) -> Option<&str> { Some("code") }
+    fn tags(&self) -> Vec<&str> { vec!["style", "if-statement"] }
+    fn effort_category(&self) -> Option<&str> { Some("quick_fix") }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -624,6 +636,12 @@ impl Rule for S1192Rule {
 
         issues
     }
+
+    fn ui_category(&self) -> Option<&str> { Some("Code Style") }
+    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
+    fn display_icon(&self) -> Option<&str> { Some("text") }
+    fn tags(&self) -> Vec<&str> { vec!["duplication", "strings"] }
+    fn effort_category(&self) -> Option<&str> { Some("quick_fix") }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1171,17 +1171,16 @@ fn main() {
     // Batch E — Rule Enrichment: UI Metadata Tests
     // ═══════════════════════════════════════════════════════════════════════════
 
-    // Test that rules using default implementations return None/empty
+    // Test S1066 UI metadata (was using defaults, now enriched)
     #[test]
-    fn test_rule_default_ui_metadata() {
-        // S1066Rule does NOT implement custom UI metadata, so it uses defaults
+    fn test_s1066_ui_metadata() {
         let rule = catalog::S1066Rule::new();
 
-        assert_eq!(rule.ui_category(), None, "S1066 should use default ui_category (None)");
-        assert_eq!(rule.dashboard_group(), None, "S1066 should use default dashboard_group (None)");
-        assert_eq!(rule.display_icon(), None, "S1066 should use default display_icon (None)");
-        assert!(rule.tags().is_empty(), "S1066 should use default tags (empty vec)");
-        assert_eq!(rule.effort_category(), None, "S1066 should use default effort_category (None)");
+        assert_eq!(rule.ui_category(), Some("Code Style"), "S1066 ui_category should be 'Code Style'");
+        assert_eq!(rule.dashboard_group(), Some("Maintainability"), "S1066 dashboard_group should be 'Maintainability'");
+        assert_eq!(rule.display_icon(), Some("code"), "S1066 display_icon should be 'code'");
+        assert_eq!(rule.tags(), vec!["style", "if-statement"], "S1066 tags should be ['style', 'if-statement']");
+        assert_eq!(rule.effort_category(), Some("quick_fix"), "S1066 effort_category should be 'quick_fix'");
     }
 
     // Test S138 UI metadata
