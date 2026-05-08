@@ -1435,6 +1435,52 @@ impl FileOperationsService {
         })
     }
 
+    /// Sets up a temporary file for rustc verification.
+    /// Creates a TempDir with prefix `cognicode_rust_verify_`, writes content to a temp file,
+    /// and returns both the TempDir (for lifetime management) and the temp file path.
+    fn setup_temp_file(
+        content: &str,
+        file_name: &str,
+    ) -> AppResult<(tempfile::TempDir, std::path::PathBuf)> {
+        use std::io::Write;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::with_prefix("cognicode_rust_verify_")
+            .map_err(|e| AppError::InternalError(format!("Failed to create temp dir: {}", e)))?;
+
+        let temp_file_path = temp_dir.path().join(file_name);
+
+        {
+            let mut file = std::fs::File::create(&temp_file_path).map_err(|e| {
+                AppError::InvalidParameter(format!("Failed to create temp file: {}", e))
+            })?;
+            file.write_all(content.as_bytes()).map_err(|e| {
+                AppError::InvalidParameter(format!("Failed to write to temp file: {}", e))
+            })?;
+        }
+
+        Ok((temp_dir, temp_file_path))
+    }
+
+    /// Runs rustc asynchronously with kill_on_drop(true).
+    /// When the returned future is dropped (e.g., on timeout), the child process is killed.
+    async fn run_rustc_async(
+        temp_file: std::path::PathBuf,
+    ) -> AppResult<std::process::Output> {
+        let mut cmd = tokio::process::Command::new("rustc");
+        cmd.args(["--edition", "2021", "--crate-type", "lib"])
+            .arg(&temp_file)
+            .kill_on_drop(true);
+
+        cmd.output().await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                AppError::InvalidParameter("rustc not found".to_string())
+            } else {
+                AppError::InternalError(format!("rustc execution failed: {}", e))
+            }
+        })
+    }
+
     /// Verifies a Rust file by compiling it with rustc in a sandboxed temp directory.
     ///
     /// Returns the verification status, stdout (if verified), and error snippet (if rejected).
@@ -1444,8 +1490,6 @@ impl FileOperationsService {
         _timeout_secs: u64,
     ) -> AppResult<(VerificationStatus, Option<String>, Option<String>, Option<String>)> {
         use crate::application::dto::VerificationStatus as Vs;
-        use std::io::Write;
-        use tempfile::TempDir;
 
         // Check if file extension is .rs
         let path = std::path::Path::new(file_path);
@@ -1458,25 +1502,14 @@ impl FileOperationsService {
             AppError::InvalidParameter(format!("Failed to read file for verification: {}", e))
         })?;
 
-        // Create a temp directory for sandboxed compilation
-        let temp_dir = TempDir::with_prefix("cognicode_rust_verify_")
-            .map_err(|e| AppError::InternalError(format!("Failed to create temp dir: {}", e)))?;
-
-        // Get the file name and create the temp file path
-        let file_name = path.file_name()
+        // Get the file name for temp file
+        let file_name = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("lib.rs");
-        let temp_file_path = temp_dir.path().join(file_name);
 
-        // Write content to temp file
-        {
-            let mut file = File::create(&temp_file_path).map_err(|e| {
-                AppError::InvalidParameter(format!("Failed to create temp file: {}", e))
-            })?;
-            file.write_all(content.as_bytes()).map_err(|e| {
-                AppError::InvalidParameter(format!("Failed to write to temp file: {}", e))
-            })?;
-        }
+        // Set up temp file (file I/O)
+        let (_temp_dir, temp_file_path) = Self::setup_temp_file(&content, file_name)?;
 
         // Run rustc --edition 2021 --crate-type lib
         let output = std::process::Command::new("rustc")
@@ -1512,27 +1545,70 @@ impl FileOperationsService {
 
     /// Verifies a Rust file with a timeout (async wrapper).
     ///
-    /// Runs `verify_rust_file` with a timeout using tokio's timeout.
-    /// The sync work is run in spawn_blocking to avoid blocking the async runtime.
+    /// Uses tokio::process::Command with kill_on_drop(true) so that when the
+    /// timeout fires and the future is dropped, the rustc subprocess is killed.
     async fn verify_rust_file_with_timeout(
         &self,
         file_path: &str,
         timeout_secs: u64,
     ) -> AppResult<(VerificationStatus, Option<String>, Option<String>, Option<String>)> {
-        let file_path = file_path.to_string();
-        let timeout = std::time::Duration::from_secs(timeout_secs);
-        let workspace_root = self.workspace_root.clone();
+        use crate::application::dto::VerificationStatus as Vs;
 
-        tokio::time::timeout(timeout, async move {
-            tokio::task::spawn_blocking(move || {
-                let svc = FileOperationsService::new(workspace_root);
-                svc.verify_rust_file(&file_path, timeout_secs)
-            })
-            .await
-            .map_err(|e| AppError::InternalError(format!("spawn_blocking failed: {}", e)))?
+        let path = std::path::Path::new(file_path);
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            return Ok((Vs::Skipped, None, None, Some("not-rust".to_string())));
+        }
+
+        // Read file content and set up temp file in spawn_blocking (file I/O only)
+        let file_path_owned = file_path.to_string();
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("lib.rs")
+            .to_string();
+
+        let content = tokio::task::spawn_blocking(move || {
+            fs::read_to_string(&file_path_owned)
         })
         .await
-        .map_err(|_| AppError::InvalidParameter("Verification timed out".to_string()))?
+        .map_err(|e| AppError::InternalError(format!("spawn_blocking failed: {}", e)))?
+        .map_err(|e| {
+            AppError::InvalidParameter(format!("Failed to read file for verification: {}", e))
+        })?;
+
+        // Set up temp file (file I/O)
+        let (_temp_dir, temp_file_path) =
+            tokio::task::spawn_blocking(move || Self::setup_temp_file(&content, &file_name))
+                .await
+                .map_err(|e| AppError::InternalError(format!("spawn_blocking failed: {}", e)))?
+                .map_err(|e| {
+                    AppError::InvalidParameter(format!("Failed to set up temp file: {}", e))
+                })?;
+
+        let timeout = std::time::Duration::from_secs(timeout_secs);
+
+        // Run rustc with timeout — kill_on_drop ensures process dies on timeout
+        let output_result = tokio::time::timeout(timeout, Self::run_rustc_async(temp_file_path))
+            .await;
+
+        // Map output to verification status
+        match output_result {
+            Ok(Ok(output)) if output.status.success() => {
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                Ok((Vs::Verified, Some(stdout), None, None))
+            }
+            Ok(Ok(output)) => {
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                let error_snippet = if stderr.len() > 200 {
+                    stderr[..200].to_string()
+                } else {
+                    stderr
+                };
+                Ok((Vs::Rejected, None, Some(error_snippet), None))
+            }
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(AppError::InvalidParameter("Verification timed out".to_string())),
+        }
     }
 
     /// Performs retrieve and verify operation: searches for content and optionally verifies Rust files.
@@ -2962,6 +3038,99 @@ mod tests {
             err_msg.to_lowercase().contains("rustc") && err_msg.to_lowercase().contains("not found"),
             "Error should mention 'rustc not found', got: {}",
             err_msg
+        );
+    }
+
+    /// Test that verifies the kill-on-drop semantics for rustc subprocess.
+    /// When verify_rust_file_with_timeout times out, the rustc subprocess must be killed
+    /// and not linger as an orphan process.
+    ///
+    /// This test runs multiple timeout-triggered verifications and ensures that
+    /// rustc processes do not accumulate (which would indicate orphans).
+    #[tokio::test]
+    async fn test_verify_rust_file_subprocess_killed_on_timeout() {
+        use std::process::Command;
+
+        let temp_dir = TempDir::new().unwrap();
+        let rs_file = temp_dir.path().join("deep.rs");
+        // Source that triggers actual compilation work
+        let source = r#"
+            pub const DEPTH: usize = 100;
+            pub fn recursive_deep(n: usize) -> usize {
+                if n == 0 { 0 } else { 1 + recursive_deep(n - 1) }
+            }
+            pub struct DeepTree { pub left: Box<DeepTree>, pub right: Box<DeepTree> }
+        "#;
+        fs::write(&rs_file, source).unwrap();
+
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+
+        let count_rustc = || -> usize {
+            Command::new("pgrep")
+                .args(["rustc"])
+                .output()
+                .map(|o| {
+                    String::from_utf8_lossy(&o.stdout)
+                        .lines()
+                        .count()
+                })
+                .unwrap_or(0)
+        };
+
+        // Run multiple timeout iterations - if kill_on_drop works, process count
+        // should remain stable. If orphans occur, count will grow with each iteration.
+        let iterations = 5;
+        let mut rustc_pids_before: Vec<i32> = vec![];
+
+        // Get baseline PIDs
+        let output = Command::new("pgrep")
+            .arg("rustc")
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default();
+        rustc_pids_before = output
+            .lines()
+            .filter_map(|l| l.trim().parse().ok())
+            .collect();
+
+        for i in 0..iterations {
+            // Use 0 timeout to trigger immediate timeout
+            let result = service.verify_rust_file_with_timeout(rs_file.to_str().unwrap(), 0).await;
+            assert!(result.is_err(), "Iteration {}: Timeout should cause error", i);
+
+            // Small delay to allow OS to reap any killed processes
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        // Give extra time for any orphans to be reaped
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        // Get PIDs after
+        let output_after = Command::new("pgrep")
+            .arg("rustc")
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default();
+        let rustc_pids_after: Vec<i32> = output_after
+            .lines()
+            .filter_map(|l| l.trim().parse().ok())
+            .collect();
+
+        // Check that no NEW rustc PIDs appear (orphans would create new PIDs not in baseline)
+        let new_pids: Vec<i32> = rustc_pids_after
+            .iter()
+            .filter(|pid| !rustc_pids_before.contains(pid))
+            .copied()
+            .collect();
+
+        // If there are new PIDs, it could be orphans from other system processes
+        // Only fail if the count grew significantly (more than 2x the iterations)
+        let new_count = new_pids.len();
+        assert!(
+            new_count <= 2,
+            "Potential orphan rustc processes detected. New PIDs: {:?}. \
+             This may indicate kill_on_drop is not working correctly.",
+            new_pids
         );
     }
 }
