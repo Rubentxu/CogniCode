@@ -751,6 +751,46 @@ impl ServerHandler for CogniCodeHandler {
                         "required": ["file_path"]
                     }).as_object().cloned().unwrap()),
                 ),
+                // Batch D: Agent Task Tools (bidirectional interaction)
+                Tool::new(
+                    "poll_tasks",
+                    "Poll for pending agent tasks and claim them for execution. Returns up to `limit` tasks with status changed to 'in_progress'.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "limit": {
+                                "type": "integer",
+                                "description": "Maximum number of tasks to claim (default: 10, max: 100)"
+                            }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "complete_task",
+                    "Mark an agent task as completed or failed with optional result data.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "task_id": {
+                                "type": "integer",
+                                "description": "Task ID to complete (required)"
+                            },
+                            "status": {
+                                "type": "string",
+                                "description": "Completion status: 'completed' or 'failed' (required)"
+                            },
+                            "result_json": {
+                                "type": "string",
+                                "description": "Optional JSON result data"
+                            },
+                            "error_message": {
+                                "type": "string",
+                                "description": "Optional error message (for failed tasks)"
+                            }
+                        },
+                        "required": ["task_id", "status"]
+                    }).as_object().cloned().unwrap()),
+                ),
             ];
 
             // Paginate
@@ -1204,6 +1244,19 @@ async fn call_tool_handler(
                 duration_ms,
                 None,
             );
+            Ok(serde_json::to_string(&output)?)
+        }
+        // Batch D: Agent Task Tools (bidirectional interaction)
+        "poll_tasks" => {
+            let input: crate::interface::mcp::schemas::PollTasksInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_poll_tasks(ctx, input).await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        "complete_task" => {
+            let input: crate::interface::mcp::schemas::CompleteTaskInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_complete_task(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         _ => anyhow::bail!("Unknown tool: {}", tool_name),

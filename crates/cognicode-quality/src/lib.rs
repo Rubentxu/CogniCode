@@ -5,6 +5,7 @@
 pub mod config;
 pub mod incremental;
 pub mod handler;
+pub mod lock;
 
 pub use handler::{
     QualityAnalysisHandler, AnalyzeFileParams, AnalyzeProjectParams,
@@ -16,3 +17,5 @@ pub use handler::{
 pub use incremental::{
     AnalysisState, BaselineDiff, FileState, QualityBaseline, QualitySnapshot,
 };
+
+pub use lock::AnalysisLock;

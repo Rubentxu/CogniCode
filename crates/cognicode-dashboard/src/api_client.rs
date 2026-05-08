@@ -98,6 +98,8 @@ pub struct IssueDto {
     pub end_line: Option<usize>,
     #[serde(default)]
     pub remediation_hint: Option<String>,
+    #[serde(default)]
+    pub effort_minutes: Option<u32>,
 }
 
 /// Path validation result

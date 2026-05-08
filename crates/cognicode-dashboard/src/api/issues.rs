@@ -74,6 +74,7 @@ fn create_mock_issues() -> Vec<IssueResult> {
             column: Some(13),
             end_line: Some(42),
             remediation_hint: Some("Consider using IllegalArgumentException or a custom exception".to_string()),
+            effort_minutes: None,
         },
         IssueResult {
             rule_id: "java:S3752".to_string(),
@@ -85,6 +86,7 @@ fn create_mock_issues() -> Vec<IssueResult> {
             column: Some(20),
             end_line: Some(156),
             remediation_hint: Some("Use PreparedStatement or a framework that handles parameterisation".to_string()),
+            effort_minutes: None,
         },
         IssueResult {
             rule_id: "java:S2229".to_string(),
@@ -96,6 +98,7 @@ fn create_mock_issues() -> Vec<IssueResult> {
             column: Some(14),
             end_line: Some(23),
             remediation_hint: None,
+            effort_minutes: None,
         },
         IssueResult {
             rule_id: "java:S1114".to_string(),
@@ -107,6 +110,7 @@ fn create_mock_issues() -> Vec<IssueResult> {
             column: Some(9),
             end_line: Some(92),
             remediation_hint: None,
+            effort_minutes: None,
         },
         IssueResult {
             rule_id: "java:S1854".to_string(),
@@ -118,6 +122,7 @@ fn create_mock_issues() -> Vec<IssueResult> {
             column: Some(15),
             end_line: Some(112),
             remediation_hint: Some("The variable is assigned but its value is never used.".to_string()),
+            effort_minutes: None,
         },
     ]
 }

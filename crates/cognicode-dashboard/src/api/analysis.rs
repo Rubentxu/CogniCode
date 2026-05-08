@@ -72,6 +72,7 @@ fn create_mock_analysis_result() -> AnalysisResult {
                 column: Some(13),
                 end_line: Some(42),
                 remediation_hint: Some("Consider using IllegalArgumentException or a custom exception".to_string()),
+                effort_minutes: None,
             },
             IssueResult {
                 rule_id: "java:S3752".to_string(),
@@ -83,6 +84,7 @@ fn create_mock_analysis_result() -> AnalysisResult {
                 column: Some(20),
                 end_line: Some(156),
                 remediation_hint: Some("Use PreparedStatement or a framework that handles parameterisation".to_string()),
+                effort_minutes: None,
             },
         ],
         quality_gate: QualityGateResult {

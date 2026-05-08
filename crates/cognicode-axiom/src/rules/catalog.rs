@@ -144,6 +144,13 @@ impl Rule for S138Rule {
     fn category(&self) -> Category { Category::CodeSmell }
     fn language(&self) -> &str { "rust" }
 
+    // UI Metadata — Dashboard integration
+    fn ui_category(&self) -> Option<&str> { Some("Code Structure") }
+    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
+    fn display_icon(&self) -> Option<&str> { Some("function") }
+    fn tags(&self) -> Vec<&str> { vec!["complexity", "refactoring"] }
+    fn effort_category(&self) -> Option<&str> { Some("moderate") }
+
     fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
         let mut issues = Vec::new();
         let threshold = self.threshold;
@@ -217,6 +224,13 @@ impl Rule for S3776Rule {
     fn severity(&self) -> Severity { Severity::Major }
     fn category(&self) -> Category { Category::CodeSmell }
     fn language(&self) -> &str { "rust" }
+
+    // UI Metadata — Dashboard integration
+    fn ui_category(&self) -> Option<&str> { Some("Code Structure") }
+    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
+    fn display_icon(&self) -> Option<&str> { Some("function") }
+    fn tags(&self) -> Vec<&str> { vec!["complexity", "cognitive", "maintainability"] }
+    fn effort_category(&self) -> Option<&str> { Some("moderate") }
 
     fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
         let mut issues = Vec::new();
@@ -2712,14 +2726,35 @@ declare_rule! {
 // S125 — Commented-out code should be removed
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S125"
-    name: "Commented-out code should be removed"
-    severity: Minor
-    category: CodeSmell
-    language: "*"
-    params: {}
-    check: => {
+pub struct S125Rule;
+
+impl S125Rule {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for S125Rule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Rule for S125Rule {
+    fn id(&self) -> &str { "S125" }
+    fn name(&self) -> &str { "Commented-out code should be removed" }
+    fn severity(&self) -> Severity { Severity::Minor }
+    fn category(&self) -> Category { Category::CodeSmell }
+    fn language(&self) -> &str { "*" }
+
+    // UI Metadata — Dashboard integration
+    fn ui_category(&self) -> Option<&str> { Some("Dead Code") }
+    fn dashboard_group(&self) -> Option<&str> { Some("Maintainability") }
+    fn display_icon(&self) -> Option<&str> { Some("code") }
+    fn tags(&self) -> Vec<&str> { vec!["dead_code", "cleanup", "maintainability"] }
+    fn effort_category(&self) -> Option<&str> { Some("quick_fix") }
+
+    fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
             let t = line.trim();
@@ -25612,5 +25647,11 @@ submit! {
 submit! {
     RuleEntry {
         factory: || Box::new(S1192Rule::default())
+    }
+}
+
+submit! {
+    RuleEntry {
+        factory: || Box::new(S125Rule::default())
     }
 }

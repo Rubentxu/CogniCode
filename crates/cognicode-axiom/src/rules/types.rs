@@ -284,6 +284,25 @@ pub trait Rule: Send + Sync {
 
     /// Analyze the context and return any issues found
     fn check(&self, ctx: &RuleContext) -> Vec<Issue>;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // UI Metadata — Dashboard integration (all have safe defaults)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Returns the UI category for this rule (e.g., "Error Handling", "Code Structure")
+    fn ui_category(&self) -> Option<&str> { None }
+
+    /// Returns the dashboard group for this rule (e.g., "Reliability", "Security", "Maintainability")
+    fn dashboard_group(&self) -> Option<&str> { None }
+
+    /// Returns the display icon identifier for this rule (e.g., "warning-triangle", "function", "lock")
+    fn display_icon(&self) -> Option<&str> { None }
+
+    /// Returns tags associated with this rule for filtering and search
+    fn tags(&self) -> Vec<&str> { vec![] }
+
+    /// Returns the effort category for fixing issues of this rule (e.g., "quick_fix", "moderate", "complex")
+    fn effort_category(&self) -> Option<&str> { None }
 }
 
 /// A rule entry for inventory-based registration

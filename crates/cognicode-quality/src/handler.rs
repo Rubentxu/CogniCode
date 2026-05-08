@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use cognicode_axiom::linters::{ClippyRunner, Linter};
-use cognicode_axiom::rules::types::{Issue, RuleContext, RuleRegistry, Severity};
+use cognicode_axiom::rules::types::{Category, Issue, Remediation, RuleContext, RuleRegistry, Severity};
 use cognicode_axiom::rules::{
     CompareOperator, DuplicationDetector, FileMetrics, GateCondition, MetricValue,
     ProjectMetrics as AxiomProjectMetrics, QualityGate,
@@ -541,10 +541,17 @@ pub struct IssueResult {
     pub file: String,
     pub line: usize,
     pub column: Option<usize>,
+    pub remediation_hint: Option<String>,
+    pub effort_minutes: Option<u32>,
 }
 
 impl From<Issue> for IssueResult {
     fn from(issue: Issue) -> Self {
+        let remediation_hint = issue.remediation.as_ref().map(|r| {
+            format!("{} ({} min)", r.description, r.effort_minutes)
+        });
+        let effort_minutes = issue.remediation.as_ref().map(|r| r.effort_minutes);
+
         Self {
             rule_id: issue.rule_id,
             message: issue.message,
@@ -553,6 +560,8 @@ impl From<Issue> for IssueResult {
             file: issue.file.display().to_string(),
             line: issue.line,
             column: issue.column,
+            remediation_hint,
+            effort_minutes,
         }
     }
 }
@@ -645,4 +654,65 @@ pub struct DuplicationLocationResult {
     pub file: String,
     pub start_line: usize,
     pub end_line: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_issue_result_from_issue_with_remediation() {
+        // Create an Issue with remediation
+        let issue = Issue {
+            rule_id: "rust-lang::clippy::unused_variable".to_string(),
+            message: "unused variable `x`".to_string(),
+            severity: Severity::Major,
+            category: Category::CodeSmell,
+            file: std::path::PathBuf::from("src/main.rs"),
+            line: 42,
+            column: Some(10),
+            end_line: None,
+            remediation: Some(Remediation::new(5, "Consider removing or using the variable")),
+        };
+
+        let result = IssueResult::from(issue);
+
+        assert_eq!(result.rule_id, "rust-lang::clippy::unused_variable");
+        assert_eq!(result.message, "unused variable `x`");
+        assert_eq!(result.line, 42);
+        assert_eq!(result.column, Some(10));
+
+        // Check remediation is carried through
+        assert!(result.remediation_hint.is_some(), "remediation_hint should be Some");
+        assert!(result.effort_minutes.is_some(), "effort_minutes should be Some");
+        assert_eq!(result.effort_minutes, Some(5));
+        let hint = result.remediation_hint.as_ref().unwrap();
+        assert!(
+            hint.contains("5 min"),
+            "remediation_hint should contain effort: {:?}",
+            hint
+        );
+    }
+
+    #[test]
+    fn test_issue_result_from_issue_without_remediation() {
+        // Create an Issue without remediation
+        let issue = Issue {
+            rule_id: "rust-lang::clippy::unused_variable".to_string(),
+            message: "unused variable `x`".to_string(),
+            severity: Severity::Major,
+            category: Category::CodeSmell,
+            file: std::path::PathBuf::from("src/main.rs"),
+            line: 42,
+            column: Some(10),
+            end_line: None,
+            remediation: None,
+        };
+
+        let result = IssueResult::from(issue);
+
+        assert_eq!(result.rule_id, "rust-lang::clippy::unused_variable");
+        assert!(result.remediation_hint.is_none(), "remediation_hint should be None when no remediation");
+        assert!(result.effort_minutes.is_none(), "effort_minutes should be None when no remediation");
+    }
 }

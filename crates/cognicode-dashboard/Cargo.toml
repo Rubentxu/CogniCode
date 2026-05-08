@@ -52,6 +52,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 urlencoding = "2"
 
+# Database (for agent_tasks endpoints)
+rusqlite = { version = "0.31", features = ["bundled"] }
+
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
 axum = { version = "0.7", features = ["macros"] }

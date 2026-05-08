@@ -83,5 +83,8 @@ adder.go
 .tmp-cognicode-verify-extra/
 openspec/
 sdd/
+
+# Proposal documents (agent-generated, not user-requested documentation)
+docs/propuestas/
 rust-intelligence
 sandbox/fixtures/rust-intelligence/

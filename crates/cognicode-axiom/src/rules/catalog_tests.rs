@@ -1166,4 +1166,57 @@ fn main() {
         });
         assert!(issues.is_empty(), "S4834 should NOT trigger for comment lines with verify=false");
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Batch E — Rule Enrichment: UI Metadata Tests
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // Test that rules using default implementations return None/empty
+    #[test]
+    fn test_rule_default_ui_metadata() {
+        // S1066Rule does NOT implement custom UI metadata, so it uses defaults
+        let rule = catalog::S1066Rule::new();
+
+        assert_eq!(rule.ui_category(), None, "S1066 should use default ui_category (None)");
+        assert_eq!(rule.dashboard_group(), None, "S1066 should use default dashboard_group (None)");
+        assert_eq!(rule.display_icon(), None, "S1066 should use default display_icon (None)");
+        assert!(rule.tags().is_empty(), "S1066 should use default tags (empty vec)");
+        assert_eq!(rule.effort_category(), None, "S1066 should use default effort_category (None)");
+    }
+
+    // Test S138 UI metadata
+    #[test]
+    fn test_s138_ui_metadata() {
+        let rule = catalog::S138Rule::new(50);
+
+        assert_eq!(rule.ui_category(), Some("Code Structure"), "S138 ui_category should be 'Code Structure'");
+        assert_eq!(rule.dashboard_group(), Some("Maintainability"), "S138 dashboard_group should be 'Maintainability'");
+        assert_eq!(rule.display_icon(), Some("function"), "S138 display_icon should be 'function'");
+        assert_eq!(rule.tags(), vec!["complexity", "refactoring"], "S138 tags should be ['complexity', 'refactoring']");
+        assert_eq!(rule.effort_category(), Some("moderate"), "S138 effort_category should be 'moderate'");
+    }
+
+    // Test S3776 UI metadata
+    #[test]
+    fn test_s3776_ui_metadata() {
+        let rule = catalog::S3776Rule::new(20);
+
+        assert_eq!(rule.ui_category(), Some("Code Structure"), "S3776 ui_category should be 'Code Structure'");
+        assert_eq!(rule.dashboard_group(), Some("Maintainability"), "S3776 dashboard_group should be 'Maintainability'");
+        assert_eq!(rule.display_icon(), Some("function"), "S3776 display_icon should be 'function'");
+        assert_eq!(rule.tags(), vec!["complexity", "cognitive", "maintainability"], "S3776 tags should be ['complexity', 'cognitive', 'maintainability']");
+        assert_eq!(rule.effort_category(), Some("moderate"), "S3776 effort_category should be 'moderate'");
+    }
+
+    // Test S125 UI metadata
+    #[test]
+    fn test_s125_ui_metadata() {
+        let rule = catalog::S125Rule::new();
+
+        assert_eq!(rule.ui_category(), Some("Dead Code"), "S125 ui_category should be 'Dead Code'");
+        assert_eq!(rule.dashboard_group(), Some("Maintainability"), "S125 dashboard_group should be 'Maintainability'");
+        assert_eq!(rule.display_icon(), Some("code"), "S125 display_icon should be 'code'");
+        assert_eq!(rule.tags(), vec!["dead_code", "cleanup", "maintainability"], "S125 tags should be ['dead_code', 'cleanup', 'maintainability']");
+        assert_eq!(rule.effort_category(), Some("quick_fix"), "S125 effort_category should be 'quick_fix'");
+    }
 }

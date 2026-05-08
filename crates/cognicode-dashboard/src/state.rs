@@ -212,6 +212,7 @@ pub struct IssueResult {
     pub column: Option<usize>,
     pub end_line: Option<usize>,
     pub remediation_hint: Option<String>,
+    pub effort_minutes: Option<u32>,
 }
 
 /// Project ratings (A-E scale)

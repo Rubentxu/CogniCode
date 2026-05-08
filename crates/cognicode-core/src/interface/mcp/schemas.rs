@@ -2064,3 +2064,74 @@ pub struct RetrieveAndVerifyOutput {
     /// Count of skipped matches
     pub skipped_count: u32,
 }
+
+// ============================================================================
+// Agent Task Tools (Batch D - Bidirectional Interaction)
+// ============================================================================
+
+/// Input for poll_tasks tool — claim pending tasks for execution
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PollTasksInput {
+    /// Maximum number of tasks to claim (default: 10)
+    #[serde(default = "default_poll_limit")]
+    pub limit: usize,
+}
+
+fn default_poll_limit() -> usize {
+    10
+}
+
+/// Output for poll_tasks tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PollTasksOutput {
+    /// List of claimed tasks
+    pub tasks: Vec<AgentTaskDto>,
+}
+
+/// An agent task record (mirrors cognicode_db::agent_tasks::AgentTask)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTaskDto {
+    pub id: i64,
+    pub task_type: String,
+    pub priority: i32,
+    pub payload_json: String,
+    pub status: String,
+    pub created_by: String,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_json: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+}
+
+/// Input for complete_task tool — mark a task as completed
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CompleteTaskInput {
+    /// Task ID to complete
+    pub task_id: i64,
+
+    /// Completion status: "completed" or "failed"
+    pub status: String,
+
+    /// Optional JSON result data
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result_json: Option<String>,
+
+    /// Optional error message (for failed tasks)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+}
+
+/// Output for complete_task tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CompleteTaskOutput {
+    /// Whether the completion was successful
+    pub success: bool,
+
+    /// Human-readable message
+    pub message: String,
+}

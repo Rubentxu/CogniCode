@@ -13,6 +13,7 @@ use cognicode_quality::handler::{
     IssueResult as QualityIssueResult,
     ProjectMetricsResult,
 };
+use cognicode_quality::lock::AnalysisLock;
 use cognicode_axiom::rules::{QualityGate, GateCondition, CompareOperator, MetricValue};
 use cognicode_db::quality::QualityStore;
 use cognicode_db::drift_events::DriftEventStore;
@@ -96,6 +97,7 @@ pub struct IssueDto {
     pub column: Option<usize>,
     pub end_line: Option<usize>,
     pub remediation_hint: Option<String>,
+    pub effort_minutes: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -295,6 +297,56 @@ pub struct AgentStatsQuery {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Agent Tasks Endpoint DTOs (Batch D - Bidirectional Interaction)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Request DTO for POST /api/tasks — create a new agent task
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateTaskRequest {
+    pub task_type: String,
+    pub priority: Option<i32>,
+    pub payload_json: String,
+    pub created_by: Option<String>,
+}
+
+/// Response DTO for task creation
+#[derive(Debug, Clone, Serialize)]
+pub struct CreateTaskResponse {
+    pub task_id: i64,
+    pub status: String,
+}
+
+/// Response DTO for a single task
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskDto {
+    pub id: i64,
+    pub task_type: String,
+    pub priority: i32,
+    pub payload_json: String,
+    pub status: String,
+    pub created_by: String,
+    pub created_at: String,
+    pub assigned_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub result_json: Option<String>,
+    pub error_message: Option<String>,
+}
+
+/// Response DTO for task list
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskListResponse {
+    pub tasks: Vec<TaskDto>,
+    pub total: usize,
+}
+
+/// Query params for GET /api/tasks
+#[derive(Debug, Clone, Deserialize)]
+pub struct TasksQuery {
+    pub status: Option<String>,
+    pub task_type: Option<String>,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Drift Events Endpoint DTOs
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -328,6 +380,83 @@ pub struct DriftResponseDto {
     pub total_count: usize,
     pub offset: usize,
     pub limit: usize,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch F: Dashboard Power-Ups DTOs
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Response DTO for GET /api/overview — returns smart_overview data
+#[derive(Debug, Clone, Serialize)]
+pub struct OverviewResponseDto {
+    pub data: Option<serde_json::Value>,
+    pub message: String,
+}
+
+/// Response DTO for GET /api/diagnostics — returns auto_diagnose data
+#[derive(Debug, Clone, Serialize)]
+pub struct DiagnosticsResponseDto {
+    pub data: Option<serde_json::Value>,
+    pub message: String,
+}
+
+/// Query params for GET /api/trends
+#[derive(Debug, Clone, Deserialize)]
+pub struct TrendsQuery {
+    pub limit: Option<usize>,
+}
+
+/// A single trend data point
+#[derive(Debug, Clone, Serialize)]
+pub struct TrendEntryDto {
+    pub date: String,
+    pub total_issues: usize,
+    pub debt_minutes: u64,
+    pub rating: String,
+}
+
+/// Response DTO for GET /api/trends — time-series from analysis_runs
+#[derive(Debug, Clone, Serialize)]
+pub struct TrendsResponseDto {
+    pub trends: Vec<TrendEntryDto>,
+    pub baseline: Option<BaselineComparisonDto>,
+}
+
+/// Baseline comparison data
+#[derive(Debug, Clone, Serialize)]
+pub struct BaselineComparisonDto {
+    pub baseline_timestamp: String,
+    pub issues_delta: i64,
+    pub debt_delta: i64,
+    pub rating_before: String,
+    pub rating_after: String,
+}
+
+/// Response DTO for GET /api/agent-outputs/:tool_name
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentOutputDto {
+    pub id: i64,
+    pub tool_name: String,
+    pub session_id: Option<String>,
+    pub output_json: serde_json::Value,
+    pub summary_text: Option<String>,
+    pub created_at: String,
+    pub expires_at: Option<String>,
+}
+
+/// Response DTO for GET /api/agent-outputs/:tool_name (when no data)
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentOutputEmptyDto {
+    pub data: Option<serde_json::Value>,
+    pub message: String,
+}
+
+/// Response DTO for GET /api/analysis/status — cache metadata
+#[derive(Debug, Clone, Serialize)]
+pub struct AnalysisStatusDto {
+    pub cached: bool,
+    pub timestamp: Option<u64>,
+    pub project_path: String,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -559,7 +688,8 @@ fn convert_issue(issue: QualityIssueResult) -> IssueDto {
         line: issue.line,
         column: issue.column,
         end_line: None,
-        remediation_hint: None,
+        remediation_hint: issue.remediation_hint.clone(),
+        effort_minutes: issue.effort_minutes,
     }
 }
 
@@ -672,6 +802,16 @@ async fn run_analysis(
             message: format!("Project path does not exist: {}", req.project_path),
         });
     }
+
+    // D.9: Try to acquire analysis lock to prevent concurrent analysis runs
+    let _lock = match AnalysisLock::try_acquire(&project_path) {
+        Some(lock) => lock,
+        None => {
+            return Err(ApiError {
+                message: "Analysis already in progress for this project. Please try again later.".to_string(),
+            });
+        }
+    };
 
     let handler = QualityAnalysisHandler::new(project_path.clone());
     let params = AnalyzeProjectParams {
@@ -1260,6 +1400,335 @@ pub async fn get_drift_events(
     })
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent Tasks Handlers (Batch D - Bidirectional Interaction)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// POST /api/tasks — create a new agent task
+async fn create_task(
+    State(state): State<AppServerState>,
+    Json(req): Json<CreateTaskRequest>,
+) -> ApiResult<Json<CreateTaskResponse>> {
+    let config = state.config.read().await;
+    let project_path = PathBuf::from(&config.project_path);
+    drop(config);
+
+    let db_path = project_path.join(".cognicode").join("cognicode.db");
+    let conn = rusqlite::Connection::open(&db_path).map_err(|e| ApiError {
+        message: format!("Failed to open database: {}", e),
+    })?;
+
+    let priority = req.priority.unwrap_or(5);
+    let created_by = req.created_by.as_deref().unwrap_or("dashboard");
+
+    let task_id = cognicode_db::agent_tasks::AgentTasksStore::create_task(
+        &conn,
+        &req.task_type,
+        priority,
+        &req.payload_json,
+        Some(created_by),
+    ).map_err(|e| ApiError {
+        message: format!("Failed to create task: {}", e),
+    })?;
+
+    Ok(Json(CreateTaskResponse {
+        task_id,
+        status: "pending".to_string(),
+    }))
+}
+
+/// GET /api/tasks/:id — get a specific task by ID
+async fn get_task(
+    State(state): State<AppServerState>,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> ApiResult<Json<TaskDto>> {
+    let config = state.config.read().await;
+    let project_path = PathBuf::from(&config.project_path);
+    drop(config);
+
+    let db_path = project_path.join(".cognicode").join("cognicode.db");
+    let conn = rusqlite::Connection::open(&db_path).map_err(|e| ApiError {
+        message: format!("Failed to open database: {}", e),
+    })?;
+
+    let task = cognicode_db::agent_tasks::AgentTasksStore::get_task(&conn, id)
+        .map_err(|e| ApiError {
+            message: format!("Failed to get task: {}", e),
+        })?;
+
+    match task {
+        Some(t) => Ok(Json(TaskDto {
+            id: t.id,
+            task_type: t.task_type,
+            priority: t.priority,
+            payload_json: t.payload_json,
+            status: t.status,
+            created_by: t.created_by,
+            created_at: t.created_at,
+            assigned_at: t.assigned_at,
+            completed_at: t.completed_at,
+            result_json: t.result_json,
+            error_message: t.error_message,
+        })),
+        None => Err(ApiError {
+            message: format!("Task not found: {}", id),
+        }),
+    }
+}
+
+/// GET /api/tasks — list tasks with optional filters
+async fn list_tasks(
+    State(state): State<AppServerState>,
+    axum::extract::Query(query): axum::extract::Query<TasksQuery>,
+) -> ApiResult<Json<TaskListResponse>> {
+    let config = state.config.read().await;
+    let project_path = PathBuf::from(&config.project_path);
+    drop(config);
+
+    let db_path = project_path.join(".cognicode").join("cognicode.db");
+    let conn = rusqlite::Connection::open(&db_path).map_err(|e| ApiError {
+        message: format!("Failed to open database: {}", e),
+    })?;
+
+    // Build query based on filters
+    let tasks: Vec<cognicode_db::agent_tasks::AgentTask> = if query.status.is_some() || query.task_type.is_some() {
+        // For filtered queries, use get_task to check each pending task (simplified approach)
+        // In production, you'd want a proper filtered query method
+        let status_filter = query.status.as_deref().unwrap_or("pending");
+        let task_type_filter = query.task_type.as_deref();
+
+        // Poll pending tasks to get a list, then filter
+        let all_tasks = cognicode_db::agent_tasks::AgentTasksStore::poll_pending(&conn, 100)
+            .unwrap_or_default();
+
+        all_tasks.into_iter()
+            .filter(|t| {
+                let status_match = t.status == status_filter;
+                let type_match = task_type_filter.map(|ft| &t.task_type == ft).unwrap_or(true);
+                status_match && type_match
+            })
+            .collect()
+    } else {
+        // No filters - return pending tasks
+        cognicode_db::agent_tasks::AgentTasksStore::poll_pending(&conn, 100)
+            .unwrap_or_default()
+    };
+
+    let dtos: Vec<TaskDto> = tasks.into_iter().map(|t| TaskDto {
+        id: t.id,
+        task_type: t.task_type,
+        priority: t.priority,
+        payload_json: t.payload_json,
+        status: t.status,
+        created_by: t.created_by,
+        created_at: t.created_at,
+        assigned_at: t.assigned_at,
+        completed_at: t.completed_at,
+        result_json: t.result_json,
+        error_message: t.error_message,
+    }).collect();
+
+    Ok(Json(TaskListResponse {
+        total: dtos.len(),
+        tasks: dtos,
+    }))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch F: Dashboard Power-Ups Handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// GET /api/overview — returns latest smart_overview from agent_outputs
+async fn get_overview(
+    State(state): State<AppServerState>,
+) -> Json<OverviewResponseDto> {
+    let config = state.config.read().await;
+    let project_path = PathBuf::from(&config.project_path);
+    drop(config);
+
+    let db_path = project_path.join(".cognicode").join("cognicode.db");
+    let conn = match rusqlite::Connection::open(&db_path) {
+        Ok(conn) => conn,
+        Err(_) => {
+            return Json(OverviewResponseDto {
+                data: None,
+                message: "No overview data yet".to_string(),
+            });
+        }
+    };
+
+    match cognicode_db::agent_outputs::AgentOutputsStore::get_latest(&conn, "smart_overview") {
+        Ok(Some(output)) => {
+            let parsed: serde_json::Value = serde_json::from_str(&output.output_json)
+                .unwrap_or(serde_json::Value::Null);
+            Json(OverviewResponseDto {
+                data: Some(parsed),
+                message: "Overview retrieved successfully".to_string(),
+            })
+        }
+        Ok(None) => Json(OverviewResponseDto {
+            data: None,
+            message: "No overview data yet".to_string(),
+        }),
+        Err(_) => Json(OverviewResponseDto {
+            data: None,
+            message: "No overview data yet".to_string(),
+        }),
+    }
+}
+
+/// GET /api/diagnostics — returns latest auto_diagnose from agent_outputs
+async fn get_diagnostics(
+    State(state): State<AppServerState>,
+) -> Json<DiagnosticsResponseDto> {
+    let config = state.config.read().await;
+    let project_path = PathBuf::from(&config.project_path);
+    drop(config);
+
+    let db_path = project_path.join(".cognicode").join("cognicode.db");
+    let conn = match rusqlite::Connection::open(&db_path) {
+        Ok(conn) => conn,
+        Err(_) => {
+            return Json(DiagnosticsResponseDto {
+                data: None,
+                message: "No diagnostics data yet".to_string(),
+            });
+        }
+    };
+
+    match cognicode_db::agent_outputs::AgentOutputsStore::get_latest(&conn, "auto_diagnose") {
+        Ok(Some(output)) => {
+            let parsed: serde_json::Value = serde_json::from_str(&output.output_json)
+                .unwrap_or(serde_json::Value::Null);
+            Json(DiagnosticsResponseDto {
+                data: Some(parsed),
+                message: "Diagnostics retrieved successfully".to_string(),
+            })
+        }
+        Ok(None) => Json(DiagnosticsResponseDto {
+            data: None,
+            message: "No diagnostics data yet".to_string(),
+        }),
+        Err(_) => Json(DiagnosticsResponseDto {
+            data: None,
+            message: "No diagnostics data yet".to_string(),
+        }),
+    }
+}
+
+/// GET /api/trends — returns time-series from analysis_runs
+async fn get_trends(
+    State(state): State<AppServerState>,
+    axum::extract::Query(query): axum::extract::Query<TrendsQuery>,
+) -> Json<TrendsResponseDto> {
+    let config = state.config.read().await;
+    let project_path = PathBuf::from(&config.project_path);
+    drop(config);
+
+    let store = QualityStore::open(&project_path);
+    let limit = query.limit.unwrap_or(30);
+
+    // Get run history (time-series)
+    let runs = store.get_run_history(limit);
+
+    // Convert to trend entries (oldest first for charting)
+    let trends: Vec<TrendEntryDto> = runs.into_iter()
+        .rev()  // Reverse to get oldest first
+        .map(|r| TrendEntryDto {
+            date: r.timestamp,
+            total_issues: r.total_issues,
+            debt_minutes: r.debt_minutes,
+            rating: r.rating,
+        })
+        .collect();
+
+    // Get baseline comparison if available
+    let baseline = if trends.last().is_some() {
+        let latest = store.get_run_history(1).pop();
+        if let (Some(latest_run), Some(baseline_data)) = (latest, store.get_baseline()) {
+            Some(BaselineComparisonDto {
+                baseline_timestamp: baseline_data.timestamp,
+                issues_delta: latest_run.total_issues as i64 - baseline_data.total_issues as i64,
+                debt_delta: latest_run.debt_minutes as i64 - baseline_data.debt_minutes as i64,
+                rating_before: baseline_data.rating,
+                rating_after: latest_run.rating,
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    Json(TrendsResponseDto { trends, baseline })
+}
+
+/// GET /api/agent-outputs/:tool_name — returns latest output for a specific tool
+async fn get_agent_output_by_tool(
+    State(state): State<AppServerState>,
+    axum::extract::Path(tool_name): axum::extract::Path<String>,
+) -> ApiResult<Json<AgentOutputDto>> {
+    let config = state.config.read().await;
+    let project_path = PathBuf::from(&config.project_path);
+    drop(config);
+
+    let db_path = project_path.join(".cognicode").join("cognicode.db");
+    let conn = rusqlite::Connection::open(&db_path).map_err(|e| ApiError {
+        message: format!("Failed to open database: {}", e),
+    })?;
+
+    let output = cognicode_db::agent_outputs::AgentOutputsStore::get_latest(&conn, &tool_name)
+        .map_err(|e| ApiError {
+            message: format!("Failed to get agent output: {}", e),
+        })?;
+
+    match output {
+        Some(o) => {
+            let parsed: serde_json::Value = serde_json::from_str(&o.output_json)
+                .unwrap_or(serde_json::Value::Null);
+            Ok(Json(AgentOutputDto {
+                id: o.id,
+                tool_name: o.tool_name,
+                session_id: o.session_id,
+                output_json: parsed,
+                summary_text: o.summary_text,
+                created_at: o.created_at,
+                expires_at: o.expires_at,
+            }))
+        }
+        None => Err(ApiError {
+            message: format!("No output found for tool: {}", tool_name),
+        }),
+    }
+}
+
+/// GET /api/analysis/status — returns cache metadata
+async fn get_analysis_status(
+    State(state): State<AppServerState>,
+) -> Json<AnalysisStatusDto> {
+    let config = state.config.read().await;
+    let project_path = config.project_path.clone();
+    drop(config);
+
+    let cache = state.analysis_cache.read().await;
+
+    match &*cache {
+        Some(cached) if cached.is_valid(&project_path) => {
+            let timestamp = cached.timestamp.elapsed().as_secs();
+            Json(AnalysisStatusDto {
+                cached: true,
+                timestamp: Some(timestamp),
+                project_path,
+            })
+        }
+        _ => Json(AnalysisStatusDto {
+            cached: false,
+            timestamp: None,
+            project_path,
+        }),
+    }
+}
+
 fn url_decode(s: &str) -> String {
     let mut result = String::new();
     let bytes = s.as_bytes();
@@ -1304,6 +1773,16 @@ pub async fn start_server(port: u16) {
         .route("/api/contracts", get(get_contracts))
         .route("/api/agent-stats", get(get_agent_stats))
         .route("/api/drift", get(get_drift_events))
+        // Batch D: Agent Tasks endpoints (bidirectional interaction)
+        .route("/api/tasks", post(create_task))
+        .route("/api/tasks", get(list_tasks))
+        .route("/api/tasks/:id", get(get_task))
+        // Batch F: Dashboard Power-Ups
+        .route("/api/overview", get(get_overview))
+        .route("/api/diagnostics", get(get_diagnostics))
+        .route("/api/trends", get(get_trends))
+        .route("/api/agent-outputs/:tool_name", get(get_agent_output_by_tool))
+        .route("/api/analysis/status", get(get_analysis_status))
         .layer(CorsLayer::permissive())
         .with_state(app_state);
 
@@ -1390,4 +1869,245 @@ async fn main() {
         .unwrap_or(3000);
 
     start_server(port).await;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch F: Dashboard Power-Ups Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_overview_response_dto_with_data() {
+        let data = serde_json::json!({"summary": "test overview", "score": 95});
+        let response = OverviewResponseDto {
+            data: Some(data.clone()),
+            message: "Overview retrieved successfully".to_string(),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"data\""));
+        assert!(json.contains("test overview"));
+        assert!(json.contains("Overview retrieved successfully"));
+    }
+
+    #[test]
+    fn test_overview_response_dto_empty() {
+        let response = OverviewResponseDto {
+            data: None,
+            message: "No overview data yet".to_string(),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"data\":null"));
+        assert!(json.contains("No overview data yet"));
+    }
+
+    #[test]
+    fn test_diagnostics_response_dto_with_data() {
+        let data = serde_json::json!({"issues": ["issue1", "issue2"]});
+        let response = DiagnosticsResponseDto {
+            data: Some(data),
+            message: "Diagnostics retrieved successfully".to_string(),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("Diagnostics retrieved successfully"));
+    }
+
+    #[test]
+    fn test_diagnostics_response_dto_empty() {
+        let response = DiagnosticsResponseDto {
+            data: None,
+            message: "No diagnostics data yet".to_string(),
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("No diagnostics data yet"));
+    }
+
+    #[test]
+    fn test_trend_entry_dto_serialization() {
+        let entry = TrendEntryDto {
+            date: "2024-01-15T10:30:00Z".to_string(),
+            total_issues: 42,
+            debt_minutes: 120,
+            rating: "B".to_string(),
+        };
+
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"date\":\"2024-01-15T10:30:00Z\""));
+        assert!(json.contains("\"total_issues\":42"));
+        assert!(json.contains("\"debt_minutes\":120"));
+        assert!(json.contains("\"rating\":\"B\""));
+    }
+
+    #[test]
+    fn test_trends_response_dto_with_baseline() {
+        let trends = vec![
+            TrendEntryDto {
+                date: "2024-01-01T00:00:00Z".to_string(),
+                total_issues: 50,
+                debt_minutes: 100,
+                rating: "C".to_string(),
+            },
+            TrendEntryDto {
+                date: "2024-01-15T00:00:00Z".to_string(),
+                total_issues: 42,
+                debt_minutes: 80,
+                rating: "B".to_string(),
+            },
+        ];
+
+        let baseline = Some(BaselineComparisonDto {
+            baseline_timestamp: "2024-01-01T00:00:00Z".to_string(),
+            issues_delta: -8,
+            debt_delta: -20,
+            rating_before: "C".to_string(),
+            rating_after: "B".to_string(),
+        });
+
+        let response = TrendsResponseDto { trends, baseline };
+        let json = serde_json::to_string(&response).unwrap();
+
+        assert!(json.contains("\"trends\""));
+        assert!(json.contains("\"baseline\""));
+        assert!(json.contains("\"issues_delta\":-8"));
+        assert!(json.contains("\"debt_delta\":-20"));
+    }
+
+    #[test]
+    fn test_trends_response_dto_without_baseline() {
+        let trends = vec![];
+        let response = TrendsResponseDto {
+            trends,
+            baseline: None,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"trends\":[]"));
+        assert!(json.contains("\"baseline\":null"));
+    }
+
+    #[test]
+    fn test_agent_output_dto_serialization() {
+        let dto = AgentOutputDto {
+            id: 1,
+            tool_name: "smart_overview".to_string(),
+            session_id: Some("session_123".to_string()),
+            output_json: serde_json::json!({"key": "value"}),
+            summary_text: Some("Summary text".to_string()),
+            created_at: "2024-01-15T10:30:00Z".to_string(),
+            expires_at: None,
+        };
+
+        let json = serde_json::to_string(&dto).unwrap();
+        assert!(json.contains("\"id\":1"));
+        assert!(json.contains("\"tool_name\":\"smart_overview\""));
+        assert!(json.contains("\"session_id\":\"session_123\""));
+        assert!(json.contains("\"summary_text\":\"Summary text\""));
+    }
+
+    #[test]
+    fn test_analysis_status_dto_cached() {
+        let dto = AnalysisStatusDto {
+            cached: true,
+            timestamp: Some(120),
+            project_path: "/path/to/project".to_string(),
+        };
+
+        let json = serde_json::to_string(&dto).unwrap();
+        assert!(json.contains("\"cached\":true"));
+        assert!(json.contains("\"timestamp\":120"));
+        assert!(json.contains("\"/path/to/project\""));
+    }
+
+    #[test]
+    fn test_analysis_status_dto_not_cached() {
+        let dto = AnalysisStatusDto {
+            cached: false,
+            timestamp: None,
+            project_path: "/path/to/project".to_string(),
+        };
+
+        let json = serde_json::to_string(&dto).unwrap();
+        assert!(json.contains("\"cached\":false"));
+        assert!(json.contains("\"timestamp\":null"));
+    }
+
+    #[test]
+    fn test_trends_query_deserialization() {
+        let json = r#"{"limit": 50}"#;
+        let query: TrendsQuery = serde_json::from_str(json).unwrap();
+        assert_eq!(query.limit, Some(50));
+    }
+
+    #[test]
+    fn test_trends_query_default_limit() {
+        let json = r#"{}"#;
+        let query: TrendsQuery = serde_json::from_str(json).unwrap();
+        assert_eq!(query.limit, None);
+    }
+
+    #[test]
+    fn test_cached_analysis_is_valid() {
+        let cached = CachedAnalysis {
+            project_path: "/test/path".to_string(),
+            timestamp: std::time::Instant::now(),
+            summary: AnalysisSummaryDto {
+                project_path: "/test/path".to_string(),
+                total_files: 10,
+                total_issues: 5,
+                ratings: ProjectRatingsDto {
+                    reliability: 'A',
+                    security: 'A',
+                    maintainability: 'B',
+                    coverage: 'C',
+                },
+                metrics: ProjectMetricsDto {
+                    ncloc: 1000,
+                    functions: 50,
+                    code_smells: 3,
+                    bugs: 1,
+                    vulnerabilities: 0,
+                    issues_by_severity: std::collections::HashMap::new(),
+                },
+                technical_debt: TechnicalDebtDto {
+                    total_minutes: 30,
+                    rating: 'A',
+                    label: "Excellent".to_string(),
+                },
+                quality_gate: QualityGateResultDto {
+                    name: "default".to_string(),
+                    status: "PASSED".to_string(),
+                    conditions: vec![],
+                },
+                incremental: IncrementalInfoDto {
+                    files_total: 10,
+                    files_changed: 2,
+                    files_reused: 8,
+                    new_code_issues: 1,
+                    legacy_issues: 2,
+                    clean_as_you_code: true,
+                    timed_out: false,
+                },
+            },
+            issues: vec![],
+            metrics: ProjectMetricsDto {
+                ncloc: 1000,
+                functions: 50,
+                code_smells: 3,
+                bugs: 1,
+                vulnerabilities: 0,
+                issues_by_severity: std::collections::HashMap::new(),
+            },
+        };
+
+        // Should be valid for same project path
+        assert!(cached.is_valid("/test/path"));
+        // Should not be valid for different project path
+        assert!(!cached.is_valid("/different/path"));
+    }
 }

@@ -70,7 +70,7 @@ pub async fn handle_smart_overview(
         OverviewDetail::Detailed => 800,
     };
 
-    Ok(SmartOverviewDto {
+    let result = SmartOverviewDto {
         project_type: project_type.to_string(),
         total_symbols: stats.symbol_count,
         total_edges: stats.edge_count,
@@ -85,7 +85,29 @@ pub async fn handle_smart_overview(
             estimated_tokens,
             detail_level: detail.to_string(),
         },
-    })
+    };
+
+    // B.1: Persist output for dashboard (agent-dashboard-improvements)
+    if let Ok(conn) = open_db(&ctx.working_dir) {
+        let json = serde_json::to_string(&result).unwrap_or_default();
+        let summary = format!("{} - {} files, {} hot paths",
+            result.project_type, stats.file_count, result.critical_hot_paths.len());
+        if let Err(e) = conn.execute(
+            "INSERT INTO agent_outputs (tool_name, session_id, output_json, summary_text, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                "smart_overview",
+                None::<&str>,
+                json,
+                Some(summary),
+                chrono::Utc::now().to_rfc3339(),
+                None::<&str>,
+            ],
+        ) {
+            tracing::warn!("Failed to persist smart_overview output: {}", e);
+        }
+    }
+
+    Ok(result)
 }
 
 /// Handler for ranked_symbols tool (AIX-1.3)
@@ -93,6 +115,7 @@ pub async fn handle_ranked_symbols(
     ctx: &HandlerContext,
     input: RankedSymbolsInput,
 ) -> HandlerResult<RankedSymbolsResult> {
+    let start = Instant::now();
     let _ensure_sem = ensure_semantic_indexed(ctx)?;
     let _ensure = ensure_graph_built(ctx)?;
 
@@ -157,7 +180,7 @@ pub async fn handle_ranked_symbols(
     }
 
     let total = ranked.len();
-    Ok(RankedSymbolsResult {
+    let result = RankedSymbolsResult {
         query: input.query,
         total_matches: total,
         returned: total,
@@ -166,7 +189,18 @@ pub async fn handle_ranked_symbols(
             estimated_tokens: total * 50,
             detail_level: "ranked".to_string(),
         },
-    })
+    };
+
+    // B.3: Record tool usage telemetry
+    let duration_ms = start.elapsed().as_millis() as f64;
+    ctx.record_tool_usage(
+        "ranked_symbols",
+        &serde_json::to_string(&result).unwrap_or_default(),
+        duration_ms,
+        None,
+    );
+
+    Ok(result)
 }
 
 /// Handler for suggest_onboarding_plan tool (AIX-2.1)
@@ -174,6 +208,7 @@ pub async fn handle_suggest_onboarding_plan(
     ctx: &HandlerContext,
     input: OnboardingPlanInput,
 ) -> HandlerResult<OnboardingPlanDto> {
+    let start = Instant::now();
     let _ensure = ensure_graph_built(ctx)?;
 
     let goal = match input.goal {
@@ -187,7 +222,7 @@ pub async fn handle_suggest_onboarding_plan(
     let total_tokens: usize = goal.iter().map(|s| s.estimated_tokens).sum();
     let total_steps = goal.len();
 
-    Ok(OnboardingPlanDto {
+    let result = OnboardingPlanDto {
         goal: format!("{:?}", input.goal).to_lowercase(),
         total_steps,
         total_estimated_tokens: total_tokens,
@@ -196,7 +231,18 @@ pub async fn handle_suggest_onboarding_plan(
             estimated_tokens: total_tokens,
             detail_level: "onboarding_plan".to_string(),
         },
-    })
+    };
+
+    // B.3: Record tool usage telemetry
+    let duration_ms = start.elapsed().as_millis() as f64;
+    ctx.record_tool_usage(
+        "suggest_onboarding_plan",
+        &serde_json::to_string(&result).unwrap_or_default(),
+        duration_ms,
+        None,
+    );
+
+    Ok(result)
 }
 
 /// Handler for auto_diagnose tool (AIX-2.3)
@@ -302,7 +348,7 @@ pub async fn handle_auto_diagnose(
         None
     };
 
-    Ok(DiagnoseReportDto {
+    let result = DiagnoseReportDto {
         health_score,
         total_issues: issues.len(),
         critical_count,
@@ -324,7 +370,29 @@ pub async fn handle_auto_diagnose(
             estimated_tokens: 500,
             detail_level: "auto_diagnose".to_string(),
         },
-    })
+    };
+
+    // B.2: Persist output for dashboard (agent-dashboard-improvements)
+    if let Ok(conn) = open_db(&ctx.working_dir) {
+        let json = serde_json::to_string(&result).unwrap_or_default();
+        let summary = format!("Health score: {:.0}/100 - {} issues ({} critical, {} important, {} warning)",
+            result.health_score, result.total_issues, result.critical_count, result.important_count, result.warning_count);
+        if let Err(e) = conn.execute(
+            "INSERT INTO agent_outputs (tool_name, session_id, output_json, summary_text, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                "auto_diagnose",
+                None::<&str>,
+                json,
+                Some(summary),
+                chrono::Utc::now().to_rfc3339(),
+                None::<&str>,
+            ],
+        ) {
+            tracing::warn!("Failed to persist auto_diagnose output: {}", e);
+        }
+    }
+
+    Ok(result)
 }
 
 /// Handler for suggest_refactor_plan tool (AIX-2.2)
@@ -332,6 +400,7 @@ pub async fn handle_suggest_refactor_plan(
     ctx: &HandlerContext,
     input: SuggestRefactorPlanInput,
 ) -> HandlerResult<RefactorSuggestionDto> {
+    let start = Instant::now();
     let _ensure = ensure_graph_built(ctx)?;
 
     let graph = ctx.analysis_service.get_project_graph();
@@ -398,7 +467,7 @@ pub async fn handle_suggest_refactor_plan(
         "medium"
     };
 
-    Ok(RefactorSuggestionDto {
+    let result = RefactorSuggestionDto {
         symbol: input.symbol,
         current_complexity: complexity,
         caller_count,
@@ -410,7 +479,18 @@ pub async fn handle_suggest_refactor_plan(
             estimated_tokens: 300,
             detail_level: "refactor_plan".to_string(),
         },
-    })
+    };
+
+    // B.3: Record tool usage telemetry
+    let duration_ms = start.elapsed().as_millis() as f64;
+    ctx.record_tool_usage(
+        "suggest_refactor_plan",
+        &serde_json::to_string(&result).unwrap_or_default(),
+        duration_ms,
+        None,
+    );
+
+    Ok(result)
 }
 
 /// Handler for nl_to_symbol tool (AIX-3.1)
@@ -418,6 +498,7 @@ pub async fn handle_nl_to_symbol(
     ctx: &HandlerContext,
     input: NlToSymbolInput,
 ) -> HandlerResult<NlToSymbolResult> {
+    let start = Instant::now();
     let _ensure_sem = ensure_semantic_indexed(ctx)?;
     let _ensure = ensure_graph_built(ctx)?;
 
@@ -476,7 +557,7 @@ pub async fn handle_nl_to_symbol(
         ctx.record_symbol_access(&m.symbol_name, 1);
     }
 
-    Ok(NlToSymbolResult {
+    let result = NlToSymbolResult {
         query: input.query,
         extracted_keywords: keywords,
         total_candidates: total,
@@ -485,7 +566,18 @@ pub async fn handle_nl_to_symbol(
             estimated_tokens: total * 40,
             detail_level: "nl_to_symbol".to_string(),
         },
-    })
+    };
+
+    // B.3: Record tool usage telemetry
+    let duration_ms = start.elapsed().as_millis() as f64;
+    ctx.record_tool_usage(
+        "nl_to_symbol",
+        &serde_json::to_string(&result).unwrap_or_default(),
+        duration_ms,
+        None,
+    );
+
+    Ok(result)
 }
 
 /// Handler for ask_about_code tool (AIX-3.2)
@@ -493,6 +585,7 @@ pub async fn handle_ask_about_code(
     ctx: &HandlerContext,
     input: AskAboutCodeInput,
 ) -> HandlerResult<AskAboutCodeResult> {
+    let start = Instant::now();
     let _ensure = ensure_graph_built(ctx)?;
 
     let graph = ctx.analysis_service.get_project_graph();
@@ -535,21 +628,33 @@ pub async fn handle_ask_about_code(
         }
     }
 
-    Ok(AskAboutCodeResult {
+    let result = AskAboutCodeResult {
         question: input.question,
         answers,
         _meta: OverviewMeta {
             estimated_tokens: 200,
             detail_level: "ask_about_code".to_string(),
         },
-    })
+    };
+
+    // B.3: Record tool usage telemetry
+    let duration_ms = start.elapsed().as_millis() as f64;
+    ctx.record_tool_usage(
+        "ask_about_code",
+        &serde_json::to_string(&result).unwrap_or_default(),
+        duration_ms,
+        None,
+    );
+
+    Ok(result)
 }
 
 /// Handler for find_pattern_by_intent tool (AIX-3.3)
 pub async fn handle_find_pattern_by_intent(
-    _ctx: &HandlerContext,
+    ctx: &HandlerContext,
     input: FindPatternByIntentInput,
 ) -> HandlerResult<FindPatternResult> {
+    let start = Instant::now();
     // Pattern catalog
     let patterns = vec![
         ("singleton", "Singleton pattern", "look for single instance with global state", "Find objects created once and accessed globally"),
@@ -594,7 +699,7 @@ pub async fn handle_find_pattern_by_intent(
         }).collect();
     }
 
-    Ok(FindPatternResult {
+    let result = FindPatternResult {
         query: input.intent,
         matched_intents: matched,
         all_patterns: patterns.iter().map(|(n, _, _, _)| n.to_string()).collect(),
@@ -602,7 +707,18 @@ pub async fn handle_find_pattern_by_intent(
             estimated_tokens: 100,
             detail_level: "find_pattern".to_string(),
         },
-    })
+    };
+
+    // B.3: Record tool usage telemetry
+    let duration_ms = start.elapsed().as_millis() as f64;
+    ctx.record_tool_usage(
+        "find_pattern_by_intent",
+        &serde_json::to_string(&result).unwrap_or_default(),
+        duration_ms,
+        None,
+    );
+
+    Ok(result)
 }
 
 /// Handler for compare_call_graphs tool (AIX-4.1)
@@ -610,6 +726,7 @@ pub async fn handle_compare_call_graphs(
     ctx: &HandlerContext,
     input: CompareCallGraphsInput,
 ) -> HandlerResult<GraphDiffDto> {
+    let start = Instant::now();
     let _ensure = ensure_graph_built(ctx)?;
 
     let current_graph = ctx.analysis_service.get_project_graph();
@@ -665,7 +782,7 @@ pub async fn handle_compare_call_graphs(
         "No baseline provided - showing current graph state".to_string()
     };
 
-    Ok(GraphDiffDto {
+    let result = GraphDiffDto {
         has_baseline,
         symbols_added,
         symbols_removed,
@@ -684,7 +801,18 @@ pub async fn handle_compare_call_graphs(
             estimated_tokens: 200,
             detail_level: "compare_graphs".to_string(),
         },
-    })
+    };
+
+    // B.3: Record tool usage telemetry
+    let duration_ms = start.elapsed().as_millis() as f64;
+    ctx.record_tool_usage(
+        "compare_call_graphs",
+        &serde_json::to_string(&result).unwrap_or_default(),
+        duration_ms,
+        None,
+    );
+
+    Ok(result)
 }
 
 /// Handler for detect_api_breaks tool (AIX-4.2)
@@ -692,6 +820,7 @@ pub async fn handle_detect_api_breaks(
     ctx: &HandlerContext,
     input: DetectApiBreaksInput,
 ) -> HandlerResult<ApiBreaksResult> {
+    let start = Instant::now();
     let _ensure = ensure_graph_built(ctx)?;
 
     let current_graph = ctx.analysis_service.get_project_graph();
@@ -738,7 +867,7 @@ pub async fn handle_detect_api_breaks(
         format!("{} breaking changes found", total_breaks)
     };
 
-    Ok(ApiBreaksResult {
+    let result = ApiBreaksResult {
         has_baseline,
         breaks,
         total_breaks,
@@ -747,7 +876,18 @@ pub async fn handle_detect_api_breaks(
             estimated_tokens: 150,
             detail_level: "detect_api_breaks".to_string(),
         },
-    })
+    };
+
+    // B.3: Record tool usage telemetry
+    let duration_ms = start.elapsed().as_millis() as f64;
+    ctx.record_tool_usage(
+        "detect_api_breaks",
+        &serde_json::to_string(&result).unwrap_or_default(),
+        duration_ms,
+        None,
+    );
+
+    Ok(result)
 }
 
 /// Handler for generate_system_prompt_context tool (AIX-5.1)
@@ -755,6 +895,7 @@ pub async fn handle_generate_system_prompt_context(
     ctx: &HandlerContext,
     input: SystemPromptContextInput,
 ) -> HandlerResult<SystemPromptContext> {
+    let start = Instant::now();
     let _ensure = ensure_graph_built(ctx)?;
 
     let stats = ctx.analysis_service.get_graph_stats();
@@ -822,11 +963,22 @@ pub async fn handle_generate_system_prompt_context(
     };
 
     let content_len = content.len();
-    Ok(SystemPromptContext {
+    let result = SystemPromptContext {
         format: format!("{:?}", input.format).to_lowercase(),
         content,
         estimated_tokens: content_len / 4,
-    })
+    };
+
+    // B.3: Record tool usage telemetry
+    let duration_ms = start.elapsed().as_millis() as f64;
+    ctx.record_tool_usage(
+        "generate_system_prompt_context",
+        &serde_json::to_string(&result).unwrap_or_default(),
+        duration_ms,
+        None,
+    );
+
+    Ok(result)
 }
 
 /// Handler for detect_god_functions tool (AIX-5.2)
@@ -834,6 +986,7 @@ pub async fn handle_detect_god_functions(
     ctx: &HandlerContext,
     input: DetectGodFunctionsInput,
 ) -> HandlerResult<GodFunctionsResult> {
+    let start = Instant::now();
     let _ensure = ensure_graph_built(ctx)?;
 
     let graph = ctx.analysis_service.get_project_graph();
@@ -876,7 +1029,7 @@ pub async fn handle_detect_god_functions(
     let total_analyzed = graph.symbol_count();
     let god_count = god_functions.len();
 
-    Ok(GodFunctionsResult {
+    let result = GodFunctionsResult {
         god_functions,
         total_analyzed,
         thresholds: GodFunctionThresholds {
@@ -888,7 +1041,18 @@ pub async fn handle_detect_god_functions(
             estimated_tokens: god_count * 60,
             detail_level: "god_functions".to_string(),
         },
-    })
+    };
+
+    // B.3: Record tool usage telemetry
+    let duration_ms = start.elapsed().as_millis() as f64;
+    ctx.record_tool_usage(
+        "detect_god_functions",
+        &serde_json::to_string(&result).unwrap_or_default(),
+        duration_ms,
+        None,
+    );
+
+    Ok(result)
 }
 
 /// Handler for detect_long_parameter_lists tool (AIX-5.3)
@@ -896,6 +1060,7 @@ pub async fn handle_detect_long_parameter_lists(
     ctx: &HandlerContext,
     input: DetectLongParamsInput,
 ) -> HandlerResult<LongParamsResult> {
+    let start = Instant::now();
     let _ensure = ensure_graph_built(ctx)?;
 
     let graph = ctx.analysis_service.get_project_graph();
@@ -924,7 +1089,7 @@ pub async fn handle_detect_long_parameter_lists(
     let total_analyzed = graph.symbol_count();
     let long_param_count = long_param_functions.len();
 
-    Ok(LongParamsResult {
+    let result = LongParamsResult {
         functions: long_param_functions,
         threshold: input.max_params,
         total_analyzed,
@@ -932,7 +1097,18 @@ pub async fn handle_detect_long_parameter_lists(
             estimated_tokens: long_param_count * 40,
             detail_level: "long_params".to_string(),
         },
-    })
+    };
+
+    // B.3: Record tool usage telemetry
+    let duration_ms = start.elapsed().as_millis() as f64;
+    ctx.record_tool_usage(
+        "detect_long_parameter_lists",
+        &serde_json::to_string(&result).unwrap_or_default(),
+        duration_ms,
+        None,
+    );
+
+    Ok(result)
 }
 
 /// Handler for evaluate_refactor_quality tool (AIX-4.3)
@@ -940,6 +1116,7 @@ pub async fn handle_evaluate_refactor_quality(
     ctx: &HandlerContext,
     _input: EvaluateRefactorQualityInput,
 ) -> HandlerResult<RefactorEvalDto> {
+    let start = Instant::now();
     let _ensure = ensure_graph_built(ctx)?;
 
     let _current_graph = ctx.analysis_service.get_project_graph();
@@ -988,7 +1165,7 @@ pub async fn handle_evaluate_refactor_quality(
         };
 
     if !has_baseline {
-        return Ok(RefactorEvalDto {
+        let result = RefactorEvalDto {
             quality_score: 0.0,
             verdict: "neutral".to_string(),
             complexity_delta: 0.0,
@@ -1000,7 +1177,16 @@ pub async fn handle_evaluate_refactor_quality(
                 estimated_tokens: 50,
                 detail_level: "evaluate_refactor".to_string(),
             },
-        });
+        };
+        // B.3: Record tool usage telemetry
+        let duration_ms = start.elapsed().as_millis() as f64;
+        ctx.record_tool_usage(
+            "evaluate_refactor_quality",
+            &serde_json::to_string(&result).unwrap_or_default(),
+            duration_ms,
+            None,
+        );
+        return Ok(result);
     }
 
     // Calculate deltas (current - baseline, so negative = improvement)
@@ -1046,7 +1232,7 @@ pub async fn handle_evaluate_refactor_quality(
         recommendations.push("Refactoring appears successful. Consider running tests to verify.".to_string());
     }
 
-    Ok(RefactorEvalDto {
+    let result = RefactorEvalDto {
         quality_score,
         verdict,
         complexity_delta,
@@ -1058,7 +1244,18 @@ pub async fn handle_evaluate_refactor_quality(
             estimated_tokens: 150,
             detail_level: "evaluate_refactor".to_string(),
         },
-    })
+    };
+
+    // B.3: Record tool usage telemetry
+    let duration_ms = start.elapsed().as_millis() as f64;
+    ctx.record_tool_usage(
+        "evaluate_refactor_quality",
+        &serde_json::to_string(&result).unwrap_or_default(),
+        duration_ms,
+        None,
+    );
+
+    Ok(result)
 }
 
 // ============================================================================
@@ -2219,6 +2416,159 @@ fn calculate_hotness_score(fan_in: usize, fan_out: usize) -> f32 {
         Ordering::Equal if fan_in == 0 => 0.5,
         _ => 0.3,
     }
+}
+
+// ============================================================================
+// Agent Task Tools (Batch D - Bidirectional Interaction)
+// ============================================================================
+
+use crate::interface::mcp::schemas::{
+    AgentTaskDto, CompleteTaskInput, CompleteTaskOutput, PollTasksInput, PollTasksOutput,
+};
+
+/// Handler for poll_tasks tool — claim pending tasks for execution
+pub async fn handle_poll_tasks(
+    ctx: &HandlerContext,
+    input: PollTasksInput,
+) -> HandlerResult<PollTasksOutput> {
+    let limit = input.limit.max(1).min(100) as i64; // Clamp between 1 and 100
+
+    // Gracefully handle case where DB is not available
+    let conn = match open_db(&ctx.working_dir) {
+        Ok(conn) => conn,
+        Err(_) => {
+            // Database not available - return empty list
+            return Ok(PollTasksOutput { tasks: vec![] });
+        }
+    };
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Get the IDs of tasks to claim (ordered by priority desc, created_at asc)
+    let mut select_stmt = match conn.prepare(
+        "SELECT id FROM agent_tasks WHERE status = 'pending' ORDER BY priority DESC, created_at ASC LIMIT ?1"
+    ) {
+        Ok(stmt) => stmt,
+        Err(_) => {
+            // Table might not exist - return empty list
+            return Ok(PollTasksOutput { tasks: vec![] });
+        }
+    };
+
+    let ids: Vec<i64> = match select_stmt.query_map(rusqlite::params![limit], |row| row.get(0)) {
+        Ok(rows) => rows.collect::<Result<Vec<_>, _>>().unwrap_or_default(),
+        Err(_) => return Ok(PollTasksOutput { tasks: vec![] }),
+    };
+
+    if ids.is_empty() {
+        return Ok(PollTasksOutput { tasks: vec![] });
+    }
+
+    // Build dynamic UPDATE with IN clause
+    let in_clause: String = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let update_sql = format!(
+        "UPDATE agent_tasks SET status = 'in_progress', assigned_at = ?1 WHERE id IN ({})",
+        in_clause
+    );
+
+    // Build params: now first, then all ids
+    let mut all_params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(now)];
+    for id in &ids {
+        all_params.push(Box::new(*id));
+    }
+    let params_refs: Vec<&dyn rusqlite::ToSql> = all_params.iter().map(|b| b.as_ref()).collect();
+
+    if let Err(e) = conn.execute(&update_sql, params_refs.as_slice()) {
+        tracing::warn!("Failed to claim tasks: {}", e);
+        return Ok(PollTasksOutput { tasks: vec![] });
+    }
+
+    // Fetch the claimed tasks
+    let case_order: String = ids.iter()
+        .enumerate()
+        .map(|(i, id)| format!("WHEN {} THEN {}", id, i))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let fetch_sql = format!(
+        "SELECT id, task_type, priority, payload_json, status, created_by, created_at, assigned_at, completed_at, result_json, error_message FROM agent_tasks WHERE id IN ({}) ORDER BY CASE id {} END",
+        in_clause, case_order
+    );
+
+    let mut fetch_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    for id in &ids {
+        fetch_params.push(Box::new(*id));
+    }
+    let fetch_params_refs: Vec<&dyn rusqlite::ToSql> = fetch_params.iter().map(|b| b.as_ref()).collect();
+
+    let mut fetch_stmt = match conn.prepare(&fetch_sql) {
+        Ok(stmt) => stmt,
+        Err(_) => return Ok(PollTasksOutput { tasks: vec![] }),
+    };
+
+    let tasks: Vec<AgentTaskDto> = match fetch_stmt.query_map(fetch_params_refs.as_slice(), |row| {
+        Ok(AgentTaskDto {
+            id: row.get(0)?,
+            task_type: row.get(1)?,
+            priority: row.get(2)?,
+            payload_json: row.get(3)?,
+            status: row.get(4)?,
+            created_by: row.get(5)?,
+            created_at: row.get(6)?,
+            assigned_at: row.get(7)?,
+            completed_at: row.get(8)?,
+            result_json: row.get(9)?,
+            error_message: row.get(10)?,
+        })
+    }) {
+        Ok(rows) => rows.collect::<Result<Vec<_>, _>>().unwrap_or_default(),
+        Err(_) => return Ok(PollTasksOutput { tasks: vec![] }),
+    };
+
+    Ok(PollTasksOutput { tasks })
+}
+
+/// Handler for complete_task tool — mark a task as completed
+pub async fn handle_complete_task(
+    ctx: &HandlerContext,
+    input: CompleteTaskInput,
+) -> HandlerResult<CompleteTaskOutput> {
+    // Validate status
+    let status = match input.status.as_str() {
+        "completed" | "failed" => input.status.clone(),
+        _ => {
+            return Err(HandlerError::InvalidInput(
+                "status must be 'completed' or 'failed'".to_string(),
+            ));
+        }
+    };
+
+    let conn = open_db(&ctx.working_dir)
+        .map_err(|e| HandlerError::Internal(format!("DB error: {}", e)))?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Determine error message based on status
+    let error_message: Option<String> = if status == "failed" {
+        input.error_message.clone()
+    } else {
+        None
+    };
+
+    conn.execute(
+        "UPDATE agent_tasks SET status = ?1, completed_at = ?2, result_json = ?3, error_message = ?4 WHERE id = ?5",
+        rusqlite::params![
+            status,
+            now,
+            input.result_json,
+            error_message,
+            input.task_id,
+        ],
+    ).map_err(|e| HandlerError::Internal(format!("Failed to complete task: {}", e)))?;
+
+    Ok(CompleteTaskOutput {
+        success: true,
+        message: format!("Task {} marked as {}", input.task_id, status),
+    })
 }
 
 #[cfg(test)]
@@ -3863,5 +4213,163 @@ def process_data(data):
             .filter(|f| f.rule_id == "S7003")
             .collect();
         assert!(!s7003_findings.is_empty(), "Python TODO should trigger S7003");
+    }
+
+    // Batch D: Agent Task Tool Tests
+    // =============================================================================
+
+    #[tokio::test]
+    async fn test_poll_tasks_returns_empty_when_no_tasks() {
+        let temp = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        let input = PollTasksInput { limit: 10 };
+        let result = handle_poll_tasks(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.tasks.is_empty(), "Should return empty when no pending tasks");
+    }
+
+    #[tokio::test]
+    async fn test_poll_tasks_claims_pending_tasks() {
+        let temp = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Create test database with agent_tasks table
+        let db_path = temp.path().join(".cognicode").join("cognicode.db");
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS agent_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_type TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 5,
+                payload_json TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_by TEXT DEFAULT 'dashboard',
+                created_at TEXT NOT NULL,
+                assigned_at TEXT,
+                completed_at TEXT,
+                result_json TEXT,
+                error_message TEXT
+            );"
+        ).unwrap();
+
+        // Insert a test task
+        conn.execute(
+            "INSERT INTO agent_tasks (task_type, priority, payload_json, status, created_by, created_at) VALUES ('test_task', 5, '{}', 'pending', 'tester', '2024-01-01T00:00:00Z')",
+            [],
+        ).unwrap();
+
+        let input = PollTasksInput { limit: 10 };
+        let result = handle_poll_tasks(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output.tasks.len(), 1, "Should return the pending task");
+        assert_eq!(output.tasks[0].task_type, "test_task");
+        assert_eq!(output.tasks[0].status, "in_progress", "Task should be claimed");
+    }
+
+    #[tokio::test]
+    async fn test_complete_task_marks_as_completed() {
+        let temp = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Create test database with agent_tasks table
+        let db_path = temp.path().join(".cognicode").join("cognicode.db");
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS agent_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_type TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 5,
+                payload_json TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_by TEXT DEFAULT 'dashboard',
+                created_at TEXT NOT NULL,
+                assigned_at TEXT,
+                completed_at TEXT,
+                result_json TEXT,
+                error_message TEXT
+            );"
+        ).unwrap();
+
+        // Insert a test task
+        conn.execute(
+            "INSERT INTO agent_tasks (task_type, priority, payload_json, status, created_by, created_at) VALUES ('test_task', 5, '{}', 'in_progress', 'tester', '2024-01-01T00:00:00Z')",
+            [],
+        ).unwrap();
+
+        let input = CompleteTaskInput {
+            task_id: 1,
+            status: "completed".to_string(),
+            result_json: Some(r#"{"result": "success"}"#.to_string()),
+            error_message: None,
+        };
+        let result = handle_complete_task(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.success);
+        assert!(output.message.contains("completed"));
+    }
+
+    #[tokio::test]
+    async fn test_complete_task_marks_as_failed() {
+        let temp = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        // Create test database with agent_tasks table
+        let db_path = temp.path().join(".cognicode").join("cognicode.db");
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS agent_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_type TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 5,
+                payload_json TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_by TEXT DEFAULT 'dashboard',
+                created_at TEXT NOT NULL,
+                assigned_at TEXT,
+                completed_at TEXT,
+                result_json TEXT,
+                error_message TEXT
+            );"
+        ).unwrap();
+
+        // Insert a test task
+        conn.execute(
+            "INSERT INTO agent_tasks (task_type, priority, payload_json, status, created_by, created_at) VALUES ('test_task', 5, '{}', 'in_progress', 'tester', '2024-01-01T00:00:00Z')",
+            [],
+        ).unwrap();
+
+        let input = CompleteTaskInput {
+            task_id: 1,
+            status: "failed".to_string(),
+            result_json: None,
+            error_message: Some("Something went wrong".to_string()),
+        };
+        let result = handle_complete_task(&ctx, input).await;
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.success);
+        assert!(output.message.contains("failed"));
+    }
+
+    #[tokio::test]
+    async fn test_complete_task_rejects_invalid_status() {
+        let temp = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::new(temp.path().to_path_buf());
+
+        let input = CompleteTaskInput {
+            task_id: 1,
+            status: "invalid_status".to_string(),
+            result_json: None,
+            error_message: None,
+        };
+        let result = handle_complete_task(&ctx, input).await;
+        assert!(result.is_err(), "Should reject invalid status");
     }
 }

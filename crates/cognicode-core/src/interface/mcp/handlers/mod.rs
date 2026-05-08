@@ -55,6 +55,8 @@ use crate::interface::mcp::schemas::{
     DetectDriftInput, DetectDriftOutput, DriftFinding, DriftSeverity,
     // Retrieve and Verify schemas
     RetrieveAndVerifyInput, RetrieveAndVerifyOutput, VerifiedMatch, VerificationStatus,
+    // Agent Task schemas (Batch D - Bidirectional Interaction)
+    AgentTaskDto, CompleteTaskInput, CompleteTaskOutput, PollTasksInput, PollTasksOutput,
 };
 use crate::interface::mcp::security::{InputValidator, SecurityError};
 use crate::application::error::AppError;

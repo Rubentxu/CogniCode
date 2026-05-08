@@ -16,3 +16,6 @@ cognicode-store-traits.workspace = true
 cognicode-core.workspace = true
 regex.workspace = true
 anyhow.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

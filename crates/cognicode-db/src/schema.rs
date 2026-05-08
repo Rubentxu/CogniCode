@@ -144,6 +144,36 @@ pub fn initialize_schema(db: &Connection) {
             PRIMARY KEY (file_path, symbol_name)
         );
         CREATE INDEX IF NOT EXISTS idx_timestamps_mtime ON symbol_timestamps(last_modified);
+
+        -- Agent Outputs (dashboard activity)
+        CREATE TABLE IF NOT EXISTS agent_outputs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tool_name TEXT NOT NULL,
+            session_id TEXT,
+            output_json TEXT NOT NULL,
+            summary_text TEXT,
+            created_at TEXT NOT NULL,
+            expires_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_outputs_tool ON agent_outputs(tool_name);
+        CREATE INDEX IF NOT EXISTS idx_agent_outputs_created ON agent_outputs(created_at);
+
+        -- Agent Tasks (dashboard task queue)
+        CREATE TABLE IF NOT EXISTS agent_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_type TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 5,
+            payload_json TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_by TEXT DEFAULT 'dashboard',
+            created_at TEXT NOT NULL,
+            assigned_at TEXT,
+            completed_at TEXT,
+            result_json TEXT,
+            error_message TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks(status);
+        CREATE INDEX IF NOT EXISTS idx_agent_tasks_priority ON agent_tasks(priority);
     ").expect("Failed to initialize schema");
 }
 
