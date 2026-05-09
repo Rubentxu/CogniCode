@@ -98,6 +98,14 @@ pub struct IssueDto {
     pub end_line: Option<usize>,
     pub remediation_hint: Option<String>,
     pub effort_minutes: Option<u32>,
+    #[serde(default)]
+    pub entity_type: Option<String>,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub code_snippet: Option<String>,
+    #[serde(default)]
+    pub variable_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -690,6 +698,10 @@ fn convert_issue(issue: QualityIssueResult) -> IssueDto {
         end_line: None,
         remediation_hint: issue.remediation_hint.clone(),
         effort_minutes: issue.effort_minutes,
+        entity_type: issue.entity_type,
+        scope: issue.scope,
+        code_snippet: issue.code_snippet,
+        variable_name: issue.variable_name,
     }
 }
 

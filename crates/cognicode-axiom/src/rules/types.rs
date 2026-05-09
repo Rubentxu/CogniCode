@@ -113,6 +113,18 @@ pub struct Issue {
     pub end_line: Option<usize>,
     /// Optional remediation guidance
     pub remediation: Option<Remediation>,
+    /// Entity type detected (auto-extracted from AST node)
+    #[serde(default)]
+    pub entity_type: EntityType,
+    /// Scope where the issue was found (auto-detected)
+    #[serde(default)]
+    pub scope: Scope,
+    /// The actual code fragment that triggered the issue
+    #[serde(default)]
+    pub code_snippet: Option<String>,
+    /// Name of the variable/function/class involved
+    #[serde(default)]
+    pub variable_name: Option<String>,
 }
 
 impl Issue {
@@ -135,7 +147,62 @@ impl Issue {
             column: None,
             end_line: None,
             remediation: None,
+            entity_type: EntityType::Unknown,
+            scope: Scope::Unknown,
+            code_snippet: None,
+            variable_name: None,
         }
+    }
+
+    /// Create an issue from a tree-sitter node with auto-enrichment
+    pub fn from_node(
+        rule_id: impl Into<String>,
+        message: impl Into<String>,
+        severity: Severity,
+        category: Category,
+        file: impl Into<PathBuf>,
+        line: usize,
+        ctx: &RuleContext,
+        node: tree_sitter::Node,
+    ) -> Self {
+        let source_bytes = ctx.source.as_bytes();
+        let lang = ctx.language.name();
+        let entity_type = EntityType::from_node_kind(node.kind(), lang);
+        let scope = Scope::detect(node, lang);
+        let code_snippet = node.utf8_text(source_bytes).ok().map(|s| s.to_string());
+        let variable_name = Self::extract_name(node, source_bytes);
+
+        Self {
+            rule_id: rule_id.into(),
+            message: message.into(),
+            severity,
+            category,
+            file: file.into(),
+            line,
+            column: None,
+            end_line: None,
+            remediation: None,
+            entity_type,
+            scope,
+            code_snippet,
+            variable_name,
+        }
+    }
+
+    /// Extract identifier name from node or its children
+    fn extract_name(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
+        if node.kind().contains("identifier") || node.kind().contains("variable") {
+            return node.utf8_text(source).ok().map(|s| s.to_string());
+        }
+        for i in 0..node.named_child_count() {
+            if let Some(child) = node.named_child(i) {
+                let kind = child.kind();
+                if kind.contains("identifier") || kind.contains("variable") || kind == "name" || kind == "property_identifier" {
+                    return child.utf8_text(source).ok().map(|s| s.to_string());
+                }
+            }
+        }
+        None
     }
 
     /// Set the column number
@@ -154,6 +221,241 @@ impl Issue {
     pub fn with_remediation(mut self, remediation: Remediation) -> Self {
         self.remediation = Some(remediation);
         self
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clean Code Attributes (SonarQube standard)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Clean Code Attribute — what aspect of "clean code" a rule evaluates
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum CleanCodeAttribute {
+    // Consistency
+    Formatted,
+    Conventional,
+    Identifiable,
+    // Intentionality
+    Clear,
+    Logical,
+    Complete,
+    Efficient,
+    // Adaptability
+    Focused,
+    Distinct,
+    Modular,
+    // Responsibility
+    Lawful,
+    Trustworthy,
+    Respectful,
+}
+
+impl Default for CleanCodeAttribute {
+    fn default() -> Self { Self::Clear }
+}
+
+/// Software quality that a rule impacts
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SoftwareQuality {
+    Security,
+    Reliability,
+    Maintainability,
+}
+
+/// Severity of an impact on a software quality
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ImpactSeverity {
+    Blocker,
+    High,
+    Medium,
+    Low,
+    Info,
+}
+
+/// A single software quality impact for a rule
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SoftwareQualityImpact {
+    pub quality: SoftwareQuality,
+    pub severity: ImpactSeverity,
+}
+
+impl Default for SoftwareQuality {
+    fn default() -> Self { Self::Maintainability }
+}
+
+impl Default for ImpactSeverity {
+    fn default() -> Self { Self::Medium }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Entity Type & Scope — auto-extracted from AST
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Entity type detected by a rule (auto-extracted from tree-sitter node)
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum EntityType {
+    FunctionDef,
+    ClassDef,
+    MethodCall,
+    Assignment,
+    Variable,
+    Import,
+    Conditional,
+    Loop,
+    StringLiteral,
+    Return,
+    Expression,
+    Pattern,
+    TraitImpl,
+    Unknown,
+}
+
+impl Default for EntityType {
+    fn default() -> Self { Self::Unknown }
+}
+
+impl EntityType {
+    pub fn from_node_kind(kind: &str, language: &str) -> Self {
+        match (language, kind) {
+            // Rust
+            ("Rust", "function_item") => Self::FunctionDef,
+            ("Rust", "function_signature_item") => Self::FunctionDef,
+            ("Rust", "struct_item") => Self::ClassDef,
+            ("Rust", "enum_item") => Self::ClassDef,
+            ("Rust", "trait_item") => Self::ClassDef,
+            ("Rust", "impl_item") => Self::TraitImpl,
+            ("Rust", "call_expression") => Self::MethodCall,
+            ("Rust", "let_declaration") => Self::Assignment,
+            ("Rust", "use_declaration") => Self::Import,
+            ("Rust", "if_expression") => Self::Conditional,
+            ("Rust", "match_expression") => Self::Conditional,
+            ("Rust", "for_expression") => Self::Loop,
+            ("Rust", "while_expression") => Self::Loop,
+            ("Rust", "loop_expression") => Self::Loop,
+            ("Rust", "string_literal") => Self::StringLiteral,
+            ("Rust", "raw_string_literal") => Self::StringLiteral,
+            ("Rust", "return_expression") => Self::Return,
+            ("Rust", "identifier") => Self::Variable,
+            ("Rust", "binary_expression") => Self::Expression,
+            // Python
+            ("Python", "function_definition") => Self::FunctionDef,
+            ("Python", "class_definition") => Self::ClassDef,
+            ("Python", "call") => Self::MethodCall,
+            ("Python", "assignment") => Self::Assignment,
+            ("Python", "augmented_assignment") => Self::Assignment,
+            ("Python", "import_statement") => Self::Import,
+            ("Python", "import_from_statement") => Self::Import,
+            ("Python", "if_statement") => Self::Conditional,
+            ("Python", "match_statement") => Self::Conditional,
+            ("Python", "for_statement") => Self::Loop,
+            ("Python", "while_statement") => Self::Loop,
+            ("Python", "string") => Self::StringLiteral,
+            ("Python", "return_statement") => Self::Return,
+            ("Python", "identifier") => Self::Variable,
+            ("Python", "binary_operator") => Self::Expression,
+            // JavaScript / TypeScript
+            ("JavaScript", k) | ("TypeScript", k) => match k {
+                "function_declaration" | "arrow_function" | "function_expression" => Self::FunctionDef,
+                "class_declaration" => Self::ClassDef,
+                "call_expression" => Self::MethodCall,
+                "assignment_expression" | "variable_declarator" => Self::Assignment,
+                "import_statement" => Self::Import,
+                "if_statement" | "switch_statement" => Self::Conditional,
+                "for_statement" | "while_statement" => Self::Loop,
+                "string" | "template_string" => Self::StringLiteral,
+                "return_statement" => Self::Return,
+                "identifier" => Self::Variable,
+                "binary_expression" | "unary_expression" => Self::Expression,
+                _ => Self::Unknown,
+            },
+            // Java
+            ("Java", "method_declaration") => Self::FunctionDef,
+            ("Java", "class_declaration") => Self::ClassDef,
+            ("Java", "method_invocation") => Self::MethodCall,
+            ("Java", "assignment_expression") => Self::Assignment,
+            ("Java", "import_declaration") => Self::Import,
+            ("Java", "if_statement") => Self::Conditional,
+            ("Java", "switch_expression") => Self::Conditional,
+            ("Java", "for_statement") => Self::Loop,
+            ("Java", "while_statement") => Self::Loop,
+            ("Java", "string_literal") => Self::StringLiteral,
+            ("Java", "return_statement") => Self::Return,
+            ("Java", "identifier") => Self::Variable,
+            // Go
+            ("Go", "function_declaration") => Self::FunctionDef,
+            ("Go", "type_declaration") => Self::ClassDef,
+            ("Go", "call_expression") => Self::MethodCall,
+            ("Go", "short_var_declaration") => Self::Assignment,
+            ("Go", "assignment_statement") => Self::Assignment,
+            ("Go", "import_declaration") => Self::Import,
+            ("Go", "if_statement") => Self::Conditional,
+            ("Go", "for_statement") => Self::Loop,
+            ("Go", "interpreted_string_literal") => Self::StringLiteral,
+            ("Go", "raw_string_literal") => Self::StringLiteral,
+            ("Go", "return_statement") => Self::Return,
+            ("Go", "identifier") => Self::Variable,
+            // Generic fallback
+            _ => {
+                if kind.contains("function") || kind.contains("method") { Self::FunctionDef }
+                else if kind.contains("class") || kind.contains("struct") || kind.contains("enum") || kind.contains("interface") { Self::ClassDef }
+                else if kind.contains("call") || kind.contains("invocation") { Self::MethodCall }
+                else if kind.contains("assignment") || kind.contains("declaration") || kind.contains("let_") || kind.contains("var_") { Self::Assignment }
+                else if kind.contains("import") || kind.contains("use_") { Self::Import }
+                else if kind.contains("if_") || kind.contains("match") || kind.contains("switch") { Self::Conditional }
+                else if kind.contains("for_") || kind.contains("while") || kind.contains("loop_") { Self::Loop }
+                else if kind.contains("string") || kind.contains("literal") { Self::StringLiteral }
+                else if kind.contains("return") { Self::Return }
+                else if kind.contains("identifier") || kind.contains("variable") { Self::Variable }
+                else if kind.contains("binary") || kind.contains("expression") { Self::Expression }
+                else { Self::Unknown }
+            }
+        }
+    }
+}
+
+/// Scope where an issue was detected (auto-detected from AST ancestors)
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Scope {
+    Local,
+    Function,
+    Method,
+    Class,
+    Module,
+    Global,
+    Unknown,
+}
+
+impl Default for Scope {
+    fn default() -> Self { Self::Unknown }
+}
+
+impl Scope {
+    pub fn detect(node: tree_sitter::Node, language: &str) -> Self {
+        let mut current = node;
+        while let Some(parent) = current.parent() {
+            let kind = parent.kind();
+            let (is_function, is_class) = match (language, kind) {
+                // Function-level
+                ("Rust", "function_item" | "closure_expression") => (true, false),
+                ("Python", "function_definition" | "lambda") => (true, false),
+                ("JavaScript", "function_declaration" | "arrow_function" | "function_expression") => (true, false),
+                ("TypeScript", "function_declaration" | "arrow_function" | "method_definition") => (true, false),
+                ("Java", "method_declaration" | "constructor_declaration") => (true, false),
+                ("Go", "function_declaration") => (true, false),
+                // Class-level
+                ("Rust", "struct_item" | "enum_item" | "trait_item" | "impl_item") => (false, true),
+                ("Python", "class_definition") => (false, true),
+                ("JavaScript", "class_declaration") => (false, true),
+                ("TypeScript", "class_declaration" | "interface_declaration") => (false, true),
+                ("Java", "class_declaration" | "interface_declaration" | "enum_declaration") => (false, true),
+                ("Go", "type_declaration") => (false, true),
+                _ => (false, false),
+            };
+            if is_function { return Self::Function; }
+            if is_class { return Self::Class; }
+            current = parent;
+        }
+        Self::Global
     }
 }
 
@@ -303,6 +605,15 @@ pub trait Rule: Send + Sync {
 
     /// Returns the effort category for fixing issues of this rule (e.g., "quick_fix", "moderate", "complex")
     fn effort_category(&self) -> Option<&str> { None }
+
+    /// Returns an explanation of why this rule matters
+    fn explanation(&self) -> Option<&str> { None }
+
+    /// Returns the clean code attribute for this rule
+    fn clean_code_attribute(&self) -> Option<CleanCodeAttribute> { None }
+
+    /// Returns the software quality impacts for this rule
+    fn software_qualities(&self) -> Vec<SoftwareQualityImpact> { vec![] }
 }
 
 /// A rule entry for inventory-based registration

@@ -32,6 +32,9 @@
 #![allow(unused_variables)]
 
 use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
+use crate::rules::{
+    CleanCodeAttribute, SoftwareQualityImpact,
+};
 use cognicode_macros::declare_rule;
 use inventory::submit;
 use streaming_iterator::StreamingIterator;

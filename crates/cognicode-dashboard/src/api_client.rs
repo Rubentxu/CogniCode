@@ -101,6 +101,14 @@ pub struct IssueDto {
     pub remediation_hint: Option<String>,
     #[serde(default)]
     pub effort_minutes: Option<u32>,
+    #[serde(default)]
+    pub entity_type: Option<String>,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub code_snippet: Option<String>,
+    #[serde(default)]
+    pub variable_name: Option<String>,
 }
 
 /// Path validation result

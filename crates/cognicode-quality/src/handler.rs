@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use cognicode_axiom::linters::Linter;
-use cognicode_axiom::rules::types::{Issue, RuleContext, RuleRegistry, Severity};
+use cognicode_axiom::rules::types::{Issue, RuleContext, RuleRegistry, Severity, Category, Remediation};
 use cognicode_axiom::rules::{
     CompareOperator, FileMetrics, GateCondition, MetricValue, QualityGate,
 };
@@ -541,6 +541,10 @@ pub struct IssueResult {
     pub column: Option<usize>,
     pub remediation_hint: Option<String>,
     pub effort_minutes: Option<u32>,
+    pub entity_type: Option<String>,
+    pub scope: Option<String>,
+    pub code_snippet: Option<String>,
+    pub variable_name: Option<String>,
 }
 
 impl From<Issue> for IssueResult {
@@ -560,6 +564,10 @@ impl From<Issue> for IssueResult {
             column: issue.column,
             remediation_hint,
             effort_minutes,
+            entity_type: Some(format!("{:?}", issue.entity_type)),
+            scope: Some(format!("{:?}", issue.scope)),
+            code_snippet: issue.code_snippet,
+            variable_name: issue.variable_name,
         }
     }
 }
@@ -671,6 +679,10 @@ mod tests {
             column: Some(10),
             end_line: None,
             remediation: Some(Remediation::new(5, "Consider removing or using the variable")),
+            entity_type: cognicode_axiom::rules::types::EntityType::Variable,
+            scope: cognicode_axiom::rules::types::Scope::Local,
+            code_snippet: Some("let x = 5;".to_string()),
+            variable_name: Some("x".to_string()),
         };
 
         let result = IssueResult::from(issue);
@@ -705,6 +717,10 @@ mod tests {
             column: Some(10),
             end_line: None,
             remediation: None,
+            entity_type: cognicode_axiom::rules::types::EntityType::Variable,
+            scope: cognicode_axiom::rules::types::Scope::Local,
+            code_snippet: None,
+            variable_name: Some("x".to_string()),
         };
 
         let result = IssueResult::from(issue);

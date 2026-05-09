@@ -47,6 +47,8 @@ pub use adr_parser::AdrParser;
 pub use types::{
     RuleRegistry, Severity, Category, Issue, Remediation, RuleEntry,
     Rule, RuleContext, FileMetrics, ParseCache,
+    CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity,
+    EntityType, Scope,
 };
 pub use gates::{QualityGate, QualityGateResult, GateCondition, CompareOperator, ProjectMetrics, QualityGateEvaluator, MetricValue};
 pub use profiles::{QualityProfile, QualityProfileEngine, RuleConfig, ResolvedProfile};
