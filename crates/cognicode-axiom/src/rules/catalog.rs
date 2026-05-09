@@ -2126,7 +2126,13 @@ declare_rule! {
             if let Some(cap) = re.captures(line) {
                 let name = cap.get(1).unwrap().as_str();
                 let remaining: String = ctx.source.lines().skip(idx + 1).collect::<Vec<_>>().join("\n");
-                if !remaining.contains(&format!(" {} ", name)) && !remaining.contains(&format!("({}", name)) {
+                let is_used = remaining.contains(&format!(" {} ", name))
+                    || remaining.contains(&format!("({}", name))
+                    || remaining.contains(&format!(",{}", name))
+                    || remaining.contains(&format!("{})", name))
+                    || remaining.contains(&format!(".{}", name))
+                    || remaining.contains(&format!("[]{}", name));
+                if !is_used {
                     issues.push(Issue::new(
                         "S1481",
                         format!("Unused variable '_{}' - remove it entirely", name),
