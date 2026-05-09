@@ -285,7 +285,7 @@ declare_rule! {
     impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
-        let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "EXEC", "EXECUTE", "UNION"];
+        let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "EXEC", "EXECUTE", "UNION", "INTO", "OUTFILE", "INFILE", "LOAD_FILE", "BENCHMARK", "SLEEP"];
         
         let query = match tree_sitter::Query::new(
             &ctx.language.to_ts_language(),
