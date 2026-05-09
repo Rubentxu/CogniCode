@@ -3282,7 +3282,7 @@ declare_rule! {
     language: "rust"
     params: {}
 
-    explanation: "Overly permissive file permissions (0777, 0666) allow unauthorized users to read or modify sensitive files, creating security vulnerabilities.",
+    explanation: "Overly permissive file permissions (0o777/777) allow unauthorized users to read or modify sensitive files, creating security vulnerabilities. Also consider 0o666 for world-writable files.",
     clean_code: Trustworthy,
     impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
