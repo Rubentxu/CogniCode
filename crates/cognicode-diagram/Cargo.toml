@@ -1,0 +1,35 @@
+[package]
+name = "cognicode-diagram"
+description = "Inferred diagramming and C4 Model reverse engineering for CogniCode"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Internal
+cognicode-core = { path = "../cognicode-core" }
+
+# Graph layout
+rust-sugiyama = "0.4"
+petgraph = { workspace = true }
+
+# Parsing
+toml = "0.8"
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Async
+tokio = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Parallelism
+rayon = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

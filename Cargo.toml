@@ -14,6 +14,7 @@ members = [
     "crates/cognicode-quality",
     "crates/cognicode-rule-test-harness",
     "crates/cognicode-dashboard",
+    "crates/cognicode-diagram",
 ]
 
 [workspace.package]
@@ -28,6 +29,7 @@ cognicode-db = { path = "crates/cognicode-db" }
 cognicode-store-traits = { path = "crates/cognicode-store-traits" }
 cognicode-axiom = { path = "crates/cognicode-axiom" }
 cognicode-macros = { path = "crates/cognicode-macros" }
+cognicode-diagram = { path = "crates/cognicode-diagram" }
 
 # Parsing
 tree-sitter = "0.24"
