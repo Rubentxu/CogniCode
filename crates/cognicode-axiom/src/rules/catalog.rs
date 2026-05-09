@@ -192,7 +192,7 @@ declare_rule! {
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
-        let deprecated_pattern = regex::Regex::new(r#"(?i:#\[deprecated\b)"#).unwrap();
+        let deprecated_pattern = regex::Regex::new(r#"(?i)^\s*#\[deprecated\b)"#).unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with("//") 
