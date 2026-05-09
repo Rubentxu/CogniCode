@@ -27,7 +27,12 @@ declare_rule! {
                     || remaining.contains(&format!(",{}", name))
                     || remaining.contains(&format!("{})", name))
                     || remaining.contains(&format!(".{}", name))
-                    || remaining.contains(&format!("[]{}", name));
+                    || remaining.contains(&format!("[]{}", name))
+                    || remaining.contains(&format!("({}", name))
+                    || remaining.contains(&format!("({}, ", name))
+                    || remaining.contains(&format!("{} ", name))
+                    || remaining.contains(&format!(" {}&", name))
+                    || remaining.contains(&format!("&{} ", name));
                 if !is_used {
                     issues.push(Issue::new(
                         "S1481",
