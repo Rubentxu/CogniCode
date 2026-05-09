@@ -897,13 +897,13 @@ declare_rule! {
             if trimmed.starts_with("let ") && !trimmed.starts_with("let _") && trimmed.contains('=') {
                 issues.push(Issue::new(
                     "S1854",
-                    "Variable declared with '_' prefix may be intentionally unused",
+                    "Variable declared but never used",
                     Severity::Info,
                     Category::CodeSmell,
                     ctx.file_path,
                     idx + 1,
                 ).with_remediation(Remediation::quick(
-                    "Remove the unused variable or prefix it with '_' to silence the warning"
+                    "Remove the unused variable or prefix it with '_' to indicate it is intentionally unused"
                 )));
             }
         }
