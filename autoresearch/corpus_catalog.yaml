@@ -423,25 +423,33 @@ rust:
   repo: clap-rs/clap
   used: false
 - cat: library
+  findings_count: 0
+  last_used: '2026-05-09T19:10:02.937449'
   loc: large
   priority: high
   repo: serde-rs/serde
-  used: false
+  used: true
 - cat: compiler
+  findings_count: 1
+  last_used: '2026-05-09T19:10:33.046339'
   loc: huge
   priority: high
   repo: rust-lang/rust
-  used: false
+  used: true
 - cat: game_engine
+  findings_count: 0
+  last_used: '2026-05-09T19:14:39.441051'
   loc: huge
   priority: high
   repo: bevyengine/bevy
-  used: false
+  used: true
 - cat: web
+  findings_count: 0
+  last_used: '2026-05-09T19:15:04.834456'
   loc: large
   priority: high
   repo: actix/actix-web
-  used: false
+  used: true
 - cat: database
   loc: large
   priority: high
