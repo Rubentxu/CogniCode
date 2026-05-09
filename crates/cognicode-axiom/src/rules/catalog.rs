@@ -3707,7 +3707,7 @@ declare_rule! {
             if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
             || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
             || trimmed.starts_with("#") { continue; }
-            let has_archive = trimmed.contains(".zip(") || trimmed.contains("ZipArchive") || trimmed.contains("tar::") || trimmed.contains("Archive::") || trimmed.contains("unzip") || trimmed.contains("flate2") || trimmed.contains("extract_all") || trimmed.contains("unpack") || trimmed.contains("sevenz") || trimmed.contains("bzip2::") || trimmed.contains("xz::") || trimmed.contains("zstd::") || trimmed.contains("snap::") || trimmed.contains("ar::");
+            let has_archive = trimmed.contains(".zip(") || trimmed.contains("ZipArchive") || trimmed.contains("zip::") || trimmed.contains("tar::") || trimmed.contains("Archive::") || trimmed.contains("unzip") || trimmed.contains("flate2") || trimmed.contains("extract_all") || trimmed.contains("unpack") || trimmed.contains("sevenz") || trimmed.contains("bzip2::") || trimmed.contains("xz::") || trimmed.contains("zstd::") || trimmed.contains("snap::") || trimmed.contains("ar::");
             if has_archive && !trimmed.contains("limit") && !trimmed.contains("max_") && !trimmed.contains("size_limit") {
                 let context_start = line_num.saturating_sub(10);
                 let context_end = std::cmp::min(ctx.source.lines().count(), line_num + 8);
