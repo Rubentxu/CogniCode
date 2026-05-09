@@ -308,8 +308,9 @@ declare_rule! {
                                     let args_upper = args_text.to_uppercase();
                                     let format_arg_count = args_text.matches("{}").count();
                                     for keyword in &sql_keywords {
-                                        // Use word boundary matching to avoid false positives like 'selected' matching 'SELECT'
-                                        let pattern = format!(r"(?i)\b{}\b", regex::escape(keyword));
+                                        // Use negative lookahead/lookbehind to match SQL keywords not part of identifiers
+                                        // This handles edge cases like "SELECT;" or "SELECT(" that \b might miss
+                                        let pattern = format!(r"(?i)(?<![a-zA-Z_]){}(?![a-zA-Z_])", regex::escape(keyword));
                                         if regex::Regex::new(&pattern)
                                             .and_then(|re| Ok(re.is_match(args_text)))
                                             .unwrap_or(false)
