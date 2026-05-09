@@ -3702,7 +3702,7 @@ declare_rule! {
             if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
             || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
             || trimmed.starts_with("#") { continue; }
-            let has_archive = trimmed.contains(".zip(") || trimmed.contains("ZipArchive") || trimmed.contains("tar::") || trimmed.contains("Archive::") || trimmed.contains("decompress(") || trimmed.contains("extract(") || trimmed.contains("unzip") || trimmed.contains("flate2");
+            let has_archive = trimmed.contains(".zip(") || trimmed.contains("ZipArchive") || trimmed.contains("tar::") || trimmed.contains("Archive::") || trimmed.contains("unzip") || trimmed.contains("flate2");
             if has_archive && !trimmed.contains("limit") && !trimmed.contains("max_") && !trimmed.contains("size_limit") {
                 let context: String = ctx.source.lines().skip(line_num.saturating_sub(5)).take(10).collect::<Vec<_>>().join("\n");
                 if !context.contains("size") && !context.contains("limit") && !context.contains("max_size") && !context.contains("uncompressed_size") && !context.contains("decompressed_size") {
