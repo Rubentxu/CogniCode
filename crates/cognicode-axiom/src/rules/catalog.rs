@@ -25139,9 +25139,9 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let patterns = [
-            (r#"(?i)(password|passwd|pwd)\s*[=:]\s*["'][^"']{4,}["']"#, "password"),
-            (r#"(?i)(api[_-]?key|apikey)\s*[=:]\s*["'][^"']{4,}["']"#, "api_key"),
-            (r#"(?i)(secret|token)\s*[=:]\s*["'][^"']{4,}["']"#, "secret"),
+            (r#"(?i)(password|passwd|pwd)\s*[=:]\s*["'][^"']{8,}["']"#, "password"),
+            (r#"(?i)(api[_-]?key|apikey)\s*[=:]\s*["'][^"']{8,}["']"#, "api_key"),
+            (r#"(?i)(secret|token)\s*[=:]\s*["'][^"']{8,}["']"#, "secret"),
         ];
         let regexes: Vec<_> = patterns.iter().map(|(p, _)| regex::Regex::new(p).unwrap()).collect();
         for (line_num, line) in ctx.source.lines().enumerate() {
