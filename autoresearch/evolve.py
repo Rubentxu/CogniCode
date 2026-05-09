@@ -59,6 +59,62 @@ def analyze(history,force=None,batch=3,keep_rate=0):
   if len(sel)>=batch:break
  return sel[:batch]
 
+
+def _segregate(rule_id):
+    """Extract rule from catalog.rs to its own file (SOLID/SRP)."""
+    content=CATALOG.read_text()
+    p=content.find('id: "'+rule_id+'"')
+    if p==-1:return False
+    bs=content.rfind("declare_rule!",0,p);bc=content.find("{",bs)
+    d=0
+    for i in range(bc,len(content)):
+        if content[i]=="{":d+=1
+        elif content[i]=="}":
+            d-=1
+            if d==0:block=content[bs:i+1];break
+    # Determine language and category
+    lang="rust"
+    if "SecurityHotspot"in block or"VULNERABILITY"in block:cat="security"
+    elif"Bug"in block or"Reliability"in block:cat="bugs"
+    else:cat="code_smells"
+    # Create file
+    rules_dir=REPO/"crates/cognicode-axiom/src/rules/rules"/lang/cat
+    rules_dir.mkdir(parents=True,exist_ok=True)
+    fname=rule_id.lower()+"_rule.rs"
+    fpath=rules_dir/fname
+    # Build new file content
+    fc="""//! """+rule_id+""" — Auto-segregated by Karpathy workflow (SOLID/SRP)
+use crate::{Severity,Category,Issue,Remediation,Rule,RuleContext,RuleEntry};
+use crate::rules::{CleanCodeAttribute,SoftwareQuality,SoftwareQualityImpact,ImpactSeverity};
+use cognicode_macros::declare_rule;
+use inventory::submit;
+
+"""+block+"""
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_"""+rule_id.lower()+"""_registered() {
+        let rule="""+rule_id+"""Rule::new();
+        assert_eq!(rule.id(),""""+rule_id+"""");
+        assert!(rule.name().len()>0);
+    }
+}
+"""
+    fpath.write_text(fc)
+    # Update mod.rs
+    modf=rules_dir/"mod.rs"
+    modc=modf.read_text()if modf.exists()else""
+    modline="pub mod "+fname.replace(".rs","")+";"
+    if modline not in modc:
+        modf.write_text(modc+"\n"+modline+"\n")
+    # Replace in catalog.rs
+    nc=content.replace(block,"// "+rule_id+" → segregated to "+str(fpath.relative_to(REPO))+" (SOLID)")
+    CATALOG.write_text(nc)
+    logger.info("   📁 Segregated: "+rule_id+" → "+str(fpath.relative_to(REPO)))
+    return True
+
 TIERS=["threshold_tune","regex_tighten","logic_refactor"]
 def improve(rule_id,tier=0):
  """Try improvement at current tier. If fails, fall back."""
@@ -186,6 +242,9 @@ def evolve(n=None,rule=None,dry=False,cooldown=5,batch=3):
     if r.returncode==0:
      git.commit(cmsg(rid,ch,m))
      base[rid]=m;bl.save(base);k+=1
+    # Also segregate if still in catalog.rs
+    try:_segregate(rid)
+    except Exception as e:logger.debug("Segregation skipped: "+str(e))
     else:
      logger.warning("git add failed, counting as discard");subprocess.run(["git","checkout","--",str(CATALOG)],cwd=str(REPO));d+=1
    else:
