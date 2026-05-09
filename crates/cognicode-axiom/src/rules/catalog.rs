@@ -371,23 +371,23 @@ declare_rule! {
         for (line_idx, line) in ctx.source.lines().enumerate() {
             for (re, description) in &compiled_patterns {
                 if re.is_match(line) {
-                        let pt = line.find(|c: char| !c.is_whitespace()).unwrap_or(0);
-                        issues.push(Issue::new(
-                            "S4792",
-                            format!(
-                                "Use of weak cryptography: {} detected on line {}",
-                                description, line_idx + 1
-                            ),
-                            Severity::Critical,
-                            Category::Vulnerability,
-                            ctx.file_path,
-                            line_idx + 1,
-                        ).with_column(pt + 1)
-                        .with_remediation(Remediation::substantial(
-                            "Use a modern cryptographic algorithm (e.g., SHA-256, AES-256-GCM)"
-                        )));
-                        break;
-                    }
+                    let pt = line.find(|c: char| !c.is_whitespace()).unwrap_or(0);
+                    issues.push(Issue::new(
+                        "S4792",
+                        format!(
+                            "Use of weak cryptography: {} detected on line {}",
+                            description, line_idx + 1
+                        ),
+                        Severity::Critical,
+                        Category::Vulnerability,
+                        ctx.file_path,
+                        line_idx + 1,
+                    ).with_column(pt + 1)
+                    .with_remediation(Remediation::substantial(
+                        "Use a modern cryptographic algorithm (e.g., SHA-256, AES-256-GCM)"
+                    )));
+                    break;
+                }
             }
         }
 
