@@ -12,3 +12,5 @@ pub mod s5042_rule;
 pub mod s5122_rule;
 
 pub mod s2612_rule;
+
+pub mod s1186_rule;
