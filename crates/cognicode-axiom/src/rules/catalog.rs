@@ -5582,12 +5582,17 @@ declare_rule! {
                     if name_str.starts_with("test_") || name_str.contains("_test_") {
                         continue;
                     }
-                    // Skip test functions marked with #[test] attribute
+                    // Skip test functions marked with various test attributes
                     if idx > 0 {
                         let prev_line = ctx.source.lines().nth(idx - 1).unwrap_or("").trim();
                         if prev_line.contains("#[test]") || prev_line.contains("#[cfg(test)]") {
                             continue;
                         }
+                    }
+                    // Skip getter/setter functions (getFoo, setFoo patterns are conventional)
+                    if (name_str.starts_with("get_") || name_str.starts_with("set_") || name_str.starts_with("is_"))
+                        && name_str.chars().skip(4).all(|c| c.is_ascii_lowercase() || c == '_') {
+                        continue;
                     }
                     // Skip closure parameters (|x| syntax is not a function declaration)
                     if name_str.starts_with('|') {
