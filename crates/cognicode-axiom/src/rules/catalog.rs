@@ -1065,7 +1065,8 @@ declare_rule! {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
-            if trimmed == "if true {" || trimmed == "if false {" || trimmed == "while true {" {
+            let const_bool_re = regex::Regex::new(r"(if|while)\s*\(?\s*(true|false)\s*\)?\s*\{").unwrap();
+        if const_bool_re.is_match(trimmed) {
                 issues.push(Issue::new(
                     "S2589",
                     format!("Constant boolean expression at line {}", idx + 1),
