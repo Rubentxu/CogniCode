@@ -1172,6 +1172,8 @@ declare_rule! {
             || trimmed.starts_with("#")
             || trimmed.contains("version") || trimmed.contains("Version")
             || trimmed.contains("coordinate") || trimmed.contains("Coordinate")
+            || trimmed.contains("specification") || trimmed.contains("Specification")
+            || trimmed.contains("example") || trimmed.contains("Example")
             { continue; }
             
             if let Some(m) = re.find(trimmed) {
