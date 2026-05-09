@@ -146,7 +146,12 @@ declare_rule! {
     category: CodeSmell
     language: "*"
     params: {
-    max_line_length: usize = 120
+    tags: Vec<String> = vec![
+        "TODO".to_string(),
+        "FIXME".to_string(),
+        "HACK".to_string(),
+        "XXX".to_string()
+    ]
 }
 
     explanation: "TODO and FIXME tags indicate incomplete work that should be tracked and completed to avoid leaving technical debt or forgotten tasks in the codebase.",
