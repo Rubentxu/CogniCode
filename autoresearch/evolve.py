@@ -28,23 +28,26 @@ TOTAL_RULES=len(re.findall(r'id:\s*"([^"]+)"',open(str(CATALOG)).read()))
 
 def analyze(history,force=None,batch=3,keep_rate=0):
  if force:return[force]
- global SESSION_DONE
+ _load_session()
+ valid_rules=set(re.findall(r'id:\s*"(S\d+)"',CATALOG.read_text()))
  # Filter out already-processed rules this session
  recent={h.get("rule_id")for h in history[-batch*3:]};rf=defaultdict(list)
  recent={h.get("rule_id")for h in history[-batch*3:]};rf=defaultdict(list)
  for h in history:
-  try:rf[h.get("rule_id","")].append(float(h.get("f1_after",0)or 0))
+  try:
+   rid=h.get("rule_id","")
+   if rid.startswith("S"):rf[rid].append(float(h.get("f1_after",0)or 0))
   except:pass
  avg={r:sum(s)/len(s)for r,s in rf.items()if s}
  sel=[]
  for r in SQ:
-  if r not in recent and r not in sel and r not in SESSION_DONE:sel.append(r)
+  if r in valid_rules and r not in recent and r not in sel and r not in SESSION_DONE:sel.append(r)
   if len(sel)>=max(1,batch//2):break
  cand=sorted(((r,a)for r,a in avg.items()if r not in recent and r not in sel),key=lambda x:x[1])
  for r,_ in cand:
   if r not in sel:sel.append(r)
   if len(sel)>=batch:break
- for r in re.findall(r'id:\s*"(S\d+)"',CATALOG.read_text()):
+ for r in valid_rules:
   if r not in sel and r not in recent and r not in SESSION_DONE:sel.append(r)
   if len(sel)>=batch:break
  return sel[:batch]
