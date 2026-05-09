@@ -182,12 +182,7 @@ declare_rule! {
     severity: Info
     category: CodeSmell
     language: "rust"
-    params: {
-        // Note: max_depth is intentionally unused in current implementation.
-        // Reserved for future use to limit recursion/deprecation chain depth
-        // when detecting deprecated code that calls other deprecated code.
-        max_depth: i64 = 3
-    }
+    params: {}
 
     explanation: "Using deprecated code can lead to compatibility issues, security vulnerabilities, and difficulties in future maintenance as deprecated APIs may be removed.",
     clean_code: Complete,
