@@ -198,8 +198,8 @@ declare_rule! {
             || trimmed.starts_with("#!") || trimmed.starts_with("/*")
             { continue; }
             
-            let lowered = trimmed.to_lowercase();
-            if lowered.contains("#[deprecated") || lowered.contains("@deprecated") {
+            let deprecated_pattern = regex::Regex::new(r#"(?i:#\[deprecated)"#).unwrap();
+            if deprecated_pattern.is_match(trimmed) {
                 issues.push(Issue::new(
                     "S1134",
                     "Deprecated attribute detected",
