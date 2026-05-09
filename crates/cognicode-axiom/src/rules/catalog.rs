@@ -3694,7 +3694,7 @@ declare_rule! {
             || trimmed.starts_with("#") { continue; }
             let has_archive = line.contains(".zip(") || line.contains("ZipArchive") || line.contains("tar::") || line.contains("Archive::");
             if has_archive && !line.contains("limit") && !line.contains("max_") {
-                let context: String = ctx.source.lines().skip(line_num.saturating_sub(3)).take(10).collect::<Vec<_>>().join("\n");
+                let context: String = ctx.source.lines().skip(line_num.saturating_sub(5)).take(10).collect::<Vec<_>>().join("\n");
                 if !context.contains("size") && !context.contains("limit") && !context.contains("max_size") {
                     issues.push(Issue::new(
                         "S5042",
