@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from tools.llm_client import ModelConfig
 from tools.metric_tools import EvolutionLogger
 from tools.eval_runner import CorpusManager
+from tools.sonarqube_validator import validate_against_sonarqube, check_severity_consistency
 from multi_tool_eval import MultiToolEvaluator, LLMAnalyzer
 
 logging.basicConfig(
@@ -98,6 +99,38 @@ def evolve(language: str = "rust", max_iterations: Optional[int] = None,
         logger.info(f"  Mode: FOREVER (Ctrl+C to stop)")
     logger.info(f"  Dry run: {dry_run}")
     logger.info("="*70)
+    
+    # ── Phase 0: SonarQube metadata validation (once per session) ──
+    logger.info(f"\n{'─'*70}")
+    logger.info("  PHASE 0: SonarQube Rule Validation")
+    logger.info(f"{'─'*70}")
+    
+    try:
+        sq_results = validate_against_sonarqube()
+        sev_issues = check_severity_consistency()
+        
+        # Log SonarQube validation results
+        evolution.log_experiment(
+            iteration=0,  # Session marker
+            rule_id="SONARQUBE_VALIDATION",
+            language=language,
+            metrics_before={},
+            metrics_after={
+                "coverage_pct": sq_results["coverage_pct"],
+                "accuracy_pct": sq_results["accuracy_pct"],
+                "issues_found": len(sq_results["issues"]) + len(sev_issues),
+            },
+            decision="validated",
+            description=f"SonarQube validation: {sq_results['accuracy_pct']:.0f}% accuracy, "
+                       f"{len(sq_results['issues'])} metadata + {len(sev_issues)} severity issues"
+        )
+        
+        if sq_results["accuracy_pct"] >= 95:
+            logger.info(f"  ✅ SonarQube validation: {sq_results['accuracy_pct']:.0f}% accuracy — PASSED")
+        else:
+            logger.warning(f"  ⚠️ SonarQube validation needed — {len(sq_results['issues'])} issues")
+    except Exception as e:
+        logger.warning(f"  SonarQube validation skipped: {e}")
     
     while not SHOULD_STOP:
         if max_iterations and session_iter >= max_iterations:
