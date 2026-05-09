@@ -1,0 +1,75 @@
+# Gitignore for autoresearch/ — Sensitive data & runtime artifacts
+
+# ═══════════════════════════════════════════════════════════════════
+# SENSITIVE — NEVER COMMIT
+# ═══════════════════════════════════════════════════════════════════
+
+# Environment files with API keys
+.env
+.env.*
+*.env
+
+# Credentials and tokens
+*.token
+*.key
+credentials.*
+auth.*
+
+# ═══════════════════════════════════════════════════════════════════
+# RUNTIME ARTIFACTS — Generated data
+# ═══════════════════════════════════════════════════════════════════
+
+# Experiment logs (generated at runtime)
+evolution.tsv
+
+# Evaluation results (large, regenerable)
+results/
+baseline/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Logs
+*.log
+run.log
+
+# ═══════════════════════════════════════════════════════════════════
+# CORPUS — Managed via submodules or config
+# ═══════════════════════════════════════════════════════════════════
+
+# Corpus repos are managed externally (git submodules or pinned hashes)
+corpus/
+
+# ═══════════════════════════════════════════════════════════════════
+# DATABASE — Runtime state
+# ═══════════════════════════════════════════════════════════════════
+
+# SQLite databases (generated at runtime)
+*.db
+metrics.db
+
+# ═══════════════════════════════════════════════════════════════════
+# IDE & OS
+# ═══════════════════════════════════════════════════════════════════
+
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ═══════════════════════════════════════════════════════════════════
+# KEPT (committed)
+# ═══════════════════════════════════════════════════════════════════
+# ✓ program.md        — Human instructions
+# ✓ config.yaml       — Configuration (no secrets!)
+# ✓ requirements.txt  — Dependencies
+# ✓ tools/*.py        — Tool wrappers
+# ✓ agents/*.py       — Agent definitions
+# ✓ orchestrator/*.py — LangGraph orchestration
+# ✓ corpus_commits.yaml — Pinned corpus references
