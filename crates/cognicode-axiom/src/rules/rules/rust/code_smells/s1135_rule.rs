@@ -7,7 +7,7 @@ use inventory::submit;
 declare_rule! {
     id: "S1135"
     name: "TODO tags should be completed or removed"
-    severity: Minor
+    severity: Info
     category: CodeSmell
     language: "*"
     params: {
@@ -25,7 +25,7 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         // Pre-compile regex once - pattern is constant
-        let re = regex::Regex::new(r"(?i)\b(TODO|FIXME|HACK|XXX)\b(?![a-zA-Z0-9_])").unwrap();
+        let re = regex::Regex::new(r"(?i)\b(TODO|FIXME|HACK|XXX)\b").unwrap();
         for (line_num, line) in ctx.source.lines().enumerate() {
             if re.is_match(line) {
                 issues.push(Issue::new(

@@ -139,43 +139,7 @@ declare_rule! {
 // S1135 — TODO/FIXME Tags Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S1135"
-    name: "TODO tags should be completed or removed"
-    severity: Info
-    category: CodeSmell
-    language: "*"
-    params: {
-    tags: Vec<String> = vec![
-        "TODO".to_string(),
-        "FIXME".to_string(),
-        "HACK".to_string(),
-        "XXX".to_string()
-    ]
-}
-
-    explanation: "TODO and FIXME tags indicate incomplete work that should be tracked and completed to avoid leaving technical debt or forgotten tasks in the codebase.",
-    clean_code: Complete,
-    impacts: [Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        // Pre-compile regex once - pattern is constant
-        let re = regex::Regex::new(r"(?i)\b(TODO|FIXME|HACK|XXX)\b(?![a-zA-Z0-9_])").unwrap();
-        for (line_num, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new(
-                    "S1135",
-                    format!("TODO/FIXME/HACK/XXX tag found: {}", line.trim()),
-                    Severity::Minor,
-                    Category::CodeSmell,
-                    ctx.file_path,
-                    line_num + 1,
-                ));
-            }
-        }
-        issues
-    }
-}
+// S1135 → segregated to crates/cognicode-axiom/src/rules/rules/rust/code_smells/s1135_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1134 — Deprecated Code Rule
