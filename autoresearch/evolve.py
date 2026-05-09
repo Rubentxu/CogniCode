@@ -146,6 +146,12 @@ def evolve(n=None,rule=None,dry=False,cooldown=5,batch=3):
  base=bl.load();git=GitTool();h=ev.read_history()
  s=k=d=f=total=0;t=len(h)
  logger.info("KARPATHY AUTONOMOUS: "+str(batch)+"/iter | "+str(ModelConfig.MODEL)+" | 3-tier+metadata fallback")
+ logger.info("┌"+"─"*60)
+ logger.info("│ 🧬 Self-Evolving Rules — Karpathy Autonomous Loop")
+ logger.info("│ 🎯 Targets: SonarQube mismatches + worst F1 rules")
+ logger.info("│ 🔧 3-tier: code change → metadata fallback → skip")
+ logger.info("│ 📋 Progress saved to session_done.txt")
+ logger.info("└"+"─"*60)
  while not STOP:
   if n and s>=n:break
   s+=1;t0=time.time();keep_rate=0 if k+d==0 else k/(k+d)
@@ -181,6 +187,19 @@ def evolve(n=None,rule=None,dry=False,cooldown=5,batch=3):
   kr=0 if k+d==0 else int(k/(k+d)*100)
   logger.info("  "+str(elapsed)+"s | "+str(k)+"K "+str(d)+"D "+str(f)+"F | rate:"+str(kr)+"%")
   logger.info("  📋 Progress: "+str(len(SESSION_DONE))+"/"+str(TOTAL_RULES)+" rules ("+str(round(len(SESSION_DONE)/TOTAL_RULES*100,1))+"%)")
+  # ── Rich iteration report ──
+  logger.info("  ┌"+"─"*55)
+  logger.info("  │ Batch "+str(s)+": "+str(len(targets))+" rules in "+str(elapsed)+"s — "+str(k)+"✅ "+str(d)+"❌ "+str(f)+"⚠ — rate "+str(kr)+"%")
+  for rid in targets:
+      last = None
+      for entry in reversed(ev.read_history()):
+          if entry.get("rule_id") == rid: last = entry; break
+      if last:
+          dec = last.get("decision","?")
+          desc = (last.get("description","") or "")[:55]
+          icon = "✅" if dec == "keep" else ("❌" if dec == "discard" else "⚠️")
+          logger.info("  │  "+icon+" "+rid+"  "+dec+"  "+desc)
+  logger.info("  └"+"─"*55)
   # Self-check: run full tests periodically
   if s%10==0:
    logger.info("  Self-check: running full test suite...")
