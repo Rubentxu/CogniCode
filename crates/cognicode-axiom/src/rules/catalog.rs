@@ -101,7 +101,7 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         // Query for function definitions to count parameters
-        let query_str = "(function_item parameters: (parameters) @params)";
+        let query_str = "(function_item body: (block) parameters: (parameters) @params)";
         if let Ok(query) = tree_sitter::Query::new(&ctx.language.to_ts_language(), query_str) {
             let mut cursor = tree_sitter::QueryCursor::new();
             let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
