@@ -5568,7 +5568,7 @@ declare_rule! {
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"fn\s+([A-Z][a-zA-Z0-9]*|[a-z][a-zA-Z0-9_]*(?![a-z_])[A-Z][a-zA-Z0-9_]*)").unwrap();
+        let re = regex::Regex::new(r"fn\s+([A-Z][a-zA-Z0-9]+|[a-z][a-zA-Z0-9_]*(?![a-z_])[A-Z][a-zA-Z0-9_]*)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
             if let Some(cap) = re.captures(line)
                 && let Some(name) = cap.get(1) {
