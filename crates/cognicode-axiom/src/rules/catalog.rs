@@ -5568,14 +5568,21 @@ declare_rule! {
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"fn\s+([A-Z][a-zA-Z0-9]*|[a-z][a-zA-Z0-9_]*(?![a-z])[A-Z][a-zA-Z0-9_]*)").unwrap();
+        let re = regex::Regex::new(r"fn\s+([A-Z][a-zA-Z0-9]*|[a-z][a-zA-Z0-9_]*(?=[A-Z])[a-zA-Z0-9_]*)").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
             if let Some(cap) = re.captures(line)
                 && let Some(name) = cap.get(1) {
                     let name_str = name.as_str();
-                    // Skip test functions
+                    // Skip test functions by naming convention
                     if name_str.starts_with("test_") || name_str.contains("_test_") {
                         continue;
+                    }
+                    // Skip test functions marked with #[test] attribute
+                    if idx > 0 {
+                        let prev_line = ctx.source.lines().nth(idx - 1).unwrap_or("").trim();
+                        if prev_line.contains("#[test]") || prev_line.contains("#[cfg(test)]") {
+                            continue;
+                        }
                     }
                     // Skip closure parameters (|x| syntax is not a function declaration)
                     if name_str.starts_with('|') {
