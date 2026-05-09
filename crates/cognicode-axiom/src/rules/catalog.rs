@@ -968,7 +968,7 @@ declare_rule! {
                     let node = capture.node;
                     // Check if the block body has no meaningful children (only comment/doc nodes)
                     let named_children = node.named_child_count();
-                    if named_children == 0
+                    if named_children <= 1
                         && let Some(name) = ctx.function_name(node.parent().unwrap_or(node)) {
                             let pt = node.start_position();
                             issues.push(Issue::new(
