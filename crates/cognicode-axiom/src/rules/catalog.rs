@@ -93,7 +93,7 @@ declare_rule! {
     severity: Major
     category: CodeSmell
     language: "rust"
-    params: { threshold: usize = 7 }
+    params: { threshold: usize = 4 }
 
     explanation: "Functions with too many parameters are difficult to call, test, and remember, often indicating the need for parameter grouping into structs or configuration objects.",
     clean_code: Clear,
@@ -145,14 +145,16 @@ declare_rule! {
     severity: Minor
     category: CodeSmell
     language: "*"
-    params: {}
+    params: {
+    max_nesting_depth: u8 = 3
+}
 
     explanation: "TODO and FIXME tags indicate incomplete work that should be tracked and completed to avoid leaving technical debt or forgotten tasks in the codebase.",
     clean_code: Complete,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"(?i)(TODO|FIXME|HACK|XXX):?").unwrap();
+        let re = regex::Regex::new(r"(?i)\b(TODO|FIXME|HACK|XXX)\b:?\s*").unwrap();
         for (line_num, line) in ctx.source.lines().enumerate() {
             if re.is_match(line) {
                 issues.push(Issue::new(
@@ -302,14 +304,16 @@ declare_rule! {
                             && let Some(args_node) = m.captures.iter().find(|c| c.node.kind() == "token_tree")
                                 && let Ok(args_text) = args_node.node.utf8_text(ctx.source.as_bytes()) {
                                     let args_upper = args_text.to_uppercase();
+                                    let format_arg_count = args_text.matches("{}").count() + args_text.matches(r"\{:[^}]*\}").count();
                                     for keyword in &sql_keywords {
-                                        if args_upper.contains(keyword) {
+                                        if args_upper.contains(keyword) && format_arg_count > 0 {
                                             let pt = cap.node.start_position();
                                             issues.push(Issue::new(
                                                 "S5122",
                                                 format!(
-                                                    "Potential SQL injection: SQL keyword '{}' found in format! string",
-                                                    keyword
+                                                    "Potential SQL injection: SQL keyword '{}' found in format! string with {} dynamic argument(s)",
+                                                    keyword,
+                                                    format_arg_count
                                                 ),
                                                 Severity::Blocker,
                                                 Category::Vulnerability,
@@ -858,7 +862,7 @@ declare_rule! {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
-            if trimmed.starts_with("let _") && !trimmed.contains('=') {
+            if trimmed.starts_with("let ") && !trimmed.starts_with("let _") && trimmed.contains('=') {
                 issues.push(Issue::new(
                     "S1854",
                     "Variable declared with '_' prefix may be intentionally unused",
@@ -999,6 +1003,12 @@ declare_rule! {
                 consequence: (block) @then_body
                 alternative: (block) @else_body
             ) @if_expr
+        "#.replace("alternative: (block) @else_body", "alternative: (block) @else_body)");
+        let query_str = r#"
+            (if_expression
+                consequence: (block) @then_body
+                alternative: (block) @else_body
+            ) @if_expr
         "#;
         if let Ok(query) = tree_sitter::Query::new(&ctx.language.to_ts_language(), query_str) {
             let mut cursor = tree_sitter::QueryCursor::new();
@@ -1120,13 +1130,15 @@ declare_rule! {
     impacts: [Security: Low, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r#""\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}""#).unwrap();
+        let re = regex::Regex::new(r#""([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])""#).unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with("//") 
             || trimmed.starts_with("///") || trimmed.starts_with("//!")
             || trimmed.starts_with("/*") || trimmed.starts_with("*")
             || trimmed.starts_with("#")
+            || trimmed.contains("version") || trimmed.contains("Version")
+            || trimmed.contains("coordinate") || trimmed.contains("Coordinate")
             { continue; }
             
             if let Some(m) = re.find(trimmed) {
@@ -1161,7 +1173,7 @@ declare_rule! {
     impacts: [Maintainability: Low, Reliability: Low],
     check: => {
         let mut issues = Vec::new();
-        let query_str = "(match_expression) @match";
+        let query_str = "(match_expression pattern: (identifier) @pat (#any-of? @pat \"Err\" \"Ok\" \"Some\" \"None\")) @match";
         if let Ok(query) = tree_sitter::Query::new(&ctx.language.to_ts_language(), query_str) {
             let mut cursor = tree_sitter::QueryCursor::new();
             let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
@@ -1699,13 +1711,13 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\*(\w+)\s*\.\s*\w+").unwrap();
-        let mut in_unsafe = false;
+        let mut unsafe_depth = 0;
         for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("unsafe {") { in_unsafe = true; }
-            if in_unsafe && re.is_match(line) {
+            if line.contains("unsafe {") { unsafe_depth += 1; }
+            if unsafe_depth > 0 && re.is_match(line) {
                 issues.push(Issue::new("S2259", "Raw pointer dereference in unsafe block - verify non-null", Severity::Blocker, Category::Bug, ctx.file_path, idx + 1));
             }
-            if line.trim() == "}" { in_unsafe = false; }
+            if line.trim() == "}" && unsafe_depth > 0 { unsafe_depth -= 1; }
         }
         issues
     }
@@ -2107,7 +2119,7 @@ declare_rule! {
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"let\s+_(\w+)\s*=").unwrap();
+        let re = regex::Regex::new(r"let\s+(?:mut\s+)?_(\w+)\s*(?::\s*\S+)?\s*=").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
             if let Some(cap) = re.captures(line) {
                 let name = cap.get(1).unwrap().as_str();
@@ -3227,8 +3239,10 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
-            if (line.contains("Set-Cookie") || line.contains(".cookie("))
-                && !line.contains("Secure") && !line.contains("secure") {
+            let trimmed = line.trim();
+        if !trimmed.starts_with("//") && !trimmed.starts_with("/*") && !trimmed.starts_with('*')
+            && (line.contains("Set-Cookie") || line.contains(".cookie("))
+            && !line.contains("Secure") && !line.contains("secure") {
                     issues.push(Issue::new(
                         "S2092",
                         "Cookie without Secure flag",
@@ -5324,7 +5338,7 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let mut test_names: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
-        let re = regex::Regex::new(r"fn\s+(test_\w+)\s*\(").unwrap();
+        let re = regex::Regex::new(r"fn\s+(test_[a-zA-Z_]\w*)\s*\(").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
             if let Some(cap) = re.captures(line) {
                 let name = cap.get(1).unwrap().as_str().to_string();
