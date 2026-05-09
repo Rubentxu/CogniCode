@@ -364,7 +364,15 @@ declare_rule! {
 
         let compiled_patterns: Vec<(regex::Regex, &str)> = weak_patterns
             .iter()
-            .filter_map(|(p, d)| regex::Regex::new(p).ok().map(|r| (r, *d)))
+            .filter_map(|(p, d)| {
+                match regex::Regex::new(p) {
+                    Ok(r) => Some((r, *d)),
+                    Err(e) => {
+                        eprintln!("Warning: Failed to compile S4792 pattern '{}': {}", p, e);
+                        None
+                    }
+                }
+            })
             .collect();
 
         for (line_idx, line) in ctx.source.lines().enumerate() {
