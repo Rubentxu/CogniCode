@@ -5593,6 +5593,10 @@ declare_rule! {
                     if name_str.starts_with('|') {
                         continue;
                     }
+                    // Skip underscore-prefixed private helper functions
+                    if name_str.starts_with('_') {
+                        continue;
+                    }
                     issues.push(Issue::new(
                         "S100",
                         format!("Function '{}' should use snake_case", name_str),
