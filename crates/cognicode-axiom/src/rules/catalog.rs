@@ -2449,6 +2449,19 @@ impl Rule for S125Rule {
     fn tags(&self) -> Vec<&str> { vec!["dead_code", "cleanup", "maintainability"] }
     fn effort_category(&self) -> Option<&str> { Some("quick_fix") }
 
+    fn explanation(&self) -> Option<&str> {
+        Some("Commented-out code represents abandoned implementation attempts that clutter the codebase and confuse developers about actual code intent.")
+    }
+    fn clean_code_attribute(&self) -> Option<CleanCodeAttribute> {
+        Some(CleanCodeAttribute::Complete)
+    }
+    fn software_qualities(&self) -> Vec<SoftwareQualityImpact> {
+        vec![SoftwareQualityImpact {
+            quality: SoftwareQuality::Maintainability,
+            severity: ImpactSeverity::Low,
+        }]
+    }
+
     fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
