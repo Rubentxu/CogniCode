@@ -193,7 +193,7 @@ declare_rule! {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with("//") 
             || trimmed.starts_with("///") || trimmed.starts_with("//!")
-            || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            || trimmed.starts_with("/*")
             { continue; }
             
             if trimmed.contains("#[deprecated") || trimmed.contains("@Deprecated") {
