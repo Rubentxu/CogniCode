@@ -55,8 +55,8 @@ declare_rule! {
     params: { threshold: usize = 4 }
 
     explanation: "Deeply nested control flow structures reduce code readability and maintainability, making it harder to understand program logic and increasing the risk of introducing bugs during modifications.",
-    clean_code: Clear,
-    impacts: [Maintainability: Medium],
+    clean_code: Focused,
+    impacts: [Maintainability: Medium, Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         let func_nodes = ctx.query_functions();
@@ -96,7 +96,7 @@ declare_rule! {
     params: { threshold: usize = 7 }
 
     explanation: "Functions with too many parameters are difficult to call, test, and remember, often indicating the need for parameter grouping into structs or configuration objects.",
-    clean_code: Focused,
+    clean_code: Clear,
     impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
@@ -224,7 +224,7 @@ declare_rule! {
 
     explanation: "Hard-coded credentials make secrets accessible to anyone with source code access, increasing the risk of credential leakage and unauthorized system access.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let patterns = [
@@ -278,7 +278,7 @@ declare_rule! {
 
     explanation: "SQL injection allows attackers to manipulate database queries through unsanitized input, potentially leading to data theft, corruption, or unauthorized system access.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "EXEC", "EXECUTE"];
@@ -344,7 +344,7 @@ declare_rule! {
 
     explanation: "Weak cryptographic algorithms like MD5, SHA1, DES, and RC4 are vulnerable to modern attacks and should not be used for security-sensitive operations.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let weak_patterns = [
@@ -475,7 +475,7 @@ declare_rule! {
 
     explanation: "AVC contract violations indicate patterns that break established coding contracts, potentially causing undefined behavior or runtime failures.",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Check for common forbidden patterns that AVC contracts enforce
@@ -596,7 +596,7 @@ declare_rule! {
 
     explanation: "Forbidden domain terms in code may indicate inappropriate abstractions or anti-patterns that violate project-specific conventions or domain rules.",
     clean_code: Respectful,
-    impacts: [Security: Medium],
+    impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
 
@@ -689,7 +689,7 @@ declare_rule! {
 
     explanation: "Clear-text HTTP connections transmit data without encryption, allowing eavesdropping and man-in-the-middle attacks on sensitive communications.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"http://[^\s""']+"#).unwrap();
@@ -733,7 +733,7 @@ declare_rule! {
 
     explanation: "Unsafe unwrap() calls can cause panics at runtime when the expected value is None or Err, crashing the application unexpectedly.",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let query_str = r#"(call_expression function: (field_expression field: (field_identifier) @method)) @call"#;
@@ -776,7 +776,7 @@ declare_rule! {
     params: {}
 
     explanation: "Lines exceeding reasonable length are difficult to read and review, especially on smaller screens or in side-by-side diffs.",
-    clean_code: Clear,
+    clean_code: Focused,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -889,7 +889,7 @@ declare_rule! {
 
     explanation: "Reassigning method parameters can confuse callers about whether the original value is used and violates the principle of least surprise.",
     clean_code: Clear,
-    impacts: [Maintainability: Medium],
+    impacts: [Maintainability: Medium, Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         // Find function parameters and check if they appear on LHS of assignments
@@ -945,7 +945,7 @@ declare_rule! {
 
     explanation: "Empty function bodies that are not placeholders waste developer time investigating non-functional code and may indicate incomplete implementation.",
     clean_code: Complete,
-    impacts: [Maintainability: Medium],
+    impacts: [Maintainability: Medium, Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         let node_type = ctx.language.function_node_type();
@@ -990,7 +990,7 @@ declare_rule! {
 
     explanation: "Duplicate branches in conditionals indicate redundant code that should be merged, reducing maintenance burden and potential for inconsistencies.",
     clean_code: Clear,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Find if_expressions and compare their alternative/consequence bodies
@@ -1049,7 +1049,7 @@ declare_rule! {
 
     explanation: "Constant boolean expressions in conditions always evaluate to the same result, indicating dead code that should be removed or replaced with meaningful logic.",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -1082,8 +1082,8 @@ declare_rule! {
     params: {}
 
     explanation: "Pattern matches in conditions that look like assignments can confuse developers and lead to unintended behavior due to the difference between = and ==.",
-    clean_code: Clear,
-    impacts: [Reliability: Medium],
+    clean_code: Logical,
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"if\s+let\s+[A-Z]").unwrap();
@@ -1117,7 +1117,7 @@ declare_rule! {
 
     explanation: "Hardcoded IP addresses make applications inflexible and difficult to deploy in different environments, reducing configurability and portability.",
     clean_code: Focused,
-    impacts: [Security: Low],
+    impacts: [Security: Low, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#""\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}""#).unwrap();
@@ -1158,7 +1158,7 @@ declare_rule! {
 
     explanation: "Deeply nested error handling with multiple match arms or Result types indicates complex control flow that could be simplified using the ? operator.",
     clean_code: Clear,
-    impacts: [Maintainability: Low],
+    impacts: [Maintainability: Low, Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         let query_str = "(match_expression) @match";
@@ -1200,7 +1200,7 @@ declare_rule! {
 
     explanation: "Modifying loop counters inside the loop body leads to unpredictable behavior and hard-to-debug issues as the loop termination condition becomes unreliable.",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s+(\w+)\s+in\s+").unwrap();
@@ -1328,7 +1328,7 @@ declare_rule! {
 
     explanation: "Silently ignoring errors in Drop implementations means failures happen without any indication, making debugging impossible.",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"impl\s+Drop\s+for\s+(\w+)").unwrap();
@@ -1364,8 +1364,8 @@ declare_rule! {
     params: {}
 
     explanation: "Unsafe blocks require careful handling of resource cleanup and memory safety; improper use can lead to resource leaks or undefined behavior.",
-    clean_code: Focused,
-    impacts: [Reliability: Medium],
+    clean_code: Logical,
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let query_str = "(unsafe_block) @unsafe";
@@ -1404,7 +1404,7 @@ declare_rule! {
 
     explanation: "Serializable fields exposing sensitive data can accidentally leak secrets through serialization formats like JSON or when logging.",
     clean_code: Trustworthy,
-    impacts: [Security: Low],
+    impacts: [Security: Low, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let sensitive = ["password", "secret", "token", "key", "credential", "passphrase"];
@@ -1480,7 +1480,7 @@ declare_rule! {
 
     explanation: "Self-assignment has no effect and usually indicates a copy-paste error or confused developer about the intended operation.",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Check for self-assignment patterns without using backreferences (not supported in Rust regex)
@@ -1517,7 +1517,7 @@ declare_rule! {
 
     explanation: "Comparisons with identical operands always produce the same result, indicating dead code or logical errors in the expression.",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Check for comparison operators with identical operands (avoid backreferences)
@@ -1556,7 +1556,7 @@ declare_rule! {
 
     explanation: "Nested mutex locks can cause deadlocks when locks are acquired in different orders across different code paths, freezing the application.",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let mut locked_mutexes = [false; 50];
@@ -1628,7 +1628,7 @@ declare_rule! {
 
     explanation: "Ignoring Result return values silently drops potential errors, making bugs harder to diagnose when operations fail unexpectedly.",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -1695,7 +1695,7 @@ declare_rule! {
 
     explanation: "Raw pointer dereferences without verification can cause undefined behavior including crashes, memory corruption, or security vulnerabilities.",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\*(\w+)\s*\.\s*\w+").unwrap();
@@ -1724,7 +1724,7 @@ declare_rule! {
     params: {}
 
     explanation: "Constant names not following UPPER_CASE convention reduce code readability and make it harder to distinguish constants from variables.",
-    clean_code: Clear,
+    clean_code: Efficient,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -1755,7 +1755,7 @@ declare_rule! {
 
     explanation: "Functions with high cyclomatic complexity are difficult to test thoroughly and maintain, often indicating the need for refactoring into smaller functions.",
     clean_code: Focused,
-    impacts: [Maintainability: Medium],
+    impacts: [Maintainability: Medium, Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         for func_node in ctx.query_functions() {
@@ -1786,7 +1786,7 @@ declare_rule! {
 
     explanation: "Functions with too many return points are harder to understand and trace through, increasing the risk of logic errors during maintenance.",
     clean_code: Clear,
-    impacts: [Maintainability: Medium],
+    impacts: [Maintainability: Medium, Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         for func_node in ctx.query_functions() {
@@ -2037,7 +2037,7 @@ declare_rule! {
 
     explanation: "static mut is inherently unsafe in Rust as it allows data races; interior mutability patterns like OnceCell or Mutex should be used instead.",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -2070,7 +2070,7 @@ declare_rule! {
 
     explanation: "Floating point equality comparisons can fail due to precision issues, producing unexpected results in numeric comparisons.",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(f32|f64)\b.*\s*==\s*").unwrap();
@@ -2103,7 +2103,7 @@ declare_rule! {
     params: {}
 
     explanation: "Variables prefixed with underscore but actually used indicate the developer intended to suppress warnings but used the wrong prefix.",
-    clean_code: Clear,
+    clean_code: Focused,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -2183,7 +2183,7 @@ declare_rule! {
 
     explanation: "Loops with unconditional break execute at most once, indicating potentially incorrect loop logic or misunderstood control flow.",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"loop\s*\{[^}]*break[^}]*\}").unwrap();
@@ -2217,7 +2217,7 @@ declare_rule! {
 
     explanation: "Variables that are written to but never read suggest logic errors or forgotten implementation, wasting memory and confusing readers.",
     clean_code: Complete,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"let\s+mut\s+(\w+)\s*=").unwrap();
@@ -2397,7 +2397,7 @@ declare_rule! {
     params: {}
 
     explanation: "Lines exceeding 120 characters are difficult to read on standard displays and in code review tools, especially in side-by-side comparisons.",
-    clean_code: Clear,
+    clean_code: Complete,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -2955,7 +2955,7 @@ declare_rule! {
 
     explanation: "SQL queries built with string interpolation are vulnerable to injection attacks when user input is included without proper sanitization.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER"];
@@ -2995,7 +2995,7 @@ declare_rule! {
 
     explanation: "Dynamic SQL built using format! macros with variable interpolation creates injection vulnerabilities when user input flows into queries.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (line_num, line) in ctx.source.lines().enumerate() {
@@ -3052,7 +3052,7 @@ declare_rule! {
 
     explanation: "EXECUTE statements built with string concatenation allow attackers to inject malicious SQL code through parameter manipulation.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (line_num, line) in ctx.source.lines().enumerate() {
@@ -3095,7 +3095,7 @@ declare_rule! {
 
     explanation: "Building SQL queries through loop concatenation with interpolation is particularly dangerous as it multiplies injection risk across iterations.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -3153,7 +3153,7 @@ declare_rule! {
 
     explanation: "Disabling TLS certificate validation removes security guarantees and enables man-in-the-middle attacks on encrypted connections.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (line_num, line) in ctx.source.lines().enumerate() {
@@ -3210,7 +3210,7 @@ declare_rule! {
 
     explanation: "Cookies without the Secure flag can be transmitted over unencrypted connections, allowing cookie theft through network interception.",
     clean_code: Trustworthy,
-    impacts: [Security: Low],
+    impacts: [Security: Low, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -3244,7 +3244,7 @@ declare_rule! {
 
     explanation: "Overly permissive file permissions (0777, 0666) allow unauthorized users to read or modify sensitive files, creating security vulnerabilities.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"0o?777|chmod\s+777").unwrap();
@@ -3278,7 +3278,7 @@ declare_rule! {
 
     explanation: "XML parsers with DTD processing enabled can be exploited to read local files or perform denial of service attacks through external entity injection.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let xxe_patterns = [
@@ -3321,7 +3321,7 @@ declare_rule! {
 
     explanation: "Cookies without HttpOnly flag can be accessed by JavaScript, making them vulnerable to cross-site scripting (XSS) theft.",
     clean_code: Trustworthy,
-    impacts: [Security: Low],
+    impacts: [Security: Low, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -3407,7 +3407,7 @@ declare_rule! {
 
     explanation: "Leaking self before complete initialization can cause use-after-free bugs when partially constructed objects are accessed.",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fn\s+new\(").unwrap();
@@ -3444,7 +3444,7 @@ declare_rule! {
 
     explanation: "SQL queries built using string operations like + or .as_str() without parameterization are vulnerable to SQL injection attacks.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER"];
@@ -3486,7 +3486,7 @@ declare_rule! {
 
     explanation: "Weak TLS protocols (SSLv3, TLS 1.0) have known vulnerabilities to cryptographic attacks and should not be used for secure communications.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Tlsv1_0|Sslv3|Sslv23|TLSv1\.0|SSLv3").unwrap();
@@ -3524,7 +3524,7 @@ declare_rule! {
 
     explanation: "Cryptographic keys smaller than 2048 bits for RSA/DSA can be broken by modern computing power, compromising security.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(RSA|DSA|DH)\w*\s*\(\s*1024\s*\)").unwrap();
@@ -3562,7 +3562,7 @@ declare_rule! {
 
     explanation: "Exposing sensitive operations in debug mode can leak secrets or provide attack vectors when debug features are accidentally enabled in production.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (line_num, line) in ctx.source.lines().enumerate() {
@@ -3602,7 +3602,7 @@ declare_rule! {
 
     explanation: "Disabling server certificate verification removes authentication from TLS connections, enabling man-in-the-middle attacks.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let dangerous_patterns = [
@@ -3645,7 +3645,7 @@ declare_rule! {
 
     explanation: "Extracting archive files without size limits can enable zip bomb attacks where small files decompress to enormous sizes, exhausting system resources.",
     clean_code: Trustworthy,
-    impacts: [Security: Medium],
+    impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (line_num, line) in ctx.source.lines().enumerate() {
@@ -3686,7 +3686,7 @@ declare_rule! {
 
     explanation: "ECB encryption mode reveals patterns in encrypted data since identical plaintext blocks produce identical ciphertext blocks, weakening confidentiality.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -3719,7 +3719,7 @@ declare_rule! {
 
     explanation: "Weak cipher algorithms like DES, 3DES, and RC4 have known vulnerabilities that make them unsuitable for protecting sensitive data.",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let weak_ciphers = ["RC4", "rc4", "DES", "3DES", "TDES", "RC2"];
@@ -3756,7 +3756,7 @@ declare_rule! {
 
     explanation: "File uploads without size limits can exhaust server resources and enable denial of service attacks through large file uploads.",
     clean_code: Trustworthy,
-    impacts: [Security: Medium],
+    impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -3793,7 +3793,7 @@ declare_rule! {
 
     explanation: "Empty match arms for Result types silently ignore potential errors, making bugs harder to diagnose when operations fail unexpectedly.",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let query_str = "(match_arm body: (block) @body)";
@@ -3868,7 +3868,7 @@ declare_rule! {
 
     explanation: "unwrap() or expect() calls in Drop implementations silently ignore errors, making failures undetectable and debugging impossible.",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"impl\s+Drop\s+for\s+").unwrap();
@@ -3905,7 +3905,7 @@ declare_rule! {
 
     explanation: "panic! in Drop implementations can terminate the program during cleanup, potentially leaving resources in inconsistent states.",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"impl\s+Drop\s+for\s+").unwrap();
@@ -4050,7 +4050,7 @@ declare_rule! {
 
     explanation: "Trait default methods with empty bodies provide no useful default behavior and may indicate incomplete implementation.",
     clean_code: Complete,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let query_str = "(function_item) @func";
@@ -4256,7 +4256,7 @@ declare_rule! {
 
     explanation: "Structs deriving both PartialEq and Hash must ensure equality comparisons use the same fields as Hash; inconsistency breaks hash-based collections.",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re_derive = regex::Regex::new(r"#\[derive\([^)]*\b(PartialEq|Hash)\b[^)]*\)").unwrap();
@@ -4316,7 +4316,7 @@ declare_rule! {
 
     explanation: "Display implementations that panic violate the contract of Display which should always succeed, causing unexpected crashes during formatting.",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"impl\s+.*\s+Display\s+for\s+").unwrap();
@@ -4789,7 +4789,7 @@ declare_rule! {
     params: {}
 
     explanation: "Double negation !!x is confusing and error-prone; the positive form x should be used directly for clarity.",
-    clean_code: Clear,
+    clean_code: Logical,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -5123,7 +5123,7 @@ declare_rule! {
 
     explanation: "Thread::sleep in tests creates flaky, timing-dependent tests that can fail intermittently",
     clean_code: Focused,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"std::thread::sleep|thread::sleep").unwrap();
@@ -5430,7 +5430,7 @@ declare_rule! {
 
     explanation: "Tests depending on shared mutable state can fail unpredictably and in any order",
     clean_code: Modular,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re_static = regex::Regex::new(r"static\s+(mut|ref)\s+\w+").unwrap();
@@ -5468,7 +5468,7 @@ declare_rule! {
 
     explanation: "Tests without assertions verify nothing and give false confidence in code correctness",
     clean_code: Focused,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fn\s+(test_\w+)\s*\(").unwrap();
@@ -5513,7 +5513,7 @@ declare_rule! {
     params: {}
 
     explanation: "Function names not following snake_case violate Rust naming conventions and reduce readability",
-    clean_code: Conventional,
+    clean_code: Efficient,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -5913,7 +5913,7 @@ declare_rule! {
 
     explanation: "Modifying a for loop variable inside the loop body causes confusing behavior",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s+(\w+)\s+in\s+").unwrap();
@@ -6221,7 +6221,7 @@ declare_rule! {
 
     explanation: "Unsafe blocks bypass Rust's memory safety guarantees and require careful manual reasoning",
     clean_code: Trustworthy,
-    impacts: [Security: Medium, Reliability: Medium],
+    impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -6254,7 +6254,7 @@ declare_rule! {
 
     explanation: "unwrap() in library code panics on unexpected errors instead of graceful error handling",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let is_test = ctx.file_path.to_string_lossy().contains("test")
@@ -6440,7 +6440,7 @@ declare_rule! {
 
     explanation: "Box::pin on a stack variable creates a self-referential structure that becomes invalid",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Box::pin\s*\(\s*(\w+)\s*\)").unwrap();
@@ -6880,7 +6880,7 @@ declare_rule! {
 
     explanation: "eval() and similar dynamic code execution functions are major XSS and injection vectors",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let eval_patterns = ["eval(", "new Function(", "setTimeout(", "setInterval("];
@@ -6923,8 +6923,8 @@ declare_rule! {
     params: {}
 
     explanation: "document.write() can inject malicious scripts and is a well-known XSS vulnerability",
-    clean_code: Trustworthy,
-    impacts: [Security: High],
+    clean_code: Logical,
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -6959,7 +6959,7 @@ declare_rule! {
 
     explanation: "innerHTML assignments with user input allow XSS attacks through script injection",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -6994,7 +6994,7 @@ declare_rule! {
 
     explanation: "Cookies without HttpOnly flag can be stolen via JavaScript XSS attacks",
     clean_code: Trustworthy,
-    impacts: [Security: Low],
+    impacts: [Security: Low, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -7030,7 +7030,7 @@ declare_rule! {
 
     explanation: "Disabling CSRF protection leaves applications vulnerable to cross-site request forgery",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let csrf_patterns = [
@@ -7074,7 +7074,7 @@ declare_rule! {
 
     explanation: "Constructing RegExp from user input allows ReDoS attacks and regex injection",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+RegExp\s*\(\s*\w+").unwrap();
@@ -7110,7 +7110,7 @@ declare_rule! {
 
     explanation: "String concatenation in XPath expressions enables XPath injection attacks",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let xpath_patterns = ["evaluate(", "selectSingleNode(", "selectNodes(", "XPathExpression"];
@@ -7153,7 +7153,7 @@ declare_rule! {
 
     explanation: "Using Node.js server APIs in browser code causes runtime errors and security issues",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let node_patterns = ["process.env", "process.cwd()", "__dirname", "__filename"];
@@ -7192,7 +7192,7 @@ declare_rule! {
 
     explanation: "Console statements in production can leak sensitive data and indicate debugging code left behind",
     clean_code: Clear,
-    impacts: [Security: Low],
+    impacts: [Security: Low, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let console_patterns = ["console.log", "console.debug", "console.info"];
@@ -7238,7 +7238,7 @@ declare_rule! {
 
     explanation: "NoSQL injection through string concatenation enables attackers to manipulate database queries",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let nosql_patterns = ["$where", "$function", "$text", "$regex"];
@@ -7284,7 +7284,7 @@ declare_rule! {
 
     explanation: "window.open() without noopener can expose the original window to malicious pages",
     clean_code: Trustworthy,
-    impacts: [Security: Low],
+    impacts: [Security: Low, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"window\.open\s*\([^)]*\)").unwrap();
@@ -7323,7 +7323,7 @@ declare_rule! {
 
     explanation: "dangerouslySetInnerHTML bypasses React's XSS protection and is a major security risk",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -7358,7 +7358,7 @@ declare_rule! {
 
     explanation: "crypto.createCipher uses deprecated insecure algorithms vulnerable to attacks",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let weak_patterns = ["createCipher", "createDecipher", "createCipheriv"];
@@ -7403,7 +7403,7 @@ declare_rule! {
 
     explanation: "Weak ciphers like RC4 and DES are cryptographically broken and easily decrypted",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let weak_ciphers = ["rc4", "RC4", "des", "DES", "3des", "3DES", "TDES", "rc2", "RC2"];
@@ -7442,7 +7442,7 @@ declare_rule! {
 
     explanation: "File uploads without size limits allow attackers to exhaust server resources (DoS)",
     clean_code: Trustworthy,
-    impacts: [Security: Medium],
+    impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let upload_patterns = ["multer", "upload", "formidable", "busboy", "fileUpload"];
@@ -7490,7 +7490,7 @@ declare_rule! {
 
     explanation: "Missing Content-Security-Policy header allows XSS and data injection attacks",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let header_patterns = ["res.setHeader", "res.headers", "response.setHeader", " helmet()", "csp"];
@@ -7542,7 +7542,7 @@ declare_rule! {
 
     explanation: "HTTP resources on HTTPS pages enable man-in-the-middle attacks (mixed content)",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"["']http://[^"']+["']"#).unwrap();
@@ -7579,7 +7579,7 @@ declare_rule! {
 
     explanation: "Missing HSTS header allows protocol downgrade attacks and cookie hijacking",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_express = ctx.source.contains("express") || ctx.source.contains("http.createServer");
@@ -7625,7 +7625,7 @@ declare_rule! {
 
     explanation: "Missing X-Content-Type-Options header allows MIME sniffing attacks",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_express = ctx.source.contains("express") || ctx.source.contains("http.createServer");
@@ -7671,7 +7671,7 @@ declare_rule! {
 
     explanation: "Nested quantifiers in regex can cause catastrophic backtracking (ReDoS)",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Detect potentially catastrophic backtracking patterns
@@ -7724,7 +7724,7 @@ declare_rule! {
 
     explanation: "Empty catch blocks silently swallow exceptions, hiding bugs and making debugging difficult",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"catch\s*\([^)]*\)\s*\{\s*\}").unwrap();
@@ -7759,7 +7759,7 @@ declare_rule! {
     params: {}
 
     explanation: "Throwing generic Error makes error handling inconsistent and debugging harder",
-    clean_code: Clear,
+    clean_code: Logical,
     impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
@@ -7900,7 +7900,7 @@ declare_rule! {
     params: {}
 
     explanation: "Trailing commas in objects cause syntax errors in older JavaScript environments",
-    clean_code: Conventional,
+    clean_code: Clear,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -7937,7 +7937,7 @@ declare_rule! {
 
     explanation: "Relying on automatic semicolon insertion can cause subtle bugs in edge cases",
     clean_code: Trustworthy,
-    impacts: [Reliability: Low],
+    impacts: [Reliability: Low, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -7996,8 +7996,8 @@ declare_rule! {
     params: {}
 
     explanation: "Functions without return statements return undefined, causing confusing behavior",
-    clean_code: Clear,
-    impacts: [Reliability: Medium],
+    clean_code: Focused,
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"function\s+\w+\s*\([^)]*\)\s*\{").unwrap();
@@ -8036,8 +8036,8 @@ declare_rule! {
     params: {}
 
     explanation: "debugger statements pause execution in browsers and should never reach production",
-    clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    clean_code: Clear,
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -8115,7 +8115,7 @@ declare_rule! {
 
     explanation: "parseInt without radix interprets leading zeros as octal, causing incorrect number parsing",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"parseInt\s*\(\s*[^,)]+\s*\)").unwrap();
@@ -8190,7 +8190,7 @@ declare_rule! {
     params: { max_params: usize = 7 }
 
     explanation: "Functions with many parameters are hard to call correctly and may indicate God objects",
-    clean_code: Focused,
+    clean_code: Clear,
     impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
@@ -8230,7 +8230,7 @@ declare_rule! {
     params: {}
 
     explanation: "Switch statements without default case may miss unhandled values",
-    clean_code: Complete,
+    clean_code: Focused,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -8354,7 +8354,7 @@ declare_rule! {
 
     explanation: "Polluting the global namespace causes hard-to-debug conflicts and memory leaks",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"window\.\w+\s*=").unwrap();
@@ -8390,7 +8390,7 @@ declare_rule! {
 
     explanation: "Using == instead of === causes type coercion bugs (e.g., '' == 0 is true)",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -8446,7 +8446,7 @@ declare_rule! {
 
     explanation: "Deeply nested code is hard to read, test, and maintain",
     clean_code: Focused,
-    impacts: [Maintainability: Medium],
+    impacts: [Maintainability: Medium, Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         let nesting_keywords = ["if ", "for ", "while ", "} else if ", "} else {"];
@@ -8596,7 +8596,7 @@ declare_rule! {
 
     explanation: "Identical conditions in if-else make the second branch unreachable dead code",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Detect identical conditions in if-else chains without backreference support
@@ -8683,7 +8683,7 @@ declare_rule! {
 
     explanation: "with statement creates confusing scope behavior and is forbidden in strict mode",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\bwith\s*\(").unwrap();
@@ -8760,7 +8760,7 @@ declare_rule! {
 
     explanation: "Code after return statements is unreachable dead code that indicates bugs",
     clean_code: Clear,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -8798,7 +8798,7 @@ declare_rule! {
 
     explanation: "Self-assignment like x = x has no effect and indicates a bug or typo",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Check for self-assignment patterns without using backreferences
@@ -8923,7 +8923,7 @@ declare_rule! {
 
     explanation: "Switch case fall-through causes unexpected behavior unless intentionally documented",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -8996,7 +8996,7 @@ declare_rule! {
     params: { min_ratio: f64 = 0.10 }
 
     explanation: "Low comment ratios make code harder to understand",
-    clean_code: Clear,
+    clean_code: Complete,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -9073,7 +9073,7 @@ declare_rule! {
 
     explanation: "delete on variables has no effect and indicates a misunderstanding of JavaScript",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"delete\s+(\w+)\s*;").unwrap();
@@ -9146,7 +9146,7 @@ declare_rule! {
 
     explanation: "Bitwise operators in conditionals are often typos for logical operators",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"if\s*\([^)]*[&|]^[^)]+\)").unwrap();
@@ -9218,7 +9218,7 @@ declare_rule! {
 
     explanation: "Object.freeze on array literals only prevents reassignment, not mutation",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Object\.freeze\s*\(\s*\[[^\]]+\]\s*\)").unwrap();
@@ -9338,7 +9338,7 @@ declare_rule! {
 
     explanation: "Direct comparison with Infinity is unreliable; isFinite() is the correct approach",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Infinity\s*[<>]=?\s*\w+|\w+\s*[<>]=?\s*Infinity").unwrap();
@@ -9374,7 +9374,7 @@ declare_rule! {
 
     explanation: "for...in without hasOwnProperty check iterates inherited properties unexpectedly",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s*\(\s*(?:let|var|const)\s+\w+\s+in\s+\w+\s*\)").unwrap();
@@ -9629,7 +9629,7 @@ declare_rule! {
 
     explanation: "Duplicate property names silently overwrite each other in object literals",
     clean_code: Distinct,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\{([^}]+)\}").unwrap();
@@ -9750,7 +9750,7 @@ declare_rule! {
 
     explanation: "Re-declaring variables with var can cause unexpected behavior",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"var\s+(\w+)\s*=").unwrap();
@@ -10012,7 +10012,7 @@ declare_rule! {
     params: {}
 
     explanation: "new Object() is inconsistent with object literals",
-    clean_code: Conventional,
+    clean_code: Focused,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -10183,7 +10183,7 @@ declare_rule! {
 
     explanation: "new Function() is a security risk similar to eval(), allowing arbitrary code execution",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+Function\s*\(").unwrap();
@@ -10986,7 +10986,7 @@ declare_rule! {
 
     explanation: "useEffect without dependency array may cause infinite loops or stale closures",
     clean_code: Focused,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"useEffect\s*\(\s*\(\s*\)\s*=>").unwrap();
@@ -11062,7 +11062,7 @@ declare_rule! {
 
     explanation: "Direct DOM manipulation bypasses React's virtual DOM and causes inconsistencies",
     clean_code: Focused,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let dom_patterns = ["getElementById", "getElementsByClassName", "getElementsByTagName", "querySelector", "querySelectorAll", "document."];
@@ -11102,7 +11102,7 @@ declare_rule! {
 
     explanation: "Missing key props in lists cause incorrect rendering and performance issues",
     clean_code: Focused,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.map\s*\([^)]*\)\s*=>\s*\([^)]*\)").unwrap();
@@ -11211,7 +11211,7 @@ declare_rule! {
 
     explanation: "setState during render creates infinite loops that crash applications",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"set\w+\s*\(").unwrap();
@@ -11359,7 +11359,7 @@ declare_rule! {
 
     explanation: "Missing useEffect cleanup causes memory leaks and stale subscriptions",
     clean_code: Focused,
-    impacts: [Reliability: Low],
+    impacts: [Reliability: Low, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"useEffect\s*\(\s*\(\s*\)\s*=>").unwrap();
@@ -11474,7 +11474,7 @@ declare_rule! {
 
     explanation: "Conditional && with falsy values renders 0 or false as text instead of nothing",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\{[^}]*\s*&&\s*[^}]*\}").unwrap();
@@ -12320,7 +12320,7 @@ declare_rule! {
 
     explanation: "JSX requires React in scope but imports may be missing",
     clean_code: Complete,
-    impacts: [Reliability: Low],
+    impacts: [Reliability: Low, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_jsx = ctx.source.contains("<") && (ctx.source.contains("Component") || ctx.source.contains("useState") || ctx.source.contains("useEffect"));
@@ -12514,7 +12514,7 @@ declare_rule! {
 
     explanation: "Direct state mutation breaks React's change detection and causes unpredictable rendering",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"this\.state\.\w+\s*=").unwrap();
@@ -12594,7 +12594,7 @@ declare_rule! {
 
     explanation: "getDerivedStateFromProps is static and cannot use 'this'; misuse causes bugs",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"static\s+getDerivedStateFromProps\s*\([^)]*\)\s*\{[^}]*this\.").unwrap();
@@ -12621,7 +12621,7 @@ declare_rule! {
 
     explanation: "componentWillMount is deprecated and causes bugs with async rendering",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"componentWillMount\s*\(").unwrap();
@@ -12648,7 +12648,7 @@ declare_rule! {
 
     explanation: "componentWillUpdate is deprecated and causes bugs with async rendering",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"componentWillUpdate\s*\(").unwrap();
@@ -12675,7 +12675,7 @@ declare_rule! {
 
     explanation: "componentWillReceiveProps is deprecated and causes bugs with async rendering",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"componentWillReceiveProps\s*\(").unwrap();
@@ -12702,7 +12702,7 @@ declare_rule! {
 
     explanation: "findDOMNode is deprecated and breaks React's virtual DOM abstraction",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"ReactDOM\.findDOMNode\s*\(").unwrap();
@@ -12810,7 +12810,7 @@ declare_rule! {
 
     explanation: "Multiple JSX roots in a function return cause syntax errors",
     clean_code: Complete,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"return\s*\([^)]*\)\s*;\s*return\s*\(").unwrap();
@@ -12872,7 +12872,7 @@ declare_rule! {
 
     explanation: "Tests without assertions verify nothing and provide false confidence",
     clean_code: Focused,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"(?:it|test|describe)\s*\(['"]"#).unwrap();
@@ -12938,7 +12938,7 @@ declare_rule! {
 
     explanation: "Hardcoded timeouts in tests create flaky tests that fail intermittently",
     clean_code: Focused,
-    impacts: [Reliability: Low],
+    impacts: [Reliability: Low, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"setTimeout|setInterval").unwrap();
@@ -12998,7 +12998,7 @@ declare_rule! {
 
     explanation: "Mocks without cleanup leak state between tests, causing unpredictable failures",
     clean_code: Modular,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_mock = ctx.source.contains("jest.fn()") || ctx.source.contains("mock(") || ctx.source.contains("vi.fn()");
@@ -13024,7 +13024,7 @@ declare_rule! {
 
     explanation: "Async tests without proper handling may pass incorrectly or timeout",
     clean_code: Logical,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?:it|test)\s*\([^)]+\)\s*(?:=>\s*)?\{").unwrap();
@@ -13126,7 +13126,7 @@ declare_rule! {
 
     explanation: "beforeEach without afterEach may cause test pollution and cleanup issues",
     clean_code: Modular,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_before = ctx.source.contains("beforeEach");
@@ -13181,7 +13181,7 @@ declare_rule! {
 
     explanation: "Promises without catch() silently swallow errors and cause hard-to-debug failures",
     clean_code: Trustworthy,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -13207,7 +13207,7 @@ declare_rule! {
 
     explanation: "await in loops is slow and should use Promise.all for parallel execution",
     clean_code: Efficient,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s*\([^)]*\)\s*\{[^}]*await\s+").unwrap();
@@ -13264,7 +13264,7 @@ declare_rule! {
 
     explanation: "setTimeout without clearTimeout causes memory leaks and stale timers",
     clean_code: Focused,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_setTimeout = ctx.source.contains("setTimeout");
@@ -13291,7 +13291,7 @@ declare_rule! {
 
     explanation: "setInterval without clearInterval runs forever and causes resource leaks",
     clean_code: Focused,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_setInterval = ctx.source.contains("setInterval");
@@ -13379,7 +13379,7 @@ declare_rule! {
 
     explanation: "Unhandled promise rejections crash Node.js and cause silent failures",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.then\s*\([^)]*\)\s*;").unwrap();
@@ -13409,7 +13409,7 @@ declare_rule! {
 
     explanation: "Promise.race without timeout may hang forever on slow/unresponsive promises",
     clean_code: Focused,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Promise\.race\s*\(").unwrap();
@@ -13470,7 +13470,7 @@ declare_rule! {
 
     explanation: "fs.readFileSync blocks the event loop, preventing other requests from being handled",
     clean_code: Efficient,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fs\.readFileSync\s*\(").unwrap();
@@ -13538,7 +13538,7 @@ declare_rule! {
 
     explanation: "EventEmitter without error handler crashes the process on unhandled errors",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+(EventEmitter|Server|Net|Http|https?)\s*\(").unwrap();
@@ -13647,7 +13647,7 @@ declare_rule! {
 
     explanation: "new Buffer() is deprecated due to security issues; use Buffer.from()",
     clean_code: Trustworthy,
-    impacts: [Security: Medium],
+    impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+Buffer\s*\(").unwrap();
@@ -13681,7 +13681,7 @@ declare_rule! {
 
     explanation: "Synchronous I/O in request handlers blocks the event loop for all users",
     clean_code: Efficient,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let sync_io_patterns = ["readFileSync", "writeFileSync", "readSync", "writeSync", "openSync", "closeSync", "statSync", "lstatSync", "readdirSync"];
@@ -13721,7 +13721,7 @@ declare_rule! {
 
     explanation: "Streams without error handlers fail silently, hiding failures from users",
     clean_code: Trustworthy,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.(pipe|on|once)\s*\(").unwrap();
@@ -13795,7 +13795,7 @@ declare_rule! {
 
     explanation: "Passing user input to exec() enables command injection attacks",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_exec = ctx.source.contains("exec(") || ctx.source.contains("execSync(");
@@ -13832,7 +13832,7 @@ declare_rule! {
 
     explanation: "eval() with user input enables arbitrary code execution attacks",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_eval = ctx.source.contains("eval(") || ctx.source.contains("new Function(") || ctx.source.contains("vm.runInScript");
@@ -13869,7 +13869,7 @@ declare_rule! {
 
     explanation: "JSON.parse without try/catch throws on invalid input, crashing the application",
     clean_code: Trustworthy,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"JSON\.parse\s*\(").unwrap();
@@ -13910,7 +13910,7 @@ declare_rule! {
 
     explanation: "path.join with user input may allow path traversal attacks to access sensitive files",
     clean_code: Trustworthy,
-    impacts: [Security: Medium],
+    impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_path_join = ctx.source.contains("path.join") || ctx.source.contains("path.resolve");
@@ -13947,7 +13947,7 @@ declare_rule! {
 
     explanation: "Using http module instead of https exposes data to interception attacks",
     clean_code: Trustworthy,
-    impacts: [Security: Medium],
+    impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"require\s*\(\s*['"]http['"]\s*\)"#).unwrap();
@@ -13981,7 +13981,7 @@ declare_rule! {
 
     explanation: "crypto.randomBytes without error checking may return empty buffers on failure",
     clean_code: Trustworthy,
-    impacts: [Reliability: Medium],
+    impacts: [Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"crypto\.randomBytes\s*\([^)]+\)\s*\(").unwrap();
@@ -14022,7 +14022,7 @@ declare_rule! {
 
     explanation: "RegExp constructed from user input allows ReDoS attacks and regex injection",
     clean_code: Trustworthy,
-    impacts: [Security: Medium],
+    impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+RegExp\s*\(").unwrap();
@@ -14056,7 +14056,7 @@ declare_rule! {
 
     explanation: "JSONP callback without validation allows XSS attacks via callback injection",
     clean_code: Trustworthy,
-    impacts: [Security: Medium],
+    impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_jsonp = ctx.source.contains("callback") || ctx.source.contains("jsonp") || ctx.source.contains("jsonpCallback");
@@ -14093,7 +14093,7 @@ declare_rule! {
 
     explanation: "CORS with wildcard origin and credentials enables CSRF attacks",
     clean_code: Trustworthy,
-    impacts: [Security: Medium],
+    impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Access-Control-Allow-Origin\s*:\s*[*]").unwrap();
@@ -14130,7 +14130,7 @@ declare_rule! {
 
     explanation: "HSTS with short max-age doesn't provide effective protection against downgrade attacks",
     clean_code: Trustworthy,
-    impacts: [Security: Medium],
+    impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Strict-Transport-Security\s*:\s*[^;]+").unwrap();
@@ -14170,7 +14170,7 @@ declare_rule! {
 
     explanation: "Express apps without helmet miss important security header protections",
     clean_code: Trustworthy,
-    impacts: [Security: Low],
+    impacts: [Security: Low, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let is_express = ctx.source.contains("express") || ctx.source.contains("createServer");
@@ -14506,7 +14506,7 @@ declare_rule! {
 
     explanation: "serialize-javascript may be vulnerable to XSS",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"serialize-javascript").unwrap();
@@ -14544,7 +14544,7 @@ declare_rule! {
 
     explanation: "Hardcoded credentials should not be used",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let patterns = [
@@ -14577,7 +14577,7 @@ declare_rule! {
 
     explanation: "SQL injection vulnerabilities should be prevented",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -14657,7 +14657,7 @@ declare_rule! {
 
     explanation: "Null pointer dereferences should be avoided",
     clean_code: Logical,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\w+\.\w+\s*\(\s*\)\s*\.\w+|\w+\s*\[\s*\w+\s*\]\.\w+|\(\s*\w+\s*==\s*null\s*\)|null\s*\.\w+").unwrap();
@@ -14748,7 +14748,7 @@ declare_rule! {
 
     explanation: "Mutable static fields should not be public",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Detect public static fields that are not final
@@ -15109,7 +15109,7 @@ declare_rule! {
 
     explanation: "Synchronized blocks should not synchronize on non-final fields",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"synchronized\s*\(\s*this\s*\)").unwrap();
@@ -15163,7 +15163,7 @@ declare_rule! {
 
     explanation: "XML parsing should not be vulnerable to external entity attacks",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -15219,7 +15219,7 @@ declare_rule! {
 
     explanation: "Abstract methods should not be called in constructors",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -15378,7 +15378,7 @@ declare_rule! {
     params: {}
 
     explanation: "Non-final field names should be camelCase",
-    clean_code: Efficient,
+    clean_code: Clear,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -15445,7 +15445,7 @@ declare_rule! {
     params: {}
 
     explanation: "Abstract class names should start with 'Abstract'",
-    clean_code: Focused,
+    clean_code: Conventional,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -15507,7 +15507,7 @@ declare_rule! {
     params: {}
 
     explanation: "Package names should be lowercase",
-    clean_code: Efficient,
+    clean_code: Clear,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -15652,7 +15652,7 @@ declare_rule! {
     params: {}
 
     explanation: "Methods should not have too many parameters",
-    clean_code: Efficient,
+    clean_code: Focused,
     impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
@@ -15683,7 +15683,7 @@ declare_rule! {
     params: { threshold: usize = 50 }
 
     explanation: "Methods should not be too long",
-    clean_code: Clear,
+    clean_code: Complete,
     impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
@@ -16201,7 +16201,7 @@ declare_rule! {
     params: { max_depth: usize = 3 }
 
     explanation: "Nested if statements should not be too deep",
-    clean_code: Focused,
+    clean_code: Logical,
     impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
@@ -16283,7 +16283,7 @@ declare_rule! {
     params: {}
 
     explanation: "Generic exceptions should not be thrown",
-    clean_code: Clear,
+    clean_code: Logical,
     impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
@@ -16347,7 +16347,7 @@ declare_rule! {
     params: {}
 
     explanation: "Constant names should follow UPPER_CASE convention",
-    clean_code: Complete,
+    clean_code: Efficient,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -16571,7 +16571,7 @@ declare_rule! {
     params: { max_methods: usize = 30 }
 
     explanation: "Classes should not have too many methods",
-    clean_code: Complete,
+    clean_code: Focused,
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
@@ -16644,7 +16644,7 @@ declare_rule! {
 
     explanation: "Nesting should not be too deep",
     clean_code: Focused,
-    impacts: [Maintainability: Medium],
+    impacts: [Maintainability: Medium, Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         let mut max_nesting = 0;
@@ -16728,7 +16728,7 @@ declare_rule! {
 
     explanation: "Anonymous classes should not be too long",
     clean_code: Clear,
-    impacts: [Maintainability: Low],
+    impacts: [Maintainability: Low, Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+\w+\s*\([^)]*\)\s*\{").unwrap();
@@ -17502,7 +17502,7 @@ declare_rule! {
 
     explanation: "Double-checked locking should not be used without volatile",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"synchronized\s*\(\s*\w+\s*Class\s*\)").unwrap();
@@ -17530,7 +17530,7 @@ declare_rule! {
 
     explanation: "Volatile fields should not be incremented with ++ operator",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"volatile\s+\w+\s+\w+\s*;").unwrap();
@@ -17649,7 +17649,7 @@ declare_rule! {
 
     explanation: "Thread.stop() is deprecated and unsafe",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.stop\s*\(").unwrap();
@@ -18999,7 +18999,7 @@ declare_rule! {
 
     explanation: "Enum classes should not have mutable fields",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -19118,7 +19118,7 @@ declare_rule! {
 
     explanation: "Classes should not have too many methods",
     clean_code: Efficient,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -19574,7 +19574,7 @@ declare_rule! {
 
     explanation: "Optional.get() should only be called after isPresent check",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19793,7 +19793,7 @@ declare_rule! {
 
     explanation: "Optional.of() does not accept null",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -20663,7 +20663,7 @@ declare_rule! {
 
     explanation: "Test using Random produces non-deterministic results",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20719,7 +20719,7 @@ declare_rule! {
 
     explanation: "assertThat with incorrect matcher may cause issues",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -20922,7 +20922,7 @@ declare_rule! {
 
     explanation: "BigDecimal.divide() without scale risks ArithmeticException",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -20948,7 +20948,7 @@ declare_rule! {
 
     explanation: "Pattern.compile() in loop should be static final field",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20982,7 +20982,7 @@ declare_rule! {
 
     explanation: "SimpleDateFormat is not thread-safe",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21206,7 +21206,7 @@ declare_rule! {
 
     explanation: "Hardcoded credentials should not be used",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21234,7 +21234,7 @@ declare_rule! {
 
     explanation: "Clear-text HTTP should not be used",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21260,7 +21260,7 @@ declare_rule! {
 
     explanation: "SQL queries should not be built with string interpolation",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER"];
@@ -21288,7 +21288,7 @@ declare_rule! {
 
     explanation: "eval() and exec() should not be used",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21314,7 +21314,7 @@ declare_rule! {
 
     explanation: "SSL certificate verification should not be disabled",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21340,7 +21340,7 @@ declare_rule! {
 
     explanation: "Weak TLS protocols should not be used",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21366,7 +21366,7 @@ declare_rule! {
 
     explanation: "Regular expressions should not be built from user input",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21392,7 +21392,7 @@ declare_rule! {
 
     explanation: "User input should not be marked as safe without sanitization",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21418,7 +21418,7 @@ declare_rule! {
 
     explanation: "Weak cryptographic hash function should not be used",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21444,7 +21444,7 @@ declare_rule! {
 
     explanation: "Weak cipher algorithms should not be used",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21470,7 +21470,7 @@ declare_rule! {
 
     explanation: "SQL queries should not be built with string concatenation",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE"];
@@ -21498,7 +21498,7 @@ declare_rule! {
 
     explanation: "File permissions should not be too permissive",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21551,7 +21551,7 @@ declare_rule! {
 
     explanation: "File uploads should have size limits",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21629,7 +21629,7 @@ declare_rule! {
 
     explanation: "CSRF protection should not be disabled",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21794,7 +21794,7 @@ declare_rule! {
 
     explanation: "Archive extraction should validate members",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21820,7 +21820,7 @@ declare_rule! {
 
     explanation: "XML parsing should not enable external entities",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21872,7 +21872,7 @@ declare_rule! {
 
     explanation: "Exception tracebacks should not be exposed in production",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21979,7 +21979,7 @@ declare_rule! {
     params: {}
 
     explanation: "Catching BaseException is too broad",
-    clean_code: Logical,
+    clean_code: Complete,
     impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
@@ -22010,7 +22010,7 @@ declare_rule! {
 
     explanation: "Variables should not be used after None check",
     clean_code: Logical,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -22354,7 +22354,7 @@ declare_rule! {
 
     explanation: "Loop counters should not be modified inside the loop",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s+(\w+)\s+in\s+").unwrap();
@@ -22388,7 +22388,7 @@ declare_rule! {
 
     explanation: "Nested locks should be avoided",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let mut lock_depth: i32 = 0;
@@ -23081,7 +23081,7 @@ declare_rule! {
     params: {}
 
     explanation: "Functions should not have too many statements",
-    clean_code: Complete,
+    clean_code: Conventional,
     impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
@@ -23360,7 +23360,7 @@ declare_rule! {
 
     explanation: "Return statements should not be in finally blocks",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -25095,7 +25095,7 @@ declare_rule! {
 
     explanation: "Hard-coded credentials are security sensitive",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let patterns = [
@@ -25129,7 +25129,7 @@ declare_rule! {
 
     explanation: "SQL injection vulnerabilities should be prevented",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "EXEC", "EXECUTE"];
@@ -25162,7 +25162,7 @@ declare_rule! {
 
     explanation: "Shell command built from user input",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"exec\.Command\s*\(\s*\w+\s*,").unwrap();
@@ -25188,7 +25188,7 @@ declare_rule! {
 
     explanation: "Permissions should be set explicitly",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"os\.Chmod\s*\([^)]*0[0-7]{3}").unwrap();
@@ -25239,7 +25239,7 @@ declare_rule! {
 
     explanation: "Clear-text protocols should not be used",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"http://[^\s""']+"#).unwrap();
@@ -25266,7 +25266,7 @@ declare_rule! {
 
     explanation: "TLS certificate verification should not be disabled",
     clean_code: Trustworthy,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"(InsecureSkipVerify\s*[=:]\s*true|ClientConfig\s*\{[^}]*InsecureSkipVerify[^}]*true)"#).unwrap();
@@ -25292,7 +25292,7 @@ declare_rule! {
 
     explanation: "Weak cryptographic hash function",
     clean_code: Trustworthy,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"md5\.(New|Md5Sum|Md5)\b").unwrap();
@@ -25344,7 +25344,7 @@ declare_rule! {
 
     explanation: "Nil pointers should be checked before dereferencing",
     clean_code: Logical,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\*\w+\s*\.\s*\w+\s*\(").unwrap();
@@ -25369,7 +25369,7 @@ declare_rule! {
     params: {}
 
     explanation: "Empty blocks should not be used",
-    clean_code: Clear,
+    clean_code: Logical,
     impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
@@ -25395,7 +25395,7 @@ declare_rule! {
     params: {}
 
     explanation: "Unused assignments should be removed",
-    clean_code: Logical,
+    clean_code: Clear,
     impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
@@ -25640,7 +25640,7 @@ declare_rule! {
 
     explanation: "Nested mutex locks should be avoided",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.Lock\(\)").unwrap();
@@ -25736,7 +25736,7 @@ declare_rule! {
 
     explanation: "Control flow statements should not be nested too deeply",
     clean_code: Focused,
-    impacts: [Maintainability: Medium],
+    impacts: [Maintainability: Medium, Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         let mut depth = 0;
@@ -25775,7 +25775,7 @@ declare_rule! {
 
     explanation: "Functions should not be too long",
     clean_code: Complete,
-    impacts: [Maintainability: Medium],
+    impacts: [Maintainability: Medium, Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -25817,7 +25817,7 @@ declare_rule! {
 
     explanation: "Cognitive complexity should not be too high",
     clean_code: Efficient,
-    impacts: [Maintainability: Medium],
+    impacts: [Maintainability: Medium, Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         let keywords = ["if", "for", "switch", "case", "&&", "||", "goto"];
@@ -26743,7 +26743,7 @@ declare_rule! {
 
     explanation: "@Transactional on private method - has no effect",
     clean_code: Logical,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@Transactional\s+private\s+\w+\s*\(").unwrap();
@@ -26859,7 +26859,7 @@ declare_rule! {
 
     explanation: "@Entity without @Id - every entity needs a primary key",
     clean_code: Logical,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_entity = ctx.source.contains("@Entity");
@@ -27646,7 +27646,7 @@ declare_rule! {
 
     explanation: "useEffect with setState - may cause infinite loop",
     clean_code: Logical,
-    impacts: [Security: High],
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"useEffect\s*\([^}]*set\w+\s*\([^)]*\)[^}]*\}\s*,\s*\[\s*\w+\s*\]\s*\)").unwrap();
@@ -28365,7 +28365,7 @@ declare_rule! {
 
     explanation: "std::mem::transmute used - requires unsafe block",
     clean_code: Logical,
-    impacts: [Reliability: High],
+    impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"transmute\s*<").unwrap();
