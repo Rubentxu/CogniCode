@@ -195,11 +195,11 @@ declare_rule! {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with("//") 
             || trimmed.starts_with("///") || trimmed.starts_with("//!")
-            || trimmed.starts_with("/*")
+            || trimmed.starts_with("#!") || trimmed.starts_with("/*")
             { continue; }
             
             let lowered = trimmed.to_lowercase();
-            if lowered.replace("#!", "# ").contains("#[deprecated") || lowered.contains("@deprecated") {
+            if lowered.contains("#[deprecated") || lowered.contains("@deprecated") {
                 issues.push(Issue::new(
                     "S1134",
                     "Deprecated attribute detected",
