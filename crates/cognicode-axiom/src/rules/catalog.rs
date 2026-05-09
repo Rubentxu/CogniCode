@@ -356,7 +356,7 @@ declare_rule! {
         let weak_patterns = [
             (r"(?i)(?:\b|_)md5\b", "MD5 hash function"),
             (r"(?i)(?:\b|_)sha1\b", "SHA-1 hash function"),
-            (r"(?i)(?:\b|_)des\b", "DES block cipher"),
+            (r"(?i)(?:\b|_)des(?!ign|esst|ktop|tails)\b", "DES block cipher"),
             (r"(?i)(?:\b|_)rc4\b", "RC4 stream cipher"),
             (r"(?i)(?<!\w)crypt\b", "crypt(3) function"),
         ];
