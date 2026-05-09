@@ -19,7 +19,7 @@ declare_rule! {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
             if (line.contains(".cookie(") || line.contains("Set-Cookie"))
-                && !line.to_lowercase().contains("httponly") && !line.contains("http_only") {
+                && !line.to_lowercase().contains("httponly") && !line.to_lowercase().contains("http_only") {
                     issues.push(Issue::new(
                         "S3330",
                         "Cookie without HttpOnly flag - vulnerable to XSS",
