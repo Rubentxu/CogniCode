@@ -353,17 +353,21 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let weak_patterns = [
-            (r"(?:\b|_)md5\b", "MD5 hash function"),
-            (r"(?:\b|_)sha1\b", "SHA-1 hash function"),
-            (r"(?:\b|_)des\b", "DES block cipher"),
-            (r"(?:\b|_)rc4\b", "RC4 stream cipher"),
-            (r"(?:\b|_)crypt\b", "crypt(3) function"),
+            (r"(?i)(?:\b|_)md5\b", "MD5 hash function"),
+            (r"(?i)(?:\b|_)sha1\b", "SHA-1 hash function"),
+            (r"(?i)(?:\b|_)des\b", "DES block cipher"),
+            (r"(?i)(?:\b|_)rc4\b", "RC4 stream cipher"),
+            (r"(?i)(?:\b|_)crypt\b", "crypt(3) function"),
         ];
 
+        let compiled_patterns: Vec<(regex::Regex, &str)> = weak_patterns
+            .iter()
+            .filter_map(|(p, d)| regex::Regex::new(p).ok().map(|r| (r, *d)))
+            .collect();
+
         for (line_idx, line) in ctx.source.lines().enumerate() {
-            for (pattern, description) in &weak_patterns {
-                if let Ok(re) = regex::Regex::new(pattern)
-                    && re.is_match(line) {
+            for (re, description) in &compiled_patterns {
+                if re.is_match(line) {
                         let pt = line.find(|c: char| !c.is_whitespace()).unwrap_or(0);
                         issues.push(Issue::new(
                             "S4792",
