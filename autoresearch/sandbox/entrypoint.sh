@@ -74,6 +74,33 @@ cd /workspace/CogniCode
 COMMIT=$(git rev-parse --short HEAD)
 echo "[1/6] Cloned at commit: $COMMIT"
 
+# Fix: Remove gitignored workspace members that break compilation
+echo "[1/6] Patching workspace for missing gitignored crates..."
+python3 -c "
+import re
+from pathlib import Path
+cargo_toml = Path('/workspace/CogniCode/Cargo.toml')
+content = cargo_toml.read_text()
+# Remove workspace members whose Cargo.toml doesn't exist
+removed = []
+for line in content.split('\n'):
+    m = re.search(r'\"crates/([^\"]+)\"', line)
+    if m:
+        crate = m.group(1)
+        if not (Path('/workspace/CogniCode/crates') / crate / 'Cargo.toml').exists():
+            content = content.replace(line, f'# {line.strip()}  # gitignored crate, sandbox skip')
+            removed.append(crate)
+# Also remove dependency lines for removed crates
+for crate in removed:
+    content = re.sub(rf'^{crate}\s*=.*$', f'# \\g<0>  # gitignored', content, flags=re.M)
+cargo_toml.write_text(content)
+if removed:
+    print(f'  Patched workspace: removed {removed}')
+else:
+    print('  Workspace OK')
+" 2>&1
+echo "[1/6] Workspace patched"
+
 # ═════════════════════════════════════════════════════════════════
 # 2. Apply experimental change
 # ═════════════════════════════════════════════════════════════════
