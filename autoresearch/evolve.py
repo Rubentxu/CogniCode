@@ -221,12 +221,15 @@ def evolve(n=None,rule=None,dry=False,cooldown=5,batch=3):
  while not STOP:
   if n and s>=n:break
   s+=1;t0=time.time();keep_rate=0 if k+d==0 else k/(k+d)
-  _load_session();targets=analyze(h,rule,batch,keep_rate)
+  _load_session()
+  logger.debug("SESSION_DONE: "+str(len(SESSION_DONE))+" rules")
+  targets=analyze(h,rule,batch,keep_rate)
   logger.info("BATCH "+str(s)+": "+str(targets))
   if dry:
    for rid in targets:t+=1;ev.log_experiment(t,rid,"rust",{},{},"dry_run","")
    time.sleep(1);continue
   for rid in targets:
+   if not rid.startswith("S"):f+=1;continue
    t+=1;f1b=base.get(rid,{}).get("f1",0)or 0
    # Try all 3 tiers
    ch=None
@@ -238,7 +241,7 @@ def evolve(n=None,rule=None,dry=False,cooldown=5,batch=3):
    if"error"in m:git.checkout(str(CATALOG));ev.log_experiment(t,rid,"rust",{"f1":f1b},{},"failed",m["error"]);f+=1;continue
    dec,reason=decide(rid,base.get(rid,{}),m,ch)
    if dec=="keep":
-    r=subprocess.run(["git","add","-f","crates/cognicode-axiom/src/rules/catalog.rs"],cwd=str(REPO),check=False)
+    r=subprocess.run(["git","add","-A"],cwd=str(REPO),check=False)
     if r.returncode==0:
      git.commit(cmsg(rid,ch,m))
      base[rid]=m;bl.save(base);k+=1
