@@ -33,7 +33,7 @@
 
 use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use crate::rules::{
-    CleanCodeAttribute, SoftwareQualityImpact,
+    CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity,
 };
 use cognicode_macros::declare_rule;
 use inventory::submit;
@@ -53,6 +53,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { threshold: usize = 4 }
+
+    explanation: "Deeply nested control flow structures reduce code readability and maintainability, making it harder to understand program logic and increasing the risk of introducing bugs during modifications.",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let func_nodes = ctx.query_functions();
@@ -90,6 +94,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { threshold: usize = 7 }
+
+    explanation: "Functions with too many parameters are difficult to call, test, and remember, often indicating the need for parameter grouping into structs or configuration objects.",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         // Query for function definitions to count parameters
@@ -138,6 +146,10 @@ declare_rule! {
     category: CodeSmell
     language: "*"
     params: {}
+
+    explanation: "TODO and FIXME tags indicate incomplete work that should be tracked and completed to avoid leaving technical debt or forgotten tasks in the codebase.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?i)(TODO|FIXME|HACK|XXX):?").unwrap();
@@ -168,6 +180,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Using deprecated code can lead to compatibility issues, security vulnerabilities, and difficulties in future maintenance as deprecated APIs may be removed.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -205,6 +221,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "*"
     params: {}
+
+    explanation: "Hard-coded credentials make secrets accessible to anyone with source code access, increasing the risk of credential leakage and unauthorized system access.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let patterns = [
@@ -255,6 +275,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "SQL injection allows attackers to manipulate database queries through unsanitized input, potentially leading to data theft, corruption, or unauthorized system access.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "EXEC", "EXECUTE"];
@@ -317,6 +341,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "Weak cryptographic algorithms like MD5, SHA1, DES, and RC4 are vulnerable to modern attacks and should not be used for security-sensitive operations.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let weak_patterns = [
@@ -367,6 +395,10 @@ declare_rule! {
     category: CodeSmell
     language: "*"
     params: { drift_threshold: f32 = 0.3 }
+
+    explanation: "When code documentation diverges from implementation, developers may misunderstand how code actually behaves, leading to incorrect usage and bugs.",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let threshold = self.drift_threshold;
         let min_lines = 3; // Skip very short functions
@@ -440,6 +472,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "AVC contract violations indicate patterns that break established coding contracts, potentially causing undefined behavior or runtime failures.",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         // Check for common forbidden patterns that AVC contracts enforce
@@ -486,6 +522,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { max_age_days: u64 = 30 }
+
+    explanation: "Obsolete patterns in recently modified files indicate technical debt that should be addressed before it accumulates and becomes harder to refactor.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -553,6 +593,10 @@ declare_rule! {
     // Non-Rust files rely on MCP handler's tree-sitter comment skip for FP reduction.
     language: "*"
     params: { forbidden_terms: Vec<String> = vec!["base64".to_string()] }
+
+    explanation: "Forbidden domain terms in code may indicate inappropriate abstractions or anti-patterns that violate project-specific conventions or domain rules.",
+    clean_code: Respectful,
+    impacts: [Security: Medium],
     check: => {
         let mut issues = Vec::new();
 
@@ -594,6 +638,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Dead code that is never called consumes maintenance effort without providing value and can confuse developers about the codebase's actual functionality.",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let dead_symbols = ctx.find_dead_symbols();
@@ -638,6 +686,10 @@ declare_rule! {
     category: Vulnerability
     language: "*"
     params: {}
+
+    explanation: "Clear-text HTTP connections transmit data without encryption, allowing eavesdropping and man-in-the-middle attacks on sensitive communications.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"http://[^\s""']+"#).unwrap();
@@ -678,6 +730,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Unsafe unwrap() calls can cause panics at runtime when the expected value is None or Err, crashing the application unexpectedly.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let query_str = r#"(call_expression function: (field_expression field: (field_identifier) @method)) @call"#;
@@ -718,6 +774,10 @@ declare_rule! {
     category: CodeSmell
     language: "*"
     params: {}
+
+    explanation: "Lines exceeding reasonable length are difficult to read and review, especially on smaller screens or in side-by-side diffs.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -747,6 +807,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Variable names not following snake_case convention reduce code readability and make it harder for developers to parse and understand code.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"let\s+(mut\s+)?([A-Z][a-zA-Z0-9_]*|[a-z]+[A-Z])").unwrap();
@@ -786,6 +850,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Variables declared but never used represent dead code that adds noise to the codebase and may indicate unfinished implementation or copy-paste errors.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -818,6 +886,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Reassigning method parameters can confuse callers about whether the original value is used and violates the principle of least surprise.",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         // Find function parameters and check if they appear on LHS of assignments
@@ -870,6 +942,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Empty function bodies that are not placeholders waste developer time investigating non-functional code and may indicate incomplete implementation.",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let node_type = ctx.language.function_node_type();
@@ -911,6 +987,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Duplicate branches in conditionals indicate redundant code that should be merged, reducing maintenance burden and potential for inconsistencies.",
+    clean_code: Clear,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         // Find if_expressions and compare their alternative/consequence bodies
@@ -966,6 +1046,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Constant boolean expressions in conditions always evaluate to the same result, indicating dead code that should be removed or replaced with meaningful logic.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -996,6 +1080,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Pattern matches in conditions that look like assignments can confuse developers and lead to unintended behavior due to the difference between = and ==.",
+    clean_code: Clear,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"if\s+let\s+[A-Z]").unwrap();
@@ -1026,6 +1114,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "*"
     params: {}
+
+    explanation: "Hardcoded IP addresses make applications inflexible and difficult to deploy in different environments, reducing configurability and portability.",
+    clean_code: Focused,
+    impacts: [Security: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#""\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}""#).unwrap();
@@ -1063,6 +1155,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Deeply nested error handling with multiple match arms or Result types indicates complex control flow that could be simplified using the ? operator.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let query_str = "(match_expression) @match";
@@ -1101,6 +1197,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Modifying loop counters inside the loop body leads to unpredictable behavior and hard-to-debug issues as the loop termination condition becomes unreliable.",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s+(\w+)\s+in\s+").unwrap();
@@ -1138,6 +1238,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Field names not following snake_case convention reduce consistency and make it harder for developers to navigate and understand struct definitions.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let query_str = "(struct_item (field_declaration name: (field_identifier) @field))";
@@ -1176,6 +1280,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Type parameters with multi-character names clutter generic signatures and deviate from Rust conventions, reducing readability.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"<\s*([A-Z][a-z]+)").unwrap();
@@ -1217,6 +1325,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Silently ignoring errors in Drop implementations means failures happen without any indication, making debugging impossible.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"impl\s+Drop\s+for\s+(\w+)").unwrap();
@@ -1250,6 +1362,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Unsafe blocks require careful handling of resource cleanup and memory safety; improper use can lead to resource leaks or undefined behavior.",
+    clean_code: Focused,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let query_str = "(unsafe_block) @unsafe";
@@ -1285,6 +1401,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "rust"
     params: {}
+
+    explanation: "Serializable fields exposing sensitive data can accidentally leak secrets through serialization formats like JSON or when logging.",
+    clean_code: Trustworthy,
+    impacts: [Security: Low],
     check: => {
         let mut issues = Vec::new();
         let sensitive = ["password", "secret", "token", "key", "credential", "passphrase"];
@@ -1320,6 +1440,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Utility structs without documentation make it harder for developers to understand their purpose and when to use them.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let query_str = "(struct_item (type_identifier) @name) @struct";
@@ -1353,6 +1477,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Self-assignment has no effect and usually indicates a copy-paste error or confused developer about the intended operation.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         // Check for self-assignment patterns without using backreferences (not supported in Rust regex)
@@ -1386,6 +1514,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Comparisons with identical operands always produce the same result, indicating dead code or logical errors in the expression.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         // Check for comparison operators with identical operands (avoid backreferences)
@@ -1421,6 +1553,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Nested mutex locks can cause deadlocks when locks are acquired in different orders across different code paths, freezing the application.",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let mut locked_mutexes = [false; 50];
@@ -1451,6 +1587,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Tests without assertions do not verify behavior and provide false confidence that code works, missing potential regressions.",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let query_str = "(function_item (identifier) @name) @func";
@@ -1485,6 +1625,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Ignoring Result return values silently drops potential errors, making bugs harder to diagnose when operations fail unexpectedly.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -1517,6 +1661,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "panic! in library code makes the library fail in unrecoverable ways, violating the principle that libraries should propagate errors rather than crash programs.",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -1544,6 +1692,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Raw pointer dereferences without verification can cause undefined behavior including crashes, memory corruption, or security vulnerabilities.",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\*(\w+)\s*\.\s*\w+").unwrap();
@@ -1570,6 +1722,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Constant names not following UPPER_CASE convention reduce code readability and make it harder to distinguish constants from variables.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"const\s+([a-z][A-Za-z0-9_]*)\s*:").unwrap();
@@ -1596,6 +1752,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { threshold: usize = 10 }
+
+    explanation: "Functions with high cyclomatic complexity are difficult to test thoroughly and maintain, often indicating the need for refactoring into smaller functions.",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for func_node in ctx.query_functions() {
@@ -1623,6 +1783,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { max_returns: usize = 3 }
+
+    explanation: "Functions with too many return points are harder to understand and trace through, increasing the risk of logic errors during maintenance.",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for func_node in ctx.query_functions() {
@@ -1657,6 +1821,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { max_lines: usize = 5 }
+
+    explanation: "Match arms that span many lines indicate complex branching logic that could be extracted into separate functions for better readability.",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let query_str = "(match_arm) @arm";
@@ -1695,6 +1863,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Using .is_empty() is more idiomatic and clear than comparing .len() to 0, improving code readability and consistency.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.len\(\)\s*==\s*0").unwrap();
@@ -1725,6 +1897,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: ".to_owned() already creates an owned copy, so calling .clone() immediately after is redundant and wastes memory.",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.to_owned\(\)\s*\.clone\(\)").unwrap();
@@ -1755,6 +1931,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "#[allow(deprecated)] suppresses warnings about using deprecated APIs, preventing developers from migrating to supported alternatives.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -1784,6 +1964,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Redundant else blocks after return/break/continue add unnecessary nesting and reduce code clarity.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -1816,6 +2000,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Magic numbers without context make code harder to understand and maintain, as their meaning and origin are not immediately clear.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"[=<>!]\s*\d{3,}").unwrap();
@@ -1846,6 +2034,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "static mut is inherently unsafe in Rust as it allows data races; interior mutability patterns like OnceCell or Mutex should be used instead.",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -1875,6 +2067,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Floating point equality comparisons can fail due to precision issues, producing unexpected results in numeric comparisons.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(f32|f64)\b.*\s*==\s*").unwrap();
@@ -1905,6 +2101,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Variables prefixed with underscore but actually used indicate the developer intended to suppress warnings but used the wrong prefix.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"let\s+_(\w+)\s*=").unwrap();
@@ -1939,6 +2139,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "String concatenation with + in loops is inefficient due to repeated allocations; push_str or iterator methods should be used instead.",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let mut in_loop = false;
@@ -1976,6 +2180,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Loops with unconditional break execute at most once, indicating potentially incorrect loop logic or misunderstood control flow.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"loop\s*\{[^}]*break[^}]*\}").unwrap();
@@ -2006,6 +2214,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Variables that are written to but never read suggest logic errors or forgotten implementation, wasting memory and confusing readers.",
+    clean_code: Complete,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"let\s+mut\s+(\w+)\s*=").unwrap();
@@ -2044,6 +2256,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Calling .to_string() on a string literal is redundant since string literals are already owned strings; .to_owned() should be used instead.",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#""([^"]*)"\s*\.to_string\(\)"#).unwrap();
@@ -2074,6 +2290,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "format!() without interpolation is unnecessary overhead; String::from() or string literals should be used directly.",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"format!\("([^}"]*)"\)"#).unwrap();
@@ -2104,6 +2324,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { max_bounds: usize = 5 }
+
+    explanation: "Too many trait bounds make function signatures complex and hard to read; creating a supertrait to group related bounds improves clarity.",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let pattern = format!(r"<\s*(?:\w+\s*:\s*(?:\w+\s*\+\s*){{{}}},\w+)", self.max_bounds);
@@ -2136,6 +2360,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Single-letter public field names are non-descriptive and make code harder to understand, especially for external users of the API.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"pub\s+([a-z])\s*:").unwrap();
@@ -2167,6 +2395,10 @@ declare_rule! {
     category: CodeSmell
     language: "*"
     params: {}
+
+    explanation: "Lines exceeding 120 characters are difficult to read on standard displays and in code review tools, especially in side-by-side comparisons.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -2269,6 +2501,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Match expressions without wildcard arms may panic at runtime when new variants are added to enums, especially in test environments.",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let all_matches: String = ctx.source.to_string();
@@ -2303,6 +2539,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Non-exhaustive match expressions can panic at runtime when new variants are added, indicating defensive programming should be used.",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"match\s+\w+\s*\{([^}]+)\}").unwrap();
@@ -2336,6 +2576,10 @@ declare_rule! {
     category: CodeSmell
     language: "*"
     params: { max_lines: usize = 1000 }
+
+    explanation: "Files exceeding 1000 lines are difficult to navigate and maintain, often indicating the need for modularization into smaller units.",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let line_count = ctx.source.lines().count();
@@ -2364,6 +2608,10 @@ declare_rule! {
     category: CodeSmell
     language: "*"
     params: { min_ratio: f64 = 0.10 }
+
+    explanation: "Code without adequate comments requires more effort to understand, especially for new contributors or when revisiting code after time.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let mut comment_lines = 0usize;
@@ -2400,6 +2648,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Empty function bodies represent incomplete implementation or placeholder code that wastes developer time investigating non-functional entities.",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let node_type = ctx.language.function_node_type();
@@ -2441,6 +2693,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { max_complexity: usize = 15 }
+
+    explanation: "Functions with high structural complexity indicated by many branches are difficult to test and maintain, suggesting the need for decomposition.",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for func_node in ctx.query_functions() {
@@ -2477,6 +2733,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { max_vars: usize = 4 }
+
+    explanation: "Destructuring too many variables in one let statement reduces readability; splitting into multiple statements improves clarity.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"let\s*\(([^)]+)\)\s*=").unwrap();
@@ -2511,6 +2771,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Unused imports add noise to the code and may indicate refactored code that no longer needs certain dependencies.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"use\s+([\w:]+)::(\w+)\s*;").unwrap();
@@ -2545,6 +2809,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Default trait implementations without documentation make it unclear what behavior the default provides and when to override it.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -2580,6 +2848,10 @@ declare_rule! {
     category: CodeSmell
     language: "*"
     params: {}
+
+    explanation: "Debug print statements left in production code can expose sensitive information and clutter logs with development noise.",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let is_test_file = ctx.file_path.to_string_lossy().contains("test");
@@ -2628,6 +2900,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Functions returning Result or Option without #[must_use] can have their errors silently ignored by callers who forget to handle them.",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for func_node in ctx.query_functions() {
@@ -2676,6 +2952,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "SQL queries built with string interpolation are vulnerable to injection attacks when user input is included without proper sanitization.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER"];
@@ -2712,6 +2992,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "Dynamic SQL built using format! macros with variable interpolation creates injection vulnerabilities when user input flows into queries.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (line_num, line) in ctx.source.lines().enumerate() {
@@ -2765,6 +3049,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "EXECUTE statements built with string concatenation allow attackers to inject malicious SQL code through parameter manipulation.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (line_num, line) in ctx.source.lines().enumerate() {
@@ -2804,6 +3092,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "Building SQL queries through loop concatenation with interpolation is particularly dangerous as it multiplies injection risk across iterations.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -2858,6 +3150,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "Disabling TLS certificate validation removes security guarantees and enables man-in-the-middle attacks on encrypted connections.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (line_num, line) in ctx.source.lines().enumerate() {
@@ -2911,6 +3207,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "rust"
     params: {}
+
+    explanation: "Cookies without the Secure flag can be transmitted over unencrypted connections, allowing cookie theft through network interception.",
+    clean_code: Trustworthy,
+    impacts: [Security: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -2941,6 +3241,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "Overly permissive file permissions (0777, 0666) allow unauthorized users to read or modify sensitive files, creating security vulnerabilities.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"0o?777|chmod\s+777").unwrap();
@@ -2971,6 +3275,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "XML parsers with DTD processing enabled can be exploited to read local files or perform denial of service attacks through external entity injection.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let xxe_patterns = [
@@ -3010,6 +3318,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "rust"
     params: {}
+
+    explanation: "Cookies without HttpOnly flag can be accessed by JavaScript, making them vulnerable to cross-site scripting (XSS) theft.",
+    clean_code: Trustworthy,
+    impacts: [Security: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -3040,6 +3352,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { max_depth: usize = 3 }
+
+    explanation: "Deeply nested if-else chains are hard to read and maintain; early returns or polymorphism should be used to flatten the structure.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for func_node in ctx.query_functions() {
@@ -3088,6 +3404,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Leaking self before complete initialization can cause use-after-free bugs when partially constructed objects are accessed.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fn\s+new\(").unwrap();
@@ -3121,6 +3441,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "SQL queries built using string operations like + or .as_str() without parameterization are vulnerable to SQL injection attacks.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER"];
@@ -3159,6 +3483,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "Weak TLS protocols (SSLv3, TLS 1.0) have known vulnerabilities to cryptographic attacks and should not be used for secure communications.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Tlsv1_0|Sslv3|Sslv23|TLSv1\.0|SSLv3").unwrap();
@@ -3193,6 +3521,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "Cryptographic keys smaller than 2048 bits for RSA/DSA can be broken by modern computing power, compromising security.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(RSA|DSA|DH)\w*\s*\(\s*1024\s*\)").unwrap();
@@ -3227,6 +3559,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "Exposing sensitive operations in debug mode can leak secrets or provide attack vectors when debug features are accidentally enabled in production.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (line_num, line) in ctx.source.lines().enumerate() {
@@ -3263,6 +3599,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "Disabling server certificate verification removes authentication from TLS connections, enabling man-in-the-middle attacks.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let dangerous_patterns = [
@@ -3302,6 +3642,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "Extracting archive files without size limits can enable zip bomb attacks where small files decompress to enormous sizes, exhausting system resources.",
+    clean_code: Trustworthy,
+    impacts: [Security: Medium],
     check: => {
         let mut issues = Vec::new();
         for (line_num, line) in ctx.source.lines().enumerate() {
@@ -3339,6 +3683,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "ECB encryption mode reveals patterns in encrypted data since identical plaintext blocks produce identical ciphertext blocks, weakening confidentiality.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -3368,6 +3716,10 @@ declare_rule! {
     category: Vulnerability
     language: "rust"
     params: {}
+
+    explanation: "Weak cipher algorithms like DES, 3DES, and RC4 have known vulnerabilities that make them unsuitable for protecting sensitive data.",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let weak_ciphers = ["RC4", "rc4", "DES", "3DES", "TDES", "RC2"];
@@ -3401,6 +3753,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "rust"
     params: {}
+
+    explanation: "File uploads without size limits can exhaust server resources and enable denial of service attacks through large file uploads.",
+    clean_code: Trustworthy,
+    impacts: [Security: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -3434,6 +3790,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Empty match arms for Result types silently ignore potential errors, making bugs harder to diagnose when operations fail unexpectedly.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let query_str = "(match_arm body: (block) @body)";
@@ -3471,6 +3831,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Using Box<dyn Error> as a catch-all error type loses type information and makes error handling less precise and more error-prone.",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Box\<dyn\s+Error\>").unwrap();
@@ -3501,6 +3865,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "unwrap() or expect() calls in Drop implementations silently ignore errors, making failures undetectable and debugging impossible.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"impl\s+Drop\s+for\s+").unwrap();
@@ -3534,6 +3902,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "panic! in Drop implementations can terminate the program during cleanup, potentially leaving resources in inconsistent states.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"impl\s+Drop\s+for\s+").unwrap();
@@ -3567,6 +3939,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Empty wildcard match arms silently ignore cases without any indication, hiding potential logic errors or missed variants.",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"_\s*=>\s*\{\s*\}").unwrap();
@@ -3597,6 +3973,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Functions returning Box<dyn Error> instead of concrete types reduce API clarity and make error handling more difficult for callers.",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"->\s*Box<dyn\s+Error>").unwrap();
@@ -3627,6 +4007,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Error types not following the Error suffix convention are harder to identify in code reviews and IDE searches.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"struct\s+(\w+Error)\s*").unwrap();
@@ -3663,6 +4047,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Trait default methods with empty bodies provide no useful default behavior and may indicate incomplete implementation.",
+    clean_code: Complete,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let query_str = "(function_item) @func";
@@ -3703,6 +4091,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Modules without documentation comments make it harder for developers to understand the module's purpose and public API.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -3745,6 +4137,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { max_derives: usize = 3 }
+
+    explanation: "Structs with many derive macros may have unnecessary trait implementations that increase binary size and compilation time.",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"#\[derive\(([^)]+)\)\]").unwrap();
@@ -3779,6 +4175,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Trait implementations without documentation make it unclear what behavior is being provided and why it matters to users.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"impl\s+\w+\s+for\s+").unwrap();
@@ -3814,6 +4214,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "impl Trait for Type blocks without documentation are unclear about the contract being implemented and who should care.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"impl\s+\w+\s+for\s+\w+").unwrap();
@@ -3849,6 +4253,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Structs deriving both PartialEq and Hash must ensure equality comparisons use the same fields as Hash; inconsistency breaks hash-based collections.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re_derive = regex::Regex::new(r"#\[derive\([^)]*\b(PartialEq|Hash)\b[^)]*\)").unwrap();
@@ -3905,6 +4313,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Display implementations that panic violate the contract of Display which should always succeed, causing unexpected crashes during formatting.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"impl\s+.*\s+Display\s+for\s+").unwrap();
@@ -3942,6 +4354,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Temporary variables assigned their own value add unnecessary indirection without providing any benefit, reducing code clarity.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"let\s+(\w+)\s*=\s*(\w+)\s*;").unwrap();
@@ -3981,6 +4397,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Calling .clone() inside loops creates unnecessary allocations and performance overhead; references or iterator patterns should be used instead.",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let mut in_loop = false;
@@ -4018,6 +4438,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Index-based loops like for i in 0..len are more error-prone than iterator methods and don't benefit from Rust's zero-cost abstractions.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s+\w+\s+in\s+0\s*\.\.\s*\w+\.len\(\)").unwrap();
@@ -4048,6 +4472,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Boxing types that implement Copy is redundant since Copy types are already cheap to clone, making Box an unnecessary allocation.",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let copy_types = ["i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32", "f64", "bool", "char"];
@@ -4082,6 +4510,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Redundant type casts to the same type add noise without changing behavior, suggesting developer confusion or copy-paste errors.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Check for redundant type casts without using backreferences
@@ -4119,6 +4551,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Boolean comparisons to true/false are redundant since the boolean value can be used directly, reducing code clarity.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(==|!=)\s*(true|false)|(true|false)\s*(==|!=)").unwrap();
@@ -4149,6 +4585,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "if-let patterns that simply return the inner value can be replaced with more idiomatic unwrap_or methods.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Detect `if let Some(x) = y { x } else { z }` pattern without backreference
@@ -4200,6 +4640,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Allocating new collections inside loops creates repeated allocations and performance overhead; collections should be initialized outside or using iterators.",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let mut in_loop = false;
@@ -4238,6 +4682,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { max_size: usize = 4 }
+
+    explanation: "Vec with small fixed capacity indicated by with_capacity() suggests a fixed-size collection that could use a stack array instead.",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Vec::with_capacity\((\d+)\)").unwrap();
@@ -4271,6 +4719,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Explicit .into_iter() in for loops is redundant since for loops automatically dereference and call into_iter on the subject.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s+\w+\s+in\s+\w+\.into_iter\(\)").unwrap();
@@ -4301,6 +4753,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Redundant boolean comparisons to true/false add noise to code; booleans should be used directly in conditions.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(if\s+\w+\s*==\s*true|if\s+\w+\s*!=\s*false)").unwrap();
@@ -4331,6 +4787,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Double negation !!x is confusing and error-prone; the positive form x should be used directly for clarity.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"!!\w+").unwrap();
@@ -4361,6 +4821,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Calling .to_string() inside format! is redundant since format! already converts arguments to strings automatically.",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"format!\s*\(\s*"[^"]*"\s*,\s*[^)]*\.to_string\(\)"#).unwrap();
@@ -4391,6 +4855,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Calling .clone() on Copy types like i32 or bool is redundant since these types are already trivially duplicated by simple assignment.",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let copy_types = ["i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32", "f64", "bool", "char"];
@@ -4425,6 +4893,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "iter_mut() without any modification indicates the developer intended iter() but accidentally used the mutable variant.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.iter_mut\(\)").unwrap();
@@ -4463,6 +4935,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "assert_ne! arguments in wrong order (actual, expected instead of expected, actual) produce confusing failure messages.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"assert_ne!\s*\(\s*\$(\w+)\s*,\s*\$(\w+)").unwrap();
@@ -4498,6 +4974,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Ignored tests without documented reasons accumulate in codebases and may hide important failures or broken functionality.",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -4530,6 +5010,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Test modules without any tests waste developer time investigating empty test suites and may indicate incomplete test coverage.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"#\[cfg\(test\)\]\s+mod\s+(\w+)").unwrap();
@@ -4565,6 +5049,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Assertions without descriptive messages make debugging failed tests harder",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"assert!\s*\(([^,]+)\s*\)").unwrap();
@@ -4598,6 +5086,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Using assert_eq!(true, x) is confusing and less readable than assert!(x)",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"assert_eq!\s*\(\s*(true|false)\s*,\s*").unwrap();
@@ -4628,6 +5120,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Thread::sleep in tests creates flaky, timing-dependent tests that can fail intermittently",
+    clean_code: Focused,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"std::thread::sleep|thread::sleep").unwrap();
@@ -4658,6 +5154,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Reversed assert_eq! arguments (expected, actual) produce confusing error messages",
+    clean_code: Logical,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"assert_eq!\s*\(\s*\$(\w+)\s*,\s*\$(\w+)").unwrap();
@@ -4693,6 +5193,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "#[should_panic] without expected message doesn't verify the correct panic occurred",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -4725,6 +5229,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Inconsistent test naming conventions make it harder to discover and organize tests",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fn\s+(test_[a-z_]+|[a-z_]+_test)\s*\(").unwrap();
@@ -4758,6 +5266,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Test functions not starting with test_ won't be recognized by Rust's test framework",
+    clean_code: Conventional,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fn\s+([a-z_][a-zA-Z_]*)\s*\(\s*\)").unwrap();
@@ -4792,6 +5304,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Duplicated test functions waste build time and indicate possible copy-paste testing",
+    clean_code: Distinct,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let mut test_names: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
@@ -4832,6 +5348,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { max_assertions: usize = 3 }
+
+    explanation: "Tests with many assertions are hard to diagnose when they fail and may test too much",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fn\s+(test_\w+)\s*\(").unwrap();
@@ -4869,6 +5389,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { max_setup_lines: usize = 10 }
+
+    explanation: "Excessive setup code in test fixtures makes tests harder to understand and maintain",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fn\s+(setup|before|init|new_test)\s*\(\s*\)").unwrap();
@@ -4903,6 +5427,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Tests depending on shared mutable state can fail unpredictably and in any order",
+    clean_code: Modular,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re_static = regex::Regex::new(r"static\s+(mut|ref)\s+\w+").unwrap();
@@ -4937,6 +5465,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Tests without assertions verify nothing and give false confidence in code correctness",
+    clean_code: Focused,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fn\s+(test_\w+)\s*\(").unwrap();
@@ -4979,6 +5511,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Function names not following snake_case violate Rust naming conventions and reduce readability",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fn\s+([A-Z][a-zA-Z0-9_]*|[a-z]+[A-Z])").unwrap();
@@ -5019,6 +5555,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Struct names not using CamelCase violate Rust naming conventions",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"struct\s+([a-z][a-z0-9_]*)\s*(<|\{|;)").unwrap();
@@ -5055,6 +5595,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Trait names not using CamelCase violate Rust naming conventions",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"trait\s+([a-z][a-z0-9_]*)\s*(<|\{|;)").unwrap();
@@ -5086,6 +5630,10 @@ declare_rule! {
     category: CodeSmell
     language: "*"
     params: {}
+
+    explanation: "Tab characters cause inconsistent formatting across different editors and environments",
+    clean_code: Formatted,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -5116,6 +5664,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Module names not following snake_case violate Rust naming conventions",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?:^|\s)mod\s+([A-Z][a-zA-Z0-9_]*|[a-z]+[A-Z])").unwrap();
@@ -5147,6 +5699,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Trait names not using CamelCase violate Rust naming conventions",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"trait\s+(\w+)\s*(<|\{|;)").unwrap();
@@ -5181,6 +5737,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Public items without documentation comments leave users without necessary context",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -5231,6 +5791,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Unnecessary #[inline] attributes add clutter without performance benefits",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -5263,6 +5827,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "impl blocks without documentation make it unclear what behavior they provide",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"impl\s+(?:\w+\s+for\s+)?\w+").unwrap();
@@ -5298,6 +5866,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { max_complexity: usize = 10 }
+
+    explanation: "Functions with high cyclomatic complexity are harder to test, understand, and maintain",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for func_node in ctx.query_functions() {
@@ -5338,6 +5910,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Modifying a for loop variable inside the loop body causes confusing behavior",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s+(\w+)\s+in\s+").unwrap();
@@ -5375,6 +5951,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Match arms with multiple comma-separated patterns should use | syntax for clarity",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r",\s*\|").unwrap();
@@ -5405,6 +5985,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: { max_arms: usize = 10 }
+
+    explanation: "Match expressions with many arms are hard to read and maintain",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"match\s+\w+\s*\{").unwrap();
@@ -5439,6 +6023,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Public functions without documentation leave users without usage guidance",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^pub\s+fn\s+(\w+)").unwrap();
@@ -5474,6 +6062,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Public structs without documentation leave users without usage guidance",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^pub\s+struct\s+(\w+)").unwrap();
@@ -5508,6 +6100,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Public traits without documentation leave users without interface guidance",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^pub\s+trait\s+(\w+)").unwrap();
@@ -5542,6 +6138,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Public enums without documentation leave users without variant guidance",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^pub\s+enum\s+(\w+)").unwrap();
@@ -5576,6 +6176,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Public modules without documentation leave users without context",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^pub\s+mod\s+(\w+)").unwrap();
@@ -5614,6 +6218,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Unsafe blocks bypass Rust's memory safety guarantees and require careful manual reasoning",
+    clean_code: Trustworthy,
+    impacts: [Security: Medium, Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -5643,6 +6251,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "unwrap() in library code panics on unexpected errors instead of graceful error handling",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let is_test = ctx.file_path.to_string_lossy().contains("test")
@@ -5678,6 +6290,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Empty expect() messages provide no debugging information when failures occur",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"\.(expect|unwrap)\s*\(\s*(""\s*|\s*")\)"#).unwrap();
@@ -5708,6 +6324,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Manual Clone implementations are error-prone when derive would generate correct code automatically",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re_impl = regex::Regex::new(r"impl\s+Clone\s+for\s+(\w+)").unwrap();
@@ -5745,6 +6365,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Manual PartialEq implementations may miss edge cases when derive would be correct",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re_impl = regex::Regex::new(r"impl\s+PartialEq\s+for\s+(\w+)").unwrap();
@@ -5779,6 +6403,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Unnecessary .collect() creates an intermediate allocation before iterating",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.collect::<.*>\(\)\.iter\(\)|\.collect::<Vec<.*>>\(\)\.iter\(\)").unwrap();
@@ -5809,6 +6437,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "Box::pin on a stack variable creates a self-referential structure that becomes invalid",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Box::pin\s*\(\s*(\w+)\s*\)").unwrap();
@@ -5843,6 +6475,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "RefCell has runtime borrowing overhead that Cell avoids for Copy types",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"RefCell<\s*(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize|f32|f64|bool|char)\s*>").unwrap();
@@ -5873,6 +6509,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Arc has atomic reference counting overhead that Rc avoids in single-threaded contexts",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let is_concurrent = ctx.source.contains("Arc::new")
@@ -5907,6 +6547,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Explicit lifetime parameters that could be inferred add visual noise without benefit",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fn\s+\w+<('[a-z]+\s*,\s*)*'[a-z]+\s*>\s*\(").unwrap();
@@ -5937,6 +6581,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Unnecessary turbofish syntax adds noise when type inference would suffice",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"::<\w+>\(\)|::<\w+>::\w+").unwrap();
@@ -5967,6 +6615,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Using .clone() on Rc/Arc is idiomatic but Rc::clone/Arc::clone makes ownership clearer",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(Rc<|Arc<)[^>]+>\s*\([^)]+\)\.clone\(\)").unwrap();
@@ -5997,6 +6649,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "for_each with complex closures is less readable than explicit for loops",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.for_each\s*\(\s*\|\s*\w+\s*,\s*\|[^|]+").unwrap();
@@ -6027,6 +6683,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Using map() for side effects is confusing since map() implies transformation",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.map\s*\(\s*\|\s*\w+\s*\|[^}]*\.push\(|\.map\s*\(\s*\|\s*\w+\s*\|[^}]*\.insert\(|\.map\s*\(\s*\|\s*\w+\s*\|[^}]*print|\.map\s*\(\s*\|\s*\w+\s*\|[^}]*eprint").unwrap();
@@ -6057,6 +6717,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Chaining filter_map().flatten() is redundant when flatten() alone suffices",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.filter_map\(\s*\|\s*\w+\s*\|\s*\w+\.ok\(\)\s*\)\.flatten\(\)").unwrap();
@@ -6087,6 +6751,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "The if-let pattern is unnecessary when .ok() achieves the same result directly",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Detect `if let Ok(x) = expr { Some(x) } else { None }` without backreference
@@ -6133,6 +6801,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Manual Default implementations may miss field initialization when derive would work",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re_impl = regex::Regex::new(r"impl\s+Default\s+for\s+(\w+)").unwrap();
@@ -6167,6 +6839,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Chained .as_ref() or .as_deref() calls are redundant and add noise",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.as_ref\(\)\.as_ref\(\)|\.as_deref\(\)\.as_deref\(\)|\.as_ref\(\)\.as_deref\(\)|\.as_deref\(\)\.as_ref\(\)").unwrap();
@@ -6201,6 +6877,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "eval() and similar dynamic code execution functions are major XSS and injection vectors",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let eval_patterns = ["eval(", "new Function(", "setTimeout(", "setInterval("];
@@ -6241,6 +6921,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "document.write() can inject malicious scripts and is a well-known XSS vulnerability",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -6272,6 +6956,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "innerHTML assignments with user input allow XSS attacks through script injection",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -6303,6 +6991,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "javascript"
     params: {}
+
+    explanation: "Cookies without HttpOnly flag can be stolen via JavaScript XSS attacks",
+    clean_code: Trustworthy,
+    impacts: [Security: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -6335,6 +7027,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "Disabling CSRF protection leaves applications vulnerable to cross-site request forgery",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let csrf_patterns = [
@@ -6375,6 +7071,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "Constructing RegExp from user input allows ReDoS attacks and regex injection",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+RegExp\s*\(\s*\w+").unwrap();
@@ -6407,6 +7107,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "String concatenation in XPath expressions enables XPath injection attacks",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let xpath_patterns = ["evaluate(", "selectSingleNode(", "selectNodes(", "XPathExpression"];
@@ -6446,6 +7150,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "Using Node.js server APIs in browser code causes runtime errors and security issues",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let node_patterns = ["process.env", "process.cwd()", "__dirname", "__filename"];
@@ -6481,6 +7189,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Console statements in production can leak sensitive data and indicate debugging code left behind",
+    clean_code: Clear,
+    impacts: [Security: Low],
     check: => {
         let mut issues = Vec::new();
         let console_patterns = ["console.log", "console.debug", "console.info"];
@@ -6523,6 +7235,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "NoSQL injection through string concatenation enables attackers to manipulate database queries",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let nosql_patterns = ["$where", "$function", "$text", "$regex"];
@@ -6565,6 +7281,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "javascript"
     params: {}
+
+    explanation: "window.open() without noopener can expose the original window to malicious pages",
+    clean_code: Trustworthy,
+    impacts: [Security: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"window\.open\s*\([^)]*\)").unwrap();
@@ -6600,6 +7320,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "dangerouslySetInnerHTML bypasses React's XSS protection and is a major security risk",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -6631,6 +7355,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "crypto.createCipher uses deprecated insecure algorithms vulnerable to attacks",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let weak_patterns = ["createCipher", "createDecipher", "createCipheriv"];
@@ -6672,6 +7400,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "Weak ciphers like RC4 and DES are cryptographically broken and easily decrypted",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let weak_ciphers = ["rc4", "RC4", "des", "DES", "3des", "3DES", "TDES", "rc2", "RC2"];
@@ -6707,6 +7439,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "javascript"
     params: {}
+
+    explanation: "File uploads without size limits allow attackers to exhaust server resources (DoS)",
+    clean_code: Trustworthy,
+    impacts: [Security: Medium],
     check: => {
         let mut issues = Vec::new();
         let upload_patterns = ["multer", "upload", "formidable", "busboy", "fileUpload"];
@@ -6751,6 +7487,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "Missing Content-Security-Policy header allows XSS and data injection attacks",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let header_patterns = ["res.setHeader", "res.headers", "response.setHeader", " helmet()", "csp"];
@@ -6799,6 +7539,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "HTTP resources on HTTPS pages enable man-in-the-middle attacks (mixed content)",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"["']http://[^"']+["']"#).unwrap();
@@ -6832,6 +7576,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "Missing HSTS header allows protocol downgrade attacks and cookie hijacking",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let has_express = ctx.source.contains("express") || ctx.source.contains("http.createServer");
@@ -6874,6 +7622,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "Missing X-Content-Type-Options header allows MIME sniffing attacks",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let has_express = ctx.source.contains("express") || ctx.source.contains("http.createServer");
@@ -6916,6 +7668,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "Nested quantifiers in regex can cause catastrophic backtracking (ReDoS)",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         // Detect potentially catastrophic backtracking patterns
@@ -6965,6 +7721,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Empty catch blocks silently swallow exceptions, hiding bugs and making debugging difficult",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"catch\s*\([^)]*\)\s*\{\s*\}").unwrap();
@@ -6997,6 +7757,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Throwing generic Error makes error handling inconsistent and debugging harder",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"throw\s+new\s+Error\s*\(").unwrap();
@@ -7029,6 +7793,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Variable names not following camelCase reduce code consistency and readability",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?:const|let|var)\s+([A-Z][a-zA-Z0-9_]*|[a-z]+[A-Z])").unwrap();
@@ -7060,6 +7828,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Function names not following camelCase reduce code consistency and readability",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"function\s+([A-Z][a-zA-Z0-9_]*|[a-z]+[A-Z])\s*\(").unwrap();
@@ -7091,6 +7863,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Class names not following PascalCase reduce code consistency and readability",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"class\s+([a-z][a-z0-9_]*)\b").unwrap();
@@ -7122,6 +7898,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Trailing commas in objects cause syntax errors in older JavaScript environments",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r",\s*\}").unwrap();
@@ -7154,6 +7934,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Relying on automatic semicolon insertion can cause subtle bugs in edge cases",
+    clean_code: Trustworthy,
+    impacts: [Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -7210,6 +7994,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Functions without return statements return undefined, causing confusing behavior",
+    clean_code: Clear,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"function\s+\w+\s*\([^)]*\)\s*\{").unwrap();
@@ -7246,6 +8034,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "debugger statements pause execution in browsers and should never reach production",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -7281,6 +8073,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "alert(), confirm(), and prompt() block the UI thread and are security risks",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let alert_patterns = ["alert(", "confirm(", "prompt("];
@@ -7316,6 +8112,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "parseInt without radix interprets leading zeros as octal, causing incorrect number parsing",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"parseInt\s*\(\s*[^,)]+\s*\)").unwrap();
@@ -7352,6 +8152,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "For loops with multiple variables are confusing and error-prone",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s*\(\s*[^;]+;[^-]*;[^-]*,").unwrap();
@@ -7384,6 +8188,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { max_params: usize = 7 }
+
+    explanation: "Functions with many parameters are hard to call correctly and may indicate God objects",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"function\s+\w+\s*\(([^)]+)\)").unwrap();
@@ -7420,6 +8228,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Switch statements without default case may miss unhandled values",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"switch\s*\([^)]+\)\s*\{").unwrap();
@@ -7456,6 +8268,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { max_returns: usize = 5 }
+
+    explanation: "Functions with many return statements are hard to follow and maintain",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"function\s+\w+\s*\([^)]*\)\s*\{").unwrap();
@@ -7493,6 +8309,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Unused variables are dead code that clutters the codebase and indicates incomplete refactoring",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?:const|let|var)\s+(\w+)\s*=").unwrap();
@@ -7531,6 +8351,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Polluting the global namespace causes hard-to-debug conflicts and memory leaks",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"window\.\w+\s*=").unwrap();
@@ -7563,6 +8387,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Using == instead of === causes type coercion bugs (e.g., '' == 0 is true)",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -7615,6 +8443,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { max_depth: usize = 4 }
+
+    explanation: "Deeply nested code is hard to read, test, and maintain",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let nesting_keywords = ["if ", "for ", "while ", "} else if ", "} else {"];
@@ -7655,6 +8487,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { max_lines: usize = 50 }
+
+    explanation: "Long functions are hard to understand, test, and maintain",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"function\s+\w+\s*\([^)]*\)\s*\{").unwrap();
@@ -7700,6 +8536,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { max_complexity: usize = 15 }
+
+    explanation: "High cyclomatic complexity makes functions hard to test and understand",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"function\s+\w+\s*\([^)]*\)\s*\{").unwrap();
@@ -7753,6 +8593,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Identical conditions in if-else make the second branch unreachable dead code",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         // Detect identical conditions in if-else chains without backreference support
@@ -7801,6 +8645,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "arguments.callee is deprecated and not allowed in strict mode",
+    clean_code: Conventional,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -7832,6 +8680,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "with statement creates confusing scope behavior and is forbidden in strict mode",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\bwith\s*\(").unwrap();
@@ -7864,6 +8716,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Empty blocks may indicate missing logic or typos that should be reviewed",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\{\s*\}").unwrap();
@@ -7901,6 +8757,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Code after return statements is unreachable dead code that indicates bugs",
+    clean_code: Clear,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -7935,6 +8795,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Self-assignment like x = x has no effect and indicates a bug or typo",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         // Check for self-assignment patterns without using backreferences
@@ -7977,6 +8841,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Ignoring return values from pure functions like map() is often a bug",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let pure_funcs = ["map(", "filter(", "reduce(", "find(", "some(", "every(", "flatMap("];
@@ -8012,6 +8880,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Switch without default may miss unhandled cases",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"switch\s*\([^)]+\)\s*\{").unwrap();
@@ -8048,6 +8920,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Switch case fall-through causes unexpected behavior unless intentionally documented",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -8084,6 +8960,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { max_lines: usize = 1000 }
+
+    explanation: "Files over 1000 lines are hard to navigate and maintain",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let line_count = ctx.source.lines().count();
@@ -8114,6 +8994,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { min_ratio: f64 = 0.10 }
+
+    explanation: "Low comment ratios make code harder to understand",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let mut comment_lines = 0usize;
@@ -8150,6 +9034,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Nested ternary operators are confusing and error-prone",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\?\s*[^:]+\s*:\s*[^?]+\?\s*").unwrap();
@@ -8182,6 +9070,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "delete on variables has no effect and indicates a misunderstanding of JavaScript",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"delete\s+(\w+)\s*;").unwrap();
@@ -8215,6 +9107,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "void operator returns undefined unnecessarily and confuses readers",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\bvoid\s+").unwrap();
@@ -8247,6 +9143,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Bitwise operators in conditionals are often typos for logical operators",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"if\s*\([^)]*[&|]^[^)]+\)").unwrap();
@@ -8279,6 +9179,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Comma operator causes confusing side effects and is rarely intentional",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r",\s*\w+\s*=\s*[^,;]+,").unwrap();
@@ -8311,6 +9215,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Object.freeze on array literals only prevents reassignment, not mutation",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Object\.freeze\s*\(\s*\[[^\]]+\]\s*\)").unwrap();
@@ -8343,6 +9251,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Using x !== x to detect NaN is confusing; Number.isNaN() is clearer",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         // Detect x !== x or x != x patterns for NaN checking without backreference
@@ -8387,6 +9299,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "typeof comparison to 'undefined' string is fragile; direct comparison is clearer",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"typeof\s+\w+\s*==\s*["']undefined["']|typeof\s+\w+\s*===\s*["']undefined["']"#).unwrap();
@@ -8419,6 +9335,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Direct comparison with Infinity is unreliable; isFinite() is the correct approach",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Infinity\s*[<>]=?\s*\w+|\w+\s*[<>]=?\s*Infinity").unwrap();
@@ -8451,6 +9371,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "for...in without hasOwnProperty check iterates inherited properties unexpectedly",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s*\(\s*(?:let|var|const)\s+\w+\s+in\s+\w+\s*\)").unwrap();
@@ -8490,6 +9414,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { max_lines: usize = 200 }
+
+    explanation: "Functions over 200 lines are hard to understand and maintain",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?:function\s+\w+|const\s+\w+\s*=\s*(?:async\s*)?\(|=>\s*)").unwrap();
@@ -8532,6 +9460,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { max_vars: usize = 15 }
+
+    explanation: "Functions with too many local variables are hard to understand",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?:function\s+\w+|(?:const|let|var)\s+(\w+))").unwrap();
@@ -8584,6 +9516,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Missing 'use strict' misses opportunities for better error checking",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let first_line = ctx.source.lines().next().unwrap_or("");
@@ -8614,6 +9550,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "var has function scoping that causes confusing behavior; use let/const",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\bvar\s+").unwrap();
@@ -8644,6 +9584,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { max_depth: usize = 3 }
+
+    explanation: "Deep callback nesting (callback hell) is hard to read and maintain",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let callback_funcs = ["function", "=>", ".then(", ".catch(", "callback("];
@@ -8682,6 +9626,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Duplicate property names silently overwrite each other in object literals",
+    clean_code: Distinct,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\{([^}]+)\}").unwrap();
@@ -8723,6 +9671,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Empty function bodies likely indicate missing implementation or dead code",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?:function\s+\w+|const\s+\w+\s*=\s*(?:async\s*)?\(|=>)\s*[^}]*\{\s*\}").unwrap();
@@ -8753,6 +9705,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Unused function parameters indicate API mismatch or incomplete implementation",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"function\s+\w+\s*\(([^)]+)\)").unwrap();
@@ -8791,6 +9747,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Re-declaring variables with var can cause unexpected behavior",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"var\s+(\w+)\s*=").unwrap();
@@ -8827,6 +9787,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Variable shadowing makes code confusing and can cause subtle bugs",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let decl_re = regex::Regex::new(r"(?:const|let|var)\s+(\w+)").unwrap();
@@ -8873,6 +9837,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Unsorted object keys make diffs harder to read and review",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\{([^}]+)\}").unwrap();
@@ -8913,6 +9881,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { min_occurrences: usize = 3 }
+
+    explanation: "Magic string literals appearing multiple times should be constants for maintainability",
+    clean_code: Identifiable,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let mut string_counts = std::collections::HashMap::new();
@@ -8954,6 +9926,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { max_lines: usize = 100 }
+
+    explanation: "Long functions are hard to understand, test, and maintain",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -9000,6 +9976,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "new Array() is inconsistent with array literals and has confusing behavior",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+Array\s*\(").unwrap();
@@ -9030,6 +10010,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "new Object() is inconsistent with object literals",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+Object\s*\(").unwrap();
@@ -9060,6 +10044,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "new String() creates object wrappers instead of primitives",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+String\s*\(").unwrap();
@@ -9090,6 +10078,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "new Boolean() creates object wrappers instead of primitives",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+Boolean\s*\(").unwrap();
@@ -9120,6 +10112,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "new Number() creates object wrappers instead of primitives",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+Number\s*\(").unwrap();
@@ -9150,6 +10146,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "new RegExp() is less readable than regex literals and has escaping issues",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+RegExp\s*\(").unwrap();
@@ -9180,6 +10180,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "javascript"
     params: {}
+
+    explanation: "new Function() is a security risk similar to eval(), allowing arbitrary code execution",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+Function\s*\(").unwrap();
@@ -9214,6 +10218,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Using let for non-reassigned variables misses opportunities for const immutability guarantees",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\blet\s+(\w+)").unwrap();
@@ -9254,6 +10262,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Arrow functions in forEach callbacks are more concise and idiomatic ES6+",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.forEach\s*\(\s*function\s*\(").unwrap();
@@ -9284,6 +10296,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "String concatenation with + is error-prone and less readable than template literals",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#""[^"]*"\s*\+\s*\w+|\w+\s*\+\s*"[^"]*""#).unwrap();
@@ -9314,6 +10330,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Destructuring reduces repetition and improves readability of object property access",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Detect obj.prop1, obj.prop2 patterns without backreference
@@ -9384,6 +10404,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Spread operator is more readable than .apply() for passing arguments",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.apply\s*\(\s*\w+\s*,").unwrap();
@@ -9414,6 +10438,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Default parameters are cleaner than || defaults and handle falsy values correctly",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"=\s*\w+\s*\|\|\s*").unwrap();
@@ -9444,6 +10472,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Rest parameters are more readable and type-safe than the arguments object",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_args = ctx.source.contains("arguments");
@@ -9477,6 +10509,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "for...of is more readable and safer than index-based for loops",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s*\(\s*(?:let|var|const)\s+\w+\s*=\s*0\s*;\s*\w+\s*<\s*\w+\.length").unwrap();
@@ -9507,6 +10543,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Object shorthand {x} instead of {x: x} reduces redundancy",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Detect {x: x} patterns without backreference
@@ -9548,6 +10588,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Promises provide better error handling and composition than callbacks",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let callback_patterns = ["callback(", "cb(", "done(", "next("];
@@ -9582,6 +10626,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "async/await is more readable than chained .then() calls",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let then_count = ctx.source.matches(".then(").count();
@@ -9615,6 +10663,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Optional chaining is cleaner and safer than multiple && checks",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\w+\s*&&\s*\w+\s*&&\s*\w+\.").unwrap();
@@ -9645,6 +10697,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Nullish coalescing ?? only coalesces null/undefined, not all falsy values",
+    clean_code: Logical,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\|\|\s*(?:null|undefined|0|false|'')").unwrap();
@@ -9675,6 +10731,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Array.includes() is more readable than indexOf() !== -1",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.indexOf\s*\([^)]+\)\s*(!==|===)\s*(-1|1)").unwrap();
@@ -9705,6 +10765,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Array.find() returns the first match directly, more efficient than filter()[0]",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.filter\s*\([^)]+\)\s*\[\s*0\s*\]").unwrap();
@@ -9735,6 +10799,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Functional array methods are more declarative and often more efficient",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let for_loop_re = regex::Regex::new(r"for\s*\(\s*(?:let|var|const)\s+\w+\s*=\s*0").unwrap();
@@ -9767,6 +10835,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Object.entries() provides both keys and values cleanly compared to for...in",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s*\(\s*(?:let|var|const)\s+\w+\s+in\s+\w+\s*\)").unwrap();
@@ -9797,6 +10869,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "startsWith/endsWith are more readable than indexOf() === 0",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.indexOf\s*\([^)]+\)\s*===?\s*0").unwrap();
@@ -9827,6 +10903,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Number.isNaN() doesn't coerce its argument, unlike global isNaN()",
+    clean_code: Logical,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Detect isNaN( without preceding Number. (lookbehind not supported in Rust regex)
@@ -9865,6 +10945,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "ES6 export default is more consistent with ES6 import syntax",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"module\.exports\s*=").unwrap();
@@ -9899,6 +10983,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "useEffect without dependency array may cause infinite loops or stale closures",
+    clean_code: Focused,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"useEffect\s*\(\s*\(\s*\)\s*=>").unwrap();
@@ -9932,6 +11020,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Unused useState setters indicate incomplete state management implementation",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"const\s+\[(\w+),\s*set(\w+)\]\s*=\s*useState").unwrap();
@@ -9967,6 +11059,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Direct DOM manipulation bypasses React's virtual DOM and causes inconsistencies",
+    clean_code: Focused,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let dom_patterns = ["getElementById", "getElementsByClassName", "getElementsByTagName", "querySelector", "querySelectorAll", "document."];
@@ -10003,6 +11099,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Missing key props in lists cause incorrect rendering and performance issues",
+    clean_code: Focused,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.map\s*\([^)]*\)\s*=>\s*\([^)]*\)").unwrap();
@@ -10036,6 +11136,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Inline styles make maintenance harder and prevent CSS reuse",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"style\s*=\s*\{\s*\{").unwrap();
@@ -10066,6 +11170,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Unused state variables indicate incomplete refactoring or unnecessary state",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"const\s+\[(\w+),").unwrap();
@@ -10100,6 +11208,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "setState during render creates infinite loops that crash applications",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"set\w+\s*\(").unwrap();
@@ -10134,6 +11246,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Components without displayName are harder to debug in React DevTools",
+    clean_code: Identifiable,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?:function\s+\w+|const\s+\w+\s*=\s*(?:(?:async\s*)?)?\(|=>\s*\()").unwrap();
@@ -10167,6 +11283,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Missing PropTypes means runtime type errors instead of compile-time detection",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_react = ctx.source.contains("React") || ctx.source.contains("import") && ctx.source.contains("Component");
@@ -10203,6 +11323,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Missing default props cause undefined value issues",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_props = ctx.source.contains("function") && (ctx.source.contains("Props") || ctx.source.contains("props."));
@@ -10232,6 +11356,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Missing useEffect cleanup causes memory leaks and stale subscriptions",
+    clean_code: Focused,
+    impacts: [Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"useEffect\s*\(\s*\(\s*\)\s*=>").unwrap();
@@ -10266,6 +11394,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Unnecessary useMemo/useCallback add complexity without performance benefit",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let use_memo = ctx.source.matches("useMemo").count();
@@ -10303,6 +11435,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "getElementById bypasses React's ref system and virtual DOM",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_react = ctx.source.contains("React") || ctx.source.contains("useState") || ctx.source.contains("useRef");
@@ -10335,6 +11471,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Conditional && with falsy values renders 0 or false as text instead of nothing",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\{[^}]*\s*&&\s*[^}]*\}").unwrap();
@@ -10365,6 +11505,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "<React.Fragment> is verbose compared to shorthand <> </>",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"<React\.Fragment").unwrap();
@@ -10395,6 +11539,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Inline arrow functions in JSX create new function instances every render",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"on( Click| Change| Submit| Focus| Blur)=").unwrap();
@@ -10425,6 +11573,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "useLayoutEffect causes synchronous layout thrashing; useEffect is usually sufficient",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"useLayoutEffect").unwrap();
@@ -10455,6 +11607,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Creating new objects in useContext value triggers unnecessary re-renders",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"useContext\s*\(\s*(\w+)\s*\)").unwrap();
@@ -10489,6 +11645,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "React.memo without comparison function re-renders on all prop changes",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"React\.memo\s*\(\s*\w+\s*\)").unwrap();
@@ -10519,6 +11679,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "useReducer adds complexity for simple state; useState is often sufficient",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let use_reducer_count = ctx.source.matches("useReducer").count();
@@ -10559,6 +11723,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { max_lines: usize = 30 }
+
+    explanation: "Arrow functions over 30 lines are hard to read and should be named functions",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r">\s*\([^)]*\)\s*=>\s*\{").unwrap();
@@ -10595,6 +11763,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { max_chain: usize = 5 }
+
+    explanation: "Long method chains are hard to read and debug",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.\w+\(").unwrap();
@@ -10619,6 +11791,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { min_occurrences: usize = 3 }
+
+    explanation: "Duplicate strings should be constants to avoid inconsistency and ease changes",
+    clean_code: Distinct,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let mut string_counts: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
@@ -10653,6 +11829,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Boolean parameters force callers to remember argument order and meaning",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"function\s+\w+\s*\([^)]*\b(bool|boolean|Boolean)\b[^)]*\)").unwrap();
@@ -10676,6 +11856,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Empty interfaces are useless and should be types or have members",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"interface\s+\w+\s*\{\s*\}").unwrap();
@@ -10699,6 +11883,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Angle bracket type assertions (<Type>x) are confusing compared to 'as' syntax",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"<\w+>\s*\(").unwrap();
@@ -10722,6 +11910,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Redundant type assertions add noise without benefit",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Detect `let x: Type = y as Type` patterns without backreference
@@ -10756,6 +11948,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Type 'any' bypasses TypeScript's type checking, defeating its purpose",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r":\s*any\b").unwrap();
@@ -10779,6 +11975,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Unnecessary type annotations add noise when inference suffices",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"let\s+\w+:\s*string\s*=\s*"[^"]*""#).unwrap();
@@ -10802,6 +12002,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Missing return types make APIs harder to use and document",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"function\s+\w+\s*\([^)]*\)\s*\{").unwrap();
@@ -10828,6 +12032,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Union with undefined is verbose; optional ? syntax is cleaner",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r":\s*\w+\s*\|\s*undefined").unwrap();
@@ -10851,6 +12059,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Mixed enum values cause confusion and inconsistent behavior",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"enum\s+\w+\s*\{").unwrap();
@@ -10881,6 +12093,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Namespaces are legacy TypeScript; ES6 modules are the standard",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"namespace\s+\w+").unwrap();
@@ -10904,6 +12120,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Triple-slash directives are legacy; ES6 imports are the standard",
+    clean_code: Conventional,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^///\s*<reference").unwrap();
@@ -10927,6 +12147,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Ambient declarations without export may cause module augmentation issues",
+    clean_code: Modular,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"declare\s+(class|function|const|var|let)\s+\w+").unwrap();
@@ -10950,6 +12174,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Interface is preferred for object types as it has better error messages and declaration merging",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"type\s+\w+\s*=\s*\{[^}]*\}\s*;").unwrap();
@@ -10973,6 +12201,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "ReadonlyArray prevents accidental mutations and is more explicit about intent",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r":\s*Array<").unwrap();
@@ -10996,6 +12228,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Abstract classes without abstract methods should be regular classes",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"abstract\s+class\s+\w+").unwrap();
@@ -11024,6 +12260,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Static methods in classes may indicate misplaced code that belongs in modules",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"static\s+\w+\s*\(").unwrap();
@@ -11047,6 +12287,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Mixing #private fields with TypeScript private keyword creates confusion",
+    clean_code: Conventional,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_hash_private = ctx.source.contains("#");
@@ -11073,6 +12317,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "JSX requires React in scope but imports may be missing",
+    clean_code: Complete,
+    impacts: [Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_jsx = ctx.source.contains("<") && (ctx.source.contains("Component") || ctx.source.contains("useState") || ctx.source.contains("useEffect"));
@@ -11095,6 +12343,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Class components are verbose; functional components with hooks are the modern standard",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"class\s+\w+\s+extends\s+(React\.)?Component").unwrap();
@@ -11118,6 +12370,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Empty fragments add unnecessary elements to the DOM",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"<>\s*</>").unwrap();
@@ -11141,6 +12397,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "State in constructor is legacy pattern; useState hook is the modern standard",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"constructor\s*\([^)]*\)\s*\{[^}]*this\.state\s*=").unwrap();
@@ -11164,6 +12424,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "setState callbacks are legacy; useEffect is the modern approach for side effects",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"this\.setState\s*\([^,]+,\s*\([^)]*\)\s*=>").unwrap();
@@ -11187,6 +12451,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Render props are legacy; hooks provide cleaner stateful logic extraction",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"render\s*=\s*\{").unwrap();
@@ -11212,6 +12480,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Higher-order components add unnecessary nesting; hooks provide cleaner logic reuse",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"React\.createElement\s*\(\s*\w+,\s*\{[^}]*\}\s*\)").unwrap();
@@ -11239,6 +12511,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Direct state mutation breaks React's change detection and causes unpredictable rendering",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"this\.state\.\w+\s*=").unwrap();
@@ -11262,6 +12538,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "forceUpdate bypasses proper state management and indicates design issues",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"this\.forceUpdate\s*\(").unwrap();
@@ -11285,6 +12565,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "shouldComponentUpdate without PureComponent misses optimization opportunities",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_scu = ctx.source.contains("shouldComponentUpdate");
@@ -11307,6 +12591,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "getDerivedStateFromProps is static and cannot use 'this'; misuse causes bugs",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"static\s+getDerivedStateFromProps\s*\([^)]*\)\s*\{[^}]*this\.").unwrap();
@@ -11330,6 +12618,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "componentWillMount is deprecated and causes bugs with async rendering",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"componentWillMount\s*\(").unwrap();
@@ -11353,6 +12645,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "componentWillUpdate is deprecated and causes bugs with async rendering",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"componentWillUpdate\s*\(").unwrap();
@@ -11376,6 +12672,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "componentWillReceiveProps is deprecated and causes bugs with async rendering",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"componentWillReceiveProps\s*\(").unwrap();
@@ -11399,6 +12699,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "findDOMNode is deprecated and breaks React's virtual DOM abstraction",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"ReactDOM\.findDOMNode\s*\(").unwrap();
@@ -11422,6 +12726,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "createRef in constructor is legacy; useRef hook is the modern standard",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"constructor\s*\([^)]*\)\s*\{[^}]*React\.createRef\s*\(").unwrap();
@@ -11445,6 +12753,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Ref callbacks are legacy; useRef with callback refs is the modern approach",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"ref\s*=\s*\{[^}]*=>\s*\([^)]*\)\s*\{").unwrap();
@@ -11468,6 +12780,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Props spreading prevents proper type checking and explicit prop documentation",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\{\.\.\.\w+\}").unwrap();
@@ -11491,6 +12807,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Multiple JSX roots in a function return cause syntax errors",
+    clean_code: Complete,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"return\s*\([^)]*\)\s*;\s*return\s*\(").unwrap();
@@ -11514,6 +12834,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { max_props: usize = 10 }
+
+    explanation: "Components with too many props are hard to use and indicate possible God components",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"function\s+\w+\s*\(\s*\{([^}]+)\}\s*\)").unwrap();
@@ -11545,6 +12869,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Tests without assertions verify nothing and provide false confidence",
+    clean_code: Focused,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"(?:it|test|describe)\s*\(['"]"#).unwrap();
@@ -11574,6 +12902,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: { max_assertions: usize = 3 }
+
+    explanation: "Tests with many assertions are hard to diagnose and may test too many concerns",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?:it|test)\s*\([^)]+\)\s*(?:=>\s*)?\{").unwrap();
@@ -11603,6 +12935,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Hardcoded timeouts in tests create flaky tests that fail intermittently",
+    clean_code: Focused,
+    impacts: [Reliability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"setTimeout|setInterval").unwrap();
@@ -11629,6 +12965,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Snapshots without review may hide regressions in UI changes",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"toMatchSnapshot|toMatchInlineSnapshot").unwrap();
@@ -11655,6 +12995,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Mocks without cleanup leak state between tests, causing unpredictable failures",
+    clean_code: Modular,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_mock = ctx.source.contains("jest.fn()") || ctx.source.contains("mock(") || ctx.source.contains("vi.fn()");
@@ -11677,6 +13021,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Async tests without proper handling may pass incorrectly or timeout",
+    clean_code: Logical,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?:it|test)\s*\([^)]+\)\s*(?:=>\s*)?\{").unwrap();
@@ -11705,6 +13053,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Empty describe blocks are dead code that clutter test output",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"describe\s*\(['"][^'"]+['"],?\s*(?:async\s*)?\([^)]*\)\s*(?:=>\s*)?\{"#).unwrap();
@@ -11741,6 +13093,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Skipped tests without reasons may be forgotten broken tests",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"(?:it|test)\.skip\s*\(['"]"#).unwrap();
@@ -11767,6 +13123,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "beforeEach without afterEach may cause test pollution and cleanup issues",
+    clean_code: Modular,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_before = ctx.source.contains("beforeEach");
@@ -11789,6 +13149,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "console.log in tests indicates debugging code left behind",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_test = ctx.source.contains("describe") || ctx.source.contains("it(") || ctx.source.contains("test(");
@@ -11814,6 +13178,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Promises without catch() silently swallow errors and cause hard-to-debug failures",
+    clean_code: Trustworthy,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -11836,6 +13204,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "await in loops is slow and should use Promise.all for parallel execution",
+    clean_code: Efficient,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s*\([^)]*\)\s*\{[^}]*await\s+").unwrap();
@@ -11859,6 +13231,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "async without await adds unnecessary overhead and indicates incomplete async implementation",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"async\s+(?:function\s+\w+|\([^)]*\)\s*=>|\w+\s*=>)\s*\{").unwrap();
@@ -11885,6 +13261,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "setTimeout without clearTimeout causes memory leaks and stale timers",
+    clean_code: Focused,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_setTimeout = ctx.source.contains("setTimeout");
@@ -11908,6 +13288,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "setInterval without clearInterval runs forever and causes resource leaks",
+    clean_code: Focused,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_setInterval = ctx.source.contains("setInterval");
@@ -11931,6 +13315,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "new Promise wrapping sync code is unnecessary; use Promise.resolve()",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+Promise\s*\(\s*\([^)]*\)\s*=>\s*\{").unwrap();
@@ -11958,6 +13346,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Promise.all with mixed types may cause unexpected resolution behavior",
+    clean_code: Logical,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Promise\.all\s*\(\s*\[").unwrap();
@@ -11984,6 +13376,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Unhandled promise rejections crash Node.js and cause silent failures",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.then\s*\([^)]*\)\s*;").unwrap();
@@ -12010,6 +13406,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Promise.race without timeout may hang forever on slow/unresponsive promises",
+    clean_code: Focused,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Promise\.race\s*\(").unwrap();
@@ -12036,6 +13436,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Promises without finally may skip cleanup on errors",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_promise = ctx.source.contains(".then(") || ctx.source.contains(".catch(");
@@ -12063,6 +13467,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "fs.readFileSync blocks the event loop, preventing other requests from being handled",
+    clean_code: Efficient,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fs\.readFileSync\s*\(").unwrap();
@@ -12093,6 +13501,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "process.exit() in libraries prevents consumers from handling termination gracefully",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"process\.exit\s*\(").unwrap();
@@ -12123,6 +13535,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "EventEmitter without error handler crashes the process on unhandled errors",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+(EventEmitter|Server|Net|Http|https?)\s*\(").unwrap();
@@ -12156,6 +13572,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "require() inside functions loads modules on every call instead of once at startup",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?:function|const\s+\w+\s*=\s*(?:async\s*)?\([^)]*\)\s*=>|=>\s*\()").unwrap();
@@ -12190,6 +13610,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "__dirname/__filename don't exist in ES modules and break in bundlers",
+    clean_code: Conventional,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"__dirname|__filename").unwrap();
@@ -12220,6 +13644,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "new Buffer() is deprecated due to security issues; use Buffer.from()",
+    clean_code: Trustworthy,
+    impacts: [Security: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+Buffer\s*\(").unwrap();
@@ -12250,6 +13678,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Synchronous I/O in request handlers blocks the event loop for all users",
+    clean_code: Efficient,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let sync_io_patterns = ["readFileSync", "writeFileSync", "readSync", "writeSync", "openSync", "closeSync", "statSync", "lstatSync", "readdirSync"];
@@ -12286,6 +13718,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Streams without error handlers fail silently, hiding failures from users",
+    clean_code: Trustworthy,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.(pipe|on|once)\s*\(").unwrap();
@@ -12319,6 +13755,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "process.env without defaults causes undefined value issues in different environments",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"process\.env\.\w+").unwrap();
@@ -12352,6 +13792,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "Passing user input to exec() enables command injection attacks",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let has_exec = ctx.source.contains("exec(") || ctx.source.contains("execSync(");
@@ -12385,6 +13829,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "eval() with user input enables arbitrary code execution attacks",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let has_eval = ctx.source.contains("eval(") || ctx.source.contains("new Function(") || ctx.source.contains("vm.runInScript");
@@ -12418,6 +13866,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "JSON.parse without try/catch throws on invalid input, crashing the application",
+    clean_code: Trustworthy,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"JSON\.parse\s*\(").unwrap();
@@ -12455,6 +13907,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "path.join with user input may allow path traversal attacks to access sensitive files",
+    clean_code: Trustworthy,
+    impacts: [Security: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_path_join = ctx.source.contains("path.join") || ctx.source.contains("path.resolve");
@@ -12488,6 +13944,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "Using http module instead of https exposes data to interception attacks",
+    clean_code: Trustworthy,
+    impacts: [Security: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"require\s*\(\s*['"]http['"]\s*\)"#).unwrap();
@@ -12518,6 +13978,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "crypto.randomBytes without error checking may return empty buffers on failure",
+    clean_code: Trustworthy,
+    impacts: [Reliability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"crypto\.randomBytes\s*\([^)]+\)\s*\(").unwrap();
@@ -12555,6 +14019,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "RegExp constructed from user input allows ReDoS attacks and regex injection",
+    clean_code: Trustworthy,
+    impacts: [Security: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+RegExp\s*\(").unwrap();
@@ -12585,6 +14053,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "JSONP callback without validation allows XSS attacks via callback injection",
+    clean_code: Trustworthy,
+    impacts: [Security: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_jsonp = ctx.source.contains("callback") || ctx.source.contains("jsonp") || ctx.source.contains("jsonpCallback");
@@ -12618,6 +14090,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "CORS with wildcard origin and credentials enables CSRF attacks",
+    clean_code: Trustworthy,
+    impacts: [Security: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Access-Control-Allow-Origin\s*:\s*[*]").unwrap();
@@ -12651,6 +14127,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "HSTS with short max-age doesn't provide effective protection against downgrade attacks",
+    clean_code: Trustworthy,
+    impacts: [Security: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Strict-Transport-Security\s*:\s*[^;]+").unwrap();
@@ -12687,6 +14167,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "javascript"
     params: {}
+
+    explanation: "Express apps without helmet miss important security header protections",
+    clean_code: Trustworthy,
+    impacts: [Security: Low],
     check: => {
         let mut issues = Vec::new();
         let is_express = ctx.source.contains("express") || ctx.source.contains("createServer");
@@ -12716,6 +14200,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "javascript"
     params: {}
+
+    explanation: "cookie-parser should use signed cookies",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_cookie_parser = ctx.source.contains("cookie-parser") || ctx.source.contains("cookieParser");
@@ -12745,6 +14233,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "express-session should not use default or weak secret",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_session = ctx.source.contains("express-session") || ctx.source.contains("session(");
@@ -12774,6 +14266,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "javascript"
     params: {}
+
+    explanation: "Content Security Policy should have report-uri",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_csp = ctx.source.contains("Content-Security-Policy") || ctx.source.contains("csp");
@@ -12803,6 +14299,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "javascript"
     params: {}
+
+    explanation: "x-powered-by header should be disabled",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let is_express = ctx.source.contains("express");
@@ -12832,6 +14332,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "body-parser should limit request body size",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_body_parser = ctx.source.contains("body-parser") || ctx.source.contains("express.json") || ctx.source.contains("express.urlencoded");
@@ -12861,6 +14365,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "javascript"
     params: {}
+
+    explanation: "express-rate-limit should be configured",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let is_express = ctx.source.contains("express");
@@ -12890,6 +14398,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "CSRF protection should be used",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let is_express = ctx.source.contains("express");
@@ -12920,6 +14432,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "http module used - use https for secure connections",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"require\s*\(\s*['"]http['"]\s*\)"#).unwrap();
@@ -12950,6 +14466,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "http-proxy should validate target URL",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_proxy = ctx.source.contains("http-proxy") || ctx.source.contains("createProxyMiddleware") || ctx.source.contains("proxy");
@@ -12983,6 +14503,10 @@ declare_rule! {
     category: Vulnerability
     language: "javascript"
     params: {}
+
+    explanation: "serialize-javascript may be vulnerable to XSS",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"serialize-javascript").unwrap();
@@ -13017,6 +14541,10 @@ declare_rule! {
     category: Vulnerability
     language: "java"
     params: {}
+
+    explanation: "Hardcoded credentials should not be used",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let patterns = [
@@ -13046,6 +14574,10 @@ declare_rule! {
     category: Vulnerability
     language: "java"
     params: {}
+
+    explanation: "SQL injection vulnerabilities should be prevented",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -13069,6 +14601,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "java"
     params: {}
+
+    explanation: "Cookies should set the Secure flag",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -13091,6 +14627,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Calling toString() on an array does not provide useful information",
+    clean_code: Logical,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\[\s*\]\.toString\(\)|\.toString\(\)\s*\[|^Arrays\.toString\s*\(\s*\w+\s*\)$").unwrap();
@@ -13114,6 +14654,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Null pointer dereferences should be avoided",
+    clean_code: Logical,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\w+\.\w+\s*\(\s*\)\s*\.\w+|\w+\s*\[\s*\w+\s*\]\.\w+|\(\s*\w+\s*==\s*null\s*\)|null\s*\.\w+").unwrap();
@@ -13137,6 +14681,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Iterator should be checked for availability before calling next()",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -13162,6 +14710,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Mutable members should not be stored in serializable classes",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let mut in_serializable = false;
@@ -13193,6 +14745,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Mutable static fields should not be public",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         // Detect public static fields that are not final
@@ -13217,6 +14773,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Lazy initialization of static fields should be thread-safe",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         // Detect static field initialization via getInstance or new without proper thread-safety
@@ -13249,6 +14809,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Synchronized blocks should not synchronize on non-final fields",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"synchronized\s*\(\s*\w+\s*\)").unwrap();
@@ -13276,6 +14840,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "notify() should be used instead of notifyAll() when only one thread is waiting",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -13301,6 +14869,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Boolean methods should start with 'is' or 'has'",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(public|private|protected)?\s*boolean\s+(\w+)\s*\(").unwrap();
@@ -13328,6 +14900,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Conditions should not always evaluate to the same value",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -13351,6 +14927,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Boolean expressions should not be constant",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"if\s*\(\s*true\s*\)|if\s*\(\s*false\s*\)|while\s*\(\s*true\s*\)|while\s*\(\s*false\s*\)").unwrap();
@@ -13374,6 +14954,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "@NonNull annotations should be used on parameters that cannot be null",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(public|private|protected)?\s+\w+\s+\w+\s*\([^)]*\)\s*\{").unwrap();
@@ -13400,6 +14984,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "@NonNull method contract should not be violated",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -13425,6 +15013,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Inappropriate regular expressions can cause performance issues",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let dangerous_patterns = [r".*", r".*.*", r"(.+)+", r"(.+)+.*", r"(\[.*\])+\)"];
@@ -13451,6 +15043,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Serializable classes should have a no-arg constructor",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let mut has_serializable = false;
@@ -13483,6 +15079,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Streams should be consumed after creation",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.stream\(\)\s*\)").unwrap();
@@ -13506,6 +15106,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Synchronized blocks should not synchronize on non-final fields",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"synchronized\s*\(\s*this\s*\)").unwrap();
@@ -13529,6 +15133,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "indexOf() result should be compared to >= 0",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"indexOf\s*\([^)]+\)\s*==\s*0").unwrap();
@@ -13552,6 +15160,10 @@ declare_rule! {
     category: Vulnerability
     language: "java"
     params: {}
+
+    explanation: "XML parsing should not be vulnerable to external entity attacks",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -13574,6 +15186,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "clone() should override Object.clone() properly",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"protected\s+\w+\s+clone\s*\(\s*\)\s*\{").unwrap();
@@ -13600,6 +15216,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Abstract methods should not be called in constructors",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -13625,6 +15245,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Nested ternary operators should not be used",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\?\s*[^:]+\s*\?\s*[^:]+:").unwrap();
@@ -13652,6 +15276,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Standard output should not be used directly",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -13681,6 +15309,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Local variables should not shadow class fields",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(private|protected|public)?\s+\w+\s+\w+\s*[=;]").unwrap();
@@ -13713,6 +15345,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Interface names should start with 'I'",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"interface\s+(\w+)").unwrap();
@@ -13740,6 +15376,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Non-final field names should be camelCase",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Detect field declarations with non-camelCase names (excluding final fields)
@@ -13772,6 +15412,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Local variable names should be camelCase",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\b(int|String|boolean|double|float|long|char|byte|short|List|Map|Set|Object)\s+([A-Z][a-zA-Z0-9_]*)\s*[=;]").unwrap();
@@ -13799,6 +15443,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Abstract class names should start with 'Abstract'",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"abstract\s+class\s+(\w+)").unwrap();
@@ -13826,6 +15474,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Type parameter names should be single letters",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"<(\w\w+)>").unwrap();
@@ -13853,6 +15505,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Package names should be lowercase",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"package\s+([a-z][a-zA-Z0-9_]*(?:\.[a-z][a-zA-Z0-9_]*)*)").unwrap();
@@ -13880,6 +15536,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Control structures should use braces",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(if|for|while|do)\s*\([^)]+\)\s*[^{;\n]").unwrap();
@@ -13903,6 +15563,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Only one statement should be on each line",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r";\s*(if|for|while|return|throw|break|continue)\s*\(").unwrap();
@@ -13926,6 +15590,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Switch statements should have a default case",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let mut switch_lines: Vec<usize> = Vec::new();
@@ -13955,6 +15623,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Floating point numbers should not be compared with ==",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(float|double)\s+\w+\s*=.*==|==\s*(float|double)\b").unwrap();
@@ -13978,6 +15650,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Methods should not have too many parameters",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(public|private|protected)?\s+\w+\s+\w+\s*\(([^)]*)\)").unwrap();
@@ -14005,6 +15681,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { threshold: usize = 50 }
+
+    explanation: "Methods should not be too long",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(public|private|protected)?\s+\w+\s+\w+\s*\([^)]*\)\s*\{").unwrap();
@@ -14038,6 +15718,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { threshold: usize = 15 }
+
+    explanation: "Methods should not be too complex",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -14063,6 +15747,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Empty catch blocks should be removed or filled",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"catch\s*\([^)]+\)\s*\{\s*\}").unwrap();
@@ -14086,6 +15774,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Empty control bodies should be removed",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(if|for|while|else)\s*\([^)]*\)\s*\{\s*\}").unwrap();
@@ -14109,6 +15801,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Unused variables should be removed",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\b(int|String|boolean|double|float|long|char|byte|short|List|Map|Set|Object)\s+(\w+)\s*=\s*[^;]+;").unwrap();
@@ -14136,6 +15832,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Use isEmpty() instead of comparing size() to 0",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.size\(\)\s*==\s*0|\.size\(\)\s*!=\s*0|\.size\(\)\s*<\s*1|\.size\(\)\s*>\s*0").unwrap();
@@ -14159,6 +15859,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Identical code should not be duplicated in if/else branches",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"if\s*\([^)]+\)\s*\{([^}]+)\}\s*else\s*\{([^}]+)\}").unwrap();
@@ -14187,6 +15891,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Use constructor injection instead of field injection",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@(Autowired|Inject)\s+(private|protected)\s+\w+\s+\w+").unwrap();
@@ -14210,6 +15918,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Empty synchronized blocks should be removed",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"synchronized\s*\([^)]*\)\s*\{\s*\}").unwrap();
@@ -14233,6 +15945,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Unused private methods should be removed",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"private\s+\w+\s+(\w+)\s*\([^)]*\)").unwrap();
@@ -14265,6 +15981,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Methods should not throw generic Exception",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"throws\s+(java\.)?Exception\b").unwrap();
@@ -14288,6 +16008,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Boolean literals should not be returned unnecessarily",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"return\s+\w+\s*\?\s*true\s*:\s*false|return\s+!\s*\w+\s*\?\s*false\s*:\s*true").unwrap();
@@ -14315,6 +16039,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Method names should follow camelCase convention",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(public|private|protected)?\s+\w+\s+([a-z]+[A-Z]\w*)\s*\(").unwrap();
@@ -14339,6 +16067,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Class names should follow PascalCase convention",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(class|interface|enum)\s+([a-z]\w*)\b").unwrap();
@@ -14363,6 +16095,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { max_length: usize = 120 }
+
+    explanation: "Lines should not be too long",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -14385,6 +16121,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { max_lines: usize = 1000 }
+
+    explanation: "Files should not be too long",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let line_count = ctx.source.lines().count();
@@ -14406,6 +16146,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Tab characters should not be used",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -14428,6 +16172,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { min_ratio: f32 = 0.05 }
+
+    explanation: "Files should have a minimum comment ratio",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let source = ctx.source.to_string();
@@ -14451,6 +16199,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { max_depth: usize = 3 }
+
+    explanation: "Nested if statements should not be too deep",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"if\s*\(").unwrap();
@@ -14476,6 +16228,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Magic numbers should not be used",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"[=<>+\-*/%\s]\s*[-+]?\d{3,}\s*[;<,\)\]]").unwrap();
@@ -14499,6 +16255,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { max_fields: usize = 20 }
+
+    explanation: "Classes should not have too many fields",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(private|public|protected)?\s+\w+\s+\w+\s*;").unwrap();
@@ -14521,6 +16281,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Generic exceptions should not be thrown",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"throw\s+(new\s+)?(Exception|Throwable|RuntimeException)\s*\(").unwrap();
@@ -14544,6 +16308,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { min_occurrences: usize = 3 }
+
+    explanation: "String literals should not be duplicated",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#""([^"]{3,})""#).unwrap();
@@ -14577,6 +16345,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Constant names should follow UPPER_CASE convention",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"static\s+final\s+\w+\s+([a-z][a-zA-Z0-9_]*)\s*=").unwrap();
@@ -14604,6 +16376,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Empty statements should be removed",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -14626,6 +16402,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Packages with classes should have package-info.java",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         
         Vec::new()
@@ -14643,6 +16423,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Empty block comments should be removed",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"/\*\*\s*\*/").unwrap();
@@ -14666,6 +16450,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Methods that override should be marked with @Override",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let methods = ["toString", "equals", "hashCode", "clone", "compareTo", "compare"];
@@ -14692,6 +16480,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Loops with single iteration should be refactored",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(for|while)\s*\([^)]+\)\s*\{[^}]*break[^}]*\}").unwrap();
@@ -14715,6 +16507,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { max_returns: usize = 5 }
+
+    explanation: "Methods should not have too many return statements",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(public|private|protected)?\s+\w+\s+\w+\s*\([^)]*\)\s*\{").unwrap();
@@ -14742,6 +16538,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { max_count: usize = 3 }
+
+    explanation: "Methods should not have too many continue/break statements",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(public|private|protected)?\s+\w+\s+\w+\s*\([^)]*\)\s*\{").unwrap();
@@ -14769,6 +16569,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { max_methods: usize = 30 }
+
+    explanation: "Classes should not have too many methods",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(public|private|protected)?\s+\w+\s+\w+\s*\([^)]*\)\s*\{").unwrap();
@@ -14791,6 +16595,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { max_imports: usize = 30 }
+
+    explanation: "Files should not have too many imports",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let import_count = ctx.source.lines().filter(|l| l.trim().starts_with("import ")).count();
@@ -14812,6 +16620,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Unused imports should be removed",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         
         Vec::new()
@@ -14829,6 +16641,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { max_depth: usize = 4 }
+
+    explanation: "Nesting should not be too deep",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let mut max_nesting = 0;
@@ -14856,6 +16672,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "If equals() is overridden, hashCode() should be overridden too",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_equals = regex::Regex::new(r"public\s+boolean\s+equals\s*\(\s*Object\s+").unwrap().is_match(ctx.source);
@@ -14878,6 +16698,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Overrides that just call super should be removed",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@Override\s+(public|protected)?\s+\w+\s+\w+\s*\([^)]*\)\s*\{\s*super\.\w+\([^)]*\)\s*;\s*\}").unwrap();
@@ -14901,6 +16725,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { max_lines: usize = 20 }
+
+    explanation: "Anonymous classes should not be too long",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+\w+\s*\([^)]*\)\s*\{").unwrap();
@@ -14928,6 +16756,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Interface methods should not be declared public explicitly",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"interface\s+\w+.*\{[^}]*public\s+\w+\s+\w+\s*\(").unwrap();
@@ -14951,6 +16783,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Unnecessary throws clauses should be removed",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"throws\s+RuntimeException\s*\)").unwrap();
@@ -14974,6 +16810,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Unnecessary semicolons should be removed",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^\s*\}\s*;\s*$").unwrap();
@@ -14997,6 +16837,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Unnecessary parentheses in lambda expressions should be removed",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\|\s*\(\s*\w+\s*\)\s*->").unwrap();
@@ -15020,6 +16864,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Unnecessary fully qualified names should be shortened",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"import\s+\w+\.\w+\.\w+;").unwrap();
@@ -15043,6 +16891,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "For loops can be replaced with enhanced for loop",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s*\(\s*int\s+\w+\s*=\s*0\s*;\s*\w+\s*<\s*\w+\.length\s*;\s*\w+\s*\+\+\s*\)").unwrap();
@@ -15066,6 +16918,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Collections can be processed with streams",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s*\(\s*\w+\s+\w+\s*:\s*\w+\s*\)\s*\{[^}]*\b(stream|collect|filter|map|forEach)\b").unwrap();
@@ -15089,6 +16945,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "StringBuilder should be used instead of StringBuffer",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -15111,6 +16971,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Interfaces with single method should be @FunctionalInterface",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"interface\s+\w+\s*\{[^}]*\}").unwrap();
@@ -15138,6 +17002,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Diamond operator should be used",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+(ArrayList|TreeSet|HashMap|LinkedList|HashSet)<\w+>\s*\(\s*\)").unwrap();
@@ -15161,6 +17029,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Try-with-resources should be used for resource management",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"finally\s*\{[^}]*\.close\(\)").unwrap();
@@ -15184,6 +17056,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Optional should not be used as method parameter",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\(\s*Optional\s*<[^>]+>\s+\w+\s*\)").unwrap();
@@ -15207,6 +17083,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Optional.isPresent() followed by .get() should be replaced",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"if\s*\(\s*\w+\.isPresent\(\)\s*\)\s*\{[^}]*\.get\(\)").unwrap();
@@ -15230,6 +17110,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "equals() comparison with unrelated types is always false",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.equals\s*\(\s*(new\s+)?\w+\s*\(\s*\)\s*\)").unwrap();
@@ -15253,6 +17137,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "BigDecimal should not be constructed from double",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+BigDecimal\s*\(\s*\d+\.\d+\s*\)").unwrap();
@@ -15276,6 +17164,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "compareTo() should be consistent with equals()",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_equals = regex::Regex::new(r"public\s+boolean\s+equals\s*\(\s*Object\s+").unwrap().is_match(ctx.source);
@@ -15302,6 +17194,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Exception should not be thrown in finally block",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"finally\s*\{[^}]*(throw|return)[^}]*\b(Exception|Error|Throwable)[^}]*\}").unwrap();
@@ -15325,6 +17221,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: { max_depth: usize = 2 }
+
+    explanation: "Try-catch blocks should not be nested too deeply",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -15362,6 +17262,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "printStackTrace() should not be used",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.printStackTrace\s*\(").unwrap();
@@ -15385,6 +17289,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Public methods should not throw generic Exception or Throwable",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"public\s+\w+\s+\w+\s*\([^)]*\)\s*throws\s+(Exception|Throwable)").unwrap();
@@ -15408,6 +17316,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@Override should be used when overriding exception methods",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(public\s+)?\w+\s+(toString|equals|hashCode|getMessage|getLocalizedMessage)\s*\([^)]*\)").unwrap();
@@ -15436,6 +17348,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Exception class names should end with Exception",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"class\s+(\w+Exception)\s*(extends|implements)").unwrap();
@@ -15462,6 +17378,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Throwable should not be caught",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"catch\s*\(\s*Throwable\s+\w+\s*\)").unwrap();
@@ -15485,6 +17405,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Throwable.printStackTrace() should not be used in catch block",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"catch\s*\([^)]+\)\s*\{[^}]*\.printStackTrace\s*\(").unwrap();
@@ -15512,6 +17436,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Caught exceptions should not be silently swallowed",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"catch\s*\([^)]+\)\s*\{[^}]*\}[^}]*\}").unwrap();
@@ -15544,6 +17472,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Synchronized blocks should not synchronize on 'this'",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"synchronized\s*\(\s*this\s*\)").unwrap();
@@ -15567,6 +17499,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Double-checked locking should not be used without volatile",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"synchronized\s*\(\s*\w+\s*Class\s*\)").unwrap();
@@ -15591,6 +17527,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Volatile fields should not be incremented with ++ operator",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"volatile\s+\w+\s+\w+\s*;").unwrap();
@@ -15619,6 +17559,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "wait() should always be called in a loop",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.wait\s*\(").unwrap();
@@ -15647,6 +17591,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Thread.start() should be called to start a thread",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Thread\s+\w+\s*=\s*new\s+Thread").unwrap();
@@ -15671,6 +17619,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Thread.run() should not be called directly - use start()",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.run\s*\(\s*\)").unwrap();
@@ -15694,6 +17646,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Thread.stop() is deprecated and unsafe",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.stop\s*\(").unwrap();
@@ -15717,6 +17673,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Thread.sleep() should not be used in synchronized block",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"synchronized\s*\([^)]+\)\s*\{[^}]*Thread\.sleep").unwrap();
@@ -15743,6 +17703,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Singleton without proper thread safety",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_sync = regex::Regex::new(r"synchronized").unwrap().is_match(ctx.source);
@@ -15772,6 +17736,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Hashtable should be replaced by ConcurrentHashMap",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"new\s+Hashtable\s*<").unwrap();
@@ -15799,6 +17767,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Serializable class should declare serialVersionUID",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(ctx.source);
@@ -15821,6 +17793,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Fields in Serializable class should be serializable",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(ctx.source);
@@ -15851,6 +17827,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "readObject() method should be private",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(private|protected|public)?\s*void\s+readObject\s*\(\s*ObjectInputStream").unwrap();
@@ -15874,6 +17854,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Singleton classes implementing Serializable should use readResolve",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_singleton = regex::Regex::new(r"private\s+static\s+\w+\s+instance").unwrap().is_match(ctx.source);
@@ -15897,6 +17881,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Externalizable class must have a public no-arg constructor",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let implements_externalizable = regex::Regex::new(r"implements\s+(java\.io\.)?Externalizable").unwrap().is_match(ctx.source);
@@ -15919,6 +17907,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Non-serializable fields should be marked transient",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(ctx.source);
@@ -15949,6 +17941,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Comparator implementing Serializable should be serializable",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"class\s+\w+\s+implements\s+Comparator[^\{]*\{").unwrap();
@@ -15973,6 +17969,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Non-serializable field in Serializable class",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let implements_serial = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(ctx.source);
@@ -16008,6 +18008,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Custom serialization should implement readObject and writeObject",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_serializable = regex::Regex::new(r"implements\s+(java\.io\.)?Serializable").unwrap().is_match(ctx.source);
@@ -16032,6 +18036,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Inner Serializable classes should be static",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"class\s+\w+\s+implements\s+(java\.io\.)?Serializable\s*\{").unwrap();
@@ -16062,6 +18070,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Generic type List/Set/Map should not use raw types",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(List|Set|Map|HashMap|ArrayList|HashSet|TreeSet)<>\s+\w+").unwrap();
@@ -16085,6 +18097,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Unchecked cast from Object should be avoided",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\(\s*\w+\s*\)\s*\w+").unwrap();
@@ -16115,6 +18131,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Type parameter should not shadow another type parameter",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Detect <T, T> patterns in generics without backreference
@@ -16145,6 +18165,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Redundant type arguments can be removed with diamond operator",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(new\s+(ArrayList|HashMap|HashSet|TreeSet|LinkedList))<(\w+)>\s*\(\s*\)\s*;").unwrap();
@@ -16168,6 +18192,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Unnecessary cast to the same type",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Detect (Type) Type(...) patterns without backreference
@@ -16203,6 +18231,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "instanceof check between unrelated types is always false",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"instanceof\s+(\w+)").unwrap();
@@ -16233,6 +18265,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "ClassCastException may be thrown",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.cast\s*\(").unwrap();
@@ -16256,6 +18292,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Map.get() result should be checked for null before use",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(\w+)\s*=\s*(\w+)\.get\s*\([^)]+\)\s*;").unwrap();
@@ -16287,6 +18327,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "equals() called on incompatible collection types",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.equals\s*\(\s*(new\s+)?(ArrayList|LinkedList|HashSet|TreeSet|HashMap|TreeMap)").unwrap();
@@ -16310,6 +18354,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "indexOf() result should be checked before using as index",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.get\s*\(\s*\w+\.indexOf").unwrap();
@@ -16337,6 +18385,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Enum constants should be in PascalCase",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"enum\s+(\w+)\s*\{").unwrap();
@@ -16371,6 +18423,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Annotation types should follow PascalCase naming",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@interface\s+(\w+)").unwrap();
@@ -16398,6 +18454,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Generic type parameters should follow Java naming conventions",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"<([A-Z]{2,}[a-z]*|[A-Z][a-z]+)").unwrap();
@@ -16427,6 +18487,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Package naming segments longer than 8 characters are discouraged",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"package\s+([\w\.]+)\s*;").unwrap();
@@ -16456,6 +18520,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Test methods should follow naming convention (test prefix)",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@Test\s+(public|private|protected)?\s+void\s+(test\w+|\w+)\s*\(").unwrap();
@@ -16482,6 +18550,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Setter methods should follow setXxx naming convention",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"public\s+void\s+(set\w+)\s*\(\s*\w+\s+\w+\s*\)").unwrap();
@@ -16509,6 +18581,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Getter methods should follow getXxx or isXxx naming convention",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"public\s+(\w+)\s+(get\w+|is\w+)\s*\(\s*\)").unwrap();
@@ -16546,6 +18622,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Singleton classes should have a private constructor",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -16571,6 +18651,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Abstract factory classes should be named with Factory suffix",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -16593,6 +18677,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Builder classes should be named with Builder suffix",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -16615,6 +18703,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Strategy implementations should implement a Strategy interface",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -16639,6 +18731,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Observer implementations should be named with Listener suffix",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -16664,6 +18760,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Decorator classes should be named with Decorator suffix",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -16687,6 +18787,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Adapter classes should be named with Adapter suffix",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -16710,6 +18814,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "DAO classes should implement a DAO interface",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -16732,6 +18840,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "DTO classes should not contain business logic",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -16758,6 +18870,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Service classes should be stateless",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -16785,6 +18901,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Repository classes should not contain business logic",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -16811,6 +18931,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Controller classes should delegate to services",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -16838,6 +18962,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Utility classes should have private constructors",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -16868,6 +18996,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Enum classes should not have mutable fields",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -16895,6 +19027,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Interfaces should define behavior, not constants",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -16922,6 +19058,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Abstract class without abstract methods should be concrete",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -16948,6 +19088,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Concrete implementations should not use Impl suffix",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -16971,6 +19115,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Classes should not have too many methods",
+    clean_code: Efficient,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -16998,6 +19146,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Multiple methods share the same parameters",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -17031,6 +19183,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Method uses more data from other classes",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -17059,6 +19215,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Method chain of depth >3 indicates message chain",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17082,6 +19242,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Class appears to be a middle man",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -17110,6 +19274,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Method accesses private fields of another class",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17133,6 +19301,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Subclass ignores most parent methods",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -17160,6 +19332,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Class is too small to justify its existence",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -17197,6 +19373,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Class with only getters and setters is a data class",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -17229,6 +19409,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Field is only used in certain code paths",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -17259,6 +19443,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Switch statements can often be replaced with polymorphism",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -17286,6 +19474,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Multiple inheritance hierarchies that grow in parallel",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -17318,6 +19510,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "TODO/FIXME comments without ticket reference",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17345,6 +19541,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Methods that may return null should return Optional",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -17371,6 +19571,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Optional.get() should only be called after isPresent check",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17393,6 +19597,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Optional.orElse(null) defeats the purpose of Optional",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17415,6 +19623,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Optional as field type is generally discouraged",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17437,6 +19649,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Optional in collections is a code smell",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17459,6 +19675,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Null check with if/else can be replaced with Optional",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -17485,6 +19705,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Public method parameters should be validated",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17510,6 +19734,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Use Objects.equals() for null-safe comparison",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17532,6 +19760,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Methods returning null should have Nullable annotation",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -17558,6 +19790,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Optional.of() does not accept null",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17580,6 +19816,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Optional.map() returning Optional should use flatMap",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17605,6 +19845,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Chained Optional calls without early exit",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17628,6 +19872,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Optional.filter().isPresent() can be replaced",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17650,6 +19898,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Optional.orElseGet(() -> new X()) can be simplified",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17672,6 +19924,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Package should have NonNullByDefault annotation",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_package_info = ctx.source.lines().any(|l| l.contains("package-info.java"));
@@ -17700,6 +19956,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Stream.forEach with side effects should use forEachOrdered",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17722,6 +19982,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Stream.peek() should only be used for debugging",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17744,6 +20008,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Use Stream.toList() instead of Collectors.toList()",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17766,6 +20034,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Use stream.anyMatch() instead of filter().findFirst().isPresent()",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17788,6 +20060,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Stream.map().collect() when forEach would suffice",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17810,6 +20086,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Parallel streams should be benchmarked before use",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17835,6 +20115,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Streams with stateful lambdas can cause bugs",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -17861,6 +20145,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Unnecessary Stream.boxed() call",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17883,6 +20171,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Lambda with empty body is a no-op",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17905,6 +20197,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Method reference is more readable than equivalent lambda",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17927,6 +20223,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Lambda may be more readable than complex method reference",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17949,6 +20249,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Use stream.min() instead of sorted().findFirst()",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17971,6 +20275,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Use stream.count() instead of Collectors.counting()",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -17993,6 +20301,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Stream.concat() should be used carefully",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18015,6 +20327,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Consider IntStream.range() for index-based loops",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18042,6 +20358,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Test methods should contain assertions",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -18068,6 +20388,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Thread.sleep() in tests should be replaced with Awaitility",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18090,6 +20414,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@Test(expected) is deprecated",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18112,6 +20440,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "JUnit 4 @Before/@After should be JUnit 5 @BeforeEach/@AfterEach",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18134,6 +20466,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@RunWith is JUnit 4 - use @ExtendWith for JUnit 5",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18156,6 +20492,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "assertEquals with boolean is clearer than assertTrue/assertFalse",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18178,6 +20518,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "JUnit 5 test methods do not need to be public",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18200,6 +20544,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@Ignore without description should include reason",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18222,6 +20570,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "System.setProperty in test should be reset",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -18248,6 +20600,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Mock created but never verified",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -18274,6 +20630,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Test should use Clock instead of new Date()",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -18300,6 +20660,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Test using Random produces non-deterministic results",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -18326,6 +20690,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@Spy wraps real object, @Mock creates fake",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18348,6 +20716,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "assertThat with incorrect matcher may cause issues",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18370,6 +20742,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Test class should have proper annotation",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -18400,6 +20776,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "String concatenation in loop uses StringBuilder internally",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -18430,6 +20810,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "StringBuilder with default capacity may cause reallocation",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18452,6 +20836,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "ArrayList with many adds should have initial capacity set",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -18479,6 +20867,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "HashMap with non-default load factor should be documented",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18501,6 +20893,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "BigInteger for small values is overkill",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18523,6 +20919,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "BigDecimal.divide() without scale risks ArithmeticException",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18545,6 +20945,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Pattern.compile() in loop should be static final field",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -18575,6 +20979,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "SimpleDateFormat is not thread-safe",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18600,6 +21008,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Logger should be static final",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18622,6 +21034,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Logger calls should use parameterized logging",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18644,6 +21060,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "System.gc() is a hint, not command",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18666,6 +21086,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Overriding finalize() is deprecated",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18688,6 +21112,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "clone() method without implementing Cloneable is risky",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -18714,6 +21142,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Calling iterator() multiple times creates multiple iterators",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -18740,6 +21172,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Collection.size() in loop condition may be called repeatedly",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18767,6 +21203,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "Hardcoded credentials should not be used",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18791,6 +21231,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "Clear-text HTTP should not be used",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18813,6 +21257,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "SQL queries should not be built with string interpolation",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER"];
@@ -18837,6 +21285,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "eval() and exec() should not be used",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18859,6 +21311,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "SSL certificate verification should not be disabled",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18881,6 +21337,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "Weak TLS protocols should not be used",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18903,6 +21363,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "Regular expressions should not be built from user input",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18925,6 +21389,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "User input should not be marked as safe without sanitization",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18947,6 +21415,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "Weak cryptographic hash function should not be used",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18969,6 +21441,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "Weak cipher algorithms should not be used",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -18991,6 +21467,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "SQL queries should not be built with string concatenation",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE"];
@@ -19015,6 +21495,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "File permissions should not be too permissive",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19037,6 +21521,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Resources should be properly closed",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19060,6 +21548,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "File uploads should have size limits",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19082,6 +21574,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "python"
     params: {}
+
+    explanation: "Cookies should set the HttpOnly flag",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19104,6 +21600,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "python"
     params: {}
+
+    explanation: "Cookies should set the Secure flag",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19126,6 +21626,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "CSRF protection should not be disabled",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19148,6 +21652,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "python"
     params: {}
+
+    explanation: "Content-Security-Policy header should be set",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let all_source = ctx.source.to_string();
@@ -19171,6 +21679,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "python"
     params: {}
+
+    explanation: "Strict-Transport-Security header should be set",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let all_source = ctx.source.to_string();
@@ -19194,6 +21706,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "python"
     params: {}
+
+    explanation: "X-Content-Type-Options header should be set",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let all_source = ctx.source.to_string();
@@ -19217,6 +21733,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "python"
     params: {}
+
+    explanation: "IP addresses should not be hardcoded",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let ip_re = regex::Regex::new(r#""\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}""#).unwrap();
@@ -19243,6 +21763,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Nested ternary expressions should not be used",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19267,6 +21791,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "Archive extraction should validate members",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19289,6 +21817,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "XML parsing should not enable external entities",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19311,6 +21843,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "print() should not be used in production code",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19333,6 +21869,10 @@ declare_rule! {
     category: Vulnerability
     language: "python"
     params: {}
+
+    explanation: "Exception tracebacks should not be exposed in production",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19355,6 +21895,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Exceptions should not be swallowed silently",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19381,6 +21925,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Exception types should be specified",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19403,6 +21951,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Generic exceptions should not be raised",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19425,6 +21977,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Catching BaseException is too broad",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19451,6 +22007,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Variables should not be used after None check",
+    clean_code: Logical,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19476,6 +22036,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Floating point equality should not be used",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19498,6 +22062,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Loops should not have only one iteration",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19524,6 +22092,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Variables should not be assigned but never read",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^\s*(\w+)\s*=\s*").unwrap();
@@ -19553,6 +22125,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Unused imports should be removed",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^\s*import\s+(\w+)").unwrap();
@@ -19588,6 +22164,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Unused variables should be removed",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^\s*(\w+)\s*=\s*\w+\(").unwrap();
@@ -19615,6 +22195,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Function parameters should not be reassigned",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"def\s+\w+\s*\(([^)]+)\)").unwrap();
@@ -19646,6 +22230,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Variables should not be self-assigned",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19674,6 +22262,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Identical expressions should not be compared",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let comparison_ops = ["==", "!=", ">=", "<=", ">", "<"];
@@ -19705,6 +22297,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Conditions should not be constant",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -19728,6 +22324,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Assignment operators should not be used in conditions",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"if\s+\w+\s*=\s*\w+").unwrap();
@@ -19751,6 +22351,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Loop counters should not be modified inside the loop",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s+(\w+)\s+in\s+").unwrap();
@@ -19781,6 +22385,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Nested locks should be avoided",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let mut lock_depth: i32 = 0;
@@ -19810,6 +22418,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Return values should not be ignored",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^\s*(\w+)\s*\([^)]*\)\s*$").unwrap();
@@ -19835,6 +22447,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Use == for value comparison, not is",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"is\s+\d+").unwrap();
@@ -19862,6 +22478,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Identical expressions should not be used on both sides of an operator",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let ops = ["==", "!=", "+", "-", "*", "/", "//", "%", "**", "and", "or", "<<", ">>"];
@@ -19893,6 +22513,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Empty except clause should not be used",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -19921,6 +22545,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Lines should not be too long",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let max_len = 120;
@@ -19944,6 +22572,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Unused imports should be removed",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -19983,6 +22615,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Unused variables should be removed",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^\s*(\w+)\s*=\s*[^=]").unwrap();
@@ -20013,6 +22649,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Unused function arguments should be removed or prefixed with _",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20051,6 +22691,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Functions should not have too many parameters",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let max_params = 7;
@@ -20080,6 +22724,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Bare except clauses should not be used",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -20103,6 +22751,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Functions should not have too many return statements",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let max_returns = 6;
@@ -20134,6 +22786,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Functions and classes should have docstrings",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20170,6 +22826,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Wildcard imports should not be used",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -20193,6 +22853,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Import aliases should not be redundant",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -20227,6 +22891,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Built-in names should not be shadowed",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let builtins = ["list", "dict", "set", "tuple", "str", "int", "float", "bool", "type", "object", "Exception", "print", "open", "range", "len", "abs", "max", "min"];
@@ -20256,6 +22924,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Constants should be named in UPPER_CASE",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^([A-Z][a-z]\w*)\s*=").unwrap();
@@ -20285,6 +22957,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Variable and function names should not be confusingly similar",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20330,6 +23006,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Function bodies should not be empty",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20359,6 +23039,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Functions should not have too many branches",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let max_branches = 10;
@@ -20395,6 +23079,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Functions should not have too many statements",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let max_statements = 50;
@@ -20426,6 +23114,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Class bodies should not be empty",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20455,6 +23147,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Cognitive complexity should not be too high",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let max_complexity = 15;
@@ -20497,6 +23193,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Operations that can raise exceptions should be wrapped",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let risky_patterns = ["json.loads(", ".get()", ".fetch(", "requests.", "open(", "eval(", "exec("];
@@ -20532,6 +23232,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Exception handlers should catch specific types",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -20555,6 +23259,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Exceptions should be raised, not returned",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -20583,6 +23291,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Exceptions should not be silently swallowed",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20612,6 +23324,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Try blocks with resource acquisition should have finally",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20641,6 +23357,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Return statements should not be in finally blocks",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20669,6 +23389,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Specific exceptions should be raised",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -20692,6 +23416,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Empty except with pass is suspicious",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20721,6 +23449,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Exception chaining should use 'raise ... from ...'",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -20745,6 +23477,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Too many nested try blocks indicate poor error handling design",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20783,6 +23519,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Caught exceptions should be logged",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20811,6 +23551,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "KeyboardInterrupt should not be caught",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -20834,6 +23578,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Assert should not be used for validation",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -20857,6 +23605,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Exceptions should not be raised in __del__",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20889,6 +23641,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Use enumerate() instead of range(len(x))",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -20911,6 +23667,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Iterate dict directly instead of .keys()",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.keys\(\)").unwrap();
@@ -20934,6 +23694,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Use comprehension instead of map/filter with lambda",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(map|filter)\s*\(\s*lambda\s+").unwrap();
@@ -20957,6 +23721,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Use comprehension instead of .append() in loop",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -20985,6 +23753,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Use join() instead of += string concatenation in loop",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21015,6 +23787,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Use mock or async helpers instead of time.sleep() in tests",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21039,6 +23815,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Avoid using global keyword",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21061,6 +23841,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Avoid deleting list items while iterating",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21091,6 +23875,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Use set for membership testing instead of list",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21119,6 +23907,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Mutable default arguments are shared across function calls",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"def\s+\w+\s*\(\s*\w+\s*=\s*\[\s*\]").unwrap();
@@ -21148,6 +23940,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Tests should contain assertions",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21175,6 +23971,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Tests should not use time.sleep()",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21199,6 +23999,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Use specific assertions instead of assertTrue/assertFalse",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -21222,6 +24026,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Use setUpClass/tearDownClass for expensive setup",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21250,6 +24058,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "unittest.skip should have a reason",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"@unittest\.skip\s*\("#).unwrap();
@@ -21275,6 +24087,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Test method names must start with test_",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21307,6 +24123,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Test setup should be simple - extract fixtures",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21335,6 +24155,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Too many assertions in one test - split into multiple tests",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21363,6 +24187,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Duplicated test methods should be removed",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21397,6 +24225,10 @@ declare_rule! {
     category: Bug
     language: "python"
     params: {}
+
+    explanation: "Tests should not use random values",
+    clean_code: Logical,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21425,6 +24257,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Function names should use snake_case",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"def\s+([A-Z][a-zA-Z0-9_]*)\s*\(").unwrap();
@@ -21453,6 +24289,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Class names should use PascalCase",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"class\s+([a-z][a-zA-Z0-9_]*)\s*[:(]").unwrap();
@@ -21481,6 +24321,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Method names should use snake_case",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"def\s+([A-Z][a-zA-Z0-9_]*)\s*\(").unwrap();
@@ -21512,6 +24356,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Constant names should use UPPER_CASE",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^([A-Z][a-zA-Z0-9_]*)\s*=\s*[^=]").unwrap();
@@ -21542,6 +24390,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Variable names should use snake_case",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^\s*([A-Z][a-zA-Z0-9_]*)\s*=").unwrap();
@@ -21572,6 +24424,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Module names should not use underscores",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^([a-z]+_[a-z]+)\.py\s*$").unwrap();
@@ -21599,6 +24455,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Package names should use lowercase only",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?:^import\s+([A-Z][a-zA-Z0-9_]+)|from\s+([A-Z][a-zA-Z0-9_]+)\s+)").unwrap();
@@ -21627,6 +24487,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Private method '_' prefix used outside class",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21663,6 +24527,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Protected attribute accessed from outside class",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21696,6 +24564,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Avoid custom dunder methods unless necessary",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         // Standard dunder methods that are allowed
@@ -21728,6 +24600,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Property getter should use @property decorator",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"def\s+get_(\w+)\s*\(").unwrap();
@@ -21751,6 +24627,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Boolean methods should start with is_, has_, or _",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21786,6 +24666,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "__eq__ defined without __hash__ makes objects unhashable",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21817,6 +24701,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "__enter__ defined without __exit__",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21848,6 +24736,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "__iter__ defined without __next__",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21879,6 +24771,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Descriptor __get__ defined without __set__",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21910,6 +24806,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "__call__ should have a docstring",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21937,6 +24837,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "__repr__ defined without __str__",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -21968,6 +24872,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "__slots__ should be a tuple, not a string",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"__slots__\s*=\s*"[^"]+""#).unwrap();
@@ -21991,6 +24899,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Class inheriting from object is redundant in Python 3",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"class\s+\w+\s*\(\s*object\s*\)").unwrap();
@@ -22014,6 +24926,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Use super() without arguments instead of super(ClassName, self)",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"super\s*\(\s*\w+\s*,\s*self\s*\)").unwrap();
@@ -22037,6 +24953,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Use explicit relative imports instead of implicit",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"from\s+\.\s+import").unwrap();
@@ -22060,6 +24980,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Avoid wildcard imports",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"from\s+\w+\s+import\s+\*").unwrap();
@@ -22083,6 +25007,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Do not shadow built-in type names",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let builtins = ["list", "dict", "set", "tuple", "str", "int", "float", "bool", "type", "object", "Exception", "TypeError", "ValueError", "KeyError", "IndexError"];
@@ -22112,6 +25040,10 @@ declare_rule! {
     category: CodeSmell
     language: "python"
     params: {}
+
+    explanation: "Unused parameters should be removed or prefixed with _",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -22160,6 +25092,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "go"
     params: {}
+
+    explanation: "Hard-coded credentials are security sensitive",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let patterns = [
@@ -22190,6 +25126,10 @@ declare_rule! {
     category: Vulnerability
     language: "go"
     params: {}
+
+    explanation: "SQL injection vulnerabilities should be prevented",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "EXEC", "EXECUTE"];
@@ -22219,6 +25159,10 @@ declare_rule! {
     category: Vulnerability
     language: "go"
     params: {}
+
+    explanation: "Shell command built from user input",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"exec\.Command\s*\(\s*\w+\s*,").unwrap();
@@ -22241,6 +25185,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "go"
     params: {}
+
+    explanation: "Permissions should be set explicitly",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"os\.Chmod\s*\([^)]*0[0-7]{3}").unwrap();
@@ -22263,6 +25211,10 @@ declare_rule! {
     category: Bug
     language: "go"
     params: {}
+
+    explanation: "panic! should not be used in library code",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -22284,6 +25236,10 @@ declare_rule! {
     category: Vulnerability
     language: "go"
     params: {}
+
+    explanation: "Clear-text protocols should not be used",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"http://[^\s""']+"#).unwrap();
@@ -22307,6 +25263,10 @@ declare_rule! {
     category: Vulnerability
     language: "go"
     params: {}
+
+    explanation: "TLS certificate verification should not be disabled",
+    clean_code: Trustworthy,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"(InsecureSkipVerify\s*[=:]\s*true|ClientConfig\s*\{[^}]*InsecureSkipVerify[^}]*true)"#).unwrap();
@@ -22329,6 +25289,10 @@ declare_rule! {
     category: Vulnerability
     language: "go"
     params: {}
+
+    explanation: "Weak cryptographic hash function",
+    clean_code: Trustworthy,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"md5\.(New|Md5Sum|Md5)\b").unwrap();
@@ -22351,6 +25315,10 @@ declare_rule! {
     category: Bug
     language: "go"
     params: {}
+
+    explanation: "Resources should be properly closed",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(os\.Open|io\.OpenFile|sql\.Open|bufio\.NewReader|bufio\.NewWriter)\s*\([^)]+\)\s*(?:\n[^}]*)?defer\s+.*\.Close\s*\(\s*\)").unwrap();
@@ -22373,6 +25341,10 @@ declare_rule! {
     category: Bug
     language: "go"
     params: {}
+
+    explanation: "Nil pointers should be checked before dereferencing",
+    clean_code: Logical,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\*\w+\s*\.\s*\w+\s*\(").unwrap();
@@ -22395,6 +25367,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Empty blocks should not be used",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"if\s+\w+\s*!=\s*nil\s*\{\s*\}").unwrap();
@@ -22417,6 +25393,10 @@ declare_rule! {
     category: Bug
     language: "go"
     params: {}
+
+    explanation: "Unused assignments should be removed",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -22448,6 +25428,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Unused local variables should be removed",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         // Note: Proper detection of unused variables requires dataflow analysis.
         // This rule provides a simplified check for obviously dead code patterns.
@@ -22475,6 +25459,10 @@ declare_rule! {
     category: Bug
     language: "go"
     params: {}
+
+    explanation: "Variables should not be self-assigned",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -22509,6 +25497,10 @@ declare_rule! {
     category: Bug
     language: "go"
     params: {}
+
+    explanation: "Identical expressions should not be compared",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let ops = ["==", "!=", ">=", "<=", ">", "<"];
@@ -22539,6 +25531,10 @@ declare_rule! {
     category: Bug
     language: "go"
     params: {}
+
+    explanation: "Unexpected assignment operators in conditions",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"if\s+\w+\s*=\s*\w+").unwrap();
@@ -22561,6 +25557,10 @@ declare_rule! {
     category: Bug
     language: "go"
     params: {}
+
+    explanation: "Floating point equality should not be used",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(float32|float64)\b.*==").unwrap();
@@ -22583,6 +25583,10 @@ declare_rule! {
     category: Bug
     language: "go"
     params: {}
+
+    explanation: "Return values should not be ignored",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let fns = ["strings.Trim", "regexp.MustCompile", "json.Marshal", "json.Unmarshal"];
@@ -22608,6 +25612,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "log.Fatal should not be used in library code",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
@@ -22629,6 +25637,10 @@ declare_rule! {
     category: Bug
     language: "go"
     params: {}
+
+    explanation: "Nested mutex locks should be avoided",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.Lock\(\)").unwrap();
@@ -22658,6 +25670,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Function names should use MixedCaps convention",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"func\s+([a-z][a-z0-9_]*)\s*\(").unwrap();
@@ -22683,6 +25699,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: { max_params: usize = 7 }
+
+    explanation: "Functions should not have too many parameters",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"func\s+\w+\s*\(([^)]*)\)").unwrap();
@@ -22713,6 +25733,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Control flow statements should not be nested too deeply",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let mut depth = 0;
@@ -22748,6 +25772,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Functions should not be too long",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -22786,6 +25814,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Cognitive complexity should not be too high",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let keywords = ["if", "for", "switch", "case", "&&", "||", "goto"];
@@ -22831,6 +25863,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Empty functions should be completed or removed",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"func\s+\w+\s*\(\s*\)\s*\{\s*\/\/.*\s*\}").unwrap();
@@ -22854,6 +25890,10 @@ declare_rule! {
     category: Bug
     language: "go"
     params: {}
+
+    explanation: "Branches should not have identical implementations",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\} else \{\s*if\s*\(").unwrap();
@@ -22877,6 +25917,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Files should not be too long",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let line_count = ctx.source.lines().count();
@@ -22897,6 +25941,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Comments should not be empty",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\/\/\s*$").unwrap();
@@ -22919,6 +25967,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Constant names should use MixedCaps",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"const\s+([a-z][a-z0-9_]*)\s*=").unwrap();
@@ -22944,6 +25996,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "String concatenation should use strings.Builder",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"\+\s*"[^"]*"\s*\+"#).unwrap();
@@ -22966,6 +26022,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Range loop index should be used",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s+_\s*:?=\s*range\s+").unwrap();
@@ -22988,6 +26048,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "append should be called with pre-allocated slice",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"append\s*\(\s*\w+\s*,\s*\w+\s*\.\.\.\s*\)").unwrap();
@@ -23010,6 +26074,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "fmt.Sprintf should not be used in string literal",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"`[^`]*fmt\.Sprintf[^`]*`"#).unwrap();
@@ -23032,6 +26100,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Unused imports should be removed",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"_\s+"\w+""#).unwrap();
@@ -23054,6 +26126,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Exported functions should have doc comments",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"func\s+[A-Z]\w+\s*\(").unwrap();
@@ -23080,6 +26156,10 @@ declare_rule! {
     category: Bug
     language: "go"
     params: {}
+
+    explanation: "Errors should be handled",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let unchecked_fns = ["os.Open", "os.Create", "os.ReadFile", "os.WriteFile", "json.Unmarshal"];
@@ -23105,6 +26185,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Variable names should use MixedCaps",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"var\s+([A-Z][a-zA-Z0-9_]*)\s*[=:]").unwrap();
@@ -23128,6 +26212,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "TODO comments should be completed or removed",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(?i)TODO:?").unwrap();
@@ -23150,6 +26238,10 @@ declare_rule! {
     category: CodeSmell
     language: "go"
     params: {}
+
+    explanation: "Commented code should not be committed",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"^\s*//\s*(if|for|switch|return|func|var|const|type)\s").unwrap();
@@ -23176,6 +26268,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Stream .skip() used before .limit() - consider reordering",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.skip\s*\(\s*\d+\s*\)\s*\.\s*limit\s*\(\s*\d+\s*\)").unwrap();
@@ -23195,6 +26291,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Stream .distinct() used after .limit() - distinct before limit is more efficient",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.limit\s*\([^)]+\)\s*\.\s*distinct\s*\(").unwrap();
@@ -23214,6 +26314,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Stream .findFirst() used after .filter() - consider findAny for parallel",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.filter\s*\([^)]+\)\s*\.\s*findFirst\s*\(").unwrap();
@@ -23233,6 +26337,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "collect(Collectors.toList()) used where toList() suffices",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Collectors\.toList\s*\(\s*\)").unwrap();
@@ -23252,6 +26360,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Stream .flatMap() used where .map() would suffice",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.flatMap\s*\(\s*\w+\s*->\s*Stream\.of\s*\([^)]+\)\s*\)").unwrap();
@@ -23271,6 +26383,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Stream .map() with identity function - remove it",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.map\s*\(\s*Function\.identity\s*\(\s*\)\s*\)").unwrap();
@@ -23290,6 +26406,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Stream .flatMap() with identity function - use .mapMulti() or flatten",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.flatMap\s*\(\s*Function\.identity\s*\(\s*\)\s*\)").unwrap();
@@ -23309,6 +26429,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Unnecessary .boxed() on primitive stream - already boxed",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"IntStream\.of\s*\([^)]+\)\s*\.boxed\s*\(\s*\)").unwrap();
@@ -23328,6 +26452,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: ".allMatch() on empty stream returns true - verify intent",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.allMatch\s*\(\s*[^)]+\s*\)\s*;?\s*$").unwrap();
@@ -23347,6 +26475,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: ".noneMatch() on empty stream returns true - verify intent",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.noneMatch\s*\(\s*[^)]+\s*\)\s*;?\s*$").unwrap();
@@ -23366,6 +26498,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: ".sorted() followed by .findFirst() - consider .min()/.max()",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.sorted\s*\([^)]*\)\s*\.\s*findFirst\s*\(").unwrap();
@@ -23385,6 +26521,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Stream .min()/.max() returns Optional - handle empty case",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.min\s*\([^)]*\)\s*;?\s*$|\.max\s*\([^)]*\)\s*;?\s*$").unwrap();
@@ -23404,6 +26544,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Stream .count() used where .findAny().isPresent() or .limit(1).findAny().isPresent() suffices",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.filter\s*\([^)]+\)\s*\.\s*count\s*\(\s*\)").unwrap();
@@ -23423,6 +26567,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Stream .distinct() on non-hashable elements - consider LinkedHashSet",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.distinct\s*\(\s*\)").unwrap();
@@ -23442,6 +26590,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Stream .toList() should be used instead of .collect(Collectors.toList())",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.collect\s*\(\s*Collectors\.toList\s*\(\s*\)\s*\)").unwrap();
@@ -23464,6 +26616,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@Autowired on field should be avoided - use constructor injection",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@Autowired\s+(private|protected|public|final)\s+\w+").unwrap();
@@ -23483,6 +26639,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@Component without interface - consider programming to interfaces",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@Component").unwrap();
@@ -23511,6 +26671,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@Service with mutable state - inject stateless beans",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         // Find @Service classes
@@ -23550,6 +26714,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@RestController should not return null directly - use ResponseEntity",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@RestController").unwrap();
@@ -23572,6 +26740,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "@Transactional on private method - has no effect",
+    clean_code: Logical,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@Transactional\s+private\s+\w+\s*\(").unwrap();
@@ -23591,6 +26763,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@Async without thread pool - use TaskExecutor",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@Async\s+public\s+\w+\s*\(").unwrap();
@@ -23611,6 +26787,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@Value with complex expression - consider @ConfigurationProperties",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"@Value\s*\(\s*"\$\{[^}]+\.[^}]+\}"\s*\)"#).unwrap();
@@ -23630,6 +26810,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@Scheduled without cron expression - specify timing",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@Scheduled\s*\(\s*\)").unwrap();
@@ -23649,6 +26833,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "JpaRepository naming - use custom method naming conventions",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"extends\s+JpaRepository<[^>]+>\s*\{").unwrap();
@@ -23668,6 +26856,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "@Entity without @Id - every entity needs a primary key",
+    clean_code: Logical,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let has_entity = ctx.source.contains("@Entity");
@@ -23686,6 +26878,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@Bean method naming - use lowercase starting name",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@Bean\s+public\s+\w+\s+([A-Z]\w+)").unwrap();
@@ -23706,6 +26902,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@Profile validation - ensure profiles are defined",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"@ActiveProfiles\s*\(\s*"[^"]+"\s*\)"#).unwrap();
@@ -23725,6 +26925,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@ConditionalOnMissingBean - verify bean absence intent",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@ConditionalOnMissingBean").unwrap();
@@ -23743,6 +26947,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@ConfigurationProperties - validate binding",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_validated = ctx.source.contains("@Validated");
@@ -23764,6 +26972,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "@Autowired in test - use constructor injection for testability",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@Autowired\s+private\s+\w+\s+\w+;").unwrap();
@@ -23786,6 +26998,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Switch with too few cases - use if-else",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"switch\s*\([^)]+\)\s*\{[^}]*case\s+\w+:[^}]*\}").unwrap();
@@ -23805,6 +27021,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Loop variable scope in for loop - declare outside",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s*\(\s*int\s+\w+\s*=\s*0[^)]*\)\s*\{").unwrap();
@@ -23827,6 +27047,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Private inner class - consider separate class if testable",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"private\s+static\s+class\s+\w+").unwrap();
@@ -23846,6 +27070,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Method returns null - consider Optional",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"return\s+null\s*;").unwrap();
@@ -23865,6 +27093,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Parameter type mismatch - verify method signature",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"method\s+\w+\s*\(\s*\w+\s+\w+\s*\)").unwrap();
@@ -23885,6 +27117,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "instanceof without cast - use pattern matching",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"instanceof\s+\w+\s*\)\s*\{[^}]*\(\s*\(\s*\w+\s*\)").unwrap();
@@ -23904,6 +27140,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Flag parameter - split method",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(boolean|Boolean)\s+\w+").unwrap();
@@ -23923,6 +27163,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Method has too many parameters - use builder or parameter object",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(\w+)\s*\([^)]{80,}\)").unwrap();
@@ -23942,6 +27186,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "Size check in loop - verify logic",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.size\s*\(\s*\)\s*[<>=!]+\s*\d+").unwrap();
@@ -23961,6 +27209,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "for(;;) - use while(true)",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"for\s*\(\s*;\s*;\s*\)").unwrap();
@@ -23980,6 +27232,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "Thread not started - verify thread start intent",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Thread\s+\w+\s*=\s*new\s+Thread\s*\([^)]+\)\s*;").unwrap();
@@ -24002,6 +27258,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "finalize() overridden - use AutoCloseable",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"@Override\s+protected\s+void\s+finalize\s*\(\s*\)").unwrap();
@@ -24024,6 +27284,10 @@ declare_rule! {
     category: Bug
     language: "java"
     params: {}
+
+    explanation: "reduce with identity on parallel stream - ensure identity is associative",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.parallel\s*\(\s*\)\s*\.\s*reduce\s*\([^,]+,").unwrap();
@@ -24043,6 +27307,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "skip() followed by limit() on ordered stream - verify order intent",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.skip\s*\(\s*\d+\s*\)\s*\.\s*limit\s*\(\s*1\s*\)").unwrap();
@@ -24062,6 +27330,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "anyMatch on Optional - use isPresent()",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Optional\w*\.anyMatch\s*\(").unwrap();
@@ -24081,6 +27353,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "findAny() vs findFirst() - use findFirst() for deterministic results",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.findAny\s*\(\s*\)").unwrap();
@@ -24100,6 +27376,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "sorted() with Comparator - consider Comparable or explicit comparison",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\.sorted\s*\(\s*Comparator\.\w+\s*\(\s*\w+,\s*\w+\s*->\s*\w+\.\w+\(\w+\)\s*\)\s*\)").unwrap();
@@ -24119,6 +27399,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "groupingBy with missing downstream collector - defaults to toList()",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Collectors\.groupingBy\s*\([^)]+\)").unwrap();
@@ -24145,6 +27429,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "partitioningBy should use groupingBy for more than two groups",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Collectors\.partitioningBy\s*\([^)]+\)\s*\.\s*get\s*\(").unwrap();
@@ -24164,6 +27452,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "mapping collector - verify flatMapping is more appropriate",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Collectors\.mapping\s*\([^,]+,\s*Collectors\.toList\s*\(\s*\)\s*\)").unwrap();
@@ -24183,6 +27475,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "flatMapping usage - verify it replaces map+flatten pattern",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Collectors\.flatMapping\s*\(").unwrap();
@@ -24202,6 +27498,10 @@ declare_rule! {
     category: CodeSmell
     language: "java"
     params: {}
+
+    explanation: "teeing collector - use for combining two collectors",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Collectors\.teeing\s*\(").unwrap();
@@ -24228,6 +27528,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Context.Provider used directly - consider useContext hook",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"<\w+Provider\s+value\s*=").unwrap();
@@ -24247,6 +27551,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "useEffect missing cleanup function for subscriptions",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"useEffect\s*\(\s*\(\s*\)\s*=>\s*\{[^}]*addEventListener|setInterval|setTimeout[^}]*\}\s*,").unwrap();
@@ -24266,6 +27574,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "useCallback missing dependencies - may cause stale closures",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"useCallback\s*\([^,]+,\s*\[\s*\]\s*\)").unwrap();
@@ -24285,6 +27597,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "useState initializer called on every render - use lazy init",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"useState\s*\(\s*\w+\s*\([^)]*\)\s*\)").unwrap();
@@ -24304,6 +27620,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Derived state computed inline - consider useMemo",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"const\s+\w+\s*=\s*\w+\s*\.\s*map\s*\([^)]+\)\s*;?\s*const\s+\w+\s*=\s*\w+\s*\.\s*filter").unwrap();
@@ -24323,6 +27643,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "useEffect with setState - may cause infinite loop",
+    clean_code: Logical,
+    impacts: [Security: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"useEffect\s*\([^}]*set\w+\s*\([^)]*\)[^}]*\}\s*,\s*\[\s*\w+\s*\]\s*\)").unwrap();
@@ -24342,6 +27666,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "useRef used but value not accessed - verify intent",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"const\s+(\w+)\s*=\s*useRef\s*\([^)]+\)").unwrap();
@@ -24367,6 +27695,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "useImperativeHandle without forwardRef",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_forward_ref = ctx.source.contains("forwardRef");
@@ -24385,6 +27717,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "React.lazy without Suspense - add boundary",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let has_lazy = ctx.source.contains("React.lazy") || ctx.source.contains("lazy(");
@@ -24403,6 +27739,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "createContext default value may cause null checks - use null",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"createContext\s*\(\s*\{\s*\}\s*\)").unwrap();
@@ -24425,6 +27765,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Test without describe block - group related tests",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"it\s*\(\s*['"][^'"]+['"]\s*,"#).unwrap();
@@ -24446,6 +27790,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "Missing expect.assertions - add for async tests",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r#"(test|it)\s*\(\s*['"][^'"]+['"]\s*,\s*(async\s*)?\("#).unwrap();
@@ -24467,6 +27815,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "beforeAll nested inside describe - move to top level",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"describe\s*\([^)]+\s*\{[^}]*beforeAll\s*\(").unwrap();
@@ -24486,6 +27838,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "mockImplementation vs mockReturnValue - use consistently",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let has_impl = ctx.source.contains("mockImplementation");
@@ -24504,6 +27860,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "spyOn without restore - add cleanup",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"jest\.spyOn\s*\([^)]+\)\s*;").unwrap();
@@ -24526,6 +27886,10 @@ declare_rule! {
     category: Bug
     language: "javascript"
     params: {}
+
+    explanation: "act() wrapper missing - wrap state updates in act()",
+    clean_code: Logical,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fireEvent\.\w+\s*\([^)]+\)").unwrap();
@@ -24549,6 +27913,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "waitFor without timeout - specify timeout",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"waitFor\s*\(\s*\(\s*\)\s*=>\s*\{[^}]*\}\s*\)").unwrap();
@@ -24568,6 +27936,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "fireEvent vs userEvent - prefer userEvent for user behavior",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"fireEvent\.\w+\s*\(").unwrap();
@@ -24587,6 +27959,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "toBeTruthy vs toBe(true) - use specific matcher",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"expect\s*\([^)]+\)\s*\.\s*toBeTruthy\s*\(\s*\)").unwrap();
@@ -24606,6 +27982,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "toEqual vs toStrictEqual - use toStrictEqual for exact matching",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"expect\s*\([^)]+\)\s*\.\s*toEqual\s*\(\s*\{").unwrap();
@@ -24628,6 +28008,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Numeric enum - use union type or const enum",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"enum\s+\w+\s*\{[^}]*(?:0|1|2|3|4|5|6|7|8|9)").unwrap();
@@ -24647,6 +28031,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Type assertion with 'as' - verify type is correct",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"\bas\s+\w+").unwrap();
@@ -24666,6 +28054,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "any type used - use unknown or specific type",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r":\s*any\b|\bany\[\]").unwrap();
@@ -24685,6 +28077,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "NonNullable - use for null check",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"NonNullable<").unwrap();
@@ -24704,6 +28100,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "ReturnType - infer return type from function",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"ReturnType<").unwrap();
@@ -24723,6 +28123,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Omit vs Pick - verify correct utility type",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(Omit|Pick)<").unwrap();
@@ -24742,6 +28146,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Record - verify key type constraints",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Record<\s*\w+\s*,").unwrap();
@@ -24761,6 +28169,10 @@ declare_rule! {
     category: CodeSmell
     language: "javascript"
     params: {}
+
+    explanation: "Exclude vs Extract - verify correct conditional type",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"(Exclude|Extract)<").unwrap();
@@ -24787,6 +28199,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Arc<Mutex> used when Rc<RefCell> would suffice (single-threaded)",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Arc<\s*Mutex<").unwrap();
@@ -24809,6 +28225,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Box<dyn Error> used - consider concrete error type or anyhow::Error",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Box<dyn\s+Error>").unwrap();
@@ -24831,6 +28251,10 @@ declare_rule! {
     category: SecurityHotspot
     language: "rust"
     params: {}
+
+    explanation: "Struct with sensitive data derives Debug - may leak secrets",
+    clean_code: Trustworthy,
+    impacts: [Maintainability: Medium],
     check: => {
         let mut issues = Vec::new();
         let sensitive = ["password", "secret", "token", "credential", "api_key", "private_key"];
@@ -24860,6 +28284,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "Custom Drop impl - consider #[unsafe_destructor] or may_dangle",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"impl\s+Drop\s+for\s+").unwrap();
@@ -24882,6 +28310,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "mem::forget used - may cause resource leaks",
+    clean_code: Logical,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"mem::forget\s*\(").unwrap();
@@ -24904,6 +28336,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "PhantomData marker type - verify proper variance and drop check",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"PhantomData\s*<").unwrap();
@@ -24926,6 +28362,10 @@ declare_rule! {
     category: Bug
     language: "rust"
     params: {}
+
+    explanation: "std::mem::transmute used - requires unsafe block",
+    clean_code: Logical,
+    impacts: [Reliability: High],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"transmute\s*<").unwrap();
@@ -24949,6 +28389,10 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {}
+
+    explanation: "std::pin::Pin used without Unpin bound - verify safety",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"Pin<\s*\w+").unwrap();
