@@ -241,7 +241,7 @@ def evolve(n=None,rule=None,dry=False,cooldown=5,batch=3):
    if"error"in m:git.checkout(str(CATALOG));ev.log_experiment(t,rid,"rust",{"f1":f1b},{},"failed",m["error"]);f+=1;continue
    dec,reason=decide(rid,base.get(rid,{}),m,ch)
    if dec=="keep":
-    r=subprocess.run(["git","add","-f","crates/cognicode-axiom/src/rules/catalog.rs","crates/cognicode-axiom/src/rules/rules/"],cwd=str(REPO),check=False)
+    r=subprocess.run(["git","add","-A"],cwd=str(REPO),check=False)
     if r.returncode==0:
      git.commit(cmsg(rid,ch,m))
      base[rid]=m;bl.save(base);k+=1
@@ -281,6 +281,17 @@ def evolve(n=None,rule=None,dry=False,cooldown=5,batch=3):
  logger.info("DONE: "+str(s)+" batches | "+str(k)+" kept | "+str(d)+" disc | rate:"+str(0 if k+d==0 else int(k/(k+d)*100))+"%")
  logger.info("📋 Session covered: "+str(len(SESSION_DONE))+"/"+str(TOTAL_RULES)+" rules ("+str(round(len(SESSION_DONE)/TOTAL_RULES*100,1))+"%)")
 
+
+def _sandbox_verify(rule_id,script_path=None):
+    """Run change in isolated sandbox. Returns True if passes."""
+    try:
+        from sandbox.manager import SandboxManager
+        sm=SandboxManager()
+        sr=sm.run_experiment(rule_id,"main",script_path,timeout=300)
+        return sr.get("status")=="success" and sr.get("tests_passed",0)>0
+    except Exception as e:
+        logger.warning("Sandbox error: "+str(e))
+        return False
 if __name__=="__main__":
  p=argparse.ArgumentParser()
  p.add_argument("-n",type=int,default=None);p.add_argument("-r",type=str,default=None)
