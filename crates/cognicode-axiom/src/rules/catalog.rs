@@ -160,7 +160,7 @@ declare_rule! {
             if re.is_match(line) {
                 issues.push(Issue::new(
                     "S1135",
-                    format!("TODO/FIXME tag found: {}", line.trim()),
+                    format!("TODO/FIXME/HACK/XXX tag found: {}", line.trim()),
                     Severity::Minor,
                     Category::CodeSmell,
                     ctx.file_path,
