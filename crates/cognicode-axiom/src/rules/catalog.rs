@@ -239,67 +239,7 @@ declare_rule! {
 // S4792 — Weak Cryptography Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S4792"
-    name: "Weak cryptography should not be used"
-    severity: Critical
-    category: Vulnerability
-    language: "rust"
-    params: {}
-
-    explanation: "Weak cryptographic algorithms like MD5, SHA1, DES, and RC4 are vulnerable to modern attacks and should not be used for security-sensitive operations.",
-    clean_code: Trustworthy,
-    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let weak_patterns = [
-            (r"(?i)(?:\b|_)(?:hash|digest|sign|encrypt)_?md5\b", "MD5 hash function"),
-            (r"(?i)(?:\b|_)(?:hash|digest|sign|encrypt)_?sha[01]\b", "SHA-0/SHA-1 hash function"),
-            (r"(?i)(?:^|[^\w])(?:_)?des(?:_|$|[^\w])", "DES block cipher"),
-            (r"(?i)(?:\b|_)3des\b", "Triple DES (3DES) block cipher"),
-            (r"(?i)(?:\b|_)rc4\b", "RC4 stream cipher"),
-            (r"(?i)(?:^|[^\w])crypt\b", "crypt(3) function"),
-        ];
-
-        let compiled_patterns: Vec<(regex::Regex, &str)> = weak_patterns
-            .iter()
-            .filter_map(|(p, d)| {
-                match regex::Regex::new(p) {
-                    Ok(r) => Some((r, *d)),
-                    Err(e) => {
-                        eprintln!("Warning: Failed to compile S4792 pattern '{}': {}", p, e);
-                        None
-                    }
-                }
-            })
-            .collect();
-
-        for (line_idx, line) in ctx.source.lines().enumerate() {
-            for (re, description) in &compiled_patterns {
-                if let Some(m) = re.find(line) {
-                    let pt = m.start();
-                    issues.push(Issue::new(
-                        "S4792",
-                        format!(
-                            "Use of weak cryptography: {} detected on line {}",
-                            description, line_idx + 1
-                        ),
-                        Severity::Critical,
-                        Category::Vulnerability,
-                        ctx.file_path,
-                        line_idx + 1,
-                    ).with_column(pt + 1)
-                    .with_remediation(Remediation::substantial(
-                        "Use a modern cryptographic algorithm (e.g., SHA-256, AES-256-GCM)"
-                    )));
-                    break;
-                }
-            }
-        }
-
-        issues
-    }
-}
+// S4792 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s4792_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S7000 — Semantic Intent Drift Detection Rule
