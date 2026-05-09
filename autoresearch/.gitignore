@@ -73,3 +73,4 @@ Thumbs.db
 # ✓ agents/*.py       — Agent definitions
 # ✓ orchestrator/*.py — LangGraph orchestration
 # ✓ corpus_commits.yaml — Pinned corpus references
+session_done.txt
