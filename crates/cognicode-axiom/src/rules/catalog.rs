@@ -3705,7 +3705,7 @@ declare_rule! {
             let has_archive = trimmed.contains(".zip(") || trimmed.contains("ZipArchive") || trimmed.contains("tar::") || trimmed.contains("Archive::") || trimmed.contains("unzip") || trimmed.contains("flate2");
             if has_archive && !trimmed.contains("limit") && !trimmed.contains("max_") && !trimmed.contains("size_limit") {
                 let context_start = line_num.saturating_sub(10);
-                let context_end = std::cmp::min(ctx.source.lines().count(), line_num + 6);
+                let context_end = std::cmp::min(ctx.source.lines().count(), line_num + 8);
                 let context: String = ctx.source.lines().skip(context_start).take(context_end - context_start).collect::<Vec<_>>().join("\n");
                 if !context.contains("size") && !context.contains("limit") && !context.contains("max_size") && !context.contains("uncompressed_size") && !context.contains("decompressed_size") {
                     issues.push(Issue::new(
