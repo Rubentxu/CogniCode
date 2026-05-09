@@ -308,7 +308,12 @@ declare_rule! {
                                     let args_upper = args_text.to_uppercase();
                                     let format_arg_count = args_text.matches("{}").count();
                                     for keyword in &sql_keywords {
-                                        if args_upper.contains(keyword) && format_arg_count >= 1 {
+                                        // Use word boundary matching to avoid false positives like 'selected' matching 'SELECT'
+                                        let pattern = format!(r"(?i)\b{}\b", regex::escape(keyword));
+                                        if regex::Regex::new(&pattern)
+                                            .and_then(|re| Ok(re.is_match(args_text)))
+                                            .unwrap_or(false)
+                                            && format_arg_count >= 1 {
                                             let pt = cap.node.start_position();
                                             issues.push(Issue::new(
                                                 "S5122",
