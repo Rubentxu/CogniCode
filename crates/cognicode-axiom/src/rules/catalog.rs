@@ -244,7 +244,7 @@ declare_rule! {
             if trimmed.is_empty() 
             || trimmed.starts_with("//") || trimmed.starts_with("///")
             || trimmed.starts_with("//!") || trimmed.starts_with("/*")
-            || trimmed.starts_with("*") || trimmed.starts_with("#")
+            || trimmed.starts_with("#")
             { continue; }
             
             for re in &regexes {
