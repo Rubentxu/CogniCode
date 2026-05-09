@@ -286,6 +286,12 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "EXEC", "EXECUTE", "UNION", "INTO", "OUTFILE", "INFILE", "LOAD_FILE", "BENCHMARK", "SLEEP"];
+        let sql_keyword_patterns: Vec<_> = sql_keywords.iter()
+            .map(|keyword| {
+                let pattern = format!(r"(?i)(?<![a-zA-Z_]){}(?![a-zA-Z_])", regex::escape(keyword));
+                regex::Regex::new(&pattern)
+            })
+            .collect();
         
         let query = match tree_sitter::Query::new(
             &ctx.language.to_ts_language(),
