@@ -93,7 +93,7 @@ declare_rule! {
     severity: Major
     category: CodeSmell
     language: "rust"
-    params: { threshold: usize = 5 }
+    params: { threshold: usize = 4 }
 
     explanation: "Functions with too many parameters are difficult to call, test, and remember, often indicating the need for parameter grouping into structs or configuration objects.",
     clean_code: Clear,
@@ -3719,7 +3719,7 @@ declare_rule! {
                 let context_start = line_num.saturating_sub(10);
                 let context_end = std::cmp::min(ctx.source.lines().count(), line_num + 8);
                 let context: String = ctx.source.lines().skip(context_start).take(context_end - context_start).collect::<Vec<_>>().join("\n");
-                if !context.contains("size") && !context.contains("limit") && !context.contains("max_size") && !context.contains("uncompressed_size") && !context.contains("decompressed_size") && !context.contains("capacity") && !context.contains("max_bytes") && !context.contains("max_len") && !context.contains("budget") && !context.contains("quota") && !context.contains("set_size_limit") {
+                if !context.contains("size") && !context.contains("limit") && !context.contains("max_size") && !context.contains("uncompressed_size") && !context.contains("decompressed_size") && !context.contains("capacity") && !context.contains("max_bytes") && !context.contains("max_len") && !context.contains("budget") && !context.contains("quota") && !context.contains("set_size_limit") && !context.contains("len") && !context.contains("byte") {
                     issues.push(Issue::new(
                         "S5042",
                         "Archive extraction without size check - potential zip bomb",
