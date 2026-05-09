@@ -126,20 +126,20 @@ class SandboxManager:
             "-v", "cognicode-target-cache:/workspace/CogniCode/target",  # Persistent target dir
         ]
         
+        # Mount change script if provided
+        change_mount = ""
+        if change_script and Path(change_script).exists():
+            cmd.extend(["-v", f"{Path(change_script).resolve()}:/change.py:ro"])
+            change_mount = "/change.py"
+        
         # Podman rootless: skip --network=none (needs root)
         if not IS_PODMAN:
-            cmd.extend(["--network", "none"])      # No network (Docker only)
+            cmd.extend(["--network", "none"])
         
         cmd.append(self.image)
-        cmd.extend([rule_id, git_ref])
-        
-        # Mount change script if provided
-        if change_script and Path(change_script).exists():
-            cmd.insert(-4, "-v")
-            cmd.insert(-4, f"{change_script}:/change.py:ro")
-            cmd.append("/change.py")
-        else:
-            cmd.append("")  # Empty change script
+        cmd.append(rule_id)
+        cmd.append(git_ref)
+        cmd.append(change_mount)  # Empty string if no script
         
         try:
             result = subprocess.run(
