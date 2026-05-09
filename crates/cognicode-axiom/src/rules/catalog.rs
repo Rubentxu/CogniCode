@@ -2152,7 +2152,7 @@ declare_rule! {
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"let\s+(?:mut\s+)?_(\w+)\s*(?::\s*\S+)?\s*=").unwrap();
+        let re = regex::Regex::new(r"let\s+(?:mut\s+)?_\b(\w+)\b\s*(?::\s*\S+)?\s*=").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
             if let Some(cap) = re.captures(line) {
                 let name = cap.get(1).unwrap().as_str();
