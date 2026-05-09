@@ -197,7 +197,7 @@ declare_rule! {
             { continue; }
             
             let lowered = trimmed.to_lowercase();
-            if lowered.contains("#[deprecated") || lowered.contains("@deprecated") {
+            if lowered.contains("#[deprecated]") || lowered.contains("#[deprecated(") || lowered.contains("@deprecated") {
                 issues.push(Issue::new(
                     "S1134",
                     "Deprecated attribute detected",
