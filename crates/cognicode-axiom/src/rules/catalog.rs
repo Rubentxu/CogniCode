@@ -360,7 +360,7 @@ declare_rule! {
             (r"(?i)(?:\b|_)sha1\b", "SHA-1 hash function"),
             (r"(?i)(?:\b|_)des(?:ign|esst|ktop|tails)?\b", "DES block cipher"),
             (r"(?i)(?:\b|_)rc4\b", "RC4 stream cipher"),
-            (r"(?i)(?<!\w)crypt\b", "crypt(3) function"),
+            (r"(?i)(?:^|[^\w])crypt\b", "crypt(3) function"),
         ];
 
         let compiled_patterns: Vec<(regex::Regex, &str)> = weak_patterns
