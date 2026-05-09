@@ -183,6 +183,7 @@ declare_rule! {
     category: CodeSmell
     language: "rust"
     params: {
+        // Reserved for future use to limit recursion/deprecation chain depth
         max_depth: i64 = 3
     }
 
