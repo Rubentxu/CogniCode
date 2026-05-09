@@ -93,7 +93,7 @@ declare_rule! {
     severity: Major
     category: CodeSmell
     language: "rust"
-    params: { threshold: usize = 7 }
+    params: { threshold: usize = 5 }
 
     explanation: "Functions with too many parameters are difficult to call, test, and remember, often indicating the need for parameter grouping into structs or configuration objects.",
     clean_code: Clear,
