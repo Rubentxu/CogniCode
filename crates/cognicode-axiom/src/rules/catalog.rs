@@ -99,43 +99,7 @@ declare_rule! {
 // S1134 — Deprecated Code Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S1134"
-    name: "Deprecated code should not be used"
-    severity: Info
-    category: CodeSmell
-    language: "rust"
-    params: {}
-
-    explanation: "Using deprecated code can lead to compatibility issues, security vulnerabilities, and difficulties in future maintenance as deprecated APIs may be removed.",
-    clean_code: Complete,
-    impacts: [Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let deprecated_pattern = regex::Regex::new(r#"(?i)^\s*#\s*\[deprecated\b)"#).unwrap();
-        for (idx, line) in ctx.source.lines().enumerate() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with("//") 
-            || trimmed.starts_with("///") || trimmed.starts_with("//!")
-            || trimmed.starts_with("/*")
-            { continue; }
-            
-            if deprecated_pattern.is_match(trimmed) {
-                issues.push(Issue::new(
-                    "S1134",
-                    "Deprecated attribute detected",
-                    Severity::Info,
-                    Category::CodeSmell,
-                    ctx.file_path,
-                    idx + 1,
-                ).with_remediation(Remediation::moderate(
-                    "Replace deprecated API with the recommended alternative"
-                )));
-            }
-        }
-        issues
-    }
-}
+// S1134 → segregated to crates/cognicode-axiom/src/rules/rules/rust/code_smells/s1134_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S2068 — Hard-coded Credentials Rule
