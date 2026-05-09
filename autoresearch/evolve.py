@@ -35,10 +35,8 @@ TOTAL_RULES=len(re.findall(r'id:\s*"([^"]+)"',open(str(CATALOG)).read()))
 
 def analyze(history,force=None,batch=3,keep_rate=0):
  if force:return[force]
- _load_session()
  valid_rules=set(re.findall(r'id:\s*"(S\d+)"',CATALOG.read_text()))
  # Filter out already-processed rules this session
- recent={h.get("rule_id")for h in history[-batch*3:]};rf=defaultdict(list)
  recent={h.get("rule_id")for h in history[-batch*3:]};rf=defaultdict(list)
  for h in history:
   try:

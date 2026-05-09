@@ -3020,35 +3020,7 @@ declare_rule! {
 // S2612 — Weak file permissions (chmod 777, 666)
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S2612"
-    name: "File permissions should not be too permissive"
-    severity: Critical
-    category: Vulnerability
-    language: "rust"
-    params: {}
-
-    explanation: "Overly permissive file permissions (0o777/777) allow unauthorized users to read or modify sensitive files, creating security vulnerabilities. Also consider 0o666 for world-writable files.",
-    clean_code: Trustworthy,
-    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let re = regex::Regex::new(r"0o?777|chmod\s+777").unwrap();
-        for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new(
-                    "S2612",
-                    "Overly permissive file permissions (0777)",
-                    Severity::Critical,
-                    Category::Vulnerability,
-                    ctx.file_path,
-                    idx + 1,
-                ).with_remediation(Remediation::quick("Use 0o644 for files and 0o755 for directories")));
-            }
-        }
-        issues
-    }
-}
+// S2612 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s2612_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S2755 — XML external entity (XXE)
