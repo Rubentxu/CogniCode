@@ -237,10 +237,10 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let patterns = [
-            (r#"(?i)(password|passwd|pwd)\s*[=:]\s*["'][^"']{12,}["']"#, "password"),
-            (r#"(?i)(api[_-]?key|apikey)\s*[=:]\s*["'][^"']{12,}["']"#, "api_key"),
-            (r#"(?i)(secret|token)\s*[=:]\s*["'][^"']{12,}["']"#, "secret"),
-            (r#"(?i)(bearer\s+token|basic\s+auth)\s*[=:]\s*["'][a-zA-Z0-9_\-]{12,}["']"#, "bearer_token"),
+            (r#"(?i)(password|passwd|pwd)\s*[=:]\s*["'][^"']{8,}["']"#, "password"),
+            (r#"(?i)(api[_-]?key|apikey)\s*[=:]\s*["'][^"']{8,}["']"#, "api_key"),
+            (r#"(?i)(secret|token)\s*[=:]\s*["'][^"']{8,}["']"#, "secret"),
+            (r#"(?i)(bearer\s+token|basic\s+auth)\s*[=:]\s*["'][a-zA-Z0-9_\-]{8,}["']"#, "bearer_token"),
         ];
         let regexes: Vec<_> = patterns.iter().map(|(p, _)| regex::Regex::new(p).unwrap()).collect();
         
