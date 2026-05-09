@@ -199,7 +199,7 @@ declare_rule! {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with("//") 
             || trimmed.starts_with("///") || trimmed.starts_with("//!")
-            || trimmed.starts_with("#!") || trimmed.starts_with("/*")
+            || trimmed.starts_with("/*")
             { continue; }
             
             if deprecated_pattern.is_match(trimmed) {
