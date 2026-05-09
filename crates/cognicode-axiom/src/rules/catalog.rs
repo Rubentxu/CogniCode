@@ -52,7 +52,7 @@ declare_rule! {
     severity: Major
     category: CodeSmell
     language: "rust"
-    params: { threshold: usize = 7 }
+    params: { threshold: usize = 5 }
 
     explanation: "Deeply nested control flow structures reduce code readability and maintainability, making it harder to understand program logic and increasing the risk of introducing bugs during modifications.",
     clean_code: Focused,
