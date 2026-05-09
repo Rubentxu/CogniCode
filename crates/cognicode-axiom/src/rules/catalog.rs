@@ -371,8 +371,8 @@ declare_rule! {
 
         for (line_idx, line) in ctx.source.lines().enumerate() {
             for (re, description) in &compiled_patterns {
-                if re.is_match(line) {
-                    let pt = line.find(|c: char| !c.is_whitespace()).unwrap_or(0);
+                if let Some(m) = re.find(line) {
+                    let pt = m.start();
                     issues.push(Issue::new(
                         "S4792",
                         format!(
