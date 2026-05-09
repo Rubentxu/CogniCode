@@ -1745,7 +1745,7 @@ declare_rule! {
     impacts: [Reliability: High, Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
-        let re = regex::Regex::new(r"\(?\s*\*\s*(\w+)\s*\)\s*\.\s*\w+").unwrap();
+        let re = regex::Regex::new(r"(?:\(?\s*\*\s*(\w+)\s*\)\s*\.\s*\w+|\s*\*\s*(\w+)\s*(?:[^\w]|$))").unwrap();
         let mut unsafe_depth = 0;
         for (idx, line) in ctx.source.lines().enumerate() {
             if line.contains("unsafe {") { unsafe_depth += 1; }
