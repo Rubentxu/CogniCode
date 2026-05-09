@@ -830,6 +830,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cognicode-diagram"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "cognicode-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio-test",
+ "tracing",
+]
+
+[[package]]
 name = "cognicode-macros"
 version = "0.1.0"
 dependencies = [

@@ -3,7 +3,7 @@
 # Build: docker build -t cognicode-sandbox:latest .
 # Run:   docker run --rm cognicode-sandbox RULE_ID GIT_REF CHANGE_SCRIPT
 
-FROM rust:1.78-slim-bookworm
+FROM docker.io/library/rust:1.92-slim-bookworm
 
 LABEL description="CogniCode self-evolving rule sandbox"
 LABEL version="0.1.0"

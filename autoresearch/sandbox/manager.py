@@ -1,4 +1,6 @@
-"""Sandbox Manager — runs isolated rule experiments in Docker containers.
+"""Sandbox Manager — runs isolated rule experiments in containers.
+
+Supports Docker and Podman (auto-detected).
 
 Usage:
     manager = SandboxManager()
@@ -11,13 +13,14 @@ Features:
     - CPU/RAM/network limits
     - Parallel multi-agent support
     - Timeout handling + forced cleanup
+    - Auto-detects Docker or Podman
 """
 
 import subprocess
 import json
 import hashlib
 import time
-import tempfile
+import shutil
 from pathlib import Path
 from typing import Dict, Optional, List
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -28,6 +31,31 @@ logger = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).parent.parent.parent
 SANDBOX_DIR = Path(__file__).parent
 IMAGE_NAME = "cognicode-sandbox:latest"
+
+# ═══════════════════════════════════════════════════════════════════
+# Container runtime detection
+# ═══════════════════════════════════════════════════════════════════
+
+def _detect_runtime() -> str:
+    """Auto-detect available container runtime: docker > podman > none."""
+    if shutil.which("docker") and _check_runtime("docker"):
+        return "docker"
+    if shutil.which("podman") and _check_runtime("podman"):
+        return "podman"
+    raise RuntimeError("No container runtime found. Install Docker or Podman.")
+
+def _check_runtime(cmd: str) -> bool:
+    """Verify a container runtime is functional."""
+    try:
+        subprocess.run([cmd, "version"], capture_output=True, timeout=5, check=False)
+        return True
+    except:
+        return False
+
+CONTAINER_CMD = _detect_runtime()
+IS_PODMAN = CONTAINER_CMD == "podman"
+
+logger.info(f"Container runtime: {CONTAINER_CMD}" + (" (rootless)" if IS_PODMAN else ""))
 
 
 class SandboxManager:
@@ -48,13 +76,13 @@ class SandboxManager:
     def _ensure_image(self):
         """Build sandbox image if not exists."""
         result = subprocess.run(
-            ["docker", "images", "-q", self.image],
+            [CONTAINER_CMD, "images", "-q", self.image],
             capture_output=True, text=True
         )
         if not result.stdout.strip():
-            logger.info(f"Building Docker image: {self.image}...")
+            logger.info(f"Building {CONTAINER_CMD} image: {self.image}...")
             subprocess.run(
-                ["docker", "build", "-t", self.image, str(SANDBOX_DIR)],
+                [CONTAINER_CMD, "build", "-t", self.image, str(SANDBOX_DIR)],
                 check=True, cwd=str(SANDBOX_DIR)
             )
             logger.info(f"Image built: {self.image}")
@@ -85,20 +113,25 @@ class SandboxManager:
         
         logger.info(f"Starting sandbox: {container_name} (rule={rule_id}, ref={git_ref})")
         
-        # Build docker run command
+        # Build container run command
         cmd = [
-            "docker", "run",
+            CONTAINER_CMD, "run",
             "--rm",                              # Auto-remove on exit
             "--name", container_name,
             "--cpus", str(cpus),                  # CPU limit
             "--memory", memory,                   # RAM limit
-            "--network", "none",                  # No network (security)
             "-v", f"{REPO_ROOT}:/host-repo:ro",   # Read-only host repo
             "-v", f"{REPO_ROOT}/autoresearch/results:/results",  # Write results
-            self.image,
-            rule_id,
-            git_ref,
+            "-v", "cognicode-cargo-cache:/usr/local/cargo/registry",  # Persistent cargo cache
+            "-v", "cognicode-target-cache:/workspace/CogniCode/target",  # Persistent target dir
         ]
+        
+        # Podman rootless: skip --network=none (needs root)
+        if not IS_PODMAN:
+            cmd.extend(["--network", "none"])      # No network (Docker only)
+        
+        cmd.append(self.image)
+        cmd.extend([rule_id, git_ref])
         
         # Mount change script if provided
         if change_script and Path(change_script).exists():
@@ -209,11 +242,11 @@ class SandboxManager:
         """Force-kill and remove a container."""
         try:
             subprocess.run(
-                ["docker", "kill", container_name],
+                [CONTAINER_CMD, "kill", container_name],
                 capture_output=True, timeout=5
             )
             subprocess.run(
-                ["docker", "rm", "-f", container_name],
+                [CONTAINER_CMD, "rm", "-f", container_name],
                 capture_output=True, timeout=5
             )
         except Exception:
@@ -222,7 +255,7 @@ class SandboxManager:
     def cleanup(self):
         """Remove all cognicode-eval-* containers (safety cleanup)."""
         result = subprocess.run(
-            ["docker", "ps", "-a", "--filter", "name=cognicode-eval-", 
+            [CONTAINER_CMD, "ps", "-a", "--filter", "name=cognicode-eval-", 
              "--format", "{{.Names}}"],
             capture_output=True, text=True
         )
