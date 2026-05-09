@@ -136,7 +136,7 @@ def cmsg(rule_id,change,metrics):
   llm=LLMClient()
   resp=llm.chat("Generate a ONE LINE conventional commit message. Format: type(scope): description. NO markdown, NO newlines, NO explanations. Max 72 chars.",[{"role":"user","content":"Rule:"+rule_id+" Type:"+change.get("type","?")}],max_tokens=200,temperature=0.1)
   msg=resp.strip().strip('"').split("\n")[0][:100]
-    msg=msg.replace("```","").replace("#","").strip()
+  msg=msg.replace(chr(96),"").replace("#","").strip()
   return msg+" [auto]"if":"in msg else"refactor("+rule_id+"): improve [auto]"
  except:return"refactor("+rule_id+"): improve [auto]"
 
