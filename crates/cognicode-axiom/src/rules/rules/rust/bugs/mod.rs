@@ -6,3 +6,5 @@ pub mod s2259_rule;
 pub mod s1226_rule;
 
 pub mod s4792_rule;
+
+pub mod s5042_rule;
