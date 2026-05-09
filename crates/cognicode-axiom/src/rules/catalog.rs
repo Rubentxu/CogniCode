@@ -142,7 +142,7 @@ declare_rule! {
 declare_rule! {
     id: "S1135"
     name: "TODO tags should be completed or removed"
-    severity: Minor
+    severity: Info
     category: CodeSmell
     language: "*"
     params: {
