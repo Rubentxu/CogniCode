@@ -1213,7 +1213,7 @@ declare_rule! {
             while let Some(m) = matches.next() {
                 for capture in m.captures {
                     let depth = ctx.nesting_depth(capture.node);
-                    if depth > 3 {
+                    if depth > 5 {
                         let pt = capture.node.start_position();
                         issues.push(Issue::new(
                             "S1141",
