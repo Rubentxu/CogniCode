@@ -241,7 +241,7 @@ def evolve(n=None,rule=None,dry=False,cooldown=5,batch=3):
    if"error"in m:git.checkout(str(CATALOG));ev.log_experiment(t,rid,"rust",{"f1":f1b},{},"failed",m["error"]);f+=1;continue
    dec,reason=decide(rid,base.get(rid,{}),m,ch)
    if dec=="keep":
-    r=subprocess.run(["git","add","-A"],cwd=str(REPO),check=False)
+    r=subprocess.run(["git","add","-f","crates/cognicode-axiom/src/rules/catalog.rs","crates/cognicode-axiom/src/rules/rules/"],cwd=str(REPO),check=False)
     if r.returncode==0:
      git.commit(cmsg(rid,ch,m))
      base[rid]=m;bl.save(base);k+=1
