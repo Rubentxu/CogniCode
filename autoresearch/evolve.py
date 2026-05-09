@@ -15,7 +15,14 @@ REPO=Path(__file__).parent.parent
 CATALOG=REPO/"crates/cognicode-axiom/src/rules/catalog.rs"
 CATALOG_REL="crates/cognicode-axiom/src/rules/catalog.rs"
 STOP=False
-signal.signal(signal.SIGINT,lambda *_:globals().__setitem__("STOP",True))
+def _handle_stop(sig,frame):
+    global STOP
+    STOP=True
+    logger.info("\n⏹ STOP requested — finishing current batch...")
+    # Force exit on second signal
+    signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
+signal.signal(signal.SIGINT,_handle_stop)
+signal.signal(signal.SIGTERM,_handle_stop)
 SQ={"S1313","S134","S107","S1481","S1141","S100","S1871","S4144","S2612","S2092","S3330","S5042","S2589","S1186","S2259","S1854","S1135","S1226"}
 SESSION_FILE=Path(__file__).parent/"session_done.txt"
 SESSION_DONE=set()
