@@ -1,0 +1,26 @@
+# Pinned corpus commits — NEVER change these during evaluation
+# Generated: 2026-05-09
+
+rust:
+  ripgrep:
+    repo: https://github.com/BurntSushi/ripgrep
+    commit: 4519153e5e461527f4bca45b042fff45c4ec6fb9
+    loc: 52266
+    description: "Fast recursive grep alternative"
+  
+  clap:
+    repo: https://github.com/clap-rs/clap
+    commit: d142d8f96650c49302aeab87814d5bf352dbf4db
+    loc: 83179
+    description: "Rust CLI argument parser"
+  
+  tokio:
+    repo: https://github.com/tokio-rs/tokio
+    commit: ee0dc9092665a1f13df573dc5e5124999d8e9035
+    loc: 174039
+    description: "Async runtime for Rust"
+
+python: {}
+javascript: {}
+java: {}
+go: {}
