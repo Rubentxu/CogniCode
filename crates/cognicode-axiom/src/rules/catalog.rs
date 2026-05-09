@@ -154,6 +154,7 @@ declare_rule! {
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
+        // Pre-compile regex once - pattern is constant
         let re = regex::Regex::new(r"(?i)\b(TODO|FIXME|HACK|XXX)\b:?\s*").unwrap();
         for (line_num, line) in ctx.source.lines().enumerate() {
             if re.is_match(line) {
