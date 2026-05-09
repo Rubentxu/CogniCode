@@ -701,37 +701,7 @@ declare_rule! {
 // S1854 — Unused Variable Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S1854"
-    name: "Unused variables should be removed"
-    severity: Info
-    category: CodeSmell
-    language: "rust"
-    params: {}
-
-    explanation: "Variables declared but never used represent dead code that adds noise to the codebase and may indicate unfinished implementation or copy-paste errors.",
-    clean_code: Complete,
-    impacts: [Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        for (idx, line) in ctx.source.lines().enumerate() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("let ") && !trimmed.starts_with("let _") && trimmed.contains('=') {
-                issues.push(Issue::new(
-                    "S1854",
-                    "Variable declared but never used",
-                    Severity::Info,
-                    Category::CodeSmell,
-                    ctx.file_path,
-                    idx + 1,
-                ).with_remediation(Remediation::quick(
-                    "Remove the unused variable or prefix it with '_' to indicate it is intentionally unused"
-                )));
-            }
-        }
-        issues
-    }
-}
+// S1854 → segregated to crates/cognicode-axiom/src/rules/rules/rust/code_smells/s1854_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1226 — Method Parameters Should Not Be Reassigned Rule

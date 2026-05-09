@@ -19,7 +19,7 @@ declare_rule! {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
-            if trimmed.starts_with("let ") && !trimmed.starts_with("let _") && trimmed.contains('=') {
+            if trimmed.starts_with("let ") && !trimmed.starts_with("let _ ") && !trimmed.starts_with("let _=") && trimmed.contains('=') {
                 issues.push(Issue::new(
                     "S1854",
                     "Variable declared but never used",
