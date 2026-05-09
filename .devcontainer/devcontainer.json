@@ -1,0 +1,53 @@
+{
+  "name": "CogniCode Sandbox",
+  "dockerFile": "../autoresearch/sandbox/Dockerfile",
+  "context": "..",
+
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/host-repo,type=bind,readonly"
+  ],
+
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=cognicode-sandbox-workspace,target=/workspace,type=volume",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "vadimcn.vscode-lldb",
+        "tamasfe.even-better-toml",
+        "ms-python.python",
+        "dbaeumer.vscode-eslint",
+        "charliermarsh.ruff"
+      ],
+      "settings": {
+        "rust-analyzer.cargo.buildScripts.enable": true,
+        "rust-analyzer.check.command": "clippy",
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer",
+          "editor.formatOnSave": true
+        }
+      }
+    }
+  },
+
+  "postCreateCommand": "echo 'Sandbox ready. Clone the repo: git clone /host-repo /workspace/CogniCode && cd /workspace/CogniCode'",
+
+  "remoteUser": "root",
+
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "installOhMyZsh": false,
+      "upgradePackages": true,
+      "username": "root"
+    }
+  },
+
+  "containerEnv": {
+    "CARGO_HOME": "/usr/local/cargo",
+    "RUSTUP_HOME": "/usr/local/rustup",
+    "PATH": "/usr/local/cargo/bin:${containerEnv:PATH}"
+  }
+}
