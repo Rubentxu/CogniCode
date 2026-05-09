@@ -35,7 +35,8 @@ from tools.llm_client import ModelConfig
 from tools.metric_tools import EvolutionLogger
 from tools.eval_runner import CorpusManager
 from tools.sonarqube_validator import validate_against_sonarqube, check_severity_consistency
-from multi_tool_eval import MultiToolEvaluator, LLMAnalyzer
+from tools.code_intelligence import CodeIntelligence
+from multi_tool_eval import LLMAnalyzer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -76,19 +77,20 @@ def evolve(language: str = "rust", max_iterations: Optional[int] = None,
     
     # Initialize
     corpus = CorpusManager()
-    evaluator = MultiToolEvaluator()
+    code_intel = CodeIntelligence()
     analyzer = LLMAnalyzer()
     evolution = EvolutionLogger(AUTORESEARCH_DIR / "evolution.tsv")
     
     session_iter = 0
     total_findings = 0
     total_improvements = 0
+    improvements = 0  # Per-iteration counter
     
     remaining = corpus.remaining(language)
     
     logger.info("="*70)
     logger.info("  COGNICODE SELF-EVOLVING RULES")
-    logger.info("  Pipeline: Multi-Tool Eval → LLM Gap Analysis → Improvement")
+    logger.info("  Pipeline: Ground Truth → Code Intel → LLM Analysis → Improvement")
     logger.info(f"  Language: {language}")
     logger.info(f"  Model: {ModelConfig.MODEL}")
     logger.info(f"  Repos per iteration: {repos_per_iteration}")
@@ -155,92 +157,101 @@ def evolve(language: str = "rust", max_iterations: Optional[int] = None,
         logger.info(f"{'─'*70}")
         
         try:
-            # ── Phase 1: Multi-tool evaluation ──
-            logger.info("Phase 1: Multi-tool evaluation...")
+            # ── Phase 1: Ground Truth (external tools only) ──
+            logger.info("Phase 1: Ground Truth (external tools)...")
+            
+            from tools.eval_runner import EvalRunner
+            runner = EvalRunner(corpus)
             
             if dry_run:
-                # Skip clone + tools, just pick repos
                 repos = corpus.pick_repos(language, repos_per_iteration)
                 logger.info(f"  DRY RUN — would evaluate: {[r['repo'] for r in repos]}")
-                results = {"repos": [r["repo"] for r in repos], "comparison": {}}
+                ground_truth = {}
             else:
-                results = evaluator.evaluate_with_all_tools(language, repos_per_iteration)
+                gt_results = runner.evaluate_batch(language, repos_per_iteration)
+                ground_truth = {"clippy": gt_results.get("findings", [])}
+                logger.info(f"  Clippy: {len(ground_truth.get('clippy', []))} findings")
             
-            # ── Phase 2: Metrics ──
-            logger.info("Phase 2: Computing metrics...")
+            # ── Phase 2: Code Intelligence (CogniCode as analysis tool) ──
+            logger.info("Phase 2: Code Intelligence (CogniCode for LLM context)...")
             
-            comparison = results.get("comparison", {})
-            total_tp = sum(s.get("tp", 0) for s in comparison.values())
-            total_fp = sum(s.get("fp", 0) for s in comparison.values())
-            total_fn = sum(s.get("fn", 0) for s in comparison.values())
-            
-            precision = total_tp / (total_tp + total_fp) if total_tp + total_fp > 0 else None
-            recall = total_tp / (total_tp + total_fn) if total_tp + total_fn > 0 else None
-            f1 = (2 * precision * recall / (precision + recall) 
-                  if precision and recall and precision + recall > 0 else None)
-            
-            total_findings += total_tp + total_fp + total_fn
-            
-            logger.info(f"  TP={total_tp} FP={total_fp} FN={total_fn}")
-            if precision: logger.info(f"  Precision: {precision:.1%}")
-            if recall: logger.info(f"  Recall: {recall:.1%}")
-            if f1: logger.info(f"  F1: {f1:.3f}")
-            
-            # ── Phase 3: LLM Gap Analysis ──
-            if not dry_run and comparison:
-                logger.info("Phase 3: LLM gap analysis...")
+            # CogniCode reads the code structure to help LLM understand
+            # NOT used for self-evaluation — only for providing context
+            code_context = {}
+            if not dry_run and ground_truth.get("clippy"):
+                # Group findings by rule category
+                from collections import defaultdict
+                by_rule = defaultdict(list)
+                for f in ground_truth["clippy"]:
+                    norm = runner._normalize_rule(f.get("rule", "")) if hasattr(runner, '_normalize_rule') else f.get("rule", "unknown")
+                    by_rule[norm].append(f)
                 
-                opportunities = analyzer.analyze_comparison(comparison, language)
+                # Build rich context for top affected rules
+                for rule_cat, findings in sorted(by_rule.items(), 
+                                                  key=lambda x: -len(x[1]))[:3]:
+                    # Find a repo dir to analyze
+                    repos = corpus.pick_repos(language, 1)
+                    if repos:
+                        repo_dir = runner._clone_repo(repos[0]["repo"]) if hasattr(runner, '_clone_repo') else None
+                        if repo_dir:
+                            ctx = code_intel.analyze_for_llm(repo_dir, rule_cat, findings)
+                            code_context[rule_cat] = ctx
+                            import shutil
+                            shutil.rmtree(repo_dir, ignore_errors=True)
                 
-                # Deep analysis of top gaps
-                for op in opportunities[:3]:
-                    gt_samples = []
-                    for tool, findings in results.get("ground_truth", {}).items():
-                        for f in findings:
-                            norm = evaluator._normalize_rule(f.get("rule", ""))
-                            if norm == op["rule_category"]:
-                                gt_samples.append(f)
-                                if len(gt_samples) >= 5:
-                                    break
-                        if len(gt_samples) >= 5:
-                            break
+                logger.info(f"  Context built for {len(code_context)} rule categories")
+            
+            # ── Phase 3: LLM Analysis with rich context ──
+            logger.info("Phase 3: LLM Gap Analysis...")
+            
+            improvements = 0
+            if not dry_run and code_context:
+                for rule_cat, ctx in code_context.items():
+                    prompt = code_intel.build_llm_prompt(
+                        rule_cat, ctx, {}
+                    )
                     
-                    if gt_samples:
-                        deep = analyzer.analyze_gap_with_llm(op, gt_samples)
-                        op["llm_analysis"] = deep
-                        
-                        # Log to evolution
-                        evolution.log_experiment(
-                            iteration=session_iter,
-                            rule_id=op["rule_category"],
-                            language=language,
-                            metrics_before={"fn": op["fn_count"], "tp": op["tp_count"]},
-                            metrics_after={
-                                "expected_delta_f1": deep.get("expected_f1_delta", 0),
-                                "improvement_type": deep.get("improvement_type", "?"),
-                            },
-                            decision="analyzed",
-                            description=f"LLM: {deep.get('improvement_type', '?')} — "
-                                       f"{deep.get('specific_change', '')[:120]}"
+                    try:
+                        llm = analyzer.llm
+                        response = llm.chat(
+                            system="You are a static analysis expert. Analyze code patterns and propose specific rule improvements.",
+                            messages=[{"role": "user", "content": prompt}],
+                            max_tokens=2000
                         )
-                        total_improvements += 1
-                
-                # Discover new rules
-                new_rules = analyzer.discover_new_rules(
-                    results.get("ground_truth", {}), comparison
-                )
-                if new_rules:
-                    logger.info(f"  🔍 New rule candidates: {len(new_rules)}")
-                    for nr in new_rules[:3]:
-                        logger.info(f"    {nr['rule_category']}: {nr['fn_count']} missed findings")
-            else:
-                opportunities = []
+                        
+                        # Parse JSON from LLM response
+                        import re as _re
+                        json_match = _re.search(r'\{[\s\S]*\}', response)
+                        if json_match:
+                            analysis = json.loads(json_match.group(0))
+                            
+                            logger.info(f"  {rule_cat}: {analysis.get('improvement_type', '?')} "
+                                       f"(ΔF1={analysis.get('expected_f1_delta', '?')})")
+                            
+                            evolution.log_experiment(
+                                iteration=session_iter,
+                                rule_id=rule_cat,
+                                language=language,
+                                metrics_before={"fn": ctx["ground_truth_count"]},
+                                metrics_after={"expected_delta_f1": analysis.get("expected_f1_delta", 0)},
+                                decision="analyzed",
+                                description=f"LLM: {analysis.get('improvement_type', '?')} — "
+                                           f"{analysis.get('suggested_fix', '')[:150]}"
+                            )
+                            improvements += 1
+                    except Exception as e:
+                        logger.warning(f"  LLM analysis failed for {rule_cat}: {e}")
             
             # ── Stats ──
             elapsed = time.time() - t0
+            gt_count = sum(len(v) for v in ground_truth.values()) if ground_truth else 0
+            total_findings += gt_count
+            total_improvements += improvements if 'improvements' in dir() else 0
+            
             logger.info(f"\n  ⏱ Iteration time: {elapsed:.0f}s")
-            logger.info(f"  📊 Total findings: {total_findings}")
-            logger.info(f"  🔧 Improvements logged: {total_improvements}")
+            logger.info(f"  📊 Ground truth findings: {gt_count}")
+            logger.info(f"  🔧 Improvements: {improvements if 'improvements' in dir() else 0}")
+            logger.info(f"  🧠 Code context built for: {len(code_context)} rule categories")
             
             # Cooldown
             if cooldown > 0 and not SHOULD_STOP:
