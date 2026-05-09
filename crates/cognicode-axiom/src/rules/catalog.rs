@@ -308,7 +308,7 @@ declare_rule! {
                                     let args_upper = args_text.to_uppercase();
                                     let format_arg_count = args_text.matches("{}").count() + args_text.matches("{:").count() - args_text.matches("{:}").count();
                                     for keyword in &sql_keywords {
-                                        if args_upper.contains(keyword) && format_arg_count > 0 {
+                                        if args_upper.contains(keyword) && format_arg_count > 1 {
                                             let pt = cap.node.start_position();
                                             issues.push(Issue::new(
                                                 "S5122",
