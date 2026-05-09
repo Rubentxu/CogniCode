@@ -306,7 +306,7 @@ declare_rule! {
                             && let Some(args_node) = m.captures.iter().find(|c| c.node.kind() == "token_tree")
                                 && let Ok(args_text) = args_node.node.utf8_text(ctx.source.as_bytes()) {
                                     let args_upper = args_text.to_uppercase();
-                                    let format_arg_count = args_text.matches("{}").count() + args_text.matches(r"\{:[^}]*\}").count();
+                                    let format_arg_count = args_text.matches("{}").count() + args_text.matches(r"\{:.*?\}").count();
                                     for keyword in &sql_keywords {
                                         if args_upper.contains(keyword) && format_arg_count > 0 {
                                             let pt = cap.node.start_position();
