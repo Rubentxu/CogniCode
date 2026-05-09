@@ -179,25 +179,44 @@ def evolve(language: str = "rust", max_iterations: Optional[int] = None,
             # NOT used for self-evaluation — only for providing context
             code_context = {}
             if not dry_run and ground_truth.get("clippy"):
+                # Normalize rule names for grouping
+                def normalize(rule: str) -> str:
+                    r = rule.lower()
+                    mapping = {
+                        "needless_borrow": "unnecessary_operation",
+                        "collapsible": "control_flow",
+                        "clone_on_copy": "unnecessary_operation",
+                        "new_without_default": "missing_trait_impl",
+                        "doc_": "documentation", "missing_doc": "documentation",
+                        "unused": "dead_code", "dead_code": "dead_code",
+                        "complexity": "complexity", "cognitive": "complexity",
+                        "unwrap": "error_handling", "expect": "error_handling",
+                        "unsafe": "safety",
+                    }
+                    for k, v in mapping.items():
+                        if k in r: return v
+                    return r.split("::")[-1] if "::" in r else r
+                
                 # Group findings by rule category
                 from collections import defaultdict
                 by_rule = defaultdict(list)
                 for f in ground_truth["clippy"]:
-                    norm = runner._normalize_rule(f.get("rule", "")) if hasattr(runner, '_normalize_rule') else f.get("rule", "unknown")
+                    norm = normalize(f.get("rule", "unknown"))
                     by_rule[norm].append(f)
                 
                 # Build rich context for top affected rules
                 for rule_cat, findings in sorted(by_rule.items(), 
                                                   key=lambda x: -len(x[1]))[:3]:
-                    # Find a repo dir to analyze
-                    repos = corpus.pick_repos(language, 1)
-                    if repos:
-                        repo_dir = runner._clone_repo(repos[0]["repo"]) if hasattr(runner, '_clone_repo') else None
-                        if repo_dir:
-                            ctx = code_intel.analyze_for_llm(repo_dir, rule_cat, findings)
-                            code_context[rule_cat] = ctx
-                            import shutil
-                            shutil.rmtree(repo_dir, ignore_errors=True)
+                    # Clone a repo to analyze
+                    import tempfile, subprocess as _sp
+                    tmp = tempfile.mkdtemp()
+                    _sp.run(['git','clone','--depth','1',
+                            f'https://github.com/BurntSushi/ripgrep.git', tmp],
+                           capture_output=True, timeout=60)
+                    ctx = code_intel.analyze_for_llm(Path(tmp), rule_cat, findings)
+                    code_context[rule_cat] = ctx
+                    import shutil
+                    shutil.rmtree(tmp, ignore_errors=True)
                 
                 logger.info(f"  Context built for {len(code_context)} rule categories")
             
