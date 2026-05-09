@@ -146,7 +146,7 @@ declare_rule! {
     category: CodeSmell
     language: "*"
     params: {
-    max_line_length: usize = 12
+    max_line_length: usize = 120
 }
 
     explanation: "TODO and FIXME tags indicate incomplete work that should be tracked and completed to avoid leaving technical debt or forgotten tasks in the codebase.",
