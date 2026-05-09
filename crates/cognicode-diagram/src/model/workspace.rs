@@ -1,7 +1,7 @@
 //! C4 Workspace — container for model + views + styles
 
 use serde::{Deserialize, Serialize};
-use super::c4_types::{C4Element, Person, SoftwareSystem};
+use super::c4_types::{Person, SoftwareSystem};
 use super::relationships::C4Relationship;
 
 /// C4 Workspace containing the full model and views

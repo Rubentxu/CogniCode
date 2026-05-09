@@ -1,7 +1,7 @@
 //! Mermaid diagram renderer for C4 and UML diagrams
 
 use crate::model::c4_types::{
-    CodeElement, CodeElementKind, Container, ContainerType, Person, SoftwareSystem, UmlRelationKind,
+    CodeElement, CodeElementKind, ContainerType, UmlRelationKind,
     UmlRelationship, Visibility,
 };
 use crate::model::workspace::C4Workspace;

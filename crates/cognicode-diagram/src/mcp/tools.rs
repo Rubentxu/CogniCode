@@ -42,7 +42,7 @@ fn extract_uml_relationships(
     elements: &[crate::model::c4_types::CodeElement],
 ) -> Vec<UmlRelationship> {
     use std::collections::HashMap;
-    use crate::model::c4_types::{ElementId, UmlRelationKind};
+    use crate::model::c4_types::ElementId;
 
     let element_ids: HashMap<String, ElementId> = elements
         .iter()

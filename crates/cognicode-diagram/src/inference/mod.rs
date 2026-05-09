@@ -3,5 +3,10 @@
 pub mod engine;
 pub mod uml_rules;
 pub mod code_inference;
+pub mod component_inference;
+pub mod container_inference;
+pub mod config_parsers;
 
 pub use engine::InferenceEngine;
+pub use component_inference::ComponentInference;
+pub use container_inference::ContainerInference;
