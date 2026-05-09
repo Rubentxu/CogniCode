@@ -911,7 +911,7 @@ declare_rule! {
                 }
             }
             // Check for assignment patterns where LHS matches a param name
-            let assign_query = "(let_declaration pattern: (identifier) @var)";
+            let assign_query = "(let_declaration pattern: (_) @var)";
             if let Ok(query2) = tree_sitter::Query::new(&ctx.language.to_ts_language(), assign_query) {
                 let mut cursor2 = tree_sitter::QueryCursor::new();
                 let mut matches2 = cursor2.matches(&query2, ctx.tree.root_node(), ctx.source.as_bytes());
