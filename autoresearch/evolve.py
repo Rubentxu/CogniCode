@@ -242,9 +242,9 @@ def evolve(n=None,rule=None,dry=False,cooldown=5,batch=3):
     # Early exit: LLM regex errors won't improve with more tiers
     err=ch.get("error","")
     if"no such group"in err or"Invalid"in err or"Expecting"in err:break
-   if not ch or not ch.get("success"):SESSION_DONE.add(rid);SESSION_FILE.write_text("\n".join(sorted(SESSION_DONE)));ev.log_experiment(t,rid,"rust",{"f1":f1b},{},"skipped",ch.get("error","?")if ch else"?");f+=1;continue
+   if not ch or not ch.get("success"):ev.log_experiment(t,rid,"rust",{"f1":f1b},{},"skipped",ch.get("error","?")if ch else"?");f+=1;continue
    m=evaluate(rid)
-   if"error"in m:git.checkout(str(CATALOG));SESSION_DONE.add(rid);SESSION_FILE.write_text("\n".join(sorted(SESSION_DONE)));ev.log_experiment(t,rid,"rust",{"f1":f1b},{},"failed",m["error"]);f+=1;continue
+   if"error"in m:git.checkout(str(CATALOG));ev.log_experiment(t,rid,"rust",{"f1":f1b},{},"failed",m["error"]);f+=1;continue
    dec,reason=decide(rid,base.get(rid,{}),m,ch)
    if dec=="keep":
     # Segregate BEFORE commit (atomic)
