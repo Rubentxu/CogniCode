@@ -2784,37 +2784,7 @@ declare_rule! {
 // S2092 — Cookie without Secure flag
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S2092"
-    name: "Cookies should set the Secure flag"
-    severity: Minor
-    category: SecurityHotspot
-    language: "rust"
-    params: {}
-
-    explanation: "Cookies without the Secure flag can be transmitted over unencrypted connections, allowing cookie theft through network interception.",
-    clean_code: Trustworthy,
-    impacts: [Security: Low, Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        for (idx, line) in ctx.source.lines().enumerate() {
-            let trimmed = line.trim();
-        if !trimmed.starts_with("//") && !trimmed.starts_with("/*") && !trimmed.starts_with("*/")
-            && (line.contains("Set-Cookie") || line.contains(".cookie("))
-            && !line.contains("Secure") && !line.contains("secure") {
-                    issues.push(Issue::new(
-                        "S2092",
-                        "Cookie without Secure flag",
-                        Severity::Minor,
-                        Category::SecurityHotspot,
-                        ctx.file_path,
-                        idx + 1,
-                    ));
-                }
-        }
-        issues
-    }
-}
+// S2092 → segregated to crates/cognicode-axiom/src/rules/rules/rust/security/s2092_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S2612 — Weak file permissions (chmod 777, 666)

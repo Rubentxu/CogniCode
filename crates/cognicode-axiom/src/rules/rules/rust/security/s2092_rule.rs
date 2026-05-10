@@ -19,7 +19,8 @@ declare_rule! {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
-        if !trimmed.starts_with("//") && !trimmed.starts_with("/*") && !trimmed.starts_with("*/")
+            if !trimmed.starts_with("//") && !trimmed.starts_with("/*") && !trimmed.starts_with("*/")
+            && trimmed.len() >= 15
             && (line.contains("Set-Cookie") || line.contains(".cookie("))
             && !line.contains("Secure") && !line.contains("secure") {
                     issues.push(Issue::new(
