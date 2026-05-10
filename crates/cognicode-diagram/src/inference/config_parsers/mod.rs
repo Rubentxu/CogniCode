@@ -3,6 +3,8 @@
 //! Auto-detects the build system and delegates to the appropriate parser.
 
 pub mod cargo;
+pub mod nodejs;
+pub mod python;
 
 pub use cargo::{CargoParser, CrateInfo, WorkspaceInfo};
 
@@ -78,3 +80,42 @@ pub fn parse_project(project_dir: &Path) -> anyhow::Result<Option<WorkspaceInfo>
 
 // Re-export Container and ElementId for use in this module
 use crate::model::c4_types::{Container, ElementId};
+
+/// Auto-detect and parse containers from any supported project
+///
+/// Detects the build system (Cargo, Node.js, Python) and parses
+/// the appropriate configuration to infer containers.
+pub fn detect_and_parse(project_dir: &Path) -> anyhow::Result<Vec<Container>> {
+    let mut containers = Vec::new();
+
+    // Try Cargo workspace/crate
+    if let Ok(Some(workspace)) = parse_project(project_dir) {
+        containers.extend(workspace.containers);
+    }
+
+    // Try Node.js package.json
+    let package_json = project_dir.join("package.json");
+    if package_json.exists() {
+        if let Some(c) = nodejs::NodeJsParser::parse_package_json(&package_json)? {
+            containers.push(c);
+        }
+    }
+
+    // Try Python pyproject.toml
+    let pyproject = project_dir.join("pyproject.toml");
+    if pyproject.exists() {
+        if let Some(c) = python::PythonParser::parse_pyproject(&pyproject)? {
+            containers.push(c);
+        }
+    }
+
+    // Try Python setup.py (legacy)
+    let setup_py = project_dir.join("setup.py");
+    if setup_py.exists() {
+        if let Some(c) = python::PythonParser::parse_setup_py(&setup_py)? {
+            containers.push(c);
+        }
+    }
+
+    Ok(containers)
+}

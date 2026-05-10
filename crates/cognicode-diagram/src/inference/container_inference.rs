@@ -43,7 +43,7 @@ impl ContainerInference {
     }
 
     /// Enrich containers with information from the call graph
-    fn enrich_containers_with_callgraph(&self, containers: &mut [Container], call_graph: &CallGraph) {
+    pub fn enrich_containers_with_callgraph(&self, containers: &mut [Container], call_graph: &CallGraph) {
         // First pass: build mapping of container_id -> (prefix, original_index)
         let container_prefixes: Vec<(String, usize, String)> = containers
             .iter()

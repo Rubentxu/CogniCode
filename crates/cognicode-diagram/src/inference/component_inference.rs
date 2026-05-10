@@ -62,13 +62,13 @@ impl ComponentInference {
             let description = format!("{} module", name);
 
             // Collect code elements for this component
-            let mut code_element_count = 0;
+            let mut _code_element_count = 0;
             let mut technology = String::new();
 
             for symbol_id in &symbol_ids {
                 if let Some(symbol) = call_graph.get_symbol(symbol_id) {
                     if symbol.is_type_definition() {
-                        code_element_count += 1;
+                        _code_element_count += 1;
                     }
                     // Detect technology from symbol kind
                     if technology.is_empty() {

@@ -53,7 +53,6 @@ impl CargoParser {
             .to_string();
 
         let mut containers = Vec::new();
-        let mut relationships = Vec::new();
 
         // Parse workspace members
         if let Some(members) = value
@@ -86,7 +85,7 @@ impl CargoParser {
         }
 
         // Infer relationships from dependencies
-        relationships = Self::infer_workspace_relationships(&containers);
+        let relationships = Self::infer_workspace_relationships(&containers);
 
         Ok(WorkspaceInfo {
             name,

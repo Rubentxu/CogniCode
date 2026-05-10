@@ -17,6 +17,7 @@ petgraph = { workspace = true }
 toml = "0.8"
 serde = { workspace = true }
 serde_json = { workspace = true }
+regex = { workspace = true }
 
 # Async
 tokio = { workspace = true }

@@ -10,3 +10,4 @@ pub mod config_parsers;
 pub use engine::InferenceEngine;
 pub use component_inference::ComponentInference;
 pub use container_inference::ContainerInference;
+pub use config_parsers::detect_and_parse;

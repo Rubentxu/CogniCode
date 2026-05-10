@@ -20,6 +20,7 @@ use super::uml_rules::UmlRuleEngine;
 pub struct InferenceEngine<'a> {
     call_graph: &'a CallGraph,
     code_inference: CodeInference,
+    #[allow(dead_code)]
     uml_rules: UmlRuleEngine,
 }
 
