@@ -18,7 +18,7 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let mut test_names: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
-        let re = regex::Regex::new(r"fn\s+(test_\w+|\w+_test)\s*\(").unwrap();
+        let re = regex::Regex::new(r"fn\s+(test_[a-zA-Z0-9]+|[a-zA-Z0-9]+_test)\s*\(").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
             if let Some(cap) = re.captures(line) {
                 let name = cap.get(1).unwrap().as_str().to_string();
