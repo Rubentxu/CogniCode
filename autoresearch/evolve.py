@@ -1,295 +1,664 @@
 #!/usr/bin/env python3
-"""KARPATHY AUTONOMOUS — Self-healing batch improvement loop
-3-tier improvement: threshold→regex→logic. Falls back to metadata.
-Auto-adapts keep rate. Never stops."""
-import sys,os,re,signal,time,json,argparse,subprocess,logging
+"""
+Karpathy Autonomous Rule Evolution — Clean Implementation.
+
+Per batch:
+  1. ANALYZER  → Pick N rules (SonarQube mismatches + worst F1)
+  2. IMPROVER  → LLM proposes change (code → metadata → skip)
+  3. EVALUATOR → Compilation + targeted tests
+  4. DECIDER   → Keep (commit + segregate) or Discard (revert)
+
+Usage:
+  python autoresearch/evolve.py              # Run forever
+  python autoresearch/evolve.py -n 10 -b 5   # 10 batches, 5 rules each
+  python autoresearch/evolve.py --dry-run     # LLM only, no changes
+"""
+
+import sys
+import os
+import re
+import signal
+import time
+import json
+import argparse
+import subprocess
+import logging
 from pathlib import Path
 from collections import defaultdict
-sys.path.insert(0,str(Path(__file__).parent))
-from tools.llm_client import LLMClient,ModelConfig
-from tools.metric_tools import EvolutionLogger,BaselineStore
-from tools.rust_tools import CargoTool,GitTool
-logging.basicConfig(level=logging.INFO,format="%(asctime)s [%(levelname)s] %(message)s",handlers=[logging.StreamHandler(),logging.FileHandler("autoresearch/run.log")])
-logger=logging.getLogger(__name__)
-REPO=Path(__file__).parent.parent
-CATALOG=REPO/"crates/cognicode-axiom/src/rules/catalog.rs"
-CATALOG_REL="crates/cognicode-axiom/src/rules/catalog.rs"
-STOP=False
-def _handle_stop(sig,frame):
+from datetime import datetime
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from tools.llm_client import LLMClient, ModelConfig
+from tools.metric_tools import EvolutionLogger, BaselineStore
+from tools.rust_tools import CargoTool, GitTool
+
+log = logging.getLogger(__name__)
+
+# ── Paths ──────────────────────────────────────────────────────────
+ROOT = Path(__file__).parent.parent
+CATALOG = ROOT / "crates" / "cognicode-axiom" / "src" / "rules" / "catalog.rs"
+RULES_DIR = ROOT / "crates" / "cognicode-axiom" / "src" / "rules" / "rules"
+SESSION_FILE = Path(__file__).parent / "session_done.txt"
+
+# ── State ──────────────────────────────────────────────────────────
+STOP = False
+SESSION_DONE = set()
+FAILURE_COUNT = defaultdict(int)  # rule_id → consecutive failures
+
+# ── SonarQube mismatches (priority targets) ────────────────────────
+SQ_TARGETS = {
+    "S1313", "S134", "S107", "S1481", "S1141", "S100",
+    "S1871", "S4144", "S2612", "S2092", "S3330", "S5042",
+    "S2589", "S1186", "S2259", "S1854", "S1135", "S1226",
+}
+
+# ── Signals ────────────────────────────────────────────────────────
+def _handle_stop(sig, frame):
     global STOP
-    STOP=True
-    logger.info("\n⏹ STOP requested — finishing current batch...")
-    # Force exit on second signal
+    STOP = True
+    log.info("\n⏹ STOP — finishing batch...")
     signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
-signal.signal(signal.SIGINT,_handle_stop)
-signal.signal(signal.SIGTERM,_handle_stop)
-SQ={"S1313","S134","S107","S1481","S1141","S100","S1871","S4144","S2612","S2092","S3330","S5042","S2589","S1186","S2259","S1854","S1135","S1226"}
-SESSION_FILE=Path(__file__).parent/"session_done.txt"
-SESSION_DONE=set()
-def _load_session():
+
+signal.signal(signal.SIGINT, _handle_stop)
+signal.signal(signal.SIGTERM, _handle_stop)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# SESSION TRACKING
+# ═══════════════════════════════════════════════════════════════════
+
+def load_session():
     global SESSION_DONE
     if SESSION_FILE.exists():
-        SESSION_DONE=set(SESSION_FILE.read_text().strip().split("\n"))
-_load_session()
-TOTAL_RULES=len(re.findall(r'id:\s*"([^"]+)"',open(str(CATALOG)).read()))
+        SESSION_DONE = set(SESSION_FILE.read_text().strip().split("\n"))
+        SESSION_DONE.discard("")  # Remove empty string if file is empty
 
-def analyze(history,force=None,batch=3,keep_rate=0):
- if force:return[force]
- valid_rules=set(re.findall(r'id:\s*"(S\d+)"',CATALOG.read_text()))
- # Filter out already-processed rules this session
- recent={h.get("rule_id")for h in history[-batch*3:]};rf=defaultdict(list)
- for h in history:
-  try:
-   rid=h.get("rule_id","")
-   if re.match(r'^S\d+$',rid):rf[rid].append(float(h.get("f1_after",0)or 0))
-  except:pass
- avg={r:sum(s)/len(s)for r,s in rf.items()if s}
- sel=[]
- for r in SQ:
-  if r in valid_rules and r not in recent and r not in sel and r not in SESSION_DONE:sel.append(r)
-  if len(sel)>=max(1,batch//2):break
- cand=sorted(((r,a)for r,a in avg.items()if r not in recent and r not in sel and r not in SESSION_DONE),key=lambda x:x[1])
- for r,_ in cand:
-  if r not in sel:sel.append(r)
-  if len(sel)>=batch:break
- for r in valid_rules:
-  if r not in sel and r not in recent and r not in SESSION_DONE:sel.append(r)
-  if len(sel)>=batch:break
- return sel[:batch]
+def save_session():
+    SESSION_FILE.write_text("\n".join(sorted(SESSION_DONE)))
+
+def mark_done(rule_id):
+    SESSION_DONE.add(rule_id)
+    save_session()
+
+def is_done(rule_id):
+    return rule_id in SESSION_DONE
+
+def is_retryable(rule_id):
+    """Rules with <3 failures can be retried."""
+    return FAILURE_COUNT.get(rule_id, 0) < 3
+
+def record_failure(rule_id):
+    FAILURE_COUNT[rule_id] = FAILURE_COUNT.get(rule_id, 0) + 1
+
+def progress():
+    total = len(re.findall(r'id:\s*"(S\d+)"', CATALOG.read_text()))
+    done = len(SESSION_DONE)
+    pct = round(done / max(1, total) * 100, 1)
+    return done, total, pct
 
 
-def _segregate(rule_id):
+# ═══════════════════════════════════════════════════════════════════
+# 1. ANALYZER
+# ═══════════════════════════════════════════════════════════════════
+
+def analyzer(history, force=None, batch=3):
+    """Pick N rules: 2 SonarQube targets + worst F1 rules."""
+    if force:
+        return [force]
+
+    # Read all valid rules from catalog
+    all_rules = re.findall(r'id:\s*"(S\d+)"', CATALOG.read_text())
+    if not all_rules:
+        log.error("catalog.rs corrupted — no rules found")
+        return []
+
+    valid = set(all_rules)
+    
+    # Recent rules (last batch*3) — cooldown
+    recent = set()
+    for h in history[-batch * 3:]:
+        rid = h.get("rule_id", "")
+        if rid.startswith("S"):
+            recent.add(rid)
+
+    # Build F1 scores from history
+    rule_f1 = defaultdict(list)
+    for h in history:
+        rid = h.get("rule_id", "")
+        if re.match(r'^S\d+$', rid):
+            try:
+                rule_f1[rid].append(float(h.get("f1_after", 0) or 0))
+            except (ValueError, TypeError):
+                pass
+
+    avg_f1 = {r: sum(s) / len(s) for r, s in rule_f1.items() if s}
+
+    selected = []
+
+    # Priority 1: SonarQube targets (up to 2)
+    for r in SQ_TARGETS:
+        if r in valid and r not in recent and r not in selected:
+            if is_done(r) and not is_retryable(r):
+                continue  # Skip permanently done
+            if is_done(r) and is_retryable(r):
+                # Retryable — allow
+                pass
+            selected.append(r)
+        if len(selected) >= max(1, batch // 2):
+            break
+
+    # Priority 2: Lowest F1
+    candidates = sorted(
+        ((r, a) for r, a in avg_f1.items() if r not in recent and r not in selected and r in valid),
+        key=lambda x: x[1]
+    )
+    for r, _ in candidates:
+        if is_done(r) and not is_retryable(r):
+            continue
+        selected.append(r)
+        if len(selected) >= batch:
+            break
+
+    # Priority 3: Any remaining valid rule
+    for r in sorted(valid):
+        if r not in selected and r not in recent:
+            if is_done(r) and not is_retryable(r):
+                continue
+            selected.append(r)
+        if len(selected) >= batch:
+            break
+
+    return selected[:batch]
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 2. IMPROVER
+# ═══════════════════════════════════════════════════════════════════
+
+def improver(rule_id):
+    """LLM proposes change. Returns {success, type, description, confidence, level}."""
+    llm = LLMClient()
+    content = CATALOG.read_text()
+
+    # Find rule block
+    pos = content.find(f'id: "{rule_id}"')
+    if pos == -1:
+        return {"success": False, "error": "already segregated"}
+
+    block_start = content.rfind("declare_rule!", 0, pos)
+    brace_start = content.find("{", block_start)
+    depth = 0
+    for i in range(brace_start, len(content)):
+        if content[i] == "{":
+            depth += 1
+        elif content[i] == "}":
+            depth -= 1
+            if depth == 0:
+                rule_block = content[block_start:i + 1]
+                break
+
+    # Ask LLM
+    system = (
+        "You edit Rust static analysis rules. Propose ONE safe change to the "
+        "detection logic. Prefer threshold adjustments (safest) over regex changes. "
+        "Return ONLY valid JSON: "
+        '{"improvement_type":"threshold_tune|regex_tighten|logic_refactor|metadata",'
+        '"description":"what and why","old_code":"EXACT original code",'
+        '"new_code":"EXACT replacement code","confidence":0.8}'
+    )
+
+    try:
+        resp = llm.chat(
+            system,
+            [{"role": "user", "content": f"Rule {rule_id}:\n```rust\n{rule_block[:3000]}\n```\nPropose ONE safe change."}],
+            max_tokens=1500
+        )
+        m = re.search(r'\{[\s\S]*\}', resp)
+        if not m:
+            return {"success": False, "error": "no JSON in response"}
+
+        change = json.loads(m.group(0))
+        imp_type = change.get("improvement_type", "none")
+        if imp_type == "none":
+            return {"success": False, "error": "no improvement needed"}
+
+        old_code = change.get("old_code", "")
+        new_code = change.get("new_code", "")
+        description = change.get("description", "")
+        confidence = change.get("confidence", 0.5)
+
+        if not old_code or not new_code or old_code == new_code:
+            return {"success": False, "error": "empty change"}
+
+        # Apply change
+        if old_code in content:
+            new_content = content.replace(old_code, new_code, 1)
+        else:
+            # Fuzzy match: strip whitespace
+            found = False
+            for line in content.split("\n"):
+                if line.strip() == old_code.strip():
+                    new_content = content.replace(line, new_code.strip(), 1)
+                    found = True
+                    break
+            if not found:
+                # Fallback: update explanation
+                return _improve_metadata(rule_id, description)
+
+        CATALOG.write_text(new_content)
+
+        # Verify compilation
+        cargo = CargoTool()
+        ok, err = cargo.check(package="cognicode-axiom")
+        if not ok:
+            CATALOG.write_text(content)  # Revert
+            # Fallback: update explanation instead
+            return _improve_metadata(rule_id, description)
+
+        return {
+            "success": True,
+            "type": imp_type,
+            "description": description,
+            "confidence": confidence,
+            "level": "code",
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def _improve_metadata(rule_id, description):
+    """Safe fallback: update explanation field."""
+    content = CATALOG.read_text()
+    pattern = re.compile(
+        rf'(id:\s*"{rule_id}".*?explanation:\s*)"(?:[^"\\]|\\.)*"',
+        re.DOTALL
+    )
+    match = pattern.search(content)
+    if match:
+        new_expl = f"[AUTORESEARCH] {description[:150]}"
+        new_content = content[:match.start(2)] + f'"{new_expl}"' + content[match.end(2):]
+        CATALOG.write_text(new_content)
+        return {"success": True, "type": "metadata", "description": description, "confidence": 0.3, "level": "metadata"}
+    return {"success": False, "error": "no explanation field"}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 3. EVALUATOR
+# ═══════════════════════════════════════════════════════════════════
+
+def evaluator(rule_id):
+    """Fast compilation check + targeted tests."""
+    # Compilation
+    r = subprocess.run(
+        ["cargo", "check", "-p", "cognicode-axiom"],
+        capture_output=True, text=True, timeout=120, cwd=str(ROOT)
+    )
+    if r.returncode != 0 and ("error[" in r.stderr or "error:" in r.stderr):
+        return {"error": "compilation"}
+
+    # Targeted tests (filter by rule_id)
+    r = subprocess.run(
+        ["cargo", "test", "-p", "cognicode-axiom", "--lib", "--", rule_id.lower()],
+        capture_output=True, text=True, timeout=60, cwd=str(ROOT)
+    )
+    combined = r.stdout + r.stderr
+    if "test result: ok" not in combined:
+        # Fallback: run all tests
+        r = subprocess.run(
+            ["cargo", "test", "-p", "cognicode-axiom", "--lib"],
+            capture_output=True, text=True, timeout=120, cwd=str(ROOT)
+        )
+        combined = r.stdout + r.stderr
+        if "test result: ok" not in combined:
+            return {"error": "tests"}
+
+    passed = int(re.search(r"(\d+) passed", combined).group(1)) if re.search(r"(\d+) passed", combined) else 0
+    return {"tests_passed": passed}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 4. DECIDER
+# ═══════════════════════════════════════════════════════════════════
+
+def decider(rule_id, baseline, current, change):
+    """Decide keep/discard based on compilation success and confidence."""
+    tests_ok = current.get("tests_passed", 0) > 0
+    confidence = change.get("confidence", 0)
+    level = change.get("level", "code")
+
+    if tests_ok and level == "code" and confidence > 0.70:
+        return "keep", f"code conf={int(confidence*100)}%"
+    if tests_ok and level == "metadata":
+        return "keep", "metadata update"
+    return "discard", "no gain"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# COMMIT MESSAGE
+# ═══════════════════════════════════════════════════════════════════
+
+def commit_msg(rule_id, change):
+    """Generate conventional commit via LLM."""
+    try:
+        llm = LLMClient()
+        resp = llm.chat(
+            "Conventional commit. One line. Format: type(scope): description.",
+            [{"role": "user", "content": f"Rule:{rule_id} Type:{change.get('type','?')} Desc:{change.get('description','')[:80]}"}],
+            max_tokens=200, temperature=0.1
+        )
+        msg = resp.strip().strip('"').split("\n")[0][:100]
+        msg = msg.replace("`", "").replace("#", "").strip()
+        return f"{msg} [auto]" if ":" in msg else f"refactor({rule_id}): improve [auto]"
+    except:
+        return f"refactor({rule_id}): improve [auto]"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# SEGREGATION
+# ═══════════════════════════════════════════════════════════════════
+
+def segregate(rule_id):
     """Extract rule from catalog.rs to its own file (SOLID/SRP)."""
-    content=CATALOG.read_text()
-    p=content.find('id: "'+rule_id+'"')
-    if p==-1:return False
-    bs=content.rfind("declare_rule!",0,p);bc=content.find("{",bs)
-    d=0
-    for i in range(bc,len(content)):
-        if content[i]=="{":d+=1
-        elif content[i]=="}":
-            d-=1
-            if d==0:block=content[bs:i+1];break
-    # Determine language and category
-    lang="rust"
-    if "SecurityHotspot"in block or"VULNERABILITY"in block:cat="security"
-    elif"Bug"in block or"Reliability"in block:cat="bugs"
-    else:cat="code_smells"
+    content = CATALOG.read_text()
+    pos = content.find(f'id: "{rule_id}"')
+    if pos == -1:
+        return
+
+    # Find declare_rule! block
+    bs = content.rfind("declare_rule!", 0, pos)
+    bc = content.find("{", bs)
+    depth = 0
+    for i in range(bc, len(content)):
+        if content[i] == "{":
+            depth += 1
+        elif content[i] == "}":
+            depth -= 1
+            if depth == 0:
+                block = content[bs:i + 1]
+                break
+
+    # Determine category
+    if "Security" in block or "VULNERABILITY" in block:
+        cat = "security"
+    elif "Bug" in block or "Reliability" in block:
+        cat = "bugs"
+    else:
+        cat = "code_smells"
+
     # Create file
-    rules_dir=REPO/"crates/cognicode-axiom/src/rules/rules"/lang/cat
-    rules_dir.mkdir(parents=True,exist_ok=True)
-    fname=rule_id.lower()+"_rule.rs"
-    fpath=rules_dir/fname
-    # Build new file content
-    fc="""//! """+rule_id+""" — Auto-segregated by Karpathy workflow (SOLID/SRP)
-use crate::{Severity,Category,Issue,Remediation,Rule,RuleContext,RuleEntry};
-use crate::rules::{CleanCodeAttribute,SoftwareQuality,SoftwareQualityImpact,ImpactSeverity};
+    target_dir = RULES_DIR / "rust" / cat
+    target_dir.mkdir(parents=True, exist_ok=True)
+    fname = f"{rule_id.lower()}_rule.rs"
+    fpath = target_dir / fname
+
+    # Build file content
+    fc = f"""//! {rule_id} — Auto-segregated by Karpathy workflow (SOLID/SRP)
+use crate::{{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry}};
+use crate::rules::{{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity}};
 use cognicode_macros::declare_rule;
 use inventory::submit;
 
-"""+block+"""
+{block}
 
 #[cfg(test)]
-mod tests {
+mod tests {{
     use super::*;
+
     #[test]
-    fn test_"""+rule_id.lower()+"""_registered() {
-        let rule="""+rule_id+"""Rule::new();
-        assert_eq!(rule.id(),""""+rule_id+"""");
-        assert!(rule.name().len()>0);
-    }
-}
+    fn test_{rule_id.lower()}_registered() {{
+        let rule = {rule_id}Rule::new();
+        assert_eq!(rule.id(), "{rule_id}");
+        assert!(rule.name().len() > 0);
+    }}
+}}
 """
     fpath.write_text(fc)
+
     # Update mod.rs
-    modf=rules_dir/"mod.rs"
-    modc=modf.read_text()if modf.exists()else""
-    modline="pub mod "+fname.replace(".rs","")+";"
-    if modline not in modc:
-        modf.write_text(modc+"\n"+modline+"\n")
+    mod_file = target_dir / "mod.rs"
+    mod_content = mod_file.read_text() if mod_file.exists() else ""
+    mod_line = f"pub mod {fname.replace('.rs', '')};"
+    if mod_line not in mod_content:
+        mod_file.write_text(mod_content + f"\n{mod_line}\n")
+
     # Replace in catalog.rs
-    nc=content.replace(block,"// "+rule_id+" → segregated to "+str(fpath.relative_to(REPO))+" (SOLID)")
-    CATALOG.write_text(nc)
-    logger.info("   📁 Segregated: "+rule_id+" → "+str(fpath.relative_to(REPO)))
-    return True
+    new_content = content.replace(
+        block,
+        f"// {rule_id} → segregated to {fpath.relative_to(ROOT)} (SOLID)"
+    )
+    CATALOG.write_text(new_content)
 
-TIERS=["threshold_tune","regex_tighten","logic_refactor"]
-def improve(rule_id,tier=0):
- """Try improvement at current tier. If fails, fall back."""
- llm=LLMClient();c=CATALOG.read_text()
- p=c.find('id: "'+rule_id+'"')
- if p==-1:return{"success":False,"error":"not found"}
- bs=c.rfind("declare_rule!",0,p);bc=c.find("{",bs)
- d=0
- for i in range(bc,len(c)):
-  if c[i]=="{":d+=1
-  elif c[i]=="}":
-   d-=1
-   if d==0:block=c[bs:i+1];break
- t=TIERS[min(tier,len(TIERS)-1)]
- sys=f"""You edit Rust code analysis rules. Propose ONE safe change.
+    log.info(f"   📁 Segregated: {rule_id} → {fpath.relative_to(ROOT)}")
 
-PREFER: {t} (safest change type)
-AVOID: logic_refactor (risky, may break compilation)
 
-If you cannot make a safe code change, return improvement_type:"metadata"
-and update the explanation field with useful context for future improvements.
+# ═══════════════════════════════════════════════════════════════════
+# MAIN LOOP
+# ═══════════════════════════════════════════════════════════════════
 
-Return JSON:
-{{"improvement_type":"{t}|metadata","description":"what and why",
-"old_code":"EXACT original code","new_code":"EXACT replacement","confidence":0.8}}"""
- try:
-  resp=llm.chat(sys,[{"role":"user","content":"Rule "+rule_id+":\n```rust\n"+block[:3000]+"\n```\nPropose ONE safe change (prefer {t})."}])
-  m=re.search(r'\{[\s\S]*\}',resp)
-  if not m:return{"success":False,"error":"no JSON"}
-  ch=json.loads(m.group(0))
-  return _apply_change(rule_id,ch,c)
- except Exception as e:return{"success":False,"error":str(e)}
+def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batch_size=3):
+    """Karpathy autonomous improvement loop."""
+    global SESSION_DONE
 
-def _apply_change(rule_id,ch,content):
- itype=ch.get("improvement_type","metadata")
- if itype=="none":return{"success":False,"error":"no improvement"}
- old,new=ch.get("old_code",""),ch.get("new_code","")
+    evolution = EvolutionLogger(Path(__file__).parent / "evolution.tsv")
+    baseline_store = BaselineStore(Path(__file__).parent / "baseline")
+    baseline = baseline_store.load()
+    git = GitTool()
 
- # Level 1: Code change (regex/threshold/logic)
- if itype!="metadata" and old and new and old!=new:
-  if old in content:nc=content.replace(old,new,1)
-  else:
-   for l in content.split("\n"):
-    if l.strip()==old.strip():nc=content.replace(l,new.strip(),1);break
-   else:
-    # Fallback: try metadata update
-    return _update_metadata(rule_id,ch,content)
-  CATALOG.write_text(nc)
-  cargo=CargoTool();ok,_=cargo.check(package="cognicode-axiom")
-  if ok:return{"success":True,"type":itype,"description":ch.get("description",""),"confidence":ch.get("confidence",.5),"level":"code"}
-  CATALOG.write_text(content) # Revert
-  # Fallback: metadata update
-  logger.info("   code change failed, falling back to metadata")
+    load_session()
+    history = evolution.read_history()
 
- # Level 2: Metadata update (always safe)
- return _update_metadata(rule_id,ch,content)
+    session = keeps = discards = fails = 0
+    total_alltime = len(history)
 
-def _update_metadata(rule_id,ch,content):
- """Update explanation field — always compiles."""
- desc=ch.get("description","")[:200].replace('"',"'")
- exp=re.compile(r'(id:\s*"'+rule_id+r'".*?explanation:\s*)"(?:[^"\\]|\\.)*"',re.DOTALL)
- em=exp.search(content)
- if em:
-  nc=content[:em.start(2)]+'"[AUTORESEARCH]'+(" "+desc if desc else"")+'"'+content[em.end(2):]
-  CATALOG.write_text(nc)
-  return{"success":True,"type":"metadata","description":desc,"confidence":.3,"level":"metadata"}
- return{"success":False,"error":"no explanation found"}
+    done, total_rules, pct = progress()
 
-def evaluate(rule_id):
- r=subprocess.run(["cargo","check","-p","cognicode-axiom"],capture_output=True,text=True,timeout=120,cwd=str(REPO))
- if r.returncode!=0 and("error["in r.stderr or"error:"in r.stderr):return{"error":"compilation"}
- # Fast path: compilation check (tests run periodically in self-check)
- p=283
- return{"tests_passed":p,"sq":0.5}
+    # ── Startup banner ──
+    log.info("┌" + "─" * 60)
+    log.info("│ 🧬 Self-Evolving Rules — Karpathy Autonomous Loop")
+    log.info(f"│ 📋 {done}/{total_rules} rules ({pct}%) | Model: {ModelConfig.MODEL}")
+    log.info(f"│ 🎯 {len(SQ_TARGETS)} SonarQube targets | {batch_size} rules/batch")
+    log.info("│ 🔧 3-tier: code change → metadata fallback → skip")
+    log.info("└" + "─" * 60)
 
-def decide(rule_id,bl,cur,change):
- conf=change.get("confidence",0);tests=cur.get("tests_passed",0)>0
- level=change.get("level","code")
- if tests and level=="code" and conf>.70:return("keep","code conf="+str(int(conf*100))+"%")
- if tests and level=="metadata":return("keep","metadata update")
- return("discard","no gain")
+    while not STOP:
+        if max_iterations and session >= max_iterations:
+            break
 
-def cmsg(rule_id,change,metrics):
- try:
-  llm=LLMClient()
-  resp=llm.chat("Generate a ONE LINE conventional commit message. Format: type(scope): description. NO markdown, NO newlines, NO explanations. Max 72 chars.",[{"role":"user","content":"Rule:"+rule_id+" Type:"+change.get("type","?")}],max_tokens=200,temperature=0.1)
-  msg=resp.strip().strip('"').split("\n")[0][:100]
-  msg=msg.replace(chr(96),"").replace("#","").strip()
-  return msg+" [auto]"if":"in msg else"refactor("+rule_id+"): improve [auto]"
- except:return"refactor("+rule_id+"): improve [auto]"
+        session += 1
+        t0 = time.time()
 
-def evolve(n=None,rule=None,dry=False,cooldown=5,batch=3):
- ev=EvolutionLogger(Path(__file__).parent/"evolution.tsv")
- bl=BaselineStore(Path(__file__).parent/"baseline")
- base=bl.load();git=GitTool();h=ev.read_history()
- s=k=d=f=total=0;t=len(h)
- logger.info("KARPATHY AUTONOMOUS: "+str(batch)+"/iter | "+str(ModelConfig.MODEL)+" | 3-tier+metadata fallback")
- logger.info("┌"+"─"*60)
- logger.info("│ 🧬 Self-Evolving Rules — Karpathy Autonomous Loop")
- logger.info("│ 🎯 Targets: SonarQube mismatches + worst F1 rules")
- logger.info("│ 🔧 3-tier: code change → metadata fallback → skip")
- logger.info("│ 📋 Progress saved to session_done.txt")
- logger.info("└"+"─"*60)
- while not STOP:
-  if n and s>=n:break
-  s+=1;t0=time.time();keep_rate=0 if k+d==0 else k/(k+d)
-  _load_session()
-  logger.debug("SESSION_DONE: "+str(len(SESSION_DONE))+" rules")
-  targets=analyze(h,rule,batch,keep_rate)
-  logger.info("BATCH "+str(s)+": "+str(targets))
-  if dry:
-   for rid in targets:t+=1;ev.log_experiment(t,rid,"rust",{},{},"dry_run","")
-   time.sleep(1);continue
-  for rid in targets:
-   if not rid.startswith("S"):f+=1;continue
-   # Skip already segregated rules
-   if 'id: "'+rid+'"' not in CATALOG.read_text():
-    logger.debug("  "+rid+" already segregated, skipping")
-    SESSION_DONE.add(rid);SESSION_FILE.write_text("\n".join(sorted(SESSION_DONE)))
-    f+=1;continue
-   t+=1;f1b=base.get(rid,{}).get("f1",0)or 0
-   # Try all 3 tiers
-   ch=None
-   for tier in range(3):
-    ch=improve(rid,tier)
-    if ch.get("success") and ch.get("level")=="code":break
-    # Early exit: LLM regex errors won't improve with more tiers
-    err=ch.get("error","")
-    if"no such group"in err or"Invalid"in err or"Expecting"in err:break
-   if not ch or not ch.get("success"):ev.log_experiment(t,rid,"rust",{"f1":f1b},{},"skipped",ch.get("error","?")if ch else"?");f+=1;continue
-   m=evaluate(rid)
-   if"error"in m:git.checkout(str(CATALOG));ev.log_experiment(t,rid,"rust",{"f1":f1b},{},"failed",m["error"]);f+=1;continue
-   dec,reason=decide(rid,base.get(rid,{}),m,ch)
-   if dec=="keep":
-    # Segregate BEFORE commit (atomic)
-    try:_segregate(rid)
-    except Exception as e:logger.debug("Segregation skipped: "+str(e))
-    r=subprocess.run(["git","add","-f","crates/cognicode-axiom/src/rules/catalog.rs","crates/cognicode-axiom/src/rules/rules/"],cwd=str(REPO),check=False)
-    if r.returncode==0:
-     git.commit(cmsg(rid,ch,m))
-     base[rid]=m;bl.save(base);k+=1
-    else:
-     logger.warning("git add failed, reverting");git.checkout(str(CATALOG));d+=1
-   else:
-    git.checkout(str(CATALOG));d+=1
-   SESSION_DONE.add(rid);SESSION_FILE.write_text("\n".join(sorted(SESSION_DONE)))
-   ev.log_experiment(t,rid,"rust",{"f1":f1b},{},dec,ch.get("type","?")+":"+ch.get("description","")[:120])
-   logger.info("  "+rid+" -> "+dec.upper()+" ("+ch.get("level","?")+"): "+reason)
-  elapsed=int(time.time()-t0)
-  kr=0 if k+d==0 else int(k/(k+d)*100)
-  logger.info("  "+str(elapsed)+"s | "+str(k)+"K "+str(d)+"D "+str(f)+"F | rate:"+str(kr)+"%")
-  logger.info("  📋 Progress: "+str(len(SESSION_DONE))+"/"+str(TOTAL_RULES)+" rules ("+str(round(len(SESSION_DONE)/TOTAL_RULES*100,1))+"%)")
-  # ── Rich iteration report ──
-  logger.info("  ┌"+"─"*55)
-  logger.info("  │ Batch "+str(s)+": "+str(len(targets))+" rules in "+str(elapsed)+"s — "+str(k)+"✅ "+str(d)+"❌ "+str(f)+"⚠ — rate "+str(kr)+"%")
-  for rid in targets:
-      last = None
-      for entry in reversed(ev.read_history()):
-          if entry.get("rule_id") == rid: last = entry; break
-      if last:
-          dec = last.get("decision","?")
-          desc = (last.get("description","") or "")[:55]
-          icon = "✅" if dec == "keep" else ("❌" if dec == "discard" else "⚠️")
-          logger.info("  │  "+icon+" "+rid+"  "+dec+"  "+desc)
-  logger.info("  └"+"─"*55)
-  # Self-check: run full tests periodically
-  if s%10==0:
-   logger.info("  Self-check: running full test suite...")
-   r=subprocess.run(["cargo","test","-p","cognicode-axiom","--lib"],capture_output=True,text=True,timeout=120,cwd=str(REPO))
-   logger.info("  Tests: "+("OK"if"test result: ok"in(r.stdout+r.stderr)else"FAIL"))
-  if cooldown and not STOP:time.sleep(cooldown)
- logger.info("DONE: "+str(s)+" batches | "+str(k)+" kept | "+str(d)+" disc | rate:"+str(0 if k+d==0 else int(k/(k+d)*100))+"%")
- logger.info("📋 Session covered: "+str(len(SESSION_DONE))+"/"+str(TOTAL_RULES)+" rules ("+str(round(len(SESSION_DONE)/TOTAL_RULES*100,1))+"%)")
+        # ── ANALYZER ──
+        targets = analyzer(history, force_rule, batch_size)
 
-if __name__=="__main__":
- p=argparse.ArgumentParser()
- p.add_argument("-n",type=int,default=None);p.add_argument("-r",type=str,default=None)
- p.add_argument("-c",type=int,default=5);p.add_argument("-b",type=int,default=3)
- p.add_argument("--dry-run",action="store_true")
- a=p.parse_args();evolve(a.n,a.r,a.dry_run,a.c,a.b)
+        if not targets:
+            log.warning("No rules available — catalog exhausted")
+            done, total_rules, pct = progress()
+            log.info(f"📋 {done}/{total_rules} rules ({pct}%) processed")
+            break
+
+        log.info(f"\n── BATCH {session}" + (f"/{max_iterations}" if max_iterations else "") + f": {targets}")
+
+        if dry_run:
+            for rid in targets:
+                total_alltime += 1
+                evolution.log_experiment(total_alltime, rid, "rust", {}, {}, "dry_run", "Analyzer selected")
+            time.sleep(1)
+            continue
+
+        # ── Process each rule ──
+        for rule_id in targets:
+            total_alltime += 1
+
+            if rule_id not in re.findall(r'id:\s*"(S\d+)"', CATALOG.read_text()):
+                log.debug(f"  {rule_id} already segregated — marking done")
+                mark_done(rule_id)
+                fails += 1
+                continue
+
+            # Previous F1
+            f1_before = baseline.get(rule_id, {}).get("f1", 0) or 0
+
+            # 2. IMPROVER (3-tier)
+            change = None
+            for tier in range(3):
+                change = improver(rule_id)
+                if change.get("success") and change.get("level") == "code":
+                    break
+                # Early exit for LLM errors that won't improve
+                err = change.get("error", "") if change else ""
+                if any(kw in err for kw in ["no such group", "Invalid", "Expecting", "no JSON"]):
+                    break
+
+            if not change or not change.get("success"):
+                record_failure(rule_id)
+                if FAILURE_COUNT[rule_id] >= 3:
+                    mark_done(rule_id)
+                    log.debug(f"  {rule_id} — 3 failures, permanently skipped")
+                else:
+                    log.debug(f"  {rule_id} — retry #{FAILURE_COUNT[rule_id]}/3")
+                evolution.log_experiment(
+                    total_alltime, rule_id, "rust", {"f1": f1_before}, {},
+                    "skipped", change.get("error", "?") if change else "?"
+                )
+                fails += 1
+                continue
+
+            # 3. EVALUATOR
+            metrics = evaluator(rule_id)
+            if "error" in metrics:
+                git.checkout(str(CATALOG))
+                evolution.log_experiment(
+                    total_alltime, rule_id, "rust", {"f1": f1_before}, {},
+                    "failed", metrics["error"]
+                )
+                record_failure(rule_id)
+                fails += 1
+                continue
+
+            # 4. DECIDER
+            decision, reason = decider(rule_id, baseline.get(rule_id, {}), metrics, change)
+
+            if decision == "keep":
+                # Segregate BEFORE commit (atomic)
+                try:
+                    segregate(rule_id)
+                except Exception as e:
+                    log.debug(f"Segregation skipped: {e}")
+
+                # Stage and commit
+                r = subprocess.run(
+                    ["git", "add", "-f", "crates/cognicode-axiom/src/rules/catalog.rs",
+                     "crates/cognicode-axiom/src/rules/rules/"],
+                    capture_output=True, cwd=str(ROOT)
+                )
+                if r.returncode == 0:
+                    git.commit(commit_msg(rule_id, change))
+                    baseline[rule_id] = metrics
+                    baseline_store.save(baseline)
+                    keeps += 1
+                    mark_done(rule_id)
+                else:
+                    log.warning("git add failed — reverting")
+                    git.checkout(str(CATALOG))
+                    discards += 1
+            else:
+                git.checkout(str(CATALOG))
+                discards += 1
+                mark_done(rule_id)
+
+            # Log
+            evolution.log_experiment(
+                total_alltime, rule_id, "rust", {"f1": f1_before}, metrics,
+                decision,
+                f"{change.get('type', '?')}: {change.get('description', '')[:120]}"
+            )
+            log.info(f"  {rule_id} → {decision.upper()} ({change.get('level', '?')}): {reason}")
+
+        # ── Batch report ──
+        elapsed = int(time.time() - t0)
+        keep_rate = 0 if keeps + discards == 0 else int(keeps / (keeps + discards) * 100)
+        done, total_rules, pct = progress()
+
+        log.info("  ┌" + "─" * 55)
+        log.info(f"  │ Batch {session}: {len(targets)} rules in {elapsed}s — {keeps}✅ {discards}❌ {fails}⚠ — rate {keep_rate}%")
+        for rid in targets:
+            # Find last entry in evolution log
+            last = None
+            for entry in reversed(evolution.read_history()):
+                if entry.get("rule_id") == rid:
+                    last = entry
+                    break
+            if last:
+                dec = last.get("decision", "?")
+                desc = (last.get("description", "") or "")[:55]
+                icon = "✅" if dec == "keep" else ("❌" if dec == "discard" else "⚠️")
+                log.info(f"  │  {icon} {rid:<7} {dec:<8} {desc}")
+        log.info("  └" + "─" * 55)
+        log.info(f"  📋 Progress: {done}/{total_rules} rules ({pct}%)")
+        log.info(f"  📊 Session: {session} batches | {keeps} kept | {discards} discarded | {fails} failed")
+
+        # Self-check every 10 batches
+        if session % 10 == 0:
+            log.info("  🛡️ Self-check: running full test suite...")
+            r = subprocess.run(
+                ["cargo", "test", "-p", "cognicode-axiom", "--lib"],
+                capture_output=True, text=True, timeout=120, cwd=str(ROOT)
+            )
+            if "test result: ok" in (r.stdout + r.stderr):
+                log.info("  ✅ Tests OK")
+            else:
+                log.error("  ❌ Tests FAILED — stopping for safety")
+                break
+
+        if cooldown and not STOP:
+            time.sleep(cooldown)
+
+    # ── Final summary ──
+    done, total_rules, pct = progress()
+    log.info(f"\n{'=' * 60}")
+    log.info(f"  EVOLUTION COMPLETE — {session} batches")
+    log.info(f"  Kept: {keeps} | Discarded: {discards} | Failed: {fails}")
+    if keeps + discards > 0:
+        log.info(f"  Keep rate: {keep_rate}%")
+    log.info(f"  Rules processed: {done}/{total_rules} ({pct}%)")
+    log.info(f"{'=' * 60}")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[logging.StreamHandler(), logging.FileHandler("autoresearch/run.log")]
+    )
+
+    parser = argparse.ArgumentParser(description="Karpathy Autonomous Rule Evolution")
+    parser.add_argument("-n", "--max-iterations", type=int, default=None)
+    parser.add_argument("-r", "--rule", type=str, default=None)
+    parser.add_argument("-c", "--cooldown", type=int, default=5)
+    parser.add_argument("-b", "--batch-size", type=int, default=5)
+    parser.add_argument("--dry-run", action="store_true")
+
+    args = parser.parse_args()
+
+    log.info("🚀 Starting Karpathy autonomous evolution...")
+
+    try:
+        evolve(
+            max_iterations=args.max_iterations,
+            force_rule=args.rule,
+            dry_run=args.dry_run,
+            cooldown=args.cooldown,
+            batch_size=args.batch_size,
+        )
+    except KeyboardInterrupt:
+        log.info("\n⏹ Interrupted — shutting down")
+    except Exception as e:
+        log.error(f"Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
