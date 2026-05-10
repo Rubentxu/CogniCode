@@ -41,7 +41,7 @@ def analyze(history,force=None,batch=3,keep_rate=0):
  for h in history:
   try:
    rid=h.get("rule_id","")
-   if rid.startswith("S"):rf[rid].append(float(h.get("f1_after",0)or 0))
+   if re.match(r'^S\d+$',rid):rf[rid].append(float(h.get("f1_after",0)or 0))
   except:pass
  avg={r:sum(s)/len(s)for r,s in rf.items()if s}
  sel=[]
@@ -228,6 +228,11 @@ def evolve(n=None,rule=None,dry=False,cooldown=5,batch=3):
    time.sleep(1);continue
   for rid in targets:
    if not rid.startswith("S"):f+=1;continue
+   # Skip already segregated rules
+   if 'id: "'+rid+'"' not in CATALOG.read_text():
+    logger.debug("  "+rid+" already segregated, skipping")
+    SESSION_DONE.add(rid);SESSION_FILE.write_text("\n".join(sorted(SESSION_DONE)))
+    f+=1;continue
    t+=1;f1b=base.get(rid,{}).get("f1",0)or 0
    # Try all 3 tiers
    ch=None
