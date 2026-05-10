@@ -1784,43 +1784,7 @@ declare_rule! {
 // S1151 — Match arm too big
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S1151"
-    name: "Match arms should not be too long"
-    severity: Minor
-    category: CodeSmell
-    language: "rust"
-    params: { max_lines: usize = 5 }
-
-    explanation: "Match arms that span many lines indicate complex branching logic that could be extracted into separate functions for better readability.",
-    clean_code: Focused,
-    impacts: [Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let query_str = "(match_arm) @arm";
-        if let Ok(query) = tree_sitter::Query::new(&ctx.language.to_ts_language(), query_str) {
-            let mut cursor = tree_sitter::QueryCursor::new();
-            let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
-            while let Some(m) = matches.next() {
-                for capture in m.captures {
-                    let lines = ctx.line_count(capture.node);
-                    if lines > self.max_lines {
-                        let pt = capture.node.start_position();
-                        issues.push(Issue::new(
-                            "S1151",
-                            format!("Match arm is {} lines - consider extracting to function", lines),
-                            Severity::Minor,
-                            Category::CodeSmell,
-                            ctx.file_path,
-                            pt.row + 1,
-                        ));
-                    }
-                }
-            }
-        }
-        issues
-    }
-}
+// S1151 → segregated to crates/cognicode-axiom/src/rules/rules/rust/code_smells/s1151_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1155 — Use .is_empty() instead of .len() == 0
