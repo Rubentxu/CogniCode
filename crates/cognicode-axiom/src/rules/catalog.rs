@@ -187,7 +187,9 @@ declare_rule! {
     severity: Info
     category: CodeSmell
     language: "rust"
-    params: {}
+    params: {
+    skip_test_files: bool = false
+}
 
     explanation: "Using deprecated code can lead to compatibility issues, security vulnerabilities, and difficulties in future maintenance as deprecated APIs may be removed.",
     clean_code: Complete,
@@ -1937,34 +1939,7 @@ declare_rule! {
 // S1161 — #[allow(deprecated)] should not be used
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S1161"
-    name: "Deprecated code should not be used"
-    severity: Minor
-    category: CodeSmell
-    language: "rust"
-    params: {}
-
-    explanation: "#[allow(deprecated)] suppresses warnings about using deprecated APIs, preventing developers from migrating to supported alternatives.",
-    clean_code: Complete,
-    impacts: [Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("#[allow(deprecated)]") {
-                issues.push(Issue::new(
-                    "S1161",
-                    "#[allow(deprecated)] suppresses useful warnings about deprecated API usage",
-                    Severity::Minor,
-                    Category::CodeSmell,
-                    ctx.file_path,
-                    idx + 1,
-                ).with_remediation(Remediation::moderate("Remove the allow(deprecated) attribute and update deprecated code")));
-            }
-        }
-        issues
-    }
-}
+// S1161 → segregated to crates/cognicode-axiom/src/rules/rules/rust/code_smells/s1161_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1163 — Redundant else after return/break/continue
