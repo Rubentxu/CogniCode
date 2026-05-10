@@ -1133,6 +1133,10 @@ declare_rule! {
         let mut issues = Vec::new();
         let re = regex::Regex::new(r"if\s+let\s+[A-Z]").unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("//") || trimmed.starts_with("/*") {
+                continue; // Skip comments and disabled code
+            }
             if re.is_match(line) {
                 issues.push(Issue::new(
                     "S2757",
@@ -1944,35 +1948,7 @@ declare_rule! {
 // S1244 — Floating point equality should not be used
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S1244"
-    name: "Floating point equality should not be used"
-    severity: Major
-    category: Bug
-    language: "rust"
-    params: {}
-
-    explanation: "Floating point equality comparisons can fail due to precision issues, producing unexpected results in numeric comparisons.",
-    clean_code: Logical,
-    impacts: [Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let re = regex::Regex::new(r"(f32|f64)\b.*\s*==\s*").unwrap();
-        for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new(
-                    "S1244",
-                    "Floating point equality comparison - may not behave as expected",
-                    Severity::Major,
-                    Category::Bug,
-                    ctx.file_path,
-                    idx + 1,
-                ).with_remediation(Remediation::moderate("Use epsilon comparison: (a - b).abs() < EPSILON")));
-            }
-        }
-        issues
-    }
-}
+// S1244 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s1244_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1481 — Unused local variable (strict: let _x = ...)
