@@ -46,43 +46,378 @@ pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Ru
 // S134 — Deep Nesting Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S134 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s134_rule.rs (SOLID)
+declare_rule! {
+    id: "S134"
+    name: "Control flow statements should not be nested too deeply"
+    severity: Major
+    category: CodeSmell
+    language: "rust"
+    params: { threshold: usize = 4 }
+
+    explanation: "Deeply nested control flow structures reduce code readability and maintainability, making it harder to understand program logic and increasing the risk of introducing bugs during modifications.",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium, Reliability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let func_nodes = ctx.query_functions();
+        for node in func_nodes {
+            let depth = ctx.nesting_depth(node);
+            if depth > self.threshold {
+                let pt = node.start_position();
+                if let Some(name) = ctx.function_name(node) {
+                    issues.push(Issue::new(
+                        "S134",
+                        format!("Function '{}' has nesting depth {} exceeding threshold {}", name, depth, self.threshold),
+                        Severity::Major,
+                        Category::CodeSmell,
+                        ctx.file_path,
+                        pt.row + 1,
+                    ).with_column(pt.column)
+                    .with_remediation(Remediation::moderate(
+                        "Extract nested logic into separate functions or use early returns"
+                    )));
+                }
+            }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S107 — Too Many Parameters Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S107 → segregated to crates/cognicode-axiom/src/rules/rules/rust/code_smells/s107_rule.rs (SOLID)
+declare_rule! {
+    id: "S107"
+    name: "Functions should not have too many parameters"
+    severity: Major
+    category: CodeSmell
+    language: "rust"
+    params: { threshold: usize = 4 }
+
+    explanation: "Functions with too many parameters are difficult to call, test, and remember, often indicating the need for parameter grouping into structs or configuration objects.",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium],
+    check: => {
+        let mut issues = Vec::new();
+        // Query for function definitions to count parameters
+        let query_str = "(function_item parameters: (parameters) @params)";
+        if let Ok(query) = tree_sitter::Query::new(&ctx.language.to_ts_language(), query_str) {
+            let mut cursor = tree_sitter::QueryCursor::new();
+            let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
+            while let Some(m) = matches.next() {
+                for capture in m.captures {
+                    // Count named children (parameters) inside the parameters node
+                    let params_node = capture.node;
+                    let param_count = params_node.named_child_count();
+                    if param_count > self.threshold {
+                        let pt = params_node.start_position();
+                        // Try to get the function name from the parent node
+                        let func_name = params_node.parent()
+                            .and_then(|p| ctx.function_name(p))
+                            .unwrap_or("anonymous");
+                        issues.push(Issue::new(
+                            "S107",
+                            format!("Function '{}' has {} parameters exceeding threshold {}", func_name, param_count, self.threshold),
+                            Severity::Major,
+                            Category::CodeSmell,
+                            ctx.file_path,
+                            pt.row + 1,
+                        ).with_column(pt.column)
+                        .with_remediation(Remediation::moderate(
+                            "Consider grouping related parameters into a struct"
+                        )));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1135 — TODO/FIXME Tags Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S1135 → segregated to crates/cognicode-axiom/src/rules/rules/rust/code_smells/s1135_rule.rs (SOLID)
+declare_rule! {
+    id: "S1135"
+    name: "TODO tags should be completed or removed"
+    severity: Minor
+    category: CodeSmell
+    language: "*"
+    params: {
+    tags: Vec<String> = vec![
+        "TODO".to_string(),
+        "FIXME".to_string(),
+        "HACK".to_string(),
+        "XXX".to_string()
+    ]
+}
+
+    explanation: "TODO and FIXME tags indicate incomplete work that should be tracked and completed to avoid leaving technical debt or forgotten tasks in the codebase.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        // Pre-compile regex once - pattern is constant
+        let re = regex::Regex::new(r"(?i)\b(TODO|FIXME|HACK|XXX)\b(?![a-zA-Z0-9_])").unwrap();
+        for (line_num, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new(
+                    "S1135",
+                    format!("TODO/FIXME/HACK/XXX tag found: {}", line.trim()),
+                    Severity::Minor,
+                    Category::CodeSmell,
+                    ctx.file_path,
+                    line_num + 1,
+                ));
+            }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1134 — Deprecated Code Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S1134 → segregated to crates/cognicode-axiom/src/rules/rules/rust/code_smells/s1134_rule.rs (SOLID)
+declare_rule! {
+    id: "S1134"
+    name: "Deprecated code should not be used"
+    severity: Info
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: "Using deprecated code can lead to compatibility issues, security vulnerabilities, and difficulties in future maintenance as deprecated APIs may be removed.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let deprecated_pattern = regex::Regex::new(r#"(?i)^\s*#\s*\[deprecated\b)"#).unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("//") 
+            || trimmed.starts_with("///") || trimmed.starts_with("//!")
+            || trimmed.starts_with("/*")
+            { continue; }
+            
+            if deprecated_pattern.is_match(trimmed) {
+                issues.push(Issue::new(
+                    "S1134",
+                    "Deprecated attribute detected",
+                    Severity::Info,
+                    Category::CodeSmell,
+                    ctx.file_path,
+                    idx + 1,
+                ).with_remediation(Remediation::moderate(
+                    "Replace deprecated API with the recommended alternative"
+                )));
+            }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S2068 — Hard-coded Credentials Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S2068 → segregated to crates/cognicode-axiom/src/rules/rules/rust/security/s2068_rule.rs (SOLID)
+declare_rule! {
+    id: "S2068"
+    name: "Hard-coded credentials are security sensitive"
+    severity: Blocker
+    category: SecurityHotspot
+    language: "*"
+    params: {}
+
+    explanation: "Hard-coded credentials make secrets accessible to anyone with source code access, increasing the risk of credential leakage and unauthorized system access.",
+    clean_code: Trustworthy,
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let patterns = [
+            (r#"(?i)(password|passwd|pwd)\s*[=:]\s*["'][^"']{8,}["']"#, "password"),
+            (r#"(?i)(api[_-]?key|apikey)\s*[=:]\s*["'][^"']{8,}["']"#, "api_key"),
+            (r#"(?i)(secret|token)\s*[=:]\s*["'][^"']{8,}["']"#, "secret"),
+            (r#"(?i)(bearer\s+token|basic\s+auth)\s*[=:]\s*["'][a-zA-Z0-9_\-]{8,}["']"#, "bearer_token"),
+        ];
+        let regexes: Vec<_> = patterns.iter().map(|(p, _)| regex::Regex::new(p).unwrap()).collect();
+        
+        for (line_num, line) in ctx.source.lines().enumerate() {
+            // Skip comments, docstrings, and empty lines to avoid false positives
+            let trimmed = line.trim();
+            if trimmed.is_empty() 
+            || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*")
+            || trimmed.starts_with("#")
+            { continue; }
+            
+            for re in &regexes {
+                if re.is_match(trimmed) {
+                    issues.push(Issue::new(
+                        "S2068",
+                        format!("Hard-coded credential detected on line {}", line_num + 1),
+                        Severity::Blocker,
+                        Category::SecurityHotspot,
+                        ctx.file_path,
+                        line_num + 1,
+                    ).with_remediation(Remediation::moderate(
+                        "Use environment variables or a secrets manager instead of hard-coded values"
+                    )));
+                    break;
+                }
+            }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S5122 — SQL Injection Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S5122 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s5122_rule.rs (SOLID)
+declare_rule! {
+    id: "S5122"
+    name: "SQL injection vulnerabilities should be prevented"
+    severity: Blocker
+    category: Vulnerability
+    language: "rust"
+    params: {}
+
+    explanation: "SQL injection allows attackers to manipulate database queries through unsanitized input, potentially leading to data theft, corruption, or unauthorized system access.",
+    clean_code: Trustworthy,
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "EXEC", "EXECUTE", "UNION", "INTO", "OUTFILE", "INFILE", "LOAD_FILE", "BENCHMARK", "SLEEP"];
+        let sql_keyword_patterns: Vec<_> = sql_keywords.iter()
+            .map(|keyword| {
+                let pattern = format!(r"(?i)(?<![a-zA-Z_]){}(?![a-zA-Z_])", regex::escape(keyword));
+                regex::Regex::new(&pattern)
+            })
+            .collect();
+        
+        let query = match tree_sitter::Query::new(
+            &ctx.language.to_ts_language(),
+            "(macro_invocation (identifier) @macro_name (token_tree) @args)"
+        ) {
+            Ok(q) => q,
+            Err(_) => return Vec::new(),
+        };
+        
+        let mut cursor = tree_sitter::QueryCursor::new();
+        let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
+
+        while let Some(m) = matches.next() {
+            for cap in m.captures {
+                if cap.node.kind() == "identifier"
+                    && let Ok(macro_name) = cap.node.utf8_text(ctx.source.as_bytes())
+                        && (macro_name == "format" || macro_name == "format_args")
+                            && let Some(args_node) = m.captures.iter().find(|c| c.node.kind() == "token_tree")
+                                && let Ok(args_text) = args_node.node.utf8_text(ctx.source.as_bytes()) {
+                                    let args_upper = args_text.to_uppercase();
+                                    let format_arg_count = args_text.matches("{}").count();
+                                    for keyword in &sql_keywords {
+                                        // Use negative lookahead/lookbehind to match SQL keywords not part of identifiers
+                                        // This handles edge cases like "SELECT;" or "SELECT(" that \b might miss
+                                        let pattern = format!(r"(?i)(?<![a-zA-Z_]){}(?![a-zA-Z_])", regex::escape(keyword));
+                                        if regex::Regex::new(&pattern)
+                                            .and_then(|re| Ok(re.is_match(args_text)))
+                                            .unwrap_or(false)
+                                            && format_arg_count >= 1 {
+                                            let pt = cap.node.start_position();
+                                            issues.push(Issue::new(
+                                                "S5122",
+                                                format!(
+                                                    "Potential SQL injection: SQL keyword '{}' found in format! string with {} dynamic argument(s)",
+                                                    keyword,
+                                                    format_arg_count
+                                                ),
+                                                Severity::Blocker,
+                                                Category::Vulnerability,
+                                                ctx.file_path,
+                                                pt.row + 1,
+                                            ).with_column(pt.column + 1)
+                                            .with_remediation(Remediation::substantial(
+                                                "Use parameterized queries instead of string interpolation"
+                                            )));
+                                            break;
+                                        }
+                                    }
+                                }
+            }
+        }
+
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S4792 — Weak Cryptography Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S4792 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s4792_rule.rs (SOLID)
+declare_rule! {
+    id: "S4792"
+    name: "Weak cryptography should not be used"
+    severity: Critical
+    category: Vulnerability
+    language: "rust"
+    params: {}
+
+    explanation: "Weak cryptographic algorithms like MD5, SHA1, DES, and RC4 are vulnerable to modern attacks and should not be used for security-sensitive operations.",
+    clean_code: Trustworthy,
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let weak_patterns = [
+            (r"(?i)(?:\b|_)(?:hash|digest|sign|encrypt)_?md5\b", "MD5 hash function"),
+            (r"(?i)(?:\b|_)(?:hash|digest|sign|encrypt)_?sha[01]\b", "SHA-0/SHA-1 hash function"),
+            (r"(?i)(?:^|[^\w])(?:_)?des(?:_|$|[^\w])", "DES block cipher"),
+            (r"(?i)(?:\b|_)3des\b", "Triple DES (3DES) block cipher"),
+            (r"(?i)(?:\b|_)rc4\b", "RC4 stream cipher"),
+            (r"(?i)(?:^|[^\w])crypt\b", "crypt(3) function"),
+        ];
+
+        let compiled_patterns: Vec<(regex::Regex, &str)> = weak_patterns
+            .iter()
+            .filter_map(|(p, d)| {
+                match regex::Regex::new(p) {
+                    Ok(r) => Some((r, *d)),
+                    Err(e) => {
+                        eprintln!("Warning: Failed to compile S4792 pattern '{}': {}", p, e);
+                        None
+                    }
+                }
+            })
+            .collect();
+
+        for (line_idx, line) in ctx.source.lines().enumerate() {
+            for (re, description) in &compiled_patterns {
+                if let Some(m) = re.find(line) {
+                    let pt = m.start();
+                    issues.push(Issue::new(
+                        "S4792",
+                        format!(
+                            "Use of weak cryptography: {} detected on line {}",
+                            description, line_idx + 1
+                        ),
+                        Severity::Critical,
+                        Category::Vulnerability,
+                        ctx.file_path,
+                        line_idx + 1,
+                    ).with_column(pt + 1)
+                    .with_remediation(Remediation::substantial(
+                        "Use a modern cryptographic algorithm (e.g., SHA-256, AES-256-GCM)"
+                    )));
+                    break;
+                }
+            }
+        }
+
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S7000 — Semantic Intent Drift Detection Rule
@@ -544,19 +879,138 @@ declare_rule! {
 // S1854 — Unused Variable Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S1854 → segregated to crates/cognicode-axiom/src/rules/rules/rust/code_smells/s1854_rule.rs (SOLID)
+declare_rule! {
+    id: "S1854"
+    name: "Unused variables should be removed"
+    severity: Info
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: "Variables declared but never used represent dead code that adds noise to the codebase and may indicate unfinished implementation or copy-paste errors.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("let ") && !trimmed.starts_with("let _") && trimmed.contains('=') {
+                issues.push(Issue::new(
+                    "S1854",
+                    "Variable declared but never used",
+                    Severity::Info,
+                    Category::CodeSmell,
+                    ctx.file_path,
+                    idx + 1,
+                ).with_remediation(Remediation::quick(
+                    "Remove the unused variable or prefix it with '_' to indicate it is intentionally unused"
+                )));
+            }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1226 — Method Parameters Should Not Be Reassigned Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S1226 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s1226_rule.rs (SOLID)
+declare_rule! {
+    id: "S1226"
+    name: "Method parameters should not be reassigned"
+    severity: Major
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: "Reassigning method parameters can confuse callers about whether the original value is used and violates the principle of least surprise.",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium, Reliability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        // Find function parameters and check if they appear on LHS of assignments
+        let query_str = "(function_item parameters: (parameters (parameter pattern: (identifier) @param))) @func";
+        if let Ok(query) = tree_sitter::Query::new(&ctx.language.to_ts_language(), query_str) {
+            let mut cursor = tree_sitter::QueryCursor::new();
+            let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
+            let mut params: std::collections::HashSet<String> = std::collections::HashSet::new();
+            while let Some(m) = matches.next() {
+                for capture in m.captures {
+                    if let Ok(name) = capture.node.utf8_text(ctx.source.as_bytes()) {
+                        params.insert(name.to_string());
+                    }
+                }
+            }
+            // Check for assignment patterns where LHS matches a param name
+            let assign_query = "(let_declaration pattern: (_) @var)";
+            if let Ok(query2) = tree_sitter::Query::new(&ctx.language.to_ts_language(), assign_query) {
+                let mut cursor2 = tree_sitter::QueryCursor::new();
+                let mut matches2 = cursor2.matches(&query2, ctx.tree.root_node(), ctx.source.as_bytes());
+                while let Some(m) = matches2.next() {
+                    for capture in m.captures {
+                        if let Ok(name) = capture.node.utf8_text(ctx.source.as_bytes())
+                            && params.contains(name) {
+                                let pt = capture.node.start_position();
+                                issues.push(Issue::new(
+                                    "S1226",
+                                    format!("Parameter '{}' should not be reassigned", name),
+                                    Severity::Major, Category::CodeSmell, ctx.file_path, pt.row + 1,
+                                ).with_remediation(Remediation::moderate(
+                                    "Use a new local variable instead of reassigning the parameter"
+                                )));
+                            }
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1186 — Empty Functions Should Be Removed Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S1186 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s1186_rule.rs (SOLID)
+declare_rule! {
+    id: "S1186"
+    name: "Empty functions should be completed or removed"
+    severity: Major
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: "Empty function bodies that are not placeholders waste developer time investigating non-functional code and may indicate incomplete implementation.",
+    clean_code: Complete,
+    impacts: [Maintainability: Medium, Reliability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let node_type = ctx.language.function_node_type();
+        let query_str = format!("({} body: (block) @body) @func", node_type);
+        if let Ok(query) = tree_sitter::Query::new(&ctx.language.to_ts_language(), &query_str) {
+            let mut cursor = tree_sitter::QueryCursor::new();
+            let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
+            while let Some(m) = matches.next() {
+                for capture in m.captures {
+                    let node = capture.node;
+                    // Check if the block body has no meaningful children (only comment/doc nodes)
+                    let named_children = node.named_child_count();
+                    if named_children <= 1
+                        && let Some(name) = ctx.function_name(node.parent().unwrap_or(node)) {
+                            let pt = node.start_position();
+                            issues.push(Issue::new(
+                                "S1186",
+                                format!("Function '{}' has an empty body", name),
+                                Severity::Major, Category::CodeSmell, ctx.file_path, pt.row + 1,
+                            ).with_remediation(Remediation::quick(
+                                "Implement the function body or remove it if not needed"
+                            )));
+                        }
+                }
+            }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1871 — Duplicate Branches In Conditionals Rule
@@ -627,7 +1081,36 @@ declare_rule! {
 // S2589 — Boolean expressions should not be constant
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S2589 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s2589_rule.rs (SOLID)
+declare_rule! {
+    id: "S2589"
+    name: "Boolean expressions should not be constant"
+    severity: Major
+    category: Bug
+    language: "rust"
+    params: {}
+
+    explanation: "Constant boolean expressions in conditions always evaluate to the same result, indicating dead code that should be removed or replaced with meaningful logic.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium, Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            let const_bool_re = regex::Regex::new(r"(if|while)\s*\(?\s*(true|false)\s*\)?\s*\{").unwrap();
+        if const_bool_re.is_match(trimmed) {
+                issues.push(Issue::new(
+                    "S2589",
+                    format!("Constant boolean expression at line {}", idx + 1),
+                    Severity::Major,
+                    Category::Bug,
+                    ctx.file_path,
+                    idx + 1,
+                ).with_remediation(Remediation::quick("Remove the redundant condition or use a meaningful expression")));
+            }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S2757 — Unexpected assignment operators in conditions
@@ -667,13 +1150,86 @@ declare_rule! {
 // S1313 — IP addresses should not be hardcoded
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S1313 → segregated to crates/cognicode-axiom/src/rules/rules/rust/security/s1313_rule.rs (SOLID)
+declare_rule! {
+    id: "S1313"
+    name: "IP addresses should not be hardcoded"
+    severity: Minor
+    category: SecurityHotspot
+    language: "*"
+    params: {}
+
+    explanation: "Hardcoded IP addresses make applications inflexible and difficult to deploy in different environments, reducing configurability and portability.",
+    clean_code: Focused,
+    impacts: [Security: Low, Reliability: Medium, Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r#""([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])"(?![0-9])"#).unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("//") 
+            || trimmed.starts_with("///") || trimmed.starts_with("//!")
+            || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            || trimmed.starts_with("#")
+            || trimmed.contains("version") || trimmed.contains("Version")
+            || trimmed.contains("coordinate") || trimmed.contains("Coordinate")
+            { continue; }
+            
+            if let Some(m) = re.find(trimmed) {
+                issues.push(Issue::new(
+                    "S1313",
+                    format!("Hardcoded IP address: {}", m.as_str()),
+                    Severity::Minor,
+                    Category::SecurityHotspot,
+                    ctx.file_path,
+                    idx + 1,
+                ));
+            }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1141 — Error handling should not be deeply nested
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S1141 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s1141_rule.rs (SOLID)
+declare_rule! {
+    id: "S1141"
+    name: "Error handling should not be deeply nested"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: "Deeply nested error handling with multiple match arms or Result types indicates complex control flow that could be simplified using the ? operator.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low, Reliability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let query_str = "(match_expression pattern: (identifier) @pat (#any-of? @pat \"Err\" \"Ok\" \"Some\" \"None\")) @match";
+        if let Ok(query) = tree_sitter::Query::new(&ctx.language.to_ts_language(), query_str) {
+            let mut cursor = tree_sitter::QueryCursor::new();
+            let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
+            while let Some(m) = matches.next() {
+                for capture in m.captures {
+                    let depth = ctx.nesting_depth(capture.node);
+                    if depth > 3 {
+                        let pt = capture.node.start_position();
+                        issues.push(Issue::new(
+                            "S1141",
+                            "Deeply nested error handling - consider using ? operator or extracting to function",
+                            Severity::Minor,
+                            Category::CodeSmell,
+                            ctx.file_path,
+                            pt.row + 1,
+                        ));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1994 — Loop counters should not be modified inside the loop
@@ -1174,7 +1730,528 @@ declare_rule! {
 // S2259 — Potential null dereference
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S2259 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s2259_rule.rs (SOLID)
+declare_rule! {
+    id: "S2259"
+    name: "Null pointer dereferences should be avoided"
+    severity: Blocker
+    category: Bug
+    language: "rust"
+    params: {}
+
+    explanation: "Raw pointer dereferences without verification can cause undefined behavior including crashes, memory corruption, or security vulnerabilities.",
+    clean_code: Logical,
+    impacts: [Reliability: High, Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\*(\w+)\s*\.\s*\w+").unwrap();
+        let mut unsafe_depth = 0;
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("unsafe {") { unsafe_depth += 1; }
+            if unsafe_depth > 0 && re.is_match(line) {
+                issues.push(Issue::new("S2259", "Raw pointer dereference in unsafe block - verify non-null", Severity::Blocker, Category::Bug, ctx.file_path, idx + 1));
+            }
+            if line.trim() == "}" && unsafe_depth > 0 { unsafe_depth -= 1; }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S115 — Constant names should follow UPPER_CASE
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S115"
+    name: "Constant names should follow UPPER_CASE convention"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: "Constant names not following UPPER_CASE convention reduce code readability and make it harder to distinguish constants from variables.",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"const\s+([a-z][A-Za-z0-9_]*)\s*:").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(cap) = re.captures(line) {
+                let name = cap.get(1).unwrap().as_str();
+                if name != name.to_uppercase() {
+                    issues.push(Issue::new("S115", format!("Constant '{}' should be UPPER_CASE", name), Severity::Minor, Category::CodeSmell, ctx.file_path, idx + 1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1541 — High cyclomatic complexity (simplified)
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S1541"
+    name: "Functions should not have too many branches"
+    severity: Major
+    category: CodeSmell
+    language: "rust"
+    params: { threshold: usize = 10 }
+
+    explanation: "Functions with high cyclomatic complexity are difficult to test thoroughly and maintain, often indicating the need for refactoring into smaller functions.",
+    clean_code: Focused,
+    impacts: [Maintainability: Medium, Reliability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        for func_node in ctx.query_functions() {
+            let mut branch_count = 0;
+            crate::rules::helpers::count_branches_impl(func_node, &mut branch_count);
+            if branch_count > self.threshold {
+                let pt = func_node.start_position();
+                if let Some(name) = ctx.function_name(func_node) {
+                    issues.push(Issue::new("S1541", format!("Function '{}' has {} branches", name, branch_count), Severity::Major, Category::CodeSmell, ctx.file_path, pt.row + 1));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1142 — Too many return statements
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S1142"
+    name: "Functions should not have too many return points"
+    severity: Major
+    category: CodeSmell
+    language: "rust"
+    params: { max_returns: usize = 3 }
+
+    explanation: "Functions with too many return points are harder to understand and trace through, increasing the risk of logic errors during maintenance.",
+    clean_code: Clear,
+    impacts: [Maintainability: Medium, Reliability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        for func_node in ctx.query_functions() {
+            let text = func_node.utf8_text(ctx.source.as_bytes()).unwrap_or("");
+            let return_count = text.matches("return ").count() + text.matches("return;").count();
+            if return_count > self.max_returns {
+                let pt = func_node.start_position();
+                if let Some(name) = ctx.function_name(func_node) {
+                    issues.push(Issue::new(
+                        "S1142",
+                        format!("Function '{}' has {} return statements", name, return_count),
+                        Severity::Major,
+                        Category::CodeSmell,
+                        ctx.file_path,
+                        pt.row + 1,
+                    ));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1151 — Match arm too big
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S1151"
+    name: "Match arms should not be too long"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: { max_lines: usize = 5 }
+
+    explanation: "Match arms that span many lines indicate complex branching logic that could be extracted into separate functions for better readability.",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let query_str = "(match_arm) @arm";
+        if let Ok(query) = tree_sitter::Query::new(&ctx.language.to_ts_language(), query_str) {
+            let mut cursor = tree_sitter::QueryCursor::new();
+            let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
+            while let Some(m) = matches.next() {
+                for capture in m.captures {
+                    let lines = ctx.line_count(capture.node);
+                    if lines > self.max_lines {
+                        let pt = capture.node.start_position();
+                        issues.push(Issue::new(
+                            "S1151",
+                            format!("Match arm is {} lines - consider extracting to function", lines),
+                            Severity::Minor,
+                            Category::CodeSmell,
+                            ctx.file_path,
+                            pt.row + 1,
+                        ));
+                    }
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1155 — Use .is_empty() instead of .len() == 0
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S1155"
+    name: "Use .is_empty() instead of comparing .len() to 0"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: "Using .is_empty() is more idiomatic and clear than comparing .len() to 0, improving code readability and consistency.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.len\(\)\s*==\s*0").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new(
+                    "S1155",
+                    "Use .is_empty() instead of .len() == 0",
+                    Severity::Minor,
+                    Category::CodeSmell,
+                    ctx.file_path,
+                    idx + 1,
+                ).with_remediation(Remediation::quick("Replace with .is_empty()")));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1158 — Redundant .clone() after .to_owned()
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S1158"
+    name: "Unnecessary .clone() calls should be removed"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: ".to_owned() already creates an owned copy, so calling .clone() immediately after is redundant and wastes memory.",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"\.to_owned\(\)\s*\.clone\(\)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new(
+                    "S1158",
+                    "Redundant .clone() after .to_owned()",
+                    Severity::Minor,
+                    Category::CodeSmell,
+                    ctx.file_path,
+                    idx + 1,
+                ));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1161 — #[allow(deprecated)] should not be used
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S1161"
+    name: "Deprecated code should not be used"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: "#[allow(deprecated)] suppresses warnings about using deprecated APIs, preventing developers from migrating to supported alternatives.",
+    clean_code: Complete,
+    impacts: [Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("#[allow(deprecated)]") {
+                issues.push(Issue::new(
+                    "S1161",
+                    "#[allow(deprecated)] suppresses useful warnings about deprecated API usage",
+                    Severity::Minor,
+                    Category::CodeSmell,
+                    ctx.file_path,
+                    idx + 1,
+                ).with_remediation(Remediation::moderate("Remove the allow(deprecated) attribute and update deprecated code")));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1163 — Redundant else after return/break/continue
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S1163"
+    name: "Redundant else after return, break, or continue"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: "Redundant else blocks after return/break/continue add unnecessary nesting and reduce code clarity.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = ctx.source.lines().collect();
+        for i in 0..lines.len().saturating_sub(1) {
+            let prev = lines[i].trim();
+            let next = lines[i+1].trim();
+            if (prev.ends_with("return;") || prev.ends_with("break;") || prev.ends_with("continue;")) && next.starts_with("else ") {
+                issues.push(Issue::new(
+                    "S1163",
+                    "Redundant else after control flow statement",
+                    Severity::Minor,
+                    Category::CodeSmell,
+                    ctx.file_path,
+                    i + 2,
+                ));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1197 — Magic numbers should be replaced by named constants
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S1197"
+    name: "Magic numbers should be replaced by named constants"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: "Magic numbers without context make code harder to understand and maintain, as their meaning and origin are not immediately clear.",
+    clean_code: Clear,
+    impacts: [Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"[=<>!]\s*\d{3,}").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) && !line.contains("const") && !line.contains("test") && !line.contains("\"") {
+                issues.push(Issue::new(
+                    "S1197",
+                    "Magic number detected - use a named constant",
+                    Severity::Minor,
+                    Category::CodeSmell,
+                    ctx.file_path,
+                    idx + 1,
+                ));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1214 — static mut should not be used
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S1214"
+    name: "Mutable static variables should not be used"
+    severity: Critical
+    category: Bug
+    language: "rust"
+    params: {}
+
+    explanation: "static mut is inherently unsafe in Rust as it allows data races; interior mutability patterns like OnceCell or Mutex should be used instead.",
+    clean_code: Logical,
+    impacts: [Reliability: High, Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("static mut") {
+                issues.push(Issue::new(
+                    "S1214",
+                    "static mut is unsafe - use OnceCell, Lazy, or interior mutability",
+                    Severity::Critical,
+                    Category::Bug,
+                    ctx.file_path,
+                    idx + 1,
+                ));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1244 — Floating point equality should not be used
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S1244"
+    name: "Floating point equality should not be used"
+    severity: Major
+    category: Bug
+    language: "rust"
+    params: {}
+
+    explanation: "Floating point equality comparisons can fail due to precision issues, producing unexpected results in numeric comparisons.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium, Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"(f32|f64)\b.*\s*==\s*").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new(
+                    "S1244",
+                    "Floating point equality comparison - may not behave as expected",
+                    Severity::Major,
+                    Category::Bug,
+                    ctx.file_path,
+                    idx + 1,
+                ).with_remediation(Remediation::moderate("Use epsilon comparison: (a - b).abs() < EPSILON")));
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1481 — Unused local variable (strict: let _x = ...)
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S1481"
+    name: "Unused local variables should be removed"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: "Variables prefixed with underscore but actually used indicate the developer intended to suppress warnings but used the wrong prefix.",
+    clean_code: Focused,
+    impacts: [Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"let\s+(?:mut\s+)?_(\w+)\s*(?::\s*\S+)?\s*=").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(cap) = re.captures(line) {
+                let name = cap.get(1).unwrap().as_str();
+                let remaining: String = ctx.source.lines().skip(idx + 1).collect::<Vec<_>>().join("\n");
+                let is_used = remaining.contains(&format!(" {} ", name))
+                    || remaining.contains(&format!("({}", name))
+                    || remaining.contains(&format!(",{}", name))
+                    || remaining.contains(&format!("{})", name))
+                    || remaining.contains(&format!(".{}", name))
+                    || remaining.contains(&format!("[]{}", name));
+                if !is_used {
+                    issues.push(Issue::new(
+                        "S1481",
+                        format!("Unused variable '_{}' - remove it entirely", name),
+                        Severity::Minor,
+                        Category::CodeSmell,
+                        ctx.file_path,
+                        idx + 1,
+                    ));
+                }
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1643 — String concatenation in loop should use push_str or collect
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S1643"
+    name: "String concatenation in loops should use collect() or push_str"
+    severity: Major
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: "String concatenation with + in loops is inefficient due to repeated allocations; push_str or iterator methods should be used instead.",
+    clean_code: Efficient,
+    impacts: [Maintainability: Medium],
+    check: => {
+        let mut issues = Vec::new();
+        let mut in_loop = false;
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if line.contains("for ") || line.contains("while ") || line.contains("loop {") {
+                in_loop = true;
+            }
+            if in_loop
+                && line.contains("+=") && (line.contains("String") || line.contains("str")) && !line.contains("push_str") {
+                    issues.push(Issue::new(
+                        "S1643",
+                        "String concatenation in loop - use .push_str() or collect()",
+                        Severity::Major,
+                        Category::CodeSmell,
+                        ctx.file_path,
+                        idx + 1,
+                    ));
+                }
+            if line.trim() == "}" {
+                in_loop = false;
+            }
+        }
+        issues
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1751 — Loop with at most one iteration
+// ─────────────────────────────────────────────────────────────────────────────
+
+declare_rule! {
+    id: "S1751"
+    name: "Loops with unconditional break have at most one iteration"
+    severity: Major
+    category: Bug
+    language: "rust"
+    params: {}
+
+    explanation: "Loops with unconditional break execute at most once, indicating potentially incorrect loop logic or misunderstood control flow.",
+    clean_code: Logical,
+    impacts: [Reliability: Medium, Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"loop\s*\{[^}]*break[^}]*\}").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new(
+                    "S1751",
+                    "Loop has unconditional break - at most one iteration",
+                    Severity::Major,
+                    Category::Bug,
+                    ctx.file_path,
+                    idx + 1,
+                ));
+            }
+        }
+        issues
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2187,13 +3264,71 @@ declare_rule! {
 // S2092 — Cookie without Secure flag
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S2092 → segregated to crates/cognicode-axiom/src/rules/rules/rust/security/s2092_rule.rs (SOLID)
+declare_rule! {
+    id: "S2092"
+    name: "Cookies should set the Secure flag"
+    severity: Minor
+    category: SecurityHotspot
+    language: "rust"
+    params: {}
+
+    explanation: "Cookies without the Secure flag can be transmitted over unencrypted connections, allowing cookie theft through network interception.",
+    clean_code: Trustworthy,
+    impacts: [Security: Low, Reliability: Medium, Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+        if !trimmed.starts_with("//") && !trimmed.starts_with("/*") && !trimmed.starts_with('*')
+            && (line.contains("Set-Cookie") || line.contains(".cookie("))
+            && !line.contains("Secure") && !line.contains("secure") {
+                    issues.push(Issue::new(
+                        "S2092",
+                        "Cookie without Secure flag",
+                        Severity::Minor,
+                        Category::SecurityHotspot,
+                        ctx.file_path,
+                        idx + 1,
+                    ));
+                }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S2612 — Weak file permissions (chmod 777, 666)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S2612 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s2612_rule.rs (SOLID)
+declare_rule! {
+    id: "S2612"
+    name: "File permissions should not be too permissive"
+    severity: Critical
+    category: Vulnerability
+    language: "rust"
+    params: {}
+
+    explanation: "Overly permissive file permissions (0o777/777) allow unauthorized users to read or modify sensitive files, creating security vulnerabilities. Also consider 0o666 for world-writable files.",
+    clean_code: Trustworthy,
+    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"0o?777|chmod\s+777").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if re.is_match(line) {
+                issues.push(Issue::new(
+                    "S2612",
+                    "Overly permissive file permissions (0777)",
+                    Severity::Critical,
+                    Category::Vulnerability,
+                    ctx.file_path,
+                    idx + 1,
+                ).with_remediation(Remediation::quick("Use 0o644 for files and 0o755 for directories")));
+            }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S2755 — XML external entity (XXE)
@@ -2242,7 +3377,35 @@ declare_rule! {
 // S3330 — Cookie without HttpOnly
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S3330 → segregated to crates/cognicode-axiom/src/rules/rules/rust/security/s3330_rule.rs (SOLID)
+declare_rule! {
+    id: "S3330"
+    name: "Cookies should set the HttpOnly flag"
+    severity: Minor
+    category: SecurityHotspot
+    language: "rust"
+    params: {}
+
+    explanation: "Cookies without HttpOnly flag can be accessed by JavaScript, making them vulnerable to cross-site scripting (XSS) theft.",
+    clean_code: Trustworthy,
+    impacts: [Security: Low, Reliability: Medium, Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if (line.contains(".cookie(") || line.contains("Set-Cookie"))
+                && !line.to_lowercase().contains("httponly") && !line.to_lowercase().contains("http_only") {
+                    issues.push(Issue::new(
+                        "S3330",
+                        "Cookie without HttpOnly flag - vulnerable to XSS",
+                        Severity::Minor,
+                        Category::SecurityHotspot,
+                        ctx.file_path,
+                        idx + 1,
+                    ));
+                }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S3358 — Deeply nested if/else chains (>3 levels)
@@ -2538,7 +3701,44 @@ declare_rule! {
 // S5042 — Expanding archive files without size check (zip bomb)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S5042 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s5042_rule.rs (SOLID)
+declare_rule! {
+    id: "S5042"
+    name: "Archive extraction should check size before decompression"
+    severity: Major
+    category: Vulnerability
+    language: "rust"
+    params: {}
+
+    explanation: "Extracting archive files without size limits can enable zip bomb attacks where small files decompress to enormous sizes, exhausting system resources.",
+    clean_code: Trustworthy,
+    impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        for (line_num, line) in ctx.source.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
+            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
+            || trimmed.starts_with("#") { continue; }
+            let has_archive = trimmed.contains(".zip(") || trimmed.contains("ZipArchive") || trimmed.contains("zip::") || trimmed.contains("tar::") || trimmed.contains("Archive::") || trimmed.contains("unzip") || trimmed.contains("flate2") || trimmed.contains("extract_all") || trimmed.contains("unpack") || trimmed.contains("sevenz") || trimmed.contains("bzip2::") || trimmed.contains("xz::") || trimmed.contains("zstd::") || trimmed.contains("snap::") || trimmed.contains("ar::");
+            if has_archive && !trimmed.contains("limit") && !trimmed.contains("max_") && !trimmed.contains("size_limit") {
+                let context_start = line_num.saturating_sub(10);
+                let context_end = std::cmp::min(ctx.source.lines().count(), line_num + 8);
+                let context: String = ctx.source.lines().skip(context_start).take(context_end - context_start).collect::<Vec<_>>().join("\n");
+                if !context.contains("size") && !context.contains("limit") && !context.contains("max_size") && !context.contains("uncompressed_size") && !context.contains("decompressed_size") && !context.contains("capacity") && !context.contains("max_bytes") && !context.contains("max_len") && !context.contains("budget") && !context.contains("quota") && !context.contains("set_size_limit") && !context.contains("len") && !context.contains("byte") {
+                    issues.push(Issue::new(
+                        "S5042",
+                        "Archive extraction without size check - potential zip bomb",
+                        Severity::Major,
+                        Category::Vulnerability,
+                        ctx.file_path,
+                        line_num + 1,
+                    ));
+                }
+            }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S5542 — Weak encryption mode (ECB)
@@ -4165,7 +5365,45 @@ declare_rule! {
 // S4144 — Duplicated test methods
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S4144 → segregated to crates/cognicode-axiom/src/rules/rules/rust/code_smells/s4144_rule.rs (SOLID)
+declare_rule! {
+    id: "S4144"
+    name: "Test methods should not be duplicated"
+    severity: Major
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: "Duplicated test functions waste build time and indicate possible copy-paste testing",
+    clean_code: Distinct,
+    impacts: [Maintainability: Medium],
+    check: => {
+        let mut issues = Vec::new();
+        let mut test_names: std::collections::HashMap<String, Vec<usize>> = std::collections::HashMap::new();
+        let re = regex::Regex::new(r"fn\s+(test_\w+)\s*\(").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(cap) = re.captures(line) {
+                let name = cap.get(1).unwrap().as_str().to_string();
+                test_names.entry(name).or_default().push(idx + 1);
+            }
+        }
+        for (name, lines) in test_names {
+            let count = lines.len();
+            if count > 1 {
+                for &line in &lines {
+                    issues.push(Issue::new(
+                        "S4144",
+                        format!("Duplicated test function '{}' - appears {} times", name, count),
+                        Severity::Major,
+                        Category::CodeSmell,
+                        ctx.file_path,
+                        line,
+                    ).with_remediation(Remediation::moderate("Remove duplicate test or merge them")));
+                }
+            }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S5778 — Only one assertion per test
@@ -4334,7 +5572,61 @@ declare_rule! {
 // S100 — Function names should use snake_case
 // ─────────────────────────────────────────────────────────────────────────────
 
-// S100 → segregated to crates/cognicode-axiom/src/rules/rules/rust/code_smells/s100_rule.rs (SOLID)
+declare_rule! {
+    id: "S100"
+    name: "Function names should follow snake_case convention"
+    severity: Minor
+    category: CodeSmell
+    language: "rust"
+    params: {}
+
+    explanation: "Function names not following snake_case violate Rust naming conventions and reduce readability",
+    clean_code: Efficient,
+    impacts: [Maintainability: Low],
+    check: => {
+        let mut issues = Vec::new();
+        let re = regex::Regex::new(r"fn\s+([A-Z][a-zA-Z0-9_]*|[a-z][a-zA-Z0-9_]*[A-Z][a-zA-Z0-9_]*)").unwrap();
+        for (idx, line) in ctx.source.lines().enumerate() {
+            if let Some(cap) = re.captures(line)
+                && let Some(name) = cap.get(1) {
+                    let name_str = name.as_str();
+                    // Skip test functions by naming convention
+                    if name_str.starts_with("test_") || name_str.contains("_test_") {
+                        continue;
+                    }
+                    // Skip test functions marked with various test attributes
+                    if idx > 0 {
+                        let prev_line = ctx.source.lines().nth(idx - 1).unwrap_or("").trim();
+                        if prev_line.contains("#[test]") || prev_line.contains("#[cfg(test)]") {
+                            continue;
+                        }
+                    }
+                    // Skip getter/setter functions (getFoo, setFoo patterns are conventional)
+                    if (name_str.starts_with("get_") || name_str.starts_with("set_") || name_str.starts_with("is_"))
+                        && name_str.chars().skip(4).all(|c| c.is_ascii_lowercase() || c == '_') {
+                        continue;
+                    }
+                    // Skip closure parameters (|x| syntax is not a function declaration)
+                    if name_str.starts_with('|') {
+                        continue;
+                    }
+                    // Skip underscore-prefixed private helper functions
+                    if name_str.starts_with('_') {
+                        continue;
+                    }
+                    issues.push(Issue::new(
+                        "S100",
+                        format!("Function '{}' should use snake_case", name_str),
+                        Severity::Minor,
+                        Category::CodeSmell,
+                        ctx.file_path,
+                        idx + 1,
+                    ));
+                }
+        }
+        issues
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S101 — Struct names should use CamelCase
