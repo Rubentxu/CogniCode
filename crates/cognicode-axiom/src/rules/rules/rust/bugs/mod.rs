@@ -16,3 +16,5 @@ pub mod s2612_rule;
 pub mod s1186_rule;
 
 pub mod s2589_rule;
+
+pub mod s134_rule;
