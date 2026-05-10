@@ -1736,31 +1736,7 @@ declare_rule! {
 // S2259 — Potential null dereference
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S2259"
-    name: "Null pointer dereferences should be avoided"
-    severity: Blocker
-    category: Bug
-    language: "rust"
-    params: {}
-
-    explanation: "Raw pointer dereferences without verification can cause undefined behavior including crashes, memory corruption, or security vulnerabilities.",
-    clean_code: Logical,
-    impacts: [Reliability: High, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let re = regex::Regex::new(r"\*(\w+)\s*\.\s*\w+").unwrap();
-        let mut unsafe_depth = 0;
-        for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("unsafe {") { unsafe_depth += 1; }
-            if unsafe_depth > 0 && re.is_match(line) {
-                issues.push(Issue::new("S2259", "Raw pointer dereference in unsafe block - verify non-null", Severity::Blocker, Category::Bug, ctx.file_path, idx + 1));
-            }
-            if line.trim() == "}" && unsafe_depth > 0 { unsafe_depth -= 1; }
-        }
-        issues
-    }
-}
+// S2259 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s2259_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S115 — Constant names should follow UPPER_CASE
