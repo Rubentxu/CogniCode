@@ -2006,35 +2006,7 @@ declare_rule! {
 // S1197 — Magic numbers should be replaced by named constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S1197"
-    name: "Magic numbers should be replaced by named constants"
-    severity: Minor
-    category: CodeSmell
-    language: "rust"
-    params: {}
-
-    explanation: "Magic numbers without context make code harder to understand and maintain, as their meaning and origin are not immediately clear.",
-    clean_code: Clear,
-    impacts: [Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let re = regex::Regex::new(r"[=<>!]\s*\d{3,}").unwrap();
-        for (idx, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) && !line.contains("const") && !line.contains("test") && !line.contains("\"") {
-                issues.push(Issue::new(
-                    "S1197",
-                    "Magic number detected - use a named constant",
-                    Severity::Minor,
-                    Category::CodeSmell,
-                    ctx.file_path,
-                    idx + 1,
-                ));
-            }
-        }
-        issues
-    }
-}
+// S1197 → segregated to crates/cognicode-axiom/src/rules/rules/rust/code_smells/s1197_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1214 — static mut should not be used
