@@ -8,3 +8,5 @@ pub mod s1161_rule;
 pub mod s115_rule;
 
 pub mod s1151_rule;
+
+pub mod s1163_rule;

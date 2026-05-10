@@ -1864,37 +1864,7 @@ declare_rule! {
 // S1163 — Redundant else after return/break/continue
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S1163"
-    name: "Redundant else after return, break, or continue"
-    severity: Minor
-    category: CodeSmell
-    language: "rust"
-    params: {}
-
-    explanation: "Redundant else blocks after return/break/continue add unnecessary nesting and reduce code clarity.",
-    clean_code: Clear,
-    impacts: [Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let lines: Vec<&str> = ctx.source.lines().collect();
-        for i in 0..lines.len().saturating_sub(1) {
-            let prev = lines[i].trim();
-            let next = lines[i+1].trim();
-            if (prev.ends_with("return;") || prev.ends_with("break;") || prev.ends_with("continue;")) && next.starts_with("else ") {
-                issues.push(Issue::new(
-                    "S1163",
-                    "Redundant else after control flow statement",
-                    Severity::Minor,
-                    Category::CodeSmell,
-                    ctx.file_path,
-                    i + 2,
-                ));
-            }
-        }
-        issues
-    }
-}
+// S1163 → segregated to crates/cognicode-axiom/src/rules/rules/rust/code_smells/s1163_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1197 — Magic numbers should be replaced by named constants
