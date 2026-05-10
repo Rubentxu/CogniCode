@@ -781,46 +781,7 @@ declare_rule! {
 // S1313 — IP addresses should not be hardcoded
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S1313"
-    name: "IP addresses should not be hardcoded"
-    severity: Minor
-    category: SecurityHotspot
-    language: "*"
-    params: {}
-
-    explanation: "Hardcoded IP addresses make applications inflexible and difficult to deploy in different environments, reducing configurability and portability.",
-    clean_code: Focused,
-    impacts: [Security: Low, Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let re = regex::Regex::new(r#""([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])"(?![0-9])"#).unwrap();
-        for (idx, line) in ctx.source.lines().enumerate() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with("//") 
-            || trimmed.starts_with("///") || trimmed.starts_with("//!")
-            || trimmed.starts_with("/*") || trimmed.starts_with("*")
-            || trimmed.starts_with("#")
-            || trimmed.contains("version") || trimmed.contains("Version")
-            || trimmed.contains("coordinate") || trimmed.contains("Coordinate")
-            || trimmed.contains("specification") || trimmed.contains("Specification")
-            || trimmed.contains("example") || trimmed.contains("Example")
-            { continue; }
-            
-            if let Some(m) = re.find(trimmed) {
-                issues.push(Issue::new(
-                    "S1313",
-                    format!("Hardcoded IP address: {}", m.as_str()),
-                    Severity::Minor,
-                    Category::SecurityHotspot,
-                    ctx.file_path,
-                    idx + 1,
-                ));
-            }
-        }
-        issues
-    }
-}
+// S1313 → segregated to crates/cognicode-axiom/src/rules/rules/rust/security/s1313_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1141 — Error handling should not be deeply nested
