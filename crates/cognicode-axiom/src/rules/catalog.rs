@@ -1768,32 +1768,7 @@ declare_rule! {
 // S1541 — High cyclomatic complexity (simplified)
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S1541"
-    name: "Functions should not have too many branches"
-    severity: Major
-    category: CodeSmell
-    language: "rust"
-    params: { threshold: usize = 10 }
-
-    explanation: "Functions with high cyclomatic complexity are difficult to test thoroughly and maintain, often indicating the need for refactoring into smaller functions.",
-    clean_code: Focused,
-    impacts: [Maintainability: Medium, Reliability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        for func_node in ctx.query_functions() {
-            let mut branch_count = 0;
-            crate::rules::helpers::count_branches_impl(func_node, &mut branch_count);
-            if branch_count > self.threshold {
-                let pt = func_node.start_position();
-                if let Some(name) = ctx.function_name(func_node) {
-                    issues.push(Issue::new("S1541", format!("Function '{}' has {} branches", name, branch_count), Severity::Major, Category::CodeSmell, ctx.file_path, pt.row + 1));
-                }
-            }
-        }
-        issues
-    }
-}
+// S1541 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s1541_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1142 — Too many return statements
