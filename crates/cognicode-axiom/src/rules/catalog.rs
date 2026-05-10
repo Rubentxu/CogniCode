@@ -1963,34 +1963,7 @@ declare_rule! {
 // S1214 — static mut should not be used
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S1214"
-    name: "Mutable static variables should not be used"
-    severity: Critical
-    category: Bug
-    language: "rust"
-    params: {}
-
-    explanation: "static mut is inherently unsafe in Rust as it allows data races; interior mutability patterns like OnceCell or Mutex should be used instead.",
-    clean_code: Logical,
-    impacts: [Reliability: High, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("static mut") {
-                issues.push(Issue::new(
-                    "S1214",
-                    "static mut is unsafe - use OnceCell, Lazy, or interior mutability",
-                    Severity::Critical,
-                    Category::Bug,
-                    ctx.file_path,
-                    idx + 1,
-                ));
-            }
-        }
-        issues
-    }
-}
+// S1214 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s1214_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1244 — Floating point equality should not be used
