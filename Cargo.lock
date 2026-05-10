@@ -835,6 +835,7 @@ version = "0.5.0"
 dependencies = [
  "anyhow",
  "cognicode-core",
+ "indexmap 2.13.0",
  "petgraph 0.6.5",
  "rayon",
  "regex",

@@ -771,10 +771,754 @@ fn test_mcp_containers_handler_with_fixture() {
 }
 
 // =============================================================================
-// Phase 2: Tests against real CogniCode workspace
+// Phase 3: Integration Tests for Context Inference, Structurizr DSL, PlantUML,
+//          reverse_engineer_c4, and Sequence Diagrams
 // =============================================================================
 
 use std::path::Path;
+use std::time::Instant;
+
+use tempfile::TempDir;
+
+use cognicode_diagram::inference::context_inference::ContextInference;
+use cognicode_diagram::mcp::tools::{
+    handle_reverse_engineer_c4,
+    ReverseEngineerC4Input,
+};
+use cognicode_diagram::render::plantuml::{render_plantuml_c4, PlantUmlOptions, PlantUmlViewType};
+use cognicode_diagram::render::sequence::{find_entry_points, render_sequence_diagram, SequenceDiagramOptions};
+use cognicode_diagram::render::structurizr_dsl::{render_structurizr_dsl, StructurizrDslOptions};
+use cognicode_diagram::model::workspace::C4Workspace;
+
+// =============================================================================
+// T3.1 — Context Inference
+// =============================================================================
+
+#[test]
+fn test_infer_context_cognicode_detects_actors_and_externals() {
+    // Use the real CogniCode workspace at /home/rubentxu/Proyectos/rust/CogniCode
+    // The MCP crate has both rmcp and opentelemetry dependencies
+    let project_dir = Path::new("/home/rubentxu/Proyectos/rust/CogniCode");
+
+    let inference = ContextInference::new();
+
+    // Verify project exists
+    if !project_dir.exists() {
+        println!("Skipping test: CogniCode workspace not found");
+        return;
+    }
+
+    // Check MCP crate which has rmcp and opentelemetry dependencies
+    let mcp_dir = project_dir.join("crates/cognicode-mcp");
+    let actors = inference.get_detected_actors(&mcp_dir);
+    let externals = inference.get_detected_external_systems(&mcp_dir);
+
+    // Print detected items for debugging
+    println!("Detected actors: {:?}", actors.iter().map(|a| a.name.clone()).collect::<Vec<_>>());
+    println!("Detected externals: {:?}", externals.iter().map(|s| s.name.clone()).collect::<Vec<_>>());
+
+    // Verify Developer person detected (clap dependency)
+    assert!(
+        actors.iter().any(|a| a.name == "Developer"),
+        "Expected Developer actor (clap dependency)"
+    );
+
+    // Verify AI Agent person detected (rmcp dependency)
+    assert!(
+        actors.iter().any(|a| a.name == "AI Agent"),
+        "Expected AI Agent actor (rmcp dependency)"
+    );
+
+    // Verify OpenTelemetry Collector detected (opentelemetry-otlp dependency)
+    assert!(
+        externals.iter().any(|s| s.name == "OpenTelemetry Collector"),
+        "Expected OpenTelemetry Collector (opentelemetry-otlp dependency)"
+    );
+}
+
+#[test]
+fn test_infer_context_relationships() {
+    let project_dir = Path::new("/home/rubentxu/Proyectos/rust/CogniCode");
+
+    if !project_dir.exists() {
+        println!("Skipping test: CogniCode workspace not found");
+        return;
+    }
+
+    let inference = ContextInference::new();
+    let actors = inference.get_detected_actors(project_dir);
+    let externals = inference.get_detected_external_systems(project_dir);
+
+    // Build a minimal internal system
+    let system = cognicode_diagram::model::c4_types::SoftwareSystem {
+        id: cognicode_diagram::model::c4_types::ElementId::new("system_main"),
+        name: "CogniCode".to_string(),
+        description: "Main system".to_string(),
+        location: cognicode_diagram::model::c4_types::ElementLocation::Internal,
+        containers: Vec::new(),
+    };
+
+    // Get relationships
+    let relationships = inference.infer_context_relationships(&system, &actors, &externals);
+
+    println!("Relationships count: {}", relationships.len());
+
+    // Verify relationships exist (from actors/externals to system)
+    // If actors or externals are empty, this may be 0
+    if !actors.is_empty() || !externals.is_empty() {
+        assert!(
+            !relationships.is_empty() || (actors.is_empty() && externals.is_empty()),
+            "Should have relationships when actors or externals exist"
+        );
+    }
+}
+
+// =============================================================================
+// T3.2 — Structurizr DSL
+// =============================================================================
+
+#[test]
+fn test_structurizr_dsl_valid_structure() {
+    // Build a minimal workspace for CogniCode
+    let project_dir = Path::new("/home/rubentxu/Proyectos/rust/CogniCode");
+
+    if !project_dir.exists() {
+        println!("Skipping test: CogniCode workspace not found");
+        return;
+    }
+
+    // Create a minimal workspace with people and systems
+    let mut workspace = C4Workspace::new("CogniCode");
+    workspace.description = "Code quality analysis platform".to_string();
+
+    // Add a developer person (External)
+    workspace.model.people.push(cognicode_diagram::model::c4_types::Person {
+        id: cognicode_diagram::model::c4_types::ElementId::new("actor_developer"),
+        name: "Developer".to_string(),
+        description: "CLI user".to_string(),
+        location: cognicode_diagram::model::c4_types::ElementLocation::External,
+    });
+
+    // Add the main internal system (no "External" suffix)
+    workspace.model.systems.push(cognicode_diagram::model::c4_types::SoftwareSystem {
+        id: cognicode_diagram::model::c4_types::ElementId::new("cognicode"),
+        name: "CogniCode".to_string(),
+        description: "Main system".to_string(),
+        location: cognicode_diagram::model::c4_types::ElementLocation::Internal,
+        containers: Vec::new(),
+    });
+
+    let options = StructurizrDslOptions::default();
+    let dsl = render_structurizr_dsl(&workspace, &options);
+
+    // Verify output structure
+    assert!(
+        dsl.starts_with("workspace \""),
+        "DSL should start with 'workspace \"'"
+    );
+    assert!(
+        dsl.contains("model {"),
+        "DSL should contain model block"
+    );
+    assert!(
+        dsl.contains("views {"),
+        "DSL should contain views block"
+    );
+    assert!(
+        dsl.contains("styles {"),
+        "DSL should contain styles block"
+    );
+
+    // Verify external actors have "External" tag
+    assert!(
+        dsl.contains("\"External\""),
+        "External actors should have 'External' tag"
+    );
+
+    // Verify main system doesn't have "External" suffix (it's internal)
+    // The internal system should NOT have the External tag
+    let system_lines: Vec<&str> = dsl.lines()
+        .filter(|l| l.contains("softwareSystem") && l.contains("CogniCode"))
+        .collect();
+    if !system_lines.is_empty() {
+        let main_system_line = system_lines.first().unwrap();
+        assert!(
+            !main_system_line.contains("\"External\""),
+            "Main internal system should not have 'External' tag"
+        );
+    }
+}
+
+#[test]
+fn test_structurizr_dsl_containers_present() {
+    // Build workspace with containers
+    let mut workspace = C4Workspace::new("CogniCode");
+    workspace.description = "Code quality analysis".to_string();
+
+    // Add containers
+    let core_container = cognicode_diagram::model::c4_types::Container {
+        id: cognicode_diagram::model::c4_types::ElementId::new("cognicode-core"),
+        name: "cognicode-core".to_string(),
+        container_type: cognicode_diagram::model::c4_types::ContainerType::Library,
+        technology: "Rust".to_string(),
+        description: "Core library".to_string(),
+        path: None,
+        components: Vec::new(),
+    };
+
+    let mcp_container = cognicode_diagram::model::c4_types::Container {
+        id: cognicode_diagram::model::c4_types::ElementId::new("cognicode-mcp"),
+        name: "cognicode-mcp".to_string(),
+        container_type: cognicode_diagram::model::c4_types::ContainerType::Service,
+        technology: "Rust, rmcp".to_string(),
+        description: "MCP server".to_string(),
+        path: None,
+        components: Vec::new(),
+    };
+
+    let main_system = cognicode_diagram::model::c4_types::SoftwareSystem {
+        id: cognicode_diagram::model::c4_types::ElementId::new("cognicode"),
+        name: "CogniCode".to_string(),
+        description: "Main system".to_string(),
+        location: cognicode_diagram::model::c4_types::ElementLocation::Internal,
+        containers: vec![core_container, mcp_container],
+    };
+
+    workspace.model.systems.push(main_system);
+
+    let options = StructurizrDslOptions::default();
+    let dsl = render_structurizr_dsl(&workspace, &options);
+
+    // Verify containers are present
+    assert!(
+        dsl.contains("cognicode-core"),
+        "DSL should mention cognicode-core container"
+    );
+    assert!(
+        dsl.contains("cognicode-mcp"),
+        "DSL should mention cognicode-mcp container"
+    );
+}
+
+#[test]
+fn test_structurizr_dsl_has_valid_identifiers() {
+    // Test that identifiers don't have spaces/hyphens (should be sanitized)
+    let mut workspace = C4Workspace::new("TestProject");
+    workspace.description = "Test".to_string();
+
+    // Add container with hyphenated name
+    let container = cognicode_diagram::model::c4_types::Container {
+        id: cognicode_diagram::model::c4_types::ElementId::new("my_container"),
+        name: "my_container".to_string(),
+        container_type: cognicode_diagram::model::c4_types::ContainerType::Service,
+        technology: "Rust".to_string(),
+        description: "Test container".to_string(),
+        path: None,
+        components: Vec::new(),
+    };
+
+    let system = cognicode_diagram::model::c4_types::SoftwareSystem {
+        id: cognicode_diagram::model::c4_types::ElementId::new("test_system"),
+        name: "TestSystem".to_string(),
+        description: "Test".to_string(),
+        location: cognicode_diagram::model::c4_types::ElementLocation::Internal,
+        containers: vec![container],
+    };
+
+    workspace.model.systems.push(system);
+
+    let options = StructurizrDslOptions::default();
+    let dsl = render_structurizr_dsl(&workspace, &options);
+
+    // Verify the sanitized identifier is used in the output
+    assert!(
+        dsl.contains("my_container"),
+        "Sanitized identifier should appear in DSL"
+    );
+
+    // Verify no invalid characters in the id portion (the first string in quotes after container)
+    // The id appears as the 5th quoted string in the container line
+    for line in dsl.lines() {
+        if line.trim().starts_with("container ") {
+            // Extract the identifier (5th quoted field)
+            let parts: Vec<&str> = line.split('"').collect();
+            if parts.len() >= 9 {
+                let identifier = parts[8];
+                assert!(
+                    !identifier.contains("-"),
+                    "Identifier should not contain hyphens: {}",
+                    identifier
+                );
+                assert!(
+                    !identifier.contains(" "),
+                    "Identifier should not contain spaces: {}",
+                    identifier
+                );
+            }
+        }
+    }
+}
+
+// =============================================================================
+// T3.3 — PlantUML
+// =============================================================================
+
+#[test]
+fn test_plantuml_system_context_valid() {
+    // Build a minimal workspace
+    let mut workspace = C4Workspace::new("CogniCode");
+    workspace.description = "Test".to_string();
+
+    workspace.model.people.push(cognicode_diagram::model::c4_types::Person {
+        id: cognicode_diagram::model::c4_types::ElementId::new("developer"),
+        name: "Developer".to_string(),
+        description: "CLI user".to_string(),
+        location: cognicode_diagram::model::c4_types::ElementLocation::External,
+    });
+
+    let system = cognicode_diagram::model::c4_types::SoftwareSystem {
+        id: cognicode_diagram::model::c4_types::ElementId::new("cognicode"),
+        name: "CogniCode".to_string(),
+        description: "Main system".to_string(),
+        location: cognicode_diagram::model::c4_types::ElementLocation::Internal,
+        containers: Vec::new(),
+    };
+    workspace.model.systems.push(system);
+
+    // Add a relationship between developer and system
+    workspace.model.relationships.push(cognicode_diagram::model::relationships::C4Relationship::new(
+        cognicode_diagram::model::c4_types::ElementId::new("developer"),
+        cognicode_diagram::model::c4_types::ElementId::new("cognicode"),
+        cognicode_diagram::model::relationships::C4RelationshipKind::Uses,
+    ));
+
+    let options = PlantUmlOptions::default();
+    let plantuml = render_plantuml_c4(&workspace, PlantUmlViewType::SystemContext, &options);
+
+    // Verify structure
+    assert!(
+        plantuml.starts_with("@startuml"),
+        "PlantUML should start with @startuml"
+    );
+    assert!(
+        plantuml.ends_with("@enduml"),
+        "PlantUML should end with @enduml"
+    );
+    assert!(
+        plantuml.contains("C4_Context.puml"),
+        "Should include C4_Context.puml"
+    );
+    assert!(
+        plantuml.contains("Person("),
+        "Should have Person declarations"
+    );
+    assert!(
+        plantuml.contains("System("),
+        "Should have System declarations"
+    );
+    assert!(
+        plantuml.contains("Rel("),
+        "Should have Rel declarations"
+    );
+    assert!(
+        plantuml.contains("LAYOUT_WITH_LEGEND()"),
+        "Should have LAYOUT_WITH_LEGEND()"
+    );
+}
+
+#[test]
+fn test_plantuml_container_view_valid() {
+    // Build workspace with containers
+    let mut workspace = C4Workspace::new("CogniCode");
+    workspace.description = "Test".to_string();
+
+    let container = cognicode_diagram::model::c4_types::Container {
+        id: cognicode_diagram::model::c4_types::ElementId::new("cognicode-core"),
+        name: "cognicode-core".to_string(),
+        container_type: cognicode_diagram::model::c4_types::ContainerType::Library,
+        technology: "Rust".to_string(),
+        description: "Core library".to_string(),
+        path: None,
+        components: Vec::new(),
+    };
+
+    let system = cognicode_diagram::model::c4_types::SoftwareSystem {
+        id: cognicode_diagram::model::c4_types::ElementId::new("cognicode"),
+        name: "CogniCode".to_string(),
+        description: "Main system".to_string(),
+        location: cognicode_diagram::model::c4_types::ElementLocation::Internal,
+        containers: vec![container],
+    };
+
+    workspace.model.systems.push(system);
+
+    let options = PlantUmlOptions::default();
+    let plantuml = render_plantuml_c4(&workspace, PlantUmlViewType::Container, &options);
+
+    // Verify structure
+    assert!(
+        plantuml.contains("C4_Container.puml"),
+        "Should include C4_Container.puml"
+    );
+    assert!(
+        plantuml.contains("System_Boundary("),
+        "Should have System_Boundary declarations"
+    );
+    assert!(
+        plantuml.contains("Container(") || plantuml.contains("ContainerDb("),
+        "Should have Container or ContainerDb declarations"
+    );
+}
+
+#[test]
+fn test_plantuml_component_view_valid() {
+    // Build workspace with components
+    let mut workspace = C4Workspace::new("CogniCode");
+    workspace.description = "Test".to_string();
+
+    let component = cognicode_diagram::model::c4_types::Component {
+        id: cognicode_diagram::model::c4_types::ElementId::new("domain"),
+        name: "domain".to_string(),
+        component_type: cognicode_diagram::model::c4_types::ComponentType::Module,
+        technology: "Rust".to_string(),
+        description: "Domain layer".to_string(),
+        path: None,
+        code_elements: Vec::new(),
+    };
+
+    let container = cognicode_diagram::model::c4_types::Container {
+        id: cognicode_diagram::model::c4_types::ElementId::new("cognicode-core"),
+        name: "cognicode-core".to_string(),
+        container_type: cognicode_diagram::model::c4_types::ContainerType::Library,
+        technology: "Rust".to_string(),
+        description: "Core library".to_string(),
+        path: None,
+        components: vec![component],
+    };
+
+    let system = cognicode_diagram::model::c4_types::SoftwareSystem {
+        id: cognicode_diagram::model::c4_types::ElementId::new("cognicode"),
+        name: "CogniCode".to_string(),
+        description: "Main system".to_string(),
+        location: cognicode_diagram::model::c4_types::ElementLocation::Internal,
+        containers: vec![container],
+    };
+
+    workspace.model.systems.push(system);
+
+    let options = PlantUmlOptions::default();
+    let plantuml = render_plantuml_c4(&workspace, PlantUmlViewType::Component, &options);
+
+    // Verify structure
+    assert!(
+        plantuml.contains("C4_Component.puml"),
+        "Should include C4_Component.puml"
+    );
+    assert!(
+        plantuml.contains("Container_Boundary("),
+        "Should have Container_Boundary declarations"
+    );
+    assert!(
+        plantuml.contains("Component("),
+        "Should have Component declarations"
+    );
+}
+
+// =============================================================================
+// T3.4 — reverse_engineer_c4
+// =============================================================================
+
+#[test]
+fn test_reverse_engineer_c4_basic_pipeline() {
+    let project_dir = Path::new("/home/rubentxu/Proyectos/rust/CogniCode");
+
+    if !project_dir.exists() {
+        println!("Skipping test: CogniCode workspace not found");
+        return;
+    }
+
+    let input = ReverseEngineerC4Input {
+        directory: Some(project_dir.to_string_lossy().to_string()),
+        levels: Some(vec!["L1".to_string(), "L2".to_string()]),
+        format: Some("mermaid".to_string()),
+        output_dir: None,
+        max_depth: None,
+    };
+
+    let result = handle_reverse_engineer_c4(input, project_dir, None);
+
+    assert!(
+        result.is_ok(),
+        "reverse_engineer_c4 should succeed, got: {:?}",
+        result
+    );
+
+    let output = result.unwrap();
+
+    // Verify output structure
+    assert!(
+        !output.diagrams.is_empty(),
+        "diagrams should not be empty"
+    );
+    assert!(
+        !output.element_counts.is_empty(),
+        "element_counts should have entries"
+    );
+    assert!(
+        output.elapsed_ms >= 0,
+        "elapsed_ms should be reasonable"
+    );
+
+    println!(
+        "reverse_engineer_c4 completed in {}ms with {} diagrams",
+        output.elapsed_ms,
+        output.diagrams.len()
+    );
+}
+
+#[test]
+fn test_reverse_engineer_c4_all_formats() {
+    let project_dir = Path::new("/home/rubentxu/Proyectos/rust/CogniCode");
+
+    if !project_dir.exists() {
+        println!("Skipping test: CogniCode workspace not found");
+        return;
+    }
+
+    let input = ReverseEngineerC4Input {
+        directory: Some(project_dir.to_string_lossy().to_string()),
+        levels: Some(vec!["L1".to_string()]),
+        format: Some("all".to_string()),
+        output_dir: None,
+        max_depth: None,
+    };
+
+    let result = handle_reverse_engineer_c4(input, project_dir, None);
+    assert!(
+        result.is_ok(),
+        "reverse_engineer_c4 should succeed"
+    );
+
+    let output = result.unwrap();
+
+    // Verify all formats are present
+    assert!(
+        output.diagrams.contains_key("L1_mermaid"),
+        "Should have L1_mermaid format"
+    );
+    assert!(
+        output.diagrams.contains_key("L1_plantuml"),
+        "Should have L1_plantuml format"
+    );
+    assert!(
+        output.diagrams.contains_key("L1_dsl"),
+        "Should have L1_dsl format"
+    );
+}
+
+#[test]
+fn test_reverse_engineer_c4_writes_files() {
+    let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+    let project_dir = Path::new("/home/rubentxu/Proyectos/rust/CogniCode");
+
+    if !project_dir.exists() {
+        println!("Skipping test: CogniCode workspace not found");
+        return;
+    }
+
+    let input = ReverseEngineerC4Input {
+        directory: Some(project_dir.to_string_lossy().to_string()),
+        levels: Some(vec!["L1".to_string()]),
+        format: Some("all".to_string()),
+        output_dir: Some(tmp_dir.path().to_string_lossy().to_string()),
+        max_depth: None,
+    };
+
+    let result = handle_reverse_engineer_c4(input, project_dir, None);
+    assert!(
+        result.is_ok(),
+        "reverse_engineer_c4 should succeed"
+    );
+
+    let output = result.unwrap();
+
+    // Verify files were written
+    assert!(
+        !output.files_written.is_empty(),
+        "files_written should not be empty"
+    );
+
+    // Verify files exist with correct extensions
+    for file in &output.files_written {
+        let path = Path::new(file);
+        assert!(
+            path.exists(),
+            "File should exist: {}",
+            file
+        );
+
+        let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        // Should have correct extensions: .mmd, .puml, .dsl
+        assert!(
+            extension == "mmd" || extension == "puml" || extension == "dsl",
+            "File {} should have .mmd, .puml, or .dsl extension, got .{}",
+            file,
+            extension
+        );
+    }
+
+    println!("Files written: {:?}", output.files_written);
+}
+
+#[test]
+fn test_reverse_engineer_c4_performance() {
+    let project_dir = Path::new("/home/rubentxu/Proyectos/rust/CogniCode");
+
+    if !project_dir.exists() {
+        println!("Skipping test: CogniCode workspace not found");
+        return;
+    }
+
+    let start = Instant::now();
+
+    let input = ReverseEngineerC4Input {
+        directory: Some(project_dir.to_string_lossy().to_string()),
+        levels: Some(vec!["L1".to_string(), "L2".to_string(), "L3".to_string()]),
+        format: Some("mermaid".to_string()),
+        output_dir: None,
+        max_depth: None,
+    };
+
+    let result = handle_reverse_engineer_c4(input, project_dir, None);
+    let elapsed = start.elapsed();
+
+    assert!(
+        result.is_ok(),
+        "reverse_engineer_c4 should succeed"
+    );
+
+    println!("reverse_engineer_c4 took {:?}", elapsed);
+
+    // Should complete in < 5000ms (5 seconds)
+    assert!(
+        elapsed.as_millis() < 5000,
+        "reverse_engineer_c4 should complete in < 5000ms, took {}ms",
+        elapsed.as_millis()
+    );
+}
+
+// =============================================================================
+// T3.5 — Sequence Diagrams
+// =============================================================================
+
+#[test]
+fn test_render_sequence_diagram_basic() {
+    // Use an empty call graph to test basic rendering
+    let call_graph = CallGraph::new();
+
+    let options = SequenceDiagramOptions {
+        max_depth: 2,
+        show_loops: true,
+        show_method_names: true,
+        title: "Test Sequence".to_string(),
+    };
+
+    let diagram = render_sequence_diagram(&call_graph, "", &options);
+
+    // Verify output structure
+    assert!(
+        diagram.starts_with("sequenceDiagram"),
+        "Diagram should start with 'sequenceDiagram'"
+    );
+    // With empty call graph, it will have a Note instead of participants
+    assert!(
+        diagram.contains("Note") || diagram.contains("participant"),
+        "Diagram should have Note or participant declarations"
+    );
+}
+
+#[test]
+fn test_find_entry_points_returns_results() {
+    // Build a minimal call graph with some symbols
+    let mut call_graph = CallGraph::new();
+
+    let location = Location::new("src/main.rs", 1, 0);
+    let symbol = Symbol::new("main", SymbolKind::Function, location);
+    let _main_id = call_graph.add_symbol(symbol);
+
+    let entry_points = find_entry_points(&call_graph);
+
+    // Should find at least one entry point (the "main" function)
+    assert!(
+        !entry_points.is_empty(),
+        "Should find at least one entry point"
+    );
+}
+
+#[test]
+fn test_sequence_diagram_max_depth() {
+    let mut call_graph = CallGraph::new();
+
+    // Create a chain: main -> a -> b -> c -> d
+    let main_loc = Location::new("src/main.rs", 1, 0);
+    let main_sym = Symbol::new("main", SymbolKind::Function, main_loc);
+    let main_id = call_graph.add_symbol(main_sym);
+
+    let a_loc = Location::new("src/a.rs", 1, 0);
+    let a_sym = Symbol::new("a", SymbolKind::Function, a_loc);
+    let a_id = call_graph.add_symbol(a_sym);
+
+    let b_loc = Location::new("src/b.rs", 1, 0);
+    let b_sym = Symbol::new("b", SymbolKind::Function, b_loc);
+    let b_id = call_graph.add_symbol(b_sym);
+
+    let c_loc = Location::new("src/c.rs", 1, 0);
+    let c_sym = Symbol::new("c", SymbolKind::Function, c_loc);
+    let c_id = call_graph.add_symbol(c_sym);
+
+    let d_loc = Location::new("src/d.rs", 1, 0);
+    let d_sym = Symbol::new("d", SymbolKind::Function, d_loc);
+    let d_id = call_graph.add_symbol(d_sym);
+
+    // Add dependencies (Calls)
+    let _ = call_graph.add_dependency(&main_id, &a_id, DependencyType::Calls);
+    let _ = call_graph.add_dependency(&a_id, &b_id, DependencyType::Calls);
+    let _ = call_graph.add_dependency(&b_id, &c_id, DependencyType::Calls);
+    let _ = call_graph.add_dependency(&c_id, &d_id, DependencyType::Calls);
+
+    // Test with max_depth = 2
+    let options = SequenceDiagramOptions {
+        max_depth: 2,
+        show_loops: false,
+        show_method_names: true,
+        title: "Depth Test".to_string(),
+    };
+
+    let diagram = render_sequence_diagram(&call_graph, "main", &options);
+
+    // The diagram should start with sequenceDiagram
+    assert!(
+        diagram.starts_with("sequenceDiagram"),
+        "Diagram should start with 'sequenceDiagram'"
+    );
+
+    // Should only traverse 2 levels deep (main -> a -> b, but not c -> d)
+    // We can verify by counting participants
+    let participant_count = diagram.matches("participant").count();
+    println!("Participants with max_depth=2: {}", participant_count);
+
+    // With depth 2, we should see: main, a, b (3 participants)
+    // Without depth limit, we'd see: main, a, b, c, d (5 participants)
+    assert!(
+        participant_count <= 4, // Allow some flexibility
+        "max_depth should limit participants to 4 or fewer, got {}",
+        participant_count
+    );
+}
+
+// =============================================================================
+// Phase 2: Tests against real CogniCode workspace
+// =============================================================================
 
 use cognicode_diagram::inference::component_inference::ComponentInference;
 

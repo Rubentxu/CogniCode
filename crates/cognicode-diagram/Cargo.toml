@@ -12,6 +12,7 @@ cognicode-core = { path = "../cognicode-core" }
 # Graph layout
 rust-sugiyama = "0.4"
 petgraph = { workspace = true }
+indexmap = { version = "2", features = ["serde"] }
 
 # Parsing
 toml = "0.8"
