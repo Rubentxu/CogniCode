@@ -17,7 +17,7 @@ declare_rule! {
     impacts: [Maintainability: Low, Reliability: Low],
     check: => {
         let mut issues = Vec::new();
-        let query_str = "(match_expression pattern: (identifier) @pat (#any-of? @pat \"Err\" \"Ok\" \"Some\" \"None\")) @match";
+        let query_str = "(match_arm pattern: (identifier) @pat (#any-of? @pat \"Err\" \"Ok\" \"Some\" \"None\")) @match";
         if let Ok(query) = tree_sitter::Query::new(&ctx.language.to_ts_language(), query_str) {
             let mut cursor = tree_sitter::QueryCursor::new();
             let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
