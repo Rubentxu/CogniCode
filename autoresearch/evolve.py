@@ -48,7 +48,7 @@ def analyze(history,force=None,batch=3,keep_rate=0):
  for r in SQ:
   if r in valid_rules and r not in recent and r not in sel and r not in SESSION_DONE:sel.append(r)
   if len(sel)>=max(1,batch//2):break
- cand=sorted(((r,a)for r,a in avg.items()if r not in recent and r not in sel),key=lambda x:x[1])
+ cand=sorted(((r,a)for r,a in avg.items()if r not in recent and r not in sel and r not in SESSION_DONE),key=lambda x:x[1])
  for r,_ in cand:
   if r not in sel:sel.append(r)
   if len(sel)>=batch:break
