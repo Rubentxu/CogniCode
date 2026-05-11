@@ -14,6 +14,8 @@ use cognicode_core::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use cognicode_core::infrastructure::parser::Language;
 use streaming_iterator::StreamingIterator;
 
+use crate::rules::symbol_table::SymbolTable;
+
 /// Severity level for issues detected by rules
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Severity {
@@ -125,6 +127,15 @@ pub struct Issue {
     /// Name of the variable/function/class involved
     #[serde(default)]
     pub variable_name: Option<String>,
+    /// Explanation of WHY this is a problem (for dashboard display)
+    #[serde(default)]
+    pub explanation: Option<String>,
+    /// Example of BAD code that triggers this issue
+    #[serde(default)]
+    pub bad_example: Option<String>,
+    /// Example of GOOD code that fixes the issue
+    #[serde(default)]
+    pub good_example: Option<String>,
 }
 
 impl Issue {
@@ -151,6 +162,9 @@ impl Issue {
             scope: Scope::Unknown,
             code_snippet: None,
             variable_name: None,
+            explanation: None,
+            bad_example: None,
+            good_example: None,
         }
     }
 
@@ -186,6 +200,9 @@ impl Issue {
             scope,
             code_snippet,
             variable_name,
+            explanation: None,
+            bad_example: None,
+            good_example: None,
         }
     }
 
@@ -565,6 +582,9 @@ pub struct RuleContext<'a> {
     pub graph: &'a CallGraph,
     /// File-level metrics
     pub metrics: &'a FileMetrics,
+    /// Optional per-file symbol table (LCPG MVP)
+    /// Built during analysis for semantic rules
+    pub symbol_table: Option<&'a SymbolTable>,
 }
 
 /// The Rule trait that all code smell rules must implement
@@ -606,14 +626,41 @@ pub trait Rule: Send + Sync {
     /// Returns the effort category for fixing issues of this rule (e.g., "quick_fix", "moderate", "complex")
     fn effort_category(&self) -> Option<&str> { None }
 
-    /// Returns an explanation of why this rule matters
+    /// Returns the explanation of why this rule exists and what problem it detects
     fn explanation(&self) -> Option<&str> { None }
+
+    /// Returns an example of bad code that triggers this rule
+    fn bad_example(&self) -> Option<&str> { None }
+
+    /// Returns an example of good code that satisfies this rule
+    fn good_example(&self) -> Option<&str> { None }
+
+    /// Returns the type of entity this rule affects
+    fn affected_entity(&self) -> Option<&str> { None }
+
+    /// Returns the default scope for issues from this rule
+    fn default_scope(&self) -> Option<&str> { None }
 
     /// Returns the clean code attribute for this rule
     fn clean_code_attribute(&self) -> Option<CleanCodeAttribute> { None }
 
     /// Returns the software quality impacts for this rule
     fn software_qualities(&self) -> Vec<SoftwareQualityImpact> { vec![] }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Layer-based rule execution (Phase 2+ for performance optimization)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Returns the layer this rule operates on for performance optimization.
+    /// Layer 0 = preflight (keyword-based fast rejection)
+    /// Layer 1 = structural (AST pattern matching) - default
+    /// Layer 2 = semantic (type checking, data flow)
+    /// Layer 3 = flow (cross-function, whole-program analysis)
+    fn layer(&self) -> u8 { 1 }
+
+    /// Returns keywords that must be present in source for this rule to apply.
+    /// Used for Layer 0 preflight filtering - rules without keywords always run.
+    fn required_keywords(&self) -> Vec<&str> { vec![] }
 }
 
 /// A rule entry for inventory-based registration
@@ -635,6 +682,8 @@ pub struct RuleRegistry {
     rules: Vec<Box<dyn Rule>>,
     by_language: HashMap<String, Vec<usize>>,
     by_category: HashMap<Category, Vec<usize>>,
+    /// Layer-0 preflight filter for fast keyword-based rule eligibility
+    preflight: Option<crate::rules::preflight::PreflightFilter>,
 }
 
 impl std::fmt::Debug for RuleRegistry {
@@ -654,6 +703,7 @@ impl RuleRegistry {
             rules: Vec::new(),
             by_language: HashMap::new(),
             by_category: HashMap::new(),
+            preflight: None,
         };
 
         // Instantiate the inventory registry
@@ -689,6 +739,9 @@ impl RuleRegistry {
             registry.by_category.entry(cat).or_default().push(idx);
         }
 
+        // Build preflight filter from all loaded rules
+        registry.preflight = Some(crate::rules::preflight::PreflightFilter::new(&registry.rules));
+
         registry
     }
 
@@ -706,6 +759,21 @@ impl RuleRegistry {
                 indices
                     .iter()
                     .map(|&i| &*self.rules[i] as &dyn Rule)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Returns rules that apply to a specific language, with their global indices.
+    /// This is useful for preflight filtering where we need to map back to original indices.
+    fn for_language_with_indices(&self, language: &str) -> Vec<(usize, &dyn Rule)> {
+        let lang = language.to_lowercase();
+        self.by_language
+            .get(&lang)
+            .map(|indices| {
+                indices
+                    .iter()
+                    .map(|&i| (i, &*self.rules[i] as &dyn Rule))
                     .collect()
             })
             .unwrap_or_default()
@@ -781,6 +849,11 @@ impl RuleRegistry {
         let metrics = FileMetrics::new();
         let call_graph = CallGraph::new();
 
+        // Build per-file symbol table for semantic analysis (LCPG MVP)
+        // This is built once per file and shared with rules via RuleContext
+        let symbol_table = crate::rules::symbol_table::SymbolTableBuilder::new()
+            .build(&tree, &source);
+
         let ctx = RuleContext {
             tree: &tree,
             source: &source,
@@ -788,12 +861,32 @@ impl RuleRegistry {
             language: &language,
             graph: &call_graph,
             metrics: &metrics,
+            symbol_table: Some(&symbol_table),
         };
 
         let lang_name = language.name();
-        let applicable_rules = self.for_language(lang_name);
 
-        let issues: Vec<Issue> = applicable_rules
+        // Get language-specific rules with their global indices
+        let lang_rules_with_indices = self.for_language_with_indices(lang_name);
+
+        // Layer-0 preflight: determine which of the language-specific rules are eligible
+        let eligible_rules: Vec<_> = if let Some(ref preflight) = self.preflight {
+            let eligible_global = preflight.eligible_rule_indices(&source);
+            let eligible_global_set: std::collections::HashSet<usize> =
+                eligible_global.into_iter().collect();
+
+            // Filter to only rules whose global index is in the eligible set
+            lang_rules_with_indices
+                .into_iter()
+                .filter(|(idx, _)| eligible_global_set.contains(idx))
+                .map(|(_, rule)| rule)
+                .collect()
+        } else {
+            // Fallback: all language rules are eligible
+            lang_rules_with_indices.into_iter().map(|(_, rule)| rule).collect()
+        };
+
+        let issues: Vec<Issue> = eligible_rules
             .par_iter()
             .flat_map(|rule| rule.check(&ctx))
             .collect();

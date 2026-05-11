@@ -40,7 +40,7 @@ use inventory::submit;
 use streaming_iterator::StreamingIterator;
 
 // Re-export extracted rules for backward compatibility
-pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule};
+pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule, S2259Rule, S1142Rule, S1214Rule, S1541Rule, S1244Rule, S1197Rule, S1161Rule, S115Rule, S1151Rule, S1163Rule};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S134 — Deep Nesting Rule
@@ -160,7 +160,7 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         // Pre-compile regex once - pattern is constant
-        let re = regex::Regex::new(r"(?i)\b(TODO|FIXME|HACK|XXX)\b(?![a-zA-Z0-9_])").unwrap();
+        let re = regex::Regex::new(r"(?i)\b(TODO|FIXME|HACK|XXX)\b").unwrap();
         for (line_num, line) in ctx.source.lines().enumerate() {
             if re.is_match(line) {
                 issues.push(Issue::new(
@@ -196,7 +196,7 @@ declare_rule! {
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
-        let deprecated_pattern = regex::Regex::new(r#"(?i)^\s*#\s*\[deprecated\b)"#).unwrap();
+        let deprecated_pattern = regex::Regex::new(r#"(?i)^\s*#\s*\[deprecated\]"#).unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with("//") 
@@ -239,10 +239,10 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let patterns = [
-            (r#"(?i)(password|passwd|pwd)\s*[=:]\s*["'][^"']{8,}["']"#, "password"),
-            (r#"(?i)(api[_-]?key|apikey)\s*[=:]\s*["'][^"']{8,}["']"#, "api_key"),
-            (r#"(?i)(secret|token)\s*[=:]\s*["'][^"']{8,}["']"#, "secret"),
-            (r#"(?i)(bearer\s+token|basic\s+auth)\s*[=:]\s*["'][a-zA-Z0-9_\-]{8,}["']"#, "bearer_token"),
+            (r#"(?i)(password|passwd|pwd)\s*[=:]\s*["'][^"']{3,}["']"#, "password"),
+            (r#"(?i)(api[_-]?key|apikey)\s*[=:]\s*["'][^"']{3,}["']"#, "api_key"),
+            (r#"(?i)(secret|token)\s*[=:]\s*["'][^"']{3,}["']"#, "secret"),
+            (r#"(?i)(bearer\s+token|basic\s+auth)\s*[=:]\s*["'][a-zA-Z0-9_\-]{3,}["']"#, "bearer_token"),
         ];
         let regexes: Vec<_> = patterns.iter().map(|(p, _)| regex::Regex::new(p).unwrap()).collect();
         
@@ -293,61 +293,39 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "EXEC", "EXECUTE", "UNION", "INTO", "OUTFILE", "INFILE", "LOAD_FILE", "BENCHMARK", "SLEEP"];
-        let sql_keyword_patterns: Vec<_> = sql_keywords.iter()
-            .map(|keyword| {
-                let pattern = format!(r"(?i)(?<![a-zA-Z_]){}(?![a-zA-Z_])", regex::escape(keyword));
-                regex::Regex::new(&pattern)
-            })
-            .collect();
-        
-        let query = match tree_sitter::Query::new(
-            &ctx.language.to_ts_language(),
-            "(macro_invocation (identifier) @macro_name (token_tree) @args)"
-        ) {
-            Ok(q) => q,
-            Err(_) => return Vec::new(),
-        };
-        
-        let mut cursor = tree_sitter::QueryCursor::new();
-        let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
 
-        while let Some(m) = matches.next() {
-            for cap in m.captures {
-                if cap.node.kind() == "identifier"
-                    && let Ok(macro_name) = cap.node.utf8_text(ctx.source.as_bytes())
-                        && (macro_name == "format" || macro_name == "format_args")
-                            && let Some(args_node) = m.captures.iter().find(|c| c.node.kind() == "token_tree")
-                                && let Ok(args_text) = args_node.node.utf8_text(ctx.source.as_bytes()) {
-                                    let args_upper = args_text.to_uppercase();
-                                    let format_arg_count = args_text.matches("{}").count();
-                                    for keyword in &sql_keywords {
-                                        // Use negative lookahead/lookbehind to match SQL keywords not part of identifiers
-                                        // This handles edge cases like "SELECT;" or "SELECT(" that \b might miss
-                                        let pattern = format!(r"(?i)(?<![a-zA-Z_]){}(?![a-zA-Z_])", regex::escape(keyword));
-                                        if regex::Regex::new(&pattern)
-                                            .and_then(|re| Ok(re.is_match(args_text)))
-                                            .unwrap_or(false)
-                                            && format_arg_count >= 1 {
-                                            let pt = cap.node.start_position();
-                                            issues.push(Issue::new(
-                                                "S5122",
-                                                format!(
-                                                    "Potential SQL injection: SQL keyword '{}' found in format! string with {} dynamic argument(s)",
-                                                    keyword,
-                                                    format_arg_count
-                                                ),
-                                                Severity::Blocker,
-                                                Category::Vulnerability,
-                                                ctx.file_path,
-                                                pt.row + 1,
-                                            ).with_column(pt.column + 1)
-                                            .with_remediation(Remediation::substantial(
-                                                "Use parameterized queries instead of string interpolation"
-                                            )));
-                                            break;
-                                        }
-                                    }
-                                }
+        // Look for format! macro invocations containing SQL keywords
+        // Pattern: format! followed by a string literal that contains SQL keywords
+        for (line_idx, line) in ctx.source.lines().enumerate() {
+            // Check if this line has a format! macro
+            if line.contains("format!") || line.contains("format_args!") {
+                // Simple approach: find format!(" or format_args!(" and extract until the closing quote
+                let line_upper = line.to_uppercase();
+                for keyword in &sql_keywords {
+                    let kw_upper = keyword.to_uppercase();
+                    // Check if the line contains the SQL keyword
+                    if line_upper.contains(&kw_upper) {
+                        // Found SQL keyword - report it
+                        // We report at the position of the keyword in the original line
+                        if let Some(kw_pos) = line_upper.find(&kw_upper) {
+                            issues.push(Issue::new(
+                                "S5122",
+                                format!(
+                                    "Potential SQL injection: SQL keyword '{}' found in format! string",
+                                    keyword
+                                ),
+                                Severity::Blocker,
+                                Category::Vulnerability,
+                                ctx.file_path,
+                                line_idx + 1,
+                            ).with_column(kw_pos + 1)
+                            .with_remediation(Remediation::substantial(
+                                "Use parameterized queries instead of string interpolation"
+                            )));
+                            break;
+                        }
+                    }
+                }
             }
         }
 
@@ -373,12 +351,14 @@ declare_rule! {
     check: => {
         let mut issues = Vec::new();
         let weak_patterns = [
-            (r"(?i)(?:\b|_)(?:hash|digest|sign|encrypt)_?md5\b", "MD5 hash function"),
-            (r"(?i)(?:\b|_)(?:hash|digest|sign|encrypt)_?sha[01]\b", "SHA-0/SHA-1 hash function"),
-            (r"(?i)(?:^|[^\w])(?:_)?des(?:_|$|[^\w])", "DES block cipher"),
-            (r"(?i)(?:\b|_)3des\b", "Triple DES (3DES) block cipher"),
-            (r"(?i)(?:\b|_)rc4\b", "RC4 stream cipher"),
-            (r"(?i)(?:^|[^\w])crypt\b", "crypt(3) function"),
+            (r"(?i)\bmd5\b", "MD5 hash function"),
+            (r"(?i)\bsha1?\b", "SHA-0/SHA-1 hash function"),
+            // Match des/rc4 when preceded by underscore (common in function names like encrypt_with_des)
+            // Also match when followed by ( or preceded by word boundary
+            (r"(?i)_des\b", "DES block cipher"),
+            (r"(?i)_3des\b", "Triple DES (3DES) block cipher"),
+            (r"(?i)_rc4\b", "RC4 stream cipher"),
+            (r"(?i)\bcrypt\b", "crypt(3) function"),
         ];
 
         let compiled_patterns: Vec<(regex::Regex, &str)> = weak_patterns

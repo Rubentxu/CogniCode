@@ -35,6 +35,8 @@ mod generated_tests {
         let tree = parser.parse(source, None).unwrap();
         let graph = CallGraph::new();
         let metrics = FileMetrics::new();
+        let symbol_table = crate::rules::symbol_table::SymbolTableBuilder::new()
+            .build(&tree, source);
 
         let ctx = RuleContext {
             tree: &tree,
@@ -43,6 +45,7 @@ mod generated_tests {
             language: &language,
             graph: &graph,
             metrics: &metrics,
+            symbol_table: Some(&symbol_table),
         };
 
         f(&ctx)

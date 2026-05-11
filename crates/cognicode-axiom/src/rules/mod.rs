@@ -28,6 +28,10 @@ pub mod ratings;     // Project Ratings A-E (Section 7)
 pub mod duplication; // Duplication Detection with BLAKE3 (Section 3.1)
 pub mod regex_patterns; // Shared regex pattern constants
 pub mod subscription_engine; // Deterministic SubscriptionVisitor pattern (SonarQube-aligned)
+pub mod preflight; // Layer-0 preflight filter using Aho-Corasick
+pub mod poc_rules; // PoC rules using #[cogni_rule] attribute macro
+pub mod symbol_table; // Lightweight per-file SymbolTable for LCPG MVP
+pub mod visitor; // Reusable AST visitor trait and traversal patterns
 
 #[cfg(feature = "scraper")]
 pub mod scraper;
@@ -39,6 +43,9 @@ mod catalog_tests;
 
 #[cfg(test)]
 mod catalog_tests_generated;
+
+#[cfg(test)]
+mod cogni_rule_tests;
 
 pub use store::{RuleStore, RuleId};
 pub use store::Rule as GovernanceRule;

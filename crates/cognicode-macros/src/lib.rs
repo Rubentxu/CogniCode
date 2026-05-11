@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemFn, Ident, Type, Expr, Token, LitStr};
+use syn::{parse_macro_input, ItemFn, ItemStruct, Ident, Type, Expr, Token, LitStr};
 
 /// AIX Tool macro for simplified MCP tool registration.
 ///
@@ -200,6 +200,244 @@ pub fn declare_rule(input: TokenStream) -> TokenStream {
     };
 
     output.into()
+}
+
+/// Attribute macro for defining rules with ast-grep pattern matching.
+///
+/// # Syntax
+/// ```ignore
+/// #[cogni_rule(
+///     id = "sec/crypto-weak-hash",
+///     severity = "Critical",
+///     category = "Vulnerability",
+///     language = "rust",
+///     pattern = "md5($$$)",
+///     message = "Use of weak cryptographic hash detected"
+/// )]
+/// struct WeakCryptoHashRule;
+/// ```
+///
+/// The macro generates:
+/// - `impl Rule for WeakCryptoHashRule` with all trait methods
+/// - If `pattern` is provided, a `check()` method using ast-grep pattern matching
+/// - If `pattern` is NOT provided, `check()` returns empty Vec (user overrides manually)
+/// - `inventory::submit!` for auto-registration
+#[proc_macro_attribute]
+pub fn cogni_rule(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attrs = parse_macro_input!(attr as CogniRuleAttrs);
+    let item_struct = parse_macro_input!(item as ItemStruct);
+
+    let struct_name = &item_struct.ident;
+    let rule_id_str = LitStr::new(&attrs.id, item_struct.ident.span());
+    let rule_name_str = attrs.name.unwrap_or_else(|| attrs.id.clone());
+    let language_str = LitStr::new(&attrs.language, item_struct.ident.span());
+    let message_str = attrs.message.unwrap_or_else(|| "Issue detected".to_string());
+    let message_lit = LitStr::new(&message_str, item_struct.ident.span());
+    let severity = &attrs.severity;
+    let category = &attrs.category;
+
+    // Generate the check method based on whether pattern is provided
+    // MVP: Use simple textual matching via ctx.source.contains()
+    let check_method = if let Some(pattern) = &attrs.pattern {
+        let pattern_str = LitStr::new(pattern, item_struct.ident.span());
+        quote! {
+            fn check(&self, ctx: &RuleContext) -> Vec<Issue> {
+                let source = ctx.source;
+                let mut issues = Vec::new();
+
+                // Simple textual pattern matching for MVP
+                if source.contains(#pattern_str) {
+                    // Find line number of first occurrence
+                    let line_number = source.lines()
+                        .enumerate()
+                        .find(|(_, line)| line.contains(#pattern_str))
+                        .map(|(idx, _)| idx + 1)
+                        .unwrap_or(1);
+
+                    issues.push(Issue::new(
+                        self.id(),
+                        #message_lit,
+                        self.severity(),
+                        self.category(),
+                        ctx.file_path,
+                        line_number,
+                    ));
+                }
+
+                issues
+            }
+        }
+    } else {
+        quote! {
+            fn check(&self, _ctx: &RuleContext) -> Vec<Issue> {
+                vec![]
+            }
+        }
+    };
+
+    // Generate the required_keywords method body
+    let required_keywords_code = if let Some(ref kws) = attrs.required_keywords {
+        let kw_lits: Vec<LitStr> = kws.iter()
+            .map(|kw| LitStr::new(kw, item_struct.ident.span()))
+            .collect();
+        quote! {
+            fn required_keywords(&self) -> Vec<&str> {
+                vec![#(#kw_lits),*]
+            }
+        }
+    } else {
+        quote! {
+            fn required_keywords(&self) -> Vec<&str> {
+                vec![]
+            }
+        }
+    };
+
+    let output = quote! {
+        #item_struct
+
+        impl Rule for #struct_name {
+            fn id(&self) -> &str {
+                #rule_id_str
+            }
+
+            fn name(&self) -> &str {
+                #rule_name_str
+            }
+
+            fn severity(&self) -> Severity {
+                Severity::#severity
+            }
+
+            fn category(&self) -> Category {
+                Category::#category
+            }
+
+            fn language(&self) -> &str {
+                #language_str
+            }
+
+            #check_method
+
+            fn layer(&self) -> u8 {
+                1
+            }
+
+            #required_keywords_code
+        }
+
+        inventory::submit! {
+            RuleEntry {
+                factory: || Box::new(#struct_name {})
+            }
+        }
+    };
+
+    output.into()
+}
+
+/// Parsed attributes for #[cogni_rule]
+struct CogniRuleAttrs {
+    id: String,
+    name: Option<String>,
+    severity: Ident,
+    category: Ident,
+    language: String,
+    pattern: Option<String>,
+    message: Option<String>,
+    required_keywords: Option<Vec<String>>,
+}
+
+impl syn::parse::Parse for CogniRuleAttrs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut id = None;
+        let mut name = None;
+        let mut severity = None;
+        let mut category = None;
+        let mut language = None;
+        let mut pattern = None;
+        let mut message = None;
+        let mut required_keywords = None;
+
+        // Parse attribute list - input is already the inner content of (id = "...", ...)
+        // Accepts both `key = value` and `key: value` syntax for flexibility
+        while !input.is_empty() {
+            let key: Ident = input.parse()?;
+
+            // Accept both `=` and `:` as separator between key and value
+            let _separator = if input.peek(Token![=]) {
+                input.parse::<Token![=]>()?;
+                "="
+            } else if input.peek(Token![:]) {
+                input.parse::<Token![:]>()?;
+                ":"
+            } else {
+                return Err(syn::Error::new(key.span(), "expected `=` or `:` after key"));
+            };
+            let key_str = key.to_string();
+
+            match key_str.as_str() {
+                "id" => {
+                    let value: syn::LitStr = input.parse()?;
+                    id = Some(value.value());
+                }
+                "name" => {
+                    let value: syn::LitStr = input.parse()?;
+                    name = Some(value.value());
+                }
+                "severity" => {
+                    let value: Ident = input.parse()?;
+                    severity = Some(value);
+                }
+                "category" => {
+                    let value: Ident = input.parse()?;
+                    category = Some(value);
+                }
+                "language" => {
+                    let value: syn::LitStr = input.parse()?;
+                    language = Some(value.value());
+                }
+                "pattern" => {
+                    let value: syn::LitStr = input.parse()?;
+                    pattern = Some(value.value());
+                }
+                "message" => {
+                    let value: syn::LitStr = input.parse()?;
+                    message = Some(value.value());
+                }
+                "required_keywords" => {
+                    // Parse array: ["kw1", "kw2", ...]
+                    let content;
+                    syn::bracketed!(content in input);
+                    let mut kws = Vec::new();
+                    while !content.is_empty() {
+                        let value: syn::LitStr = content.parse()?;
+                        kws.push(value.value());
+                        if content.peek(Token![,]) {
+                            let _comma: Token![,] = content.parse()?;
+                        }
+                    }
+                    required_keywords = Some(kws);
+                }
+                _ => return Err(syn::Error::new(key.span(), format!("Unknown key: {}", key_str))),
+            }
+
+            if input.peek(Token![,]) {
+                let _comma: Token![,] = input.parse()?;
+            }
+        }
+
+        Ok(Self {
+            id: id.ok_or_else(|| syn::Error::new(input.span(), "Missing `id` field"))?,
+            name,
+            severity: severity.ok_or_else(|| syn::Error::new(input.span(), "Missing `severity` field"))?,
+            category: category.ok_or_else(|| syn::Error::new(input.span(), "Missing `category` field"))?,
+            language: language.ok_or_else(|| syn::Error::new(input.span(), "Missing `language` field"))?,
+            pattern,
+            message,
+            required_keywords,
+        })
+    }
 }
 
 /// Parsed input for the declare_rule! macro

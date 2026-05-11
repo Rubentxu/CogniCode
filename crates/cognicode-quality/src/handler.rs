@@ -89,6 +89,7 @@ impl QualityAnalysisHandler {
             language: &language,
             graph: &graph,
             metrics: &metrics,
+            symbol_table: None,
         };
 
         let mut all_issues = Vec::new();
@@ -194,6 +195,7 @@ impl QualityAnalysisHandler {
                 language: &language,
                 graph: &graph,
                 metrics: &metrics,
+                symbol_table: None,
             };
 
             let mut file_issues = Vec::new();
@@ -545,6 +547,9 @@ pub struct IssueResult {
     pub scope: Option<String>,
     pub code_snippet: Option<String>,
     pub variable_name: Option<String>,
+    pub explanation: Option<String>,
+    pub bad_example: Option<String>,
+    pub good_example: Option<String>,
 }
 
 impl From<Issue> for IssueResult {
@@ -568,6 +573,9 @@ impl From<Issue> for IssueResult {
             scope: Some(format!("{:?}", issue.scope)),
             code_snippet: issue.code_snippet,
             variable_name: issue.variable_name,
+            explanation: issue.explanation,
+            bad_example: issue.bad_example,
+            good_example: issue.good_example,
         }
     }
 }
@@ -683,6 +691,9 @@ mod tests {
             scope: cognicode_axiom::rules::types::Scope::Local,
             code_snippet: Some("let x = 5;".to_string()),
             variable_name: Some("x".to_string()),
+            explanation: None,
+            bad_example: None,
+            good_example: None,
         };
 
         let result = IssueResult::from(issue);
@@ -721,6 +732,9 @@ mod tests {
             scope: cognicode_axiom::rules::types::Scope::Local,
             code_snippet: None,
             variable_name: Some("x".to_string()),
+            explanation: None,
+            bad_example: None,
+            good_example: None,
         };
 
         let result = IssueResult::from(issue);
