@@ -40,7 +40,7 @@ mod tests {
     #[test]
     fn test_s1244_registered() {
         let rule=S1244Rule::new();
-        assert_eq!(rule.id(),+rule_id+);
+        assert_eq!(rule.id(), "S1244");
         assert!(rule.name().len()>0);
     }
 }

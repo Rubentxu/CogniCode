@@ -36,7 +36,7 @@ mod tests {
     #[test]
     fn test_s115_registered() {
         let rule=S115Rule::new();
-        assert_eq!(rule.id(),+rule_id+);
+        assert_eq!(rule.id(), "S115");
         assert!(rule.name().len()>0);
     }
 }

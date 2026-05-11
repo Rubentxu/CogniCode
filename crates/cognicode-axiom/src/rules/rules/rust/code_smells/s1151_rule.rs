@@ -2,7 +2,7 @@
 use crate::{Severity,Category,Issue,Remediation,Rule,RuleContext,RuleEntry};
 use crate::rules::{CleanCodeAttribute,SoftwareQuality,SoftwareQualityImpact,ImpactSeverity};
 use cognicode_macros::declare_rule;
-use inventory::submit;
+use streaming_iterator::StreamingIterator;
 
 declare_rule! {
     id: "S1151"
@@ -48,7 +48,7 @@ mod tests {
     #[test]
     fn test_s1151_registered() {
         let rule=S1151Rule::new();
-        assert_eq!(rule.id(),+rule_id+);
+        assert_eq!(rule.id(), "S1151");
         assert!(rule.name().len()>0);
     }
 }

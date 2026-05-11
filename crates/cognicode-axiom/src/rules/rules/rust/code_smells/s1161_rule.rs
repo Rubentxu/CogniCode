@@ -39,7 +39,7 @@ mod tests {
     #[test]
     fn test_s1161_registered() {
         let rule=S1161Rule::new();
-        assert_eq!(rule.id(),+rule_id+);
+        assert_eq!(rule.id(), "S1161");
         assert!(rule.name().len()>0);
     }
 }

@@ -8,6 +8,8 @@
 
 pub mod complexity;
 pub mod style;
+pub mod rust;
+pub mod python;
 
 pub use complexity::{S138Rule, S3776Rule};
 pub use style::{S2306Rule, S1066Rule, S1192Rule};

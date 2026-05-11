@@ -41,6 +41,7 @@ use streaming_iterator::StreamingIterator;
 
 // Re-export extracted rules for backward compatibility
 pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule};
+pub use crate::rules::rules::rust::bugs::S2259Rule;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S134 — Deep Nesting Rule
