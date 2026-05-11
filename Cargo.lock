@@ -836,6 +836,7 @@ dependencies = [
  "anyhow",
  "blake3",
  "cognicode-core",
+ "criterion",
  "indexmap 2.13.0",
  "petgraph 0.6.5",
  "rayon",
@@ -843,6 +844,8 @@ dependencies = [
  "rust-sugiyama",
  "serde",
  "serde_json",
+ "serde_yaml",
+ "sqlparser",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -4797,6 +4800,15 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+
+[[package]]
+name = "sqlparser"
+version = "0.53.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05a528114c392209b3264855ad491fcce534b94a38771b0a0b97a79379275ce8"
+dependencies = [
+ "log",
+]
 
 [[package]]
 name = "stable_deref_trait"
