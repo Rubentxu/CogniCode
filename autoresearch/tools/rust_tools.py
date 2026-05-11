@@ -15,7 +15,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).parent.parent
+REPO_ROOT = Path(__file__).parent.parent.parent
 CATALOG_PATH = REPO_ROOT / "crates" / "cognicode-axiom" / "src" / "rules" / "catalog.rs"
 
 
@@ -79,7 +79,7 @@ class GitTool:
         """Stage all changes and commit. Returns success."""
         try:
             subprocess.run(
-                ["git", "add", str(CATALOG_PATH)],
+                ["git", "add", "-f", str(CATALOG_PATH)],
                 check=True, cwd=str(REPO_ROOT)
             )
             subprocess.run(

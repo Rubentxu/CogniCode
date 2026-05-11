@@ -33,8 +33,8 @@ class ModelConfig:
     DECIDER_MODEL = MODEL
     
     # Token limits
-    MAX_TOKENS = 8192
-    TEMPERATURE = 0.3  # Low for code editing precision
+    MAX_TOKENS = 4096        # Enough for thinking + text response
+    TEMPERATURE = 0.3        # Low for code editing precision
     
     @classmethod
     def validate(cls) -> bool:
@@ -112,7 +112,15 @@ class LLMClient:
                 system=[{"type": "text", "text": system}],
                 messages=messages,
             )
-            return response.content[0].text
+            # Extract text from response (skip thinking blocks)
+            for block in response.content:
+                if hasattr(block, 'type') and block.type == 'text':
+                    return block.text
+                elif hasattr(block, 'text'):
+                    return block.text
+            
+            logger.warning(f"No text block in response: {response.content}")
+            return ""
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
             raise
