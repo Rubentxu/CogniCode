@@ -18,6 +18,8 @@ indexmap = { version = "2", features = ["serde"] }
 toml = "0.8"
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+sqlparser = { workspace = true }
 regex = { workspace = true }
 
 # Async
@@ -38,3 +40,16 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "layout_benchmark"
+harness = false
+
+[[bench]]
+name = "inference_benchmark"
+harness = false
+
+[[bench]]
+name = "render_benchmark"
+harness = false

@@ -1,24 +1,31 @@
-//! CogniCode Diagram — Inferred diagramming and C4 Model reverse engineering
+//! # cognicode-diagram
 //!
-//! Generates C4 Model diagrams (Context, Container, Component, Code),
-//! UML class diagrams, and architecture visualizations from code analysis.
+//! Inferred diagramming and C4 Model reverse engineering for CogniCode.
 //!
-//! # Architecture
+//! ## Features
+//! - **C4 Model**: L1-L4 inference and rendering (Context, Container, Component, Code)
+//! - **Deployment Diagrams**: Dockerfile/docker-compose inference
+//! - **ER Diagrams**: SQL schema inference
+//! - **Multiple Formats**: Mermaid, PlantUML, D2, SVG, Structurizr DSL
+//! - **Layout Engine**: Sugiyama hierarchical layout algorithm
 //!
-//! The crate is organized in three phases:
-//! 1. **Inference** — extracts C4 model elements from `CallGraph` and project config
-//! 2. **Layout** — computes node positions using Sugiyama algorithm with port extensions
-//! 3. **Render** — outputs to Mermaid, PlantUML, Structurizr DSL, or SVG
+//! ## Architecture
 //!
-//! # Example
+//! The crate is organized in four main modules:
+//!
+//! 1. **model** — C4 model types, deployment model, ER model, workspace
+//! 2. **inference** — extracts model elements from code analysis, configs, schemas
+//! 3. **layout** — computes node positions using Sugiyama algorithm
+//! 4. **render** — outputs diagrams in various formats (Mermaid, PlantUML, D2, SVG)
+//!
+//! ## Quick Start
 //!
 //! ```ignore
-//! use cognicode_diagram::inference::InferenceEngine;
-//! use cognicode_core::domain::aggregates::call_graph::CallGraph;
+//! use cognicode_diagram::model::workspace::C4Workspace;
+//! use cognicode_diagram::render::d2::{render_d2, D2Options};
 //!
-//! let engine = InferenceEngine::new(&call_graph);
-//! let elements = engine.infer_code_elements("src/domain", 2);
-//! let mermaid = cognicode_diagram::render::render_class_diagram(&elements);
+//! let workspace = C4Workspace::new("MySystem");
+//! let d2_source = render_d2(&workspace, &D2Options::default());
 //! ```
 
 pub mod model;

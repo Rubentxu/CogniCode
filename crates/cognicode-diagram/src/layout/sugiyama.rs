@@ -16,8 +16,7 @@ use crate::layout::types::{
     LayoutedDiagram, LayoutedEdge, LayoutedNode, LayoutConfig, LayoutDirection, Point, Port,
     PortSide,
 };
-use crate::model::c4_types::{ContainerType, ElementId, Person, SoftwareSystem};
-use crate::model::relationships::C4Relationship;
+use crate::model::c4_types::ContainerType;
 use crate::model::workspace::C4Workspace;
 
 /// Compute layout for a C4Workspace using Sugiyama algorithm
@@ -463,6 +462,8 @@ fn get_default_target_port(source: &LayoutedNode, target: &LayoutedNode, directi
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::c4_types::{ElementId, Person, SoftwareSystem};
+    use crate::model::relationships::C4Relationship;
 
     fn create_test_workspace() -> C4Workspace {
         let mut workspace = C4Workspace::new("TestSystem");

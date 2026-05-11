@@ -3,6 +3,7 @@
 //! Auto-detects the build system and delegates to the appropriate parser.
 
 pub mod cargo;
+pub mod docker;
 pub mod nodejs;
 pub mod python;
 

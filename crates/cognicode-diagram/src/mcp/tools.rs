@@ -19,6 +19,7 @@ use crate::render::mermaid_c4::{render_component_diagram, render_container_diagr
 use crate::render::plantuml::{render_plantuml_c4, PlantUmlOptions, PlantUmlViewType};
 use crate::render::structurizr_dsl::{render_structurizr_dsl, StructurizrDslOptions};
 use crate::render::sequence::{find_entry_points, render_sequence_diagram, SequenceDiagramOptions};
+use crate::render::d2::{render_d2, D2Options};
 
 /// Input for the `generate_c4_code` MCP tool
 #[derive(Debug, Clone, Deserialize)]
@@ -410,6 +411,7 @@ pub fn handle_reverse_engineer_c4(
                 "mermaid" => "mmd",
                 "plantuml" => "puml",
                 "dsl" => "dsl",
+                "d2" => "d2",
                 _ => "txt",
             };
             let level = diagram_output.level.to_lowercase();
@@ -434,7 +436,7 @@ pub fn handle_reverse_engineer_c4(
 /// Parse format string into list of formats
 fn parse_formats(format: &str) -> Vec<String> {
     match format {
-        "all" => vec!["mermaid".to_string(), "plantuml".to_string(), "dsl".to_string()],
+        "all" => vec!["mermaid".to_string(), "plantuml".to_string(), "dsl".to_string(), "d2".to_string()],
         _ => vec![format.to_string()],
     }
 }
@@ -770,6 +772,10 @@ fn render_diagram_for_workspace(
             let options = StructurizrDslOptions::default();
             Ok(render_structurizr_dsl(workspace, &options))
         }
+        "d2" => {
+            let options = D2Options::default();
+            Ok(render_d2(workspace, &options))
+        }
         other => Err(anyhow::anyhow!("Unsupported format: {}", other)),
     }
 }
@@ -961,7 +967,7 @@ version = "0.1.0"
         assert_eq!(parse_formats("mermaid"), vec!["mermaid"]);
         assert_eq!(
             parse_formats("all"),
-            vec!["mermaid", "plantuml", "dsl"]
+            vec!["mermaid", "plantuml", "dsl", "d2"]
         );
     }
 
@@ -1018,5 +1024,187 @@ version = "0.1.0"
         let result = handle_generate_c4_dynamic(input, &call_graph).unwrap();
         assert_eq!(result.format, "mermaid");
         assert!(result.diagram.contains("sequenceDiagram"));
+    }
+}
+
+// =============================================================================
+// Deployment Diagram Tools
+// =============================================================================
+
+/// Input for the `generate_c4_deployment` MCP tool
+#[derive(Debug, Clone, Deserialize)]
+pub struct GenerateC4DeploymentInput {
+    /// Project directory to analyze (default: ".")
+    pub directory: Option<String>,
+    /// Output format: "mermaid" (default), "d2"
+    pub format: Option<String>,
+    /// Show port mappings (default: true)
+    pub show_ports: Option<bool>,
+    /// Show environment variables (default: false)
+    pub show_environment: Option<bool>,
+}
+
+/// Output of the `generate_c4_deployment` MCP tool
+#[derive(Debug, Clone, Serialize)]
+pub struct GenerateC4DeploymentOutput {
+    pub diagram: String,
+    pub format: String,
+    pub node_count: usize,
+    pub network_count: usize,
+    pub relationship_count: usize,
+}
+
+/// Handle `generate_c4_deployment` — deployment/infrastructure diagram
+pub fn handle_generate_c4_deployment(
+    input: GenerateC4DeploymentInput,
+    project_dir: &std::path::Path,
+) -> anyhow::Result<GenerateC4DeploymentOutput> {
+    let format = input.format.unwrap_or_else(|| "mermaid".to_string());
+
+    // Infer deployment from Docker files
+    let model = crate::inference::deployment_inference::infer_deployment(project_dir)?;
+
+    // Render diagram
+    let diagram = match format.as_str() {
+        "mermaid" => crate::render::deployment::render_deployment_mermaid(&model),
+        "d2" => {
+            let options = crate::render::d2::D2Options::default();
+            crate::render::deployment::render_deployment_d2(&model, &options)
+        }
+        other => {
+            return Err(anyhow::anyhow!(
+                "Unsupported format '{}'. Supported: 'mermaid', 'd2'",
+                other
+            ))
+        }
+    };
+
+    Ok(GenerateC4DeploymentOutput {
+        diagram,
+        format,
+        node_count: model.nodes.len(),
+        network_count: model.networks.len(),
+        relationship_count: model.relationships.len(),
+    })
+}
+
+// =============================================================================
+// ER Diagram Tools
+// =============================================================================
+
+/// Input for the `generate_er_diagram` MCP tool
+#[derive(Debug, Clone, Deserialize)]
+pub struct GenerateErDiagramInput {
+    /// Project directory to analyze (default: ".")
+    pub directory: Option<String>,
+    /// Output format: "mermaid" (default), "d2"
+    pub format: Option<String>,
+    /// Include relationships (default: true)
+    pub show_relationships: Option<bool>,
+}
+
+/// Output of the `generate_er_diagram` MCP tool
+#[derive(Debug, Clone, Serialize)]
+pub struct GenerateErDiagramOutput {
+    pub diagram: String,
+    pub format: String,
+    pub entity_count: usize,
+    pub relationship_count: usize,
+}
+
+/// Handle `generate_er_diagram` — entity-relationship diagram
+pub fn handle_generate_er_diagram(
+    input: GenerateErDiagramInput,
+    project_dir: &std::path::Path,
+) -> anyhow::Result<GenerateErDiagramOutput> {
+    let format = input.format.unwrap_or_else(|| "mermaid".to_string());
+
+    // Infer ER from SQL files
+    let model = crate::inference::er_inference::infer_er_diagram(project_dir)?;
+
+    // Render diagram
+    let diagram = match format.as_str() {
+        "mermaid" => crate::render::er::render_er_mermaid(&model),
+        "d2" => {
+            let options = crate::render::d2::D2Options::default();
+            crate::render::er::render_er_d2(&model, &options)
+        }
+        other => {
+            return Err(anyhow::anyhow!(
+                "Unsupported format '{}'. Supported: 'mermaid', 'd2'",
+                other
+            ))
+        }
+    };
+
+    Ok(GenerateErDiagramOutput {
+        diagram,
+        format,
+        entity_count: model.entities.len(),
+        relationship_count: model.relationships.len(),
+    })
+}
+
+#[cfg(test)]
+mod deployment_er_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_generate_c4_deployment_empty() {
+        let temp_dir = TempDir::new().unwrap();
+        let input = GenerateC4DeploymentInput {
+            directory: Some(temp_dir.path().to_string_lossy().to_string()),
+            format: Some("mermaid".to_string()),
+            show_ports: None,
+            show_environment: None,
+        };
+
+        let result = handle_generate_c4_deployment(input, temp_dir.path()).unwrap();
+        assert_eq!(result.format, "mermaid");
+        assert_eq!(result.node_count, 0);
+    }
+
+    #[test]
+    fn test_generate_er_diagram_empty() {
+        let temp_dir = TempDir::new().unwrap();
+        let input = GenerateErDiagramInput {
+            directory: Some(temp_dir.path().to_string_lossy().to_string()),
+            format: Some("mermaid".to_string()),
+            show_relationships: None,
+        };
+
+        let result = handle_generate_er_diagram(input, temp_dir.path()).unwrap();
+        assert_eq!(result.format, "mermaid");
+        assert_eq!(result.entity_count, 0);
+    }
+
+    #[test]
+    fn test_generate_c4_deployment_unsupported_format() {
+        let temp_dir = TempDir::new().unwrap();
+        let input = GenerateC4DeploymentInput {
+            directory: Some(temp_dir.path().to_string_lossy().to_string()),
+            format: Some("plantuml".to_string()),
+            show_ports: None,
+            show_environment: None,
+        };
+
+        let result = handle_generate_c4_deployment(input, temp_dir.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unsupported format"));
+    }
+
+    #[test]
+    fn test_generate_er_diagram_unsupported_format() {
+        let temp_dir = TempDir::new().unwrap();
+        let input = GenerateErDiagramInput {
+            directory: Some(temp_dir.path().to_string_lossy().to_string()),
+            format: Some("plantuml".to_string()),
+            show_relationships: None,
+        };
+
+        let result = handle_generate_er_diagram(input, temp_dir.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unsupported format"));
     }
 }

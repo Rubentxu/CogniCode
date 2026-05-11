@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use crate::layout::types::{
-    LayoutConfig, LayoutDirection, LayoutedDiagram, LayoutedEdge, LayoutedNode, Point, Port, PortSide,
+    LayoutDirection, LayoutedDiagram, LayoutedNode, Point, Port, PortSide,
 };
 
 /// Assign ports to all edges in a layouted diagram based on layout direction.
@@ -332,6 +332,7 @@ fn compute_bend_points(source: Point, target: Point, direction: LayoutDirection)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout::types::{LayoutConfig, LayoutedEdge};
 
     fn create_test_node(id: &str, x: f64, y: f64, w: f64, h: f64) -> LayoutedNode {
         LayoutedNode {
