@@ -10,6 +10,7 @@
 pub mod bugs;
 pub mod code_smells;
 pub mod error_handling;
+pub mod naming;
 pub mod performance;
 pub mod security;
 pub mod testing;
