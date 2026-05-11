@@ -1,7 +1,7 @@
 //! CogniCode MCP Server Binary
 
 use clap::Parser;
-use cognicode_core::interface::mcp::CogniCodeHandler;
+use diagram_handler::DiagramAwareHandler;
 use opentelemetry::global;
 use opentelemetry_otlp::MetricExporter;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
@@ -9,6 +9,8 @@ use rayon::ThreadPoolBuilder;
 use rmcp::transport::io::stdio;
 use std::path::PathBuf;
 use tracing::info;
+
+mod diagram_handler;
 
 #[derive(Parser)]
 #[command(name = "cognicode-mcp", version, about)]
@@ -76,14 +78,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting CogniCode MCP Server v{}", env!("CARGO_PKG_VERSION"));
 
-    // Use the new rmcp-based server
+    // Use the diagram-aware handler that wraps CogniCodeHandler + diagram tools
     // Try SQLite persistence first, fall back to in-memory
     let handler = {
         let db_path = args.cwd.join(".cognicode/cognicode.db");
         if let Ok(store) = cognicode_db::graph::SqliteGraphStore::open(&db_path) {
-            CogniCodeHandler::with_graph_store(args.cwd, Box::new(store))
+            DiagramAwareHandler::with_graph_store(args.cwd, Box::new(store))
         } else {
-            CogniCodeHandler::new(args.cwd)
+            DiagramAwareHandler::new(args.cwd)
         }
     };
     let transport = stdio();

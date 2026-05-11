@@ -49,6 +49,14 @@ impl CogniCodeHandler {
             .unwrap_or_else(|_| project_root.clone());
         HandlerContext::new(canonical_root)
     }
+
+    /// Get the current CallGraph from the store
+    pub fn get_call_graph(&self) -> anyhow::Result<crate::domain::aggregates::call_graph::CallGraph> {
+        self.ctx.get_graph_store()
+            .load_graph()
+            .map_err(|e| anyhow::anyhow!("Graph store error: {}", e))?
+            .ok_or_else(|| anyhow::anyhow!("No call graph available. Run build_graph first."))
+    }
 }
 
 impl ServerHandler for CogniCodeHandler {
@@ -788,9 +796,9 @@ impl ServerHandler for CogniCodeHandler {
                                 "description": "Optional error message (for failed tasks)"
                             }
                         },
-                        "required": ["task_id", "status"]
-                    }).as_object().cloned().unwrap()),
-                ),
+                         "required": ["task_id", "status"]
+                     }).as_object().cloned().unwrap()),
+                 ),
             ];
 
             // Paginate
