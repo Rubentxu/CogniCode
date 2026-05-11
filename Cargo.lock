@@ -834,6 +834,7 @@ name = "cognicode-diagram"
 version = "0.5.0"
 dependencies = [
  "anyhow",
+ "blake3",
  "cognicode-core",
  "indexmap 2.13.0",
  "petgraph 0.6.5",

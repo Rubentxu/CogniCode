@@ -24,9 +24,7 @@
 pub mod model;
 pub mod inference;
 pub mod render;
-
-// Layout module will be enabled in Phase 4
-// pub mod layout;
+pub mod layout;
 
 // MCP integration handlers — used by cognicode-mcp to register tools
 pub mod mcp;

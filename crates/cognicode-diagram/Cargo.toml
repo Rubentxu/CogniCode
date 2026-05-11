@@ -30,6 +30,9 @@ thiserror = { workspace = true }
 # Parallelism
 rayon = { workspace = true }
 
+# Hashing
+blake3 = { workspace = true }
+
 # Logging
 tracing = { workspace = true }
 
