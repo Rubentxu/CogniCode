@@ -476,7 +476,9 @@ impl syn::parse::Parse for RuleInput {
             match key_str.as_str() {
                 "id" => {
                     let value: syn::LitStr = input.parse()?;
-                    id = Some(Ident::new(&value.value(), value.span()));
+                    // Sanitize: replace invalid identifier chars with underscore
+                    let sanitized = value.value().replace("-", "_").replace("/", "_");
+                    id = Some(Ident::new(&sanitized, value.span()));
                 }
                 "name" => {
                     let value: syn::LitStr = input.parse()?;

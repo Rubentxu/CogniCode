@@ -296,7 +296,47 @@ SI falsos positivos no mejoran:
 
 ---
 
-## 10. Referencias Cruzadas
+## 10. Fase Rulesync KB: Knowledge Base para Agentes IA
+
+### Justificación
+
+El pipeline actual de rulesync (extractor → sanitizer → Rust code generator) produce structs sin conocimiento de detección, fixes, ni ejemplos. Para que agentes de IA puedan implementar reglas CogniCode de calidad, necesitan un **Knowledge Base estructurado** con patrones AST, código de fix, ejemplos, y metadata de seguridad.
+
+### Sprint KB1-KB2 (Semanas paralelas a Sprint 3-4)
+
+| Tarea | Descripción | Entregable |
+|-------|-------------|------------|
+| **KB0.1** | Crear `RuleKnowledge` schema en Rust | schema.rs, mod.rs |
+| **KB0.2** | Download y parse MITRE CWE XML | CweDatabase struct |
+| **KB0.3** | Implementar `EnrichmentPipeline` con L1 | CWE/OWASP enrichment |
+| **KB0.4** | Implementar `KnowledgeBaseGenerator` (JSON/YAML/Rust) | Output en 3 formatos |
+| **KB0.5** | Mejorar Semgrep extractor con YAML pattern parsing | DetectionKnowledge desde Semgrep |
+| **KB0.6** | Mejorar ESLint extractor con AST selector parsing | DetectionKnowledge desde ESLint |
+| **KB0.7** | CLI integration: `rulesync generate --format knowledge-json` | Comando CLI funcional |
+
+### Sprint KB3 (Semanas paralelas a Sprint 5-6)
+
+| Tarea | Descripción | Entregable |
+|-------|-------------|------------|
+| **KB1.1** | Implementar `merge.rs` (cross-reference merge) | Deduplicación de reglas |
+| **KB1.2** | Implementar `KnowledgeBaseQuery` trait | API de consulta |
+| **KB1.3** | L2 enrichment: description parsing | CWE inference desde texto |
+| **KB1.4** | Severity override desde CWE | Priority-based severity |
+| **KB1.5** | CodeQL extractor mejorado | from/where logic extraction |
+
+### Integration con Roadmap Existente
+
+```
+FASE 0-1: Cimientos          ← continue as planned
+FASE 2:   LCPG               ← continue as planned  
+FASE 3:   Migración          ← KB0.1-KB0.7 en paralelo
+FASE 4:   Plataforma        ← KB1.1-KB1.5 en paralelo
+FASE 5:   Knowledge Base     ← full integration con SDD
+```
+
+---
+
+## 11. Referencias Cruzadas
 
 | Documento | Descripción |
 |-----------|-------------|
@@ -307,6 +347,9 @@ SI falsos positivos no mejoran:
 | `04-pre-flight.md` | Layer 0 con Aho-Corasick |
 | `05-fp-reputation.md` | Sistema de reputación de FPs |
 | `06-migration.md` | Plan de migración incremental |
+| `08-rulesync-knowledge-base.md` | Visión y arquitectura del KB |
+| `09-extraction-strategy.md` | Estrategia de extracción por herramienta |
+| `10-agent-integration.md` | Integración de agentes IA con KB |
 
 ---
 

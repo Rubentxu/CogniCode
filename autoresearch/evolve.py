@@ -278,7 +278,9 @@ def _improve_metadata(rule_id, description):
     match = pattern.search(content)
     if match:
         new_expl = f"[AUTORESEARCH] {description[:150]}"
-        new_content = content[:match.start(2)] + f'"{new_expl}"' + content[match.end(2):]
+        replacement_start = match.end(1)
+        replacement_end = match.end(0)
+        new_content = content[:replacement_start] + f'"{new_expl}"' + content[replacement_end:]
         CATALOG.write_text(new_content)
         return {"success": True, "type": "metadata", "description": description, "confidence": 0.3, "level": "metadata"}
     return {"success": False, "error": "no explanation field"}
@@ -301,14 +303,14 @@ def evaluator(rule_id):
     # Targeted tests (filter by rule_id)
     r = subprocess.run(
         ["cargo", "test", "-p", "cognicode-axiom", "--lib", "--", rule_id.lower()],
-        capture_output=True, text=True, timeout=60, cwd=str(ROOT)
+        capture_output=True, text=True, timeout=300, cwd=str(ROOT)
     )
     combined = r.stdout + r.stderr
     if "test result: ok" not in combined:
         # Fallback: run all tests
         r = subprocess.run(
             ["cargo", "test", "-p", "cognicode-axiom", "--lib"],
-            capture_output=True, text=True, timeout=120, cwd=str(ROOT)
+            capture_output=True, text=True, timeout=300, cwd=str(ROOT)
         )
         combined = r.stdout + r.stderr
         if "test result: ok" not in combined:
@@ -399,6 +401,7 @@ use crate::{{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntr
 use crate::rules::{{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity}};
 use cognicode_macros::declare_rule;
 use inventory::submit;
+use streaming_iterator::StreamingIterator;
 
 {block}
 
@@ -437,7 +440,7 @@ mod tests {{
 # MAIN LOOP
 # ═══════════════════════════════════════════════════════════════════
 
-def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batch_size=3):
+def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batch_size=3, auto_commit=False):
     """Karpathy autonomous improvement loop."""
     global SESSION_DONE
 
@@ -468,6 +471,7 @@ def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batc
 
         session += 1
         t0 = time.time()
+        batch_results = {}
 
         # ── ANALYZER ──
         targets = analyzer(history, force_rule, batch_size)
@@ -484,6 +488,7 @@ def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batc
             for rid in targets:
                 total_alltime += 1
                 evolution.log_experiment(total_alltime, rid, "rust", {}, {}, "dry_run", "Analyzer selected")
+                batch_results[rid] = ("dry_run", "Analyzer selected")
             time.sleep(1)
             continue
 
@@ -494,6 +499,7 @@ def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batc
             if rule_id not in re.findall(r'id:\s*"(S\d+)"', CATALOG.read_text()):
                 log.debug(f"  {rule_id} already segregated — marking done")
                 mark_done(rule_id)
+                batch_results[rule_id] = ("failed", "already segregated")
                 fails += 1
                 continue
 
@@ -522,6 +528,7 @@ def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batc
                     total_alltime, rule_id, "rust", {"f1": f1_before}, {},
                     "skipped", change.get("error", "?") if change else "?"
                 )
+                batch_results[rule_id] = ("skipped", change.get("error", "?") if change else "?")
                 fails += 1
                 continue
 
@@ -533,6 +540,7 @@ def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batc
                     total_alltime, rule_id, "rust", {"f1": f1_before}, {},
                     "failed", metrics["error"]
                 )
+                batch_results[rule_id] = ("failed", metrics["error"])
                 record_failure(rule_id)
                 fails += 1
                 continue
@@ -547,22 +555,26 @@ def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batc
                 except Exception as e:
                     log.debug(f"Segregation skipped: {e}")
 
-                # Stage and commit
-                r = subprocess.run(
-                    ["git", "add", "-f", "crates/cognicode-axiom/src/rules/catalog.rs",
-                     "crates/cognicode-axiom/src/rules/rules/"],
-                    capture_output=True, cwd=str(ROOT)
-                )
-                if r.returncode == 0:
-                    git.commit(commit_msg(rule_id, change))
-                    baseline[rule_id] = metrics
-                    baseline_store.save(baseline)
-                    keeps += 1
-                    mark_done(rule_id)
+                if auto_commit:
+                    # Stage and commit
+                    r = subprocess.run(
+                        ["git", "add", "-f", "crates/cognicode-axiom/src/rules/catalog.rs",
+                         "crates/cognicode-axiom/src/rules/rules/"],
+                        capture_output=True, cwd=str(ROOT)
+                    )
+                    if r.returncode == 0:
+                        git.commit(commit_msg(rule_id, change))
+                        baseline[rule_id] = metrics
+                        baseline_store.save(baseline)
+                        keeps += 1
+                        mark_done(rule_id)
+                    else:
+                        log.warning("git add failed — reverting")
+                        git.checkout(str(CATALOG))
+                        discards += 1
                 else:
-                    log.warning("git add failed — reverting")
-                    git.checkout(str(CATALOG))
-                    discards += 1
+                    log.info("  AUTO-COMMIT disabled — changes kept in working tree for review")
+                    keeps += 1
             else:
                 git.checkout(str(CATALOG))
                 discards += 1
@@ -574,6 +586,7 @@ def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batc
                 decision,
                 f"{change.get('type', '?')}: {change.get('description', '')[:120]}"
             )
+            batch_results[rule_id] = (decision, f"{change.get('type', '?')}: {change.get('description', '')[:120]}")
             log.info(f"  {rule_id} → {decision.upper()} ({change.get('level', '?')}): {reason}")
 
         # ── Batch report ──
@@ -584,15 +597,9 @@ def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batc
         log.info("  ┌" + "─" * 55)
         log.info(f"  │ Batch {session}: {len(targets)} rules in {elapsed}s — {keeps}✅ {discards}❌ {fails}⚠ — rate {keep_rate}%")
         for rid in targets:
-            # Find last entry in evolution log
-            last = None
-            for entry in reversed(evolution.read_history()):
-                if entry.get("rule_id") == rid:
-                    last = entry
-                    break
-            if last:
-                dec = last.get("decision", "?")
-                desc = (last.get("description", "") or "")[:55]
+            if rid in batch_results:
+                dec, desc = batch_results[rid]
+                desc = (desc or "")[:55]
                 icon = "✅" if dec == "keep" else ("❌" if dec == "discard" else "⚠️")
                 log.info(f"  │  {icon} {rid:<7} {dec:<8} {desc}")
         log.info("  └" + "─" * 55)
@@ -643,6 +650,7 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--cooldown", type=int, default=5)
     parser.add_argument("-b", "--batch-size", type=int, default=5)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--commit", action="store_true")
 
     args = parser.parse_args()
 
@@ -655,6 +663,7 @@ if __name__ == "__main__":
             dry_run=args.dry_run,
             cooldown=args.cooldown,
             batch_size=args.batch_size,
+            auto_commit=args.commit,
         )
     except KeyboardInterrupt:
         log.info("\n⏹ Interrupted — shutting down")

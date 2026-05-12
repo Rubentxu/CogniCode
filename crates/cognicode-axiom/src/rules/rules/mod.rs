@@ -12,4 +12,4 @@ pub mod rust;
 
 pub use complexity::{S138Rule, S3776Rule};
 pub use style::{S2306Rule, S1066Rule, S1192Rule};
-pub use rust::{S1142Rule, S1214Rule, S1541Rule, S1244Rule, S2259Rule, S1197Rule, S1161Rule, S115Rule, S1151Rule, S1163Rule};
+pub use rust::{S1142Rule, S1214Rule, S1541Rule, S1244Rule, S2259Rule, S1197Rule, S1161Rule, S115Rule, S1151Rule, S1163Rule, S134Rule, S107Rule};
