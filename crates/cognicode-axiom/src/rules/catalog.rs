@@ -40,7 +40,7 @@ use inventory::submit;
 use streaming_iterator::StreamingIterator;
 
 // Re-export extracted rules for backward compatibility
-pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule, S2259Rule, S1142Rule, S1214Rule, S1541Rule, S1244Rule, S1197Rule, S1161Rule, S115Rule, S1151Rule, S1163Rule, S134Rule, S107Rule, S1135Rule, S2589Rule, S4792Rule, S5122Rule};
+pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule, S2259Rule, S1142Rule, S1214Rule, S1541Rule, S1244Rule, S1197Rule, S1161Rule, S115Rule, S1151Rule, S1163Rule, S134Rule, S107Rule, S1135Rule, S2068Rule, S2589Rule, S4792Rule, S5122Rule};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S134 — Deep Nesting Rule
@@ -96,59 +96,7 @@ declare_rule! {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// S2068 — Hard-coded Credentials Rule
-// ─────────────────────────────────────────────────────────────────────────────
-
-declare_rule! {
-    id: "S2068"
-    name: "Hard-coded credentials are security sensitive"
-    severity: Blocker
-    category: SecurityHotspot
-    language: "*"
-    params: {}
-
-    explanation: "Hard-coded credentials make secrets accessible to anyone with source code access, increasing the risk of credential leakage and unauthorized system access.",
-    clean_code: Trustworthy,
-    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let patterns = [
-            (r#"(?i)(password|passwd|pwd)\s*[=:]\s*["'][^"']{3,}["']"#, "password"),
-            (r#"(?i)(api[_-]?key|apikey)\s*[=:]\s*["'][^"']{3,}["']"#, "api_key"),
-            (r#"(?i)(secret|token)\s*[=:]\s*["'][^"']{3,}["']"#, "secret"),
-            (r#"(?i)(bearer\s+token|basic\s+auth)\s*[=:]\s*["'][a-zA-Z0-9_\-]{3,}["']"#, "bearer_token"),
-        ];
-        let regexes: Vec<_> = patterns.iter().map(|(p, _)| regex::Regex::new(p).unwrap()).collect();
-        
-        for (line_num, line) in ctx.source.lines().enumerate() {
-            // Skip comments, docstrings, and empty lines to avoid false positives
-            let trimmed = line.trim();
-            if trimmed.is_empty() 
-            || trimmed.starts_with("//") || trimmed.starts_with("///")
-            || trimmed.starts_with("//!") || trimmed.starts_with("/*")
-            || trimmed.starts_with("#")
-            { continue; }
-            
-            for re in &regexes {
-                if re.is_match(trimmed) {
-                    issues.push(Issue::new(
-                        "S2068",
-                        format!("Hard-coded credential detected on line {}", line_num + 1),
-                        Severity::Blocker,
-                        Category::SecurityHotspot,
-                        ctx.file_path,
-                        line_num + 1,
-                    ).with_remediation(Remediation::moderate(
-                        "Use environment variables or a secrets manager instead of hard-coded values"
-                    )));
-                    break;
-                }
-            }
-        }
-        issues
-    }
-}
+// S2068 — Hard-coded Credentials Rule (segregated to rules/rules/rust/security/s2068_rule.rs)
 
 // S5122 — SQL Injection Rule (segregated to rules/rules/rust/security/s5122_rule.rs)
 
@@ -633,7 +581,7 @@ declare_rule! {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
-            if trimmed.starts_with("let ") && !trimmed.starts_with("let _") && trimmed.contains('=') {
+            if trimmed.starts_with("let ") && !trimmed.starts_with("let _") && !trimmed.starts_with("let mut _") && trimmed.contains('=') {
                 issues.push(Issue::new(
                     "S1854",
                     "Variable declared but never used",
