@@ -40,7 +40,7 @@ use inventory::submit;
 use streaming_iterator::StreamingIterator;
 
 // Re-export extracted rules for backward compatibility
-pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule, S2259Rule, S1142Rule, S1214Rule, S1541Rule, S1244Rule, S1197Rule, S1161Rule, S115Rule, S1151Rule, S1163Rule, S134Rule, S107Rule};
+pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule, S2259Rule, S1142Rule, S1214Rule, S1541Rule, S1244Rule, S1197Rule, S1161Rule, S115Rule, S1151Rule, S1163Rule, S134Rule, S107Rule, S1135Rule, S4792Rule};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S134 — Deep Nesting Rule
@@ -50,47 +50,7 @@ pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Ru
 
 // S107 — Too Many Parameters Rule (segregated to rules/rules/rust/code_smells/s107_rule.rs)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// S1135 — TODO/FIXME Tags Rule
-// ─────────────────────────────────────────────────────────────────────────────
-
-declare_rule! {
-    id: "S1135"
-    name: "TODO tags should be completed or removed"
-    severity: Minor
-    category: CodeSmell
-    language: "*"
-    params: {
-    tags: Vec<String> = vec![
-        "TODO".to_string(),
-        "FIXME".to_string(),
-        "HACK".to_string(),
-        "XXX".to_string()
-    ]
-}
-
-    explanation: "TODO and FIXME tags indicate incomplete work that should be tracked and completed to avoid leaving technical debt or forgotten tasks in the codebase.",
-    clean_code: Complete,
-    impacts: [Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        // Pre-compile regex once - pattern is constant
-        let re = regex::Regex::new(r"(?i)\b(TODO|FIXME|HACK|XXX)\b").unwrap();
-        for (line_num, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new(
-                    "S1135",
-                    format!("TODO/FIXME/HACK/XXX tag found: {}", line.trim()),
-                    Severity::Minor,
-                    Category::CodeSmell,
-                    ctx.file_path,
-                    line_num + 1,
-                ));
-            }
-        }
-        issues
-    }
-}
+// S1135 — TODO/FIXME Tags Rule (segregated to rules/rules/rust/code_smells/s1135_rule.rs)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1134 — Deprecated Code Rule
@@ -252,69 +212,7 @@ declare_rule! {
 // S4792 — Weak Cryptography Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S4792"
-    name: "Weak cryptography should not be used"
-    severity: Critical
-    category: Vulnerability
-    language: "rust"
-    params: {}
-
-    explanation: "Weak cryptographic algorithms like MD5, SHA1, DES, and RC4 are vulnerable to modern attacks and should not be used for security-sensitive operations.",
-    clean_code: Trustworthy,
-    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let weak_patterns = [
-            (r"(?i)\bmd5\b", "MD5 hash function"),
-            (r"(?i)\bsha1?\b", "SHA-0/SHA-1 hash function"),
-            // Match des/rc4 when preceded by underscore (common in function names like encrypt_with_des)
-            // Also match when followed by ( or preceded by word boundary
-            (r"(?i)_des\b", "DES block cipher"),
-            (r"(?i)_3des\b", "Triple DES (3DES) block cipher"),
-            (r"(?i)_rc4\b", "RC4 stream cipher"),
-            (r"(?i)\bcrypt\b", "crypt(3) function"),
-        ];
-
-        let compiled_patterns: Vec<(regex::Regex, &str)> = weak_patterns
-            .iter()
-            .filter_map(|(p, d)| {
-                match regex::Regex::new(p) {
-                    Ok(r) => Some((r, *d)),
-                    Err(e) => {
-                        eprintln!("Warning: Failed to compile S4792 pattern '{}': {}", p, e);
-                        None
-                    }
-                }
-            })
-            .collect();
-
-        for (line_idx, line) in ctx.source.lines().enumerate() {
-            for (re, description) in &compiled_patterns {
-                if let Some(m) = re.find(line) {
-                    let pt = m.start();
-                    issues.push(Issue::new(
-                        "S4792",
-                        format!(
-                            "Use of weak cryptography: {} detected on line {}",
-                            description, line_idx + 1
-                        ),
-                        Severity::Critical,
-                        Category::Vulnerability,
-                        ctx.file_path,
-                        line_idx + 1,
-                    ).with_column(pt + 1)
-                    .with_remediation(Remediation::substantial(
-                        "Use a modern cryptographic algorithm (e.g., SHA-256, AES-256-GCM)"
-                    )));
-                    break;
-                }
-            }
-        }
-
-        issues
-    }
-}
+// S4792 → segregated to crates/cognicode-axiom/src/rules/rules/rust/security/s4792_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S7000 — Semantic Intent Drift Detection Rule
@@ -1778,11 +1676,14 @@ declare_rule! {
                 let name = cap.get(1).unwrap().as_str();
                 let remaining: String = ctx.source.lines().skip(idx + 1).collect::<Vec<_>>().join("\n");
                 let is_used = remaining.contains(&format!(" {} ", name))
+                    || remaining.contains(&format!(" {};", name))
+                    || remaining.contains(&format!(" {}", name))
                     || remaining.contains(&format!("({}", name))
                     || remaining.contains(&format!(",{}", name))
                     || remaining.contains(&format!("{})", name))
                     || remaining.contains(&format!(".{}", name))
-                    || remaining.contains(&format!("[]{}", name));
+                    || remaining.contains(&format!("[]{}", name))
+                    || remaining.contains(&format!("={}", name));
                 if !is_used {
                     issues.push(Issue::new(
                         "S1481",
