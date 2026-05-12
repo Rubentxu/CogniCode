@@ -40,7 +40,7 @@ use inventory::submit;
 use streaming_iterator::StreamingIterator;
 
 // Re-export extracted rules for backward compatibility
-pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule, S2259Rule, S1142Rule, S1214Rule, S1541Rule, S1244Rule, S1197Rule, S1161Rule, S115Rule, S1151Rule, S1163Rule, S134Rule, S107Rule, S1135Rule, S2589Rule, S4792Rule};
+pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule, S2259Rule, S1142Rule, S1214Rule, S1541Rule, S1244Rule, S1197Rule, S1161Rule, S115Rule, S1151Rule, S1163Rule, S134Rule, S107Rule, S1135Rule, S2589Rule, S4792Rule, S5122Rule};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S134 — Deep Nesting Rule
@@ -150,63 +150,7 @@ declare_rule! {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// S5122 — SQL Injection Rule
-// ─────────────────────────────────────────────────────────────────────────────
-
-declare_rule! {
-    id: "S5122"
-    name: "SQL injection vulnerabilities should be prevented"
-    severity: Blocker
-    category: Vulnerability
-    language: "rust"
-    params: {}
-
-    explanation: "SQL injection allows attackers to manipulate database queries through unsanitized input, potentially leading to data theft, corruption, or unauthorized system access.",
-    clean_code: Trustworthy,
-    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "EXEC", "EXECUTE", "UNION", "INTO", "OUTFILE", "INFILE", "LOAD_FILE", "BENCHMARK", "SLEEP"];
-
-        // Look for format! macro invocations containing SQL keywords
-        // Pattern: format! followed by a string literal that contains SQL keywords
-        for (line_idx, line) in ctx.source.lines().enumerate() {
-            // Check if this line has a format! macro
-            if line.contains("format!") || line.contains("format_args!") {
-                // Simple approach: find format!(" or format_args!(" and extract until the closing quote
-                let line_upper = line.to_uppercase();
-                for keyword in &sql_keywords {
-                    let kw_upper = keyword.to_uppercase();
-                    // Check if the line contains the SQL keyword
-                    if line_upper.contains(&kw_upper) {
-                        // Found SQL keyword - report it
-                        // We report at the position of the keyword in the original line
-                        if let Some(kw_pos) = line_upper.find(&kw_upper) {
-                            issues.push(Issue::new(
-                                "S5122",
-                                format!(
-                                    "Potential SQL injection: SQL keyword '{}' found in format! string",
-                                    keyword
-                                ),
-                                Severity::Blocker,
-                                Category::Vulnerability,
-                                ctx.file_path,
-                                line_idx + 1,
-                            ).with_column(kw_pos + 1)
-                            .with_remediation(Remediation::substantial(
-                                "Use parameterized queries instead of string interpolation"
-                            )));
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        issues
-    }
-}
+// S5122 — SQL Injection Rule (segregated to rules/rules/rust/security/s5122_rule.rs)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S4792 — Weak Cryptography Rule
@@ -3197,7 +3141,7 @@ declare_rule! {
     language: "rust"
     params: {}
 
-    explanation: "Extracting archive files without size limits can enable zip bomb attacks where small files decompress to enormous sizes, exhausting system resources.",
+    explanation: "[AUTORESEARCH] Reduce context window from 10 lines before/8 lines after to 5 lines before/3 lines after. The current 18-line context window is overly broad and can m",
     clean_code: Trustworthy,
     impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
     check: => {
