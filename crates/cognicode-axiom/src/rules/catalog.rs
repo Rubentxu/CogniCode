@@ -46,42 +46,7 @@ pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Ru
 // S134 — Deep Nesting Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S134"
-    name: "Control flow statements should not be nested too deeply"
-    severity: Major
-    category: CodeSmell
-    language: "rust"
-    params: { threshold: usize = 4 }
-
-    explanation: "Deeply nested control flow structures reduce code readability and maintainability, making it harder to understand program logic and increasing the risk of introducing bugs during modifications.",
-    clean_code: Focused,
-    impacts: [Maintainability: Medium, Reliability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let func_nodes = ctx.query_functions();
-        for node in func_nodes {
-            let depth = ctx.nesting_depth(node);
-            if depth > self.threshold {
-                let pt = node.start_position();
-                if let Some(name) = ctx.function_name(node) {
-                    issues.push(Issue::new(
-                        "S134",
-                        format!("Function '{}' has nesting depth {} exceeding threshold {}", name, depth, self.threshold),
-                        Severity::Major,
-                        Category::CodeSmell,
-                        ctx.file_path,
-                        pt.row + 1,
-                    ).with_column(pt.column)
-                    .with_remediation(Remediation::moderate(
-                        "Extract nested logic into separate functions or use early returns"
-                    )));
-                }
-            }
-        }
-        issues
-    }
-}
+// S134 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s134_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S107 — Too Many Parameters Rule
