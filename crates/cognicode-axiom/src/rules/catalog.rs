@@ -40,7 +40,7 @@ use inventory::submit;
 use streaming_iterator::StreamingIterator;
 
 // Re-export extracted rules for backward compatibility
-pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule, S2259Rule, S1142Rule, S1214Rule, S1541Rule, S1244Rule, S1197Rule, S1161Rule, S115Rule, S1151Rule, S1163Rule, S134Rule, S107Rule, S1135Rule, S4792Rule};
+pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule, S2259Rule, S1142Rule, S1214Rule, S1541Rule, S1244Rule, S1197Rule, S1161Rule, S115Rule, S1151Rule, S1163Rule, S134Rule, S107Rule, S1135Rule, S2589Rule, S4792Rule};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S134 — Deep Nesting Rule
@@ -872,40 +872,7 @@ declare_rule! {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// S2589 — Boolean expressions should not be constant
-// ─────────────────────────────────────────────────────────────────────────────
-
-declare_rule! {
-    id: "S2589"
-    name: "Boolean expressions should not be constant"
-    severity: Major
-    category: Bug
-    language: "rust"
-    params: {}
-
-    explanation: "Constant boolean expressions in conditions always evaluate to the same result, indicating dead code that should be removed or replaced with meaningful logic.",
-    clean_code: Logical,
-    impacts: [Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        for (idx, line) in ctx.source.lines().enumerate() {
-            let trimmed = line.trim();
-            let const_bool_re = regex::Regex::new(r"(if|while)\s*\(?\s*(true|false)\s*\)?\s*\{").unwrap();
-        if const_bool_re.is_match(trimmed) {
-                issues.push(Issue::new(
-                    "S2589",
-                    format!("Constant boolean expression at line {}", idx + 1),
-                    Severity::Major,
-                    Category::Bug,
-                    ctx.file_path,
-                    idx + 1,
-                ).with_remediation(Remediation::quick("Remove the redundant condition or use a meaningful expression")));
-            }
-        }
-        issues
-    }
-}
+// S2589 — Boolean expressions should not be constant (segregated to rules/rules/rust/security/s2589_rule.rs)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S2757 — Unexpected assignment operators in conditions
@@ -3245,7 +3212,7 @@ declare_rule! {
                 let context_start = line_num.saturating_sub(10);
                 let context_end = std::cmp::min(ctx.source.lines().count(), line_num + 8);
                 let context: String = ctx.source.lines().skip(context_start).take(context_end - context_start).collect::<Vec<_>>().join("\n");
-                if !context.contains("size") && !context.contains("limit") && !context.contains("max_size") && !context.contains("uncompressed_size") && !context.contains("decompressed_size") && !context.contains("capacity") && !context.contains("max_bytes") && !context.contains("max_len") && !context.contains("budget") && !context.contains("quota") && !context.contains("set_size_limit") && !context.contains("len") && !context.contains("byte") {
+                if !context.contains("size") && !context.contains("limit") && !context.contains("max_size") && !context.contains("uncompressed_size") && !context.contains("decompressed_size") && !context.contains("capacity") && !context.contains("max_bytes") && !context.contains("max_len") && !context.contains("budget") && !context.contains("quota") && !context.contains("set_size_limit") && !context.contains("size_limit") && !context.contains("uncompressed_size") && !context.contains("decompressed_size") && !context.contains("capacity") && !context.contains("max_bytes") && !context.contains("max_len") && !context.contains("budget") && !context.contains("quota") && !context.contains("byte") {
                     issues.push(Issue::new(
                         "S5042",
                         "Archive extraction without size check - potential zip bomb",
