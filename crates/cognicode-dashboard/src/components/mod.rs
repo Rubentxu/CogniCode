@@ -13,6 +13,9 @@ pub mod error_boundary;
 pub mod file_browser;
 pub mod live_updates;
 pub mod export_utils;
+pub mod project_selector;
+pub mod service_status;
+pub mod graceful_degraded;
 
 pub use shell::Shell;
 pub use rating_card::RatingCard;
@@ -26,3 +29,6 @@ pub use filter_bar::FilterBar;
 pub use loading_spinner::LoadingSpinner;
 pub use error_boundary::{ErrorBoundary, ErrorFallback, ErrorInfo};
 pub use file_browser::FileBrowser;
+pub use project_selector::ProjectSelector;
+pub use service_status::ServiceStatusIndicators;
+pub use graceful_degraded::{ServiceUnavailable, NeedsAnalysis};

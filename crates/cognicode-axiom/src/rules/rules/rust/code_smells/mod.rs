@@ -21,8 +21,7 @@ pub mod s170_rule;
 
 pub mod s120_rule;
 
-pub mod s1854_rule;
+// pub mod s1854_rule; // TODO: file missing
+// pub mod s1134_rule; // TODO: file missing
 
-pub mod s1134_rule;
-
-pub mod s100_rule;
+// pub mod s100_rule; // TODO: file missing — restore from branch when available

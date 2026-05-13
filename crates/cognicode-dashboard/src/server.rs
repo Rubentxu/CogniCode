@@ -28,6 +28,9 @@ use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 
 use ws_handler::WsState;
+use cognicode_dashboard::{
+    ProjectCapabilities, ServiceAvailability, ProjectStatusDto,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Request/Response DTOs
@@ -1311,6 +1314,67 @@ fn build_project_info(name: &str, path: &str) -> ProjectInfoDto {
     }
 }
 
+/// Detect project capabilities from filesystem markers
+fn detect_capabilities(project_path: &std::path::Path) -> ProjectCapabilities {
+    let mut caps = ProjectCapabilities::default();
+    if project_path.join("Cargo.toml").exists() {
+        caps.is_rust = true;
+        caps.has_quality_rules = true;
+        caps.supports_diagrams = true;
+    }
+    if project_path.join("package.json").exists() {
+        caps.is_typescript = true;
+        caps.supports_diagrams = true;
+    }
+    let db_path = project_path.join(".cognicode").join("cognicode.db");
+    caps.has_cognicode_db = db_path.exists();
+    caps
+}
+
+fn check_service_availability(
+    project_path: &std::path::Path,
+    caps: &ProjectCapabilities,
+) -> ServiceAvailability {
+    let mut avail = ServiceAvailability::default();
+    avail.quality_available = caps.has_cognicode_db;
+    avail.diagrams_available = caps.is_rust || caps.is_typescript;
+    avail.symbols_available = caps.is_rust || caps.is_typescript;
+    if caps.has_cognicode_db {
+        let store = QualityStore::open(&project_path.to_path_buf());
+        let history = store.get_run_history(1);
+        if let Some(latest) = history.first() {
+            avail.last_analysis = Some(latest.timestamp.clone());
+        }
+        avail.analysis_runs_count = store.get_run_history(1000).len();
+    }
+    avail
+}
+
+async fn get_project_status(
+    State(state): State<AppServerState>,
+    axum::extract::Path(project_id): axum::extract::Path<String>,
+) -> Result<Json<ProjectStatusDto>, StatusCode> {
+    let projects = state.registered_projects.read().await;
+    let project = projects
+        .iter()
+        .find(|p| p.path == project_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let project_path = PathBuf::from(&project.path);
+    let capabilities = detect_capabilities(&project_path);
+    let service_availability = check_service_availability(&project_path, &capabilities);
+    let last_analysis = service_availability.last_analysis.clone();
+    let analysis_runs_count = service_availability.analysis_runs_count;
+    Ok(Json(ProjectStatusDto {
+        project_id: project.path.clone(),
+        name: project.name.clone(),
+        path: project.path.clone(),
+        capabilities,
+        service_availability,
+        last_analysis,
+        analysis_runs_count,
+    }))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Telemetry Handlers (Phase 3B)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1797,6 +1861,7 @@ pub async fn start_server(port: u16) {
         .route("/api/projects", get(list_projects))
         .route("/api/projects/register", post(register_project))
         .route("/api/projects/:id/history", get(get_project_history))
+        .route("/api/projects/:id/status", get(get_project_status))
         .route("/api/contracts", get(get_contracts))
         .route("/api/agent-stats", get(get_agent_stats))
         .route("/api/drift", get(get_drift_events))

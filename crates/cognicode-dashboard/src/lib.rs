@@ -25,6 +25,9 @@ pub use state::{
     RuleProfile, QualityGateDefinition, GateConditionTemplate,
     AnalysisRequest,
     ReactiveAppState,
+    // Project-centric context types
+    ProjectCapabilities, ServiceAvailability, ProjectInfo,
+    ProjectStatusDto, ProjectContext,
 };
 
 // Re-export API client types

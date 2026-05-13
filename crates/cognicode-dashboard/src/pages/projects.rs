@@ -2,13 +2,14 @@
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use crate::state::ReactiveAppState;
+use crate::state::{ReactiveAppState, ProjectContext, ProjectInfo, ProjectCapabilities};
 use crate::api_client::ProjectInfoDto;
 use crate::components::{Shell, LoadingSpinner};
 
 #[component]
 pub fn ProjectsPage() -> impl IntoView {
     let state = expect_context::<ReactiveAppState>();
+    let project_ctx = expect_context::<ProjectContext>();
     let (projects, set_projects) = signal(Vec::<ProjectInfoDto>::new());
     let (show_register, set_show_register) = signal(false);
 
@@ -50,7 +51,8 @@ pub fn ProjectsPage() -> impl IntoView {
                 }
                 {
                     let st = state.clone();
-                    view! { <ProjectList projects=projects state=st /> }
+                    let pctx = project_ctx.clone();
+                    view! { <ProjectList projects=projects state=st project_ctx=pctx /> }
                 }
             </div>
         </Shell>
@@ -169,7 +171,7 @@ fn RegisterForm(
 }
 
 #[component]
-fn ProjectList(projects: ReadSignal<Vec<ProjectInfoDto>>, state: ReactiveAppState) -> impl IntoView {
+fn ProjectList(projects: ReadSignal<Vec<ProjectInfoDto>>, state: ReactiveAppState, project_ctx: ProjectContext) -> impl IntoView {
     move || {
         let list = projects.get();
         if list.is_empty() {
@@ -184,15 +186,27 @@ fn ProjectList(projects: ReadSignal<Vec<ProjectInfoDto>>, state: ReactiveAppStat
                 let rc = match p.rating.as_str() { "A"|"B" => "bg-rating-a", "C" => "bg-rating-c", _ => "bg-rating-e" };
                 let gc = if p.quality_gate_status == "PASSED" { "badge-success" } else { "badge-error" };
                 let ts = p.last_analysis.as_ref().map(|t| t[..19].to_string()).unwrap_or_else(|| "Never".to_string());
-                let name = p.name.clone();
-                let path = p.path.clone();
+                let p_name = p.name.clone();
+                let p_path = p.path.clone();
+                let p_has_db = p.has_cognicode_db;
+                let pctx = project_ctx.clone();
                 let st = state.clone();
                 view! {
                     <div class="card hover:shadow-elevated transition-shadow cursor-pointer"
                         on:click=move |_| {
                             // Select this project for the dashboard
-                            st.selected_project_name.set(Some(name.clone()));
-                            st.project_path.set(path.clone());
+                            st.selected_project_name.set(Some(p_name.clone()));
+                            st.project_path.set(p_path.clone());
+                            let info = ProjectInfo {
+                                id: p_path.clone(),
+                                name: p_name.clone(),
+                                path: p_path.clone(),
+                                capabilities: ProjectCapabilities {
+                                    has_cognicode_db: p_has_db,
+                                    ..Default::default()
+                                },
+                            };
+                            pctx.select_project(info);
                         }>
                         <div class="flex items-start justify-between mb-4">
                             <div class="flex items-center gap-4">

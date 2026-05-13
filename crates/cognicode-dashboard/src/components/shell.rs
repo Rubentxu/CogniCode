@@ -4,6 +4,8 @@
 use leptos::prelude::*;
 
 use crate::components::live_updates::{LiveUpdatesProvider, LiveToggle, LiveStatus};
+use crate::components::project_selector::ProjectSelector;
+use crate::components::service_status::ServiceStatusIndicators;
 
 #[derive(Clone, Debug)]
 pub struct NavItem {
@@ -163,10 +165,16 @@ pub fn Shell(children: Children) -> impl IntoView {
             <main class="main-content" style="flex: 1; padding: 32px; min-height: 100vh;">
                 {/* Live updates provider */}
                 <LiveUpdatesProvider>
-                    {/* Header bar with live updates */}
-                    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 16px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--color-border);">
-                        <LiveStatus />
-                        <LiveToggle />
+                    {/* Header bar with project selector + live updates */}
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--color-border);">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <ProjectSelector />
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <ServiceStatusIndicators />
+                            <LiveStatus />
+                            <LiveToggle />
+                        </div>
                     </div>
                     {children()}
                 </LiveUpdatesProvider>

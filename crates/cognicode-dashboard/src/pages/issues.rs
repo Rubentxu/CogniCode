@@ -2,13 +2,14 @@
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use crate::state::ReactiveAppState;
+use crate::state::{ReactiveAppState, ProjectContext};
 use crate::components::{Shell, IssueTable, LoadingSpinner};
 
 /// Issues page component
 #[component]
 pub fn IssuesPage() -> impl IntoView {
     let state = expect_context::<ReactiveAppState>();
+    let project_ctx = expect_context::<ProjectContext>();
     let (severity, set_severity) = signal(None::<String>);
     let (category, set_category) = signal(None::<String>);
     let (file, set_file) = signal(None::<String>);
@@ -19,6 +20,21 @@ pub fn IssuesPage() -> impl IntoView {
         let st = state.clone();
         spawn_local(async move {
             st.load_issues(None, None, None, 1).await;
+        });
+    }
+
+    // React to project context changes — reload issues when project changes
+    {
+        let st = state.clone();
+        create_effect(move |_| {
+            let project = project_ctx.current_project.get();
+            if let Some(info) = project {
+                st.project_path.set(info.path.clone());
+                let s = st.clone();
+                spawn_local(async move {
+                    s.load_issues(None, None, None, 1).await;
+                });
+            }
         });
     }
 
