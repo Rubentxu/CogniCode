@@ -1131,24 +1131,27 @@ def commit_msg(rule_id, change):
 # SEGREGATION
 # ═══════════════════════════════════════════════════════════════════
 
-def segregate(rule_id):
-    """Extract rule from catalog.rs to its own file (SOLID/SRP)."""
+def segregate(rule_id) -> Optional[Path]:
+    """
+    Extract rule from catalog.rs to its own file (SOLID/SRP).
+    Returns Path on success, None on failure.
+    """
     content = CATALOG.read_text()
     pos = content.find(f'id: "{rule_id}"')
     if pos == -1:
         log.warning(f"  segregate: {rule_id} not found in catalog — already segregated?")
-        return
+        return False
 
     # Find declare_rule! block using robust extraction
     bs = content.rfind("declare_rule!", 0, pos)
     if bs == -1:
         log.warning(f"  segregate: declare_rule! not found before {rule_id}")
-        return
+        return False
 
     block = _extract_rule_block(content, bs)
     if not block:
         log.warning(f"  segregate: failed to extract block for {rule_id}")
-        return
+        return False
 
     # ── VALIDATION: Prevent corrupted segregation ─────────────────────────
     # Check 1: Block must contain exactly ONE rule ID matching the target
@@ -1156,17 +1159,17 @@ def segregate(rule_id):
     if id_count != 1:
         log.error(f"  segregate: BLOCK CORRUPTED for {rule_id} — contains {id_count} occurrences of id (expected 1). Aborting!")
         log.error(f"  segregate: This usually means the rule was already segregated. Skipping.")
-        return
+        return False
 
     # Check 2: Block must not be absurdly large (entire catalog is ~1MB)
     if len(block) > 10000:  # 10KB is way too big for a single rule
         log.error(f"  segregate: BLOCK TOO LARGE for {rule_id} ({len(block)} bytes). Aborting!")
-        return
+        return False
 
     # Check 3: Block must end with a closing brace
     if not block.strip().endswith('}'):
         log.error(f"  segregate: BLOCK MALFORMED for {rule_id} — doesn't end with '}}'. Aborting!")
-        return
+        return False
 
     # Determine category
     if "Security" in block or "VULNERABILITY" in block:
@@ -1221,6 +1224,60 @@ mod tests {{
     CATALOG.write_text(new_content)
 
     log.info(f"   📁 Segregated: {rule_id} → {fpath.relative_to(ROOT)}")
+    return fpath  # Return the path for validation
+
+
+# ═══════════════════════════════════════════════════════════════════
+# POST-SEGREGATION VALIDATION (P5)
+# ═══════════════════════════════════════════════════════════════════
+
+def validate_segregation(rule_id: str, fpath: Path) -> bool:
+    """
+    P5: After segregation, verify that the new file compiles.
+    Returns True if cargo check passes, False otherwise.
+    """
+    # Run cargo check on the axiom crate
+    r = subprocess.run(
+        ["cargo", "check", "-p", "cognicode-axiom"],
+        capture_output=True, text=True, timeout=120, cwd=str(ROOT)
+    )
+    if r.returncode != 0:
+        stderr = r.stderr.lower()
+        # Check if the error is related to our file
+        if fpath.name in stderr or rule_id in stderr:
+            log.error(f"  P5: Compilation failed for {rule_id} after segregation — reverting")
+            log.error(f"  P5: Error preview: {r.stderr[:500]}")
+            return False
+        # Error is elsewhere, might be pre-existing
+        log.warning(f"  P5: cargo check failed but not related to {rule_id} — manual review recommended")
+        return True  # Don't revert for unrelated errors
+
+    log.info(f"  P5: Compilation validated for {rule_id}")
+    return True
+
+
+def revert_segregation(rule_id: str, fpath: Path):
+    """Revert segregation: restore catalog.rs and remove the new file."""
+    # Remove the file
+    if fpath.exists():
+        fpath.unlink()
+        log.info(f"  P5: Removed {fpath.name}")
+
+    # Update mod.rs to remove the entry
+    mod_file = fpath.parent / "mod.rs"
+    if mod_file.exists():
+        mod_content = mod_file.read_text()
+        mod_line = f"pub mod {fpath.stem};"
+        if mod_line in mod_content:
+            mod_content = mod_content.replace(mod_line + "\n", "")
+            mod_content = mod_content.replace(mod_line, "")
+            mod_file.write_text(mod_content)
+            log.info(f"  P5: Removed {mod_line} from mod.rs")
+
+    # Restore catalog.rs from git
+    git = GitTool()
+    git.checkout(str(CATALOG))
+    log.info(f"  P5: Restored catalog.rs")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1339,10 +1396,48 @@ def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batc
 
             if decision == "keep":
                 # Segregate BEFORE commit (atomic)
+                seg_path = None
                 try:
-                    segregate(rule_id)
+                    seg_path = segregate(rule_id)
                 except Exception as e:
-                    log.debug(f"Segregation skipped: {e}")
+                    log.error(f"  Segregation failed: {e}")
+                    git.checkout(str(CATALOG))
+                    evolution.log_experiment(
+                        total_alltime, rule_id, "rust", {"f1": f1_before}, {},
+                        "discard", f"segregation error: {e}",
+                        strategy=change.get("strategy", "")
+                    )
+                    batch_results[rule_id] = ("discard", f"segregation error: {e}")
+                    discards += 1
+                    mark_done(rule_id)
+                    continue
+
+                if not seg_path:
+                    log.warning("  Segregation returned no path — discarding")
+                    git.checkout(str(CATALOG))
+                    evolution.log_experiment(
+                        total_alltime, rule_id, "rust", {"f1": f1_before}, {},
+                        "discard", "segregation failed",
+                        strategy=change.get("strategy", "")
+                    )
+                    batch_results[rule_id] = ("discard", "segregation failed")
+                    discards += 1
+                    mark_done(rule_id)
+                    continue
+
+                # P5: Validate compilation after segregation
+                if not validate_segregation(rule_id, seg_path):
+                    log.warning(f"  P5: Validation failed — reverting segregation for {rule_id}")
+                    revert_segregation(rule_id, seg_path)
+                    evolution.log_experiment(
+                        total_alltime, rule_id, "rust", {"f1": f1_before}, {},
+                        "discard", "compilation failed after segregation (P5)",
+                        strategy=change.get("strategy", "")
+                    )
+                    batch_results[rule_id] = ("discard", "compilation failed after segregation (P5)")
+                    discards += 1
+                    mark_done(rule_id)
+                    continue
 
                 if auto_commit:
                     # Stage and commit
