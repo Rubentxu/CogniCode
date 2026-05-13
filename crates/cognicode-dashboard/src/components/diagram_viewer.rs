@@ -156,6 +156,122 @@ export function getSharedDiagramState() {
         return null;
     }
 }
+
+// Set up click-to-scroll for diff-highlighted elements
+export function setupDiffClickScroll(containerId) {
+    // Find the container and set up click handlers for diff-highlighted elements
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    // Use MutationObserver to watch for SVG changes (Mermaid re-renders)
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'childList' || mutation.type === 'subtree') {
+                attachClickHandlers();
+            }
+        });
+    });
+
+    observer.observe(container, { childList: true, subtree: true });
+
+    // Initial attachment after a short delay to allow Mermaid to render
+    setTimeout(attachClickHandlers, 100);
+    setTimeout(attachClickHandlers, 500);
+    setTimeout(attachClickHandlers, 1000);
+
+    function attachClickHandlers() {
+        // Find all diff-highlighted elements (groups, rects, circles, polygons with diff classes)
+        const diffSelectors = [
+            '.diff-added',
+            '.diff-removed',
+            '.diff-modified',
+            '[class*="diff-added"]',
+            '[class*="diff-removed"]',
+            '[class*="diff-modified"]',
+            '[class*="diff_"]'
+        ];
+
+        diffSelectors.forEach(selector => {
+            try {
+                const elements = container.querySelectorAll(selector);
+                elements.forEach(el => {
+                    if (el.dataset.clickScrollAttached) return;
+                    el.dataset.clickScrollAttached = 'true';
+                    el.style.cursor = 'pointer';
+
+                    el.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+
+                        // Get element position
+                        const rect = el.getBoundingClientRect();
+                        const svg = el.closest('svg');
+                        if (!svg) return;
+
+                        const svgRect = svg.getBoundingClientRect();
+
+                        // Calculate center position relative to the scrollable container
+                        const scrollContainer = container.closest('.diagram-container') || container;
+                        const elementCenterX = rect.left + rect.width / 2 - svgRect.left;
+                        const elementCenterY = rect.top + rect.height / 2 - svgRect.top;
+
+                        // Add pulse animation
+                        el.classList.add('diff-pulse');
+                        setTimeout(() => el.classList.remove('diff-pulse'), 600);
+
+                        // Scroll to center the element in both panels
+                        scrollContainer.scrollTo({
+                            left: elementCenterX - scrollContainer.clientWidth / 2,
+                            top: elementCenterY - scrollContainer.clientHeight / 2,
+                            behavior: 'smooth'
+                        });
+
+                        // Also notify the other panel via custom event
+                        window.dispatchEvent(new CustomEvent('diff-element-clicked', {
+                            detail: {
+                                elementId: el.id || el.getAttribute('id') || '',
+                                className: el.className || '',
+                                centerX: elementCenterX,
+                                centerY: elementCenterY
+                            }
+                        }));
+                    });
+                });
+            } catch (e) {
+                // Ignore invalid selectors
+            }
+        });
+    }
+}
+
+// Scroll to a specific diff element by ID
+export function scrollToDiffElement(elementId) {
+    // Find element by ID in any diagram container and scroll to it
+    const containers = document.querySelectorAll('.diagram-container');
+    containers.forEach(container => {
+        const el = container.querySelector(`#${elementId}, [id="${elementId}"]`);
+        if (el) {
+            const rect = el.getBoundingClientRect();
+            const svg = el.closest('svg');
+            if (!svg) return;
+
+            const svgRect = svg.getBoundingClientRect();
+            const scrollContainer = container.closest('.diagram-container') || container;
+
+            const elementCenterX = rect.left + rect.width / 2 - svgRect.left;
+            const elementCenterY = rect.top + rect.height / 2 - svgRect.top;
+
+            el.classList.add('diff-pulse');
+            setTimeout(() => el.classList.remove('diff-pulse'), 600);
+
+            scrollContainer.scrollTo({
+                left: elementCenterX - scrollContainer.clientWidth / 2,
+                top: elementCenterY - scrollContainer.clientHeight / 2,
+                behavior: 'smooth'
+            });
+        }
+    });
+}
 "#)]
 extern "C" {
     fn initMermaid();

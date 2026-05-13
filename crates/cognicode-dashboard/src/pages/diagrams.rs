@@ -3,19 +3,34 @@
 //! Supports C4, Sequence, StateMachine, Activity, and MultiLang diagrams.
 
 use leptos::prelude::*;
+use leptos_router::hooks::use_query;
+use leptos_router::params::Params;
 use wasm_bindgen_futures::spawn_local;
 use crate::state::ReactiveAppState;
 use crate::components::{Shell, LoadingSpinner};
 use crate::api::diagrams::*;
 use crate::components::diagram_viewer::{DiagramViewer, get_shared_diagram_state_from_url};
 
+/// Query params for pre-filling project path from URL
+#[derive(Params, Clone, Debug, PartialEq)]
+pub struct ProjectPathQuery {
+    pub project_path: Option<String>,
+}
+
 /// Diagrams page component
 #[component]
 pub fn DiagramsPage() -> impl IntoView {
     let _state = expect_context::<ReactiveAppState>();
 
+    // Read project_path from query params if available
+    let query_params = use_query::<ProjectPathQuery>();
+    let initial_path = query_params.get()
+        .ok()
+        .and_then(|q| q.project_path.clone())
+        .unwrap_or_else(|| String::from("/home/rubentxu/Proyectos/rust/CogniCode-diagram-f5"));
+
     // Form signals
-    let (project_path, set_project_path) = signal(String::from("/home/rubentxu/Proyectos/rust/CogniCode-diagram-f5"));
+    let (project_path, set_project_path) = signal(initial_path);
     let (diagram_type, set_diagram_type) = signal(DiagramType::C4);
     let (c4_level, set_c4_level) = signal(C4Level::Context);
     let (entry_symbol, set_entry_symbol) = signal(String::new());

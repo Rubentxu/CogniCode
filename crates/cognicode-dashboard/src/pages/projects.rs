@@ -1,6 +1,7 @@
 //! Projects Page — SonarQube-style list with register + native directory picker
 
 use leptos::prelude::*;
+use urlencoding::encode;
 use wasm_bindgen_futures::spawn_local;
 use crate::state::ReactiveAppState;
 use crate::api_client::ProjectInfoDto;
@@ -202,6 +203,11 @@ fn ProjectList(projects: ReadSignal<Vec<ProjectInfoDto>>, state: ReactiveAppStat
                             <div class="flex items-center gap-3">
                                 <span class={format!("badge {}", gc)}>{p.quality_gate_status}</span>
                                 <span class="text-body-sm text-text-muted">{ts}</span>
+                                <a href={format!("/diagrams?project_path={}", encode(&path))}
+                                    class="btn btn-secondary btn-sm"
+                                    on:click=|_| {}>
+                                    "View Diagram"
+                                </a>
                             </div>
                         </div>
                         <div class="grid grid-cols-4 gap-4 pt-4 border-t border-border">
