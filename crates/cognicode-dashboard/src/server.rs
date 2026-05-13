@@ -1,6 +1,10 @@
 //! Axum server with real cognicode-quality integration
 //! All analysis endpoints call cognicode-quality in-process
 
+// Server-only modules
+pub mod watch_service;
+pub mod ws_handler;
+
 use axum::{
     extract::{Request, State},
     http::StatusCode,
@@ -22,6 +26,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
+
+use ws_handler::WsState;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Request/Response DTOs
@@ -1766,6 +1772,15 @@ fn url_decode(s: &str) -> String {
 pub async fn start_server(port: u16) {
     let app_state = AppServerState::new();
 
+    // Get project path from config for WebSocket state
+    let project_path = app_state.config.read().await.project_path.clone();
+
+    // Create WebSocket state with 2-second debounce
+    let ws_state = WsState::new(project_path, 2000);
+
+    // Create the WebSocket router
+    let ws_router = ws_handler::create_ws_router(ws_state);
+
     let app = Router::new()
         .route("/health", get(health))
         .route("/api/analysis", post(run_analysis))
@@ -1796,7 +1811,9 @@ pub async fn start_server(port: u16) {
         .route("/api/agent-outputs/:tool_name", get(get_agent_output_by_tool))
         .route("/api/analysis/status", get(get_analysis_status))
         .layer(CorsLayer::permissive())
-        .with_state(app_state);
+        .with_state(app_state)
+        // Merge WebSocket router
+        .merge(ws_router);
 
     // Serve static files + SPA fallback
     let dist_dir = std::env::var("DIST_DIR")

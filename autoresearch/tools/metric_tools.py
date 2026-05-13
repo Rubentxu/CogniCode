@@ -18,7 +18,7 @@ class EvolutionLogger:
         "f1_before", "f1_after", "fpr_before", "fpr_after",
         "precision", "recall", "execution_ms",
         "health_before", "health_after",
-        "decision", "description"
+        "decision", "description", "strategy"
     ]
     
     def __init__(self, log_path: Path):
@@ -33,7 +33,7 @@ class EvolutionLogger:
     
     def log_experiment(self, iteration: int, rule_id: str, language: str,
                        metrics_before: dict, metrics_after: dict,
-                       decision: str, description: str):
+                       decision: str, description: str, strategy: str = ""):
         """Append an experiment result to the log."""
         with open(self.log_path, "a", newline="") as f:
             writer = csv.writer(f, delimiter="\t")
@@ -53,6 +53,7 @@ class EvolutionLogger:
                 metrics_after.get("health", ""),
                 decision,
                 description,
+                strategy,
             ])
     
     def read_history(self) -> List[dict]:

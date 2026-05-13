@@ -3,6 +3,8 @@
 
 use leptos::prelude::*;
 
+use crate::components::live_updates::{LiveUpdatesProvider, LiveToggle, LiveStatus};
+
 #[derive(Clone, Debug)]
 pub struct NavItem {
     pub label: &'static str,
@@ -80,6 +82,26 @@ pub fn Shell(children: Children) -> impl IntoView {
                         --shadow-card: 0 2px 8px 0 rgba(0, 0, 0, 0.3) !important;
                         --shadow-elevated: 0 4px 16px 0 rgba(0, 0, 0, 0.4) !important;
                     }
+
+                    /* Live toggle dark mode styles */
+                    .live-toggle {
+                        background: #1e293b !important;
+                        border-color: #334155 !important;
+                    }
+                    .live-toggle-active .live-indicator {
+                        background: #22c55e !important;
+                        box-shadow: 0 0 8px #22c55e !important;
+                    }
+                    .live-toggle-paused .live-indicator {
+                        background: #eab308 !important;
+                    }
+                    .live-toggle-disconnected .live-indicator {
+                        background: #6b7280 !important;
+                    }
+                    .live-status {
+                        color: #94a3b8 !important;
+                    }
+                    "
                     "#
                 } else {
                     r#"
@@ -139,7 +161,15 @@ pub fn Shell(children: Children) -> impl IntoView {
             </aside>
 
             <main class="main-content" style="flex: 1; padding: 32px; min-height: 100vh;">
-                {children()}
+                {/* Live updates provider */}
+                <LiveUpdatesProvider>
+                    {/* Header bar with live updates */}
+                    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 16px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--color-border);">
+                        <LiveStatus />
+                        <LiveToggle />
+                    </div>
+                    {children()}
+                </LiveUpdatesProvider>
             </main>
         </div>
 

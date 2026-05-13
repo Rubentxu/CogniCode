@@ -11,6 +11,8 @@ pub mod filter_bar;
 pub mod loading_spinner;
 pub mod error_boundary;
 pub mod file_browser;
+pub mod live_updates;
+pub mod export_utils;
 
 pub use shell::Shell;
 pub use rating_card::RatingCard;

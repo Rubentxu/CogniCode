@@ -40,7 +40,7 @@ use inventory::submit;
 use streaming_iterator::StreamingIterator;
 
 // Re-export extracted rules for backward compatibility
-pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule, S2259Rule, S1142Rule, S1214Rule, S1541Rule, S1244Rule, S1197Rule, S1161Rule, S115Rule, S1151Rule, S1163Rule, S134Rule, S107Rule, S1135Rule, S2068Rule, S2589Rule, S4792Rule, S5122Rule};
+pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule, S2259Rule, S2757Rule, S1142Rule, S1214Rule, S1541Rule, S1244Rule, S1197Rule, S1161Rule, S115Rule, S1151Rule, S1163Rule, S134Rule, S1764Rule, S107Rule, S1135Rule, S2068Rule, S2077Rule, S2589Rule, S4792Rule, S5122Rule};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S134 — Deep Nesting Rule
@@ -768,41 +768,7 @@ declare_rule! {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S2757 — Unexpected assignment operators in conditions
-// ─────────────────────────────────────────────────────────────────────────────
-
-declare_rule! {
-    id: "S2757"
-    name: "Unexpected assignment operators in conditions"
-    severity: Major
-    category: Bug
-    language: "rust"
-    params: {}
-
-    explanation: "Pattern matches in conditions that look like assignments can confuse developers and lead to unintended behavior due to the difference between = and ==.",
-    clean_code: Logical,
-    impacts: [Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let re = regex::Regex::new(r"if\s+let\s+[A-Z]").unwrap();
-        for (idx, line) in ctx.source.lines().enumerate() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("//") || trimmed.starts_with("/*") {
-                continue; // Skip comments and disabled code
-            }
-            if re.is_match(line) {
-                issues.push(Issue::new(
-                    "S2757",
-                    "Potentially unintended pattern match in condition",
-                    Severity::Major,
-                    Category::Bug,
-                    ctx.file_path,
-                    idx + 1,
-                ));
-            }
-        }
-        issues
-    }
-}
+// S2757 — Unexpected assignment operators in conditions (segregated to rules/rules/rust/bugs/s2757_rule.rs)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1313 — IP addresses should not be hardcoded
@@ -1208,42 +1174,7 @@ declare_rule! {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1764 — Identical operands in binary expressions
-// ─────────────────────────────────────────────────────────────────────────────
-
-declare_rule! {
-    id: "S1764"
-    name: "Identical expressions should not be compared"
-    severity: Major
-    category: Bug
-    language: "rust"
-    params: {}
-
-    explanation: "Comparisons with identical operands always produce the same result, indicating dead code or logical errors in the expression.",
-    clean_code: Logical,
-    impacts: [Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        // Check for comparison operators with identical operands (avoid backreferences)
-        let comparison_ops = ["==", "!=", ">=", "<=", ">", "<"];
-        for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("// allow") {
-                continue;
-            }
-            for op in &comparison_ops {
-                if let Some(pos) = line.find(op)
-                    && pos > 0 {
-                        let before = line[..pos].trim();
-                        let after = line[pos + op.len()..].trim();
-                        if before == after && !before.is_empty() {
-                            issues.push(Issue::new("S1764", "Identical operands in comparison - always true/false", Severity::Major, Category::Bug, ctx.file_path, idx + 1));
-                            break;
-                        }
-                    }
-            }
-        }
-        issues
-    }
-}
+// S1764 — Identical expressions should not be compared (segregated to rules/rules/rust/bugs/s1764_rule.rs)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1860 — Deadlock-prone Mutex patterns
@@ -2387,43 +2318,7 @@ declare_rule! {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S2077 — SQL injection via format! with user input
-// ─────────────────────────────────────────────────────────────────────────────
-
-declare_rule! {
-    id: "S2077"
-    name: "SQL queries should not be built with string interpolation"
-    severity: Blocker
-    category: Vulnerability
-    language: "rust"
-    params: {}
-
-    explanation: "SQL queries built with string interpolation are vulnerable to injection attacks when user input is included without proper sanitization.",
-    clean_code: Trustworthy,
-    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER"];
-        for (line_num, line) in ctx.source.lines().enumerate() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
-            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
-            || trimmed.starts_with("#") { continue; }
-            let has_sql = sql_keywords.iter().any(|kw| line.contains(kw));
-            let has_format = line.contains("format!");
-            if has_sql && has_format && !line.contains("bind") && !line.contains("prepared") && !line.contains("parameter") {
-                issues.push(Issue::new(
-                    "S2077",
-                    "SQL query built with string interpolation - use parameterized queries",
-                    Severity::Blocker,
-                    Category::Vulnerability,
-                    ctx.file_path,
-                    line_num + 1,
-                ).with_remediation(Remediation::moderate("Use prepared statements or an ORM with parameter binding")));
-            }
-        }
-        issues
-    }
-}
+// S2077 — SQL queries should not be built with string interpolation (segregated to rules/rules/rust/security/s2077_rule.rs)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S2076 — Dynamic SQL Injection via format!

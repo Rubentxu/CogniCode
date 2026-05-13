@@ -26,6 +26,8 @@ import logging
 from pathlib import Path
 from collections import defaultdict
 from datetime import datetime
+from typing import List, Tuple, Optional, Dict, Any
+from dataclasses import dataclass, asdict, field
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -98,6 +100,419 @@ def progress():
     return done, total, pct
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# RULE STRATEGY CLASSIFIER
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Known dataflow/security rule IDs (source/sink models, taint analysis)
+DATAFLOW_RULE_IDS = {
+    "S5122",  # Code injection
+    "S3649",  # SQL injection
+    "S5131",  # XSS
+    "S2598",  # Command injection
+    "S2631",  # Path traversal
+    "S6092",  # Command injection (npm)
+    "S4738",  # XXE
+    "S5759",  # SSRF
+}
+
+# Known semantic analysis rule IDs (symbol/scope/usage analysis)
+SEMANTIC_RULE_IDS = {
+    "S2068",  # Hardcoded credentials (variable binding)
+    "S1854",  # Dead store / unused variable
+    "S1226",  # Variable shadowing
+    "S1481",  # Unused local variable
+    "S1125",  # Boolean literals
+    "S2225",  # Increment/decrement in condition
+    "S2376",  # Protected subclass
+    "S3878",  # Signal handler
+    "S4062",  # Trait method override
+}
+
+# Known AST/structural rule IDs (control flow, nesting, parameters)
+AST_RULE_IDS = {
+    "S2589",  # Constant boolean condition
+    "S107",   # Max parameters
+    "S134",   # Max nested control flow depth
+    "S1134",  # Too many break/continue
+    "S2259",  # Constant pattern
+    "S1186",  # Empty default branch
+    "S1871",  # Duplicate branch
+    "S4144",  # Overload parameter
+    "S2612",  # Insecure file permissions / chmod pattern
+    "S2092",  # Session cookie flags
+    "S3330",  # Cookie HttpOnly flag
+    "S5042",  # Archive/resource extraction size checks
+    "S100",   # Method naming
+    "S1141",  # Method length
+    "S1874",  # Deprecated item
+}
+
+# Known metric-based rule IDs
+METRIC_RULE_IDS = {
+    "S138",   # Function length
+    "S1541",  # Cyclomatic complexity
+    "S124",   # Commented-out code lines
+    "S1105",  # Nesting depth
+    "S1068",  # Unused private field
+    "S3323",  # Cognitive complexity (if added)
+}
+
+# Known textual rules that should remain regex/preflight-oriented
+REGEX_RULE_IDS = {
+    "S1135",  # TODO/FIXME/HACK/XXX tags
+    "S1313",  # Hardcoded IP address literals
+    "S4792",  # Weak crypto literal/API names (until AST migration is available)
+    "S5332",  # Clear-text protocol literals
+}
+
+
+@dataclass
+class RuleSpec:
+    """Specification for a rule's generation strategy and engine."""
+    rule_id: str
+    strategy: str                    # regex | ast | semantic | dataflow | metric | hybrid
+    engine: str                      # preferred engine: tree_sitter | regex | semantic | dataflow | metric
+    fallback_engine: str = "regex"   # fallback if preferred fails
+    patterns: list = field(default_factory=list)
+    constraints: list = field(default_factory=list)
+    exclusions: list = field(default_factory=list)
+    fixtures_required: bool = False
+    rationale: str = ""
+    metadata: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+def classify_rule_strategy(rule_id: str, rule_block: str) -> Dict[str, Any]:
+    """
+    Classify a rule's preferred analysis strategy.
+    Returns a dict with strategy, reason, preferred_engine, fallback_engine, fixtures_required.
+    """
+    strategy = "regex"
+    preferred_engine = "regex"
+    fallback_engine = "regex"
+    fixtures_required = False
+    reason_parts = []
+
+    if rule_id in DATAFLOW_RULE_IDS:
+        return {
+            "strategy": "dataflow",
+            "reason": f"Rule ID {rule_id} is a known dataflow/source-sink rule",
+            "preferred_engine": "dataflow",
+            "fallback_engine": "tree_sitter",
+            "fixtures_required": True,
+            "rule_id": rule_id,
+        }
+
+    if rule_id in SEMANTIC_RULE_IDS:
+        return {
+            "strategy": "semantic",
+            "reason": f"Rule ID {rule_id} is a known semantic analysis rule",
+            "preferred_engine": "semantic",
+            "fallback_engine": "tree_sitter",
+            "fixtures_required": True,
+            "rule_id": rule_id,
+        }
+
+    if rule_id in AST_RULE_IDS:
+        return {
+            "strategy": "ast",
+            "reason": f"Rule ID {rule_id} is a known AST/structural rule",
+            "preferred_engine": "tree_sitter",
+            "fallback_engine": "regex",
+            "fixtures_required": True,
+            "rule_id": rule_id,
+        }
+
+    if rule_id in METRIC_RULE_IDS:
+        return {
+            "strategy": "metric",
+            "reason": f"Rule ID {rule_id} is a known metric-based rule",
+            "preferred_engine": "metric",
+            "fallback_engine": "regex",
+            "fixtures_required": False,
+            "rule_id": rule_id,
+        }
+
+    if rule_id in REGEX_RULE_IDS:
+        return {
+            "strategy": "regex",
+            "reason": f"Rule ID {rule_id} is a known textual/preflight rule",
+            "preferred_engine": "regex",
+            "fallback_engine": "tree_sitter",
+            "fixtures_required": True,
+            "rule_id": rule_id,
+        }
+
+    # Analyze rule block content (heuristic)
+    block_lower = rule_block.lower()
+
+    source_terms = ["user input", "request", "req.", "param", "body", "argv", "stdin", "env"]
+    sink_terms = ["sink", "execute", "query", "eval", "command", "sql", "database", "shell", "process"]
+    taint_terms = ["taint", "sanitize", "sanitizer", "escape", "encode", "validate"]
+    injection_terms = ["sql injection", "xss", "command injection", "path traversal", "ldap injection", "xxe", "ssrf"]
+
+    source_hits = sum(1 for kw in source_terms if kw in block_lower)
+    sink_hits = sum(1 for kw in sink_terms if kw in block_lower)
+    taint_hits = sum(1 for kw in taint_terms if kw in block_lower)
+    injection_hits = sum(1 for kw in injection_terms if kw in block_lower)
+
+    dataflow_score = (source_hits > 0 and sink_hits > 0) or taint_hits >= 2 or (injection_hits > 0 and (source_hits > 0 or sink_hits > 0))
+    if dataflow_score:
+        strategy = "dataflow"
+        preferred_engine = "dataflow"
+        fallback_engine = "tree_sitter"
+        fixtures_required = True
+        reason_parts.append(f"content has source/sink or taint-flow characteristics")
+
+    semantic_keywords = ["variable", "assign", "reassign", "scope", "unused", "shadow", "redeclare", "symbol", "reference", "binding", "credential", "password", "token", "secret"]
+    semantic_hits = sum(1 for kw in semantic_keywords if kw in block_lower)
+    if semantic_hits >= 2 and strategy == "regex":
+        strategy = "semantic"
+        preferred_engine = "semantic"
+        fallback_engine = "tree_sitter"
+        fixtures_required = True
+        reason_parts.append(f"content has semantic analysis characteristics ({semantic_hits} keyword hits)")
+
+    ast_keywords = ["if", "while", "for", "loop", "nest", "depth", "branch", "condition", "boolean", "constant", "parameter", "function", "match", "pattern", "arm"]
+    ast_hits = sum(1 for kw in ast_keywords if kw in block_lower)
+    if ast_hits >= 3 and strategy == "regex":
+        strategy = "ast"
+        preferred_engine = "tree_sitter"
+        fallback_engine = "regex"
+        fixtures_required = True
+        reason_parts.append(f"content has AST/structural characteristics ({ast_hits} keyword hits)")
+
+    metric_keywords = ["count", "line", "length", "complexity", "threshold", "cognitive", "maintainability", "statement", "expression"]
+    metric_hits = sum(1 for kw in metric_keywords if kw in block_lower)
+    if metric_hits >= 2 and strategy == "regex":
+        strategy = "metric"
+        preferred_engine = "metric"
+        fallback_engine = "regex"
+        fixtures_required = False
+        reason_parts.append(f"content has metric characteristics ({metric_hits} keyword hits)")
+
+    if strategy == "regex":
+        regex_patterns = re.findall(r'regex:\s*"([^"]+)"', rule_block)
+        if regex_patterns:
+            reason_parts.append(f"contains regex patterns ({len(regex_patterns)} found)")
+        else:
+            reason_parts.append("no specific strategy indicators found, defaulting to regex")
+
+    reason = reason_parts[0] if reason_parts else "default regex strategy (no specific indicators)"
+
+    return {
+        "strategy": strategy,
+        "reason": reason,
+        "preferred_engine": preferred_engine,
+        "fallback_engine": fallback_engine,
+        "fixtures_required": fixtures_required,
+        "rule_id": rule_id,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# RUST REGEX VALIDATOR
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Rust regex crate does NOT support lookahead/lookbehind, backreferences, or named backreferences
+RUST_REGEX_UNSUPPORTED = [
+    (r'\(\?=', 'positive_lookahead'),
+    (r'\(\?!', 'negative_lookahead'),
+    (r'\(\?<=', 'positive_lookbehind'),
+    (r'\(\?<!', 'negative_lookbehind'),
+    (r'\\{1,2}[1-9][0-9]*', 'backreference'),
+    (r'\\g<\w+>', 'named_backreference_g'),
+    (r'\\k<\w+>', 'named_backreference_k'),
+    (r'\(\?R\)', 'recursive_pattern'),
+    (r'\(\?\(\w+\)', 'conditional_subpattern'),
+]
+
+
+def validate_rust_regex(code: str) -> Tuple[bool, str]:
+    """Check if code contains Rust regex crate unsupported constructs."""
+    for pattern, name in RUST_REGEX_UNSUPPORTED:
+        if re.search(pattern, code):
+            return False, f"rust_regex_unsupported: {name}"
+    return True, ""
+
+
+def validate_proposal(old_code: str, new_code: str) -> Tuple[bool, str]:
+    """Validate proposed replacement code for Rust regex compatibility."""
+    valid, reason = validate_rust_regex(new_code)
+    if not valid:
+        return False, reason
+    return True, ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ANTI-OSCILLATION DETECTOR
+# ═══════════════════════════════════════════════════════════════════════════
+
+DESC_NOISE_RE = re.compile(r'[\s\-–—:,\.]+')
+THRESHOLD_RE = re.compile(r'\bthreshold[:\s]*(\d+)', re.IGNORECASE)
+
+
+def _normalize_desc(desc: str) -> str:
+    """Normalize description for comparison."""
+    desc = desc.lower()
+    desc = DESC_NOISE_RE.sub(' ', desc)
+    return desc.strip()
+
+
+def _extract_threshold(desc: str) -> Optional[int]:
+    """Extract numeric threshold from description if present."""
+    m = THRESHOLD_RE.search(desc)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def detect_oscillation(rule_id: str, history: List[dict], change_desc: str,
+                       change_type: str, window_n: int = 8) -> Tuple[bool, str]:
+    """
+    Check if a proposed change would cause oscillation for this rule.
+    Oscillation = same rule gets repeated inverse/near-duplicate changes.
+    """
+    if not history:
+        return False, ""
+
+    if change_type not in ("threshold_tune", "regex_tighten", "metadata"):
+        return False, ""
+
+    rule_history = []
+    for entry in reversed(history):
+        if entry.get("rule_id") == rule_id:
+            rule_history.append(entry)
+            if len(rule_history) >= window_n:
+                break
+
+    if len(rule_history) < 2:
+        return False, ""
+
+    new_thresh = _extract_threshold(change_desc)
+    new_desc_norm = _normalize_desc(change_desc)
+
+    # Check for threshold flip (e.g., 4→5 then 5→4)
+    if new_thresh is not None:
+        thresholds_seen = []
+        for entry in rule_history:
+            entry_desc = entry.get("description", "")
+            entry_thresh = _extract_threshold(entry_desc)
+            if entry_thresh is not None:
+                thresholds_seen.append(entry_thresh)
+
+        if thresholds_seen and thresholds_seen[0] == new_thresh:
+            return True, f"oscillation_detected: threshold {new_thresh} already tried"
+
+    # Check for direction oscillation (raise→lower→raise pattern)
+    if new_thresh is not None and len(thresholds_seen) >= 2:
+        recent_thresholds = [new_thresh] + thresholds_seen[:3]
+        directions = []
+        for i in range(len(recent_thresholds) - 1):
+            diff = recent_thresholds[i] - recent_thresholds[i + 1]
+            if diff > 0:
+                directions.append("up")
+            elif diff < 0:
+                directions.append("down")
+        dir_changes = sum(1 for i in range(len(directions) - 1) if directions[i] != directions[i + 1])
+        if dir_changes >= 2:
+            return True, f"oscillation_detected: threshold zigzag (directions: {directions})"
+
+    # Check for near-duplicate descriptions
+    similar_count = 0
+    for entry in rule_history:
+        entry_desc = entry.get("description", "")
+        entry_norm = _normalize_desc(entry_desc)
+        if new_desc_norm and entry_norm:
+            shorter, longer = sorted([new_desc_norm, entry_norm], key=len)
+            if len(shorter) > 10 and shorter in longer:
+                similar_count += 1
+                if similar_count >= 2:
+                    return True, f"oscillation_detected: similar description repeated {similar_count} times"
+
+    return False, ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LOW-QUALITY PROPOSAL REJECTOR
+# ═══════════════════════════════════════════════════════════════════════════
+
+MIN_DESC_WORDS = 3
+
+
+def is_low_quality_proposal(change: dict, imp_type: str) -> Tuple[bool, str]:
+    """Check if a proposal is low quality and should be rejected."""
+    desc = change.get("description", "").strip()
+    old_code = change.get("old_code", "").strip()
+    new_code = change.get("new_code", "").strip()
+
+    if imp_type in ("threshold_tune", "regex_tighten", "logic_refactor", "metadata"):
+        if len(desc) < 10:
+            return True, "low_quality: description too short"
+        words = desc.split()
+        if len(words) < MIN_DESC_WORDS:
+            return True, f"low_quality: description has <{MIN_DESC_WORDS} words"
+
+    if imp_type in ("regex_tighten", "logic_refactor"):
+        if not desc or desc.lower() in ("none", "n/a", "na", ""):
+            return True, "low_quality: no description/rationale"
+        vague_terms = {"improve", "fix", "update", "change", "modify", "edit"}
+        if desc.lower().strip() in vague_terms:
+            return True, "low_quality: description is too vague"
+
+    if imp_type == "regex_tighten" and old_code and new_code:
+        if old_code == new_code:
+            return True, "low_quality: old_code == new_code (no change)"
+
+    return False, ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# RULE COOLDOWN (oscillation prevention)
+# ═══════════════════════════════════════════════════════════════════════════
+
+RULE_COOLDOWN = {}  # rule_id → next eligible iteration
+COOLDOWN_BATCHES = 5  # skip rule for N batches after oscillation
+
+
+def set_rule_cooldown(rule_id: str, batches: int = COOLDOWN_BATCHES):
+    """Set cooldown for a rule (skip for N batches)."""
+    RULE_COOLDOWN[rule_id] = len(SESSION_DONE) + batches
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LOCKED RULES (stable, do not re-tune)
+# ═══════════════════════════════════════════════════════════════════════════
+
+LOCKED_RULES = {
+    "S2259",  # 100% keep rate — stable
+    "S4792",  # Converged weak crypto patterns
+    "S2068",  # Converged credential length threshold
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STRATEGY ENFORCEMENT (S4)
+# ═══════════════════════════════════════════════════════════════════════════
+
+STRATEGY_ALLOWED_TYPES = {
+    "regex": {"threshold_tune", "regex_tighten", "logic_refactor", "metadata"},
+    "ast": {"ast_migrate", "threshold_tune", "metadata"},
+    "semantic": {"semantic_migrate", "threshold_tune", "metadata"},
+    "dataflow": {"dataflow_migrate", "threshold_tune", "metadata"},
+    "metric": {"metric_migrate", "threshold_tune", "metadata"},
+    "hybrid": {"hybrid_migrate", "ast_migrate", "semantic_migrate", "dataflow_migrate", "metric_migrate", "threshold_tune", "metadata"},
+}
+
+
+def get_strategy_allowed_types(strategy: str) -> set:
+    """Get allowed improvement types for a given strategy."""
+    return STRATEGY_ALLOWED_TYPES.get(strategy, {"threshold_tune", "regex_tighten", "logic_refactor", "metadata"})
+
+
 # ═══════════════════════════════════════════════════════════════════
 # 1. ANALYZER
 # ═══════════════════════════════════════════════════════════════════
@@ -114,13 +529,19 @@ def analyzer(history, force=None, batch=3):
         return []
 
     valid = set(all_rules)
-    
+
+    # S5: Remove locked rules from selection pool
+    valid = valid - LOCKED_RULES
+
     # Recent rules (last batch*3) — cooldown
     recent = set()
     for h in history[-batch * 3:]:
         rid = h.get("rule_id", "")
         if rid.startswith("S"):
             recent.add(rid)
+
+    # S3: Cooldown rules (oscillation cooldown)
+    cooled = {rid for rid, eligible_at in RULE_COOLDOWN.items() if len(SESSION_DONE) < eligible_at}
 
     # Build F1 scores from history
     rule_f1 = defaultdict(list)
@@ -138,7 +559,7 @@ def analyzer(history, force=None, batch=3):
 
     # Priority 1: SonarQube targets (up to 2)
     for r in SQ_TARGETS:
-        if r in valid and r not in recent and r not in selected:
+        if r in valid and r not in recent and r not in selected and r not in cooled:
             if is_done(r) and not is_retryable(r):
                 continue  # Skip permanently done
             if is_done(r) and is_retryable(r):
@@ -150,7 +571,7 @@ def analyzer(history, force=None, batch=3):
 
     # Priority 2: Lowest F1
     candidates = sorted(
-        ((r, a) for r, a in avg_f1.items() if r not in recent and r not in selected and r in valid),
+        ((r, a) for r, a in avg_f1.items() if r not in recent and r not in selected and r in valid and r not in cooled),
         key=lambda x: x[1]
     )
     for r, _ in candidates:
@@ -162,7 +583,7 @@ def analyzer(history, force=None, batch=3):
 
     # Priority 3: Any remaining valid rule
     for r in sorted(valid):
-        if r not in selected and r not in recent:
+        if r not in selected and r not in recent and r not in cooled:
             if is_done(r) and not is_retryable(r):
                 continue
             selected.append(r)
@@ -176,8 +597,55 @@ def analyzer(history, force=None, batch=3):
 # 2. IMPROVER
 # ═══════════════════════════════════════════════════════════════════
 
+def _extract_rule_block(content: str, start: int) -> Optional[str]:
+    """Extract a declare_rule!{...} block handling nested braces and strings."""
+    i = content.find("{", start)
+    if i == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    string_char = None
+    raw_prefix = False
+
+    while i < len(content):
+        ch = content[i]
+
+        if not in_string:
+            if ch in ('"', 'r'):
+                if ch == 'r' and i + 1 < len(content) and content[i + 1] == '"':
+                    in_string = True
+                    string_char = '"'
+                    raw_prefix = True
+                    i += 1
+                elif ch == '"':
+                    in_string = True
+                    string_char = '"'
+        else:
+            if raw_prefix:
+                if ch == '"':
+                    in_string = False
+                    raw_prefix = False
+            else:
+                if ch == '\\':
+                    i += 1
+                elif ch == string_char:
+                    in_string = False
+
+        if not in_string:
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return content[start:i + 1]
+        i += 1
+
+    return None
+
+
 def improver(rule_id):
-    """LLM proposes change. Returns {success, type, description, confidence, level}."""
+    """LLM proposes change. Returns {success, type, description, confidence, level, strategy}."""
     llm = LLMClient()
     content = CATALOG.read_text()
 
@@ -187,41 +655,50 @@ def improver(rule_id):
         return {"success": False, "error": "already segregated"}
 
     block_start = content.rfind("declare_rule!", 0, pos)
-    brace_start = content.find("{", block_start)
-    depth = 0
-    for i in range(brace_start, len(content)):
-        if content[i] == "{":
-            depth += 1
-        elif content[i] == "}":
-            depth -= 1
-            if depth == 0:
-                rule_block = content[block_start:i + 1]
-                break
+    if block_start == -1:
+        return {"success": False, "error": "rule block not found"}
 
-    # Ask LLM
-    system = (
-        "You edit Rust static analysis rules. Propose ONE safe change to the "
-        "detection logic. Prefer threshold adjustments (safest) over regex changes. "
-        "Return ONLY valid JSON: "
-        '{"improvement_type":"threshold_tune|regex_tighten|logic_refactor|metadata",'
-        '"description":"what and why","old_code":"EXACT original code",'
-        '"new_code":"EXACT replacement code","confidence":0.8}'
-    )
+    # Extract rule block using balanced brace matching with string awareness
+    rule_block = _extract_rule_block(content, block_start)
+    if not rule_block:
+        return {"success": False, "error": "rule block parse failed"}
+
+    # ── Strategy classification (before building prompt) ──
+    classification = classify_rule_strategy(rule_id, rule_block)
+    strategy = classification["strategy"]
+    log.info(f"  {rule_id} → classified as strategy='{strategy}' ({classification['reason']})")
+
+    # Build strategy-aware system prompt
+    system = _build_strategy_prompt(strategy)
 
     try:
         resp = llm.chat(
             system,
-            [{"role": "user", "content": f"Rule {rule_id}:\n```rust\n{rule_block[:3000]}\n```\nPropose ONE safe change."}],
+            [{"role": "user", "content": f"Rule {rule_id}:\n```rust\n{rule_block[:3000]}\n```\nPropose ONE safe change to improve detection quality."}],
             max_tokens=1500
         )
+        # M4: Retry with simpler prompt for JSON parsing failures
         m = re.search(r'\{[\s\S]*\}', resp)
         if not m:
-            return {"success": False, "error": "no JSON in response"}
+            log.info(f"  {rule_id} — no JSON in first response, retrying with simpler prompt...")
+            resp2 = llm.chat(
+                "Return ONLY a JSON object. No markdown, no explanation. "
+                'Format: {"improvement_type":"threshold_tune|metadata","description":"...",'
+                '"old_code":"...","new_code":"...","confidence":0.8}',
+                [{"role": "user", "content": f"Rule {rule_id}:\n```rust\n{rule_block[:2000]}\n```\nPropose ONE safe improvement."}],
+                max_tokens=1000
+            )
+            m = re.search(r'\{[\s\S]*\}', resp2)
+            if not m:
+                return {"success": False, "error": "no JSON in response (2 attempts)"}
 
         change = json.loads(m.group(0))
         imp_type = change.get("improvement_type", "none")
         if imp_type == "none":
             return {"success": False, "error": "no improvement needed"}
+        if imp_type not in get_strategy_allowed_types(strategy):
+            log.info(f"  {rule_id} — strategy enforcement: {imp_type} not allowed for strategy={strategy}")
+            return {"success": False, "error": f"strategy_mismatch: {imp_type} not allowed for {strategy}"}
 
         old_code = change.get("old_code", "")
         new_code = change.get("new_code", "")
@@ -230,6 +707,36 @@ def improver(rule_id):
 
         if not old_code or not new_code or old_code == new_code:
             return {"success": False, "error": "empty change"}
+
+        # M3: Pre-validate: old_code must exist in current catalog
+        if old_code and old_code not in content:
+            old_code_stripped = old_code.strip()
+            found_fuzzy = False
+            for line in content.split("\n"):
+                if line.strip() == old_code_stripped:
+                    found_fuzzy = True
+                    break
+            if not found_fuzzy:
+                return {"success": False, "error": "old_code not found in catalog (pre-validation)"}
+
+        # Low-quality proposal check
+        is_low, lq_reason = is_low_quality_proposal(change, imp_type)
+        if is_low:
+            return {"success": False, "error": lq_reason}
+
+        # Anti-oscillation check
+        history = read_evolution_history()
+        is_osc, osc_reason = detect_oscillation(rule_id, history, description, imp_type)
+        if is_osc:
+            set_rule_cooldown(rule_id)
+            return {"success": False, "error": osc_reason}
+
+        # S1: Rust regex validation — runs for ALL improvement types with code changes
+        if new_code.strip():
+            valid, reason = validate_proposal(old_code, new_code)
+            if not valid:
+                log.debug(f"  {rule_id} — regex validation rejected: {reason}")
+                return {"success": False, "error": reason}
 
         # Apply change
         if old_code in content:
@@ -262,10 +769,118 @@ def improver(rule_id):
             "description": description,
             "confidence": confidence,
             "level": "code",
+            "strategy": strategy,  # Include strategy in return for observability
         }
 
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def _build_strategy_prompt(strategy: str) -> str:
+    """Build strategy-aware system prompt for the LLM."""
+    base = (
+        "You edit Rust static analysis rules for the CogniCode analyzer. "
+        "IMPORTANT Rust regex limitations: The Rust `regex` crate does NOT support "
+        "lookahead (?=), negative lookahead (?!), lookbehind (?<=), negative lookbehind (?<!), "
+        "backreferences (\\1, \\2), or named backreferences (\\g<name>, \\k<name>). "
+        "Rust regex DOES support non-capturing groups (?:...), inline flags (?i), "
+        "word boundaries (\\b), and quantifiers like \\d{2}. "
+        "Prefer threshold adjustments (safest) over regex changes. "
+    )
+
+    if strategy == "regex":
+        return base + (
+            "Return ONLY valid JSON (extra fields are ignored): "
+            '{"improvement_type":"threshold_tune|regex_tighten|logic_refactor|metadata",'
+            '"description":"what and why this change helps (be specific)",'
+            '"fp_rationale":"why this reduces false positives",'
+            '"test_implication":"what existing tests should still pass",'
+            '"old_code":"EXACT original code from the rule block",'
+            '"new_code":"EXACT replacement code","confidence":0.8}'
+        )
+
+    elif strategy == "ast":
+        guidance = (
+            "This rule is classified as AST/structural. "
+            "Do NOT propose regex-first changes. "
+            "Instead consider: tree-sitter AST patterns, structural conditions, or parameter count checks. "
+            "Acceptable improvement_types: ast_migrate, threshold_tune, metadata. "
+        )
+        return base + guidance + (
+            "Return ONLY valid JSON: "
+            '{"improvement_type":"ast_migrate|threshold_tune|metadata",'
+            '"description":"AST/structural change and why it improves detection",'
+            '"old_code":"EXACT original code","new_code":"EXACT replacement code","confidence":0.8}'
+        )
+
+    elif strategy == "semantic":
+        guidance = (
+            "This rule is classified as semantic (symbol/scope/usage analysis). "
+            "Do NOT propose regex-first changes. "
+            "Consider: variable binding analysis, unused symbol detection, scope shadowing checks. "
+            "Acceptable improvement_types: semantic_migrate, threshold_tune, metadata. "
+        )
+        return base + guidance + (
+            "Return ONLY valid JSON: "
+            '{"improvement_type":"semantic_migrate|threshold_tune|metadata",'
+            '"description":"semantic analysis change and why it improves detection",'
+            '"old_code":"EXACT original code","new_code":"EXACT replacement code","confidence":0.8}'
+        )
+
+    elif strategy == "dataflow":
+        guidance = (
+            "This rule is classified as dataflow (source-sink/taint analysis). "
+            "Do NOT propose regex-first changes. "
+            "Consider: taint propagation, source/sink modeling, sanitizer identification. "
+            "Acceptable improvement_types: dataflow_migrate, threshold_tune, metadata. "
+        )
+        return base + guidance + (
+            "Return ONLY valid JSON: "
+            '{"improvement_type":"dataflow_migrate|threshold_tune|metadata",'
+            '"description":"dataflow/taint analysis change and why it improves detection",'
+            '"old_code":"EXACT original code","new_code":"EXACT replacement code","confidence":0.8}'
+        )
+
+    elif strategy == "metric":
+        guidance = (
+            "This rule is classified as metric-based. "
+            "Do NOT propose regex-first changes. "
+            "Consider: threshold tuning, metric aggregation changes, counting logic adjustments. "
+            "Acceptable improvement_types: metric_migrate, threshold_tune, metadata. "
+        )
+        return base + guidance + (
+            "Return ONLY valid JSON: "
+            '{"improvement_type":"metric_migrate|threshold_tune|metadata",'
+            '"description":"metric-based change and why it improves detection",'
+            '"old_code":"EXACT original code","new_code":"EXACT replacement code","confidence":0.8}'
+        )
+
+    elif strategy == "hybrid":
+        guidance = (
+            "This rule is classified as hybrid (multiple analysis approaches). "
+            "Consider combining regex, AST, semantic, or metric strategies as appropriate. "
+            "Acceptable improvement_types: hybrid_migrate, ast_migrate, semantic_migrate, "
+            "dataflow_migrate, metric_migrate, threshold_tune, metadata. "
+        )
+        return base + guidance + (
+            "Return ONLY valid JSON: "
+            '{"improvement_type":"hybrid_migrate|threshold_tune|metadata",'
+            '"description":"hybrid analysis change and why it improves detection",'
+            '"old_code":"EXACT original code","new_code":"EXACT replacement code","confidence":0.8}'
+        )
+
+    else:
+        return base + (
+            "Return ONLY valid JSON: "
+            '{"improvement_type":"threshold_tune|regex_tighten|logic_refactor|metadata",'
+            '"description":"what and why this change helps","old_code":"EXACT original code",'
+            '"new_code":"EXACT replacement code","confidence":0.8}'
+        )
+
+
+def read_evolution_history() -> List[dict]:
+    """Read autoresearch evolution history without mutating experiment state."""
+    return EvolutionLogger(Path(__file__).parent / "evolution.tsv").read_history()
 
 
 def _improve_metadata(rule_id, description):
@@ -368,18 +983,11 @@ def segregate(rule_id):
     if pos == -1:
         return
 
-    # Find declare_rule! block
+    # Find declare_rule! block using robust extraction
     bs = content.rfind("declare_rule!", 0, pos)
-    bc = content.find("{", bs)
-    depth = 0
-    for i in range(bc, len(content)):
-        if content[i] == "{":
-            depth += 1
-        elif content[i] == "}":
-            depth -= 1
-            if depth == 0:
-                block = content[bs:i + 1]
-                break
+    block = _extract_rule_block(content, bs)
+    if not block:
+        return
 
     # Determine category
     if "Security" in block or "VULNERABILITY" in block:
@@ -487,7 +1095,7 @@ def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batc
         if dry_run:
             for rid in targets:
                 total_alltime += 1
-                evolution.log_experiment(total_alltime, rid, "rust", {}, {}, "dry_run", "Analyzer selected")
+                evolution.log_experiment(total_alltime, rid, "rust", {}, {}, "dry_run", "Analyzer selected", strategy="")
                 batch_results[rid] = ("dry_run", "Analyzer selected")
             time.sleep(1)
             continue
@@ -526,7 +1134,8 @@ def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batc
                     log.debug(f"  {rule_id} — retry #{FAILURE_COUNT[rule_id]}/3")
                 evolution.log_experiment(
                     total_alltime, rule_id, "rust", {"f1": f1_before}, {},
-                    "skipped", change.get("error", "?") if change else "?"
+                    "skipped", change.get("error", "?") if change else "?",
+                    strategy=change.get("strategy", "") if change else ""
                 )
                 batch_results[rule_id] = ("skipped", change.get("error", "?") if change else "?")
                 fails += 1
@@ -538,7 +1147,8 @@ def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batc
                 git.checkout(str(CATALOG))
                 evolution.log_experiment(
                     total_alltime, rule_id, "rust", {"f1": f1_before}, {},
-                    "failed", metrics["error"]
+                    "failed", metrics["error"],
+                    strategy=change.get("strategy", "")
                 )
                 batch_results[rule_id] = ("failed", metrics["error"])
                 record_failure(rule_id)
@@ -584,7 +1194,8 @@ def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batc
             evolution.log_experiment(
                 total_alltime, rule_id, "rust", {"f1": f1_before}, metrics,
                 decision,
-                f"{change.get('type', '?')}: {change.get('description', '')[:120]}"
+                f"{change.get('type', '?')}: {change.get('description', '')[:120]}",
+                strategy=change.get("strategy", "")
             )
             batch_results[rule_id] = (decision, f"{change.get('type', '?')}: {change.get('description', '')[:120]}")
             log.info(f"  {rule_id} → {decision.upper()} ({change.get('level', '?')}): {reason}")
