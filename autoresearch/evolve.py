@@ -348,11 +348,90 @@ def validate_proposal(old_code: str, new_code: str) -> Tuple[bool, str]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# JSON EXTRACTION HELPERS (P0-C)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _extract_json(resp: str) -> Optional[re.Match]:
+    """
+    Extract JSON object from LLM response with robust fallbacks.
+    P0-C: Tries greedy match first, then last complete brace pair, then length check.
+    """
+    if not resp:
+        return None
+
+    # Try greedy match first
+    m = re.search(r'\{[\s\S]*\}', resp)
+    if m:
+        json_str = m.group(0)
+        # P0-C: Validate minimum length to avoid truncated JSON
+        if len(json_str) < 50:
+            return None
+        try:
+            json.loads(json_str)
+            return m
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback: find the LAST complete } that produces valid JSON
+    # This handles cases where the greedy match captured a truncated JSON
+    candidates = list(re.finditer(r'\}', resp))
+    for candidate in reversed(candidates):
+        end_pos = candidate.end()
+        # Try all start positions from 0 to this } position
+        for start in range(0, end_pos):
+            trial = resp[start:end_pos]
+            if len(trial) < 50:
+                continue
+            try:
+                json.loads(trial)
+                # Found valid JSON - return match object at this position
+                return re.match(r'\{[\s\S]*\}', resp[start:])
+            except json.JSONDecodeError:
+                continue
+
+    return None
+
+
+def _extract_check_closure(rule_block: str, rule_id: str) -> Optional[str]:
+    """
+    Extract just the check closure from a rule_block for S100 (P0-B/P3).
+    Returns only the check function body to reduce token count for LLM.
+    """
+    # Look for common check closure patterns
+    patterns = [
+        # Pattern: check = |ctx: &RuleContext| { ... }
+        r'check\s*=\s*\|[^|]*\|\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}',
+        # Pattern: fn check(ctx: &RuleContext) -> bool { ... }
+        r'fn\s+check\s*\([^)]*\)\s*->\s*bool\s*\{([^}]+(?:\{[^}]*\}[^}]*)*)\}',
+    ]
+
+    for pattern in patterns:
+        m = re.search(pattern, rule_block, re.DOTALL)
+        if m:
+            return m.group(0)
+
+    # Fallback: extract the entire rule block if no check closure found
+    return rule_block[:1500] if len(rule_block) > 1500 else rule_block
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # ANTI-OSCILLATION DETECTOR
 # ═══════════════════════════════════════════════════════════════════════════
 
 DESC_NOISE_RE = re.compile(r'[\s\-–—:,\.]+')
 THRESHOLD_RE = re.compile(r'\bthreshold[:\s]*(\d+)', re.IGNORECASE)
+
+# P1: Threshold type patterns - extract the KIND of threshold being tuned
+THRESHOLD_TYPE_PATTERNS = [
+    (re.compile(r'\bthreshold[:\s]*(\d+)', re.IGNORECASE), "threshold"),
+    (re.compile(r'\bcontext\s+window[:\s]*(\d+)', re.IGNORECASE), "context_window"),
+    (re.compile(r'\bmin\s+length[:\s]*(\d+)', re.IGNORECASE), "min_length"),
+    (re.compile(r'\bmax\s+length[:\s]*(\d+)', re.IGNORECASE), "max_length"),
+    (re.compile(r'\blines?[:\s]*(\d+)', re.IGNORECASE), "lines"),
+    (re.compile(r'\bchars?[:\s]*(\d+)', re.IGNORECASE), "chars"),
+    (re.compile(r'\bdepth[:\s]*(\d+)', re.IGNORECASE), "depth"),
+    (re.compile(r'\bcount[:\s]*(\d+)', re.IGNORECASE), "count"),
+]
 
 
 def _normalize_desc(desc: str) -> str:
@@ -370,11 +449,32 @@ def _extract_threshold(desc: str) -> Optional[int]:
     return None
 
 
+def _extract_threshold_type(desc: str) -> Optional[str]:
+    """
+    P1: Extract the TYPE of threshold being tuned.
+    Returns the threshold type category (e.g., 'threshold', 'context_window', 'min_length').
+    """
+    for pattern, thresh_type in THRESHOLD_TYPE_PATTERNS:
+        if pattern.search(desc):
+            return thresh_type
+    return None
+
+
+def _extract_threshold_with_type(desc: str) -> Optional[Tuple[str, int]]:
+    """P1: Extract both threshold type and value."""
+    for pattern, thresh_type in THRESHOLD_TYPE_PATTERNS:
+        m = pattern.search(desc)
+        if m:
+            return (thresh_type, int(m.group(1)))
+    return None
+
+
 def detect_oscillation(rule_id: str, history: List[dict], change_desc: str,
                        change_type: str, window_n: int = 8) -> Tuple[bool, str]:
     """
     Check if a proposed change would cause oscillation for this rule.
     Oscillation = same rule gets repeated inverse/near-duplicate changes.
+    P1: Now distinguishes threshold TYPES - only rejects if same type+value already tried.
     """
     if not history:
         return False, ""
@@ -392,11 +492,30 @@ def detect_oscillation(rule_id: str, history: List[dict], change_desc: str,
     if len(rule_history) < 2:
         return False, ""
 
-    new_thresh = _extract_threshold(change_desc)
+    new_thresh_info = _extract_threshold_with_type(change_desc)
     new_desc_norm = _normalize_desc(change_desc)
 
-    # Check for threshold flip (e.g., 4→5 then 5→4)
-    if new_thresh is not None:
+    # P1: Check for same threshold type+value already tried
+    if new_thresh_info is not None:
+        new_thresh_type, new_thresh_val = new_thresh_info
+        thresholds_seen_by_type = defaultdict(list)
+
+        for entry in rule_history:
+            entry_desc = entry.get("description", "")
+            entry_info = _extract_threshold_with_type(entry_desc)
+            if entry_info is not None:
+                entry_type, entry_val = entry_info
+                thresholds_seen_by_type[entry_type].append(entry_val)
+
+        # P1: Only reject if same TYPE and same VALUE already tried
+        if new_thresh_type in thresholds_seen_by_type:
+            if new_thresh_val in thresholds_seen_by_type[new_thresh_type]:
+                return True, f"oscillation_detected: {new_thresh_type}={new_thresh_val} already tried"
+
+    # Check for direction oscillation (raise→lower→raise pattern)
+    # P1: Only applies when we have threshold type info
+    if new_thresh_info is not None and len(rule_history) >= 2:
+        _, new_thresh = new_thresh_info
         thresholds_seen = []
         for entry in rule_history:
             entry_desc = entry.get("description", "")
@@ -404,22 +523,18 @@ def detect_oscillation(rule_id: str, history: List[dict], change_desc: str,
             if entry_thresh is not None:
                 thresholds_seen.append(entry_thresh)
 
-        if thresholds_seen and thresholds_seen[0] == new_thresh:
-            return True, f"oscillation_detected: threshold {new_thresh} already tried"
-
-    # Check for direction oscillation (raise→lower→raise pattern)
-    if new_thresh is not None and len(thresholds_seen) >= 2:
-        recent_thresholds = [new_thresh] + thresholds_seen[:3]
-        directions = []
-        for i in range(len(recent_thresholds) - 1):
-            diff = recent_thresholds[i] - recent_thresholds[i + 1]
-            if diff > 0:
-                directions.append("up")
-            elif diff < 0:
-                directions.append("down")
-        dir_changes = sum(1 for i in range(len(directions) - 1) if directions[i] != directions[i + 1])
-        if dir_changes >= 2:
-            return True, f"oscillation_detected: threshold zigzag (directions: {directions})"
+        if len(thresholds_seen) >= 2:
+            recent_thresholds = [new_thresh] + thresholds_seen[:3]
+            directions = []
+            for i in range(len(recent_thresholds) - 1):
+                diff = recent_thresholds[i] - recent_thresholds[i + 1]
+                if diff > 0:
+                    directions.append("up")
+                elif diff < 0:
+                    directions.append("down")
+            dir_changes = sum(1 for i in range(len(directions) - 1) if directions[i] != directions[i + 1])
+            if dir_changes >= 2:
+                return True, f"oscillation_detected: threshold zigzag (directions: {directions})"
 
     # Check for near-duplicate descriptions
     similar_count = 0
@@ -536,7 +651,7 @@ def analyzer(history, force=None, batch=3):
     # Recent rules (last batch*3) — cooldown
     recent = set()
     for h in history[-batch * 3:]:
-        rid = h.get("rule_id", "")
+        rid = h.get("rule_id") or ""
         if rid.startswith("S"):
             recent.add(rid)
 
@@ -546,8 +661,8 @@ def analyzer(history, force=None, batch=3):
     # Build F1 scores from history
     rule_f1 = defaultdict(list)
     for h in history:
-        rid = h.get("rule_id", "")
-        if re.match(r'^S\d+$', rid):
+        rid = h.get("rule_id") or ""
+        if rid and re.match(r'^S\d+$', rid):
             try:
                 rule_f1[rid].append(float(h.get("f1_after", 0) or 0))
             except (ValueError, TypeError):
@@ -671,26 +786,49 @@ def improver(rule_id):
     # Build strategy-aware system prompt
     system = _build_strategy_prompt(strategy)
 
+    # P3: For S100, extract only the check closure to avoid LLM JSON parsing failures
+    # S100 rule blocks are ~2000 chars, which combined with prompt exceeds token limits
+    if rule_id == "S100":
+        check_closure = _extract_check_closure(rule_block, rule_id)
+        prompt_block = check_closure
+        log.info(f"  {rule_id} — P3: using check closure only ({len(check_closure)} chars)")
+    else:
+        prompt_block = rule_block[:3000]
+
     try:
         resp = llm.chat(
             system,
-            [{"role": "user", "content": f"Rule {rule_id}:\n```rust\n{rule_block[:3000]}\n```\nPropose ONE safe change to improve detection quality."}],
-            max_tokens=1500
+            [{"role": "user", "content": f"Rule {rule_id}:\n```rust\n{prompt_block}\n```\nPropose ONE safe change to improve detection quality."}],
+            max_tokens=2500
         )
         # M4: Retry with simpler prompt for JSON parsing failures
-        m = re.search(r'\{[\s\S]*\}', resp)
+        m = _extract_json(resp)
         if not m:
             log.info(f"  {rule_id} — no JSON in first response, retrying with simpler prompt...")
             resp2 = llm.chat(
                 "Return ONLY a JSON object. No markdown, no explanation. "
                 'Format: {"improvement_type":"threshold_tune|metadata","description":"...",'
                 '"old_code":"...","new_code":"...","confidence":0.8}',
-                [{"role": "user", "content": f"Rule {rule_id}:\n```rust\n{rule_block[:2000]}\n```\nPropose ONE safe improvement."}],
+                [{"role": "user", "content": f"Rule {rule_id}:\n```rust\n{prompt_block[:2000]}\n```\nPropose ONE safe improvement."}],
                 max_tokens=1000
             )
-            m = re.search(r'\{[\s\S]*\}', resp2)
+            m = _extract_json(resp2)
             if not m:
-                return {"success": False, "error": "no JSON in response (2 attempts)"}
+                # P0-B: 3rd attempt with only closure check and simplified prompt
+                log.info(f"  {rule_id} — 2nd attempt failed, trying 3rd attempt with minimal prompt...")
+                check_closure = _extract_check_closure(rule_block, rule_id)
+                if check_closure:
+                    resp3 = llm.chat(
+                        "Return ONLY valid JSON with exactly these fields: "
+                        '{"improvement_type":"threshold_tune","description":"...","old_code":"...","new_code":"...","confidence":0.8}',
+                        [{"role": "user", "content": f"Rule {rule_id} check closure:\n```rust\n{check_closure}\n```\nPropose ONE safe improvement to this check function."}],
+                        max_tokens=800
+                    )
+                    m = _extract_json(resp3)
+                    if m:
+                        log.info(f"  {rule_id} — 3rd attempt succeeded")
+                if not m:
+                    return {"success": False, "error": "no JSON in response (3 attempts)"}
 
         change = json.loads(m.group(0))
         imp_type = change.get("improvement_type", "none")
@@ -940,15 +1078,32 @@ def evaluator(rule_id):
 # ═══════════════════════════════════════════════════════════════════
 
 def decider(rule_id, baseline, current, change):
-    """Decide keep/discard based on compilation success and confidence."""
-    tests_ok = current.get("tests_passed", 0) > 0
+    """
+    Decide keep/discard based on compilation success and confidence.
+    P2: Now handles rules without tests by relying on description quality.
+    """
+    tests_passed = current.get("tests_passed", 0)
+    tests_ok = tests_passed > 0
     confidence = change.get("confidence", 0)
     level = change.get("level", "code")
+    description = change.get("description", "")
 
     if tests_ok and level == "code" and confidence > 0.70:
         return "keep", f"code conf={int(confidence*100)}%"
     if tests_ok and level == "metadata":
         return "keep", "metadata update"
+
+    # P2: Handle rules without tests
+    if tests_passed == 0:
+        # P2-1: metadata level with decent confidence
+        if level == "metadata" and confidence >= 0.75:
+            log.info(f"  {rule_id} — tests_passed == 0, relying on description quality (metadata, conf={confidence:.2f})")
+            return "keep", "metadata (no tests, high confidence)"
+        # P2-2: High confidence + detailed description
+        if confidence >= 0.85 and len(description) > 50:
+            log.info(f"  {rule_id} — tests_passed == 0, relying on description quality (conf={confidence:.2f}, desc_len={len(description)})")
+            return "keep", f"code (no tests, high confidence+description)"
+
     return "discard", "no gain"
 
 
@@ -981,12 +1136,36 @@ def segregate(rule_id):
     content = CATALOG.read_text()
     pos = content.find(f'id: "{rule_id}"')
     if pos == -1:
+        log.warning(f"  segregate: {rule_id} not found in catalog — already segregated?")
         return
 
     # Find declare_rule! block using robust extraction
     bs = content.rfind("declare_rule!", 0, pos)
+    if bs == -1:
+        log.warning(f"  segregate: declare_rule! not found before {rule_id}")
+        return
+
     block = _extract_rule_block(content, bs)
     if not block:
+        log.warning(f"  segregate: failed to extract block for {rule_id}")
+        return
+
+    # ── VALIDATION: Prevent corrupted segregation ─────────────────────────
+    # Check 1: Block must contain exactly ONE rule ID matching the target
+    id_count = block.count(f'id: "{rule_id}"')
+    if id_count != 1:
+        log.error(f"  segregate: BLOCK CORRUPTED for {rule_id} — contains {id_count} occurrences of id (expected 1). Aborting!")
+        log.error(f"  segregate: This usually means the rule was already segregated. Skipping.")
+        return
+
+    # Check 2: Block must not be absurdly large (entire catalog is ~1MB)
+    if len(block) > 10000:  # 10KB is way too big for a single rule
+        log.error(f"  segregate: BLOCK TOO LARGE for {rule_id} ({len(block)} bytes). Aborting!")
+        return
+
+    # Check 3: Block must end with a closing brace
+    if not block.strip().endswith('}'):
+        log.error(f"  segregate: BLOCK MALFORMED for {rule_id} — doesn't end with '}}'. Aborting!")
         return
 
     # Determine category

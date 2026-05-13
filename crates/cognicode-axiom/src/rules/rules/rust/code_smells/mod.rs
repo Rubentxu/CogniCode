@@ -14,3 +14,11 @@ pub use s1161_rule::S1161Rule;
 pub use s115_rule::S115Rule;
 pub use s1151_rule::S1151Rule;
 pub use s1163_rule::S1163Rule;
+
+pub mod s106_rule;
+
+pub mod s170_rule;
+
+pub mod s120_rule;
+
+pub mod s1854_rule;
