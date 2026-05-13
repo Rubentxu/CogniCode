@@ -36,7 +36,7 @@ build: build-server build-wasm copy-assets
 # Build only the server binary
 build-server:
     @echo "🔨 Building server..."
-    cargo build --bin cognicode-dashboard-server
+    cargo build --bin cognicode-dashboard-server --features server
 
 # Build only the WASM frontend
 build-wasm:
@@ -51,7 +51,7 @@ copy-assets:
 # Build in release mode
 build-release:
     @echo "🔨 Building release..."
-    cargo build --release --bin cognicode-dashboard-server
+    cargo build --release --bin cognicode-dashboard-server --features server
     cd {{DASHBOARD_DIR}} && trunk build --release --no-default-features
     cp -r {{DASHBOARD_DIR}}/style {{DIST_DIR}}/style/
 
