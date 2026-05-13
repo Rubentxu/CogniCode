@@ -39,6 +39,8 @@ impl RuleRunner {
 
         let graph = CallGraph::default();
         let metrics = FileMetrics::default();
+        let symbol_table = cognicode_axiom::rules::symbol_table::SymbolTableBuilder::new()
+            .build(&tree, &source);
 
         let ctx = RuleContext {
             tree: &tree,
@@ -47,6 +49,7 @@ impl RuleRunner {
             language: &language,
             graph: &graph,
             metrics: &metrics,
+            symbol_table: Some(&symbol_table),
         };
 
         let mut issues = Vec::new();
@@ -76,6 +79,8 @@ impl RuleRunner {
 
         let graph = CallGraph::default();
         let metrics = FileMetrics::default();
+        let symbol_table = cognicode_axiom::rules::symbol_table::SymbolTableBuilder::new()
+            .build(&tree, &source);
 
         let ctx = RuleContext {
             tree: &tree,
@@ -84,6 +89,7 @@ impl RuleRunner {
             language: &language,
             graph: &graph,
             metrics: &metrics,
+            symbol_table: Some(&symbol_table),
         };
 
         let lang_name = language.name();

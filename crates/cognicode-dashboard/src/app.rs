@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 use leptos_router::components::{Route, Router, Routes};
 use leptos_router::path;
-use crate::state::ReactiveAppState;
+use crate::state::{ReactiveAppState, ProjectContext};
 use crate::pages::{
     DashboardPage, DriftPage, ContractsPage, IssuesPage, IssueDetailPage,
     MetricsPage, QualityGatePage, ConfigurationPage, DiagramsPage, DiagramDiffPage,
@@ -19,6 +19,10 @@ pub fn App() -> impl IntoView {
     // Provide global app state
     let app_state = ReactiveAppState::new();
     provide_context(app_state);
+
+    // Provide project-centric context
+    let project_ctx = ProjectContext::new();
+    provide_context(project_ctx);
 
     view! {
         <Router>

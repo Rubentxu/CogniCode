@@ -30,6 +30,9 @@ tracing = { workspace = true }
 # Regex
 regex = { workspace = true }
 
+# Aho-Corasick for preflight filtering
+aho-corasick = "1"
+
 # Parallelism
 rayon = { workspace = true }
 
@@ -42,6 +45,9 @@ inventory = "0.3"
 # Tree-sitter for AST analysis
 tree-sitter = "0.24"
 streaming-iterator = "0.1"
+
+# ast-grep for structural pattern matching (using version compatible with tree-sitter 0.24)
+ast-grep-core = { version = "0.9.0", default-features = false, features = ["regex"] }
 
 # For BLAKE3 hashing (duplication detection)
 blake3 = "1"

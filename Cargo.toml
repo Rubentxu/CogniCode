@@ -14,7 +14,7 @@ members = [
     "crates/cognicode-quality",
     "crates/cognicode-rule-test-harness",
     "crates/cognicode-dashboard",
-    "crates/cognicode-diagram",
+    # "crates/cognicode-diagram",  # TEMPORARILY DISABLED — missing Cargo.toml
 ]
 
 [workspace.package]
@@ -29,7 +29,7 @@ cognicode-db = { path = "crates/cognicode-db" }
 cognicode-store-traits = { path = "crates/cognicode-store-traits" }
 cognicode-axiom = { path = "crates/cognicode-axiom" }
 cognicode-macros = { path = "crates/cognicode-macros" }
-cognicode-diagram = { path = "crates/cognicode-diagram" }
+# cognicode-diagram = { path = "crates/cognicode-diagram" }  # TEMPORARILY DISABLED
 
 # Parsing
 tree-sitter = "0.24"

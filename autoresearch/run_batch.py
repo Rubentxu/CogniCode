@@ -1,35 +1,40 @@
 #!/usr/bin/env python3
-"""Batch autonomous rule improvement — N rules per sandbox iteration.
+"""Batch autonomous rule improvement — Direct mode (no sandbox).
 
 Usage:
     python autoresearch/run_batch.py --batch-size 20 --max-iterations 5
 
 Strategy:
-    1. LLM analyzes N rules in parallel (~20s each)
-    2. Generate N change scripts
-    3. Run ALL in ONE sandbox container (clone once)
-    4. Per-rule: apply → cargo check → keep/revert
-    5. cargo test once at end
-    6. Report per-rule results → evolution.tsv
+    1. Analyzer picks N rules (SQ targets + worst F1 + round-robin)
+    2. For each rule: improver → evaluator → decider → P5/P6/P9
+    3. All processing done directly on local repo (no containers)
+    4. git checkout restores catalog.rs on failure
+    5. Results logged to evolution.tsv
 
-Speedup: 20 rules in ~5 min vs 20×3.5min = 70 min (14x faster)
+Reuses evolve.py functions: analyzer, improver, evaluator, decider,
+segregate, revert_segregation, validate_with_cognicode, check_quality_gate.
 """
 
 import sys
 import argparse
 import logging
 import time
+import subprocess
 from pathlib import Path
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List, Optional
+from collections import defaultdict
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from tools.rust_tools import CargoTool, GitTool
-from tools.llm_client import LLMClient, ModelConfig
-from tools.metric_tools import EvolutionLogger
-from sandbox.manager import SandboxManager
+# Import all pipeline functions from evolve.py
+from evolve import (
+    analyzer, improver, evaluator, decider, segregate,
+    revert_segregation, validate_with_cognicode, check_quality_gate,
+    commit_msg, mark_done, record_failure, progress,
+    load_session, is_done, is_retryable,
+    FAILURE_COUNT, SESSION_DONE,
+    CATALOG, ROOT,
+    EvolutionLogger, BaselineStore, GitTool, ModelConfig,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,238 +44,269 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 AUTORESEARCH_DIR = Path(__file__).parent
-CATALOG_PATH = AUTORESEARCH_DIR.parent / "crates" / "cognicode-axiom" / "src" / "rules" / "catalog.rs"
 
 
-def get_all_rule_ids() -> list:
-    import re
-    return re.findall(r'id:\s*"([^"]+)"', CATALOG_PATH.read_text())
+def run_batch(
+    batch_size: int = 20,
+    max_iterations: int = 5,
+    auto_commit: bool = False,
+):
+    """Main batch loop — direct mode, no sandbox."""
 
-
-def pick_batch(all_rules: list, history: list, batch_size: int) -> list:
-    """Pick N rules for this batch. Avoid recently attempted."""
-    recently = {h.get("rule_id") for h in history[-batch_size:]}
-    candidates = [r for r in all_rules if r not in recently]
-    
-    if len(candidates) < batch_size:
-        candidates = all_rules  # Reset — try all again
-    
-    return candidates[:batch_size]
-
-
-def generate_batch_script(rule_analyses: Dict[str, dict]) -> str:
-    """Generate a single Python script that applies N rule improvements.
-    
-    For each rule: apply change → cargo check → keep/revert.
-    Then cargo test once at end.
-    """
-    lines = []
-    lines.append('#!/usr/bin/env python3')
-    lines.append(f'"""Batch improvement: {len(rule_analyses)} rules (autonomous)"""')
-    lines.append('import subprocess, sys')
-    lines.append('from pathlib import Path')
-    lines.append('')
-    lines.append('WORKSPACE = Path("/workspace/CogniCode")')
-    lines.append('CATALOG = WORKSPACE / "crates/cognicode-axiom/src/rules/catalog.rs"')
-    lines.append(f'CARGO = WORKSPACE / ".cargo"')
-    lines.append('')
-    lines.append(f'analyses = {{')
-    for rule_id, analysis in rule_analyses.items():
-        imp_type = analysis.get('improvement_type', '?')
-        conf = analysis.get('confidence', 0)
-        suggestions = analysis.get('suggested_changes', [])
-        lines.append(f'    "{rule_id}": {{')
-        lines.append(f'        "type": "{imp_type}",')
-        lines.append(f'        "confidence": {conf},')
-        lines.append(f'        "suggestions": {suggestions!r},')
-        lines.append(f'    }},')
-    lines.append('}')
-    lines.append('')
-    lines.append('results = {}')
-    lines.append('content = CATALOG.read_text()')
-    lines.append('')
-    lines.append('for rule_id, analysis in analyses.items():')
-    lines.append('    print(f"\\n--- {rule_id} ---")')
-    lines.append('    suggestions = analysis["suggestions"]')
-    lines.append('    imp_type = analysis["type"]')
-    lines.append('    ')
-    lines.append('    if not suggestions:')
-    lines.append('        results[rule_id] = {"status": "skipped", "reason": "no_suggestions"}')
-    lines.append('        continue')
-    lines.append('    ')
-    lines.append('    print(f"  Type: {imp_type}, Suggestions: {len(suggestions)}")')
-    lines.append('    for i, s in enumerate(suggestions):')
-    lines.append('        print(f"    {i+1}. {s[:100]}")')
-    lines.append('    ')
-    lines.append('    # Phase 2+: Apply actual code changes based on improvement_type')
-    lines.append('    # For MVP: just record the analysis')
-    lines.append('    results[rule_id] = {')
-    lines.append('        "status": "analyzed",')
-    lines.append('        "type": imp_type,')
-    lines.append('        "suggestions": len(suggestions),')
-    lines.append('        "confidence": analysis["confidence"],')
-    lines.append('    }')
-    lines.append('')
-    lines.append('print(f"\\n=== RESULTS: {len(results)} rules ===\")')
-    lines.append('for rule_id, result in results.items():')
-    lines.append('    print(f"  {rule_id}: {result[\"status\"]} ({result.get(\"type\", \"?\")})")')
-    
-    script = "\n".join(lines) + "\n"
-    
-    # Write to a temp location that will be mounted into sandbox
-    script_path = AUTORESEARCH_DIR / "results" / f"batch_{datetime.now():%Y%m%d_%H%M%S}.py"
-    script_path.parent.mkdir(parents=True, exist_ok=True)
-    script_path.write_text(script)
-    
-    return str(script_path)
-
-
-def analyze_rules_parallel(rule_ids: List[str]) -> Dict[str, dict]:
-    """Analyze multiple rules with LLM in parallel."""
-    llm = LLMClient()
-    results = {}
-    
-    def analyze_one(rule_id: str) -> tuple:
-        import re
-        content = CATALOG_PATH.read_text()
-        pos = content.find(f'id: "{rule_id}"')
-        if pos == -1:
-            return rule_id, None
-        
-        block_start = content.rfind("declare_rule!", 0, pos)
-        brace_start = content.find("{", block_start)
-        brace_count = 0
-        for i in range(brace_start, len(content)):
-            if content[i] == "{": brace_count += 1
-            elif content[i] == "}":
-                brace_count -= 1
-                if brace_count == 0:
-                    rule_block = content[block_start:i+1]
-                    break
-        
-        try:
-            analysis = llm.analyze_rule(
-                rule_id=rule_id,
-                rule_code=rule_block,
-                metrics={"f1": 0.78, "fpr": 0.03}
-            )
-            return rule_id, analysis
-        except Exception as e:
-            return rule_id, {"error": str(e)}
-    
-    logger.info(f"  Analyzing {len(rule_ids)} rules in parallel (MiniMax M2.7)...")
-    
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(analyze_one, rid): rid for rid in rule_ids}
-        for future in as_completed(futures):
-            rule_id, analysis = future.result()
-            if analysis and "error" not in analysis:
-                results[rule_id] = analysis
-                logger.info(f"    {rule_id}: {analysis.get('improvement_type', '?')} " +
-                           f"({analysis.get('confidence', 0):.0%})")
-            else:
-                logger.warning(f"    {rule_id}: analysis failed")
-    
-    return results
-
-
-def run_batch(batch_size: int = 20, max_iterations: int = 5, dry_run: bool = False):
-    """Main batch loop."""
-    
-    git = GitTool()
-    sandbox = SandboxManager()
     evolution = EvolutionLogger(AUTORESEARCH_DIR / "evolution.tsv")
-    
+    baseline_store = BaselineStore(AUTORESEARCH_DIR / "baseline")
+    baseline = baseline_store.load()
+    git = GitTool()
+
+    load_session()
     history = evolution.read_history()
-    all_rules = get_all_rule_ids()
+
     total_alltime = len(history)
     session_iter = 0
-    
-    logger.info("="*70)
-    logger.info("  COGNICODE BATCH SELF-EVOLVING RULES")
+    keeps = discards = fails = 0
+
+    done, total_rules, pct = progress()
+
+    logger.info("=" * 70)
+    logger.info("  COGNICODE BATCH SELF-EVOLVING RULES (Direct Mode)")
     logger.info(f"  Batch size: {batch_size} rules/iteration")
     logger.info(f"  Model: {ModelConfig.MODEL}")
-    logger.info(f"  Rules available: {len(all_rules)}")
-    logger.info("="*70)
-    
+    logger.info(f"  Progress: {done}/{total_rules} rules ({pct}%)")
+    logger.info("=" * 70)
+
     while session_iter < max_iterations:
         session_iter += 1
-        total_alltime += 1
-        
-        logger.info(f"\n{'─'*70}")
-        logger.info(f"  BATCH {session_iter}/{max_iterations}")
-        logger.info(f"{'─'*70}")
-        
-        # ── Pick rules ──
-        batch_rules = pick_batch(all_rules, history, batch_size)
-        logger.info(f"  Rules: {len(batch_rules)} ({', '.join(batch_rules[:5])}...)")
-        
-        # ── Parallel LLM analysis ──
         t0 = time.time()
-        analyses = analyze_rules_parallel(batch_rules)
-        t_llm = time.time() - t0
-        logger.info(f"  ⏱ LLM analysis: {t_llm:.0f}s ({len(analyses)}/{len(batch_rules)} successful)")
-        
-        if dry_run:
-            # Log all analyses
-            for rule_id, analysis in analyses.items():
+        batch_results = {}
+
+        # ── ANALYZER: Pick rules ──
+        targets = analyzer(history, force=None, batch=batch_size)
+
+        if not targets:
+            logger.warning("No rules available — catalog exhausted")
+            break
+
+        logger.info(f"\n{'─' * 70}")
+        logger.info(f"  BATCH {session_iter}/{max_iterations}: {targets}")
+        logger.info(f"{'─' * 70}")
+
+        # ── Process each rule sequentially (direct mode) ──
+        for rule_id in targets:
+            total_alltime += 1
+
+            # Check if already segregated
+            import re
+            if rule_id not in re.findall(r'id:\s*"(S\d+)"', CATALOG.read_text()):
+                logger.info(f"  {rule_id} already segregated — skipping")
+                mark_done(rule_id)
+                batch_results[rule_id] = ("skipped", "already segregated")
+                fails += 1
+                continue
+
+            # Previous F1
+            f1_before = baseline.get(rule_id, {}).get("f1", 0) or 0
+
+            # ── IMPROVER (3-tier) ──
+            change = None
+            for tier in range(3):
+                change = improver(rule_id)
+                if change.get("success") and change.get("level") == "code":
+                    break
+                err = change.get("error", "") if change else ""
+                if any(kw in err for kw in ["no such group", "Invalid", "Expecting", "no JSON"]):
+                    break
+
+            if not change or not change.get("success"):
+                record_failure(rule_id)
+                reason = change.get("error", "?") if change else "?"
+                if FAILURE_COUNT[rule_id] >= 3:
+                    mark_done(rule_id)
+                    logger.info(f"  {rule_id} — 3 failures, permanently skipped")
+                else:
+                    logger.info(f"  {rule_id} — retry #{FAILURE_COUNT[rule_id]}/3")
+
                 evolution.log_experiment(
-                    iteration=total_alltime, rule_id=rule_id, language="rust",
-                    metrics_before={}, metrics_after={},
-                    decision="dry_run",
-                    description=f"BATCH: {analysis.get('improvement_type', '?')} " +
-                               f"({analysis.get('confidence', 0):.0%})"
+                    total_alltime, rule_id, "rust", {"f1": f1_before}, {},
+                    "skipped", reason,
+                    strategy=change.get("strategy", "") if change else ""
                 )
-            logger.info(f"  📝 Logged {len(analyses)} analyses to evolution.tsv")
-            continue
-        
-        # ── Generate batch script ──
-        script_path = generate_batch_script(analyses)
-        logger.info(f"  Script: {script_path}")
-        
-        # ── Sandbox evaluation ──
-        logger.info(f"  Running sandbox (batch of {len(analyses)} rules)...")
-        t0 = time.time()
-        
-        try:
-            experiment = sandbox.run_experiment(
-                rule_id=f"BATCH{session_iter:03d}",
-                git_ref="main",
-                change_script=script_path,
-                timeout=900,  # 15 min for batch
-            )
-        except Exception as e:
-            logger.error(f"  Sandbox error: {e}")
-            experiment = {"status": "failed", "reason": str(e)}
-        
-        t_sandbox = time.time() - t0
-        logger.info(f"  ⏱ Sandbox: {t_sandbox:.0f}s — {experiment.get('status', '?')}")
-        
-        # ── Log all rules ──
-        for rule_id, analysis in analyses.items():
+                batch_results[rule_id] = ("skipped", reason)
+                fails += 1
+                continue
+
+            # ── EVALUATOR ──
+            metrics = evaluator(rule_id)
+            if "error" in metrics:
+                git.checkout(str(CATALOG))
+                evolution.log_experiment(
+                    total_alltime, rule_id, "rust", {"f1": f1_before}, {},
+                    "failed", metrics["error"],
+                    strategy=change.get("strategy", "")
+                )
+                batch_results[rule_id] = ("failed", metrics["error"])
+                record_failure(rule_id)
+                fails += 1
+                continue
+
+            # ── DECIDER ──
+            decision, reason = decider(rule_id, baseline.get(rule_id, {}), metrics, change)
+
+            if decision == "keep":
+                # ── SEGREGATE ──
+                seg_path = None
+                try:
+                    seg_path = segregate(rule_id)
+                except Exception as e:
+                    logger.error(f"  Segregation failed: {e}")
+                    git.checkout(str(CATALOG))
+                    evolution.log_experiment(
+                        total_alltime, rule_id, "rust", {"f1": f1_before}, {},
+                        "discard", f"segregation error: {e}",
+                        strategy=change.get("strategy", "")
+                    )
+                    batch_results[rule_id] = ("discard", f"segregation error: {e}")
+                    discards += 1
+                    mark_done(rule_id)
+                    continue
+
+                if not seg_path:
+                    logger.warning("  Segregation returned no path — discarding")
+                    git.checkout(str(CATALOG))
+                    evolution.log_experiment(
+                        total_alltime, rule_id, "rust", {"f1": f1_before}, {},
+                        "discard", "segregation failed",
+                        strategy=change.get("strategy", "")
+                    )
+                    batch_results[rule_id] = ("discard", "segregation failed")
+                    discards += 1
+                    mark_done(rule_id)
+                    continue
+
+                # P5: Validate compilation after segregation
+                from evolve import validate_segregation
+                if not validate_segregation(rule_id, seg_path):
+                    logger.warning(f"  P5: Validation failed — reverting {rule_id}")
+                    revert_segregation(rule_id, seg_path)
+                    evolution.log_experiment(
+                        total_alltime, rule_id, "rust", {"f1": f1_before}, {},
+                        "discard", "compilation failed after segregation (P5)",
+                        strategy=change.get("strategy", "")
+                    )
+                    batch_results[rule_id] = ("discard", "P5 failed")
+                    discards += 1
+                    mark_done(rule_id)
+                    continue
+
+                # P6: Quality validation
+                quality_ok, quality_msg = validate_with_cognicode(seg_path, rule_id)
+                if not quality_ok:
+                    logger.warning(f"  P6: Quality failed for {rule_id} — {quality_msg}")
+                    revert_segregation(rule_id, seg_path)
+                    evolution.log_experiment(
+                        total_alltime, rule_id, "rust", {"f1": f1_before}, {},
+                        "discard", f"P6: {quality_msg}",
+                        strategy=change.get("strategy", "")
+                    )
+                    batch_results[rule_id] = ("discard", f"P6: {quality_msg}")
+                    discards += 1
+                    mark_done(rule_id)
+                    continue
+
+                # P9: Quality gate
+                gate_ok, gate_msg = check_quality_gate(rule_id, seg_path)
+                if not gate_ok:
+                    logger.warning(f"  P9: Quality gate failed for {rule_id} — {gate_msg}")
+
+                # ── COMMIT (optional) ──
+                if auto_commit:
+                    r = subprocess.run(
+                        ["git", "add", "-f",
+                         "crates/cognicode-axiom/src/rules/catalog.rs",
+                         "crates/cognicode-axiom/src/rules/rules/"],
+                        capture_output=True, cwd=str(ROOT)
+                    )
+                    if r.returncode == 0:
+                        git.commit(commit_msg(rule_id, change))
+                        baseline[rule_id] = metrics
+                        baseline_store.save(baseline)
+                        keeps += 1
+                        mark_done(rule_id)
+                    else:
+                        logger.warning("git add failed — reverting")
+                        git.checkout(str(CATALOG))
+                        discards += 1
+                else:
+                    logger.info(f"  {rule_id} — kept in working tree (no auto-commit)")
+                    keeps += 1
+                    mark_done(rule_id)
+            else:
+                git.checkout(str(CATALOG))
+                discards += 1
+                mark_done(rule_id)
+
+            # ── Log ──
+            desc = f"{change.get('type', '?')}: {change.get('description', '')[:120]}"
             evolution.log_experiment(
-                iteration=total_alltime, rule_id=rule_id, language="rust",
-                metrics_before={}, metrics_after={},
-                decision="analyzed" if experiment.get("status") == "success" else "failed",
-                description=f"BATCH{session_iter}: {analysis.get('improvement_type', '?')} " +
-                           f"({analysis.get('confidence', 0):.0%})"
+                total_alltime, rule_id, "rust", {"f1": f1_before}, metrics,
+                decision, desc,
+                strategy=change.get("strategy", "")
             )
-        
-        logger.info(f"  📝 Batch complete — {len(analyses)} rules logged")
-        time.sleep(5)  # Brief cooldown
-    
-    logger.info(f"\n✓ Batch run complete — {session_iter} batches, ~{session_iter * batch_size} rules analyzed")
+            batch_results[rule_id] = (decision, desc)
+            logger.info(f"  {rule_id} → {decision.upper()}: {reason}")
+
+        # ── Batch report ──
+        elapsed = int(time.time() - t0)
+        total_batch = keeps + discards + fails
+        keep_rate = 0 if keeps + discards == 0 else int(keeps / (keeps + discards) * 100)
+        done, total_rules, pct = progress()
+
+        logger.info(f"\n  ┌{'─' * 60}")
+        logger.info(f"  │ Batch {session_iter}: {len(targets)} rules in {elapsed}s")
+        logger.info(f"  │ {keeps}✅ kept | {discards}❌ discarded | {fails}⚠️ failed — rate {keep_rate}%")
+        for rid in targets:
+            if rid in batch_results:
+                dec, desc = batch_results[rid]
+                desc = (desc or "")[:55]
+                icon = "✅" if dec == "keep" else ("❌" if dec == "discard" else "⚠️")
+                logger.info(f"  │  {icon} {rid:<7} {dec:<8} {desc}")
+        logger.info(f"  └{'─' * 60}")
+        logger.info(f"  📋 Progress: {done}/{total_rules} rules ({pct}%)")
+
+        # Self-check every 10 batches
+        if session_iter % 10 == 0:
+            logger.info("  🛡️ Self-check: running full test suite...")
+            r = subprocess.run(
+                ["cargo", "test", "-p", "cognicode-axiom", "--lib"],
+                capture_output=True, text=True, timeout=120, cwd=str(ROOT)
+            )
+            if "test result: ok" in (r.stdout + r.stderr):
+                logger.info("  ✅ Tests OK")
+            else:
+                logger.error("  ❌ Tests FAILED — stopping for safety")
+                break
+
+        time.sleep(2)  # Brief cooldown
+
+    # ── Final summary ──
+    done, total_rules, pct = progress()
+    logger.info(f"\n{'=' * 60}")
+    logger.info(f"  BATCH RUN COMPLETE — {session_iter} batches")
+    logger.info(f"  Kept: {keeps} | Discarded: {discards} | Failed: {fails}")
+    if keeps + discards > 0:
+        logger.info(f"  Keep rate: {keep_rate}%")
+    logger.info(f"  Rules processed: {done}/{total_rules} ({pct}%)")
+    logger.info(f"{'=' * 60}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Batch autonomous rule improvement")
+    parser = argparse.ArgumentParser(description="Batch autonomous rule improvement (direct mode)")
     parser.add_argument("--batch-size", "-b", type=int, default=20)
     parser.add_argument("--max-iterations", "-n", type=int, default=5)
-    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--commit", action="store_true", help="Auto-commit kept changes")
     args = parser.parse_args()
-    
+
     run_batch(
         batch_size=args.batch_size,
         max_iterations=args.max_iterations,
-        dry_run=args.dry_run,
+        auto_commit=args.commit,
     )

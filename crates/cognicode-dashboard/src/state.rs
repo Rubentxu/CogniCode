@@ -337,6 +337,126 @@ pub struct GateConditionTemplate {
 }
 
 // ============================================================================
+// Project-Centric Context (DTOs + Provider)
+// ============================================================================
+
+/// Detected capabilities of a project based on filesystem analysis
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct ProjectCapabilities {
+    pub is_rust: bool,
+    pub is_typescript: bool,
+    pub has_cognicode_db: bool,
+    pub has_quality_rules: bool,
+    pub supports_diagrams: bool,
+}
+
+/// Service availability status for a project
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct ServiceAvailability {
+    pub quality_available: bool,
+    pub diagrams_available: bool,
+    pub symbols_available: bool,
+    pub last_analysis: Option<String>,
+    pub analysis_runs_count: usize,
+}
+
+/// Information about a registered project
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ProjectInfo {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub capabilities: ProjectCapabilities,
+}
+
+/// Full project status returned by the API
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ProjectStatusDto {
+    pub project_id: String,
+    pub name: String,
+    pub path: String,
+    pub capabilities: ProjectCapabilities,
+    pub service_availability: ServiceAvailability,
+    pub last_analysis: Option<String>,
+    pub analysis_runs_count: usize,
+}
+
+/// Project-centric context provided via Leptos provide_context.
+#[derive(Clone, Copy)]
+pub struct ProjectContext {
+    pub current_project: RwSignal<Option<ProjectInfo>>,
+    pub projects: RwSignal<Vec<ProjectInfo>>,
+    pub service_status: RwSignal<Option<ServiceAvailability>>,
+    pub loading: RwSignal<bool>,
+    pub error: RwSignal<Option<String>>,
+}
+
+impl ProjectContext {
+    pub fn new() -> Self {
+        let ctx = Self {
+            current_project: RwSignal::new(None),
+            projects: RwSignal::new(Vec::new()),
+            service_status: RwSignal::new(None),
+            loading: RwSignal::new(false),
+            error: RwSignal::new(None),
+        };
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Ok(Some(storage)) = web_sys::window()
+                .and_then(|w| w.session_storage())
+                .transpose()
+            {
+                if let Ok(Some(saved)) = storage.get_item("cognicode_selected_project") {
+                    if !saved.is_empty() {
+                        let name = saved.rsplit('/').next().unwrap_or(&saved).to_string();
+                        ctx.current_project.set(Some(ProjectInfo {
+                            id: saved.clone(),
+                            name,
+                            path: saved,
+                            capabilities: ProjectCapabilities::default(),
+                        }));
+                    }
+                }
+            }
+        }
+        ctx
+    }
+
+    pub fn select_project(&self, project: ProjectInfo) {
+        self.current_project.set(Some(project.clone()));
+        self.service_status.set(None);
+        self.error.set(None);
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Ok(Some(storage)) = web_sys::window()
+                .and_then(|w| w.session_storage())
+                .transpose()
+            {
+                let _ = storage.set_item("cognicode_selected_project", &project.path);
+            }
+        }
+    }
+
+    pub fn clear_selection(&self) {
+        self.current_project.set(None);
+        self.service_status.set(None);
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Ok(Some(storage)) = web_sys::window()
+                .and_then(|w| w.session_storage())
+                .transpose()
+            {
+                let _ = storage.remove_item("cognicode_selected_project");
+            }
+        }
+    }
+}
+
+impl Default for ProjectContext {
+    fn default() -> Self { Self::new() }
+}
+
+// ============================================================================
 // Reactive Application State (using API client)
 // ============================================================================
 

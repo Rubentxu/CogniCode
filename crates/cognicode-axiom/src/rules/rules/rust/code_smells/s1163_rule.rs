@@ -41,8 +41,8 @@ mod tests {
     use super::*;
     #[test]
     fn test_s1163_registered() {
-        let rule = S1163Rule::new();
+        let rule=S1163Rule::new();
         assert_eq!(rule.id(), "S1163");
-        assert!(rule.name().len() > 0);
+        assert!(rule.name().len()>0);
     }
 }

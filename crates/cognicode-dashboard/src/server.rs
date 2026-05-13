@@ -1,9 +1,13 @@
 //! Axum server with real cognicode-quality integration
 //! All analysis endpoints call cognicode-quality in-process
 
+// Server-only modules
+pub mod watch_service;
+pub mod ws_handler;
+
 use axum::{
-    extract::{Extension, State},
-    http::{StatusCode, Uri},
+    extract::{Request, State},
+    http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -17,30 +21,16 @@ use cognicode_quality::lock::AnalysisLock;
 use cognicode_axiom::rules::{QualityGate, GateCondition, CompareOperator, MetricValue};
 use cognicode_db::quality::QualityStore;
 use cognicode_db::drift_events::DriftEventStore;
-use cognicode_diagram::render::mermaid::render_c4_context;
-use cognicode_diagram::model::workspace::C4Workspace;
-use cognicode_diagram::inference::engine::InferenceEngine;
-use cognicode_diagram::mcp::tools::{
-    handle_generate_sequence_diagram, GenerateSequenceDiagramInput,
-    handle_generate_state_machine, GenerateStateMachineInput,
-    handle_generate_activity_diagram, GenerateActivityDiagramInput,
-    handle_generate_multi_lang_workspace, GenerateMultiLangWorkspaceInput,
-    handle_summarize_diagram, SummarizeDiagramInput,
-    handle_diff_diagrams, DiffDiagramsInput,
-};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 
-// Server modules for live updates (server feature)
-#[cfg(feature = "server")]
-mod watch_service;
-#[cfg(feature = "server")]
-mod ws_handler;
-#[cfg(feature = "server")]
-use ws_handler::{WsState, create_ws_router};
+use ws_handler::WsState;
+use cognicode_dashboard::{
+    ProjectCapabilities, ServiceAvailability, ProjectStatusDto,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Request/Response DTOs
@@ -497,8 +487,6 @@ struct AppServerState {
     analysis_cache: Arc<RwLock<Option<CachedAnalysis>>>,
     /// Registered projects (path → name)
     registered_projects: Arc<RwLock<Vec<RegisteredProject>>>,
-    /// Cached diagrams: key = "{project_path}:{diagram_type}:{level}"
-    diagram_cache: Arc<RwLock<std::collections::HashMap<String, CachedDiagram>>>,
 }
 
 /// A project registered in the dashboard
@@ -521,26 +509,6 @@ struct CachedAnalysis {
 impl CachedAnalysis {
     fn is_valid(&self, project_path: &str) -> bool {
         self.project_path == project_path && self.timestamp.elapsed().as_secs() < 300 // 5 min TTL
-    }
-}
-
-/// Cached diagram with TTL
-#[derive(Clone)]
-struct CachedDiagram {
-    project_path: String,
-    diagram_type: String,
-    mermaid_code: String,
-    workspace_json: Option<String>,
-    timestamp: std::time::Instant,
-}
-
-impl CachedDiagram {
-    fn cache_key(project_path: &str, diagram_type: &str, level: &str) -> String {
-        format!("{}:{}:{}", project_path, diagram_type, level)
-    }
-
-    fn is_valid(&self) -> bool {
-        self.timestamp.elapsed().as_secs() < 600 // 10 min TTL
     }
 }
 
@@ -589,7 +557,6 @@ impl AppServerState {
             })),
             analysis_cache: Arc::new(RwLock::new(None)),
             registered_projects: Arc::new(RwLock::new(initial_projects)),
-            diagram_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
         }
     }
 }
@@ -1347,6 +1314,67 @@ fn build_project_info(name: &str, path: &str) -> ProjectInfoDto {
     }
 }
 
+/// Detect project capabilities from filesystem markers
+fn detect_capabilities(project_path: &std::path::Path) -> ProjectCapabilities {
+    let mut caps = ProjectCapabilities::default();
+    if project_path.join("Cargo.toml").exists() {
+        caps.is_rust = true;
+        caps.has_quality_rules = true;
+        caps.supports_diagrams = true;
+    }
+    if project_path.join("package.json").exists() {
+        caps.is_typescript = true;
+        caps.supports_diagrams = true;
+    }
+    let db_path = project_path.join(".cognicode").join("cognicode.db");
+    caps.has_cognicode_db = db_path.exists();
+    caps
+}
+
+fn check_service_availability(
+    project_path: &std::path::Path,
+    caps: &ProjectCapabilities,
+) -> ServiceAvailability {
+    let mut avail = ServiceAvailability::default();
+    avail.quality_available = caps.has_cognicode_db;
+    avail.diagrams_available = caps.is_rust || caps.is_typescript;
+    avail.symbols_available = caps.is_rust || caps.is_typescript;
+    if caps.has_cognicode_db {
+        let store = QualityStore::open(&project_path.to_path_buf());
+        let history = store.get_run_history(1);
+        if let Some(latest) = history.first() {
+            avail.last_analysis = Some(latest.timestamp.clone());
+        }
+        avail.analysis_runs_count = store.get_run_history(1000).len();
+    }
+    avail
+}
+
+async fn get_project_status(
+    State(state): State<AppServerState>,
+    axum::extract::Path(project_id): axum::extract::Path<String>,
+) -> Result<Json<ProjectStatusDto>, StatusCode> {
+    let projects = state.registered_projects.read().await;
+    let project = projects
+        .iter()
+        .find(|p| p.path == project_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let project_path = PathBuf::from(&project.path);
+    let capabilities = detect_capabilities(&project_path);
+    let service_availability = check_service_availability(&project_path, &capabilities);
+    let last_analysis = service_availability.last_analysis.clone();
+    let analysis_runs_count = service_availability.analysis_runs_count;
+    Ok(Json(ProjectStatusDto {
+        project_id: project.path.clone(),
+        name: project.name.clone(),
+        path: project.path.clone(),
+        capabilities,
+        service_availability,
+        last_analysis,
+        analysis_runs_count,
+    }))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Telemetry Handlers (Phase 3B)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1802,271 +1830,6 @@ fn url_decode(s: &str) -> String {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Diagram API DTOs & Handlers
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GenerateDiagramRequest {
-    pub project_path: String,
-    /// "c4", "sequence", "state_machine", "activity", "multi_lang"
-    pub diagram_type: String,
-    /// "context", "container", "component", "code" (for C4)
-    pub level: Option<String>,
-    /// Entry symbol for sequence/activity/state_machine
-    pub entry_symbol: Option<String>,
-    /// Output format: "mermaid" (default)
-    pub format: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GenerateDiagramResponse {
-    pub diagram_type: String,
-    pub mermaid_code: String,
-    pub workspace_json: Option<String>,
-    pub element_count: usize,
-    pub relationship_count: usize,
-    pub cached: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiagramSummaryRequest {
-    pub workspace_json: String,
-    pub style: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiagramDiffRequest {
-    pub workspace_a_json: String,
-    pub workspace_b_json: String,
-    pub format: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListDiagramsResponse {
-    pub diagrams: Vec<CachedDiagramDto>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CachedDiagramDto {
-    pub key: String,
-    pub project_path: String,
-    pub diagram_type: String,
-    pub element_count: usize,
-    pub age_secs: u64,
-}
-
-/// Generate a C4 diagram from a project
-async fn generate_diagram(
-    State(state): State<AppServerState>,
-    Json(req): Json<GenerateDiagramRequest>,
-) -> ApiResult<Json<GenerateDiagramResponse>> {
-    let diagram_type = req.diagram_type.clone();
-    let level = req.level.clone().unwrap_or_else(|| "container".to_string());
-    let cache_key = CachedDiagram::cache_key(&req.project_path, &diagram_type, &level);
-
-    // Check cache
-    {
-        let cache = state.diagram_cache.read().await;
-        if let Some(cached) = cache.get(&cache_key) {
-            if cached.is_valid() {
-                return Ok(Json(GenerateDiagramResponse {
-                    diagram_type: cached.diagram_type.clone(),
-                    mermaid_code: cached.mermaid_code.clone(),
-                    workspace_json: cached.workspace_json.clone(),
-                    element_count: 0,
-                    relationship_count: 0,
-                    cached: true,
-                }));
-            }
-        }
-    }
-
-    let project_path = req.project_path.clone();
-    let entry_symbol = req.entry_symbol.clone();
-    let dt = diagram_type.clone();
-    let project_path_for_cache = project_path.clone();
-
-    let result = tokio::task::spawn_blocking(move || -> Result<(String, Option<String>), String> {
-        match dt.as_str() {
-            "c4" => generate_c4_diagram(&project_path, &level),
-            "sequence" => generate_sequence_diagram(&project_path, &entry_symbol),
-            "state_machine" => generate_state_machine_diagram(&project_path, &entry_symbol),
-            "activity" => generate_activity_diagram(&project_path, &entry_symbol),
-            "multi_lang" => generate_multi_lang_diagram(&project_path),
-            _ => Err(format!("Unknown diagram type: {}", dt)),
-        }
-    })
-    .await
-    .map_err(|e| ApiError { message: e.to_string() })?
-    .map_err(|e| ApiError { message: e })?;
-
-    let (mermaid_code, workspace_json) = result;
-
-    // Cache result
-    {
-        let mut cache = state.diagram_cache.write().await;
-        cache.insert(cache_key, CachedDiagram {
-            project_path: project_path_for_cache,
-            diagram_type: diagram_type.clone(),
-            mermaid_code: mermaid_code.clone(),
-            workspace_json: workspace_json.clone(),
-            timestamp: std::time::Instant::now(),
-        });
-    }
-
-    Ok(Json(GenerateDiagramResponse {
-        diagram_type,
-        mermaid_code,
-        workspace_json,
-        element_count: 0,
-        relationship_count: 0,
-        cached: false,
-    }))
-}
-
-fn generate_c4_diagram(project_path: &str, level: &str) -> Result<(String, Option<String>), String> {
-    let path = PathBuf::from(project_path);
-    if !path.exists() {
-        return Err(format!("Project path does not exist: {}", project_path));
-    }
-
-    // Try to load a call graph from DB or create minimal one
-    let call_graph = cognicode_core::domain::aggregates::call_graph::CallGraph::new();
-    let engine = InferenceEngine::new(&call_graph);
-    let workspace = engine.infer_workspace(
-        path.file_name().and_then(|n| n.to_str()).unwrap_or("Project")
-    );
-    let workspace_json = serde_json::to_string(&workspace).ok();
-    let mermaid = render_c4_context(&workspace);
-
-    Ok((mermaid, workspace_json))
-}
-
-fn generate_sequence_diagram(project_path: &str, entry_symbol: &Option<String>) -> Result<(String, Option<String>), String> {
-    let call_graph = cognicode_core::domain::aggregates::call_graph::CallGraph::new();
-    let entry = entry_symbol.as_deref().unwrap_or("main");
-    let input = GenerateSequenceDiagramInput {
-        entry_point: Some(entry.to_string()),
-        max_depth: Some(5),
-        format: Some("mermaid".to_string()),
-        width: None,
-        height: None,
-        show_loops: Some(true),
-        show_method_names: Some(true),
-        title: None,
-    };
-    let output = handle_generate_sequence_diagram(input, &call_graph)
-        .map_err(|e| e.to_string())?;
-    Ok((output.diagram, None))
-}
-
-fn generate_state_machine_diagram(project_path: &str, symbol_name: &Option<String>) -> Result<(String, Option<String>), String> {
-    let call_graph = cognicode_core::domain::aggregates::call_graph::CallGraph::new();
-    let input = GenerateStateMachineInput {
-        symbol_name: symbol_name.clone(),
-        format: Some("mermaid".to_string()),
-        show_actions: Some(true),
-        show_guards: Some(true),
-        title: None,
-        direction: Some("LR".to_string()),
-    };
-    let output = handle_generate_state_machine(input, &call_graph)
-        .map_err(|e| e.to_string())?;
-    Ok((output.diagram, None))
-}
-
-fn generate_activity_diagram(project_path: &str, symbol_name: &Option<String>) -> Result<(String, Option<String>), String> {
-    let call_graph = cognicode_core::domain::aggregates::call_graph::CallGraph::new();
-    let input = GenerateActivityDiagramInput {
-        symbol_name: symbol_name.clone(),
-        format: Some("mermaid".to_string()),
-        title: None,
-        direction: None,
-        include_loops: Some(true),
-    };
-    let output = handle_generate_activity_diagram(input, &call_graph)
-        .map_err(|e| e.to_string())?;
-    Ok((output.diagram, None))
-}
-
-fn generate_multi_lang_diagram(project_path: &str) -> Result<(String, Option<String>), String> {
-    let input = GenerateMultiLangWorkspaceInput {
-        directory: Some(project_path.to_string()),
-        format: Some("mermaid".to_string()),
-        include_code: Some(false),
-    };
-    let path = PathBuf::from(project_path);
-    let output = handle_generate_multi_lang_workspace(input, &path)
-        .map_err(|e| e.to_string())?;
-    Ok((output.diagram, None))
-}
-
-/// Summarize a diagram
-async fn summarize_diagram(
-    Json(req): Json<DiagramSummaryRequest>,
-) -> ApiResult<Json<serde_json::Value>> {
-    let style = req.style.clone();
-    let workspace_json = req.workspace_json.clone();
-
-    let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
-        let input = SummarizeDiagramInput {
-            workspace_json,
-            style,
-        };
-        let output = handle_summarize_diagram(input)
-            .map_err(|e| e.to_string())?;
-        serde_json::to_value(output).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| ApiError { message: e.to_string() })?
-    .map_err(|e| ApiError { message: e })?;
-
-    Ok(Json(result))
-}
-
-/// Diff two diagrams
-async fn diff_diagrams(
-    Json(req): Json<DiagramDiffRequest>,
-) -> ApiResult<Json<serde_json::Value>> {
-    let result = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, String> {
-        let input = DiffDiagramsInput {
-            workspace_a_json: req.workspace_a_json,
-            workspace_b_json: req.workspace_b_json,
-            format: req.format,
-        };
-        let output = handle_diff_diagrams(input)
-            .map_err(|e| e.to_string())?;
-        serde_json::to_value(output).map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| ApiError { message: e.to_string() })?
-    .map_err(|e| ApiError { message: e })?;
-
-    Ok(Json(result))
-}
-
-/// List cached diagrams
-async fn list_diagrams(
-    State(state): State<AppServerState>,
-) -> ApiResult<Json<ListDiagramsResponse>> {
-    let cache = state.diagram_cache.read().await;
-    let now = std::time::Instant::now();
-    let diagrams: Vec<CachedDiagramDto> = cache
-        .values()
-        .filter(|c| c.is_valid())
-        .map(|c| CachedDiagramDto {
-            key: format!("{}:{}", c.diagram_type, c.project_path),
-            project_path: c.project_path.clone(),
-            diagram_type: c.diagram_type.clone(),
-            element_count: 0,
-            age_secs: now.duration_since(c.timestamp).as_secs(),
-        })
-        .collect();
-
-    Ok(Json(ListDiagramsResponse { diagrams }))
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Server Setup
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -2076,11 +1839,11 @@ pub async fn start_server(port: u16) {
     // Get project path from config for WebSocket state
     let project_path = app_state.config.read().await.project_path.clone();
 
-    // WebSocket state for live diagram updates (Phase 7.5)
+    // Create WebSocket state with 2-second debounce
     let ws_state = WsState::new(project_path, 2000);
 
     // Create the WebSocket router
-    let ws_router = create_ws_router(ws_state);
+    let ws_router = ws_handler::create_ws_router(ws_state);
 
     let app = Router::new()
         .route("/health", get(health))
@@ -2098,6 +1861,7 @@ pub async fn start_server(port: u16) {
         .route("/api/projects", get(list_projects))
         .route("/api/projects/register", post(register_project))
         .route("/api/projects/:id/history", get(get_project_history))
+        .route("/api/projects/:id/status", get(get_project_status))
         .route("/api/contracts", get(get_contracts))
         .route("/api/agent-stats", get(get_agent_stats))
         .route("/api/drift", get(get_drift_events))
@@ -2111,11 +1875,6 @@ pub async fn start_server(port: u16) {
         .route("/api/trends", get(get_trends))
         .route("/api/agent-outputs/:tool_name", get(get_agent_output_by_tool))
         .route("/api/analysis/status", get(get_analysis_status))
-        // Diagram endpoints (Phase 7)
-        .route("/api/diagrams/generate", post(generate_diagram))
-        .route("/api/diagrams", get(list_diagrams))
-        .route("/api/diagrams/summarize", post(summarize_diagram))
-        .route("/api/diagrams/diff", post(diff_diagrams))
         .layer(CorsLayer::permissive())
         .with_state(app_state)
         // Merge WebSocket router
@@ -2125,11 +1884,12 @@ pub async fn start_server(port: u16) {
     let dist_dir = std::env::var("DIST_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("dist"));
-
-    let app = app.fallback(move |uri: Uri| {
-        let dist = dist_dir.clone();
+    let dist_dir2 = dist_dir.clone();
+    
+    let app = app.fallback_service(tower::service_fn(move |req: Request| {
+        let dist = dist_dir2.clone();
         async move {
-            let path = uri.path().trim_start_matches('/');
+            let path = req.uri().path().trim_start_matches('/');
             let file_path = if path.is_empty() || !path.contains('.') {
                 // SPA fallback: routes without extension go to index.html
                 dist.join("index.html")
@@ -2152,26 +1912,26 @@ pub async fn start_server(port: u16) {
                         "ico" => "image/x-icon",
                         _ => "application/octet-stream",
                     };
-                    (
+                    Ok::<_, std::convert::Infallible>((
                         StatusCode::OK,
                         [("content-type", mime)],
                         content,
-                    ).into_response()
+                    ).into_response())
                 }
                 Err(_) => {
                     // SPA fallback: serve index.html
                     match tokio::fs::read(dist.join("index.html")).await {
-                        Ok(content) => (
+                        Ok(content) => Ok((
                             StatusCode::OK,
                             [("content-type", "text/html; charset=utf-8")],
                             content,
-                        ).into_response(),
-                        Err(_) => (StatusCode::NOT_FOUND, "Not Found").into_response(),
+                        ).into_response()),
+                        Err(_) => Ok((StatusCode::NOT_FOUND, "Not Found").into_response()),
                     }
                 }
             }
         }
-    });
+    }));
 
     let addr = format!("0.0.0.0:{}", port);
     println!("CogniCode Dashboard Server running on http://{}", addr);

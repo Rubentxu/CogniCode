@@ -269,6 +269,7 @@ impl QualityAnalysisHandler {
                     language: &language,
                     graph: &graph,
                     metrics: &metrics,
+                    symbol_table: None,
                 };
 
                 let mut found_issues = Vec::new();
@@ -355,6 +356,7 @@ profiles:
                     language: &language,
                     graph: &graph,
                     metrics: &metrics,
+                    symbol_table: None,
                 };
 
                 let complexity_result = ComplexityResult {
@@ -396,6 +398,7 @@ profiles:
                     language: &language,
                     graph: &graph,
                     metrics: &metrics,
+                    symbol_table: None,
                 };
 
                 let result = FileMetricsResult {
@@ -510,6 +513,7 @@ profiles:
                 let ctx = RuleContext {
                     tree: &tree, source: &source, file_path: &file_path,
                     language: &language, graph: &graph, metrics: &metrics,
+                    symbol_table: None,
                 };
 
                 let mut results = Vec::new();

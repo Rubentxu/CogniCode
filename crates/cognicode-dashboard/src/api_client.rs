@@ -627,6 +627,18 @@ impl ApiClient {
             .map_err(|e| format!("Failed to parse response: {}", e))
     }
 
+    /// Get project status with capabilities and service availability
+    pub async fn get_project_status(&self, project_id: &str) -> Result<crate::state::ProjectStatusDto, String> {
+        let url = format!("{}/api/projects/{}/status", self.base_url, project_id);
+        Request::get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {}", e))
+    }
+
     /// Get drift events with optional filters — GET /api/drift
     pub async fn get_drift_events(
         &self,

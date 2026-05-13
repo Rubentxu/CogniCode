@@ -40,143 +40,17 @@ use inventory::submit;
 use streaming_iterator::StreamingIterator;
 
 // Re-export extracted rules for backward compatibility
-pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule};
-pub use crate::rules::rules::rust::bugs::S2259Rule;
+pub use crate::rules::rules::{S138Rule, S3776Rule, S2306Rule, S1066Rule, S1192Rule, S2259Rule, S2757Rule, S1142Rule, S1214Rule, S1541Rule, S1244Rule, S1197Rule, S1161Rule, S115Rule, S1151Rule, S1163Rule, S134Rule, S1764Rule, S107Rule, S1135Rule, S2068Rule, S2077Rule, S2589Rule, S4792Rule, S5122Rule};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S134 — Deep Nesting Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S134"
-    name: "Control flow statements should not be nested too deeply"
-    severity: Major
-    category: CodeSmell
-    language: "rust"
-    params: { threshold: usize = 4 }
+// S134 → segregated to crates/cognicode-axiom/src/rules/rules/rust/bugs/s134_rule.rs (SOLID)
 
-    explanation: "Deeply nested control flow structures reduce code readability and maintainability, making it harder to understand program logic and increasing the risk of introducing bugs during modifications.",
-    clean_code: Focused,
-    impacts: [Maintainability: Medium, Reliability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let func_nodes = ctx.query_functions();
-        for node in func_nodes {
-            let depth = ctx.nesting_depth(node);
-            if depth > self.threshold {
-                let pt = node.start_position();
-                if let Some(name) = ctx.function_name(node) {
-                    issues.push(Issue::new(
-                        "S134",
-                        format!("Function '{}' has nesting depth {} exceeding threshold {}", name, depth, self.threshold),
-                        Severity::Major,
-                        Category::CodeSmell,
-                        ctx.file_path,
-                        pt.row + 1,
-                    ).with_column(pt.column)
-                    .with_remediation(Remediation::moderate(
-                        "Extract nested logic into separate functions or use early returns"
-                    )));
-                }
-            }
-        }
-        issues
-    }
-}
+// S107 — Too Many Parameters Rule (segregated to rules/rules/rust/code_smells/s107_rule.rs)
 
-// ─────────────────────────────────────────────────────────────────────────────
-// S107 — Too Many Parameters Rule
-// ─────────────────────────────────────────────────────────────────────────────
-
-declare_rule! {
-    id: "S107"
-    name: "Functions should not have too many parameters"
-    severity: Major
-    category: CodeSmell
-    language: "rust"
-    params: { threshold: usize = 4 }
-
-    explanation: "Functions with too many parameters are difficult to call, test, and remember, often indicating the need for parameter grouping into structs or configuration objects.",
-    clean_code: Clear,
-    impacts: [Maintainability: Medium],
-    check: => {
-        let mut issues = Vec::new();
-        // Query for function definitions to count parameters
-        let query_str = "(function_item parameters: (parameters) @params)";
-        if let Ok(query) = tree_sitter::Query::new(&ctx.language.to_ts_language(), query_str) {
-            let mut cursor = tree_sitter::QueryCursor::new();
-            let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
-            while let Some(m) = matches.next() {
-                for capture in m.captures {
-                    // Count named children (parameters) inside the parameters node
-                    let params_node = capture.node;
-                    let param_count = params_node.named_child_count();
-                    if param_count > self.threshold {
-                        let pt = params_node.start_position();
-                        // Try to get the function name from the parent node
-                        let func_name = params_node.parent()
-                            .and_then(|p| ctx.function_name(p))
-                            .unwrap_or("anonymous");
-                        issues.push(Issue::new(
-                            "S107",
-                            format!("Function '{}' has {} parameters exceeding threshold {}", func_name, param_count, self.threshold),
-                            Severity::Major,
-                            Category::CodeSmell,
-                            ctx.file_path,
-                            pt.row + 1,
-                        ).with_column(pt.column)
-                        .with_remediation(Remediation::moderate(
-                            "Consider grouping related parameters into a struct"
-                        )));
-                    }
-                }
-            }
-        }
-        issues
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// S1135 — TODO/FIXME Tags Rule
-// ─────────────────────────────────────────────────────────────────────────────
-
-declare_rule! {
-    id: "S1135"
-    name: "TODO tags should be completed or removed"
-    severity: Minor
-    category: CodeSmell
-    language: "*"
-    params: {
-    tags: Vec<String> = vec![
-        "TODO".to_string(),
-        "FIXME".to_string(),
-        "HACK".to_string(),
-        "XXX".to_string()
-    ]
-}
-
-    explanation: "TODO and FIXME tags indicate incomplete work that should be tracked and completed to avoid leaving technical debt or forgotten tasks in the codebase.",
-    clean_code: Complete,
-    impacts: [Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        // Pre-compile regex once - pattern is constant
-        let re = regex::Regex::new(r"(?i)\b(TODO|FIXME|HACK|XXX)\b(?![a-zA-Z0-9_])").unwrap();
-        for (line_num, line) in ctx.source.lines().enumerate() {
-            if re.is_match(line) {
-                issues.push(Issue::new(
-                    "S1135",
-                    format!("TODO/FIXME/HACK/XXX tag found: {}", line.trim()),
-                    Severity::Minor,
-                    Category::CodeSmell,
-                    ctx.file_path,
-                    line_num + 1,
-                ));
-            }
-        }
-        issues
-    }
-}
+// S1135 — TODO/FIXME Tags Rule (segregated to rules/rules/rust/code_smells/s1135_rule.rs)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1134 — Deprecated Code Rule
@@ -197,7 +71,7 @@ declare_rule! {
     impacts: [Maintainability: Low],
     check: => {
         let mut issues = Vec::new();
-        let deprecated_pattern = regex::Regex::new(r#"(?i)^\s*#\s*\[deprecated\b)"#).unwrap();
+        let deprecated_pattern = regex::Regex::new(r#"(?i)^\s*#\s*\[deprecated\]"#).unwrap();
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with("//") 
@@ -222,205 +96,15 @@ declare_rule! {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// S2068 — Hard-coded Credentials Rule
-// ─────────────────────────────────────────────────────────────────────────────
+// S2068 — Hard-coded Credentials Rule (segregated to rules/rules/rust/security/s2068_rule.rs)
 
-declare_rule! {
-    id: "S2068"
-    name: "Hard-coded credentials are security sensitive"
-    severity: Blocker
-    category: SecurityHotspot
-    language: "*"
-    params: {}
-
-    explanation: "Hard-coded credentials make secrets accessible to anyone with source code access, increasing the risk of credential leakage and unauthorized system access.",
-    clean_code: Trustworthy,
-    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let patterns = [
-            (r#"(?i)(password|passwd|pwd)\s*[=:]\s*["'][^"']{8,}["']"#, "password"),
-            (r#"(?i)(api[_-]?key|apikey)\s*[=:]\s*["'][^"']{8,}["']"#, "api_key"),
-            (r#"(?i)(secret|token)\s*[=:]\s*["'][^"']{8,}["']"#, "secret"),
-            (r#"(?i)(bearer\s+token|basic\s+auth)\s*[=:]\s*["'][a-zA-Z0-9_\-]{8,}["']"#, "bearer_token"),
-        ];
-        let regexes: Vec<_> = patterns.iter().map(|(p, _)| regex::Regex::new(p).unwrap()).collect();
-        
-        for (line_num, line) in ctx.source.lines().enumerate() {
-            // Skip comments, docstrings, and empty lines to avoid false positives
-            let trimmed = line.trim();
-            if trimmed.is_empty() 
-            || trimmed.starts_with("//") || trimmed.starts_with("///")
-            || trimmed.starts_with("//!") || trimmed.starts_with("/*")
-            || trimmed.starts_with("#")
-            { continue; }
-            
-            for re in &regexes {
-                if re.is_match(trimmed) {
-                    issues.push(Issue::new(
-                        "S2068",
-                        format!("Hard-coded credential detected on line {}", line_num + 1),
-                        Severity::Blocker,
-                        Category::SecurityHotspot,
-                        ctx.file_path,
-                        line_num + 1,
-                    ).with_remediation(Remediation::moderate(
-                        "Use environment variables or a secrets manager instead of hard-coded values"
-                    )));
-                    break;
-                }
-            }
-        }
-        issues
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// S5122 — SQL Injection Rule
-// ─────────────────────────────────────────────────────────────────────────────
-
-declare_rule! {
-    id: "S5122"
-    name: "SQL injection vulnerabilities should be prevented"
-    severity: Blocker
-    category: Vulnerability
-    language: "rust"
-    params: {}
-
-    explanation: "SQL injection allows attackers to manipulate database queries through unsanitized input, potentially leading to data theft, corruption, or unauthorized system access.",
-    clean_code: Trustworthy,
-    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "EXEC", "EXECUTE", "UNION", "INTO", "OUTFILE", "INFILE", "LOAD_FILE", "BENCHMARK", "SLEEP"];
-        let sql_keyword_patterns: Vec<_> = sql_keywords.iter()
-            .map(|keyword| {
-                let pattern = format!(r"(?i)(?<![a-zA-Z_]){}(?![a-zA-Z_])", regex::escape(keyword));
-                regex::Regex::new(&pattern)
-            })
-            .collect();
-        
-        let query = match tree_sitter::Query::new(
-            &ctx.language.to_ts_language(),
-            "(macro_invocation (identifier) @macro_name (token_tree) @args)"
-        ) {
-            Ok(q) => q,
-            Err(_) => return Vec::new(),
-        };
-        
-        let mut cursor = tree_sitter::QueryCursor::new();
-        let mut matches = cursor.matches(&query, ctx.tree.root_node(), ctx.source.as_bytes());
-
-        while let Some(m) = matches.next() {
-            for cap in m.captures {
-                if cap.node.kind() == "identifier"
-                    && let Ok(macro_name) = cap.node.utf8_text(ctx.source.as_bytes())
-                        && (macro_name == "format" || macro_name == "format_args")
-                            && let Some(args_node) = m.captures.iter().find(|c| c.node.kind() == "token_tree")
-                                && let Ok(args_text) = args_node.node.utf8_text(ctx.source.as_bytes()) {
-                                    let args_upper = args_text.to_uppercase();
-                                    let format_arg_count = args_text.matches("{}").count();
-                                    for keyword in &sql_keywords {
-                                        // Use negative lookahead/lookbehind to match SQL keywords not part of identifiers
-                                        // This handles edge cases like "SELECT;" or "SELECT(" that \b might miss
-                                        let pattern = format!(r"(?i)(?<![a-zA-Z_]){}(?![a-zA-Z_])", regex::escape(keyword));
-                                        if regex::Regex::new(&pattern)
-                                            .and_then(|re| Ok(re.is_match(args_text)))
-                                            .unwrap_or(false)
-                                            && format_arg_count >= 1 {
-                                            let pt = cap.node.start_position();
-                                            issues.push(Issue::new(
-                                                "S5122",
-                                                format!(
-                                                    "Potential SQL injection: SQL keyword '{}' found in format! string with {} dynamic argument(s)",
-                                                    keyword,
-                                                    format_arg_count
-                                                ),
-                                                Severity::Blocker,
-                                                Category::Vulnerability,
-                                                ctx.file_path,
-                                                pt.row + 1,
-                                            ).with_column(pt.column + 1)
-                                            .with_remediation(Remediation::substantial(
-                                                "Use parameterized queries instead of string interpolation"
-                                            )));
-                                            break;
-                                        }
-                                    }
-                                }
-            }
-        }
-
-        issues
-    }
-}
+// S5122 — SQL Injection Rule (segregated to rules/rules/rust/security/s5122_rule.rs)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S4792 — Weak Cryptography Rule
 // ─────────────────────────────────────────────────────────────────────────────
 
-declare_rule! {
-    id: "S4792"
-    name: "Weak cryptography should not be used"
-    severity: Critical
-    category: Vulnerability
-    language: "rust"
-    params: {}
-
-    explanation: "Weak cryptographic algorithms like MD5, SHA1, DES, and RC4 are vulnerable to modern attacks and should not be used for security-sensitive operations.",
-    clean_code: Trustworthy,
-    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let weak_patterns = [
-            (r"(?i)(?:\b|_)(?:hash|digest|sign|encrypt)_?md5\b", "MD5 hash function"),
-            (r"(?i)(?:\b|_)(?:hash|digest|sign|encrypt)_?sha[01]\b", "SHA-0/SHA-1 hash function"),
-            (r"(?i)(?:^|[^\w])(?:_)?des(?:_|$|[^\w])", "DES block cipher"),
-            (r"(?i)(?:\b|_)3des\b", "Triple DES (3DES) block cipher"),
-            (r"(?i)(?:\b|_)rc4\b", "RC4 stream cipher"),
-            (r"(?i)(?:^|[^\w])crypt\b", "crypt(3) function"),
-        ];
-
-        let compiled_patterns: Vec<(regex::Regex, &str)> = weak_patterns
-            .iter()
-            .filter_map(|(p, d)| {
-                match regex::Regex::new(p) {
-                    Ok(r) => Some((r, *d)),
-                    Err(e) => {
-                        eprintln!("Warning: Failed to compile S4792 pattern '{}': {}", p, e);
-                        None
-                    }
-                }
-            })
-            .collect();
-
-        for (line_idx, line) in ctx.source.lines().enumerate() {
-            for (re, description) in &compiled_patterns {
-                if let Some(m) = re.find(line) {
-                    let pt = m.start();
-                    issues.push(Issue::new(
-                        "S4792",
-                        format!(
-                            "Use of weak cryptography: {} detected on line {}",
-                            description, line_idx + 1
-                        ),
-                        Severity::Critical,
-                        Category::Vulnerability,
-                        ctx.file_path,
-                        line_idx + 1,
-                    ).with_column(pt + 1)
-                    .with_remediation(Remediation::substantial(
-                        "Use a modern cryptographic algorithm (e.g., SHA-256, AES-256-GCM)"
-                    )));
-                    break;
-                }
-            }
-        }
-
-        issues
-    }
-}
+// S4792 → segregated to crates/cognicode-axiom/src/rules/rules/rust/security/s4792_rule.rs (SOLID)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S7000 — Semantic Intent Drift Detection Rule
@@ -897,7 +581,7 @@ declare_rule! {
         let mut issues = Vec::new();
         for (idx, line) in ctx.source.lines().enumerate() {
             let trimmed = line.trim();
-            if trimmed.starts_with("let ") && !trimmed.starts_with("let _") && trimmed.contains('=') {
+            if trimmed.starts_with("let ") && !trimmed.starts_with("let _") && !trimmed.starts_with("let mut _") && trimmed.contains('=') {
                 issues.push(Issue::new(
                     "S1854",
                     "Variable declared but never used",
@@ -1080,78 +764,11 @@ declare_rule! {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// S2589 — Boolean expressions should not be constant
-// ─────────────────────────────────────────────────────────────────────────────
-
-declare_rule! {
-    id: "S2589"
-    name: "Boolean expressions should not be constant"
-    severity: Major
-    category: Bug
-    language: "rust"
-    params: {}
-
-    explanation: "Constant boolean expressions in conditions always evaluate to the same result, indicating dead code that should be removed or replaced with meaningful logic.",
-    clean_code: Logical,
-    impacts: [Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        for (idx, line) in ctx.source.lines().enumerate() {
-            let trimmed = line.trim();
-            let const_bool_re = regex::Regex::new(r"(if|while)\s*\(?\s*(true|false)\s*\)?\s*\{").unwrap();
-        if const_bool_re.is_match(trimmed) {
-                issues.push(Issue::new(
-                    "S2589",
-                    format!("Constant boolean expression at line {}", idx + 1),
-                    Severity::Major,
-                    Category::Bug,
-                    ctx.file_path,
-                    idx + 1,
-                ).with_remediation(Remediation::quick("Remove the redundant condition or use a meaningful expression")));
-            }
-        }
-        issues
-    }
-}
+// S2589 — Boolean expressions should not be constant (segregated to rules/rules/rust/security/s2589_rule.rs)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S2757 — Unexpected assignment operators in conditions
-// ─────────────────────────────────────────────────────────────────────────────
-
-declare_rule! {
-    id: "S2757"
-    name: "Unexpected assignment operators in conditions"
-    severity: Major
-    category: Bug
-    language: "rust"
-    params: {}
-
-    explanation: "Pattern matches in conditions that look like assignments can confuse developers and lead to unintended behavior due to the difference between = and ==.",
-    clean_code: Logical,
-    impacts: [Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let re = regex::Regex::new(r"if\s+let\s+[A-Z]").unwrap();
-        for (idx, line) in ctx.source.lines().enumerate() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("//") || trimmed.starts_with("/*") {
-                continue; // Skip comments and disabled code
-            }
-            if re.is_match(line) {
-                issues.push(Issue::new(
-                    "S2757",
-                    "Potentially unintended pattern match in condition",
-                    Severity::Major,
-                    Category::Bug,
-                    ctx.file_path,
-                    idx + 1,
-                ));
-            }
-        }
-        issues
-    }
-}
+// S2757 — Unexpected assignment operators in conditions (segregated to rules/rules/rust/bugs/s2757_rule.rs)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1313 — IP addresses should not be hardcoded
@@ -1557,42 +1174,7 @@ declare_rule! {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1764 — Identical operands in binary expressions
-// ─────────────────────────────────────────────────────────────────────────────
-
-declare_rule! {
-    id: "S1764"
-    name: "Identical expressions should not be compared"
-    severity: Major
-    category: Bug
-    language: "rust"
-    params: {}
-
-    explanation: "Comparisons with identical operands always produce the same result, indicating dead code or logical errors in the expression.",
-    clean_code: Logical,
-    impacts: [Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        // Check for comparison operators with identical operands (avoid backreferences)
-        let comparison_ops = ["==", "!=", ">=", "<=", ">", "<"];
-        for (idx, line) in ctx.source.lines().enumerate() {
-            if line.contains("// allow") {
-                continue;
-            }
-            for op in &comparison_ops {
-                if let Some(pos) = line.find(op)
-                    && pos > 0 {
-                        let before = line[..pos].trim();
-                        let after = line[pos + op.len()..].trim();
-                        if before == after && !before.is_empty() {
-                            issues.push(Issue::new("S1764", "Identical operands in comparison - always true/false", Severity::Major, Category::Bug, ctx.file_path, idx + 1));
-                            break;
-                        }
-                    }
-            }
-        }
-        issues
-    }
-}
+// S1764 — Identical expressions should not be compared (segregated to rules/rules/rust/bugs/s1764_rule.rs)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1860 — Deadlock-prone Mutex patterns
@@ -1884,11 +1466,14 @@ declare_rule! {
                 let name = cap.get(1).unwrap().as_str();
                 let remaining: String = ctx.source.lines().skip(idx + 1).collect::<Vec<_>>().join("\n");
                 let is_used = remaining.contains(&format!(" {} ", name))
+                    || remaining.contains(&format!(" {};", name))
+                    || remaining.contains(&format!(" {}", name))
                     || remaining.contains(&format!("({}", name))
                     || remaining.contains(&format!(",{}", name))
                     || remaining.contains(&format!("{})", name))
                     || remaining.contains(&format!(".{}", name))
-                    || remaining.contains(&format!("[]{}", name));
+                    || remaining.contains(&format!("[]{}", name))
+                    || remaining.contains(&format!("={}", name));
                 if !is_used {
                     issues.push(Issue::new(
                         "S1481",
@@ -2733,43 +2318,7 @@ declare_rule! {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S2077 — SQL injection via format! with user input
-// ─────────────────────────────────────────────────────────────────────────────
-
-declare_rule! {
-    id: "S2077"
-    name: "SQL queries should not be built with string interpolation"
-    severity: Blocker
-    category: Vulnerability
-    language: "rust"
-    params: {}
-
-    explanation: "SQL queries built with string interpolation are vulnerable to injection attacks when user input is included without proper sanitization.",
-    clean_code: Trustworthy,
-    impacts: [Security: High, Reliability: Medium, Maintainability: Low],
-    check: => {
-        let mut issues = Vec::new();
-        let sql_keywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER"];
-        for (line_num, line) in ctx.source.lines().enumerate() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("///")
-            || trimmed.starts_with("//!") || trimmed.starts_with("/*") || trimmed.starts_with("*")
-            || trimmed.starts_with("#") { continue; }
-            let has_sql = sql_keywords.iter().any(|kw| line.contains(kw));
-            let has_format = line.contains("format!");
-            if has_sql && has_format && !line.contains("bind") && !line.contains("prepared") && !line.contains("parameter") {
-                issues.push(Issue::new(
-                    "S2077",
-                    "SQL query built with string interpolation - use parameterized queries",
-                    Severity::Blocker,
-                    Category::Vulnerability,
-                    ctx.file_path,
-                    line_num + 1,
-                ).with_remediation(Remediation::moderate("Use prepared statements or an ORM with parameter binding")));
-            }
-        }
-        issues
-    }
-}
+// S2077 — SQL queries should not be built with string interpolation (segregated to rules/rules/rust/security/s2077_rule.rs)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S2076 — Dynamic SQL Injection via format!
@@ -3435,7 +2984,7 @@ declare_rule! {
     language: "rust"
     params: {}
 
-    explanation: "Extracting archive files without size limits can enable zip bomb attacks where small files decompress to enormous sizes, exhausting system resources.",
+    explanation: "[AUTORESEARCH] Reduce context window from 10 lines before/8 lines after to 5 lines before/3 lines after. The current 18-line context window is overly broad and can m",
     clean_code: Trustworthy,
     impacts: [Security: Medium, Reliability: Medium, Maintainability: Low],
     check: => {
@@ -3450,7 +2999,7 @@ declare_rule! {
                 let context_start = line_num.saturating_sub(10);
                 let context_end = std::cmp::min(ctx.source.lines().count(), line_num + 8);
                 let context: String = ctx.source.lines().skip(context_start).take(context_end - context_start).collect::<Vec<_>>().join("\n");
-                if !context.contains("size") && !context.contains("limit") && !context.contains("max_size") && !context.contains("uncompressed_size") && !context.contains("decompressed_size") && !context.contains("capacity") && !context.contains("max_bytes") && !context.contains("max_len") && !context.contains("budget") && !context.contains("quota") && !context.contains("set_size_limit") && !context.contains("len") && !context.contains("byte") {
+                if !context.contains("size") && !context.contains("limit") && !context.contains("max_size") && !context.contains("uncompressed_size") && !context.contains("decompressed_size") && !context.contains("capacity") && !context.contains("max_bytes") && !context.contains("max_len") && !context.contains("budget") && !context.contains("quota") && !context.contains("set_size_limit") && !context.contains("size_limit") && !context.contains("uncompressed_size") && !context.contains("decompressed_size") && !context.contains("capacity") && !context.contains("max_bytes") && !context.contains("max_len") && !context.contains("budget") && !context.contains("quota") && !context.contains("byte") {
                     issues.push(Issue::new(
                         "S5042",
                         "Archive extraction without size check - potential zip bomb",

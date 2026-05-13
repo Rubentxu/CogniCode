@@ -2,13 +2,29 @@
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use crate::state::ReactiveAppState;
+use crate::state::{ReactiveAppState, ProjectContext};
 use crate::components::{Shell, RatingCard, MetricCard, GateStatusBar, IssueTable, LoadingSpinner};
 
 /// Dashboard page component
 #[component]
 pub fn DashboardPage() -> impl IntoView {
     let state = expect_context::<ReactiveAppState>();
+    let project_ctx = expect_context::<ProjectContext>();
+
+    // React to project context changes — reload analysis when project changes
+    {
+        let st = state.clone();
+        create_effect(move |_| {
+            let project = project_ctx.current_project.get();
+            if let Some(info) = project {
+                st.project_path.set(info.path.clone());
+                let s = st.clone();
+                spawn_local(async move {
+                    s.run_analysis().await;
+                });
+            }
+        });
+    }
 
     let run_analysis = {
         let st = state.clone();
