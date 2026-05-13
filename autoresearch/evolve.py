@@ -348,6 +348,59 @@ def validate_proposal(old_code: str, new_code: str) -> Tuple[bool, str]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# P10: FRAGILE PATTERN REJECTOR (post-generation validation)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Patterns that indicate line-based scanning (fragile, causes FP)
+FRAGILE_LINE_PATTERNS = [
+    (r'ctx\.source\.lines\(\)', "Uses ctx.source.lines() — must use ctx.query_nodes() instead"),
+    (r'for\s+\w+\s+in\s+.*ctx\.source', "Iterates over raw source — must use tree-sitter queries"),
+    (r'regex::Regex::new\(', "Uses raw regex on source — must use tree-sitter queries"),
+]
+
+# Patterns that indicate proper tree-sitter usage (allowed even with fragile patterns)
+GOOD_AST_PATTERNS = [
+    r'ctx\.query_nodes\(',
+    r'ctx\.query_functions\(',
+    r'ctx\.query_imports\(',
+    r'ctx\.query_classes\(',
+    r'ctx\.query_patterns\(',
+    r'tree_sitter::Query::new',
+    r'ctx\.nesting_depth\(',
+    r'ctx\.cognitive_complexity\(',
+    r'ctx\.callers_of\(',
+    r'ctx\.callees_of\(',
+    r'ctx\.find_dead_symbols\(',
+    r'ctx\.function_name\(',
+    r'ctx\.count_matches\(',
+    r'ctx\.language\.function_node_type\(',
+]
+
+
+def _validate_no_fragile_patterns(new_code: str, strategy: str) -> Tuple[bool, str]:
+    """P10: Reject generated code that uses fragile line-based patterns.
+
+    Only applies to ast/semantic/dataflow/metric strategies.
+    If the code ALSO uses proper tree-sitter methods, allow it (mixed approach).
+    """
+    # Check if code uses good AST patterns
+    has_good = any(re.search(p, new_code) for p in GOOD_AST_PATTERNS)
+
+    for fragile_pattern, message in FRAGILE_LINE_PATTERNS:
+        if re.search(fragile_pattern, new_code):
+            if has_good:
+                # Mixed approach — has tree-sitter AND fragile patterns
+                # Log warning but allow (the rule is migrating toward AST)
+                log.debug(f"  P10: Warning — mixed approach: {message}")
+                return True, ""
+            else:
+                # Only fragile patterns, no tree-sitter — REJECT
+                return False, f"P10 fragile: {message} (no tree-sitter queries found)"
+
+    return True, ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # JSON EXTRACTION HELPERS (P0-C)
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -876,6 +929,13 @@ def improver(rule_id):
                 log.debug(f"  {rule_id} — regex validation rejected: {reason}")
                 return {"success": False, "error": reason}
 
+        # P10: Reject fragile line-based patterns in AST/semantic/dataflow strategies
+        if strategy in ("ast", "semantic", "dataflow", "metric") and new_code.strip():
+            fragile_ok, fragile_reason = _validate_no_fragile_patterns(new_code, strategy)
+            if not fragile_ok:
+                log.debug(f"  {rule_id} — P10 fragile pattern rejected: {fragile_reason}")
+                return {"success": False, "error": fragile_reason}
+
         # Apply change
         if old_code in content:
             new_content = content.replace(old_code, new_code, 1)
@@ -915,122 +975,254 @@ def improver(rule_id):
 
 
 def _build_strategy_prompt(strategy: str) -> str:
-    """Build strategy-aware system prompt for the LLM."""
+    """Build strategy-aware system prompt for the LLM.
+
+    P10: Rewritten with complete RuleContext API reference, strict prohibitions
+    against line-based scanning, and few-shot examples of correct tree-sitter rules.
+    """
+
+    # ── Shared API reference (injected in ALL strategies) ──
+    api_reference = r"""
+RULECONTEXT API (available in every check() closure):
+
+  ctx.tree          — Full parsed AST (tree_sitter::Tree)
+  ctx.source        — Raw source text
+  ctx.file_path     — Path to file being analyzed
+  ctx.language      — Language enum (Rust, Python, JavaScript, TypeScript, Go, Java)
+  ctx.graph         — Project-wide CallGraph (callers, callees, dead code)
+  ctx.symbol_table  — Per-file SymbolTable (variable bindings, scopes)
+  ctx.metrics       — FileMetrics (struct count, function count, etc.)
+
+TREE-SITTER QUERY METHODS (ALWAYS prefer over ctx.source.lines()):
+  ctx.query_nodes(query_str)             -> Vec<Node>        — Arbitrary AST query
+  ctx.query_functions()                  -> Vec<Node>        — All function/method defs
+  ctx.query_imports()                    -> Vec<(line, text)>— All import/use statements
+  ctx.query_classes()                    -> Vec<(line, text)>— All struct/class/impl defs
+  ctx.query_patterns(query_str)          -> Vec<(line,col,t)>)— Custom query with captures
+  ctx.count_matches(query_str)           -> usize            — Count matching nodes
+  ctx.function_name(node)                -> Option<&str>     — Extract function name
+  ctx.nesting_depth(node)                -> usize            — Max control flow nesting
+  ctx.cognitive_complexity(node)         -> i32              — SonarSource complexity
+  ctx.line_count(node)                   -> usize            — Lines occupied by node
+
+CALL GRAPH METHODS (for dataflow/semantic rules):
+  ctx.callers_of(symbol_name)            -> Vec<String>      — Who calls this symbol
+  ctx.callees_of(symbol_name)            -> Vec<String>      — What this symbol calls
+  ctx.find_dead_symbols()                -> Vec<(name,file)> — Unreachable code
+
+RUST TREE-SITTER NODE TYPES:
+  function_item, impl_item, struct_item, enum_item, trait_item
+  let_declaration, assignment_expression, call_expression
+  if_expression, match_expression, match_arm, for_expression, while_expression, loop_expression
+  field_expression, method_call_expression, return_expression
+  use_declaration, mod_item, type_item
+  parameters, parameter, type_identifier, identifier
+  block_comment, line_comment, string_literal, raw_string_literal
+  attribute_item, inner_attribute_item, unsafe_expression
+
+COMMON TREE-SITTER QUERY PATTERNS:
+  "(function_item name: (identifier) @name) @func"
+  "(call_expression function: (field_expression field: (field_identifier) @method)) @call"
+  "(impl_item trait: (type_identifier) @trait type: (type_identifier) @type) @impl"
+  "(let_declaration pattern: (identifier) @var value: (_)) @assign"
+  "(function_item parameters: (parameters (parameter pattern: (identifier) @param))) @func"
+"""
+
     base = (
-        "You edit Rust static analysis rules for the CogniCode analyzer. "
-        "IMPORTANT Rust regex limitations: The Rust `regex` crate does NOT support "
-        "lookahead (?=), negative lookahead (?!), lookbehind (?<=), negative lookbehind (?<!), "
-        "backreferences (\\1, \\2), or named backreferences (\\g<name>, \\k<name>). "
-        "Rust regex DOES support non-capturing groups (?:...), inline flags (?i), "
-        "word boundaries (\\b), and quantifiers like \\d{2}. "
-        "Prefer threshold adjustments (safest) over regex changes. "
+        "You edit Rust static analysis rules for the CogniCode analyzer.\n"
+        "The rules run inside a `check(ctx: &RuleContext) -> Vec<Issue>` closure.\n"
+        "RuleContext provides tree-sitter AST queries, call graph analysis, and symbol tables.\n\n"
+        "CRITICAL PROHIBITIONS:\n"
+        "- FORBIDDEN: ctx.source.lines() — line-by-line scanning causes false positives\n"
+        "- FORBIDDEN: for line in source — same problem, no AST awareness\n"
+        "- FORBIDDEN: .contains() / .starts_with() on raw source — matches comments/strings\n"
+        "- FORBIDDEN: regex::Regex::new on multi-line content — use tree-sitter instead\n\n"
+        "WHY: Line-based scanning cannot distinguish code from comments, strings, or docs.\n"
+        "Tree-sitter operates on the AST — it knows node types, parent-child relationships,\n"
+        "and can distinguish a function call from a string literal containing the same text.\n\n"
+        "Rust regex limitations: NO lookahead/lookbehind/backreferences.\n"
+        "Rust regex supports: (?:...), (?i), \\b, \\d{2}.\n\n"
+        f"{api_reference}\n"
     )
 
+    # ── Few-shot example of a CORRECT tree-sitter rule ──
+    good_example = r"""
+CORRECT EXAMPLE (S1226 — parameter reassignment detection):
+```rust
+check: => {
+    let mut issues = Vec::new();
+    let query_str = "(function_item parameters: (parameters \
+        (parameter pattern: (identifier) @param))) @func";
+    if let Ok(query) = tree_sitter::Query::new(
+        &ctx.language.to_ts_language(), query_str) {
+        let mut cursor = tree_sitter::QueryCursor::new();
+        let mut matches = cursor.matches(
+            &query, ctx.tree.root_node(), ctx.source.as_bytes());
+        let mut params: std::collections::HashSet<String> = std::collections::HashSet::new();
+        while let Some(m) = matches.next() {
+            for capture in m.captures {
+                if let Ok(name) = capture.node.utf8_text(ctx.source.as_bytes()) {
+                    params.insert(name.to_string());
+                }
+            }
+        }
+        let assign_query = "(let_declaration pattern: (_) @var)";
+        if let Ok(query2) = tree_sitter::Query::new(
+            &ctx.language.to_ts_language(), assign_query) {
+            let mut cursor2 = tree_sitter::QueryCursor::new();
+            let mut matches2 = cursor2.matches(
+                &query2, ctx.tree.root_node(), ctx.source.as_bytes());
+            while let Some(m) = matches2.next() {
+                for capture in m.captures {
+                    if let Ok(name) = capture.node.utf8_text(ctx.source.as_bytes())
+                        && params.contains(name) {
+                            let pt = capture.node.start_position();
+                            issues.push(Issue::new("S1226",
+                                format!("Parameter '{}' should not be reassigned", name),
+                                Severity::Major, Category::CodeSmell,
+                                ctx.file_path, pt.row + 1,
+                            ).with_remediation(Remediation::moderate(
+                                "Use a new local variable instead"
+                            )));
+                        }
+                }
+            }
+        }
+    }
+    issues
+}
+```
+
+WRONG EXAMPLE (REJECTED by quality gate — causes false positives):
+```rust
+// This matches "password" in comments, strings, and variable names
+for line in ctx.source.lines() {       // ← FORBIDDEN
+    if line.contains("password") {     // ← FORBIDDEN — matches comments!
+        issues.push(Issue::new(...));
+    }
+}
+```
+"""
+
     if strategy == "regex":
-        return base + (
-            "Return ONLY valid JSON (extra fields are ignored): "
-            '{"improvement_type":"threshold_tune|regex_tighten|logic_refactor|metadata",'
-            '"description":"what and why this change helps (be specific)",'
-            '"fp_rationale":"why this reduces false positives",'
-            '"test_implication":"what existing tests should still pass",'
+        return base + good_example + (
+            "This rule is classified as regex-based. Only use regex for simple single-line "
+            "pattern matching where AST is not applicable (e.g., line length checks). "
+            "For ANY structural detection (functions, calls, assignments, imports), "
+            "you MUST use tree-sitter queries instead of regex.\n\n"
+            "Acceptable improvement_types: regex_tighten, threshold_tune, ast_migrate, metadata.\n\n"
+            "Return ONLY valid JSON: "
+            '{"improvement_type":"regex_tighten|threshold_tune|ast_migrate|metadata",'
+            '"description":"what and why (be specific about FP reduction)",'
             '"old_code":"EXACT original code from the rule block",'
             '"new_code":"EXACT replacement code","confidence":0.8}'
         )
 
     elif strategy == "ast":
-        # P8: AST-aware prompts with tree-sitter guidance
-        guidance = (
-            "This rule is classified as AST/structural (tree-sitter analysis).\n\n"
-            "AVAILABLE TOOLS (use these INSTEAD of ctx.source.lines()):\n"
-            "- ctx.query_nodes(\"(node_type) @capture\"): Tree-sitter queries\n"
-            "- ctx.query_functions(): Get all function definitions\n"
-            "- ctx.query_imports(): Get all import statements\n"
-            "- ctx.function_name(node): Extract function name from AST node\n"
-            "- ctx.nesting_depth(node): Calculate nesting depth\n\n"
-            "COMMON AST PATTERNS:\n"
-            "- Function definitions: \"(function_item) @func\"\n"
-            "- Method definitions: \"(function_item name: (identifier) @name)\"\n"
-            "- If statements: \"(if_expression) @if\"\n"
-            "- Match expressions: \"(match_expression) @match\"\n"
-            "- Parameters: \"(parameters (parameter pattern: (identifier) @param))\"\n\n"
-            "Acceptable improvement_types: ast_migrate, threshold_tune, metadata.\n"
-        )
-        return base + guidance + (
+        return base + good_example + (
+            "This rule is classified as AST/structural. You MUST use tree-sitter queries.\n\n"
+            "PATTERN FOR EVERY AST RULE:\n"
+            "1. Build a tree-sitter query string for the target node type\n"
+            "2. Create Query + QueryCursor\n"
+            "3. Iterate matches, extract captures with utf8_text()\n"
+            "4. Apply logic on the captured nodes (not on raw text)\n"
+            "5. Push Issue with node's start_position() for precise location\n\n"
+            "HELPER METHODS YOU SHOULD USE:\n"
+            "- ctx.language.function_node_type() for language-aware function queries\n"
+            "- ctx.language.to_ts_language() to get the tree-sitter Language object\n"
+            "- node.named_child_count() to check if a body is empty\n"
+            "- node.parent() to navigate up the AST\n"
+            "- ctx.function_name(node) to extract function/method names\n\n"
+            "Acceptable improvement_types: ast_migrate, threshold_tune, metadata.\n\n"
             "Return ONLY valid JSON: "
             '{"improvement_type":"ast_migrate|threshold_tune|metadata",'
-            '"description":"AST/structural change and why it improves detection",'
+            '"description":"AST/structural change and why it reduces false positives",'
             '"old_code":"EXACT original code","new_code":"EXACT replacement code","confidence":0.8}'
         )
 
     elif strategy == "semantic":
-        guidance = (
-            "This rule is classified as semantic (symbol/scope/usage analysis). "
-            "Do NOT propose regex-first changes. "
-            "Consider: variable binding analysis, unused symbol detection, scope shadowing checks. "
-            "Acceptable improvement_types: semantic_migrate, threshold_tune, metadata. "
-        )
-        return base + guidance + (
+        return base + good_example + (
+            "This rule is classified as semantic (symbol/scope/usage analysis).\n\n"
+            "YOU MUST USE these semantic capabilities:\n"
+            "- ctx.callers_of(name) — find who calls a function (cross-function analysis)\n"
+            "- ctx.callees_of(name) — find what a function calls\n"
+            "- ctx.find_dead_symbols() — detect unreachable code\n"
+            "- ctx.symbol_table — access variable bindings, types, and scopes\n"
+            "- ctx.query_nodes() with scope-aware queries\n\n"
+            "FORBIDDEN: regex on raw source text. Use AST queries + semantic methods.\n\n"
+            "Acceptable improvement_types: semantic_migrate, threshold_tune, metadata.\n\n"
             "Return ONLY valid JSON: "
             '{"improvement_type":"semantic_migrate|threshold_tune|metadata",'
-            '"description":"semantic analysis change and why it improves detection",'
+            '"description":"semantic analysis change and why it reduces false positives",'
             '"old_code":"EXACT original code","new_code":"EXACT replacement code","confidence":0.8}'
         )
 
     elif strategy == "dataflow":
-        # P7: Dataflow-aware prompts with AST/tools guidance
-        guidance = (
+        return base + good_example + (
             "This rule is classified as dataflow (source-sink/taint analysis).\n\n"
-            "AVAILABLE TOOLS (use these instead of ctx.source.lines()):\n"
-            "- ctx.symbol_table: Access symbol table for variable tracking\n"
-            "- ctx.query_nodes(\"(call_expression) @call\"): Find function calls\n"
-            "- ctx.callers_of(func_name) / ctx.callees_of(func_name): Call graph analysis\n"
-            "- tree_sitter AST queries for structural analysis\n\n"
-            "DETECTION PATTERNS (DO NOT use regex for these):\n"
-            "- User input sources: ctx.query_nodes('(identifier) @user') where name matches input patterns\n"
-            "- Dangerous sinks: ctx.query_nodes('(call_expression function: (identifier) @fn') where fn matches eval/exec/spawn\n"
-            "- Taint propagation: Follow data flow through assignments and function calls\n\n"
-            "Acceptable improvement_types: dataflow_migrate, threshold_tune, metadata.\n"
-        )
-        return base + guidance + (
+            "YOU MUST USE these dataflow capabilities:\n"
+            "- ctx.query_nodes() to find source nodes (user input, config, env)\n"
+            "- ctx.query_nodes() to find sink nodes (eval, exec, spawn, SQL, HTTP)\n"
+            "- ctx.callers_of() / ctx.callees_of() for cross-function taint tracking\n"
+            "- ctx.symbol_table for variable binding and flow analysis\n\n"
+            "DATAFLOW DETECTION PATTERN:\n"
+            "1. Find SOURCES: ctx.query_nodes('(call_expression function: (identifier) @fn)')\n"
+            "   where fn matches input/env/config/read functions\n"
+            "2. Find SINKS: ctx.query_nodes('(call_expression function: (identifier) @fn)')\n"
+            "   where fn matches eval/exec/spawn/query/execute functions\n"
+            "3. Check FLOW: is there a data path from source to sink?\n"
+            "   Use ctx.callees_of() and ctx.callers_of() for inter-procedural tracking\n\n"
+            "SANITIZER detection: check if intermediate calls are sanitizers\n"
+            "(escape, encode, parameterize, validate, hash functions)\n\n"
+            "FORBIDDEN: regex on raw source for source/sink detection.\n\n"
+            "Acceptable improvement_types: dataflow_migrate, threshold_tune, metadata.\n\n"
             "Return ONLY valid JSON: "
             '{"improvement_type":"dataflow_migrate|threshold_tune|metadata",'
-            '"description":"dataflow/taint analysis change and why it improves detection",'
+            '"description":"dataflow/taint analysis change and why it reduces false positives",'
             '"old_code":"EXACT original code","new_code":"EXACT replacement code","confidence":0.8}'
         )
 
     elif strategy == "metric":
-        guidance = (
-            "This rule is classified as metric-based. "
-            "Do NOT propose regex-first changes. "
-            "Consider: threshold tuning, metric aggregation changes, counting logic adjustments. "
-            "Acceptable improvement_types: metric_migrate, threshold_tune, metadata. "
-        )
-        return base + guidance + (
+        return base + good_example + (
+            "This rule is classified as metric-based (thresholds, counting, complexity).\n\n"
+            "PREFERRED METRIC METHODS:\n"
+            "- ctx.nesting_depth(node) — control flow nesting (replaces line counting)\n"
+            "- ctx.cognitive_complexity(node) — SonarSource algorithm (replaces regex)\n"
+            "- ctx.line_count(node) — precise line count for AST nodes\n"
+            "- ctx.query_functions() — iterate functions to measure per-function metrics\n"
+            "- ctx.count_matches(query) — count specific patterns without regex\n\n"
+            "METRIC RULE PATTERN:\n"
+            "1. ctx.query_functions() or ctx.query_nodes() to get target nodes\n"
+            "2. Apply metric function (nesting_depth, cognitive_complexity, line_count)\n"
+            "3. Compare against threshold\n"
+            "4. Push Issue with precise location from node.start_position()\n\n"
+            "Acceptable improvement_types: metric_migrate, threshold_tune, metadata.\n\n"
             "Return ONLY valid JSON: "
             '{"improvement_type":"metric_migrate|threshold_tune|metadata",'
-            '"description":"metric-based change and why it improves detection",'
+            '"description":"metric-based change and why it reduces false positives",'
             '"old_code":"EXACT original code","new_code":"EXACT replacement code","confidence":0.8}'
         )
 
     elif strategy == "hybrid":
-        guidance = (
-            "This rule is classified as hybrid (multiple analysis approaches). "
-            "Consider combining regex, AST, semantic, or metric strategies as appropriate. "
+        return base + good_example + (
+            "This rule is classified as hybrid (multiple analysis approaches).\n"
+            "Combine AST queries, semantic methods, and metric calculations.\n"
+            "Always prefer ctx.query_nodes() over ctx.source.lines().\n"
+            "Use ctx.callers_of()/callees_of() for cross-function analysis.\n\n"
             "Acceptable improvement_types: hybrid_migrate, ast_migrate, semantic_migrate, "
-            "dataflow_migrate, metric_migrate, threshold_tune, metadata. "
-        )
-        return base + guidance + (
+            "dataflow_migrate, metric_migrate, threshold_tune, metadata.\n\n"
             "Return ONLY valid JSON: "
             '{"improvement_type":"hybrid_migrate|threshold_tune|metadata",'
-            '"description":"hybrid analysis change and why it improves detection",'
+            '"description":"hybrid analysis change and why it reduces false positives",'
             '"old_code":"EXACT original code","new_code":"EXACT replacement code","confidence":0.8}'
         )
 
     else:
-        return base + (
+        return base + good_example + (
             "Return ONLY valid JSON: "
-            '{"improvement_type":"threshold_tune|regex_tighten|logic_refactor|metadata",'
-            '"description":"what and why this change helps","old_code":"EXACT original code",'
+            '{"improvement_type":"threshold_tune|regex_tighten|ast_migrate|metadata",'
+            '"description":"what and why (focus on FP reduction)",'
+            '"old_code":"EXACT original code",'
             '"new_code":"EXACT replacement code","confidence":0.8}'
         )
 
