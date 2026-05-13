@@ -938,11 +938,22 @@ def _build_strategy_prompt(strategy: str) -> str:
         )
 
     elif strategy == "ast":
+        # P8: AST-aware prompts with tree-sitter guidance
         guidance = (
-            "This rule is classified as AST/structural. "
-            "Do NOT propose regex-first changes. "
-            "Instead consider: tree-sitter AST patterns, structural conditions, or parameter count checks. "
-            "Acceptable improvement_types: ast_migrate, threshold_tune, metadata. "
+            "This rule is classified as AST/structural (tree-sitter analysis).\n\n"
+            "AVAILABLE TOOLS (use these INSTEAD of ctx.source.lines()):\n"
+            "- ctx.query_nodes(\"(node_type) @capture\"): Tree-sitter queries\n"
+            "- ctx.query_functions(): Get all function definitions\n"
+            "- ctx.query_imports(): Get all import statements\n"
+            "- ctx.function_name(node): Extract function name from AST node\n"
+            "- ctx.nesting_depth(node): Calculate nesting depth\n\n"
+            "COMMON AST PATTERNS:\n"
+            "- Function definitions: \"(function_item) @func\"\n"
+            "- Method definitions: \"(function_item name: (identifier) @name)\"\n"
+            "- If statements: \"(if_expression) @if\"\n"
+            "- Match expressions: \"(match_expression) @match\"\n"
+            "- Parameters: \"(parameters (parameter pattern: (identifier) @param))\"\n\n"
+            "Acceptable improvement_types: ast_migrate, threshold_tune, metadata.\n"
         )
         return base + guidance + (
             "Return ONLY valid JSON: "
@@ -966,11 +977,19 @@ def _build_strategy_prompt(strategy: str) -> str:
         )
 
     elif strategy == "dataflow":
+        # P7: Dataflow-aware prompts with AST/tools guidance
         guidance = (
-            "This rule is classified as dataflow (source-sink/taint analysis). "
-            "Do NOT propose regex-first changes. "
-            "Consider: taint propagation, source/sink modeling, sanitizer identification. "
-            "Acceptable improvement_types: dataflow_migrate, threshold_tune, metadata. "
+            "This rule is classified as dataflow (source-sink/taint analysis).\n\n"
+            "AVAILABLE TOOLS (use these instead of ctx.source.lines()):\n"
+            "- ctx.symbol_table: Access symbol table for variable tracking\n"
+            "- ctx.query_nodes(\"(call_expression) @call\"): Find function calls\n"
+            "- ctx.callers_of(func_name) / ctx.callees_of(func_name): Call graph analysis\n"
+            "- tree_sitter AST queries for structural analysis\n\n"
+            "DETECTION PATTERNS (DO NOT use regex for these):\n"
+            "- User input sources: ctx.query_nodes('(identifier) @user') where name matches input patterns\n"
+            "- Dangerous sinks: ctx.query_nodes('(call_expression function: (identifier) @fn') where fn matches eval/exec/spawn\n"
+            "- Taint propagation: Follow data flow through assignments and function calls\n\n"
+            "Acceptable improvement_types: dataflow_migrate, threshold_tune, metadata.\n"
         )
         return base + guidance + (
             "Return ONLY valid JSON: "
@@ -1256,6 +1275,131 @@ def validate_segregation(rule_id: str, fpath: Path) -> bool:
     return True
 
 
+# ═══════════════════════════════════════════════════════════════════
+# P6: RULE QUALITY VALIDATION (Post-Segregation)
+# ═══════════════════════════════════════════════════════════════════
+
+# Patterns that indicate fragile line-based detection (should be AST)
+FRAGILE_PATTERNS = [
+    (r'ctx\.source\.lines\(\)', "Uses ctx.source.lines() - should use AST queries"),
+    (r'for\s*\(\s*idx.*ctx\.source\.lines\(\)', "Line-based iteration - prefer tree-sitter queries"),
+    (r'regex.*\.is_match\(\s*line', "Line-by-line regex - use ctx.query_nodes()"),
+]
+
+# Acceptable regex patterns (for comments, IPs, literals - text-based detection)
+ACCEPTABLE_REGEX_PATTERNS = [
+    (r'#[deprecated]', "Deprecation attributes"),
+    (r'\bTODO\b|\bFIXME\b|\bHACK\b', "Comment markers"),
+    (r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b', "IP address literals"),
+    (r'"[^"]*csrf[^"]*"|"[^"]*token[^"]*"', "Security-related literals"),
+]
+
+# AST patterns that are professional quality
+AST_PATTERNS = [
+    r'ctx\.query_nodes\(',
+    r'ctx\.query_functions\(',
+    r'ctx\.query_imports\(',
+    r'tree_sitter::Query',
+    r'ctx\.symbol_table',
+    r'ctx\.nesting_depth\(',
+    r'ctx\.function_name\(',
+]
+
+
+def validate_with_cognicode(file_path: Path, rule_id: str) -> Tuple[bool, str]:
+    """
+    P6: Validate a segregated rule file for quality patterns.
+    Returns (success, error_message).
+
+    Checks:
+    1. No fragile line-based regex patterns (for AST rules)
+    2. Uses AST tools when appropriate
+    3. File size reasonable (< 5KB for a single rule)
+    """
+    if not file_path.exists():
+        return False, f"Rule file not found: {file_path}"
+
+    content = file_path.read_text()
+    file_size = len(content)
+
+    # Check 1: File size (single rule should be reasonable)
+    if file_size > 5000:
+        return False, f"Rule file too large ({file_size} bytes) - possible corruption"
+
+    # Check 2: Fragile pattern detection
+    strategy = classify_rule_strategy(rule_id, content)
+    strategy_type = strategy.get("strategy", "unknown")
+
+    # For AST/semantic/dataflow rules, check for fragile patterns
+    if strategy_type in ("ast", "semantic", "dataflow"):
+        for fragile_regex, message in FRAGILE_PATTERNS:
+            if re.search(fragile_regex, content):
+                # Allow if there's also AST usage (mixed approach)
+                has_ast = any(re.search(p, content) for p in AST_PATTERNS)
+                if not has_ast:
+                    return False, f"P6: Fragile pattern detected: {message}"
+
+    # Check 3: Verify rule uses appropriate tools
+    if strategy_type == "ast":
+        has_tree_sitter = re.search(r'ctx\.query_nodes|tree_sitter', content)
+        has_line_regex = re.search(r'for.*ctx\.source\.lines\(\)', content)
+        if has_line_regex and not has_tree_sitter:
+            return False, "P6: AST rule without tree-sitter queries"
+
+    log.info(f"  P6: Quality validation passed for {rule_id}")
+    return True, ""
+
+
+# ═══════════════════════════════════════════════════════════════════
+# P9: QUALITY GATE (Pre-Commit Validation)
+# ═══════════════════════════════════════════════════════════════════
+
+def check_quality_gate(rule_id: str, file_path: Path) -> Tuple[bool, str]:
+    """
+    P9: Quality gate before accepting a rule change.
+    Checks:
+    1. Rule file size reasonable
+    2. Rule complexity estimate (heuristic)
+    3. No obvious anti-patterns
+    Returns (success, error_message).
+    """
+    if not file_path.exists():
+        return True, ""  # Skip if file doesn't exist
+
+    content = file_path.read_text()
+    lines = content.split('\n')
+
+    # Check 1: Line count (single rule should be < 200 lines)
+    if len(lines) > 200:
+        log.warning(f"  P9: Rule has {len(lines)} lines - consider splitting")
+        # Don't fail, just warn
+
+    # Check 2: Cognitive complexity estimate
+    # Count nested blocks as proxy for complexity
+    max_nesting = 0
+    current_nesting = 0
+    for line in lines:
+        current_nesting += line.count('{') - line.count('}')
+        max_nesting = max(max_nesting, current_nesting)
+
+    if max_nesting > 5:
+        return False, f"P9: Complexity too high (nesting={max_nesting})"
+
+    # Check 3: Multiple unrelated checks in one rule
+    # If a rule has many regexes, it might be doing too much
+    regex_count = len(re.findall(r'regex::Regex::new', content))
+    if regex_count > 5:
+        return False, f"P9: Rule has {regex_count} regexes - should be split"
+
+    # Check 4: Query count (good if using tree-sitter)
+    query_count = len(re.findall(r'ctx\.query_nodes\(', content))
+    if query_count == 0 and regex_count == 0:
+        return False, "P9: Rule has no tree-sitter queries or regex patterns"
+
+    log.info(f"  P9: Quality gate passed for {rule_id}")
+    return True, ""
+
+
 def revert_segregation(rule_id: str, fpath: Path):
     """Revert segregation: restore catalog.rs and remove the new file."""
     # Remove the file
@@ -1438,6 +1582,27 @@ def evolve(max_iterations=None, force_rule=None, dry_run=False, cooldown=5, batc
                     discards += 1
                     mark_done(rule_id)
                     continue
+
+                # P6: CogniCode Quality validation (NEW)
+                quality_ok, quality_msg = validate_with_cognicode(seg_path, rule_id)
+                if not quality_ok:
+                    log.warning(f"  P6: Quality validation failed for {rule_id} — {quality_msg}")
+                    revert_segregation(rule_id, seg_path)
+                    evolution.log_experiment(
+                        total_alltime, rule_id, "rust", {"f1": f1_before}, {},
+                        "discard", f"quality validation failed (P6): {quality_msg}",
+                        strategy=change.get("strategy", "")
+                    )
+                    batch_results[rule_id] = ("discard", f"quality validation failed (P6): {quality_msg}")
+                    discards += 1
+                    mark_done(rule_id)
+                    continue
+
+                # P9: Quality gate (NEW)
+                gate_ok, gate_msg = check_quality_gate(rule_id, seg_path)
+                if not gate_ok:
+                    log.warning(f"  P9: Quality gate failed for {rule_id} — {gate_msg}")
+                    # Don't revert on gate failure, but log warning and continue
 
                 if auto_commit:
                     # Stage and commit

@@ -22,3 +22,7 @@ pub mod s170_rule;
 pub mod s120_rule;
 
 pub mod s1854_rule;
+
+pub mod s1134_rule;
+
+pub mod s100_rule;
