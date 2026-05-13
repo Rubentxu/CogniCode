@@ -8,7 +8,7 @@ use leptos_router::path;
 use crate::state::ReactiveAppState;
 use crate::pages::{
     DashboardPage, DriftPage, ContractsPage, IssuesPage, IssueDetailPage,
-    MetricsPage, QualityGatePage, ConfigurationPage,
+    MetricsPage, QualityGatePage, ConfigurationPage, DiagramsPage, DiagramDiffPage,
     NotFoundPage, ProjectsPage, AgentStatsPage, CodeExplorerPage, ActivityPage,
     TrendsPage, KanbanPage,
 };
@@ -35,6 +35,8 @@ pub fn App() -> impl IntoView {
                 <Route path=path!("/metrics") view=MetricsPage />
                 <Route path=path!("/quality-gate") view=QualityGatePage />
                 <Route path=path!("/configuration") view=ConfigurationPage />
+                <Route path=path!("/diagrams/diff") view=DiagramDiffPage />
+                <Route path=path!("/diagrams") view=DiagramsPage />
                 <Route path=path!("/trends") view=TrendsPage />
                 <Route path=path!("/kanban") view=KanbanPage />
                 <Route path=path!("/*any") view=NotFoundPage />

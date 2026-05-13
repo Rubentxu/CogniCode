@@ -414,6 +414,373 @@ fn escape_mermaid(text: &str) -> String {
         .replace('\n', " ")
 }
 
+// ============================================================================
+// PlantUML Sequence Diagram Rendering
+// ============================================================================
+
+/// Render a sequence diagram as PlantUML format
+pub fn render_sequence_diagram_plantuml(
+    call_graph: &CallGraph,
+    entry_point: &str,
+    options: &SequenceDiagramOptions,
+) -> String {
+    // Find the actual entry point symbol
+    let start_symbol = find_symbol_by_name(call_graph, entry_point)
+        .or_else(|| find_entry_points(call_graph).first().cloned())
+        .unwrap_or_default();
+
+    if start_symbol.is_empty() {
+        return render_empty_plantuml(options);
+    }
+
+    // BFS traversal to collect call edges
+    let (edges, participants) = bfs_traverse(call_graph, &start_symbol, options);
+
+    // Build PlantUML sequence diagram
+    build_plantuml_sequence(&participants, &edges, options)
+}
+
+/// Render an empty PlantUML diagram
+fn render_empty_plantuml(options: &SequenceDiagramOptions) -> String {
+    let mut lines = Vec::new();
+    lines.push("@startuml".to_string());
+    if !options.title.is_empty() {
+        lines.push(format!("title {}", escape_plantuml(&options.title)));
+    }
+    lines.push("' No call graph data available".to_string());
+    lines.push("@enduml".to_string());
+    lines.join("\n")
+}
+
+/// Escape text for PlantUML
+fn escape_plantuml(text: &str) -> String {
+    text.replace('"', "'")
+        .replace('\n', " ")
+}
+
+/// Build PlantUML sequence diagram from participants and edges
+fn build_plantuml_sequence(
+    participants: &HashMap<String, Participant>,
+    edges: &[CallEdge],
+    options: &SequenceDiagramOptions,
+) -> String {
+    let mut lines = Vec::new();
+
+    lines.push("@startuml".to_string());
+
+    if !options.title.is_empty() {
+        lines.push(format!("title {}", escape_plantuml(&options.title)));
+    }
+
+    // Participants
+    for participant in participants.values() {
+        let display_name = if participant.module != participant.name {
+            format!("{}:{}", participant.module, participant.name)
+        } else {
+            participant.name.clone()
+        };
+
+        // Use actor icon for actors, otherwise participant
+        if is_actor_name(&participant.name) {
+            lines.push(format!("actor {}", escape_plantuml(&display_name)));
+        } else {
+            lines.push(format!("participant {}", escape_plantuml(&display_name)));
+        }
+    }
+
+    if participants.is_empty() {
+        lines.push("' No callable symbols found".to_string());
+        lines.push("@enduml".to_string());
+        return lines.join("\n");
+    }
+
+    // Messages
+    for edge in edges {
+        let caller_display = get_participant_display(participants, &edge.caller);
+        let callee_display = get_participant_display(participants, &edge.callee);
+
+        if edge.is_loop && options.show_loops {
+            lines.push(format!("loop {}", escape_plantuml(&edge.method_name)));
+            lines.push(format!(
+                "{} -> {} : {}()",
+                escape_plantuml(&caller_display),
+                escape_plantuml(&callee_display),
+                escape_plantuml(&edge.method_name)
+            ));
+            lines.push("end".to_string());
+        } else {
+            lines.push(format!(
+                "{} -> {} : {}()",
+                escape_plantuml(&caller_display),
+                escape_plantuml(&callee_display),
+                escape_plantuml(&edge.method_name)
+            ));
+        }
+    }
+
+    lines.push("@enduml".to_string());
+    lines.join("\n")
+}
+
+/// Check if a name represents an actor
+fn is_actor_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower == "user"
+        || lower == "client"
+        || lower == "admin"
+        || lower == "actor"
+        || lower == "guest"
+}
+
+/// Get display name for a participant
+fn get_participant_display(participants: &HashMap<String, Participant>, id: &str) -> String {
+    participants
+        .get(id)
+        .map(|p| {
+            if p.module != p.name {
+                format!("{}:{}", p.module, p.name)
+            } else {
+                p.name.clone()
+            }
+        })
+        .unwrap_or_else(|| id.to_string())
+}
+
+// ============================================================================
+// SVG Sequence Diagram Rendering
+// ============================================================================
+
+/// Options for SVG rendering
+#[derive(Debug, Clone)]
+pub struct SequenceSvgOptions {
+    /// Width of the diagram in pixels
+    pub width: u32,
+    /// Height of the diagram in pixels
+    pub height: u32,
+    /// Padding around the diagram
+    pub padding: u32,
+    /// Color for participant boxes
+    pub box_color: String,
+    /// Color for arrows/lines
+    pub arrow_color: String,
+    /// Background color
+    pub background_color: String,
+    /// Font family
+    pub font_family: String,
+    /// Font size
+    pub font_size: u32,
+}
+
+impl Default for SequenceSvgOptions {
+    fn default() -> Self {
+        Self {
+            width: 800,
+            height: 600,
+            padding: 40,
+            box_color: "#e0e0e0".to_string(),
+            arrow_color: "#333333".to_string(),
+            background_color: "#ffffff".to_string(),
+            font_family: "Monaco, Consolas, monospace".to_string(),
+            font_size: 12,
+        }
+    }
+}
+
+/// Render a sequence diagram as SVG
+pub fn render_sequence_diagram_svg(
+    call_graph: &CallGraph,
+    entry_point: &str,
+    options: &SequenceDiagramOptions,
+    svg_options: &SequenceSvgOptions,
+) -> String {
+    // Find the actual entry point symbol
+    let start_symbol = find_symbol_by_name(call_graph, entry_point)
+        .or_else(|| find_entry_points(call_graph).first().cloned())
+        .unwrap_or_default();
+
+    if start_symbol.is_empty() {
+        return render_empty_svg(svg_options);
+    }
+
+    // BFS traversal to collect call edges
+    let (edges, participants) = bfs_traverse(call_graph, &start_symbol, options);
+
+    // Build SVG
+    build_svg_sequence(&participants, &edges, options, svg_options)
+}
+
+/// Render an empty SVG diagram
+fn render_empty_svg(options: &SequenceSvgOptions) -> String {
+    format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}">
+  <rect width="100%" height="100%" fill="{}"/>
+  <text x="{}" y="{}" font-family="{}" font-size="{}" fill="#666" text-anchor="middle">
+    No call graph data available
+  </text>
+</svg>"##,
+        options.width,
+        options.height,
+        options.background_color,
+        options.width / 2,
+        options.height / 2,
+        options.font_family,
+        options.font_size
+    )
+}
+
+/// Build SVG sequence diagram from participants and edges
+fn build_svg_sequence(
+    participants: &HashMap<String, Participant>,
+    edges: &[CallEdge],
+    _options: &SequenceDiagramOptions,
+    svg_options: &SequenceSvgOptions,
+) -> String {
+    let mut svg_parts = Vec::new();
+
+    let width = svg_options.width;
+    let height = svg_options.height;
+    let padding = svg_options.padding;
+
+    svg_parts.push(format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}">"#,
+        width, height
+    ));
+
+    // Background
+    svg_parts.push(format!(
+        r#"  <rect width="100%" height="100%" fill="{}"/>"#,
+        svg_options.background_color
+    ));
+
+    if participants.is_empty() {
+        svg_parts.push(format!(
+            r##"  <text x="{}" y="{}" font-family="{}" font-size="{}" fill="#666" text-anchor="middle">
+    No callable symbols found
+  </text>"##,
+            width / 2,
+            height / 2,
+            svg_options.font_family,
+            svg_options.font_size
+        ));
+        svg_parts.push("</svg>".to_string());
+        return svg_parts.join("\n");
+    }
+
+    // Calculate layout
+    let participant_count = participants.len() as u32;
+    let spacing = (width - 2 * padding) / participant_count.max(1);
+    let box_width = spacing - 20;
+    let box_height = 40u32;
+    let lifeline_height = height - 2 * padding - box_height;
+
+    // Draw participants and lifelines
+    let mut participant_x: HashMap<String, u32> = HashMap::new();
+    for (i, (id, participant)) in participants.iter().enumerate() {
+        let x = padding + (i as u32) * spacing + spacing / 2;
+        participant_x.insert(id.clone(), x);
+
+        let display_name = if participant.module != participant.name {
+            format!("{}:{}", participant.module, participant.name)
+        } else {
+            participant.name.clone()
+        };
+
+        // Box
+        svg_parts.push(format!(
+            r#"  <rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" rx="4"/>"#,
+            x - box_width / 2,
+            padding,
+            box_width,
+            box_height,
+            svg_options.box_color,
+            svg_options.arrow_color
+        ));
+
+        // Name
+        svg_parts.push(format!(
+            r##"  <text x="{}" y="{}" font-family="{}" font-size="{}" fill="#333" text-anchor="middle" dominant-baseline="middle">
+    {}
+  </text>"##,
+            x,
+            padding + box_height / 2,
+            svg_options.font_family,
+            svg_options.font_size,
+            escape_xml(&display_name)
+        ));
+
+        // Lifeline (dashed line going down)
+        svg_parts.push(format!(
+            r#"  <line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="1" stroke-dasharray="4,2"/>"#,
+            x,
+            padding + box_height,
+            x,
+            padding + box_height + lifeline_height,
+            svg_options.arrow_color
+        ));
+    }
+
+    // Draw messages
+    let message_spacing = (lifeline_height - 40) / edges.len().max(1) as u32;
+    for (i, edge) in edges.iter().enumerate() {
+        let y_offset = padding + box_height + 30 + (i as u32) * message_spacing;
+
+        let from_x = *participant_x.get(&edge.caller).unwrap_or(&padding);
+        let to_x = *participant_x.get(&edge.callee).unwrap_or(&padding);
+
+        let is_forward = to_x > from_x;
+        let _arrow_dir = if is_forward { "-8,4 0,-4 8,4" } else { "8,4 0,-4 -8,4" };
+
+        // Arrow line
+        svg_parts.push(format!(
+            r#"  <line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="2"/>"#,
+            from_x,
+            y_offset,
+            to_x,
+            y_offset,
+            svg_options.arrow_color
+        ));
+
+        // Arrowhead
+        let arrow_x = if is_forward { to_x - 8 } else { to_x + 8 };
+        let _arrow_dir = if is_forward { "-8,4 0,-4 8,4" } else { "8,4 0,-4 -8,4" };
+        svg_parts.push(format!(
+            r#"  <polygon points="{},{} {},{} {},{}" fill="{}"/>"#,
+            to_x,
+            y_offset,
+            arrow_x,
+            y_offset - 4,
+            arrow_x,
+            y_offset + 4,
+            svg_options.arrow_color
+        ));
+
+        // Method name label
+        let label_x = (from_x + to_x) / 2;
+        svg_parts.push(format!(
+            r##"  <text x="{}" y="{}" font-family="{}" font-size="{}" fill="#666" text-anchor="middle">
+    {}()
+  </text>"##,
+            label_x,
+            y_offset - 5,
+            svg_options.font_family,
+            svg_options.font_size - 2,
+            escape_xml(&edge.method_name)
+        ));
+    }
+
+    svg_parts.push("</svg>".to_string());
+    svg_parts.join("\n")
+}
+
+/// Escape text for XML/SVG
+fn escape_xml(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

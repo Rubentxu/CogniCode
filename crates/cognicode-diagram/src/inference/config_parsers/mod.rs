@@ -6,8 +6,10 @@ pub mod cargo;
 pub mod docker;
 pub mod nodejs;
 pub mod python;
+pub mod tsconfig;
 
 pub use cargo::{CargoParser, CrateInfo, WorkspaceInfo};
+pub use tsconfig::{TsConfigInfo, detect_nextjs, detect_react, detect_vite, JsProjectType};
 
 use std::path::Path;
 

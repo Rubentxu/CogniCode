@@ -37,4 +37,13 @@ pub use tools::{
     GenerateC4CodeInput, GenerateC4CodeOutput, handle_generate_c4_code,
     GenerateC4ContainersInput, GenerateC4ContainersOutput, handle_generate_c4_containers,
     GenerateC4ComponentsInput, GenerateC4ComponentsOutput, handle_generate_c4_components,
+    GenerateC4DynamicInput, GenerateC4DynamicOutput, handle_generate_c4_dynamic,
+    GenerateSequenceDiagramInput, GenerateSequenceDiagramOutput, handle_generate_sequence_diagram,
+    GenerateC4DeploymentInput, GenerateC4DeploymentOutput, handle_generate_c4_deployment,
+    GenerateErDiagramInput, GenerateErDiagramOutput, handle_generate_er_diagram,
+    GenerateStateMachineInput, GenerateStateMachineOutput, handle_generate_state_machine,
+    GenerateActivityDiagramInput, GenerateActivityDiagramOutput, handle_generate_activity_diagram,
+    GenerateMultiLangWorkspaceInput, GenerateMultiLangWorkspaceOutput, handle_generate_multi_lang_workspace,
+    SummarizeDiagramInput, SummarizeDiagramOutput, handle_summarize_diagram,
+    DiffDiagramsInput, DiffDiagramsOutput, handle_diff_diagrams,
 };

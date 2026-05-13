@@ -30,7 +30,7 @@ fn escape_er(text: &str) -> String {
 /// use cognicode_diagram::model::er_types::ErModel;
 /// use cognicode_diagram::render::er::render_er_mermaid;
 ///
-/// let model = ErModel::default();
+/// let model = ErModel::empty();
 /// let mermaid = render_er_mermaid(&model);
 /// assert!(mermaid.starts_with("erDiagram"));
 /// ```
@@ -154,7 +154,7 @@ fn cardinality_mermaid(cardinality: &Cardinality) -> &'static str {
 /// use cognicode_diagram::render::d2::D2Options;
 /// use cognicode_diagram::render::er::render_er_d2;
 ///
-/// let model = ErModel::default();
+/// let model = ErModel::empty();
 /// let options = D2Options::default();
 /// let d2 = render_er_d2(&model, &options);
 /// assert!(d2.contains("direction"));

@@ -11,6 +11,9 @@ pub mod filter_bar;
 pub mod loading_spinner;
 pub mod error_boundary;
 pub mod file_browser;
+pub mod diagram_viewer;
+pub mod live_updates;
+pub mod export_utils;
 
 pub use shell::Shell;
 pub use rating_card::RatingCard;
@@ -24,3 +27,6 @@ pub use filter_bar::FilterBar;
 pub use loading_spinner::LoadingSpinner;
 pub use error_boundary::{ErrorBoundary, ErrorFallback, ErrorInfo};
 pub use file_browser::FileBrowser;
+pub use diagram_viewer::DiagramViewer;
+pub use live_updates::{LiveUpdatesProvider, LiveToggle, LiveStatus};
+pub use export_utils::{ShareButton, ExportMenuButton, ShareableUrl, export_json, export_issues_csv};

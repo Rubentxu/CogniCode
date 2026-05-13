@@ -4,6 +4,7 @@
 //! These are used by the dashboard to fetch analysis data.
 
 pub mod analysis;
+pub mod diagrams;
 pub mod issues;
 pub mod quality_gate;
 pub mod configuration;

@@ -11,6 +11,9 @@ CogniCode Diagram es un crate de diagramacion inferida y reverse engineering que
 3. **4 niveles C4** — Context, Container, Component, Code
 4. **Layout profesional** — Sugiyama con puertos, nodos compuestos
 5. **Integracion MCP** — tools consumibles por agentes AI
+6. **Multi-lenguaje** — Soporte para Rust, TypeScript, Python, Go
+7. **IA integrada** — Resumenes y explicaciones en lenguaje natural
+8. **Dashboard web** — Visualizacion interactiva con auto-update
 
 ## Phases
 
@@ -69,12 +72,43 @@ CogniCode Diagram es un crate de diagramacion inferida y reverse engineering que
 **Entregable**: Produccion-ready
 
 - Diagramas de deployment (desde Dockerfile, docker-compose)
-- Diagramas de secuencia (desde call graph traversal)
 - ER diagrams (para proyectos con DB schemas)
 - Export D2 lang
 - Integracion con dashboard `cognicode-dashboard`
 - Benchmarking de rendimiento
 - Documentacion de API publica
+
+**Detalle**: [PLAN-FASE5.md](./PLAN-FASE5.md)
+
+---
+
+### Phase 6 — Advanced Diagram Features (Semanas 11-14)
+**Entregable**: Diagramas UML avanzados e inferencia multi-lenguaje
+
+- Diagramas de secuencia (desde call graph traversal)
+- State Machine diagrams (desde enums y transiciones)
+- Activity diagrams (flujo de control)
+- Inferencia TypeScript/JavaScript (L1-L3)
+- Soporte multi-lenguaje (Rust + TypeScript + Python)
+- AI Diagram Summarization (explicaciones en lenguaje natural)
+- Diagram Diff & Versioning (comparar versiones)
+
+**Detalle**: [PLAN-FASE6.md](./PLAN-FASE6.md)
+
+---
+
+### Phase 7 — Dashboard Integration (Semanas 15-17)
+**Entregable**: Seccion de diagramas integrada en CogniCode Dashboard
+
+- Diagram API endpoints (REST per diagram types)
+- DiagramViewer component (zoom, pan, theme, export)
+- Diagrams page (`/diagrams`) con generacion interactiva
+- Diagram comparison view (side-by-side diff)
+- Real-time updates (file watcher + WebSocket)
+- Diagram sharing (URLs, embed, export SVG/PNG)
+- Navigation integration (sidebar, breadcrumbs, deep linking)
+
+**Detalle**: [PLAN-FASE7.md](./PLAN-FASE7.md)
 
 ## Milestones
 
@@ -88,6 +122,20 @@ CogniCode Diagram es un crate de diagramacion inferida y reverse engineering que
 | M6: Full C4 | F3 | `reverse_engineer_c4` genera las 4 vistas C4 para CogniCode en <5s |
 | M7: SVG Nativo | F4 | Layout con puertos produce SVG legible para diagrama de 50+ nodos |
 | M8: Produccion | F5 | Todas las tools MCP funcionan con proyectos Rust, Python, Go, TypeScript |
+| M9: Sequence | F6 | `generate_sequence_diagram` produce Mermaid sequence diagram valido |
+| M10: State Machine | F6 | Detecta estados desde enum y genera state diagram |
+| M11: Activity | F6 | Activity diagram con fork/join para paralelismo |
+| M12: TypeScript | F6 | `reverse_engineer_c4` funciona con proyecto Next.js |
+| M13: Multi-lang | F6 | Workspace Rust+TS genera container diagram unificado |
+| M14: AI Summary | F6 | LLM genera resumen comprensible del diagrama |
+| M15: Diff | F6 | `diff_diagrams` muestra changeset visual |
+| M16: API | F7 | POST /api/diagrams/c4 devuelve Mermaid valido en <2s |
+| M17: Viewer | F7 | DiagramViewer renderiza con zoom/pan funcional |
+| M18: Page | F7 | Pagina /diagrams funcional |
+| M19: Compare | F7 | Side-by-side diff con highlighting |
+| M20: Live | F7 | Auto-update en <5s al cambiar codigo |
+| M21: Export | F7 | Export SVG/PNG funcional |
+| M22: Dashboard | F7 | Integracion completa en sidebar + navegacion |
 
 ## Dependencias entre Fases
 
@@ -97,9 +145,19 @@ F1 (Foundation) ──→ F2 (Component/Container) ──→ F3 (Context/DSL)
 F1 ──────────────────────────────────────────→ F4 (Layout Engine)
                                                       │
                                                  F5 (Polish)
+                                                      │
+                                    ┌────────────────┴────────────────┐
+                                    │                                 │
+                              F6 (Advanced Features)           F7 (Dashboard Integration)
+                                    │                                 │
+                                    └──────────────┬──────────────────┘
+                                                   │
+                                              F7 ← F6
 ```
 
-F4 puede empezar en paralelo con F2/F3 si se trabaja solo el layout. F3 requiere F2 para las vistas completas.
+- F4 puede empezar en paralelo con F2/F3 si se trabaja solo el layout
+- F6 puede empezar despues de F5 (necesita cognicode-diagram estable)
+- F7 depende de F6 para los tipos de diagramas avanzados
 
 ## Riesgos y Mitigaciones
 
@@ -126,5 +184,10 @@ F4 puede empezar en paralelo con F2/F3 si se trabaja solo el layout. F3 requiere
 - [PLAN-FASE2.md](./PLAN-FASE2.md) — Fase 2: L3 Component + L2 Container
 - [PLAN-FASE3.md](./PLAN-FASE3.md) — Fase 3: L1 Context + Structurizr DSL
 - [PLAN-FASE4.md](./PLAN-FASE4.md) — Fase 4: Layout Engine + SVG Nativo
+- [PLAN-FASE5.md](./PLAN-FASE5.md) — Fase 5: Polish + Deploy + Extras
+- [PLAN-FASE6.md](./PLAN-FASE6.md) — Fase 6: Advanced Diagram Features
+- [PLAN-FASE7.md](./PLAN-FASE7.md) — Fase 7: Dashboard Integration
 - [MCP-TOOLS.md](./MCP-TOOLS.md) — Especificacion de MCP tools
 - [INVESTIGACION.md](./INVESTIGACION.md) — Hallazgos, crates, referencias
+- [Dashboard Plan](../../dashboard/PLAN.md) — Plan del dashboard web
+- [Dashboard README](../../dashboard/README.md) — Manual de uso del dashboard

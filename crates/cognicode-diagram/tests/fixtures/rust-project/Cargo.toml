@@ -1,0 +1,3 @@
+[workspace]
+members = ["crate-lib-a", "crate-lib-b", "my-cli"]
+resolver = "2"

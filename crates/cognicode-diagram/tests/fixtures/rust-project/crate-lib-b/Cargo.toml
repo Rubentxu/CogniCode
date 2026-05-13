@@ -1,0 +1,8 @@
+[package]
+name = "crate-lib-b"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "crate_lib_b"
+path = "src/lib.rs"

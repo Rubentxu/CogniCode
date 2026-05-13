@@ -7,8 +7,8 @@ authors = ["CogniCode Team"]
 license = "MIT"
 
 [features]
-default = ["server"]
-server = ["dep:leptos_axum", "dep:axum", "dep:tower", "dep:tower-http", "dep:tokio", "dep:tracing-subscriber", "dep:env_logger", "dep:cognicode-quality", "dep:cognicode-core", "dep:cognicode-axiom", "dep:cognicode-db"]
+default = []
+server = ["dep:leptos_axum", "dep:axum", "dep:tower", "dep:tower-http", "dep:tokio", "dep:tracing-subscriber", "dep:env_logger", "dep:cognicode-quality", "dep:cognicode-core", "dep:cognicode-axiom", "dep:cognicode-db", "dep:cognicode-diagram", "dep:rusqlite", "dep:notify", "dep:tokio-stream", "dep:futures-util", "dep:parking_lot"]
 
 [dependencies]
 # Leptos Web Framework
@@ -18,7 +18,7 @@ leptos_meta = "0.8"
 
 # Server support (optional - only for server binary)
 leptos_axum = { version = "0.8", optional = true }
-axum = { version = "0.7", optional = true }
+axum = { version = "0.7", features = ["ws"], optional = true }
 tower = { version = "0.4", optional = true }
 tower-http = { version = "0.5", features = ["fs", "cors"], optional = true }
 
@@ -27,6 +27,7 @@ cognicode-quality = { path = "../cognicode-quality", optional = true }
 cognicode-core = { path = "../cognicode-core", optional = true }
 cognicode-axiom = { path = "../cognicode-axiom", optional = true }
 cognicode-db = { path = "../cognicode-db", optional = true }
+cognicode-diagram = { path = "../cognicode-diagram", optional = true }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -36,7 +37,7 @@ serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Async runtime (WASM-compatible)
-gloo-timers = "0.3"
+gloo-timers = { version = "0.3", features = ["futures"] }
 gloo-net = "0.6"
 wasm-bindgen-futures = "0.4"
 
@@ -52,8 +53,21 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 urlencoding = "2"
 
+# WASM support
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["WheelEvent", "MouseEvent", "Navigator", "Clipboard", "Blob", "Url", "Window", "Document", "HtmlElement", "HtmlTextAreaElement"] }
+
 # Database (for agent_tasks endpoints)
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled"], optional = true }
+
+# File watcher for live updates (server only)
+notify = { version = "6", optional = true }
+
+# Async utilities
+tokio-stream = { version = "0.1", optional = true }
+futures-util = { version = "0.3", optional = true }
+parking_lot = { version = "0.12", optional = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
