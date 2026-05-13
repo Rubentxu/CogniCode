@@ -2596,3 +2596,441 @@ fn test_layout_cache_file_format() {
         "Cache should contain timestamp"
     );
 }
+
+// =============================================================================
+// T6.2 — State Machine Diagrams
+// =============================================================================
+
+#[test]
+fn test_state_machine_inference_with_enum_pattern() {
+    // Create a call graph with state machine enum pattern
+    let mut cg = CallGraph::new();
+
+    // Add state enum
+    let state_enum_loc = Location::new("src/machine.rs", 10, 0);
+    let state_enum = Symbol::new("ConnectionState", SymbolKind::Enum, state_enum_loc);
+    let state_enum_id = cg.add_symbol(state_enum);
+
+    // Add transition functions
+    let connect_loc = Location::new("src/machine.rs", 20, 0);
+    let connect_sym = Symbol::new("transition_to_connected", SymbolKind::Function, connect_loc);
+    let _connect_id = cg.add_symbol(connect_sym);
+
+    let disconnect_loc = Location::new("src/machine.rs", 30, 0);
+    let disconnect_sym = Symbol::new("transition_to_disconnected", SymbolKind::Function, disconnect_loc);
+    let _disconnect_id = cg.add_symbol(disconnect_sym);
+
+    let error_loc = Location::new("src/machine.rs", 40, 0);
+    let error_sym = Symbol::new("transition_to_error", SymbolKind::Function, error_loc);
+    let _error_id = cg.add_symbol(error_sym);
+
+    // Add dependency from state machine to transitions
+    add_dependency(&mut cg, &state_enum_id, &_connect_id, DependencyType::Calls);
+    add_dependency(&mut cg, &state_enum_id, &_disconnect_id, DependencyType::Calls);
+    add_dependency(&mut cg, &state_enum_id, &_error_id, DependencyType::Calls);
+
+    // Use find_state_machines to detect state machines
+    let options = cognicode_diagram::inference::StateMachineInferenceOptions::default();
+    let machines = cognicode_diagram::inference::find_state_machines(&cg, &options);
+
+    // Should detect at least one state machine (the ConnectionState enum)
+    assert!(
+        !machines.is_empty(),
+        "Should detect at least one state machine from enum pattern"
+    );
+}
+
+#[test]
+fn test_state_machine_render_mermaid() {
+    use cognicode_diagram::model::state_machine_types::{
+        State, StateMachineModel, StateType, Transition, TransitionKind,
+    };
+    use cognicode_diagram::render::state_machine::{
+        render_state_machine_mermaid, StateMachineRenderOptions,
+    };
+
+    // Create a state machine with 5 states and transitions
+    let mut model = StateMachineModel::new("ConnectionMachine", "ConnectionState");
+
+    // Initial state
+    model.add_state(State {
+        id: "disconnected".to_string(),
+        name: "Disconnected".to_string(),
+        state_type: StateType::Initial,
+        entry_action: Some("init()".to_string()),
+        exit_action: None,
+        child_states: Vec::new(),
+    });
+
+    // Regular states
+    model.add_state(State {
+        id: "connecting".to_string(),
+        name: "Connecting".to_string(),
+        state_type: StateType::Regular,
+        entry_action: Some("connect()".to_string()),
+        exit_action: Some("disconnect()".to_string()),
+        child_states: Vec::new(),
+    });
+
+    model.add_state(State {
+        id: "connected".to_string(),
+        name: "Connected".to_string(),
+        state_type: StateType::Regular,
+        entry_action: Some("onConnect()".to_string()),
+        exit_action: Some("onDisconnect()".to_string()),
+        child_states: Vec::new(),
+    });
+
+    model.add_state(State {
+        id: "error".to_string(),
+        name: "Error".to_string(),
+        state_type: StateType::Regular,
+        entry_action: Some("logError()".to_string()),
+        exit_action: None,
+        child_states: Vec::new(),
+    });
+
+    // Final state
+    model.add_state(State {
+        id: "closed".to_string(),
+        name: "Closed".to_string(),
+        state_type: StateType::Final,
+        entry_action: None,
+        exit_action: None,
+        child_states: Vec::new(),
+    });
+
+    // Add transitions
+    model.add_transition(Transition {
+        id: "t1".to_string(),
+        from: "disconnected".to_string(),
+        to: "connecting".to_string(),
+        event: Some("connect".to_string()),
+        guard: None,
+        action: None,
+        kind: TransitionKind::External,
+    });
+
+    model.add_transition(Transition {
+        id: "t2".to_string(),
+        from: "connecting".to_string(),
+        to: "connected".to_string(),
+        event: Some("connected".to_string()),
+        guard: Some("[isSuccess]".to_string()),
+        action: Some("saveSession()".to_string()),
+        kind: TransitionKind::External,
+    });
+
+    model.add_transition(Transition {
+        id: "t3".to_string(),
+        from: "connecting".to_string(),
+        to: "error".to_string(),
+        event: Some("error".to_string()),
+        guard: Some("[!isSuccess]".to_string()),
+        action: None,
+        kind: TransitionKind::External,
+    });
+
+    model.add_transition(Transition {
+        id: "t4".to_string(),
+        from: "connected".to_string(),
+        to: "disconnected".to_string(),
+        event: Some("disconnect".to_string()),
+        guard: None,
+        action: None,
+        kind: TransitionKind::External,
+    });
+
+    model.add_transition(Transition {
+        id: "t5".to_string(),
+        from: "connected".to_string(),
+        to: "closed".to_string(),
+        event: Some("close".to_string()),
+        guard: None,
+        action: Some("cleanup()".to_string()),
+        kind: TransitionKind::External,
+    });
+
+    model.add_transition(Transition {
+        id: "t6".to_string(),
+        from: "error".to_string(),
+        to: "disconnected".to_string(),
+        event: Some("retry".to_string()),
+        guard: None,
+        action: None,
+        kind: TransitionKind::External,
+    });
+
+    model.finalize();
+
+    // Verify metadata
+    assert_eq!(model.states.len(), 5, "Should have 5 states");
+    assert_eq!(model.transitions.len(), 6, "Should have 6 transitions");
+    assert!(model.metadata.has_actions, "Should have entry/exit actions");
+    assert!(model.metadata.has_guards, "Should have guards");
+
+    // Render to Mermaid
+    let options = StateMachineRenderOptions::default();
+    let mermaid = render_state_machine_mermaid(&model, &options);
+
+    // Verify Mermaid output
+    assert!(
+        mermaid.starts_with("stateDiagram-v2"),
+        "Should start with stateDiagram-v2"
+    );
+    assert!(
+        mermaid.contains("[*] --> Disconnected"),
+        "Should show initial state transition"
+    );
+    assert!(
+        mermaid.contains("Closed --> [*]"),
+        "Should show final state transition"
+    );
+    assert!(
+        mermaid.contains("Connecting"),
+        "Should contain Connecting state"
+    );
+    assert!(
+        mermaid.contains("Connected"),
+        "Should contain Connected state"
+    );
+    assert!(
+        mermaid.contains("Error"),
+        "Should contain Error state"
+    );
+    assert!(
+        mermaid.contains("[isSuccess]"),
+        "Should contain guard condition"
+    );
+    assert!(
+        mermaid.contains("saveSession()"),
+        "Should contain action"
+    );
+}
+
+#[test]
+fn test_state_machine_render_plantuml() {
+    use cognicode_diagram::model::state_machine_types::{
+        State, StateMachineModel, StateType, Transition, TransitionKind,
+    };
+    use cognicode_diagram::render::state_machine::{
+        render_state_machine_plantuml, StateMachineRenderOptions,
+    };
+
+    let mut model = StateMachineModel::new("TestMachine", "TestState");
+
+    model.add_state(State {
+        id: "idle".to_string(),
+        name: "Idle".to_string(),
+        state_type: StateType::Initial,
+        entry_action: None,
+        exit_action: None,
+        child_states: Vec::new(),
+    });
+
+    model.add_state(State {
+        id: "running".to_string(),
+        name: "Running".to_string(),
+        state_type: StateType::Regular,
+        entry_action: Some("start()".to_string()),
+        exit_action: None,
+        child_states: Vec::new(),
+    });
+
+    model.add_state(State {
+        id: "done".to_string(),
+        name: "Done".to_string(),
+        state_type: StateType::Final,
+        entry_action: None,
+        exit_action: None,
+        child_states: Vec::new(),
+    });
+
+    model.add_transition(Transition {
+        id: "t1".to_string(),
+        from: "idle".to_string(),
+        to: "running".to_string(),
+        event: Some("start".to_string()),
+        guard: None,
+        action: None,
+        kind: TransitionKind::External,
+    });
+
+    model.add_transition(Transition {
+        id: "t2".to_string(),
+        from: "running".to_string(),
+        to: "done".to_string(),
+        event: Some("complete".to_string()),
+        guard: None,
+        action: None,
+        kind: TransitionKind::External,
+    });
+
+    model.finalize();
+
+    let options = StateMachineRenderOptions::default();
+    let plantuml = render_state_machine_plantuml(&model, &options);
+
+    assert!(
+        plantuml.starts_with("@startuml"),
+        "Should start with @startuml"
+    );
+    assert!(
+        plantuml.ends_with("@enduml"),
+        "Should end with @enduml"
+    );
+    assert!(
+        plantuml.contains("[*] --> Idle"),
+        "Should show initial state"
+    );
+    assert!(
+        plantuml.contains("Done --> [*]"),
+        "Should show final state"
+    );
+}
+
+#[test]
+fn test_generate_state_machine_mcp_tool() {
+    use cognicode_diagram::mcp::tools::{
+        handle_generate_state_machine, GenerateStateMachineInput,
+    };
+
+    let call_graph = CallGraph::new();
+
+    let input = GenerateStateMachineInput {
+        symbol_name: Some("ConnectionState".to_string()),
+        format: Some("mermaid".to_string()),
+        show_actions: Some(true),
+        show_guards: Some(true),
+        title: Some("Test State Machine".to_string()),
+        direction: Some("LR".to_string()),
+    };
+
+    let result = handle_generate_state_machine(input, &call_graph);
+
+    assert!(result.is_ok(), "MCP tool should succeed");
+    let output = result.unwrap();
+
+    assert_eq!(output.format, "mermaid");
+    assert!(output.diagram.starts_with("stateDiagram-v2"), "Should be valid Mermaid");
+}
+
+#[test]
+fn test_state_machine_choice_state() {
+    use cognicode_diagram::model::state_machine_types::{
+        State, StateMachineModel, StateType, Transition, TransitionKind,
+    };
+    use cognicode_diagram::render::state_machine::{
+        render_state_machine_mermaid, StateMachineRenderOptions,
+    };
+
+    let mut model = StateMachineModel::new("DecisionMachine", "DecisionState");
+
+    model.add_state(State {
+        id: "start".to_string(),
+        name: "Start".to_string(),
+        state_type: StateType::Initial,
+        entry_action: None,
+        exit_action: None,
+        child_states: Vec::new(),
+    });
+
+    // Choice state (decision point)
+    model.add_state(State {
+        id: "choice".to_string(),
+        name: "Choice".to_string(),
+        state_type: StateType::Choice,
+        entry_action: None,
+        exit_action: None,
+        child_states: Vec::new(),
+    });
+
+    model.add_state(State {
+        id: "path_a".to_string(),
+        name: "Path A".to_string(),
+        state_type: StateType::Regular,
+        entry_action: None,
+        exit_action: None,
+        child_states: Vec::new(),
+    });
+
+    model.add_state(State {
+        id: "path_b".to_string(),
+        name: "Path B".to_string(),
+        state_type: StateType::Regular,
+        entry_action: None,
+        exit_action: None,
+        child_states: Vec::new(),
+    });
+
+    model.add_state(State {
+        id: "end".to_string(),
+        name: "End".to_string(),
+        state_type: StateType::Final,
+        entry_action: None,
+        exit_action: None,
+        child_states: Vec::new(),
+    });
+
+    model.add_transition(Transition {
+        id: "t1".to_string(),
+        from: "start".to_string(),
+        to: "choice".to_string(),
+        event: Some("decide".to_string()),
+        guard: None,
+        action: None,
+        kind: TransitionKind::External,
+    });
+
+    model.add_transition(Transition {
+        id: "t2".to_string(),
+        from: "choice".to_string(),
+        to: "path_a".to_string(),
+        event: Some("optionA".to_string()),
+        guard: Some("[condA]".to_string()),
+        action: None,
+        kind: TransitionKind::External,
+    });
+
+    model.add_transition(Transition {
+        id: "t3".to_string(),
+        from: "choice".to_string(),
+        to: "path_b".to_string(),
+        event: Some("optionB".to_string()),
+        guard: Some("[condB]".to_string()),
+        action: None,
+        kind: TransitionKind::External,
+    });
+
+    model.add_transition(Transition {
+        id: "t4".to_string(),
+        from: "path_a".to_string(),
+        to: "end".to_string(),
+        event: Some("done".to_string()),
+        guard: None,
+        action: None,
+        kind: TransitionKind::External,
+    });
+
+    model.add_transition(Transition {
+        id: "t5".to_string(),
+        from: "path_b".to_string(),
+        to: "end".to_string(),
+        event: Some("done".to_string()),
+        guard: None,
+        action: None,
+        kind: TransitionKind::External,
+    });
+
+    model.finalize();
+
+    assert!(model.metadata.has_choice_states, "Should have choice states");
+
+    let options = StateMachineRenderOptions::default();
+    let mermaid = render_state_machine_mermaid(&model, &options);
+
+    assert!(
+        mermaid.contains("Choice : choice"),
+        "Should render choice state with choice marker"
+    );
+}

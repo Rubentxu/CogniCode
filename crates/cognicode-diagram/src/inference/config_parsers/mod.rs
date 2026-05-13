@@ -4,11 +4,13 @@
 
 pub mod cargo;
 pub mod docker;
+pub mod go_parser;
 pub mod nodejs;
 pub mod python;
 pub mod tsconfig;
 
 pub use cargo::{CargoParser, CrateInfo, WorkspaceInfo};
+pub use go_parser::GoParser;
 pub use tsconfig::{TsConfigInfo, detect_nextjs, detect_react, detect_vite, JsProjectType};
 
 use std::path::Path;
@@ -116,6 +118,14 @@ pub fn detect_and_parse(project_dir: &Path) -> anyhow::Result<Vec<Container>> {
     let setup_py = project_dir.join("setup.py");
     if setup_py.exists() {
         if let Some(c) = python::PythonParser::parse_setup_py(&setup_py)? {
+            containers.push(c);
+        }
+    }
+
+    // Try Go go.mod
+    let go_mod = project_dir.join("go.mod");
+    if go_mod.exists() {
+        if let Some(c) = go_parser::GoParser::parse_go_mod(&go_mod)? {
             containers.push(c);
         }
     }

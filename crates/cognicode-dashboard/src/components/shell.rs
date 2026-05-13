@@ -2,8 +2,10 @@
 //! Responsive: sidebar collapses to hamburger menu on mobile (< 768px)
 
 use leptos::prelude::*;
+use wasm_bindgen::UnwrapThrowExt;
 
 use crate::components::live_updates::{LiveUpdatesProvider, LiveToggle, LiveStatus};
+use crate::components::breadcrumbs::Breadcrumbs;
 
 #[derive(Clone, Debug)]
 pub struct NavItem {
@@ -32,6 +34,7 @@ const NAV_ITEMS: &[NavItem] = &[
     NavItem::new("Code Explorer", "/code-explorer", "M10 20l4-4m4 4l4-4m-12 4l4 4m0 0l-4 4m4-4l4 4"),
     NavItem::new("Activity", "/activity", "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"),
     NavItem::new("Configuration", "/configuration", "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z"),
+    NavItem::new("Diagrams", "/diagrams", "M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"),
 ];
 
 /// Navigation group — a labeled section containing indices into NAV_ITEMS
@@ -42,12 +45,13 @@ pub struct NavGroup {
 }
 
 /// Navigation group definitions — indices refer to NAV_ITEMS positions
-/// Order: Overview [0-2], Telemetry [3-5], Quality [6-9], Explorer [10-12]
+/// Order: Overview [0-2], Telemetry [3-5], Quality [6-9], Explorer [10-12], Diagrams [13]
 pub const NAV_GROUPS: &[NavGroup] = &[
     NavGroup { label: "Overview", items: &[0, 1, 2] },
     NavGroup { label: "Telemetry", items: &[3, 4, 5] },
     NavGroup { label: "Quality", items: &[6, 7, 8, 9] },
     NavGroup { label: "Explorer", items: &[10, 11, 12] },
+    NavGroup { label: "Diagrams", items: &[13] },
 ];
 
 /// Navigation sidebar with responsive hamburger menu
@@ -163,10 +167,13 @@ pub fn Shell(children: Children) -> impl IntoView {
             <main class="main-content" style="flex: 1; padding: 32px; min-height: 100vh;">
                 {/* Live updates provider */}
                 <LiveUpdatesProvider>
-                    {/* Header bar with live updates */}
-                    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 16px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--color-border);">
-                        <LiveStatus />
-                        <LiveToggle />
+                    {/* Header bar with live updates and breadcrumbs */}
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--color-border);">
+                        <Breadcrumbs />
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <LiveStatus />
+                            <LiveToggle />
+                        </div>
                     </div>
                     {children()}
                 </LiveUpdatesProvider>
@@ -213,6 +220,8 @@ pub fn Shell(children: Children) -> impl IntoView {
 /// Sidebar content shared between desktop and mobile
 #[component]
 fn SidebarContent(dark_mode: ReadSignal<bool>, on_toggle_dark: impl Fn() + 'static) -> impl IntoView {
+    let current_path = window().location().pathname().unwrap_throw();
+
     view! {
         <div style="padding: 24px; border-bottom: 1px solid var(--color-border);">
             <div style="display: flex; align-items: center; gap: 16px;">
@@ -241,8 +250,27 @@ fn SidebarContent(dark_mode: ReadSignal<bool>, on_toggle_dark: impl Fn() + 'stat
                         {group.items.iter().map(|&idx| {
                             let item = &NAV_ITEMS[idx];
                             let href = item.href.to_string();
+                            let current_path = current_path.clone();
+                            let is_active_flag = if href == "/" {
+                                current_path == "/"
+                            } else {
+                                current_path == href || current_path.starts_with(&format!("{}/", href))
+                            };
                             view! {
-                                <a href={href} style="display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-radius: 8px; text-decoration: none; color: var(--color-text-secondary); font-size: 14px; font-weight: 500; transition: all 0.15s ease;">
+                                <a
+                                    href={href}
+                                    style:background={if is_active_flag { "var(--color-accent-pale)" } else { "transparent" }}
+                                    style:color={if is_active_flag { "var(--color-brand)" } else { "var(--color-text-secondary)" }}
+                                    style:font-weight={if is_active_flag { "600" } else { "500" }}
+                                    style:display="flex"
+                                    style:align-items="center"
+                                    style:gap="16px"
+                                    style:padding="12px 16px"
+                                    style:border-radius="8px"
+                                    style:text-decoration="none"
+                                    style:font-size="14px"
+                                    style:transition="all 0.15s ease"
+                                >
                                     <svg style="width: 20px; height: 20px; flex-shrink: 0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                                         <path stroke-linecap="round" stroke-linejoin="round" d={item.icon}/>
                                     </svg>

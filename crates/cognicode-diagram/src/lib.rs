@@ -67,6 +67,7 @@ pub use summarization::{
 
 // Diff exports
 pub use diff::{
-    diff_workspaces, render_diff_mermaid, WorkspaceDiff, DiffSummary,
+    diff_workspaces, render_diff_mermaid, render_diff_json, WorkspaceDiff, DiffSummary,
     ContainerDiff, RelationshipDiff, ElementDiff,
 };
+pub use diff::render::{DiffFormat, DiffJsonOutput, render_diff_json as internal_render_diff_json};

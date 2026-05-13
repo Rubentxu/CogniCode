@@ -14,6 +14,7 @@ pub mod file_browser;
 pub mod diagram_viewer;
 pub mod live_updates;
 pub mod export_utils;
+pub mod breadcrumbs;
 
 pub use shell::Shell;
 pub use rating_card::RatingCard;
@@ -30,3 +31,4 @@ pub use file_browser::FileBrowser;
 pub use diagram_viewer::DiagramViewer;
 pub use live_updates::{LiveUpdatesProvider, LiveToggle, LiveStatus};
 pub use export_utils::{ShareButton, ExportMenuButton, ShareableUrl, export_json, export_issues_csv};
+pub use breadcrumbs::Breadcrumbs;

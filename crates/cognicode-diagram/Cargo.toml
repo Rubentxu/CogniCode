@@ -24,6 +24,7 @@ regex = { workspace = true }
 
 # Async
 tokio = { workspace = true }
+async-trait = { workspace = true }
 
 # Error handling
 anyhow = { workspace = true }

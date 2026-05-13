@@ -1493,7 +1493,7 @@ pub fn handle_generate_activity_diagram(
 
 use crate::summarization::{
     summarize_workspace, SummaryStyle as DiagramSummaryStyle,
-    DiagramSummary as SummarizedDiagram, DiagramStatistics, ArchitectureRisk, RiskSeverity,
+    DiagramStatistics, RiskSeverity,
 };
 
 /// Input for the `summarize_diagram` MCP tool
@@ -1694,8 +1694,7 @@ pub fn handle_generate_multi_lang_workspace(
 // =============================================================================
 
 use crate::diff::{
-    diff_workspaces, render_diff_mermaid, WorkspaceDiff, DiffSummary,
-    ContainerDiff, RelationshipDiff,
+    diff_workspaces, render_diff_mermaid, DiffSummary,
 };
 
 /// Input for the `diff_diagrams` MCP tool
@@ -1829,12 +1828,12 @@ pub fn handle_diff_diagrams(
         .iter()
         .map(|c| ContainerDiffDto {
             id: c.id.clone(),
-            name_before: get_modified_value(&c.name_diff),
-            name_after: get_modified_value(&c.name_diff),
-            technology_before: get_modified_value(&c.technology_diff),
-            technology_after: get_modified_value(&c.technology_diff),
-            description_before: get_modified_value(&c.description_diff),
-            description_after: get_modified_value(&c.description_diff),
+            name_before: get_before_value(&c.name_diff),
+            name_after: get_after_value(&c.name_diff),
+            technology_before: get_before_value(&c.technology_diff),
+            technology_after: get_after_value(&c.technology_diff),
+            description_before: get_before_value(&c.description_diff),
+            description_after: get_after_value(&c.description_diff),
         })
         .collect();
 
@@ -1850,15 +1849,29 @@ pub fn handle_diff_diagrams(
     })
 }
 
-fn get_modified_value<T: Clone + PartialEq>(diff: &crate::diff::ElementDiff<T>) -> String
+/// Extract the "before" value from an ElementDiff
+fn get_before_value<T: Clone + PartialEq>(diff: &crate::diff::ElementDiff<T>) -> String
+where
+    T: std::fmt::Display,
+{
+    match diff {
+        crate::diff::ElementDiff::Unchanged(v) => format!("{}", v),
+        crate::diff::ElementDiff::Modified { before, .. } => format!("{}", before),
+        crate::diff::ElementDiff::Added(_) => String::new(), // No before value for added
+        crate::diff::ElementDiff::Removed(v) => format!("{}", v),
+    }
+}
+
+/// Extract the "after" value from an ElementDiff
+fn get_after_value<T: Clone + PartialEq>(diff: &crate::diff::ElementDiff<T>) -> String
 where
     T: std::fmt::Display,
 {
     match diff {
         crate::diff::ElementDiff::Unchanged(v) => format!("{}", v),
         crate::diff::ElementDiff::Modified { after, .. } => format!("{}", after),
-        crate::diff::ElementDiff::Added(v) => format!("+{}", v),
-        crate::diff::ElementDiff::Removed(v) => format!("-{}", v),
+        crate::diff::ElementDiff::Added(v) => format!("{}", v),
+        crate::diff::ElementDiff::Removed(_) => String::new(), // No after value for removed
     }
 }
 
@@ -1976,5 +1989,128 @@ mod deployment_er_tests {
         assert_eq!(result.format, "mermaid");
         assert!(result.languages.contains(&"Rust".to_string()));
         assert_eq!(result.languages.len(), 1);
+    }
+
+    #[test]
+    fn test_diff_diagrams_mermaid() {
+        // Create two workspaces with differences
+        let workspace_a_json = r#"{
+            "name": "System A",
+            "description": "Original system",
+            "model": {
+                "people": [],
+                "systems": [{
+                    "id": "system-main",
+                    "name": "Main System",
+                    "description": "Core system",
+                    "location": "Internal",
+                    "containers": [{
+                        "id": "container-api",
+                        "name": "API Server",
+                        "container_type": "Service",
+                        "technology": "Rust",
+                        "description": "REST API",
+                        "path": "/api",
+                        "components": []
+                    }]
+                }],
+                "relationships": [{
+                    "source_id": "container-api",
+                    "target_id": "container-db",
+                    "kind": "ReadsFrom",
+                    "label": "Queries",
+                    "technology": "SQL",
+                    "confidence": 1.0
+                }]
+            },
+            "views": []
+        }"#;
+
+        let workspace_b_json = r#"{
+            "name": "System B",
+            "description": "Modified system",
+            "model": {
+                "people": [],
+                "systems": [{
+                    "id": "system-main",
+                    "name": "Main System",
+                    "description": "Core system",
+                    "location": "Internal",
+                    "containers": [{
+                        "id": "container-api",
+                        "name": "API Server",
+                        "container_type": "Service",
+                        "technology": "Rust/Axum",
+                        "description": "REST API",
+                        "path": "/api",
+                        "components": []
+                    }, {
+                        "id": "container-web",
+                        "name": "Web UI",
+                        "container_type": "Service",
+                        "technology": "Leptos",
+                        "description": "Web interface",
+                        "path": "/web",
+                        "components": []
+                    }]
+                }],
+                "relationships": []
+            },
+            "views": []
+        }"#;
+
+        let input = DiffDiagramsInput {
+            workspace_a_json: workspace_a_json.to_string(),
+            workspace_b_json: workspace_b_json.to_string(),
+            format: Some("mermaid".to_string()),
+        };
+
+        let result = handle_diff_diagrams(input).unwrap();
+        assert_eq!(result.format, "mermaid");
+        assert!(result.diff_output.contains("stateDiagram-v2"));
+        // Should have: 1 container added (Web UI), 1 container modified (API Server), 1 rel removed
+        assert_eq!(result.summary.containers_added, 1);
+        assert_eq!(result.summary.containers_modified, 1);
+        assert_eq!(result.summary.relationships_removed, 1);
+        assert_eq!(result.summary.total_changes, 3);
+    }
+
+    #[test]
+    fn test_diff_diagrams_json_format() {
+        let workspace_a_json = r#"{
+            "name": "System A",
+            "description": "Original",
+            "model": {"people": [], "systems": [], "relationships": []},
+            "views": []
+        }"#;
+
+        let workspace_b_json = r#"{
+            "name": "System B",
+            "description": "Modified",
+            "model": {"people": [], "systems": [], "relationships": []},
+            "views": []
+        }"#;
+
+        let input = DiffDiagramsInput {
+            workspace_a_json: workspace_a_json.to_string(),
+            workspace_b_json: workspace_b_json.to_string(),
+            format: Some("json".to_string()),
+        };
+
+        let result = handle_diff_diagrams(input).unwrap();
+        assert_eq!(result.format, "json");
+        assert_eq!(result.summary.total_changes, 0);
+    }
+
+    #[test]
+    fn test_diff_diagrams_invalid_json() {
+        let input = DiffDiagramsInput {
+            workspace_a_json: "invalid json".to_string(),
+            workspace_b_json: r#"{"name": "B"}"#.to_string(),
+            format: None,
+        };
+
+        let result = handle_diff_diagrams(input);
+        assert!(result.is_err());
     }
 }
