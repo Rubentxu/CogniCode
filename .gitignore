@@ -89,6 +89,5 @@ docs/propuestas/
 rust-intelligence
 sandbox/fixtures/rust-intelligence/
 cognicode-*.tar.gz
-cognicode-*/
 results/
 rust-clippy/
