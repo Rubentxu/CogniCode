@@ -18,8 +18,25 @@ use crate::render::mermaid::{render_c4_context, render_class_diagram, MermaidOpt
 use crate::render::mermaid_c4::{render_component_diagram, render_container_diagram, C4MermaidOptions};
 use crate::render::plantuml::{render_plantuml_c4, PlantUmlOptions, PlantUmlViewType};
 use crate::render::structurizr_dsl::{render_structurizr_dsl, StructurizrDslOptions};
-use crate::render::sequence::{find_entry_points, render_sequence_diagram, SequenceDiagramOptions};
+use crate::render::sequence::{
+    find_entry_points, render_sequence_diagram, render_sequence_diagram_plantuml,
+    render_sequence_diagram_svg, SequenceDiagramOptions, SequenceSvgOptions,
+};
 use crate::render::d2::{render_d2, D2Options};
+use crate::inference::state_machine_inference::{
+    find_state_machines, infer_state_machine_from_struct, StateMachineInferenceOptions,
+};
+use crate::inference::activity_inference::{
+    find_activities, infer_activity_from_function, ActivityInferenceOptions,
+};
+use crate::render::state_machine::{
+    render_state_machine_mermaid, render_state_machine_plantuml, render_empty_state_machine,
+    StateMachineRenderOptions,
+};
+use crate::render::activity::{
+    render_activity_mermaid, render_activity_plantuml, render_empty_activity,
+    ActivityRenderOptions,
+};
 
 /// Input for the `generate_c4_code` MCP tool
 #[derive(Debug, Clone, Deserialize)]
@@ -863,6 +880,130 @@ pub fn handle_generate_c4_dynamic(
     })
 }
 
+// =============================================================================
+// Sequence Diagram Tools (T6.1)
+// =============================================================================
+
+/// Input for the `generate_sequence_diagram` MCP tool
+#[derive(Debug, Clone, Deserialize)]
+pub struct GenerateSequenceDiagramInput {
+    /// Entry point symbol name or path (default: auto-detect first entry point)
+    pub entry_point: Option<String>,
+    /// Maximum call depth (default: 5)
+    pub max_depth: Option<usize>,
+    /// Output format: "mermaid" (default), "plantuml", "svg"
+    pub format: Option<String>,
+    /// SVG-specific: width in pixels (default: 800)
+    pub width: Option<u32>,
+    /// SVG-specific: height in pixels (default: 600)
+    pub height: Option<u32>,
+    /// Include loop markers (default: true)
+    pub show_loops: Option<bool>,
+    /// Show method names on edges (default: true)
+    pub show_method_names: Option<bool>,
+    /// Title for the diagram
+    pub title: Option<String>,
+}
+
+/// Output of the `generate_sequence_diagram` MCP tool
+#[derive(Debug, Clone, Serialize)]
+pub struct GenerateSequenceDiagramOutput {
+    /// The generated diagram source
+    pub diagram: String,
+    /// Output format used
+    pub format: String,
+    /// The entry point used
+    pub entry_point: String,
+    /// Number of participants detected
+    pub participant_count: usize,
+    /// Number of messages/calls in the diagram
+    pub message_count: usize,
+    /// Maximum depth traversed
+    pub max_depth: usize,
+}
+
+/// Handle `generate_sequence_diagram` — sequence diagram in multiple formats
+pub fn handle_generate_sequence_diagram(
+    input: GenerateSequenceDiagramInput,
+    call_graph: &CallGraph,
+) -> anyhow::Result<GenerateSequenceDiagramOutput> {
+    let format = input.format.unwrap_or_else(|| "mermaid".to_string());
+    let max_depth = input.max_depth.unwrap_or(5);
+    let show_loops = input.show_loops.unwrap_or(true);
+    let show_method_names = input.show_method_names.unwrap_or(true);
+    let title = input.title.unwrap_or_else(|| "Sequence Diagram".to_string());
+
+    // Determine entry point
+    let entry_point = input
+        .entry_point
+        .clone()
+        .or_else(|| find_entry_points(call_graph).first().cloned())
+        .unwrap_or_default();
+
+    if entry_point.is_empty() {
+        return Ok(GenerateSequenceDiagramOutput {
+            diagram: "sequenceDiagram\n    Note over Participant: No entry point found".to_string(),
+            format,
+            entry_point: String::new(),
+            participant_count: 0,
+            message_count: 0,
+            max_depth: 0,
+        });
+    }
+
+    // Build sequence diagram options
+    let options = SequenceDiagramOptions {
+        max_depth,
+        show_loops,
+        show_method_names,
+        title,
+    };
+
+    // Render based on format
+    let diagram = match format.as_str() {
+        "mermaid" => render_sequence_diagram(call_graph, &entry_point, &options),
+        "plantuml" => render_sequence_diagram_plantuml(call_graph, &entry_point, &options),
+        "svg" => {
+            let svg_options = SequenceSvgOptions {
+                width: input.width.unwrap_or(800),
+                height: input.height.unwrap_or(600),
+                ..SequenceSvgOptions::default()
+            };
+            render_sequence_diagram_svg(call_graph, &entry_point, &options, &svg_options)
+        }
+        other => {
+            return Err(anyhow::anyhow!(
+                "Unsupported format '{}'. Supported: 'mermaid', 'plantuml', 'svg'",
+                other
+            ))
+        }
+    };
+
+    // Count participants and messages from the rendered diagram
+    let participant_count = if format == "mermaid" {
+        diagram.lines().filter(|l| l.contains("participant")).count()
+    } else if format == "plantuml" {
+        diagram.lines().filter(|l| l.contains("participant") || l.contains("actor")).count()
+    } else {
+        // For SVG, count participant rectangles
+        diagram.matches("<rect").count()
+    };
+
+    let message_count = diagram
+        .lines()
+        .filter(|line| line.contains("->>") || line.contains("-->>"))
+        .count();
+
+    Ok(GenerateSequenceDiagramOutput {
+        diagram,
+        format,
+        entry_point,
+        participant_count,
+        message_count,
+        max_depth,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1145,6 +1286,582 @@ pub fn handle_generate_er_diagram(
     })
 }
 
+// =============================================================================
+// State Machine Diagram Tools (T6.2)
+// =============================================================================
+
+/// Input for the `generate_state_machine` MCP tool
+#[derive(Debug, Clone, Deserialize)]
+pub struct GenerateStateMachineInput {
+    /// Symbol name to analyze (enum or struct with state pattern)
+    /// If not provided, auto-detects state machines in the codebase
+    pub symbol_name: Option<String>,
+    /// Output format: "mermaid" (default), "plantuml"
+    pub format: Option<String>,
+    /// Show entry/exit actions (default: true)
+    pub show_actions: Option<bool>,
+    /// Show guards on transitions (default: true)
+    pub show_guards: Option<bool>,
+    /// Title for the diagram
+    pub title: Option<String>,
+    /// Direction: "LR" (left-right, default) or "TB" (top-bottom)
+    pub direction: Option<String>,
+}
+
+/// Output of the `generate_state_machine` MCP tool
+#[derive(Debug, Clone, Serialize)]
+pub struct GenerateStateMachineOutput {
+    /// The generated diagram source
+    pub diagram: String,
+    /// Output format used
+    pub format: String,
+    /// Name of the state machine detected
+    pub name: String,
+    /// Number of states detected
+    pub state_count: usize,
+    /// Number of transitions detected
+    pub transition_count: usize,
+}
+
+/// Handle `generate_state_machine` — state machine diagram
+pub fn handle_generate_state_machine(
+    input: GenerateStateMachineInput,
+    call_graph: &CallGraph,
+) -> anyhow::Result<GenerateStateMachineOutput> {
+    let format = input.format.unwrap_or_else(|| "mermaid".to_string());
+    let title = input.title.unwrap_or_else(|| "State Machine".to_string());
+
+    // Build inference options
+    let inference_options = StateMachineInferenceOptions {
+        min_states: 2,
+        include_actions: input.show_actions.unwrap_or(true),
+        include_guards: input.show_guards.unwrap_or(true),
+        title: title.clone(),
+    };
+
+    // Build render options
+    let render_options = StateMachineRenderOptions {
+        show_actions: input.show_actions.unwrap_or(true),
+        show_guards: input.show_guards.unwrap_or(true),
+        title: title.clone(),
+        direction: input.direction.unwrap_or_else(|| "LR".to_string()),
+    };
+
+    // Try to find state machines
+    let model = if let Some(ref symbol_name) = input.symbol_name {
+        // Try to infer from specific symbol
+        infer_state_machine_from_struct(call_graph, symbol_name, &inference_options)
+            .or_else(|| {
+                // If not found, try to find state machines with this name
+                let machines = find_state_machines(call_graph, &inference_options);
+                let name_to_find = symbol_name.as_str();
+                machines.into_iter().find(|m| m.name.as_str() == name_to_find || m.entry_point.as_str() == name_to_find)
+            })
+    } else {
+        // Auto-detect: find first state machine
+        let machines = find_state_machines(call_graph, &inference_options);
+        machines.into_iter().next()
+    };
+
+    // Render the diagram
+    let (diagram, model_name, state_count, transition_count) = match model {
+        Some(ref model) => {
+            let diagram = match format.as_str() {
+                "plantuml" => render_state_machine_plantuml(model, &render_options),
+                _ => render_state_machine_mermaid(model, &render_options),
+            };
+            (diagram, model.name.clone(), model.states.len(), model.transitions.len())
+        }
+        None => {
+            // No state machine found, render empty diagram
+            let diagram = render_empty_state_machine(&title, &format);
+            (diagram, "Unknown".to_string(), 0, 0)
+        }
+    };
+
+    Ok(GenerateStateMachineOutput {
+        diagram,
+        format,
+        name: model_name,
+        state_count,
+        transition_count,
+    })
+}
+
+// =============================================================================
+// Activity Diagram Tools (T6.3)
+// =============================================================================
+
+/// Input for the `generate_activity_diagram` MCP tool
+#[derive(Debug, Clone, Deserialize)]
+pub struct GenerateActivityDiagramInput {
+    /// Function name to analyze
+    /// If not provided, auto-detects activities in the codebase
+    pub symbol_name: Option<String>,
+    /// Output format: "mermaid" (default), "plantuml"
+    pub format: Option<String>,
+    /// Title for the diagram
+    pub title: Option<String>,
+    /// Direction: "TB" (top-bottom, default) or "LR" (left-right)
+    pub direction: Option<String>,
+    /// Include loop detection (default: true)
+    pub include_loops: Option<bool>,
+}
+
+/// Output of the `generate_activity_diagram` MCP tool
+#[derive(Debug, Clone, Serialize)]
+pub struct GenerateActivityDiagramOutput {
+    /// The generated diagram source
+    pub diagram: String,
+    /// Output format used
+    pub format: String,
+    /// Name of the activity function
+    pub name: String,
+    /// Number of nodes in the diagram
+    pub node_count: usize,
+    /// Number of edges in the diagram
+    pub edge_count: usize,
+}
+
+/// Handle `generate_activity_diagram` — activity/flow diagram
+pub fn handle_generate_activity_diagram(
+    input: GenerateActivityDiagramInput,
+    call_graph: &CallGraph,
+) -> anyhow::Result<GenerateActivityDiagramOutput> {
+    let format = input.format.unwrap_or_else(|| "mermaid".to_string());
+    let title = input.title.unwrap_or_else(|| "Activity Diagram".to_string());
+
+    // Build inference options
+    let inference_options = ActivityInferenceOptions {
+        min_actions: 2,
+        include_loops: input.include_loops.unwrap_or(true),
+        title: title.clone(),
+    };
+
+    // Build render options
+    let render_options = ActivityRenderOptions {
+        show_ids: false,
+        title: title.clone(),
+        direction: input.direction.unwrap_or_else(|| "TB".to_string()),
+        show_guards: true,
+    };
+
+    // Try to find activity
+    let model = if let Some(ref symbol_name) = input.symbol_name {
+        // Try to infer from specific function
+        infer_activity_from_function(call_graph, symbol_name, &inference_options)
+            .or_else(|| {
+                // Try to find activities with this name
+                let activities = find_activities(call_graph, &inference_options);
+                let name_to_find = symbol_name.as_str();
+                activities.into_iter().find(|a| a.entry_point.as_str() == name_to_find)
+            })
+    } else {
+        // Auto-detect: find first activity
+        let activities = find_activities(call_graph, &inference_options);
+        activities.into_iter().next()
+    };
+
+    // Render the diagram
+    let (diagram, model_name, node_count, edge_count) = match model {
+        Some(ref model) => {
+            let diagram = match format.as_str() {
+                "plantuml" => render_activity_plantuml(model, &render_options),
+                _ => render_activity_mermaid(model, &render_options),
+            };
+            (diagram, model.entry_point.clone(), model.nodes.len(), model.edges.len())
+        }
+        None => {
+            // No activity found, render empty diagram
+            let diagram = render_empty_activity(&title, &format);
+            (diagram, "Unknown".to_string(), 0, 0)
+        }
+    };
+
+    Ok(GenerateActivityDiagramOutput {
+        diagram,
+        format,
+        name: model_name,
+        node_count,
+        edge_count,
+    })
+}
+
+// =============================================================================
+// AI Summarization Tools (T6.6)
+// =============================================================================
+
+use crate::summarization::{
+    summarize_workspace, SummaryStyle as DiagramSummaryStyle,
+    DiagramSummary as SummarizedDiagram, DiagramStatistics, ArchitectureRisk, RiskSeverity,
+};
+
+/// Input for the `summarize_diagram` MCP tool
+#[derive(Debug, Clone, Deserialize)]
+pub struct SummarizeDiagramInput {
+    /// C4 Workspace as JSON string
+    pub workspace_json: String,
+    /// Summary style: "executive", "technical", or "risk"
+    pub style: Option<String>,
+}
+
+/// Output of the `summarize_diagram` MCP tool
+#[derive(Debug, Clone, Serialize)]
+pub struct SummarizeDiagramOutput {
+    /// Title of the summary
+    pub title: String,
+    /// The summary text
+    pub text: String,
+    /// Style used
+    pub style: String,
+    /// Key highlights
+    pub highlights: Vec<String>,
+    /// Risk count by severity (only for risk assessment)
+    pub risk_counts: Option<RiskCounts>,
+    /// Diagram statistics
+    pub statistics: DiagramStatisticsDto,
+}
+
+/// Risk counts by severity
+#[derive(Debug, Clone, Serialize)]
+pub struct RiskCounts {
+    pub critical: usize,
+    pub high: usize,
+    pub medium: usize,
+    pub low: usize,
+}
+
+/// DTO for diagram statistics
+#[derive(Debug, Clone, Serialize)]
+pub struct DiagramStatisticsDto {
+    pub system_count: usize,
+    pub container_count: usize,
+    pub component_count: usize,
+    pub relationship_count: usize,
+    pub person_count: usize,
+    pub technologies: Vec<String>,
+}
+
+impl From<DiagramStatistics> for DiagramStatisticsDto {
+    fn from(stats: DiagramStatistics) -> Self {
+        Self {
+            system_count: stats.system_count,
+            container_count: stats.container_count,
+            component_count: stats.component_count,
+            relationship_count: stats.relationship_count,
+            person_count: stats.person_count,
+            technologies: stats.technologies,
+        }
+    }
+}
+
+/// Handle `summarize_diagram` — generate AI summary of a diagram
+pub fn handle_summarize_diagram(
+    input: SummarizeDiagramInput,
+) -> anyhow::Result<SummarizeDiagramOutput> {
+    // Parse style
+    let style = match input.style.as_deref().unwrap_or("technical") {
+        "executive" => DiagramSummaryStyle::Executive,
+        "risk" | "risk_assessment" => DiagramSummaryStyle::RiskAssessment,
+        _ => DiagramSummaryStyle::Technical,
+    };
+
+    // Parse workspace
+    let workspace: crate::model::workspace::C4Workspace =
+        serde_json::from_str(&input.workspace_json)
+            .map_err(|e| anyhow::anyhow!("Failed to parse workspace JSON: {}", e))?;
+
+    // Generate summary
+    let summary = summarize_workspace(&workspace, style);
+
+    // Build risk counts if risk assessment
+    let risk_counts = if style == DiagramSummaryStyle::RiskAssessment {
+        Some(RiskCounts {
+            critical: summary.risks.iter().filter(|r| r.severity == RiskSeverity::Critical).count(),
+            high: summary.risks.iter().filter(|r| r.severity == RiskSeverity::High).count(),
+            medium: summary.risks.iter().filter(|r| r.severity == RiskSeverity::Medium).count(),
+            low: summary.risks.iter().filter(|r| r.severity == RiskSeverity::Low).count(),
+        })
+    } else {
+        None
+    };
+
+    Ok(SummarizeDiagramOutput {
+        title: summary.title,
+        text: summary.text,
+        style: format!("{:?}", style),
+        highlights: summary.highlights,
+        risk_counts,
+        statistics: summary.statistics.into(),
+    })
+}
+
+// =============================================================================
+// Multi-Language Workspace Tools (T6.5)
+// =============================================================================
+
+use crate::inference::multi_lang_engine::MultiLangEngine;
+
+/// Input for the `generate_multi_lang_workspace` MCP tool
+#[derive(Debug, Clone, Deserialize)]
+pub struct GenerateMultiLangWorkspaceInput {
+    /// Project directory path (default: current directory)
+    pub directory: Option<String>,
+    /// Output format: "mermaid" (default), "plantuml", "structurizr"
+    pub format: Option<String>,
+    /// Whether to include code details (default: false)
+    pub include_code: Option<bool>,
+}
+
+/// Output of the `generate_multi_lang_workspace` MCP tool
+#[derive(Debug, Clone, Serialize)]
+pub struct GenerateMultiLangWorkspaceOutput {
+    /// The generated diagram source
+    pub diagram: String,
+    /// Output format used
+    pub format: String,
+    /// Detected languages
+    pub languages: Vec<String>,
+    /// Number of containers in the workspace
+    pub container_count: usize,
+    /// Number of relationships in the workspace
+    pub relationship_count: usize,
+}
+
+/// Handle `generate_multi_lang_workspace` — multi-language C4 workspace
+pub fn handle_generate_multi_lang_workspace(
+    input: GenerateMultiLangWorkspaceInput,
+    project_dir: &std::path::Path,
+) -> anyhow::Result<GenerateMultiLangWorkspaceOutput> {
+    let format = input.format.unwrap_or_else(|| "mermaid".to_string());
+
+    // Create multi-language engine
+    let mut engine = MultiLangEngine::new();
+
+    // Detect languages
+    let detected_languages = engine.detect_languages(project_dir);
+    let language_names: Vec<String> = detected_languages
+        .iter()
+        .map(|l| match l {
+            crate::inference::multi_lang_engine::Language::Rust => "Rust",
+            crate::inference::multi_lang_engine::Language::TypeScript => "TypeScript",
+            crate::inference::multi_lang_engine::Language::JavaScript => "JavaScript",
+            crate::inference::multi_lang_engine::Language::Python => "Python",
+            crate::inference::multi_lang_engine::Language::Go => "Go",
+            crate::inference::multi_lang_engine::Language::Unknown => "Unknown",
+        })
+        .map(String::from)
+        .collect();
+
+    // Build workspace
+    let workspace = engine.build_workspace(project_dir);
+
+    let container_count = workspace.model.systems.iter()
+        .map(|s| s.containers.len())
+        .sum();
+
+    let relationship_count = workspace.model.relationships.len();
+
+    // Render the workspace
+    let diagram = match format.as_str() {
+        "structurizr" => {
+            use crate::render::structurizr_dsl::render_structurizr_dsl;
+            let options = crate::render::structurizr_dsl::StructurizrDslOptions::default();
+            render_structurizr_dsl(&workspace, &options)
+        }
+        "plantuml" => {
+            use crate::render::plantuml::{render_plantuml_c4, PlantUmlOptions, PlantUmlViewType};
+            let options = PlantUmlOptions::default();
+            render_plantuml_c4(&workspace, PlantUmlViewType::SystemContext, &options)
+        }
+        _ => {
+            // Default to Mermaid
+            render_c4_context(&workspace)
+        }
+    };
+
+    Ok(GenerateMultiLangWorkspaceOutput {
+        diagram,
+        format,
+        languages: language_names,
+        container_count,
+        relationship_count,
+    })
+}
+
+// =============================================================================
+// Diagram Diff Tools (T6.7)
+// =============================================================================
+
+use crate::diff::{
+    diff_workspaces, render_diff_mermaid, WorkspaceDiff, DiffSummary,
+    ContainerDiff, RelationshipDiff,
+};
+
+/// Input for the `diff_diagrams` MCP tool
+#[derive(Debug, Clone, Deserialize)]
+pub struct DiffDiagramsInput {
+    /// First workspace as JSON string
+    pub workspace_a_json: String,
+    /// Second workspace as JSON string
+    pub workspace_b_json: String,
+    /// Output format: "mermaid" (default), "mermaid_state", "mermaid_class", "json"
+    pub format: Option<String>,
+}
+
+/// Output of the `diff_diagrams` MCP tool
+#[derive(Debug, Clone, Serialize)]
+pub struct DiffDiagramsOutput {
+    /// The diff diagram source (Mermaid) or JSON
+    pub diff_output: String,
+    /// Output format used
+    pub format: String,
+    /// Summary of changes
+    pub summary: DiffSummaryDto,
+    /// Detailed container diffs
+    pub containers_added: Vec<ContainerSummaryDto>,
+    pub containers_removed: Vec<ContainerSummaryDto>,
+    pub containers_modified: Vec<ContainerDiffDto>,
+    pub relationships_added_count: usize,
+    pub relationships_removed_count: usize,
+}
+
+/// DTO for diff summary
+#[derive(Debug, Clone, Serialize)]
+pub struct DiffSummaryDto {
+    pub systems_added: usize,
+    pub systems_removed: usize,
+    pub containers_added: usize,
+    pub containers_removed: usize,
+    pub containers_modified: usize,
+    pub relationships_added: usize,
+    pub relationships_removed: usize,
+    pub total_changes: usize,
+}
+
+impl From<&DiffSummary> for DiffSummaryDto {
+    fn from(summary: &DiffSummary) -> Self {
+        Self {
+            systems_added: summary.systems_added,
+            systems_removed: summary.systems_removed,
+            containers_added: summary.containers_added,
+            containers_removed: summary.containers_removed,
+            containers_modified: summary.containers_modified,
+            relationships_added: summary.relationships_added,
+            relationships_removed: summary.relationships_removed,
+            total_changes: summary.total_changes,
+        }
+    }
+}
+
+/// DTO for container summary
+#[derive(Debug, Clone, Serialize)]
+pub struct ContainerSummaryDto {
+    pub id: String,
+    pub name: String,
+    pub technology: String,
+    pub description: String,
+}
+
+/// DTO for container diff
+#[derive(Debug, Clone, Serialize)]
+pub struct ContainerDiffDto {
+    pub id: String,
+    pub name_before: String,
+    pub name_after: String,
+    pub technology_before: String,
+    pub technology_after: String,
+    pub description_before: String,
+    pub description_after: String,
+}
+
+/// Handle `diff_diagrams` — compare two diagrams
+pub fn handle_diff_diagrams(
+    input: DiffDiagramsInput,
+) -> anyhow::Result<DiffDiagramsOutput> {
+    // Parse workspaces
+    let workspace_a: crate::model::workspace::C4Workspace =
+        serde_json::from_str(&input.workspace_a_json)
+            .map_err(|e| anyhow::anyhow!("Failed to parse workspace A: {}", e))?;
+
+    let workspace_b: crate::model::workspace::C4Workspace =
+        serde_json::from_str(&input.workspace_b_json)
+            .map_err(|e| anyhow::anyhow!("Failed to parse workspace B: {}", e))?;
+
+    // Compute diff
+    let diff = diff_workspaces(&workspace_a, &workspace_b);
+
+    // Format output
+    let format = input.format.unwrap_or_else(|| "mermaid".to_string());
+
+    let diff_output = if format == "json" {
+        serde_json::to_string_pretty(&diff)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize diff: {}", e))?
+    } else {
+        render_diff_mermaid(&diff, &format)
+    };
+
+    // Build container dtos
+    let containers_added: Vec<ContainerSummaryDto> = diff
+        .containers_added
+        .iter()
+        .map(|c| ContainerSummaryDto {
+            id: c.id.as_str().to_string(),
+            name: c.name.clone(),
+            technology: c.technology.clone(),
+            description: c.description.clone(),
+        })
+        .collect();
+
+    let containers_removed: Vec<ContainerSummaryDto> = diff
+        .containers_removed
+        .iter()
+        .map(|c| ContainerSummaryDto {
+            id: c.id.as_str().to_string(),
+            name: c.name.clone(),
+            technology: c.technology.clone(),
+            description: c.description.clone(),
+        })
+        .collect();
+
+    let containers_modified: Vec<ContainerDiffDto> = diff
+        .containers_modified
+        .iter()
+        .map(|c| ContainerDiffDto {
+            id: c.id.clone(),
+            name_before: get_modified_value(&c.name_diff),
+            name_after: get_modified_value(&c.name_diff),
+            technology_before: get_modified_value(&c.technology_diff),
+            technology_after: get_modified_value(&c.technology_diff),
+            description_before: get_modified_value(&c.description_diff),
+            description_after: get_modified_value(&c.description_diff),
+        })
+        .collect();
+
+    Ok(DiffDiagramsOutput {
+        diff_output,
+        format: format.clone(),
+        summary: (&diff.summary).into(),
+        containers_added,
+        containers_removed,
+        containers_modified,
+        relationships_added_count: diff.summary.relationships_added,
+        relationships_removed_count: diff.summary.relationships_removed,
+    })
+}
+
+fn get_modified_value<T: Clone + PartialEq>(diff: &crate::diff::ElementDiff<T>) -> String
+where
+    T: std::fmt::Display,
+{
+    match diff {
+        crate::diff::ElementDiff::Unchanged(v) => format!("{}", v),
+        crate::diff::ElementDiff::Modified { after, .. } => format!("{}", after),
+        crate::diff::ElementDiff::Added(v) => format!("+{}", v),
+        crate::diff::ElementDiff::Removed(v) => format!("-{}", v),
+    }
+}
+
 #[cfg(test)]
 mod deployment_er_tests {
     use super::*;
@@ -1206,5 +1923,58 @@ mod deployment_er_tests {
         let result = handle_generate_er_diagram(input, temp_dir.path());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Unsupported format"));
+    }
+
+    #[test]
+    fn test_generate_multi_lang_workspace() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a mixed workspace with Rust and TypeScript
+        std::fs::write(
+            temp_dir.path().join("Cargo.toml"),
+            "[package]\nname = \"backend\"\nversion = \"0.1.0\"",
+        )
+        .unwrap();
+
+        std::fs::write(
+            temp_dir.path().join("package.json"),
+            r#"{"name": "frontend", "dependencies": {"react": "^18.0.0"}}"#,
+        )
+        .unwrap();
+
+        let input = GenerateMultiLangWorkspaceInput {
+            directory: Some(temp_dir.path().to_string_lossy().to_string()),
+            format: Some("mermaid".to_string()),
+            include_code: Some(false),
+        };
+
+        let result = handle_generate_multi_lang_workspace(input, temp_dir.path()).unwrap();
+        assert_eq!(result.format, "mermaid");
+        assert!(result.languages.contains(&"Rust".to_string()));
+        assert!(result.languages.contains(&"JavaScript".to_string()));
+        assert!(result.container_count >= 2);
+    }
+
+    #[test]
+    fn test_generate_multi_lang_workspace_single_language() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a Rust-only workspace
+        std::fs::write(
+            temp_dir.path().join("Cargo.toml"),
+            "[package]\nname = \"backend\"\nversion = \"0.1.0\"",
+        )
+        .unwrap();
+
+        let input = GenerateMultiLangWorkspaceInput {
+            directory: Some(temp_dir.path().to_string_lossy().to_string()),
+            format: Some("mermaid".to_string()),
+            include_code: Some(false),
+        };
+
+        let result = handle_generate_multi_lang_workspace(input, temp_dir.path()).unwrap();
+        assert_eq!(result.format, "mermaid");
+        assert!(result.languages.contains(&"Rust".to_string()));
+        assert_eq!(result.languages.len(), 1);
     }
 }

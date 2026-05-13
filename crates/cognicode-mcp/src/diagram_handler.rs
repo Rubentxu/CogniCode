@@ -7,7 +7,9 @@
 use cognicode_core::interface::mcp::CogniCodeHandler;
 use cognicode_diagram::mcp::tools::{
     GenerateC4CodeInput, GenerateC4ContainersInput, GenerateC4ComponentsInput,
+    GenerateStateMachineInput, GenerateActivityDiagramInput,
     handle_generate_c4_code, handle_generate_c4_containers, handle_generate_c4_components,
+    handle_generate_state_machine, handle_generate_activity_diagram,
 };
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
@@ -144,6 +146,72 @@ impl ServerHandler for DiagramAwareHandler {
                 }).as_object().cloned().unwrap()),
             ));
 
+            result.tools.push(Tool::new(
+                "generate_state_machine",
+                "Generate State Machine diagrams from code analysis. Detects state machines from enums with state patterns (State*, Status*, Mode*) or structs with state fields, then renders transitions as a state diagram.",
+                Arc::new(serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "symbol_name": {
+                            "type": "string",
+                            "description": "Symbol name to analyze (enum or struct with state pattern). If not provided, auto-detects state machines."
+                        },
+                        "format": {
+                            "type": "string",
+                            "description": "Output format: 'mermaid' (default), 'plantuml'"
+                        },
+                        "show_actions": {
+                            "type": "boolean",
+                            "description": "Show entry/exit actions (default: true)"
+                        },
+                        "show_guards": {
+                            "type": "boolean",
+                            "description": "Show guards on transitions (default: true)"
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Title for the diagram"
+                        },
+                        "direction": {
+                            "type": "string",
+                            "description": "Diagram direction: 'LR' (left-right, default) or 'TB' (top-bottom)"
+                        }
+                    },
+                    "required": []
+                }).as_object().cloned().unwrap()),
+            ));
+
+            result.tools.push(Tool::new(
+                "generate_activity_diagram",
+                "Generate Activity/Flow diagrams from code analysis. Detects control flow patterns (if/else, loops, fork/join) from function analysis and renders them as an activity diagram.",
+                Arc::new(serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "symbol_name": {
+                            "type": "string",
+                            "description": "Function name to analyze. If not provided, auto-detects activities."
+                        },
+                        "format": {
+                            "type": "string",
+                            "description": "Output format: 'mermaid' (default), 'plantuml'"
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Title for the diagram"
+                        },
+                        "direction": {
+                            "type": "string",
+                            "description": "Diagram direction: 'TB' (top-bottom, default) or 'LR' (left-right)"
+                        },
+                        "include_loops": {
+                            "type": "boolean",
+                            "description": "Include loop detection (default: true)"
+                        }
+                    },
+                    "required": []
+                }).as_object().cloned().unwrap()),
+            ));
+
             Ok(result)
         }
     }
@@ -177,6 +245,22 @@ impl ServerHandler for DiagramAwareHandler {
                 "generate_c4_components" => {
                     let arguments = request.arguments.unwrap_or_default();
                     let result = self.handle_generate_c4_components(serde_json::Value::Object(arguments));
+                    match result {
+                        Ok(output) => Ok(CallToolResult::success(vec![Content::text(output)])),
+                        Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+                    }
+                }
+                "generate_state_machine" => {
+                    let arguments = request.arguments.unwrap_or_default();
+                    let result = self.handle_generate_state_machine(serde_json::Value::Object(arguments));
+                    match result {
+                        Ok(output) => Ok(CallToolResult::success(vec![Content::text(output)])),
+                        Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+                    }
+                }
+                "generate_activity_diagram" => {
+                    let arguments = request.arguments.unwrap_or_default();
+                    let result = self.handle_generate_activity_diagram(serde_json::Value::Object(arguments));
                     match result {
                         Ok(output) => Ok(CallToolResult::success(vec![Content::text(output)])),
                         Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
@@ -226,6 +310,20 @@ impl DiagramAwareHandler {
         let input: GenerateC4ComponentsInput = serde_json::from_value(arguments)?;
         let call_graph = self.inner.get_call_graph()?;
         let output = handle_generate_c4_components(input, &call_graph)?;
+        Ok(serde_json::to_string(&output)?)
+    }
+
+    fn handle_generate_state_machine(&self, arguments: serde_json::Value) -> anyhow::Result<String> {
+        let input: GenerateStateMachineInput = serde_json::from_value(arguments)?;
+        let call_graph = self.inner.get_call_graph()?;
+        let output = handle_generate_state_machine(input, &call_graph)?;
+        Ok(serde_json::to_string(&output)?)
+    }
+
+    fn handle_generate_activity_diagram(&self, arguments: serde_json::Value) -> anyhow::Result<String> {
+        let input: GenerateActivityDiagramInput = serde_json::from_value(arguments)?;
+        let call_graph = self.inner.get_call_graph()?;
+        let output = handle_generate_activity_diagram(input, &call_graph)?;
         Ok(serde_json::to_string(&output)?)
     }
 }

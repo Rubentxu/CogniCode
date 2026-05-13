@@ -1,0 +1,12 @@
+[package]
+name = "my-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "my-cli"
+path = "src/main.rs"
+
+[dependencies]
+crate-lib-a = { path = "../crate-lib-a" }
+crate-lib-b = { path = "../crate-lib-b" }

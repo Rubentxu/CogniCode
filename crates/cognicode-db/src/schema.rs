@@ -174,6 +174,23 @@ pub fn initialize_schema(db: &Connection) {
         );
         CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks(status);
         CREATE INDEX IF NOT EXISTS idx_agent_tasks_priority ON agent_tasks(priority);
+
+        -- Diagram Snapshots (Phase 7)
+        CREATE TABLE IF NOT EXISTS diagram_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_path TEXT NOT NULL,
+            diagram_type TEXT NOT NULL,
+            level TEXT,
+            entry_symbol TEXT,
+            mermaid_code TEXT NOT NULL,
+            element_count INTEGER NOT NULL DEFAULT 0,
+            relationship_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            expires_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_diagram_snapshots_project ON diagram_snapshots(project_path);
+        CREATE INDEX IF NOT EXISTS idx_diagram_snapshots_type ON diagram_snapshots(diagram_type);
+        CREATE INDEX IF NOT EXISTS idx_diagram_snapshots_created ON diagram_snapshots(created_at);
     ").expect("Failed to initialize schema");
 }
 

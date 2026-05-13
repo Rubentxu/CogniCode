@@ -1357,10 +1357,10 @@ fn test_reverse_engineer_c4_writes_files() {
         );
 
         let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        // Should have correct extensions: .mmd, .puml, .dsl
+        // Should have correct extensions: .mmd, .puml, .dsl, .d2
         assert!(
-            extension == "mmd" || extension == "puml" || extension == "dsl",
-            "File {} should have .mmd, .puml, or .dsl extension, got .{}",
+            extension == "mmd" || extension == "puml" || extension == "dsl" || extension == "d2",
+            "File {} should have .mmd, .puml, .dsl, or .d2 extension, got .{}",
             file,
             extension
         );

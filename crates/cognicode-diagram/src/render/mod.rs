@@ -43,6 +43,7 @@
 //! let mermaid = render_er_mermaid(&model);
 //! ```
 
+pub mod activity;
 pub mod d2;
 pub mod deployment;
 pub mod er;
@@ -50,15 +51,27 @@ pub mod mermaid;
 pub mod mermaid_c4;
 pub mod plantuml;
 pub mod sequence;
+pub mod state_machine;
 pub mod structurizr_dsl;
 pub mod svg;
 
+pub use activity::{
+    render_activity_mermaid, render_activity_plantuml, render_empty_activity,
+    ActivityRenderOptions,
+};
 pub use d2::{render_d2, D2Options, D2Theme, D2Direction};
 pub use deployment::{render_deployment_mermaid, render_deployment_d2};
 pub use er::{render_er_mermaid, render_er_d2};
 pub use mermaid::{render_class_diagram, MermaidOptions};
 pub use mermaid_c4::{render_component_diagram, render_container_diagram, C4MermaidOptions};
 pub use plantuml::{render_plantuml_c4, PlantUmlOptions, PlantUmlViewType};
-pub use sequence::{render_sequence_diagram, find_entry_points, SequenceDiagramOptions};
+pub use sequence::{
+    render_sequence_diagram, render_sequence_diagram_plantuml, render_sequence_diagram_svg,
+    find_entry_points, SequenceDiagramOptions, SequenceSvgOptions,
+};
+pub use state_machine::{
+    render_state_machine_mermaid, render_state_machine_plantuml,
+    render_empty_state_machine, StateMachineRenderOptions,
+};
 pub use structurizr_dsl::{render_structurizr_dsl, StructurizrDslOptions};
 pub use svg::{render_svg, render_svg_to_file, SvgTheme};
