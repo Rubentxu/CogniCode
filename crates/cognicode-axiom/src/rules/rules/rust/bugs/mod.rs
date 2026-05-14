@@ -22,3 +22,10 @@ pub use s7001_rule::S7001Rule;
 pub mod s1226_rule;
 
 pub mod s1141_rule;
+
+pub mod s1871_rule;
+
+pub mod concurrency;
+
+// Re-export concurrency rules for convenience
+pub use concurrency::{S1872aRule, S1872bRule, S1873Rule, S1874aRule, S1874bRule, S1875Rule, S1876Rule, S1877Rule, S1878Rule, S1879Rule};

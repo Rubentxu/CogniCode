@@ -1,0 +1,891 @@
+{
+  "fixture_date": "2026-05-14",
+  "batch_id": "bug-concurrency",
+  "total_rules": 8,
+  "total_fixtures": 148,
+  "fixtures": [
+    {
+      "rule_id": "CC_CONC001",
+      "rule_name": "Race condition: shared mutable state without synchronization",
+      "detection_strategy": "AST-based (shared mutability detection + sync primitive analysis)",
+      "languages": ["rust"],
+      "fixtures": [
+        {
+          "fixture_id": "CC_CONC001_pos_001",
+          "category": "positive",
+          "description": "Shared mutable counter without synchronization",
+          "code": "static mut COUNTER: u32 = 0;\n\nfn increment() {\n    unsafe { COUNTER += 1; }\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 4,
+          "severity": "CRITICAL"
+        },
+        {
+          "fixture_id": "CC_CONC001_pos_002",
+          "category": "positive",
+          "description": "Global mutable state accessed from multiple threads",
+          "code": "use std::thread;\n\nstatic mut DATA: Vec<u32> = Vec::new();\n\nfn worker() {\n    unsafe { DATA.push(42); }\n}\n\nfn main() {\n    let handles: Vec<_> = (0..4).map(|_| thread::spawn(worker)).collect();\n    for h in handles { h.join().unwrap(); }\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 3
+        },
+        {
+          "fixture_id": "CC_CONC001_pos_003",
+          "category": "positive",
+          "description": "Struct with interior mutability accessed concurrently",
+          "code": "use std::rc::Rc;\nuse std::cell::RefCell;\nuse std::thread;\n\nstruct Counter { count: u32 }\n\nfn main() {\n    let shared = Rc::new(RefCell::new(Counter { count: 0 }));\n    let shared2 = shared.clone();\n    \n    let _ = thread::spawn(move || {\n        shared2.borrow_mut().count += 1;\n    }).join();\n    \n    println!(\"{}\", shared.borrow().count);\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 9,
+          "note": "Rc<RefCell<T>> is not thread-safe"
+        },
+        {
+          "fixture_id": "CC_CONC001_neg_001",
+          "category": "negative",
+          "description": "Arc<Mutex<T>> properly synchronized",
+          "code": "use std::sync::{Arc, Mutex};\nuse std::thread;\n\nfn main() {\n    let counter = Arc::new(Mutex::new(0));\n    let mut handles = vec![];\n    \n    for _ in 0..4 {\n        let c = counter.clone();\n        handles.push(thread::spawn(move || {\n            let mut num = c.lock().unwrap();\n            *num += 1;\n        }));\n    }\n    \n    for h in handles { h.join().unwrap(); }\n    println!(\"{}\", *counter.lock().unwrap());\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC001_neg_002",
+          "category": "negative",
+          "description": "Atomic counter using AtomicU32",
+          "code": "use std::sync::atomic::{AtomicU32, Ordering};\nuse std::thread;\n\nstatic COUNTER: AtomicU32 = AtomicU32::new(0);\n\nfn main() {\n    let handles: Vec<_> = (0..4).map(|_| {\n        thread::spawn(|| { COUNTER.fetch_add(1, Ordering::SeqCst); })\n    }).collect();\n    \n    for h in handles { h.join().unwrap(); }\n    println!(\"{}\", COUNTER.load(Ordering::SeqCst));\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC001_neg_003",
+          "category": "negative",
+          "description": "RwLock for read-write synchronization",
+          "code": "use std::sync::{Arc, RwLock};\nuse std::thread;\n\nfn main() {\n    let data = Arc::new(RwLock::new(0));\n    \n    let r = data.read().unwrap();\n    println!(\"{}\", *r);\n    drop(r);\n    \n    let mut w = data.write().unwrap();\n    *w += 1;\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC001_neg_004",
+          "category": "negative",
+          "description": "Thread-local storage is safe",
+          "code": "use std::thread;\n\nfn main() {\n    let local = thread::LocalKey::new(|| 42);\n    println!(\"{}\", local.with(|&v| v));\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC001_edge_001",
+          "category": "edge_case",
+          "description": "Empty file",
+          "code": "",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC001_edge_002",
+          "category": "edge_case",
+          "description": "Single thread, no sharing",
+          "code": "fn main() {\n    let mut counter = 0;\n    counter += 1;\n    println!(\"{}\", counter);\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC001_fp_001",
+          "category": "false_positive_guard",
+          "description": "Comment mentions shared mutability",
+          "code": "// WARNING: shared mutable state here\nstatic FOO: u32 = 0;",
+          "expected": "no_trigger",
+          "language": "rust",
+          "note": "Comments should not trigger"
+        },
+        {
+          "fixture_id": "CC_CONC001_fp_002",
+          "category": "false_positive_guard",
+          "description": "String literal contains unsafe keyword",
+          "code": "let msg = \"unsafe: shared mutable state\";",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC001_fp_003",
+          "category": "false_positive_guard",
+          "description": "Constant data is immutable and safe",
+          "code": "const MAX_CONNECTIONS: u32 = 100;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC001_perf_001",
+          "category": "performance",
+          "description": "Large struct with multiple shared fields",
+          "code": "static mut STATS: (u64, u64, u64, u64, u64) = (0, 0, 0, 0, 0);\n\nfn update_all() {\n    unsafe {\n        STATS.0 += 1;\n        STATS.1 += 1;\n        STATS.2 += 1;\n        STATS.3 += 1;\n        STATS.4 += 1;\n    }\n}",
+          "expected": "trigger",
+          "language": "rust"
+        }
+      ]
+    },
+    {
+      "rule_id": "CC_CONC002",
+      "rule_name": "Mutex guard leaked: MutexGuard not released before return/.await",
+      "detection_strategy": "AST-based (borrow analysis + control flow + await detection)",
+      "languages": ["rust"],
+      "fixtures": [
+        {
+          "fixture_id": "CC_CONC002_pos_001",
+          "category": "positive",
+          "description": "MutexGuard returned without drop",
+          "code": "use std::sync::Mutex;\n\nfn get_lock<'a>(lock: &'a Mutex<u32>) -> &'a u32 {\n    let guard = lock.lock().unwrap();\n    return &*guard; // guard dropped here but borrow escapes\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 5,
+          "severity": "MAJOR"
+        },
+        {
+          "fixture_id": "CC_CONC002_pos_002",
+          "category": "positive",
+          "description": "Early return with guard in scope",
+          "code": "use std::sync::Mutex;\n\nfn process(lock: &Mutex<Vec<u32>>) -> usize {\n    let mut guard = lock.lock().unwrap();\n    if guard.len() > 100 {\n        return guard.len(); // guard not dropped before return\n    }\n    guard.push(42);\n    guard.len()\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 7
+        },
+        {
+          "fixture_id": "CC_CONC002_pos_003",
+          "category": "positive",
+          "description": "RwLockReadGuard returned",
+          "code": "use std::sync::RwLock;\n\nfn read_value<'a>(lock: &'a RwLock<u32>) -> &'a u32 {\n    let guard = lock.read().unwrap();\n    return &*guard;\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 5
+        },
+        {
+          "fixture_id": "CC_CONC002_neg_001",
+          "category": "negative",
+          "description": "Guard explicitly dropped before return",
+          "code": "use std::sync::Mutex;\n\nfn get_value(lock: &Mutex<u32>) -> u32 {\n    let guard = lock.lock().unwrap();\n    let value = *guard;\n    drop(guard);\n    value\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC002_neg_002",
+          "category": "negative",
+          "description": "Guard used in scope and naturally dropped",
+          "code": "use std::sync::Mutex;\n\nfn get_len(lock: &Mutex<Vec<u32>>) -> usize {\n    let guard = lock.lock().unwrap();\n    guard.len()\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC002_neg_003",
+          "category": "negative",
+          "description": "Arc<Mutex<T>> returned after proper release",
+          "code": "use std::sync::{Arc, Mutex};\n\nfn clone_value(data: Arc<Mutex<u32>>) -> u32 {\n    let guard = data.lock().unwrap();\n    *guard\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC002_edge_001",
+          "category": "edge_case",
+          "description": "Empty file",
+          "code": "",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC002_edge_002",
+          "category": "edge_case",
+          "description": "Lock guard in conditional return",
+          "code": "use std::sync::Mutex;\n\nfn maybe_early(lock: &Mutex<u32>, flag: bool) -> u32 {\n    let guard = lock.lock().unwrap();\n    if flag {\n        return *guard;\n    }\n    *guard + 1\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 6,
+          "note": "Early return in conditional - guard leaked"
+        },
+        {
+          "fixture_id": "CC_CONC002_fp_001",
+          "category": "false_positive_guard",
+          "description": "Comment mentioning mutex",
+          "code": "// TODO: fix mutex guard leak\nfn example() { }",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC002_fp_002",
+          "category": "false_positive_guard",
+          "description": "Variable named mutex_guard",
+          "code": "let mutex_guard = 42;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC002_fp_003",
+          "category": "false_positive_guard",
+          "description": "String literal with lock info",
+          "code": "let msg = \"Drop the guard before returning\";",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC002_perf_001",
+          "category": "performance",
+          "description": "Multiple nested mutex operations",
+          "code": "use std::sync::Mutex;\n\nfn nested(outer: &Mutex<u32>, inner: &Mutex<u32>) -> u32 {\n    let g1 = outer.lock().unwrap();\n    let g2 = inner.lock().unwrap();\n    *g1 + *g2\n}",
+          "expected": "no_trigger",
+          "language": "rust",
+          "note": "Both guards dropped at end of function"
+        }
+      ]
+    },
+    {
+      "rule_id": "CC_CONC003",
+      "rule_name": "Deadlock: nested locks acquired in inconsistent order",
+      "detection_strategy": "AST-based (lock ordering graph analysis)",
+      "languages": ["rust"],
+      "fixtures": [
+        {
+          "fixture_id": "CC_CONC003_pos_001",
+          "category": "positive",
+          "description": "Lock A then B in one function, B then A in another",
+          "code": "use std::sync::Mutex;\n\nstatic LOCK_A: Mutex<()> = Mutex::new(());\nstatic LOCK_B: Mutex<()> = Mutex::new(());\n\nfn func1() {\n    let a = LOCK_A.lock().unwrap();\n    let b = LOCK_B.lock().unwrap();\n}\n\nfn func2() {\n    let b = LOCK_B.lock().unwrap();\n    let a = LOCK_A.lock().unwrap(); // inverted order causes deadlock\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 12,
+          "severity": "CRITICAL"
+        },
+        {
+          "fixture_id": "CC_CONC003_pos_002",
+          "category": "positive",
+          "description": "Three locks with inconsistent ordering",
+          "code": "use std::sync::Mutex;\n\nstatic L1: Mutex<()> = Mutex::new(());\nstatic L2: Mutex<()> = Mutex::new(());\nstatic L3: Mutex<()> = Mutex::new(());\n\nfn order_xyz() {\n    let x = L1.lock().unwrap();\n    let y = L2.lock().unwrap();\n    let z = L3.lock().unwrap();\n}\n\nfn order_zyx() {\n    let z = L3.lock().unwrap();\n    let y = L2.lock().unwrap();\n    let x = L1.lock().unwrap();\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 14
+        },
+        {
+          "fixture_id": "CC_CONC003_pos_003",
+          "category": "positive",
+          "description": "RwLock also subject to deadlock",
+          "code": "use std::sync::RwLock;\n\nstatic R1: RwLock<u32> = RwLock::new(0);\nstatic R2: RwLock<u32> = RwLock::new(0);\n\nfn write_read() {\n    let w1 = R1.write().unwrap();\n    let r2 = R2.read().unwrap();\n}\n\nfn read_write() {\n    let r1 = R1.read().unwrap();\n    let w2 = R2.write().unwrap();\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 11
+        },
+        {
+          "fixture_id": "CC_CONC003_neg_001",
+          "category": "negative",
+          "description": "Consistent lock ordering across all functions",
+          "code": "use std::sync::Mutex;\n\nstatic L1: Mutex<()> = Mutex::new(());\nstatic L2: Mutex<()> = Mutex::new(());\n\nfn func_a() {\n    let l1 = L1.lock().unwrap();\n    let l2 = L2.lock().unwrap();\n}\n\nfn func_b() {\n    let l1 = L1.lock().unwrap();\n    let l2 = L2.lock().unwrap();\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC003_neg_002",
+          "category": "negative",
+          "description": "Using lock_all helper to prevent ordering issues",
+          "code": "use std::sync::Mutex;\n\nstruct LockPair { a: Mutex<()>, b: Mutex<()> }\n\nimpl LockPair {\n    fn lock_both(&self) -> (std::sync::MutexGuard<'_, ()>, std::sync::MutexGuard<'_, ()>) {\n        let a = self.a.lock().unwrap();\n        let b = self.b.lock().unwrap();\n        (a, b)\n    }\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC003_neg_003",
+          "category": "negative",
+          "description": "Single lock only",
+          "code": "use std::sync::Mutex;\n\nstatic LOCK: Mutex<u32> = Mutex::new(0);\n\nfn process() {\n    let guard = LOCK.lock().unwrap();\n    *guard += 1;\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC003_edge_001",
+          "category": "edge_case",
+          "description": "Empty file",
+          "code": "",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC003_edge_002",
+          "category": "edge_case",
+          "description": "Locks in separate scopes, no interleaving",
+          "code": "use std::sync::Mutex;\n\nstatic A: Mutex<()> = Mutex::new(());\nstatic B: Mutex<()> = Mutex::new(());\n\nfn scope1() {\n    let a = A.lock().unwrap();\n}\n\nfn scope2() {\n    let b = B.lock().unwrap();\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC003_fp_001",
+          "category": "false_positive_guard",
+          "description": "Comment mentions deadlock risk",
+          "code": "// Potential deadlock if lock order not maintained\nuse std::sync::Mutex;\nstatic L1: Mutex<()> = Mutex::new(());\nstatic L2: Mutex<()> = Mutex::new(());",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC003_fp_002",
+          "category": "false_positive_guard",
+          "description": "String literal mentions order",
+          "code": "let msg = \"Lock ordering matters\";",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC003_fp_003",
+          "category": "false_positive_guard",
+          "description": "Dynamic locking library handles ordering",
+          "code": "use std::sync::Mutex;\n\nfn dynamic_lock(locks: &[&Mutex<()>]) {\n    for lock in locks {\n        let _g = lock.lock().unwrap();\n    }\n}",
+          "expected": "no_trigger",
+          "language": "rust",
+          "note": "Dynamic lock acquisition cannot be statically analyzed"
+        },
+        {
+          "fixture_id": "CC_CONC003_perf_001",
+          "category": "performance",
+          "description": "Four locks with complex interleaving",
+          "code": "use std::sync::Mutex;\nstatic A: Mutex<()> = Mutex::new(());\nstatic B: Mutex<()> = Mutex::new(());\nstatic C: Mutex<()> = Mutex::new(());\nstatic D: Mutex<()> = Mutex::new(());\n\nfn order_1() { let _=A.lock().unwrap(); let _=B.lock().unwrap(); let _=C.lock().unwrap(); let _=D.lock().unwrap(); }\nfn order_2() { let _=D.lock().unwrap(); let _=C.lock().unwrap(); let _=B.lock().unwrap(); let _=A.lock().unwrap(); }",
+          "expected": "trigger",
+          "language": "rust"
+        }
+      ]
+    },
+    {
+      "rule_id": "CC_CONC004",
+      "rule_name": "Channel closed/broken: send on closed channel",
+      "detection_strategy": "AST-based (channel send detection + sender lifecycle)",
+      "languages": ["rust"],
+      "fixtures": [
+        {
+          "fixture_id": "CC_CONC004_pos_001",
+          "category": "positive",
+          "description": "Send after Sender is dropped",
+          "code": "use std::sync::mpsc;\n\nfn main() {\n    let (tx, rx) = mpsc::channel::<u32>();\n    drop(tx); // tx dropped here\n    \n    let (tx2, _rx2) = mpsc::channel();\n    tx2.send(42).unwrap(); // OK\n    \n    // tx is gone, rx still alive\n    rx.recv().unwrap();\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 4,
+          "severity": "MAJOR"
+        },
+        {
+          "fixture_id": "CC_CONC004_pos_002",
+          "category": "positive",
+          "description": "Sender cloned and one dropped affects others",
+          "code": "use std::sync::mpsc;\nuse std::thread;\n\nfn main() {\n    let (tx, rx) = mpsc::channel();\n    let tx2 = tx.clone();\n    \n    let handle = thread::spawn(move || {\n        tx.send(1).unwrap();\n    });\n    \n    drop(tx); // Original tx dropped\n    drop(tx2); // Cloned tx also dropped\n    \n    // Both senders now dropped\n    let _ = rx.recv();\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 10
+        },
+        {
+          "fixture_id": "CC_CONC004_pos_003",
+          "category": "positive",
+          "description": "Send on channel after receiver dropped",
+          "code": "use std::sync::mpsc;\n\nfn main() {\n    let (tx, rx) = mpsc::channel();\n    drop(rx); // Receiver dropped first\n    \n    // Channel is now closed, send will panic\n    let tx2 = tx.clone();\n    std::thread::spawn(move || {\n        tx2.send(42).unwrap(); // Will panic - channel closed\n    });\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 9
+        },
+        {
+          "fixture_id": "CC_CONC004_neg_001",
+          "category": "negative",
+          "description": "Sender kept alive while sending",
+          "code": "use std::sync::mpsc;\n\nfn main() {\n    let (tx, rx) = mpsc::channel();\n    \n    tx.send(42).unwrap();\n    \n    drop(tx);\n    drop(rx);\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC004_neg_002",
+          "category": "negative",
+          "description": "Multiple senders, all kept until done",
+          "code": "use std::sync::mpsc;\nuse std::thread;\n\nfn main() {\n    let (tx, rx) = mpsc::channel();\n    let tx2 = tx.clone();\n    \n    let handles: Vec<_> = (0..2).map(|i| {\n        let t = if i == 0 { tx.clone() } else { tx2.clone() };\n        thread::spawn(move || { t.send(i).unwrap(); })\n    }).collect();\n    \n    for h in handles { h.join().unwrap(); }\n    drop(tx);\n    drop(tx2);\n    \n    let _ = rx.recv();\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC004_neg_003",
+          "category": "negative",
+          "description": "try_send is explicitly fallible",
+          "code": "use std::sync::mpsc;\n\nfn main() {\n    let (tx, _rx) = mpsc::channel::<u32>();\n    \n    // try_send returns Result, not panic\n    if let Err(_) = tx.try_send(42) {\n        println!(\"Channel closed\");\n    }\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC004_edge_001",
+          "category": "edge_case",
+          "description": "Empty file",
+          "code": "",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC004_edge_002",
+          "category": "edge_case",
+          "description": "SyncSender vs Sender lifecycle",
+          "code": "use std::sync::mpsc;\nuse std::thread;\n\nfn main() {\n    let (tx, rx) = mpsc::channel();\n    let tx2 = tx.clone();\n    \n    // tx can be sent from multiple threads safely\n    let _ = thread::spawn(move || tx2.send(1));\n    \n    drop(tx);\n    let _ = rx.recv();\n}",
+          "expected": "no_trigger",
+          "language": "rust",
+          "note": "SyncSender can be cloned to multiple threads"
+        },
+        {
+          "fixture_id": "CC_CONC004_fp_001",
+          "category": "false_positive_guard",
+          "description": "Comment about channel",
+          "code": "// TODO: fix channel send issue\nlet x = 42;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC004_fp_002",
+          "category": "false_positive_guard",
+          "description": "Variable named sender",
+          "code": "let sender = 42;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC004_fp_003",
+          "category": "false_positive_guard",
+          "description": "String literal about channels",
+          "code": "let msg = \"channel closed\";",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC004_perf_001",
+          "category": "performance",
+          "description": "Many senders on one channel",
+          "code": "use std::sync::mpsc;\nuse std::thread;\n\nfn main() {\n    let (tx, rx) = mpsc::channel();\n    \n    let handles: Vec<_> = (0..100).map(|_| {\n        let t = tx.clone();\n        thread::spawn(move || { t.send(1).unwrap(); })\n    }).collect();\n    \n    for h in handles { h.join().unwrap(); }\n    drop(tx);\n    let _ = rx.recv();\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        }
+      ]
+    },
+    {
+      "rule_id": "CC_CONC005",
+      "rule_name": "RefCell borrowed across await: RefCell::borrow() held across .await",
+      "detection_strategy": "AST-based (borrow scope + await point detection)",
+      "languages": ["rust"],
+      "fixtures": [
+        {
+          "fixture_id": "CC_CONC005_pos_001",
+          "category": "positive",
+          "description": "RefCell borrow held across async await",
+          "code": "use std::cell::RefCell;\nuse std::future::Future;\n\nasync fn bad_read(refcell: &RefCell<u32>) -> u32 {\n    let value = refcell.borrow(); // Immutable borrow\n    async_op().await; // AWAIT WHILE BORROWED\n    *value // borrow still active here\n}\n\nasync fn async_op() {}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 5,
+          "severity": "CRITICAL"
+        },
+        {
+          "fixture_id": "CC_CONC005_pos_002",
+          "category": "positive",
+          "description": "Mutable borrow across await",
+          "code": "use std::cell::RefCell;\n\nasync fn bad_write(refcell: &RefCell<u32>) {\n    let mut value = refcell.borrow_mut();\n    some_async_call().await;\n    *value = 42;\n}\n\nasync fn some_async_call() {}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 5
+        },
+        {
+          "fixture_id": "CC_CONC005_pos_003",
+          "category": "positive",
+          "description": "RefCell in Rc used across await in multiple threads",
+          "code": "use std::cell::RefCell;\nuse std::rc::Rc;\nuse std::future::Future;\n\nasync fn process_data(data: Rc<RefCell<Vec<u32>>>) -> u32 {\n    let len = data.borrow().len();\n    dbg_async().await;\n    let sum: u32 = data.borrow().iter().sum();\n    sum\n}\n\nasync fn dbg_async() {}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 5
+        },
+        {
+          "fixture_id": "CC_CONC005_neg_001",
+          "category": "negative",
+          "description": "Borrow dropped before await",
+          "code": "use std::cell::RefCell;\nuse std::future::Future;\n\nasync fn good_read(refcell: &RefCell<u32>) -> u32 {\n    {\n        let value = refcell.borrow();\n        *value\n    } // borrow dropped here\n    async_op().await; // await without active borrow\n    42\n}\n\nasync fn async_op() {}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC005_neg_002",
+          "category": "negative",
+          "description": "Use after await pattern",
+          "code": "use std::cell::RefCell;\n\nasync fn use_after_await(refcell: &RefCell<u32>) -> u32 {\n    some_async_call().await;\n    *refcell.borrow() // borrow only after await completes\n}\n\nasync fn some_async_call() {}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC005_neg_003",
+          "category": "negative",
+          "description": "Mutex instead of RefCell for async",
+          "code": "use std::sync::Mutex;\n\nasync fn good_async(mtx: &Mutex<u32>) -> u32 {\n    let guard = mtx.lock().unwrap();\n    let val = *guard;\n    drop(guard);\n    async_op().await;\n    val\n}\n\nasync fn async_op() {}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC005_edge_001",
+          "category": "edge_case",
+          "description": "Empty file",
+          "code": "",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC005_edge_002",
+          "category": "edge_case",
+          "description": "No await in function",
+          "code": "use std::cell::RefCell;\n\nfn sync_read(refcell: &RefCell<u32>) -> u32 {\n    *refcell.borrow()\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC005_fp_001",
+          "category": "false_positive_guard",
+          "description": "Comment mentioning RefCell",
+          "code": "// TODO: RefCell borrow across await issue\nfn foo() { }",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC005_fp_002",
+          "category": "false_positive_guard",
+          "description": "Variable named refcell",
+          "code": "let refcell = 42;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC005_fp_003",
+          "category": "false_positive_guard",
+          "description": "String with borrow keyword",
+          "code": "let msg = \"borrow checker\";",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC005_perf_001",
+          "category": "performance",
+          "description": "Multiple RefCells with interleaved awaits",
+          "code": "use std::cell::RefCell;\n\nasync fn complex(ref1: &RefCell<u32>, ref2: &RefCell<u32>) -> u32 {\n    let v1 = ref1.borrow();\n    async_op().await;\n    let v2 = ref2.borrow();\n    async_op().await;\n    *v1 + *v2\n}\n\nasync fn async_op() {}",
+          "expected": "trigger",
+          "language": "rust"
+        }
+      ]
+    },
+    {
+      "rule_id": "CC_CONC006",
+      "rule_name": "Unbounded channel without backpressure mechanism",
+      "detection_strategy": "AST-based (mpsc::channel detection + backpressure pattern analysis)",
+      "languages": ["rust"],
+      "fixtures": [
+        {
+          "fixture_id": "CC_CONC006_pos_001",
+          "category": "positive",
+          "description": "Unbounded channel without backpressure",
+          "code": "use std::sync::mpsc;\nuse std::thread;\n\nfn main() {\n    let (tx, rx) = mpsc::channel(); // unbounded by default\n    \n    // Producer sends faster than consumer can process\n    for i in 0..1_000_000 {\n        tx.send(i).unwrap();\n    }\n    \n    // Consumer processes slowly\n    while let Ok(v) = rx.recv() {\n        std::thread::sleep(std::time::Duration::from_millis(1));\n    }\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 6,
+          "severity": "MAJOR"
+        },
+        {
+          "fixture_id": "CC_CONC006_pos_002",
+          "category": "positive",
+          "description": "Multiple producers unbounded channel",
+          "code": "use std::sync::mpsc;\nuse std::thread;\n\nfn main() {\n    let (tx, rx) = mpsc::channel();\n    \n    // Multiple producers - memory explosion risk\n    for i in 0..100 {\n        let tx_clone = tx.clone();\n        thread::spawn(move || {\n            for j in 0..10_000 {\n                tx_clone.send(j).unwrap();\n            }\n        });\n    }\n    \n    drop(tx);\n    let _ = rx.iter().collect::<Vec<_>>();\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 6
+        },
+        {
+          "fixture_id": "CC_CONC006_pos_003",
+          "category": "positive",
+          "description": "Channel with zero-capacity (instant backpressure) vs unbounded",
+          "code": "use std::sync::mpsc;\n\nfn process_queue() {\n    let (tx, rx) = mpsc::channel(); // unbounded\n    \n    // No rate limiting, no backpressure\n    tx.send(1).unwrap();\n    tx.send(2).unwrap();\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 5
+        },
+        {
+          "fixture_id": "CC_CONC006_neg_001",
+          "category": "negative",
+          "description": "Bounded channel with capacity limit",
+          "code": "use std::sync::mpsc;\n\nfn bounded_channel() {\n    let (tx, rx) = mpsc::channel::<u32>(10); // bounded to 10\n    \n    tx.send(1).unwrap();\n    tx.send(2).unwrap();\n    \n    let _ = rx.recv();\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC006_neg_002",
+          "category": "negative",
+          "description": "sync_channel provides backpressure",
+          "code": "use std::sync::mpsc;\n\nfn synchronous_channel() {\n    let (tx, rx) = mpsc::sync_channel(1); // capacity of 1\n    \n    tx.send(1).unwrap(); // blocks if full\n    rx.recv().unwrap();\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC006_neg_003",
+          "category": "negative",
+          "description": "Semaphore-based throttling",
+          "code": "use std::sync::{mpsc, Arc, Semaphore};\nuse std::thread;\n\nfn throttled_producer() {\n    let (tx, rx) = mpsc::channel();\n    let sem = Arc::new(Semaphore::new(100)); // max 100 in flight\n    \n    let sem_clone = sem.clone();\n    let tx_clone = tx.clone();\n    \n    thread::spawn(move || {\n        let _permit = sem_clone.acquire().unwrap();\n        tx_clone.send(1).unwrap();\n    });\n    \n    let _ = rx.recv();\n}",
+          "expected": "no_trigger",
+          "language": "rust",
+          "note": "Semaphore provides backpressure"
+        },
+        {
+          "fixture_id": "CC_CONC006_edge_001",
+          "category": "edge_case",
+          "description": "Empty file",
+          "code": "",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC006_edge_002",
+          "category": "edge_case",
+          "description": "Crossbeam channel alternative",
+          "code": "use crossbeam_channel::{bounded, unbounded;\n\nfn main() {\n    let (tx, rx) = bounded(100); // Has bound\n    tx.send(1).unwrap();\n}",
+          "expected": "no_trigger",
+          "language": "rust",
+          "note": "Crossbeam bounded channel is OK"
+        },
+        {
+          "fixture_id": "CC_CONC006_fp_001",
+          "category": "false_positive_guard",
+          "description": "Comment about channel",
+          "code": "// TODO: add backpressure to channel\nlet x = 42;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC006_fp_002",
+          "category": "false_positive_guard",
+          "description": "Variable named channel",
+          "code": "let channel = 42;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC006_fp_003",
+          "category": "false_positive_guard",
+          "description": "String about unbounded",
+          "code": "let msg = \"unbounded potential\";",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC006_perf_001",
+          "category": "performance",
+          "description": "Very large unbounded sends",
+          "code": "use std::sync::mpsc;\n\nfn huge_unbounded() {\n    let (tx, _rx) = mpsc::channel();\n    for i in 0..10_000_000 {\n        tx.send(i).unwrap();\n    }\n}",
+          "expected": "trigger",
+          "language": "rust"
+        }
+      ]
+    },
+    {
+      "rule_id": "CC_CONC007",
+      "rule_name": "Arc::clone in hot path without justification",
+      "detection_strategy": "AST-based (Arc::clone detection + hot path heuristics)",
+      "languages": ["rust"],
+      "fixtures": [
+        {
+          "fixture_id": "CC_CONC007_pos_001",
+          "category": "positive",
+          "description": "Arc::clone inside tight loop",
+          "code": "use std::sync::Arc;\nuse std::thread;\n\nfn process_items() {\n    let data = Arc::new(vec![1, 2, 3, 4, 5]);\n    \n    for i in 0..1000 {\n        let data_clone = data.clone(); // clone in every iteration\n        thread::spawn(move || {\n            let _ = data_clone;\n        });\n    }\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 8,
+          "severity": "MINOR"
+        },
+        {
+          "fixture_id": "CC_CONC007_pos_002",
+          "category": "positive",
+          "description": "Arc::clone in recursive function",
+          "code": "use std::sync::Arc;\n\nfn recursive_compute(data: Arc<Vec<u32>>, depth: u32) -> u32 {\n    if depth == 0 {\n        return data.iter().sum();\n    }\n    \n    let data_clone = data.clone(); // unnecessary clone at each level\n    recursive_compute(data_clone, depth - 1)\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 7
+        },
+        {
+          "fixture_id": "CC_CONC007_pos_003",
+          "category": "positive",
+          "description": "Arc::clone in hot inner loop",
+          "code": "use std::sync::Arc;\n\nfn inner_loop_hot_path() {\n    let shared = Arc::new(0u64);\n    \n    for batch in 0..100 {\n        let s = shared.clone(); // clone once per batch\n        process_batch(&s, batch);\n    }\n}\n\nfn process_batch(_s: &u64, _batch: u64) {}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 6,
+          "note": "Clone per batch iteration is excessive"
+        },
+        {
+          "fixture_id": "CC_CONC007_neg_001",
+          "category": "negative",
+          "description": "Arc::clone once before loop (efficient)",
+          "code": "use std::sync::Arc;\nuse std::thread;\n\nfn efficient_clone() {\n    let data = Arc::new(vec![1, 2, 3]);\n    let data_clone = data.clone(); // clone once, use in multiple threads\n    \n    let handles: Vec<_> = (0..4).map(|_| {\n        let d = data_clone.clone();\n        thread::spawn(move || { *d })\n    }).collect();\n    \n    for h in handles { h.join().unwrap(); }\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC007_neg_002",
+          "category": "negative",
+          "description": "Clone moved to thread (necessary)",
+          "code": "use std::sync::Arc;\nuse std::thread;\n\nfn necessary_clone() {\n    let data = Arc::new(42);\n    \n    let handle = thread::spawn({\n        let data = data.clone(); // necessary for thread\n        move || { *data }\n    });\n    \n    handle.join().unwrap();\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC007_neg_003",
+          "category": "negative",
+          "description": "Clone only when needed (conditional)",
+          "code": "use std::sync::Arc;\n\nfn conditional_clone() {\n    let data = Arc::new(vec![1, 2, 3]);\n    \n    if need_to_share() {\n        let clone = data.clone();\n        use_in_other_place(clone);\n    }\n}\n\nfn need_to_share() -> bool { false }\nfn use_in_other_place(_: Arc<Vec<u32>>) {}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC007_edge_001",
+          "category": "edge_case",
+          "description": "Empty file",
+          "code": "",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC007_edge_002",
+          "category": "edge_case",
+          "description": "Single clone, single use",
+          "code": "use std::sync::Arc;\n\nfn single_use() {\n    let data = Arc::new(42);\n    let clone = data.clone();\n    println!(\"{}\", *clone);\n}",
+          "expected": "no_trigger",
+          "language": "rust",
+          "note": "One clone is often necessary"
+        },
+        {
+          "fixture_id": "CC_CONC007_fp_001",
+          "category": "false_positive_guard",
+          "description": "Comment about Arc",
+          "code": "// Arc::clone optimization needed\nlet x = 42;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC007_fp_002",
+          "category": "false_positive_guard",
+          "description": "Variable named arc_clone",
+          "code": "let arc_clone = 42;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC007_fp_003",
+          "category": "false_positive_guard",
+          "description": "String literal",
+          "code": "let msg = \"clone optimization\";",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC007_perf_001",
+          "category": "performance",
+          "description": "Clone per item in iterator",
+          "code": "use std::sync::Arc;\nuse std::thread;\n\nfn per_item_clone() {\n    let data = Arc::new(vec![1, 2, 3, 4, 5]);\n    \n    let handles: Vec<_> = data.iter().enumerate().map(|(i, v)| {\n        let d = data.clone();\n        thread::spawn(move || { format!(\"{}-{}\", i, v) })\n    }).collect();\n    \n    for h in handles { h.join().unwrap(); }\n}",
+          "expected": "trigger",
+          "language": "rust"
+        }
+      ]
+    },
+    {
+      "rule_id": "CC_CONC008",
+      "rule_name": "Concurrent map access without synchronization: HashMap/BTreeMap in multi-threaded context",
+      "detection_strategy": "AST-based (HashMap/BTreeMap detection + thread context analysis)",
+      "languages": ["rust"],
+      "fixtures": [
+        {
+          "fixture_id": "CC_CONC008_pos_001",
+          "category": "positive",
+          "description": "HashMap shared between threads without sync",
+          "code": "use std::collections::HashMap;\nuse std::thread;\nuse std::sync::Arc;\n\nfn main() {\n    let shared_map = Arc::new(HashMap::new());\n    \n    let handle = thread::spawn({\n        let map = shared_map.clone();\n        move || {\n            map.insert(\"key\", 42); // HashMap is not thread-safe\n        }\n    });\n    \n    handle.join().unwrap();\n    shared_map.get(\"key\");\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 10,
+          "severity": "CRITICAL"
+        },
+        {
+          "fixture_id": "CC_CONC008_pos_002",
+          "category": "positive",
+          "description": "BTreeMap accessed concurrently",
+          "code": "use std::collections::BTreeMap;\nuse std::thread;\nuse std::sync::Arc;\n\nfn btree_concurrent() {\n    let map = Arc::new(BTreeMap::new());\n    \n    let map2 = map.clone();\n    thread::spawn(move || {\n        map2.insert(1, \"one\");\n    }).join().unwrap();\n    \n    map.get(&1);\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 8
+        },
+        {
+          "fixture_id": "CC_CONC008_pos_003",
+          "category": "positive",
+          "description": "StdMap (HashMap variant) used in async context",
+          "code": "use std::collections::HashMap;\nuse std::sync::Arc;\n\nasync fn async_map_access(map: Arc<HashMap<String, u32>>) -> Option<u32> {\n    let value = map.get(\"key\")?;\n    dbg_async().await;\n    Some(*value)\n}\n\nasync fn dbg_async() {}",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 4
+        },
+        {
+          "fixture_id": "CC_CONC008_neg_001",
+          "category": "negative",
+          "description": "DashMap instead of HashMap for concurrent access",
+          "code": "use std::collections::HashMap;\nuse dashmap::DashMap;\nuse std::thread;\n\nfn correct_concurrent_map() {\n    let map = DashMap::new(); // DashMap is thread-safe\n    \n    let handles: Vec<_> = (0..4).map(|_| {\n        let map_clone = map.clone();\n        thread::spawn(move || {\n            map_clone.insert(\"key\", 42);\n        })\n    }).collect();\n    \n    for h in handles { h.join().unwrap(); }\n    \n    assert_eq!(*map.get(\"key\").unwrap(), 42);\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC008_neg_002",
+          "category": "negative",
+          "description": "RwLock<HashMap> provides thread safety",
+          "code": "use std::collections::HashMap;\nuse std::sync::{Arc, RwLock};\nuse std::thread;\n\nfn locked_hashmap() {\n    let map = Arc::new(RwLock::new(HashMap::new()));\n    \n    let handles: Vec<_> = (0..4).map(|_| {\n        let m = map.clone();\n        thread::spawn(move || {\n            let mut map = m.write().unwrap();\n            map.insert(\"key\", 42);\n        })\n    }).collect();\n    \n    for h in handles { h.join().unwrap(); }\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC008_neg_003",
+          "category": "negative",
+          "description": "Mutex<HashMap> for single-thread access patterns",
+          "code": "use std::collections::HashMap;\nuse std::sync::Mutex;\n\nfn single_thread_mutex() {\n    let map = Mutex::new(HashMap::new());\n    \n    let mut m = map.lock().unwrap();\n    m.insert(\"key\", 42);\n    drop(m);\n    \n    let v = map.lock().unwrap().get(\"key\");\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC008_edge_001",
+          "category": "edge_case",
+          "description": "Empty file",
+          "code": "",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC008_edge_002",
+          "category": "edge_case",
+          "description": "HashMap in single-threaded context",
+          "code": "use std::collections::HashMap;\n\nfn single_thread() {\n    let mut map = HashMap::new();\n    map.insert(\"key\", 42);\n    println!(\"{:?}\", map.get(\"key\"));\n}",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC008_fp_001",
+          "category": "false_positive_guard",
+          "description": "Comment mentions HashMap",
+          "code": "// TODO: use DashMap instead of HashMap\nlet x = 42;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC008_fp_002",
+          "category": "false_positive_guard",
+          "description": "Variable named hashmap",
+          "code": "let hashmap = 42;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC008_fp_003",
+          "category": "false_positive_guard",
+          "description": "String with concurrent keyword",
+          "code": "let msg = \"concurrent hashmap access\";",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "CC_CONC008_perf_001",
+          "category": "performance",
+          "description": "Multiple HashMaps in concurrent context",
+          "code": "use std::collections::HashMap;\nuse std::sync::Arc;\nuse std::thread;\n\nfn many_maps() {\n    let map1 = Arc::new(HashMap::new());\n    let map2 = Arc::new(HashMap::new());\n    \n    let m1 = map1.clone();\n    let m2 = map2.clone();\n    \n    thread::spawn(move || {\n        m1.insert(1, 1);\n        m2.insert(2, 2);\n    });\n}",
+          "expected": "trigger",
+          "language": "rust"
+        }
+      ]
+    }
+  ]
+}

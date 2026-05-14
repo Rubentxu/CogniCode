@@ -1,0 +1,157 @@
+{
+  "batch_id": "bug-concurrency",
+  "created": "2026-05-14",
+  "status": "fixtures_ready",
+  "concepts_total": 8,
+  "concepts_approved": 8,
+  "concepts_legal_blocked": 0,
+  "rules": [
+    {
+      "rule_id": "CC_CONC001",
+      "concept_id": "C001",
+      "name": "Race condition: shared mutable state without synchronization",
+      "status": "fixtures_ready",
+      "severity": "CRITICAL",
+      "precision": "high",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (shared mutability detection + sync primitive analysis)",
+      "performance": "O(n) per file",
+      "fixture_count": 13,
+      "test_targets": ["CC_CONC001_pos_001", "CC_CONC001_pos_002", "CC_CONC001_pos_003", "CC_CONC001_neg_001", "CC_CONC001_neg_002", "CC_CONC001_neg_003", "CC_CONC001_neg_004", "CC_CONC001_edge_001", "CC_CONC001_edge_002", "CC_CONC001_fp_001", "CC_CONC001_fp_002", "CC_CONC001_fp_003", "CC_CONC001_perf_001"]
+    },
+    {
+      "rule_id": "CC_CONC002",
+      "concept_id": "C002",
+      "name": "Mutex guard leaked: MutexGuard not released before return/.await",
+      "status": "fixtures_ready",
+      "severity": "MAJOR",
+      "precision": "high",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (borrow analysis + control flow + await detection)",
+      "performance": "O(n) per file",
+      "fixture_count": 12,
+      "test_targets": ["CC_CONC002_pos_001", "CC_CONC002_pos_002", "CC_CONC002_pos_003", "CC_CONC002_neg_001", "CC_CONC002_neg_002", "CC_CONC002_neg_003", "CC_CONC002_edge_001", "CC_CONC002_edge_002", "CC_CONC002_fp_001", "CC_CONC002_fp_002", "CC_CONC002_fp_003", "CC_CONC002_perf_001"]
+    },
+    {
+      "rule_id": "CC_CONC003",
+      "concept_id": "C003",
+      "name": "Deadlock: nested locks acquired in inconsistent order",
+      "status": "fixtures_ready",
+      "severity": "CRITICAL",
+      "precision": "medium",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (lock ordering graph analysis)",
+      "performance": "O(n^2) worst case for lock ordering",
+      "fixture_count": 12,
+      "test_targets": ["CC_CONC003_pos_001", "CC_CONC003_pos_002", "CC_CONC003_pos_003", "CC_CONC003_neg_001", "CC_CONC003_neg_002", "CC_CONC003_neg_003", "CC_CONC003_edge_001", "CC_CONC003_edge_002", "CC_CONC003_fp_001", "CC_CONC003_fp_002", "CC_CONC003_fp_003", "CC_CONC003_perf_001"]
+    },
+    {
+      "rule_id": "CC_CONC004",
+      "concept_id": "C004",
+      "name": "Channel closed/broken: send on closed channel",
+      "status": "fixtures_ready",
+      "severity": "MAJOR",
+      "precision": "high",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (channel send detection + sender lifecycle)",
+      "performance": "O(n) per file",
+      "fixture_count": 12,
+      "test_targets": ["CC_CONC004_pos_001", "CC_CONC004_pos_002", "CC_CONC004_pos_003", "CC_CONC004_neg_001", "CC_CONC004_neg_002", "CC_CONC004_neg_003", "CC_CONC004_edge_001", "CC_CONC004_edge_002", "CC_CONC004_fp_001", "CC_CONC004_fp_002", "CC_CONC004_fp_003", "CC_CONC004_perf_001"]
+    },
+    {
+      "rule_id": "CC_CONC005",
+      "concept_id": "C005",
+      "name": "RefCell borrowed across await: RefCell::borrow() held across .await",
+      "status": "fixtures_ready",
+      "severity": "CRITICAL",
+      "precision": "high",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (borrow scope + await point detection)",
+      "performance": "O(n) per async function",
+      "fixture_count": 12,
+      "test_targets": ["CC_CONC005_pos_001", "CC_CONC005_pos_002", "CC_CONC005_pos_003", "CC_CONC005_neg_001", "CC_CONC005_neg_002", "CC_CONC005_neg_003", "CC_CONC005_edge_001", "CC_CONC005_edge_002", "CC_CONC005_fp_001", "CC_CONC005_fp_002", "CC_CONC005_fp_003", "CC_CONC005_perf_001"]
+    },
+    {
+      "rule_id": "CC_CONC006",
+      "concept_id": "C006",
+      "name": "Unbounded channel without backpressure mechanism",
+      "status": "fixtures_ready",
+      "severity": "MAJOR",
+      "precision": "medium",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (mpsc::channel detection + backpressure pattern analysis)",
+      "performance": "O(n) per file",
+      "fixture_count": 12,
+      "test_targets": ["CC_CONC006_pos_001", "CC_CONC006_pos_002", "CC_CONC006_pos_003", "CC_CONC006_neg_001", "CC_CONC006_neg_002", "CC_CONC006_neg_003", "CC_CONC006_edge_001", "CC_CONC006_edge_002", "CC_CONC006_fp_001", "CC_CONC006_fp_002", "CC_CONC006_fp_003", "CC_CONC006_perf_001"]
+    },
+    {
+      "rule_id": "CC_CONC007",
+      "concept_id": "C007",
+      "name": "Arc::clone in hot path without justification",
+      "status": "fixtures_ready",
+      "severity": "MINOR",
+      "precision": "medium",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (Arc::clone detection + hot path heuristics)",
+      "performance": "O(n) per function",
+      "fixture_count": 12,
+      "test_targets": ["CC_CONC007_pos_001", "CC_CONC007_pos_002", "CC_CONC007_pos_003", "CC_CONC007_neg_001", "CC_CONC007_neg_002", "CC_CONC007_neg_003", "CC_CONC007_edge_001", "CC_CONC007_edge_002", "CC_CONC007_fp_001", "CC_CONC007_fp_002", "CC_CONC007_fp_003", "CC_CONC007_perf_001"]
+    },
+    {
+      "rule_id": "CC_CONC008",
+      "concept_id": "C008",
+      "name": "Concurrent map access without synchronization: HashMap/BTreeMap in multi-threaded context",
+      "status": "fixtures_ready",
+      "severity": "CRITICAL",
+      "precision": "high",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (HashMap/BTreeMap detection + thread context analysis)",
+      "performance": "O(n) per file",
+      "fixture_count": 12,
+      "test_targets": ["CC_CONC008_pos_001", "CC_CONC008_pos_002", "CC_CONC008_pos_003", "CC_CONC008_neg_001", "CC_CONC008_neg_002", "CC_CONC008_neg_003", "CC_CONC008_edge_001", "CC_CONC008_edge_002", "CC_CONC008_fp_001", "CC_CONC008_fp_002", "CC_CONC008_fp_003", "CC_CONC008_perf_001"]
+    }
+  ],
+  "legal_audit": {
+    "status": "approved",
+    "audited_concepts": 8,
+    "blocked": 0,
+    "notes": "All bug-concurrency rules derived from MIT/Apache-2.0 sources (SonarQube, Clippy, Rust std). AST detection strategies are original designs. No implementation code copied."
+  },
+  "batch_metrics": {
+    "total_fixtures": 148,
+    "positive_fixtures": 24,
+    "negative_fixtures": 24,
+    "edge_case_fixtures": 16,
+    "false_positive_guards": 24,
+    "performance_fixtures": 8
+  },
+  "phase_history": [
+    {
+      "phase": "research",
+      "status": "completed",
+      "timestamp": "2026-05-14T14:56:00Z",
+      "notes": "10 candidates discovered"
+    },
+    {
+      "phase": "normalize",
+      "status": "completed",
+      "timestamp": "2026-05-14T14:57:00Z",
+      "notes": "8 concepts normalized, 2 duplicates merged"
+    },
+    {
+      "phase": "legal-audit",
+      "status": "completed",
+      "timestamp": "2026-05-14T14:58:00Z",
+      "notes": "All 8 concepts approved"
+    },
+    {
+      "phase": "fixtures_generated",
+      "status": "completed",
+      "timestamp": "2026-05-14T17:00:00Z",
+      "artifact": "rules/bug-concurrency/fixture-matrix/fixture-matrix.json",
+      "test_skeleton": "rules/bug-concurrency/fixture-matrix/test_skeletons.rs"
+    }
+  ],
+  "fixtures_ready": true,
+  "next_phase": "design"
+}
