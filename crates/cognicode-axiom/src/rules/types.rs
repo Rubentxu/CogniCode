@@ -37,6 +37,43 @@ impl Severity {
             Severity::Blocker => "Blocker",
         }
     }
+
+    /// Map a CVSS 3.1 score (0.0-10.0) to Severity.
+    ///
+    /// CVSS 3.1 severity ratings:
+    /// - 0.0: None
+    /// - 0.1-3.9: Low (→ Minor)
+    /// - 4.0-6.9: Medium (→ Major)
+    /// - 7.0-8.9: High (→ Critical)
+    /// - 9.0-10.0: Critical (→ Blocker)
+    #[allow(dead_code)]
+    pub fn from_cvss(cvss: f64) -> Self {
+        if cvss >= 9.0 {
+            Severity::Blocker
+        } else if cvss >= 7.0 {
+            Severity::Critical
+        } else if cvss >= 4.0 {
+            Severity::Major
+        } else if cvss > 0.0 {
+            Severity::Minor
+        } else {
+            Severity::Info
+        }
+    }
+
+    /// Map CWE severity string to Severity.
+    ///
+    /// CWE uses: None, Low, Medium, High, Critical
+    #[allow(dead_code)]
+    pub fn from_cwe_severity(cwe_severity: &str) -> Self {
+        match cwe_severity.to_lowercase().as_str() {
+            "critical" => Severity::Blocker,
+            "high" => Severity::Critical,
+            "medium" | "moderate" => Severity::Major,
+            "low" => Severity::Minor,
+            "none" | _ => Severity::Info,
+        }
+    }
 }
 
 /// Category of issues detected by rules
@@ -105,6 +142,19 @@ impl<'a> QueryMatch<'a> {
     /// Iterate over all captures in this match.
     pub fn captures(&self) -> impl Iterator<Item = &QueryCapture> {
         self.captures.iter()
+    }
+
+    /// Extract text from a captured node by name.
+    /// Returns empty string if the capture doesn't exist.
+    ///
+    /// # Example
+    /// ```
+    /// let method_text = qm.text(ctx.source.as_bytes(), "method");
+    /// ```
+    pub fn text(&self, source: &[u8], name: &str) -> String {
+        self.get(name)
+            .and_then(|n| n.utf8_text(source).ok().map(|s| s.to_string()))
+            .unwrap_or_default()
     }
 }
 
@@ -252,6 +302,42 @@ impl Issue {
             bad_example: None,
             good_example: None,
         }
+    }
+
+    /// Create an issue from a QueryMatch, using a named capture as the issue node.
+    ///
+    /// This simplifies the common pattern:
+    /// ```ignore
+    /// let start = qm.get("call").map(|n| n.start_position()).unwrap_or_default();
+    /// issues.push(Issue::from_node(
+    ///     "RULE_ID", "message", Severity::Critical, Category::Vulnerability,
+    ///     ctx.file_path, start.row + 1, ctx,
+    ///     qm.get("call").unwrap_or_else(|| qm.get("x").unwrap()),
+    /// ));
+    /// ```
+    ///
+    /// Into:
+    /// ```ignore
+    /// issues.push(Issue::from_query_match(
+    ///     "RULE_ID", "message", Severity::Critical, Category::Vulnerability,
+    ///     ctx, qm, "call"
+    /// ));
+    /// ```
+    #[allow(dead_code)]
+    pub fn from_query_match(
+        rule_id: impl Into<String>,
+        message: impl Into<String>,
+        severity: Severity,
+        category: Category,
+        ctx: &RuleContext,
+        qm: &QueryMatch,
+        node_name: &str,
+    ) -> Self {
+        let node = qm.get(node_name)
+            .or_else(|| qm.captures().next().map(|c| c.node))
+            .expect("QueryMatch must have at least one capture");
+        let line = node.start_position().row + 1;
+        Self::from_node(rule_id, message, severity, category, ctx.file_path, line, ctx, node)
     }
 
     /// Extract identifier name from node or its children
@@ -1068,6 +1154,20 @@ impl<'a> RuleContext<'a> {
             count += 1;
         }
         count
+    }
+
+    /// Extract text from a tree-sitter node safely.
+    /// Returns empty string on failure.
+    #[allow(dead_code)]
+    pub fn node_text(&self, node: tree_sitter::Node) -> &'a str {
+        node.utf8_text(self.source.as_bytes()).unwrap_or("")
+    }
+
+    /// Extract text from an optional tree-sitter node safely.
+    /// Returns empty string if node is None or if extraction fails.
+    #[allow(dead_code)]
+    pub fn opt_text(&self, node: Option<tree_sitter::Node>) -> &'a str {
+        node.and_then(|n| n.utf8_text(self.source.as_bytes()).ok()).unwrap_or("")
     }
 
     /// Extract function/method name from its AST node.
