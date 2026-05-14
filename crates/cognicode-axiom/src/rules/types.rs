@@ -60,6 +60,54 @@ impl Category {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Tree-sitter Query Results
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A single capture from a tree-sitter query match, with its name and node.
+#[derive(Debug, Clone)]
+pub struct QueryCapture<'a> {
+    /// The capture name from the tree-sitter query (e.g., "method", "obj")
+    pub name: String,
+    /// The AST node that was captured
+    pub node: tree_sitter::Node<'a>,
+}
+
+/// A single match from a tree-sitter query, containing all captures.
+#[derive(Debug, Clone)]
+pub struct QueryMatch<'a> {
+    captures: Vec<QueryCapture<'a>>,
+    _phantom: std::marker::PhantomData<&'a ()>,
+}
+
+impl<'a> QueryMatch<'a> {
+    /// Get the first captured node with the given name.
+    /// Returns None if no capture with that name exists in this match.
+    pub fn get(&self, name: &str) -> Option<tree_sitter::Node<'a>> {
+        self.captures.iter().find(|c| c.name == name).map(|c| c.node)
+    }
+
+    /// Get all captured nodes with the given name.
+    pub fn get_all(&self, name: &str) -> Vec<tree_sitter::Node<'a>> {
+        self.captures.iter().filter(|c| c.name == name).map(|c| c.node).collect()
+    }
+
+    /// Returns the number of captures in this match.
+    pub fn len(&self) -> usize {
+        self.captures.len()
+    }
+
+    /// Returns true if this match has no captures.
+    pub fn is_empty(&self) -> bool {
+        self.captures.is_empty()
+    }
+
+    /// Iterate over all captures in this match.
+    pub fn captures(&self) -> impl Iterator<Item = &QueryCapture> {
+        self.captures.iter()
+    }
+}
+
 /// Remediation information for fixing an issue
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Remediation {
@@ -237,6 +285,18 @@ impl Issue {
     /// Set the remediation guidance
     pub fn with_remediation(mut self, remediation: Remediation) -> Self {
         self.remediation = Some(remediation);
+        self
+    }
+
+    /// Set the bad example code snippet
+    pub fn with_bad_example(mut self, code: impl Into<String>) -> Self {
+        self.bad_example = Some(code.into());
+        self
+    }
+
+    /// Set the good example code snippet
+    pub fn with_good_example(mut self, code: impl Into<String>) -> Self {
+        self.good_example = Some(code.into());
         self
     }
 }
@@ -933,6 +993,64 @@ impl<'a> RuleContext<'a> {
                 results.push(cap.node);
             }
         }
+        results
+    }
+
+    /// Execute a tree-sitter query and return all matches with their named captures.
+    ///
+    /// Unlike `query_nodes` which returns only the captured nodes flattened,
+    /// this method returns complete matches where each capture can be accessed
+    /// by its name using `qm.get("field_name")`.
+    ///
+    /// Example:
+    /// ```ignore
+    /// for qm in ctx.query_captures(
+    ///     "(call_expression method: @m args: @a) @call"
+    /// ) {
+    ///     if let Some(method_node) = qm.get("m") {
+    ///         let method_text = method_node.utf8_text(ctx.source.as_bytes());
+    ///         // ...
+    ///     }
+    ///     if let Some(args_node) = qm.get("a") {
+    ///         // ...
+    ///     }
+    /// }
+    /// ```
+    pub fn query_captures(&self, query_str: &str) -> Vec<QueryMatch<'a>> {
+        let query = match tree_sitter::Query::new(&self.language.to_ts_language(), query_str) {
+            Ok(q) => q,
+            Err(_) => return Vec::new(),
+        };
+
+        // Build a map from capture index to capture name (owned Strings)
+        // capture_names() returns all capture names in order
+        let capture_names: Vec<String> = query
+            .capture_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        let mut cursor = tree_sitter::QueryCursor::new();
+        let mut results = Vec::new();
+
+        let mut matches = cursor.matches(&query, self.tree.root_node(), self.source.as_bytes());
+        while let Some(m) = matches.next() {
+            let mut captures = Vec::with_capacity(m.captures.len());
+            for cap in m.captures {
+                // cap.index is the capture index (u32) that corresponds to the @name in the query
+                if let Some(name) = capture_names.get(cap.index as usize) {
+                    captures.push(QueryCapture {
+                        name: name.clone(),
+                        node: cap.node,
+                    });
+                }
+            }
+            results.push(QueryMatch {
+                captures,
+                _phantom: std::marker::PhantomData,
+            });
+        }
+
         results
     }
 
