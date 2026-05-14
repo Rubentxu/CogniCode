@@ -1,0 +1,23 @@
+{
+  "rule_id": "CGR_BUG_ERR_002",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_broad_exception",
+      "file": "src/smelly_handler.js",
+      "description": "Catching generic Exception should trigger CGR_BUG_ERR_002",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["CGR_BUG_ERR_002"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_specific_exception",
+      "file": "src/clean_handler.js",
+      "description": "Catching specific TypeError should not trigger CGR_BUG_ERR_002",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

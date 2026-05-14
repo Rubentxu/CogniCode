@@ -1,0 +1,23 @@
+{
+  "rule_id": "CGR_BUG_ERR_001",
+  "language": "python",
+  "test_cases": [
+    {
+      "name": "detects_empty_except",
+      "file": "src/smelly_handler.py",
+      "description": "Empty except block should trigger CGR_BUG_ERR_001",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["CGR_BUG_ERR_001"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_except_with_logging",
+      "file": "src/clean_handler.py",
+      "description": "Except with logging should not trigger CGR_BUG_ERR_001",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

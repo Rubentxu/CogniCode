@@ -1,0 +1,23 @@
+{
+  "rule_id": "CGR_BUG_ERR_001",
+  "language": "javascript",
+  "test_cases": [
+    {
+      "name": "detects_empty_catch",
+      "file": "src/smelly_handler.js",
+      "description": "Empty catch block should trigger CGR_BUG_ERR_001",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["CGR_BUG_ERR_001"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_catch_with_logging",
+      "file": "src/clean_handler.js",
+      "description": "Catch with logging should not trigger CGR_BUG_ERR_001",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "rule_id": "CGR_BUG_ERR_004",
+  "language": "java",
+  "test_cases": [
+    {
+      "name": "detects_throw_in_finally",
+      "file": "src/SmellyHandler.java",
+      "description": "Throw in finally block should trigger CGR_BUG_ERR_004",
+      "expected_min_issues": 1,
+      "expected_max_issues": 1,
+      "expected_rule_ids": ["CGR_BUG_ERR_004"],
+      "expected_severities": ["Major"]
+    },
+    {
+      "name": "ignores_proper_finally",
+      "file": "src/CleanHandler.java",
+      "description": "Finally without throw should not trigger CGR_BUG_ERR_004",
+      "expected_min_issues": 0,
+      "expected_max_issues": 0,
+      "expected_rule_ids": []
+    }
+  ]
+}
