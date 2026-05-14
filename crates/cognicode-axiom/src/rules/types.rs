@@ -192,6 +192,47 @@ impl Remediation {
     }
 }
 
+/// Agent semantics metadata for AI agent assistance
+///
+/// Provides context-aware information to help AI agents understand,
+/// review, and fix issues detected by this rule.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AgentSemantics {
+    /// Brief summary of what the rule detects
+    pub summary: String,
+    /// Step-by-step fix playbook for resolving issues
+    pub fix_playbook: String,
+    /// Questions to guide human review of issues
+    pub review_questions: Vec<String>,
+    /// Semantic tags for RAG chunking and retrieval
+    pub semantic_chunks: Vec<String>,
+    /// Whether autofix is safe without human review
+    pub safe_autofix: bool,
+    /// Guidance for when autofix is not safe
+    pub autofix_guidance: String,
+}
+
+impl AgentSemantics {
+    /// Create a new AgentSemantics with all fields
+    pub fn new(
+        summary: impl Into<String>,
+        fix_playbook: impl Into<String>,
+        review_questions: Vec<String>,
+        semantic_chunks: Vec<String>,
+        safe_autofix: bool,
+        autofix_guidance: impl Into<String>,
+    ) -> Self {
+        Self {
+            summary: summary.into(),
+            fix_playbook: fix_playbook.into(),
+            review_questions,
+            semantic_chunks,
+            safe_autofix,
+            autofix_guidance: autofix_guidance.into(),
+        }
+    }
+}
+
 /// A detected issue from a rule check
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Issue {
@@ -792,6 +833,12 @@ pub trait Rule: Send + Sync {
 
     /// Returns the software quality impacts for this rule
     fn software_qualities(&self) -> Vec<SoftwareQualityImpact> { vec![] }
+
+    /// Returns agent semantics metadata for AI agent assistance
+    ///
+    /// Provides context-aware information to help AI agents understand,
+    /// review, and fix issues detected by this rule.
+    fn agent_semantics(&self) -> Option<&AgentSemantics> { None }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Layer-based rule execution (Phase 2+ for performance optimization)
