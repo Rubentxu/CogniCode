@@ -1,0 +1,103 @@
+{
+  "batch_id": "style-naming",
+  "created": "2026-05-14",
+  "status": "implemented",
+  "concepts_total": 4,
+  "concepts_approved": 4,
+  "concepts_legal_blocked": 0,
+  "rules": [
+    {
+      "rule_id": "S3491",
+      "concept_id": "CC_STYLE_001",
+      "name": "Trailing whitespace should be removed",
+      "status": "implemented",
+      "severity": "Minor",
+      "precision": "high",
+      "languages": ["rust", "javascript", "python", "go", "java"],
+      "detection_strategy": "Regex-based (line scan)",
+      "performance": "O(n) per file",
+      "fixture_count": 18,
+      "test_targets": ["S3491_pos_001", "S3491_pos_002", "S3491_pos_003", "S3491_pos_004", "S3491_pos_005", "S3491_neg_001", "S3491_neg_002", "S3491_neg_003", "S3491_neg_004", "S3491_neg_005", "S3491_edge_001", "S3491_edge_002", "S3491_edge_003", "S3491_edge_004", "S3491_fp_001", "S3491_fp_002", "S3491_fp_003", "S3491_perf_001"]
+    },
+    {
+      "rule_id": "STYLE_001",
+      "concept_id": "CC_STYLE_002",
+      "name": "Short variable names (1-2 chars) should be avoided",
+      "status": "fixtures_ready",
+      "severity": "Minor",
+      "precision": "medium",
+      "languages": ["rust", "javascript", "python", "go", "java", "typescript"],
+      "detection_strategy": "AST-based (identifier analysis)",
+      "performance": "O(n) per file",
+      "fixture_count": 21,
+      "test_targets": ["STYLE_001_pos_001", "STYLE_001_pos_002", "STYLE_001_pos_003", "STYLE_001_pos_004", "STYLE_001_neg_001", "STYLE_001_neg_002", "STYLE_001_neg_003", "STYLE_001_neg_004", "STYLE_001_neg_005", "STYLE_001_neg_006", "STYLE_001_neg_007", "STYLE_001_neg_008", "STYLE_001_neg_009", "STYLE_001_neg_010", "STYLE_001_edge_001", "STYLE_001_edge_002", "STYLE_001_edge_003", "STYLE_001_fp_001", "STYLE_001_fp_002", "STYLE_001_fp_003", "STYLE_001_perf_001"]
+    },
+    {
+      "rule_id": "STYLE_002",
+      "concept_id": "CC_STYLE_003",
+      "name": "Inconsistent naming conventions within a file",
+      "status": "implemented",
+      "severity": "Minor",
+      "precision": "medium",
+      "languages": ["javascript", "typescript", "python"],
+      "detection_strategy": "AST-based (identifier collection + pattern analysis)",
+      "performance": "O(n) per file",
+      "fixture_count": 15,
+      "test_targets": ["STYLE_002_pos_001", "STYLE_002_pos_002", "STYLE_002_pos_003", "STYLE_002_neg_001", "STYLE_002_neg_002", "STYLE_002_neg_003", "STYLE_002_neg_004", "STYLE_002_neg_005", "STYLE_002_edge_001", "STYLE_002_edge_002", "STYLE_002_edge_003", "STYLE_002_fp_001", "STYLE_002_fp_002", "STYLE_002_fp_003", "STYLE_002_perf_001"],
+      "implementation_notes": "Rule uses tree-sitter to find identifier nodes and classifies them into naming conventions (snake_case, camelCase, PascalCase, SCREAMING_SNAKE_CASE). Detects dominant convention and flags identifiers that don't follow it. Threshold of 3+ identifiers required to confirm inconsistency."
+    },
+    {
+      "rule_id": "STYLE_003",
+      "concept_id": "CC_STYLE_004",
+      "name": "Magic numbers should be replaced with named constants",
+      "status": "fixtures_ready",
+      "severity": "Major",
+      "precision": "high",
+      "languages": ["rust", "javascript", "python"],
+      "detection_strategy": "AST-based (literal analysis + context evaluation)",
+      "performance": "O(n) per file",
+      "fixture_count": 22,
+      "test_targets": ["STYLE_003_pos_001", "STYLE_003_pos_002", "STYLE_003_pos_003", "STYLE_003_pos_004", "STYLE_003_pos_005", "STYLE_003_neg_001", "STYLE_003_neg_002", "STYLE_003_neg_003", "STYLE_003_neg_004", "STYLE_003_neg_005", "STYLE_003_neg_006", "STYLE_003_neg_007", "STYLE_003_neg_008", "STYLE_003_neg_009", "STYLE_003_edge_001", "STYLE_003_edge_002", "STYLE_003_edge_003", "STYLE_003_edge_004", "STYLE_003_fp_001", "STYLE_003_fp_002", "STYLE_003_fp_003", "STYLE_003_perf_001"]
+    }
+  ],
+  "legal_audit": {
+    "status": "approved",
+    "audited_concepts": 4,
+    "blocked": 0,
+    "notes": "All style-naming rules are derived from SonarQube community standards and general coding best practices. No legal concerns."
+  },
+  "batch_metrics": {
+    "total_fixtures": 76,
+    "positive_fixtures": 17,
+    "negative_fixtures": 27,
+    "edge_case_fixtures": 15,
+    "false_positive_guards": 12,
+    "performance_fixtures": 4
+  },
+  "phase_history": [
+    {
+      "phase": "design",
+      "status": "completed",
+      "timestamp": "2026-05-14T14:05:00Z",
+      "notes": "4 rule designs created"
+    },
+    {
+      "phase": "fixtures_generated",
+      "status": "completed",
+      "timestamp": "2026-05-14T15:00:00Z",
+      "artifact": "rules/style-naming/fixture-matrix/fixture-matrix.json"
+    },
+    {
+      "phase": "tasks_generated",
+      "status": "completed",
+      "timestamp": "2026-05-14T15:00:00Z",
+      "artifact": "rules/style-naming/tasks/tasks.json"
+    },
+    {
+      "phase": "implementation",
+      "status": "completed",
+      "timestamp": "2026-05-14T16:30:00Z",
+      "notes": "STYLE_002 implemented with 17 passing tests"
+    }
+  ]
+}

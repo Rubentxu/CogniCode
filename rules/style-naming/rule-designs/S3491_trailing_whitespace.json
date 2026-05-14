@@ -1,0 +1,69 @@
+{
+  "rule_id": "S3491",
+  "name": "Trailing whitespace should be removed",
+  "description": "Trailing whitespace at the end of lines causes unnecessary diff noise and provides no semantic value. This rule detects spaces and tabs at the end of non-empty lines.",
+  "severity": "Minor",
+  "category": "CodeSmell",
+  "languages": ["rust", "javascript", "python", "go", "java"],
+  "sonarqube_equivalent": "S3491",
+  "precision_target": "high",
+  "Axiom metadata": {
+    "layer": "preflight",
+    "required_keywords": ["format", "whitespace", "style"],
+    "performance": "O(n) per file",
+    "event_kind": "style.formatting.trailing_whitespace"
+  },
+  "detection_strategy": "Regex-based (line scan)",
+  "detection_details": {
+    "pattern": "(?m)[ \\t]+$",
+    "description": "Match spaces or tabs at end of non-empty lines",
+    "skip_empty_lines": true,
+    "preflight_checks": [
+      "Skip empty lines (whitespace-only lines are indentation, not trailing)",
+      "Skip comment-only lines where trailing space may be intentional",
+      "Skip lines within string literals (some string formatting preserves trailing spaces)"
+    ]
+  },
+  "exclusions": [
+    "Empty lines (lines containing only whitespace)",
+    "Lines that are purely comments",
+    "String literals (trailing space may be intentional content)"
+  ],
+  "false_positive_conditions": [
+    "Multi-line string literals with intentional trailing spaces",
+    "Markdown/code block formatting in comments"
+  ],
+  "remediation": "Remove trailing whitespace from the end of lines. Most editors have a 'trim trailing whitespace' option or can be configured to do so automatically on save.",
+  "fix_playbook": "1. Identify lines with trailing whitespace\n2. Remove spaces/tabs before line ending\n3. Configure editor to auto-trim on save\n4. Add pre-commit hook to prevent future trailing whitespace",
+  "SARIF_mapping": {
+    "ruleId": "S3491",
+    "name": "Trailing whitespace should be removed",
+    "severity": "note",
+    "properties": {
+      "category": "Formatting",
+      "technology": ["Rust", "JavaScript", "Python", "Go", "Java"]
+    }
+  },
+  "agent_semantics": {
+    "summary": "Trailing whitespace detected at end of lines - this adds no value but causes diff noise",
+    "reasoning_model": "gpt-4o",
+    "review_questions": [
+      "Is this trailing whitespace intentional for formatting?",
+      "Would removing it affect any string content?",
+      "Has the editor been configured to auto-trim trailing whitespace?"
+    ],
+    "semantic_chunks": [
+      "Trailing whitespace is a minor formatting issue that causes unnecessary version control diffs",
+      "The offending line(s) end with spaces or tabs that serve no purpose",
+      "Fix: Remove trailing whitespace - most IDEs can do this automatically"
+    ],
+    "safe_autofix": true,
+    "autofix_guidance": "Can be automatically fixed by removing trailing whitespace from affected lines"
+  },
+  "performance_budget": {
+    "estimated_ms": 0.5,
+    "budget_ms": 1,
+    "strategy": "Simple regex scan per line"
+  },
+  "complexity": "low"
+}

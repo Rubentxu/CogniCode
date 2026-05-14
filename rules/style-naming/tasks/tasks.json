@@ -1,0 +1,275 @@
+{
+  "tasks_date": "2026-05-14",
+  "batch_id": "style-naming",
+  "total_tasks": 4,
+  "tasks": [
+    {
+      "task_id": "S3491-impl",
+      "rule_id": "S3491",
+      "description": "Implement S3491 trailing whitespace detection",
+      "priority": "high",
+      "detection_strategy": "Regex-based (line scan)",
+      "subtasks": [
+        {
+          "subtask_id": "S3491-impl-01",
+          "description": "Create rule file: rules/rust/style/s3491_trailing_whitespace.rs",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "S3491-impl-02",
+          "description": "Implement regex pattern: (?m)[ \\t]+$ for trailing whitespace detection",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "S3491-impl-03",
+          "description": "Add skip logic: empty lines, comments, string literals",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "S3491-impl-04",
+          "description": "Register rule in catalog.rs with declare_rule! macro",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "S3491-impl-05",
+          "description": "Write unit tests with 10+ fixture cases",
+          "status": "pending",
+          "agent": "rule-test"
+        },
+        {
+          "subtask_id": "S3491-impl-06",
+          "description": "Verify on dashboard: cargo run -p cognicode-quality -- analyze --rule S3491",
+          "status": "pending",
+          "agent": "rule-verify"
+        }
+      ],
+      "test_targets": [
+        "S3491_pos_001", "S3491_pos_002", "S3491_pos_003", "S3491_pos_004", "S3491_pos_005",
+        "S3491_neg_001", "S3491_neg_002", "S3491_neg_003", "S3491_neg_004", "S3491_neg_005",
+        "S3491_edge_001", "S3491_edge_002", "S3491_edge_003", "S3491_edge_004",
+        "S3491_fp_001", "S3491_fp_002", "S3491_fp_003",
+        "S3491_perf_001"
+      ],
+      "dependencies": [],
+      "performance_budget_ms": 1,
+      "estimated_complexity": "low"
+    },
+    {
+      "task_id": "STYLE_001-impl",
+      "rule_id": "STYLE_001",
+      "description": "Implement STYLE_001 short variable names detection",
+      "priority": "medium",
+      "detection_strategy": "AST-based (identifier analysis)",
+      "subtasks": [
+        {
+          "subtask_id": "STYLE_001-impl-01",
+          "description": "Create rule file: rules/rust/style/style_001_short_variable_names.rs",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_001-impl-02",
+          "description": "Implement AST query to collect identifier nodes",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_001-impl-03",
+          "description": "Add length check: 1-2 character identifiers",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_001-impl-04",
+          "description": "Implement whitelist: i/j/k loops, x/y coords, id/ok/db abbreviations",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_001-impl-05",
+          "description": "Register rule in catalog.rs",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_001-impl-06",
+          "description": "Write unit tests with 15+ fixture cases",
+          "status": "pending",
+          "agent": "rule-test"
+        },
+        {
+          "subtask_id": "STYLE_001-impl-07",
+          "description": "Verify on dashboard",
+          "status": "pending",
+          "agent": "rule-verify"
+        }
+      ],
+      "test_targets": [
+        "STYLE_001_pos_001", "STYLE_001_pos_002", "STYLE_001_pos_003", "STYLE_001_pos_004",
+        "STYLE_001_neg_001", "STYLE_001_neg_002", "STYLE_001_neg_003", "STYLE_001_neg_004",
+        "STYLE_001_neg_005", "STYLE_001_neg_006", "STYLE_001_neg_007", "STYLE_001_neg_008",
+        "STYLE_001_neg_009", "STYLE_001_neg_010",
+        "STYLE_001_edge_001", "STYLE_001_edge_002", "STYLE_001_edge_003",
+        "STYLE_001_fp_001", "STYLE_001_fp_002", "STYLE_001_fp_003",
+        "STYLE_001_perf_001"
+      ],
+      "dependencies": [],
+      "performance_budget_ms": 3,
+      "estimated_complexity": "low"
+    },
+    {
+      "task_id": "STYLE_002-impl",
+      "rule_id": "STYLE_002",
+      "description": "Implement STYLE_002 inconsistent naming conventions detection",
+      "priority": "medium",
+      "detection_strategy": "AST-based (identifier collection + pattern analysis)",
+      "subtasks": [
+        {
+          "subtask_id": "STYLE_002-impl-01",
+          "description": "Create rule file: rules/rust/style/style_002_inconsistent_naming.rs",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_002-impl-02",
+          "description": "Implement AST query to collect all identifier nodes",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_002-impl-03",
+          "description": "Implement pattern classification: snake_case vs camelCase vs PascalCase",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_002-impl-04",
+          "description": "Implement threshold check: 3+ identifiers of each convention to confirm mixing",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_002-impl-05",
+          "description": "Add exclusions: external library calls, generated code, UPPER_SNAKE_CASE constants",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_002-impl-06",
+          "description": "Register rule in catalog.rs",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_002-impl-07",
+          "description": "Write unit tests with 12+ fixture cases",
+          "status": "pending",
+          "agent": "rule-test"
+        },
+        {
+          "subtask_id": "STYLE_002-impl-08",
+          "description": "Verify on dashboard",
+          "status": "pending",
+          "agent": "rule-verify"
+        }
+      ],
+      "test_targets": [
+        "STYLE_002_pos_001", "STYLE_002_pos_002", "STYLE_002_pos_003",
+        "STYLE_002_neg_001", "STYLE_002_neg_002", "STYLE_002_neg_003",
+        "STYLE_002_neg_004", "STYLE_002_neg_005",
+        "STYLE_002_edge_001", "STYLE_002_edge_002", "STYLE_002_edge_003",
+        "STYLE_002_fp_001", "STYLE_002_fp_002", "STYLE_002_fp_003",
+        "STYLE_002_perf_001"
+      ],
+      "dependencies": [],
+      "performance_budget_ms": 5,
+      "estimated_complexity": "medium"
+    },
+    {
+      "task_id": "STYLE_003-impl",
+      "rule_id": "STYLE_003",
+      "description": "Implement STYLE_003 magic numbers generalization detection",
+      "priority": "high",
+      "detection_strategy": "AST-based (literal analysis + context evaluation)",
+      "subtasks": [
+        {
+          "subtask_id": "STYLE_003-impl-01",
+          "description": "Create rule file: rules/rust/style/style_003_magic_numbers.rs",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_003-impl-02",
+          "description": "Implement AST query to collect numeric literal nodes",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_003-impl-03",
+          "description": "Implement context evaluation to detect problematic patterns (timeout, buffer_size, retry_count)",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_003-impl-04",
+          "description": "Implement safe numbers list: 0, 1, -1, 100, 255, 1024 and loop bounds, array indices",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_003-impl-05",
+          "description": "Register rule in catalog.rs",
+          "status": "pending",
+          "agent": "rule-impl"
+        },
+        {
+          "subtask_id": "STYLE_003-impl-06",
+          "description": "Write unit tests with 15+ fixture cases",
+          "status": "pending",
+          "agent": "rule-test"
+        },
+        {
+          "subtask_id": "STYLE_003-impl-07",
+          "description": "Verify on dashboard",
+          "status": "pending",
+          "agent": "rule-verify"
+        }
+      ],
+      "test_targets": [
+        "STYLE_003_pos_001", "STYLE_003_pos_002", "STYLE_003_pos_003", "STYLE_003_pos_004", "STYLE_003_pos_005",
+        "STYLE_003_neg_001", "STYLE_003_neg_002", "STYLE_003_neg_003", "STYLE_003_neg_004",
+        "STYLE_003_neg_005", "STYLE_003_neg_006", "STYLE_003_neg_007", "STYLE_003_neg_008", "STYLE_003_neg_009",
+        "STYLE_003_edge_001", "STYLE_003_edge_002", "STYLE_003_edge_003", "STYLE_003_edge_004",
+        "STYLE_003_fp_001", "STYLE_003_fp_002", "STYLE_003_fp_003",
+        "STYLE_003_perf_001"
+      ],
+      "dependencies": [],
+      "performance_budget_ms": 5,
+      "estimated_complexity": "medium"
+    }
+  ],
+  "implementation_order": [
+    "S3491-impl",
+    "STYLE_001-impl",
+    "STYLE_002-impl",
+    "STYLE_003-impl"
+  ],
+  "test_execution_plan": {
+    "phase_1_unit_tests": [
+      "cargo test -p cognicode-axiom --lib S3491",
+      "cargo test -p cognicode-axiom --lib STYLE_001",
+      "cargo test -p cognicode-axiom --lib STYLE_002",
+      "cargo test -p cognicode-axiom --lib STYLE_003"
+    ],
+    "phase_2_integration_tests": [
+      "cargo test -p cognicode-quality -- style_naming"
+    ],
+    "phase_3_dashboard_verification": [
+      "curl -X POST http://localhost:3000/api/analysis -d '{\"project_path\":\".\",\"quick\":true}' | jq '.issues[] | select(.rule_id | startswith(\"S3491\"))'"
+    ]
+  }
+}

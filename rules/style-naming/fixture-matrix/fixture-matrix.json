@@ -1,0 +1,686 @@
+{
+  "fixture_date": "2026-05-14",
+  "batch_id": "style-naming",
+  "total_rules": 4,
+  "total_fixtures": 72,
+  "fixtures": [
+    {
+      "rule_id": "S3491",
+      "rule_name": "Trailing whitespace should be removed",
+      "detection_strategy": "Regex-based (line scan)",
+      "languages": ["rust", "javascript", "python", "go", "java"],
+      "fixtures": [
+        {
+          "fixture_id": "S3491_pos_001",
+          "category": "positive",
+          "description": "Line with trailing spaces",
+          "code": "let x = 5;   ",
+          "expected": "trigger",
+          "language": "rust",
+          "line": 1
+        },
+        {
+          "fixture_id": "S3491_pos_002",
+          "category": "positive",
+          "description": "Line with trailing tabs",
+          "code": "fn main() {\t",
+          "expected": "trigger",
+          "language": "rust",
+          "line": 1
+        },
+        {
+          "fixture_id": "S3491_pos_003",
+          "category": "positive",
+          "description": "Multiple lines with trailing whitespace",
+          "code": "let a = 1;   \nlet b = 2;\t\nlet c = 3;  ",
+          "expected": "trigger",
+          "language": "rust",
+          "line": 3
+        },
+        {
+          "fixture_id": "S3491_pos_004",
+          "category": "positive",
+          "description": "Python function with trailing spaces",
+          "code": "def foo():\n    return 42   ",
+          "expected": "trigger",
+          "language": "python",
+          "line": 2
+        },
+        {
+          "fixture_id": "S3491_pos_005",
+          "category": "positive",
+          "description": "JavaScript arrow function with trailing tab",
+          "code": "const add = (a, b) => a + b;\t",
+          "expected": "trigger",
+          "language": "javascript",
+          "line": 1
+        },
+        {
+          "fixture_id": "S3491_neg_001",
+          "category": "negative",
+          "description": "Line without trailing whitespace",
+          "code": "let x = 5;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "S3491_neg_002",
+          "category": "negative",
+          "description": "Empty line is not trailing whitespace",
+          "code": "let x = 5;\n\nlet y = 6;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "S3491_neg_003",
+          "category": "negative",
+          "description": "Line with only indentation (not trailing)",
+          "code": "    let x = 5;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "S3491_neg_004",
+          "category": "negative",
+          "description": "Comment line with intentional space after // is not detected (skip comments)",
+          "code": "// This is a comment",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "S3491_neg_005",
+          "category": "negative",
+          "description": "String literal with intentional trailing space (string content)",
+          "code": "let s = \"hello \";",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "S3491_edge_001",
+          "category": "edge_case",
+          "description": "Empty file",
+          "code": "",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "S3491_edge_002",
+          "category": "edge_case",
+          "description": "File with only whitespace-only lines",
+          "code": "   \n\t\n  \t",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "S3491_edge_003",
+          "category": "edge_case",
+          "description": "Mixed: line with trailing whitespace followed by empty line",
+          "code": "let x = 5;   \n\nlet y = 6;",
+          "expected": "trigger",
+          "language": "rust",
+          "line": 1
+        },
+        {
+          "fixture_id": "S3491_edge_004",
+          "category": "edge_case",
+          "description": "Line ending with mixed spaces and tabs",
+          "code": "let x = 5; \t  ",
+          "expected": "trigger",
+          "language": "rust",
+          "line": 1
+        },
+        {
+          "fixture_id": "S3491_fp_001",
+          "category": "false_positive_guard",
+          "description": "Multi-line string with intentional trailing spaces in content",
+          "code": "let s = \"line one  \nline two\";",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "S3491_fp_002",
+          "category": "false_positive_guard",
+          "description": "Raw string literal (r\") preserves content exactly",
+          "code": "let s = r\"hello  \";",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "S3491_fp_003",
+          "category": "false_positive_guard",
+          "description": "Block comment with trailing whitespace in content",
+          "code": "/* This is a\n   multi-line comment  */",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "S3491_perf_001",
+          "category": "performance",
+          "description": "Large file (10000 lines) with trailing whitespace every 10th line",
+          "code": "fn main() {\n  let lines = (0..10000).map(|i| if i % 10 == 0 { format!(\"val {}\", i) + \"   \" } else { format!(\"val {}\", i) });\n}",
+          "expected": "trigger",
+          "language": "rust",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "rule_id": "STYLE_001",
+      "rule_name": "Short variable names (1-2 characters) should be avoided",
+      "detection_strategy": "AST-based (identifier analysis)",
+      "languages": ["rust", "javascript", "python", "go", "java", "typescript"],
+      "fixtures": [
+        {
+          "fixture_id": "STYLE_001_pos_001",
+          "category": "positive",
+          "description": "Single character variable name 'x'",
+          "code": "let x = 5;",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 1,
+          "issue_column": 4
+        },
+        {
+          "fixture_id": "STYLE_001_pos_002",
+          "category": "positive",
+          "description": "Two character variable name 'mx'",
+          "code": "let mx = 10;",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 1,
+          "issue_column": 4
+        },
+        {
+          "fixture_id": "STYLE_001_pos_003",
+          "category": "positive",
+          "description": "Two character variable 'cn' in function",
+          "code": "fn foo() { let cn = get_count(); }",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 1
+        },
+        {
+          "fixture_id": "STYLE_001_pos_004",
+          "category": "positive",
+          "description": "Single char var 'a' in JS",
+          "code": "const a = getValue();",
+          "expected": "trigger",
+          "language": "javascript",
+          "issue_line": 1
+        },
+        {
+          "fixture_id": "STYLE_001_neg_001",
+          "category": "negative",
+          "description": "Loop counter 'i' is allowed",
+          "code": "for i in 0..10 { println!(\"{}\", i); }",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_neg_002",
+          "category": "negative",
+          "description": "Loop counter 'j' is allowed",
+          "code": "for j in 0..5 { sum += j; }",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_neg_003",
+          "category": "negative",
+          "description": "Loop counter 'k' is allowed",
+          "code": "for k in 0..3 { process(k); }",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_neg_004",
+          "category": "negative",
+          "description": "Coordinate 'x' is allowed in geometric context",
+          "code": "let x = point.x;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_neg_005",
+          "category": "negative",
+          "description": "Coordinate 'y' is allowed",
+          "code": "let y = point.y;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_neg_006",
+          "category": "negative",
+          "description": "Common abbreviation 'id' is allowed",
+          "code": "let id = user.id;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_neg_007",
+          "category": "negative",
+          "description": "Common abbreviation 'ok' is allowed",
+          "code": "let ok = result.is_ok();",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_neg_008",
+          "category": "negative",
+          "description": "Common abbreviation 'db' is allowed",
+          "code": "let db = get_database();",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_neg_009",
+          "category": "negative",
+          "description": "Three character name 'cnt' is fine",
+          "code": "let cnt = count();",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_neg_010",
+          "category": "negative",
+          "description": "Four character name 'max' is fine",
+          "code": "let max = values.iter().max();",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_edge_001",
+          "category": "edge_case",
+          "description": "Empty file",
+          "code": "",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_edge_002",
+          "category": "edge_case",
+          "description": "Function parameter 'n' in mathematical context",
+          "code": "fn factorial(n: u64) -> u64 { if n <= 1 { 1 } else { n * factorial(n-1) } }",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_edge_003",
+          "category": "edge_case",
+          "description": "Error handling 'e' in catch block",
+          "code": "catch e { println!(\"{:?}\", e); }",
+          "expected": "no_trigger",
+          "language": "javascript"
+        },
+        {
+          "fixture_id": "STYLE_001_fp_001",
+          "category": "false_positive_guard",
+          "description": "Variable named 'i' inside string literal should not trigger",
+          "code": "let s = \"iterator i\";",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_fp_002",
+          "category": "false_positive_guard",
+          "description": "Variable 'id' inside comment should not trigger",
+          "code": "// user_id field",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_fp_003",
+          "category": "false_positive_guard",
+          "description": "Built-in type 'fn' is allowed",
+          "code": "let f: fn() -> i32 = || 42;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_001_perf_001",
+          "category": "performance",
+          "description": "File with 1000 short variable declarations",
+          "code": "fn process() { let a = 1; let b = 2; let c = 3; let d = 4; let e = 5; }",
+          "expected": "trigger",
+          "language": "rust",
+          "note": "Multiple violations in single function"
+        }
+      ]
+    },
+    {
+      "rule_id": "STYLE_002",
+      "rule_name": "Inconsistent naming conventions within a file",
+      "detection_strategy": "AST-based (identifier collection + pattern analysis)",
+      "languages": ["javascript", "typescript", "python"],
+      "fixtures": [
+        {
+          "fixture_id": "STYLE_002_pos_001",
+          "category": "positive",
+          "description": "Python file mixing snake_case and camelCase",
+          "code": "def get_user_id():\n    user_name = 'John'\n    userId = get_current_user()\n    return user_name",
+          "expected": "trigger",
+          "language": "python",
+          "issue_line": 3,
+          "violations": ["camelCase: userId"]
+        },
+        {
+          "fixture_id": "STYLE_002_pos_002",
+          "category": "positive",
+          "description": "JavaScript mixing snake_case and camelCase",
+          "code": "function get_user_id() {\n  let user_name = 'John';\n  let userId = 123;\n  return user_name;\n}",
+          "expected": "trigger",
+          "language": "javascript",
+          "issue_line": 3,
+          "violations": ["camelCase: userId", "snake_case: get_user_id, user_name"]
+        },
+        {
+          "fixture_id": "STYLE_002_pos_003",
+          "category": "positive",
+          "description": "TypeScript with mixed naming in interface",
+          "code": "interface UserConfig {\n  user_id: string;\n  userName: string;\n  createdAt: Date;\n}",
+          "expected": "trigger",
+          "language": "typescript",
+          "issue_line": 3
+        },
+        {
+          "fixture_id": "STYLE_002_neg_001",
+          "category": "negative",
+          "description": "Python file with only snake_case",
+          "code": "def get_user_id():\n    user_name = 'John'\n    return user_name",
+          "expected": "no_trigger",
+          "language": "python"
+        },
+        {
+          "fixture_id": "STYLE_002_neg_002",
+          "category": "negative",
+          "description": "JavaScript file with only camelCase",
+          "code": "function getUserId() {\n  let userName = 'John';\n  return userName;\n}",
+          "expected": "no_trigger",
+          "language": "javascript"
+        },
+        {
+          "fixture_id": "STYLE_002_neg_003",
+          "category": "negative",
+          "description": "TypeScript with PascalCase for class/interface names",
+          "code": "class UserService {\n  getUserById(id: string) { }\n}",
+          "expected": "no_trigger",
+          "language": "typescript"
+        },
+        {
+          "fixture_id": "STYLE_002_neg_004",
+          "category": "negative",
+          "description": "Constants in UPPER_SNAKE_CASE are valid exception",
+          "code": "const MAX_SIZE = 100;\nconst DEFAULT_TIMEOUT = 30;",
+          "expected": "no_trigger",
+          "language": "javascript"
+        },
+        {
+          "fixture_id": "STYLE_002_neg_005",
+          "category": "negative",
+          "description": "Only 2 identifiers total - insufficient sample",
+          "code": "let a = 1;\nlet b = 2;",
+          "expected": "no_trigger",
+          "language": "javascript",
+          "note": "Threshold is 3+ of each convention"
+        },
+        {
+          "fixture_id": "STYLE_002_edge_001",
+          "category": "edge_case",
+          "description": "Empty file",
+          "code": "",
+          "expected": "no_trigger",
+          "language": "javascript"
+        },
+        {
+          "fixture_id": "STYLE_002_edge_002",
+          "category": "edge_case",
+          "description": "File with only 1 identifier",
+          "code": "let x = 5;",
+          "expected": "no_trigger",
+          "language": "javascript"
+        },
+        {
+          "fixture_id": "STYLE_002_edge_003",
+          "category": "edge_case",
+          "description": "Exactly 3 snake_case and 3 camelCase - threshold met",
+          "code": "let user_id = 1;\nlet user_name = 2;\nlet created_at = 3;\nlet userId = 4;\nlet userName = 5;\nlet createdAt = 6;",
+          "expected": "trigger",
+          "language": "javascript",
+          "note": "Both conventions have 3+ identifiers"
+        },
+        {
+          "fixture_id": "STYLE_002_fp_001",
+          "category": "false_positive_guard",
+          "description": "External library calls (cannot control naming)",
+          "code": "let result = snake_case_func();\nresult = camelCaseFunc();",
+          "expected": "no_trigger",
+          "language": "javascript",
+          "note": "External API calls excluded"
+        },
+        {
+          "fixture_id": "STYLE_002_fp_002",
+          "category": "false_positive_guard",
+          "description": "Generated code marker comment",
+          "code": "// GENERATED CODE - DO NOT EDIT\nlet user_id = 1;\nlet userId = 2;",
+          "expected": "no_trigger",
+          "language": "javascript",
+          "note": "Generated code should be excluded"
+        },
+        {
+          "fixture_id": "STYLE_002_fp_003",
+          "category": "false_positive_guard",
+          "description": "Mixed conventions but one is UPPER_SNAKE_CASE constants",
+          "code": "const MAX_SIZE = 100;\nconst DEFAULT_TIMEOUT = 30;\nfunction getMaxSize() { }",
+          "expected": "no_trigger",
+          "language": "javascript"
+        },
+        {
+          "fixture_id": "STYLE_002_perf_001",
+          "category": "performance",
+          "description": "Large file with 500 identifiers of mixed conventions",
+          "code": "let user_id_1 = 1; let userId_1 = 2; let user_id_2 = 3; let userId_2 = 4;",
+          "expected": "trigger",
+          "language": "javascript",
+          "note": "Pattern repeats to create 500 identifiers"
+        }
+      ]
+    },
+    {
+      "rule_id": "STYLE_003",
+      "rule_name": "Magic numbers should be replaced with named constants",
+      "detection_strategy": "AST-based (literal analysis + context evaluation)",
+      "languages": ["rust", "javascript", "python"],
+      "fixtures": [
+        {
+          "fixture_id": "STYLE_003_pos_001",
+          "category": "positive",
+          "description": "Timeout value 5000 should be constant",
+          "code": "setTimeout(callback, 5000);",
+          "expected": "trigger",
+          "language": "javascript",
+          "issue_line": 1,
+          "issue_column": 19,
+          "literal": "5000"
+        },
+        {
+          "fixture_id": "STYLE_003_pos_002",
+          "category": "positive",
+          "description": "Buffer size 1024 should be constant",
+          "code": "let buffer = new Array(1024);",
+          "expected": "trigger",
+          "language": "javascript",
+          "issue_line": 1,
+          "literal": "1024"
+        },
+        {
+          "fixture_id": "STYLE_003_pos_003",
+          "category": "positive",
+          "description": "Retry count 3 should be constant",
+          "code": "for i in 0..3 { retry(); }",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 1,
+          "literal": "3"
+        },
+        {
+          "fixture_id": "STYLE_003_pos_004",
+          "category": "positive",
+          "description": "Percentage threshold 80 should be constant",
+          "code": "if score > 80 { pass(); }",
+          "expected": "trigger",
+          "language": "rust",
+          "issue_line": 1,
+          "literal": "80"
+        },
+        {
+          "fixture_id": "STYLE_003_pos_005",
+          "category": "positive",
+          "description": "Duration 30 should be constant",
+          "code": "sleep(30);",
+          "expected": "trigger",
+          "language": "python",
+          "issue_line": 1,
+          "literal": "30"
+        },
+        {
+          "fixture_id": "STYLE_003_neg_001",
+          "category": "negative",
+          "description": "Zero is safe for initialization",
+          "code": "let count = 0;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_neg_002",
+          "category": "negative",
+          "description": "One is safe for unit increment",
+          "code": "count += 1;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_neg_003",
+          "category": "negative",
+          "description": "Negative one is safe sentinel",
+          "code": "if index == -1 { return NotFound; }",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_neg_004",
+          "category": "negative",
+          "description": "100 is safe for percentage base",
+          "code": "let percent = (value / 100) * 100;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_neg_005",
+          "category": "negative",
+          "description": "255 is safe for byte boundaries",
+          "code": "let byte = 255u8;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_neg_006",
+          "category": "negative",
+          "description": "1024 is safe for KB boundaries",
+          "code": "let kb = 1024usize;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_neg_007",
+          "category": "negative",
+          "description": "Loop bound 0..10 is safe",
+          "code": "for i in 0..10 { sum += i; }",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_neg_008",
+          "category": "negative",
+          "description": "Array index arr[0] is safe",
+          "code": "let first = arr[0];",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_neg_009",
+          "category": "negative",
+          "description": "Number 2 in binary context",
+          "code": "Vec::from_elem(1000, 2)",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_edge_001",
+          "category": "edge_case",
+          "description": "Empty file",
+          "code": "",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_edge_002",
+          "category": "edge_case",
+          "description": "Number in string literal",
+          "code": "let s = \"The number is 5000\";",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_edge_003",
+          "category": "edge_case",
+          "description": "Semver version number",
+          "code": "let version = \"1.0.0\";",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_edge_004",
+          "category": "edge_case",
+          "description": "Hex bit flag 0x1F",
+          "code": "let flags = 0x1F;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_fp_001",
+          "category": "false_positive_guard",
+          "description": "Mathematical constant PI",
+          "code": "let area = PI * r * r;",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_fp_002",
+          "category": "false_positive_guard",
+          "description": "Number in comment",
+          "code": "// Maximum value is 5000",
+          "expected": "no_trigger",
+          "language": "rust"
+        },
+        {
+          "fixture_id": "STYLE_003_fp_003",
+          "category": "false_positive_guard",
+          "description": "Test fixtures intentional magic numbers",
+          "code": "#[test] fn test_with_magic() { let arr = [1, 2, 3, 5000]; }",
+          "expected": "no_trigger",
+          "language": "rust",
+          "note": "Test code often has intentional magic numbers"
+        },
+        {
+          "fixture_id": "STYLE_003_perf_001",
+          "category": "performance",
+          "description": "Large file with 1000 numeric literals",
+          "code": "let a = 5000; let b = 5001; let c = 5002;",
+          "expected": "trigger",
+          "language": "rust",
+          "note": "Multiple magic numbers"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "rule_id": "STYLE_002",
+  "name": "Inconsistent naming conventions within a file",
+  "description": "When a file contains a mixture of naming conventions (snake_case and camelCase), it violates consistency principles and increases cognitive load. All identifiers within a file should follow the same naming convention.",
+  "severity": "Minor",
+  "category": "CodeSmell",
+  "languages": ["javascript", "typescript", "python"],
+  "precision_target": "medium",
+  "Axiom metadata": {
+    "layer": "preflight",
+    "required_keywords": ["naming", "convention", "style", "snake", "camel"],
+    "performance": "O(n) per file",
+    "event_kind": "style.naming.inconsistent_convention"
+  },
+  "detection_strategy": "AST-based (identifier collection + pattern analysis)",
+  "detection_details": {
+    "collect_identifiers": "Extract all function names, variable names, class names, method names from the AST",
+    "classify_pattern": "For each identifier, classify as snake_case, camelCase, PascalCase, or other",
+    "detect_mixing": "If file contains both snake_case and camelCase identifiers of the same type (e.g., functions), flag as inconsistent",
+    "threshold": "At least 3 identifiers of each convention needed to confirm mixing is intentional, not accidental",
+    "per_language_rules": {
+      "python": "Should use snake_case only; camelCase is violation",
+      "javascript": "Should use camelCase for variables/functions; snake_case is violation",
+      "typescript": "Should use camelCase for variables/functions, PascalCase for classes/interfaces"
+    }
+  },
+  "exclusions": [
+    "External/library API calls (cannot control their naming)",
+    "Generated code (build outputs, protobuf outputs)",
+    "Test files with different conventions for test methods",
+    "Config files imported from external sources"
+  ],
+  "false_positive_conditions": [
+    "Files that import both snake_case Python modules and camelCase JS libraries",
+    "Migration code in progress with intentional mixed conventions",
+    "Files with only 1-2 identifiers (insufficient sample)",
+    "Constants written in UPPER_SNAKE_CASE (valid exception)"
+  ],
+  "remediation": "Choose the appropriate naming convention for the language and refactor all identifiers to follow it consistently. Use automated refactoring tools to rename across the file.",
+  "fix_playbook": "1. Identify which naming convention is appropriate for the language\n2. List all identifiers that don't follow the convention\n3. Use IDE refactoring to rename identifiers consistently\n4. Ensure snake_case Python code doesn't mix with camelCase\n5. For JavaScript/TypeScript: ensure functions/variables use camelCase\n6. Update any related documentation",
+  "SARIF_mapping": {
+    "ruleId": "STYLE_002",
+    "name": "Inconsistent naming conventions within a file",
+    "severity": "note",
+    "properties": {
+      "category": "Naming",
+      "technology": ["JavaScript", "TypeScript", "Python"]
+    }
+  },
+  "agent_semantics": {
+    "summary": "Mixed naming conventions detected in file - all identifiers should follow consistent style",
+    "reasoning_model": "gpt-4o",
+    "review_questions": [
+      "Is this file imported from external source?",
+      "Is this code in transition between conventions?",
+      "Which convention should be used for this language?",
+      "Are there at least 3 instances of each convention to confirm mixing?"
+    ],
+    "semantic_chunks": [
+      "Inconsistent naming conventions increase cognitive load",
+      "Python should use snake_case; JavaScript/TypeScript should use camelCase",
+      "Mixed conventions in same file suggest incomplete refactoring or external imports",
+      "Fix: Choose appropriate convention and refactor all identifiers to match"
+    ],
+    "safe_autofix": false,
+    "autofix_guidance": "Cannot safely autofix without context - requires choosing correct convention and ensuring external APIs are not broken"
+  },
+  "performance_budget": {
+    "estimated_ms": 2,
+    "budget_ms": 5,
+    "strategy": "AST identifier collection + pattern classification"
+  },
+  "complexity": "medium"
+}

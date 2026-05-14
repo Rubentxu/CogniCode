@@ -1,0 +1,96 @@
+# Style Naming Concepts
+
+## CC_STYLE_001: Trailing Whitespace
+
+**Problem**: Trailing whitespace (spaces/tabs at end of lines) is a common code smell that:
+- Causes unnecessary diff noise in version control
+- Can cause issues with some editors and tools
+- Adds no semantic value to the code
+
+**Rule**: S3491
+**Severity**: Minor
+**Languages**: rust, javascript, python, go, java
+
+**Detection Approach**:
+- Regex-based line scan looking for `[ \t]+$` at end of each line
+- Exclude empty lines (just whitespace is acceptable for indentation alignment)
+- Exclude comment-only lines (some formatting tools preserve trailing spaces in comments)
+
+**References**:
+- SonarQube S3491: Trailing whitespace
+
+---
+
+## CC_STYLE_002: Short Variable Names
+
+**Problem**: Variable names of 1-2 characters reduce code readability and maintainability. While single-letter names may be acceptable for simple counters or loop variables, they should be avoided in most contexts.
+
+**Rule**: STYLE_001
+**Severity**: Minor
+**Languages**: rust, javascript, python, go, java, typescript
+
+**Detection Approach**:
+- AST-based identifier analysis
+- Collect all variable declarations and analyze identifier length
+- Flag identifiers with 1-2 character names
+
+**Exceptions (whitelist)**:
+- Loop counters: `i`, `j`, `k` in `for` loops
+- Coordinate variables: `x`, `y` in simple geometric contexts
+- Mathematical indices: `n`, `m` in simple mathematical operations
+
+**False Positives to Avoid**:
+- Built-in types/constants: `fn`, `db`, `io`
+- Common abbreviations: `id`, `ok`, `us`
+- File extensions: `js`, `ts`, `py`
+
+---
+
+## CC_STYLE_003: Inconsistent Naming Conventions
+
+**Problem**: When a codebase mixes naming conventions (snake_case, camelCase) within the same file, it creates cognitive load and violates project consistency principles.
+
+**Rule**: STYLE_002
+**Severity**: Minor
+**Languages**: javascript, typescript, python
+
+**Detection Approach**:
+- AST-based identifier collection
+- Extract all function names, variable names, class names
+- Analyze naming pattern for each identifier
+- Detect mixing of snake_case and camelCase within same scope
+
+**Note**: This is NOT about cross-file consistency (which is a project-level concern), but within a single file where all identifiers should follow the same convention.
+
+**Context**: 
+- Python: snake_case convention
+- JavaScript/TypeScript: camelCase for variables/functions, PascalCase for classes
+
+---
+
+## CC_STYLE_004: Magic Numbers Generalization
+
+**Problem**: Magic numbers (hardcoded numeric literals) reduce code readability and maintainability. Numbers should be replaced with named constants that explain their purpose.
+
+**Rule**: STYLE_003 (extends S1197/RUST_S1197)
+**Severity**: Major
+**Languages**: rust, javascript, python
+
+**Detection Approach**:
+- AST-based literal analysis
+- Detect numeric literals in contexts where they should be constants
+- Exclude common patterns: 0, 1 for initialization, loop bounds, array indices
+- Include context-aware recommendations
+
+**Context-Aware Detection**:
+- Timeout values: `setTimeout(5000)` → should be `TIMEOUT_MS = 5000`
+- Buffer sizes: `buffer[1024]` → should be `BUFFER_SIZE = 1024`
+- Retry counts: `retry(3)` → should be `MAX_RETRIES = 3`
+- Percentage thresholds: `if (score > 80)` → should be `PASSING_THRESHOLD = 80`
+
+**Exclusions**:
+- 0, 1 for identity/null checks, initialization
+- Loop bounds: `for i in 0..10`
+- Array indices: `arr[0]`, `arr[1]`
+- Bit flags: `0x1F`, `0x80`
+- Version numbers: `1.0.0`

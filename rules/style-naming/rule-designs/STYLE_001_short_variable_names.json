@@ -1,0 +1,82 @@
+{
+  "rule_id": "STYLE_001",
+  "name": "Short variable names (1-2 characters) should be avoided",
+  "description": "Variable names with only 1-2 characters reduce code readability and maintainability. While some short names like loop counters (i, j, k) are acceptable, most variables should have descriptive names.",
+  "severity": "Minor",
+  "category": "CodeSmell",
+  "languages": ["rust", "javascript", "python", "go", "java", "typescript"],
+  "precision_target": "medium",
+  "Axiom metadata": {
+    "layer": "preflight",
+    "required_keywords": ["variable", "naming", "style"],
+    "performance": "O(n) per file",
+    "event_kind": "style.naming.short_variable_name"
+  },
+  "detection_strategy": "AST-based (identifier analysis)",
+  "detection_details": {
+    "ast_query": "Collect all identifier nodes from the AST that represent variable declarations, function parameters, or assignments",
+    "analyze_length": "For each identifier, check if length is 1-2 characters",
+    "context_aware_whitelist": [
+      "i, j, k - loop counters in for loops",
+      "x, y - coordinates in simple geometric contexts",
+      "n, m - mathematical indices in simple expressions",
+      "r, g, b - color components (RGB)",
+      "q, w - simple queue operation pointers"
+    ],
+    "false_positive_whitelist": [
+      "Common abbreviations: id, ok, us, db, io, fn",
+      "File extensions: js, ts, py, go, rs, java",
+      "Built-in types: fn, np",
+      "Single-letter with single purpose: e (error), s (string), v (value)"
+    ]
+  },
+  "exclusions": [
+    "Loop counters i, j, k in for-loop contexts",
+    "Coordinate variables x, y in geometric/plotting code",
+    "Mathematical indices n, m in simple formulas",
+    "Common abbreviations (id, ok, db, io, fn)",
+    "Error handling: err, e in catch blocks",
+    "String templates: s, str, txt"
+  ],
+  "false_positive_conditions": [
+    "Mathematical code where single letters are conventional (Einstein notation)",
+    "Legacy code with established short naming conventions",
+    "Callback parameters in functional programming patterns",
+    "Temporary variables in very short snippets"
+  ],
+  "remediation": "Replace short variable names with descriptive names that indicate the variable's purpose. For example, 'cnt' could become 'count', 'mx' could become 'maxValue', 'pos' could become 'position'.",
+  "fix_playbook": "1. Identify short variable name\n2. Analyze context and purpose of variable\n3. Replace with descriptive name (3+ characters recommended)\n4. Ensure the new name reflects the variable's purpose\n5. Update all references to the renamed variable\n6. For loop counters, consider renaming if used outside loop context",
+  "SARIF_mapping": {
+    "ruleId": "STYLE_001",
+    "name": "Short variable names should be avoided",
+    "severity": "note",
+    "properties": {
+      "category": "Naming",
+      "technology": ["Rust", "JavaScript", "Python", "Go", "Java", "TypeScript"]
+    }
+  },
+  "agent_semantics": {
+    "summary": "Short variable name (1-2 chars) detected - descriptive names improve code readability",
+    "reasoning_model": "gpt-4o",
+    "review_questions": [
+      "Is this a conventional loop counter (i, j, k)?",
+      "Is this a common abbreviation (id, ok, db)?",
+      "Would a longer name improve understanding of this code?",
+      "Is this legacy code that should be refactored?"
+    ],
+    "semantic_chunks": [
+      "Variable names should be descriptive enough to convey their purpose",
+      "Short names like 'cn', 'mx', 'pos' make code harder to understand",
+      "Exception: conventional short names like i/j/k for loop counters",
+      "Fix: Rename to something like 'count', 'max', 'position' that explains the variable"
+    ],
+    "safe_autofix": false,
+    "autofix_guidance": "Cannot safely autofix - requires understanding variable purpose to suggest appropriate replacement name"
+  },
+  "performance_budget": {
+    "estimated_ms": 1,
+    "budget_ms": 3,
+    "strategy": "AST identifier collection + length analysis"
+  },
+  "complexity": "low"
+}

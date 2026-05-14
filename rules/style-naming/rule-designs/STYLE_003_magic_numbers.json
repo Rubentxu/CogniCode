@@ -1,0 +1,90 @@
+{
+  "rule_id": "STYLE_003",
+  "name": "Magic numbers should be replaced with named constants",
+  "description": "Magic numbers (hardcoded numeric literals) reduce code readability and maintainability. When a number appears without explanation, it should be replaced with a named constant that describes its purpose.",
+  "severity": "Major",
+  "category": "CodeSmell",
+  "languages": ["rust", "javascript", "python"],
+  "sonarqube_equivalent": "S1197, RUST_S1197",
+  "precision_target": "high",
+  "Axiom metadata": {
+    "layer": "preflight",
+    "required_keywords": ["magic", "number", "constant", "literal"],
+    "performance": "O(n) per file",
+    "event_kind": "style.magic_number"
+  },
+  "detection_strategy": "AST-based (literal analysis + context evaluation)",
+  "detection_details": {
+    "collect_literals": "Extract all numeric literal nodes from AST",
+    "context_evaluation": "Evaluate context of each literal to determine if it should be a constant",
+    "problematic_contexts": {
+      "timeout_ms": "setTimeout(5000) - timeout values",
+      "buffer_size": "buffer[1024] - size specifications",
+      "retry_count": "retry(3) - iteration counts",
+      "percentage": "if (score > 80) - threshold values",
+      "duration": "sleep(30) - time durations",
+      "max_limit": "MAX_CONNECTIONS = 100 - limits",
+      "delay": "setInterval(fn, 1000) - interval values"
+    },
+    "safe_numbers": {
+      "0": "Zero for null/identity checks, initialization",
+      "1": "Unit increments, identity multiplication",
+      "2": "Binary choices, double-buffering",
+      "-1": "Not found sentinel, end-of-list",
+      "100": "Percentage base (100%), full count",
+      "127": "ASCII range boundaries",
+      "255": "Byte boundaries (8-bit)",
+      "1024": "Binary KB/MB boundaries"
+    }
+  },
+  "exclusions": [
+    "Numbers 0, 1, -1 in initialization and boundary checks",
+    "Loop bounds: for i in 0..10",
+    "Array indices: arr[0], arr[1]",
+    "Bit flags: 0x1F, 0x80",
+    "Version numbers: semver patterns",
+    "Mathematical constants: PI, E",
+    "Size units in tests: Vec::from_elem(1000, 0)"
+  ],
+  "false_positive_conditions": [
+    "Short code snippets where introducing constants would add complexity",
+    "One-off calculations that won't be reused",
+    "Test fixtures with intentional magic numbers",
+    "Generated code that will be regenerated"
+  ],
+  "remediation": "Replace magic numbers with named constants that describe their purpose. For example, instead of 'timeout(5000)', use 'timeout(MILLISECONDS(5))' or define 'const TIMEOUT_MS: u64 = 5000;'",
+  "fix_playbook": "1. Identify the magic number and its context\n2. Determine appropriate constant name based on purpose\n3. Define constant at appropriate scope (local, function, module, global)\n4. Replace literal with constant reference\n5. Add unit suffix to name if applicable (e.g., TIMEOUT_MS, BUFFER_SIZE)\n6. Ensure constant is properly typed",
+  "SARIF_mapping": {
+    "ruleId": "STYLE_003",
+    "name": "Magic numbers should be replaced with named constants",
+    "severity": "warning",
+    "properties": {
+      "category": "Code Smell",
+      "technology": ["Rust", "JavaScript", "Python"]
+    }
+  },
+  "agent_semantics": {
+    "summary": "Magic number detected - hardcoded numbers should be replaced with descriptive constants",
+    "reasoning_model": "gpt-4o",
+    "review_questions": [
+      "What does this number represent (timeout, size, count, threshold)?",
+      "Is this number likely to change or be reused?",
+      "What should the constant be named to explain its purpose?",
+      "Should this constant be scoped locally or shared?"
+    ],
+    "semantic_chunks": [
+      "Magic numbers reduce code readability and maintainability",
+      "A number like 5000 is meaningless without context; TIMEOUT_MS = 5000 explains itself",
+      "Magic numbers are especially problematic when used in multiple places",
+      "Fix: Replace with named constant like TIMEOUT_MS, MAX_RETRIES, BUFFER_SIZE"
+    ],
+    "safe_autofix": false,
+    "autofix_guidance": "Cannot safely autofix - requires understanding number's purpose to suggest appropriate constant name"
+  },
+  "performance_budget": {
+    "estimated_ms": 2,
+    "budget_ms": 5,
+    "strategy": "AST literal collection + context-aware filtering"
+  },
+  "complexity": "medium"
+}
