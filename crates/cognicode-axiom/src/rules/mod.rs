@@ -5,12 +5,15 @@ pub mod test_smell;
 pub mod error_handling;
 pub mod bug_concurrency;
 pub mod code_smells;
+pub mod security_crypto;
+pub mod security_input;
 
 pub use catalog::*;
 pub use test_smell::*;
 pub use error_handling::*;
 pub use bug_concurrency::*;
 pub use code_smells::*;
+pub use security_crypto::*;
 
 // Re-export all test smell rules for convenient access
 pub use test_smell::{
@@ -70,4 +73,32 @@ pub use code_smells::{
     FunctionNamingConventionRule,    // CC_CS_007
     StubFunctionRule,               // CC_CS_008
     RedundantParenthesesRule,       // CC_CS_009
+};
+
+// Re-export all security-crypto rules
+pub use security_crypto::{
+    HardcodedCredentialsRule,        // CC_SEC_CRY_001
+    WeakCryptoHashRule,               // CC_SEC_CRY_002
+    WeakEncryptionRule,               // CC_SEC_CRY_003
+    HardcodedCryptoKeyRule,           // CC_SEC_CRY_004
+    InsecureTlsConfigRule,           // CC_SEC_CRY_005
+    DeprecatedCryptoFunctionsRule,    // CC_SEC_CRY_006
+};
+
+// Re-export all security-input-validation rules
+pub use security_input::{
+    SqlInjectionRule,                   // CC_SEC_INP_001
+    CommandInjectionRule,               // CC_SEC_INP_002
+    PathTraversalRule,                  // CC_SEC_INP_003
+    XxeInjectionRule,                   // CC_SEC_INP_004
+    InsecureDeserializationRule,        // CC_SEC_INP_005
+    LdapInjectionRule,                  // CC_SEC_INP_006
+    XpathInjectionRule,                // CC_SEC_INP_007
+    CrossSiteScriptingRule,             // CC_SEC_INP_008
+    PathEquivalenceRule,               // CC_SEC_INP_009
+    OpenRedirectRule,                   // CC_SEC_INP_010
+    HttpResponseSplittingRule,          // CC_SEC_INP_011
+    IntegerOverflowRule,                // CC_SEC_INP_012
+    MissingInputSanitizationRule,       // CC_SEC_INP_013
+    UnvalidatedUrlSchemeRule,            // CC_SEC_INP_014
 };

@@ -1,0 +1,186 @@
+{
+  "batch_id": "security-input-validation",
+  "created": "2026-05-15",
+  "status": "designed",
+  "concepts_total": 14,
+  "concepts_approved": 14,
+  "concepts_legal_blocked": 0,
+  "rules": [
+    {
+      "rule_id": "CC_SEC_INP_001",
+      "concept_id": "sql-injection",
+      "name": "SQL Injection via String Concatenation",
+      "status": "designed",
+      "severity": "CRITICAL",
+      "precision": "high",
+      "cwe": "CWE-89"
+    },
+    {
+      "rule_id": "CC_SEC_INP_002",
+      "concept_id": "command-injection",
+      "name": "OS Command Injection via Shell Execution",
+      "status": "designed",
+      "severity": "CRITICAL",
+      "precision": "high",
+      "cwe": "CWE-78"
+    },
+    {
+      "rule_id": "CC_SEC_INP_003",
+      "concept_id": "path-traversal",
+      "name": "Path Traversal via User Input in File Operations",
+      "status": "designed",
+      "severity": "CRITICAL",
+      "precision": "high",
+      "cwe": "CWE-22"
+    },
+    {
+      "rule_id": "CC_SEC_INP_004",
+      "concept_id": "xxe",
+      "name": "XML External Entity (XXE) Injection",
+      "status": "designed",
+      "severity": "CRITICAL",
+      "precision": "high",
+      "cwe": "CWE-611"
+    },
+    {
+      "rule_id": "CC_SEC_INP_005",
+      "concept_id": "insecure-deserialization",
+      "name": "Insecure Deserialization of Untrusted Data",
+      "status": "designed",
+      "severity": "CRITICAL",
+      "precision": "high",
+      "cwe": "CWE-502"
+    },
+    {
+      "rule_id": "CC_SEC_INP_006",
+      "concept_id": "ldap-injection",
+      "name": "LDAP Injection via Filter String Concatenation",
+      "status": "designed",
+      "severity": "MAJOR",
+      "precision": "medium",
+      "cwe": "CWE-90"
+    },
+    {
+      "rule_id": "CC_SEC_INP_007",
+      "concept_id": "xpath-injection",
+      "name": "XPath Injection via Expression Concatenation",
+      "status": "designed",
+      "severity": "MAJOR",
+      "precision": "medium",
+      "cwe": "CWE-643"
+    },
+    {
+      "rule_id": "CC_SEC_INP_008",
+      "concept_id": "xss",
+      "name": "Cross-Site Scripting via Unsanitized Output",
+      "status": "designed",
+      "severity": "MAJOR",
+      "precision": "high",
+      "cwe": "CWE-79"
+    },
+    {
+      "rule_id": "CC_SEC_INP_009",
+      "concept_id": "path-equivalence",
+      "name": "Path Equivalence Without Verification",
+      "status": "designed",
+      "severity": "MAJOR",
+      "precision": "medium",
+      "cwe": "CWE-41"
+    },
+    {
+      "rule_id": "CC_SEC_INP_010",
+      "concept_id": "open-redirect",
+      "name": "Open Redirect via Unvalidated URL",
+      "status": "designed",
+      "severity": "MAJOR",
+      "precision": "high",
+      "cwe": "CWE-601"
+    },
+    {
+      "rule_id": "CC_SEC_INP_011",
+      "concept_id": "http-response-splitting",
+      "name": "HTTP Response Splitting via Header Injection",
+      "status": "designed",
+      "severity": "MAJOR",
+      "precision": "medium",
+      "cwe": "CWE-113"
+    },
+    {
+      "rule_id": "CC_SEC_INP_012",
+      "concept_id": "integer-overflow",
+      "name": "Integer Overflow in Size Calculation",
+      "status": "designed",
+      "severity": "MAJOR",
+      "precision": "medium",
+      "cwe": "CWE-190"
+    },
+    {
+      "rule_id": "CC_SEC_INP_013",
+      "concept_id": "missing-input-sanitization",
+      "name": "Missing Input Sanitization on Public Interface",
+      "status": "designed",
+      "severity": "MINOR",
+      "precision": "low",
+      "cwe": "CWE-20"
+    },
+    {
+      "rule_id": "CC_SEC_INP_014",
+      "concept_id": "trusting-url-scheme",
+      "name": "Unvalidated URL Scheme Allows Dangerous Protocols",
+      "status": "designed",
+      "severity": "MINOR",
+      "precision": "medium",
+      "cwe": "CWE-829"
+    }
+  ],
+  "legal_audit": {
+    "status": "completed",
+    "audited_concepts": 14,
+    "blocked": 0,
+    "notes": "All security-input-validation concepts are derived from public CWE descriptions, SonarQube/CodeQL security rules, and OWASP guidelines. No proprietary implementations involved."
+  },
+  "batch_metrics": {
+    "discovered": 14,
+    "normalized": 14,
+    "duplicates": 0,
+    "legal_blocked": 0,
+    "reference_only": 0,
+    "designed": 14,
+    "fixtures_ready": 0,
+    "implemented": 0,
+    "tested": 0,
+    "benchmarked": 0,
+    "approved": 0,
+    "published": 0
+  },
+  "phase_history": [
+    {
+      "phase": "research",
+      "status": "completed",
+      "timestamp": "2026-05-15T00:00:00Z",
+      "notes": "Researched SonarQube/CodeQL security injection rules - 14 candidates identified"
+    },
+    {
+      "phase": "normalize",
+      "status": "completed",
+      "timestamp": "2026-05-15T00:05:00Z",
+      "notes": "14 unique concepts, no duplicates"
+    },
+    {
+      "phase": "legal",
+      "status": "completed",
+      "timestamp": "2026-05-15T00:10:00Z",
+      "notes": "All concepts based on public CWE, SonarQube, OWASP - no legal blockers"
+    },
+    {
+      "phase": "design",
+      "status": "completed",
+      "timestamp": "2026-05-15T00:15:00Z",
+      "notes": "Detection strategies defined in rule-designs.json"
+    }
+  ],
+  "infrastructure_ready": true,
+  "axiom_crate_created": true,
+  "next_phase": "implement",
+  "blocking_issues": []
+}

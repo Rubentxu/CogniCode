@@ -1,0 +1,1147 @@
+# Test Tasks: security-input-validation batch
+# Generated: 2026-05-14
+# Rules: 14 (CRITICAL: 5, MAJOR: 7, Minor: 2)
+
+batch_summary:
+  total_rules: 14
+  total_positive_tests: 37
+  total_negative_tests: 56
+  total_edge_case_tests: 20
+  total_tests: 113
+
+test_execution_order:
+  - "CRITICAL rules first for faster feedback on most severe issues"
+  - "MAJOR rules second"
+  - "MINOR rules last"
+
+rules:
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # CRITICAL RULES
+  # ═══════════════════════════════════════════════════════════════════════════════
+
+  - rule_id: sqli-string-concat
+    cwe: CWE-89
+    test_categories:
+      positive_detection:
+        count: 3
+        tests:
+          - id: FP-001
+            name: Direct interpolation in SQL query
+            code: |
+              fn get_user(id: i32) -> Result<User> {
+                  let query = format!("SELECT * FROM users WHERE id = {}", id);
+                  db.execute(&query)
+              }
+            expected: DETECT
+
+          - id: FP-002
+            name: Multiple user inputs concatenated
+            code: |
+              let sql = format!("INSERT INTO logs VALUES ('{}', '{}')", user, msg);
+              conn.execute(&sql)?;
+            expected: DETECT
+
+          - id: FP-003
+            name: Multi-statement query construction
+            code: |
+              let mut q = String::new();
+              q.push_str("SELECT * FROM items WHERE name = '");
+              q.push_str(&user_input);
+              q.push_str("'");
+              execute(&q);
+            expected: DETECT
+
+      negative_detection:
+        count: 5
+        tests:
+          - id: FN-001
+            name: Parameterized query placeholder
+            code: |
+              let result = query!("SELECT * FROM users WHERE id = $1", user_id);
+            expected: NO_DETECT
+
+          - id: FN-002
+            name: Hardcoded SQL string
+            code: |
+              let sql = "SELECT * FROM products ORDER BY name";
+              execute(sql);
+            expected: NO_DETECT
+
+          - id: FN-003
+            name: Logging format, not SQL
+            code: |
+              log::info!("User {} triggered action", username);
+            expected: NO_DETECT
+
+          - id: FN-004
+            name: Test module code
+            code: |
+              #[cfg(test)]
+              mod tests {
+                  let sql = "SELECT 1";
+              }
+            expected: NO_DETECT
+
+          - id: FN-005
+            name: Sanitized input
+            code: |
+              let safe_name = sanitize(&name);
+              execute(&format!("SELECT * FROM users WHERE name = '{}'", safe_name));
+            expected: NO_DETECT
+
+      edge_cases:
+        count: 2
+        tests:
+          - id: EC-001
+            name: Nested format calls
+            code: |
+              let id = format!("{}", user_id);
+              let query = format!("SELECT * FROM users WHERE id = {}", id);
+            expected: DETECT
+
+          - id: EC-002
+            name: Query built via macro
+            code: |
+              macro_rules! build_query {
+                  ($t:expr) => { format!("SELECT * FROM {}", $t) }
+              }
+            expected: DETECT
+
+      false_positive_regression:
+        count: 3
+        scenarios:
+          - "Query using ? placeholder"
+          - "Binary expression concatenating but not in database context"
+          - "Function named query but receiving constant string"
+
+  - rule_id: command-injection-shell
+    cwe: CWE-78
+    test_categories:
+      positive_detection:
+        count: 3
+        tests:
+          - id: FP-001
+            name: Format string with user path
+            code: |
+              fn delete_path(path: &str) {
+                  Command::new(&format!("rm -rf {}", path));
+              }
+            expected: DETECT
+
+          - id: FP-002
+            name: Shell invocation with user input
+            code: |
+              std::process::Command::new("sh")
+                  .arg("-c")
+                  .arg(&format!("ls {}", user_dir));
+            expected: DETECT
+
+          - id: FP-003
+            name: Command from user-controlled path
+            code: |
+              let script = format!("{}/script.sh", base);
+              std::process::Command::new(&script);
+            expected: DETECT
+
+      negative_detection:
+        count: 4
+        tests:
+          - id: FN-001
+            name: Safe .arg() method usage
+            code: |
+              Command::new("ls").arg("-la").arg(user_path);
+            expected: NO_DETECT
+
+          - id: FN-002
+            name: Constant arguments only
+            code: |
+              Command::new("rm").arg("-rf").arg("/safe/path");
+            expected: NO_DETECT
+
+          - id: FN-003
+            name: Pre-validated command
+            code: |
+              let cmd = validate_command(user_input)?;
+              Command::new(cmd);
+            expected: NO_DETECT
+
+          - id: FN-004
+            name: Test environment
+            code: |
+              #[test]
+              fn test_command() {
+                  Command::new("echo");
+              }
+            expected: NO_DETECT
+
+      edge_cases:
+        count: 2
+        tests:
+          - id: EC-001
+            name: Multiple format args
+            code: |
+              let cmd = format!("{} {} {}", prog, arg1, arg2);
+              Command::new(&cmd);
+            expected: DETECT
+
+          - id: EC-002
+            name: args() with user vector
+            code: |
+              Command::new("ls").args(&user_args);
+            expected: DETECT
+
+      false_positive_regression:
+        count: 3
+        scenarios:
+          - "Command::new with .arg() method (safe pattern)"
+          - "Input is constant string"
+          - "Using shell with pre-defined safe commands only"
+
+  - rule_id: path-traversal
+    cwe: CWE-22
+    test_categories:
+      positive_detection:
+        count: 3
+        tests:
+          - id: FP-001
+            name: User input joined into path
+            code: |
+              fn open_file(dir: &str, name: &str) -> Result<File> {
+                  File::open(&format!("{}/{}", dir, name))
+              }
+            expected: DETECT
+
+          - id: FP-002
+            name: Multiple user inputs in path
+            code: |
+              let path = format!("files/{}/{}", user_id, filename);
+              std::fs::read(&path)?;
+            expected: DETECT
+
+          - id: FP-003
+            name: String concatenation
+            code: |
+              let full_path = base_path.clone() + "/" + &user_input;
+              std::fs::File::open(&full_path)?;
+            expected: DETECT
+
+      negative_detection:
+        count: 4
+        tests:
+          - id: FN-001
+            name: Canonicalized with bounds check
+            code: |
+              let full = base_dir.join(&user_input).canonicalize()?;
+              if !full.starts_with(base_dir) { return Err(()); }
+            expected: NO_DETECT
+
+          - id: FN-002
+            name: Whitelist validation
+            code: |
+              if !ALLOWED_DIRS.contains(&user_dir) {
+                  return Err(SecurityError);
+              }
+              File::open(&format!("{}/{}", user_dir, filename))
+            expected: NO_DETECT
+
+          - id: FN-003
+            name: Constant path
+            code: |
+              std::fs::read("/etc/config/app.conf")?;
+            expected: NO_DETECT
+
+          - id: FN-004
+            name: Test fixture
+            code: |
+              #[test]
+              fn test_read() {
+                  std::fs::read("/test/fixture.txt").unwrap();
+              }
+            expected: NO_DETECT
+
+      edge_cases:
+        count: 2
+        tests:
+          - id: EC-001
+            name: Nested path building
+            code: |
+              let dir = format!("{}/subdir", user_base);
+              let path = format!("{}/{}", dir, user_file);
+            expected: DETECT
+
+          - id: EC-002
+            name: PathBuf push operation
+            code: |
+              let mut p = PathBuf::from(base);
+              p.push(&user_input);
+            expected: DETECT
+
+  - rule_id: xxe
+    cwe: CWE-611
+    test_categories:
+      positive_detection:
+        count: 2
+        tests:
+          - id: FP-001
+            name: XML parser without secure features
+            code: |
+              fn parse_xml(input: &str) -> Result<()> {
+                  let mut reader = Reader::new(input);
+                  for event in reader.events() {
+                      println!("{:?}", event);
+                  }
+                  Ok(())
+              }
+            expected: DETECT
+
+          - id: FP-002
+            name: XML reader without DTD restrictions
+            code: |
+              let reader = quick_xml::Reader::from_str(data);
+              reader.config();
+            expected: DETECT
+
+      negative_detection:
+        count: 3
+        tests:
+          - id: FN-001
+            name: External entities disabled
+            code: |
+              let reader = Reader::new(input)
+                  .with_feature("http://xml.org/sax/features/external-general-entities", false)?;
+            expected: NO_DETECT
+
+          - id: FN-002
+            name: Using serde_json
+            code: |
+              serde_json::from_str::<Value>(&data)?;
+            expected: NO_DETECT
+
+          - id: FN-003
+            name: Test with mock data
+            code: |
+              #[test]
+              fn test_parser() {
+                  let reader = Reader::new("<test/>");
+              }
+            expected: NO_DETECT
+
+      edge_cases:
+        count: 1
+        tests:
+          - id: EC-001
+            name: Feature set after creation
+            code: |
+              let mut reader = Reader::new(input);
+              reader = reader.into_reader();
+            expected: DETECT
+
+  - rule_id: insecure-deserialization
+    cwe: CWE-502
+    test_categories:
+      positive_detection:
+        count: 3
+        tests:
+          - id: FP-001
+            name: bincode from user data
+            code: |
+              fn process(user_data: Vec<u8>) -> Result<Config> {
+                  bincode::deserialize(&user_data)
+              }
+            expected: DETECT
+
+          - id: FP-002
+            name: YAML from user input
+            code: |
+              let config: Config = serde_yaml::from_str(&user_yaml)?;
+            expected: DETECT
+
+          - id: FP-003
+            name: MessagePack from stream
+            code: |
+              let obj = rmp_serde::from_read(user_stream)?;
+            expected: DETECT
+
+      negative_detection:
+        count: 4
+        tests:
+          - id: FN-001
+            name: JSON from user
+            code: |
+              let value: serde_json::Value = serde_json::from_str(&user_input)?;
+            expected: NO_DETECT
+
+          - id: FN-002
+            name: Trusted internal source
+            code: |
+              let config = serde_json::from_str(include_str!("config.json"))?;
+            expected: NO_DETECT
+
+          - id: FN-003
+            name: Integrity check first
+            code: |
+              let hash = sha256(&data);
+              verify(&hash, &expected)?;
+              serde_json::from_slice::<Value>(&data)?
+            expected: NO_DETECT
+
+          - id: FN-004
+            name: Test with known data
+            code: |
+              #[test]
+              fn test_deser() {
+                  let data = b"test";
+                  bincode::deserialize::<u32>(data).unwrap();
+              }
+            expected: NO_DETECT
+
+      edge_cases:
+        count: 2
+        tests:
+          - id: EC-001
+            name: Nested deserialization
+            code: |
+              let outer: Outer = bincode::deserialize(&data)?;
+              let inner: Inner = bincode::deserialize(outer.inner_bytes())?;
+            expected: DETECT
+
+          - id: EC-002
+            name: Dynamic type
+            code: |
+              let obj: Box<dyn Deserialize> = Box::new(data);
+            expected: DETECT
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # MAJOR RULES
+  # ═══════════════════════════════════════════════════════════════════════════════
+
+  - rule_id: ldap-injection
+    cwe: CWE-90
+    test_categories:
+      positive_detection:
+        count: 2
+        tests:
+          - id: FP-001
+            name: Direct LDAP filter interpolation
+            code: |
+              fn find_user(ldap: &Ldap, username: &str) -> ldap3::Result<()> {
+                  let filter = format!("(uid={})", username);
+                  ldap.simple_search(&filter)?;
+              }
+            expected: DETECT
+
+          - id: FP-002
+            name: Multi-step filter construction
+            code: |
+              let mut f = String::from("(cn=");
+              f.push_str(&user_input);
+              f.push_str(")");
+              ldap.search(&f, SearchFlags::empty())?;
+            expected: DETECT
+
+      negative_detection:
+        count: 4
+        tests:
+          - id: FN-001
+            name: Proper LDAP escaping
+            code: |
+              let filter = format!("(uid={})", filter_escape(&user));
+              ldap.simple_search(&filter)?;
+            expected: NO_DETECT
+
+          - id: FN-002
+            name: Constant filter
+            code: |
+              ldap.simple_search("(uid=admin)", SearchFlags::empty())?;
+            expected: NO_DETECT
+
+          - id: FN-003
+            name: Safe library abstraction
+            code: |
+              let filter = Filter::eq("uid", &validated_input);
+            expected: NO_DETECT
+
+          - id: FN-004
+            name: Test environment
+            code: |
+              #[test]
+              fn test_ldap_filter() {
+                  ldap.simple_search("(objectClass=*)", flags)?;
+              }
+            expected: NO_DETECT
+
+      edge_cases:
+        count: 2
+        tests:
+          - id: EC-001
+            name: Multiple user inputs
+            code: |
+              let filter = format!("(&(uid={})(mail={}))", u1, u2);
+            expected: DETECT
+
+          - id: EC-002
+            name: Filter via macro
+            code: |
+              macro_rules! build_filter {
+                  ($u:expr) => { format!("(uid={})", $u) }
+              }
+            expected: DETECT
+
+  - rule_id: xpath-injection
+    cwe: CWE-643
+    test_categories:
+      positive_detection:
+        count: 3
+        tests:
+          - id: FP-001
+            name: Dynamic tag via format
+            code: |
+              fn find_node(xml: &str, tag: &str) -> Option<Node> {
+                  let doc = Document::from(xml);
+                  doc.select(&format!(".//{}", tag)).pop()
+              }
+            expected: DETECT
+
+          - id: FP-002
+            name: User input in XPath
+            code: |
+              let expr = format!("//user[@name='{}']", user_name);
+              xpath.evaluate(&expr, document)?
+            expected: DETECT
+
+          - id: FP-003
+            name: String concatenation in XPath
+            code: |
+              let path = "//item[@id='".to_string() + &item_id + "']";
+              doc.select(&path);
+            expected: DETECT
+
+      negative_detection:
+        count: 4
+        tests:
+          - id: FN-001
+            name: Prepared statement
+            code: |
+              let query = xpath.prepare("//item[@id=$1]")?;
+              query.bind(&[&item_id])?;
+            expected: NO_DETECT
+
+          - id: FN-002
+            name: Constant expression
+            code: |
+              doc.select("//item[@id='safe']").pop()
+            expected: NO_DETECT
+
+          - id: FN-003
+            name: Validated input
+            code: |
+              let tag = validate_tag(&user_tag)?;
+              doc.select(&format(".//{}", tag))
+            expected: NO_DETECT
+
+          - id: FN-004
+            name: Test environment
+            code: |
+              #[test]
+              fn test_xpath() {
+                  doc.select("//root/child");
+              }
+            expected: NO_DETECT
+
+      edge_cases:
+        count: 1
+        tests:
+          - id: EC-001
+            name: Multiple interpolations
+            code: |
+              let expr = format!("//{}[@a='{}' and @b='{}']", tag, a, b);
+            expected: DETECT
+
+  - rule_id: xss-unsanitized-output
+    cwe: CWE-79
+    test_categories:
+      positive_detection:
+        count: 3
+        tests:
+          - id: FP-001
+            name: User in HTML response
+            code: |
+              fn greet(req: HttpRequest) -> HttpResponse {
+                  let name = req.match_info().get("name").unwrap_or("World");
+                  HttpResponse::Ok().body(format!("<h1>Hello {}</h1>", name))
+              }
+            expected: DETECT
+
+          - id: FP-002
+            name: User in JavaScript context
+            code: |
+              HttpResponse::Ok()
+                  .content_type("text/html")
+                  .body(format!("<script>alert('{}')</script>", msg))
+            expected: DETECT
+
+          - id: FP-003
+            name: Multiple user inputs in HTML
+            code: |
+              let body = format!("<div class='{}'>{}</div>", cls, content);
+              response.body(body)
+            expected: DETECT
+
+      negative_detection:
+        count: 4
+        tests:
+          - id: FN-001
+            name: HTML escaped before output
+            code: |
+              HttpResponse::Ok().body(format!("<div>{}</div>", escape_html(&user)))
+            expected: NO_DETECT
+
+          - id: FN-002
+            name: JSON response
+            code: |
+              HttpResponse::Ok().json(&user_data)
+            expected: NO_DETECT
+
+          - id: FN-003
+            name: Template engine auto-escape
+            code: |
+              Template::render("index", &context)
+            expected: NO_DETECT
+
+          - id: FN-004
+            name: Test environment
+            code: |
+              #[test]
+              fn test_response() {
+                  HttpResponse::Ok().body("<h1>Test</h1>");
+              }
+            expected: NO_DETECT
+
+      edge_cases:
+        count: 2
+        tests:
+          - id: EC-001
+            name: Nested rendering
+            code: |
+              let inner = format!("<span>{}</span>", user);
+              let page = format!("<div>{}</div>", inner);
+            expected: DETECT
+
+          - id: EC-002
+            name: JSON in HTML
+            code: |
+              let json = serde_json::to_string(&data)?;
+              format!("<script>var cfg = {};</script>", json)
+            expected: DETECT
+
+  - rule_id: path-equivalence
+    cwe: CWE-41
+    test_categories:
+      positive_detection:
+        count: 3
+        tests:
+          - id: FP-001
+            name: Canonicalize without bounds
+            code: |
+              fn read_user_file(filename: &str) -> Result<String> {
+                  let path = Path::new(filename).canonicalize()?;
+                  std::fs::read_to_string(&path)
+              }
+            expected: DETECT
+
+          - id: FP-002
+            name: Components without bounds
+            code: |
+              let normalized = Path::new(&input).components();
+              for c in normalized { println!("{:?}", c); }
+            expected: DETECT
+
+          - id: FP-003
+            name: Normalize without verification
+            code: |
+              let p = base_path.join(&user_path).normalize();
+              std::fs::read(&p)?;
+            expected: DETECT
+
+      negative_detection:
+        count: 4
+        tests:
+          - id: FN-001
+            name: Canonicalized with bounds check
+            code: |
+              let p = base.join(&input).canonicalize()?;
+              if !p.starts_with(base) {
+                  return Err(AccessDenied);
+              }
+            expected: NO_DETECT
+
+          - id: FN-002
+            name: Constant path
+            code: |
+              std::fs::read("/etc/app/config.toml")?;
+            expected: NO_DETECT
+
+          - id: FN-003
+            name: Whitelist validation
+            code: |
+              if !ALLOWED_PATHS.contains(&user_path) {
+                  return Err(InvalidPath);
+              }
+              base.join(&user_path)
+            expected: NO_DETECT
+
+          - id: FN-004
+            name: Test environment
+            code: |
+              #[test]
+              fn test_path() {
+                  Path::new("/test/fixture").canonicalize().unwrap();
+              }
+            expected: NO_DETECT
+
+      edge_cases:
+        count: 2
+        tests:
+          - id: EC-001
+            name: Delayed verification
+            code: |
+              let p1 = base.join(&a);
+              let p2 = p1.join(&b);
+              let p3 = p2.canonicalize();
+            expected: DETECT
+
+          - id: EC-002
+            name: Symlink handling
+            code: |
+              let real = path.canonicalize()?;
+            expected: DETECT
+
+  - rule_id: open-redirect
+    cwe: CWE-601
+    test_categories:
+      positive_detection:
+        count: 3
+        tests:
+          - id: FP-001
+            name: Direct user URL in redirect
+            code: |
+              fn redirect_to(req: HttpRequest) -> HttpResponse {
+                  let dest = req.match_info().get("url").unwrap();
+                  HttpResponse::Found()
+                      .insert_header(("Location", dest))
+                      .finish()
+              }
+            expected: DETECT
+
+          - id: FP-002
+            name: User input in redirect URL
+            code: |
+              let url = format!("{}/{}", base_url, user_path);
+              HttpResponse::MovedPermanently()
+                  .insert_header(("Location", &url))
+                  .finish()
+            expected: DETECT
+
+          - id: FP-003
+            name: User in Location header
+            code: |
+              HttpResponse::SeeOther()
+                  .insert_header(("Location", &user_input))
+            expected: DETECT
+
+      negative_detection:
+        count: 4
+        tests:
+          - id: FN-001
+            name: Path-only with validation
+            code: |
+              redirect(&format!("/app/{}", validate_path(segment)?))
+            expected: NO_DETECT
+
+          - id: FN-002
+            name: Whitelist validation
+            code: |
+              if !is_allowed_redirect(&url) {
+                  return Err(InvalidRedirect);
+              }
+              redirect(&url)
+            expected: NO_DETECT
+
+          - id: FN-003
+            name: Named route
+            code: |
+              Redirect::to_named("dashboard")
+            expected: NO_DETECT
+
+          - id: FN-004
+            name: Test environment
+            code: |
+              #[test]
+              fn test_redirect() {
+                  HttpResponse::Found().insert_header(("Location", "/"));
+              }
+            expected: NO_DETECT
+
+      edge_cases:
+        count: 2
+        tests:
+          - id: EC-001
+            name: Protocol-relative URL
+            code: |
+              format!("//{}", user_domain)
+            expected: DETECT
+
+          - id: EC-002
+            name: Double encoding
+            code: |
+              format!("/page?url={}", urlencoding(&user_input))
+            expected: DETECT
+
+  - rule_id: http-response-splitting
+    cwe: CWE-113
+    test_categories:
+      positive_detection:
+        count: 3
+        tests:
+          - id: FP-001
+            name: User in custom header
+            code: |
+              fn handler(req: HttpRequest) -> HttpResponse {
+                  let name = req.match_info().get("name").unwrap_or("Guest");
+                  HttpResponse::Ok()
+                      .insert_header(("X-Greeting", format!("Hello {}", name)))
+                      .finish()
+              }
+            expected: DETECT
+
+          - id: FP-002
+            name: Session in Set-Cookie
+            code: |
+              let cookie = format!("session={}", session_id);
+              HttpResponse::Ok()
+                  .insert_header(("Set-Cookie", cookie))
+                  .finish()
+            expected: DETECT
+
+          - id: FP-003
+            name: Raw header value
+            code: |
+              let forwarded = req.headers().get("X-Forwarded-For");
+              let mut res = HttpResponse::Ok();
+              res.insert_header(("X-Client-IP", forwarded));
+            expected: DETECT
+
+      negative_detection:
+        count: 4
+        tests:
+          - id: FN-001
+            name: Newlines stripped
+            code: |
+              let safe = user_input.replace(['\r', '\n'], "");
+              header.insert("X-Value", safe);
+            expected: NO_DETECT
+
+          - id: FN-002
+            name: Constant header
+            code: |
+              header.insert("Content-Type", "text/html");
+            expected: NO_DETECT
+
+          - id: FN-003
+            name: Typed header builder
+            code: |
+              header.insert(ContentType::json());
+            expected: NO_DETECT
+
+          - id: FN-004
+            name: Test environment
+            code: |
+              #[test]
+              fn test_header() {
+                  HttpResponse::Ok().insert_header(("X-Test", "value"));
+              }
+            expected: NO_DETECT
+
+      edge_cases:
+        count: 2
+        tests:
+          - id: EC-001
+            name: Unicode newlines
+            code: |
+              let input = user.replace('\n', "\u{2028}");
+            expected: DETECT
+
+          - id: EC-002
+            name: Iterating user headers
+            code: |
+              for (k, v) in user_headers {
+                  res.insert_header((k, v));
+              }
+            expected: DETECT
+
+  - rule_id: integer-overflow-size
+    cwe: CWE-190
+    test_categories:
+      positive_detection:
+        count: 3
+        tests:
+          - id: FP-001
+            name: Multiplication without check
+            code: |
+              fn process(a: &[u8], b: &[u8]) -> Vec<u8> {
+                  let total = a.len() * b.len();
+                  vec![0u8; total]
+              }
+            expected: DETECT
+
+          - id: FP-002
+            name: Unchecked resize
+            code: |
+              let mut v = Vec::new();
+              v.resize(old_size + user_input, 0);
+            expected: DETECT
+
+          - id: FP-003
+            name: Size from user collection
+            code: |
+              let capacity = headers.len() * 2 + payload.len();
+              let buf = Vec::with_capacity(capacity);
+            expected: DETECT
+
+      negative_detection:
+        count: 4
+        tests:
+          - id: FN-001
+            name: Checked multiplication
+            code: |
+              let size = a.len().checked_mul(b.len()).ok_or(Overflow)?;
+              vec![0u8; size]
+            expected: NO_DETECT
+
+          - id: FN-002
+            name: Validated input
+            code: |
+              let size = validate_size(user_input)?;
+              Vec::with_capacity(size)
+            expected: NO_DETECT
+
+          - id: FN-003
+            name: Constant
+            code: |
+              vec![0u8; 1024]
+            expected: NO_DETECT
+
+          - id: FN-004
+            name: Test environment
+            code: |
+              #[test]
+              fn test_vec() {
+                  vec![0u8; 100];
+              }
+            expected: NO_DETECT
+
+      edge_cases:
+        count: 2
+        tests:
+          - id: EC-001
+            name: Chained operations
+            code: |
+              let size = (a.len() + b.len()) * c.len();
+            expected: DETECT
+
+          - id: EC-002
+            name: Size from deserialization
+            code: |
+              let header: Header = deserialize(data)?;
+              let size = header.count * std::mem::size_of::<Item>();
+            expected: DETECT
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # MINOR RULES
+  # ═══════════════════════════════════════════════════════════════════════════════
+
+  - rule_id: missing-input-sanitization
+    cwe: CWE-20
+    test_categories:
+      positive_detection:
+        count: 3
+        tests:
+          - id: FP-001
+            name: No validation present
+            code: |
+              pub fn process_user_input(data: String) -> Result<()> {
+                  store_in_db(&data)?;
+                  Ok(())
+              }
+            expected: DETECT
+
+          - id: FP-002
+            name: Stored without sanitization
+            code: |
+              fn new_user(name: String, email: String) -> User {
+                  User { name, email }
+              }
+            expected: DETECT
+
+          - id: FP-003
+            name: Passed to query
+            code: |
+              async fn handle(req: HttpRequest) -> Result<HttpResponse> {
+                  let input = req.match_info().get("data").unwrap();
+                  execute_query(input)
+              }
+            expected: DETECT
+
+      negative_detection:
+        count: 4
+        tests:
+          - id: FN-001
+            name: Validated at entry
+            code: |
+              fn process(data: String) -> Result<()> {
+                  validate_input(&data)?;
+              }
+            expected: NO_DETECT
+
+          - id: FN-002
+            name: Newtype pattern
+            code: |
+              struct UserInput(String);
+              impl UserInput {
+                  pub fn new(s: String) -> Result<Self> {
+                      validate(&s)?;
+                      Ok(UserInput(s))
+                  }
+              }
+            expected: NO_DETECT
+
+          - id: FN-003
+            name: Validated helper
+            code: |
+              fn handler(input: String) {
+                  process(validate_input(input)?)
+              }
+            expected: NO_DETECT
+
+          - id: FN-004
+            name: Test environment
+            code: |
+              #[test]
+              fn test_helper() {
+                  let r = helper("constant");
+              }
+            expected: NO_DETECT
+
+      edge_cases:
+        count: 2
+        tests:
+          - id: EC-001
+            name: Partial validation
+            code: |
+              if data.len() > 100 { return Err(()); }
+              execute(&data)
+            expected: DETECT
+
+          - id: EC-002
+            name: Selective validation
+            code: |
+              fn create(name: String, email: String, age: u32) {
+                  validate_name(&name)?;
+                  store(email, age);
+              }
+            expected: DETECT
+
+  - rule_id: trusting-url-scheme
+    cwe: CWE-829
+    test_categories:
+      positive_detection:
+        count: 3
+        tests:
+          - id: FP-001
+            name: URL parsed without scheme check
+            code: |
+              fn fetch_resource(url_str: &str) -> Result<String> {
+                  let url = Url::parse(url_str)?;
+                  reqwest::get(url.as_str())?.text()
+              }
+            expected: DETECT
+
+          - id: FP-002
+            name: User controls scheme and host
+            code: |
+              let url = format!("{}://{}", user_scheme, user_host);
+              reqwest::get(&url)?;
+            expected: DETECT
+
+          - id: FP-003
+            name: Request to user URL
+            code: |
+              let resp = reqwest::get(&user_url).await?;
+            expected: DETECT
+
+      negative_detection:
+        count: 4
+        tests:
+          - id: FN-001
+            name: Scheme validated
+            code: |
+              let url = Url::parse(&user_url)?;
+              if url.scheme() != "https" {
+                  return Err(InsecureScheme);
+              }
+            expected: NO_DETECT
+
+          - id: FN-002
+            name: HTTPS required
+            code: |
+              url.require_https()?;
+            expected: NO_DETECT
+
+          - id: FN-003
+            name: Static URL
+            code: |
+              reqwest::get("https://api.example.com/data")?
+            expected: NO_DETECT
+
+          - id: FN-004
+            name: Test environment
+            code: |
+              #[test]
+              fn test_url() {
+                  Url::parse("https://example.com").unwrap();
+              }
+            expected: NO_DETECT
+
+      edge_cases:
+        count: 2
+        tests:
+          - id: EC-001
+            name: Protocol-relative URL
+            code: |
+              format!("//{}", user_host)
+            expected: DETECT
+
+          - id: EC-002
+            name: Data URL
+            code: |
+              format!("data:text/html,<script>{}</script>", script)
+            expected: DETECT
+
+# Test execution requirements
+test_execution:
+  min_coverage:
+    positives: "100% detection rate required"
+    negatives: "0% false positive rate on negative cases"
+    edge_cases: "All edge cases must be correctly classified"
+
+  regression_tests:
+    - "Run all positive tests - all must detect"
+    - "Run all negative tests - none should detect"
+    - "Run all edge cases - verify correct classification"
+    - "Run false positive guard tests - verify no false positives"
+
+  ci_integration:
+    - "All tests must pass in CI"
+    - "Test count must match expected: 113 total tests"
+    - "No test may timeout (timeout: 30s per test)"

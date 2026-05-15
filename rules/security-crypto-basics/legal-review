@@ -1,0 +1,58 @@
+{
+  "audit_date": "2026-05-14",
+  "batch_id": "security-crypto-basics",
+  "auditor": "rule-designer",
+  "legal_provenance_check": {
+    "status": "passed",
+    "sources_verified": [
+      "CWE (Common Weakness Enumeration) - public domain",
+      "SonarQube SonarSource rules - permissive license",
+      "OWASP guidelines - public domain"
+    ],
+    "no_proprietary_content": true,
+    "no_patent_risk": true,
+    "attribution_notes": "CWE descriptions are from MITRE's CWE list (public). SonarQube rule specifications referenced for behavioral patterns."
+  },
+  "concepts_audited": 6,
+  "approved": [
+    {
+      "concept_id": "CC_SEC_CRY_001",
+      "name": "hardcoded-credentials",
+      "legal_status": "approved",
+      "provenance": "CWE-798, CWE-312 (MITRE) + SonarQube S2068"
+    },
+    {
+      "concept_id": "CC_SEC_CRY_002",
+      "name": "weak-crypto-hash",
+      "legal_status": "approved",
+      "provenance": "CWE-327 (MITRE) + SonarQube S4792"
+    },
+    {
+      "concept_id": "CC_SEC_CRY_003",
+      "name": "weak-encryption",
+      "legal_status": "approved",
+      "provenance": "CWE-327 (MITRE) + SonarQube S2254"
+    },
+    {
+      "concept_id": "CC_SEC_CRY_004",
+      "name": "hardcoded-crypto-key",
+      "legal_status": "approved",
+      "provenance": "CWE-321 (MITRE) + SonarQube S2068 variant"
+    },
+    {
+      "concept_id": "CC_SEC_CRY_005",
+      "name": "insecure-tls-config",
+      "legal_status": "approved",
+      "provenance": "CWE-295, CWE-296 (MITRE) + SonarQube S4834"
+    },
+    {
+      "concept_id": "CC_SEC_CRY_006",
+      "name": "deprecated-crypto-functions",
+      "legal_status": "approved",
+      "provenance": "CWE-327 (MITRE) + SonarQube S5122"
+    }
+  ],
+  "blocked": [],
+  "legal_blocked_count": 0,
+  "notes": "All concepts are derived from publicly available CWE descriptions and established static analysis rule patterns. No proprietary algorithm implementations or patented technology involved."
+}

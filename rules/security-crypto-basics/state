@@ -1,0 +1,58 @@
+{
+  "batch_id": "security-crypto-basics",
+  "created": "2026-05-14",
+  "status": "designed",
+  "concepts_total": 6,
+  "concepts_approved": 6,
+  "concepts_legal_blocked": 0,
+  "rules": [
+    {
+      "rule_id": "CGR_SEC_CRY_001",
+      "concept_id": "hardcoded-credentials",
+      "status": "designed",
+      "severity": "BLOCKER",
+      "precision": "high"
+    },
+    {
+      "rule_id": "CGR_SEC_CRY_002",
+      "concept_id": "weak-crypto-hash",
+      "status": "designed",
+      "severity": "CRITICAL",
+      "precision": "high"
+    },
+    {
+      "rule_id": "CGR_SEC_CRY_003",
+      "concept_id": "weak-encryption",
+      "status": "designed",
+      "severity": "CRITICAL",
+      "precision": "high"
+    },
+    {
+      "rule_id": "CGR_SEC_CRY_004",
+      "concept_id": "hardcoded-crypto-key",
+      "status": "designed",
+      "severity": "BLOCKER",
+      "precision": "high"
+    },
+    {
+      "rule_id": "CGR_SEC_CRY_005",
+      "concept_id": "insecure-tls-config",
+      "status": "designed",
+      "severity": "CRITICAL",
+      "precision": "medium"
+    },
+    {
+      "rule_id": "CGR_SEC_CRY_006",
+      "concept_id": "deprecated-crypto-functions",
+      "status": "designed",
+      "severity": "MAJOR",
+      "precision": "high"
+    }
+  ],
+  "legal_audit": {
+    "status": "approved",
+    "audited_concepts": 6,
+    "blocked": 0,
+    "notes": "All security-crypto-basics concepts are derived from public CWE descriptions and SonarQube rule specifications. No proprietary knowledge or patented algorithms involved."
+  }
+}

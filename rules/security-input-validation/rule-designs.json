@@ -1,0 +1,567 @@
+{
+  "batch_id": "security-input-validation",
+  "created": "2026-05-15",
+  "status": "design_completed",
+  "description": "Security input validation rules for detecting injection vulnerabilities, path traversal, XSS, and other input-related security issues",
+  "source": "CWE (MITRE), SonarQube Security Rules (S3649, S5131, S2076, S2077, etc.), OWASP Top 10, CodeQL Security Queries",
+  "rules_count": 14,
+  "rules": [
+    {
+      "rule_id": "CC_SEC_INP_001",
+      "name": "SQL Injection via String Concatenation",
+      "description": "Detects SQL queries constructed using string concatenation or interpolation with user-controlled input, allowing attackers to manipulate query logic.",
+      "severity": "CRITICAL",
+      "category": "Security/Injection",
+      "languages": ["Rust"],
+      "cwe": "CWE-89",
+      "cwe_title": "SQL Injection",
+      "detection_strategy": "Detect function calls to database query methods (execute, query, sql) where the query string argument contains binary_expression with operator::+ or macro_invocation format! that interpolates variables. AST query pattern:\n\n```\n(call_expression\n  function: (field_expression field: (identifier) @field (#eq? @field \"execute\"))\n  arguments: (arguments (binary_expression operator: (operator) @op (#eq? @op \"+\"))))\n```\n\nAlternative pattern for format! macro:\n```\n(macro_invocation macro: (identifier) @macro (#eq? @macro \"format!\")\n  arguments: (token_tree) @args)\n```\n\nPreflight scan for: query, execute, sql, format!, format, diesel, sqlx, rusqlite",
+      "preflight_keywords": ["query", "execute", "sql", "format", "format!", "diesel", "sqlx", "rusqlite"],
+      "false_positive_guards": [
+        "Query uses parameterized placeholders (? or $1, $2)",
+        "String is a constant/hardcoded SQL literal",
+        "Variable is a numeric primitive (not string-concatenated)",
+        "Input validated via sanitize function before use",
+        "Code is in test module (#[cfg(test)])"
+      ],
+      "sanitizers": [
+        "Parameterized query builders (query!, sqlx::query)",
+        "Input sanitization functions (sql_escape, quote)",
+        "ORM methods that auto-parameterize"
+      ],
+      "references": [
+        "CWE-89: https://cwe.mitre.org/data/definitions/89.html",
+        "SonarQube: S3649 (SQL Injection)",
+        "SonarQube: S2077 (SQL Injection - formatted string)",
+        "OWASP: A03:2021-Injection"
+      ],
+      "examples": {
+        "vulnerable": [
+          "format!(\"SELECT * FROM users WHERE id = {}\", user_id)",
+          "\"SELECT * FROM users WHERE name = '\" + &username + \"'\""
+        ],
+        "safe": [
+          "query!(\"SELECT * FROM users WHERE id = $1\", user_id)",
+          "sqlx::query(\"SELECT * FROM users WHERE id = ?\").bind(user_id)"
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_SEC_INP_002",
+      "name": "OS Command Injection via Shell Execution",
+      "description": "Detects process command construction where user input is concatenated into shell commands, allowing arbitrary command execution.",
+      "severity": "CRITICAL",
+      "category": "Security/Injection",
+      "languages": ["Rust"],
+      "cwe": "CWE-78",
+      "cwe_title": "OS Command Injection",
+      "detection_strategy": "Detect call_expression to std::process::Command::new or related process spawning functions where an argument contains format! macro or binary_expression with string concatenation.\n\nAST query pattern:\n```\n(call_expression\n  function: (field_expression\n    field: (identifier) @field\n    field: (identifier) @meth)\n  arguments: (arguments\n    (macro_invocation macro: (identifier) @macro (#eq? @macro \"format!\"))))\n```\n\nAlso detect direct binary_expression concatenation in Command arguments:\n```\n(call_expression\n  function: (field_expression\n    object: (type_expression)\n    field: (identifier) @field (#eq? @field \"new\"))\n  arguments: (arguments (binary_expression)))\n```\n\nPreflight scan for: Command, new, exec, popen, system, sh, bash, cmd, format, std::process",
+      "preflight_keywords": ["Command", "new", "exec", "popen", "system", "sh", "bash", "cmd", "format", "std::process"],
+      "false_positive_guards": [
+        "Using .arg() method with individual safe arguments",
+        "Command arguments are all constant strings",
+        "Input validated via whitelist or regex before use",
+        "Command construction uses shell = false (no shell interpretation)",
+        "Code is in test module"
+      ],
+      "sanitizers": [
+        "Individual .arg() calls with validated input",
+        "Command::new with non-shell execution",
+        "Input validation with allowlist"
+      ],
+      "references": [
+        "CWE-78: https://cwe.mitre.org/data/definitions/78.html",
+        "SonarQube: S4721 (Operating System Command Injection)",
+        "OWASP: A03:2021-Injection"
+      ],
+      "examples": {
+        "vulnerable": [
+          "Command::new(&format!(\"rm -rf {}\", path))",
+          "std::process::Command::new(\"sh\").arg(\"-c\").arg(&format!(\"ls {}\", dir))"
+        ],
+        "safe": [
+          "Command::new(\"ls\").arg(user_path)  // using .arg() safely",
+          "Command::new(\"rm\").arg(\"-rf\").arg(safe_path)"
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_SEC_INP_003",
+      "name": "Path Traversal via User Input in File Operations",
+      "description": "Detects file path operations where user input is joined or concatenated into paths without proper validation of '../' sequences, allowing access to unauthorized files.",
+      "severity": "CRITICAL",
+      "category": "Security/PathTraversal",
+      "languages": ["Rust"],
+      "cwe": "CWE-22",
+      "cwe_title": "Path Traversal",
+      "detection_strategy": "Detect call_expression to file system operations (File::open, std::fs::read, std::fs::write, Path::new) where arguments contain format! macro or binary_expression concatenation with user variables.\n\nAST query pattern:\n```\n(call_expression\n  function: (field_expression\n    field: (identifier) @field (#any-of? @field \"open\" \"read\" \"read_to_string\" \"write\" \"create\"))\n  arguments: (arguments\n    (macro_invocation macro: (identifier) @macro (#eq? @macro \"format!\"))))\n```\n\nAlso detect binary_expression in path construction:\n```\n(call_expression\n  function: (identifier) @func (#any-of? @func \"File::open\" \"std::fs::read\" \"Path::new\"))\n  arguments: (arguments (binary_expression)))\n```\n\nPreflight scan for: open, read, write, Path, join, canonicalize, from, user, input, file, read_dir",
+      "preflight_keywords": ["open", "read", "write", "Path", "join", "canonicalize", "from", "user", "input", "file", "read_dir"],
+      "false_positive_guards": [
+        "Path is canonicalized and checked with starts_with() against base directory",
+        "Input validated via whitelist of allowed values",
+        "Using std::path::Path::components() with validation",
+        "Constant hardcoded path",
+        "Code is in test module"
+      ],
+      "sanitizers": [
+        "canonicalize() with starts_with() check",
+        "Realpath validation",
+        "Whitelist of allowed directories",
+        "Input sanitization removing '../'"
+      ],
+      "references": [
+        "CWE-22: https://cwe.mitre.org/data/definitions/22.html",
+        "SonarQube: S2598 (Path Traversal)",
+        "OWASP: A01:2021-Broken Access Control"
+      ],
+      "examples": {
+        "vulnerable": [
+          "File::open(&format!(\"{}/{}\", dir, name))",
+          "std::fs::read(&format!(\"files/{}/{}\", user_id, filename))"
+        ],
+        "safe": [
+          "let full = base.join(&user_input).canonicalize()?; if !full.starts_with(base) { return Err(()); }",
+          "std::fs::read(\"/etc/config/app.conf\")  // constant path"
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_SEC_INP_004",
+      "name": "XML External Entity (XXE) Injection",
+      "description": "Detects XML parser configuration that enables external entity expansion, allowing attackers to read local files or perform SSRF attacks.",
+      "severity": "CRITICAL",
+      "category": "Security/Injection",
+      "languages": ["Rust"],
+      "cwe": "CWE-611",
+      "cwe_title": "XML External Entity (XXE)",
+      "detection_strategy": "Detect call_expression to XML parser creation (quick_xml::Reader::new, Reader::from_str, xml::Parser::new) without explicit disabling of external entities.\n\nAST query pattern:\n```\n(call_expression\n  function: (field_expression\n    field: (identifier) @field (#any-of? @field \"new\" \"from_str\" \"from_reader\"))\n  arguments: (arguments (identifier) @input))\n\n; Check absence of feature disabling in following code\n(macro_invocation\n  macro: (identifier) @macro (#eq? @macro \"with_feature\"))\n```\n\nLook for Reader creation without subsequent DTD disable:\n```\n(call_expression\n  function: (field_expression\n    object: (identifier) @parser (#any-of? @parser \"Reader\" \"Parser\"))\n  arguments: (arguments))\n```\n\nPreflight scan for: XmlReader, Parser, Document, DTD, Entity, external, feature, set, quick_xml, xml",
+      "preflight_keywords": ["XmlReader", "Parser", "Document", "DTD", "Entity", "external", "feature", "set", "quick_xml", "xml"],
+      "false_positive_guards": [
+        "External entities explicitly disabled via with_feature()",
+        "DTD processing disabled",
+        "Using serde_json instead of XML",
+        "Parser configured with restriction features",
+        "Code is in test module"
+      ],
+      "sanitizers": [
+        "with_feature(\"external-general-entities\", false)",
+        "with_feature(\"external-parameter-entities\", false)",
+        "DTD disabled configuration"
+      ],
+      "references": [
+        "CWE-611: https://cwe.mitre.org/data/definitions/611.html",
+        "SonarQube: S2755 (XML External Entity)",
+        "OWASP: A05:2021-Security Misconfiguration"
+      ],
+      "examples": {
+        "vulnerable": [
+          "let mut reader = Reader::new(input);  // without features config",
+          "quick_xml::Reader::from_str(data)  // without DTD restrictions"
+        ],
+        "safe": [
+          "reader.with_feature(\"http://xml.org/sax/features/external-general-entities\", false)?",
+          "serde_json::from_str::<Value>(&data)?  // using JSON instead"
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_SEC_INP_005",
+      "name": "Insecure Deserialization of Untrusted Data",
+      "description": "Detects deserialization of untrusted data using formats known to be unsafe (bincode, MessagePack, YAML), which can lead to arbitrary code execution.",
+      "severity": "CRITICAL",
+      "category": "Security/Deserialization",
+      "languages": ["Rust"],
+      "cwe": "CWE-502",
+      "cwe_title": "Deserialization of Untrusted Data",
+      "detection_strategy": "Detect call_expression to deserialization methods on unsafe formats (bincode::deserialize, bincode::deserialize_from, serde_yaml::from_str, rmp_serde::from_read, rmp_serde::from_slice) where input is user-controlled.\n\nAST query pattern:\n```\n(call_expression\n  function: (field_expression\n    field: (identifier) @method (#any-of? @method \"deserialize\" \"deserialize_from\" \"from_str\" \"from_read\" \"from_slice\")))\n\n; Check for unsafe formats in receiver\n(field_expression\n  object: (identifier) @fmt (#any-of? @fmt \"bincode\" \"serde_yaml\" \"rmp_serde\" \"rmp\"))\n```\n\nPreflight scan for: deserialize, from_slice, from_str, bincode, yaml, serde, MessagePack, rmp, from_read",
+      "preflight_keywords": ["deserialize", "from_slice", "from_str", "bincode", "yaml", "serde", "MessagePack", "rmp", "from_read"],
+      "false_positive_guards": [
+        "Using serde_json (safe format)",
+        "Input from trusted internal source (include_str!, const)",
+        "Integrity check (hash, signature) before deserialization",
+        "Deserializing to simple/primitive types",
+        "Code is in test module with known data"
+      ],
+      "sanitizers": [
+        "serde_json for user input",
+        "Integrity verification before deserialization",
+        "Input from trusted source",
+        "Type restrictions on deserialization"
+      ],
+      "references": [
+        "CWE-502: https://cwe.mitre.org/data/definitions/502.html",
+        "SonarQube: S3363 (Deserializing untrusted data)",
+        "OWASP: A08:2021-Software and Data Integrity Failures"
+      ],
+      "examples": {
+        "vulnerable": [
+          "bincode::deserialize::<Config>(&user_data)",
+          "serde_yaml::from_str::<Config>(&user_yaml)?"
+        ],
+        "safe": [
+          "let hash = sha256(&data); verify(&hash, &expected)?; serde_json::from_slice::<Value>(&data)?",
+          "serde_json::from_str(&user_input)?  // safe format"
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_SEC_INP_006",
+      "name": "LDAP Injection via Filter String Concatenation",
+      "description": "Detects LDAP query construction where user input is concatenated into filters without proper escaping, allowing filter manipulation.",
+      "severity": "MAJOR",
+      "category": "Security/Injection",
+      "languages": ["Rust"],
+      "cwe": "CWE-90",
+      "cwe_title": "LDAP Injection",
+      "detection_strategy": "Detect call_expression to ldap search/filter methods where filter argument contains format! macro or string concatenation with user variables.\n\nAST query pattern:\n```\n(call_expression\n  function: (field_expression\n    field: (identifier) @field (#any-of? @field \"search\" \"simple_search\" \"search_filter\"))\n  arguments: (arguments\n    (macro_invocation macro: (identifier) @macro (#eq? @macro \"format!\"))))\n```\n\nAlso detect ldap3 crate patterns:\n```\n(call_expression\n  function: (method_identifier)\n  arguments: (arguments (binary_expression)))\n```\n\nPreflight scan for: ldap, search, filter, find, User, dn, format, ldap3",
+      "preflight_keywords": ["ldap", "search", "filter", "find", "User", "dn", "format", "ldap3"],
+      "false_positive_guards": [
+        "Using filter_escape() or proper LDAP escaping",
+        "Constant filter string",
+        "Using safe library filter builder (Filter::eq)",
+        "Validated input against LDAP special characters",
+        "Code is in test module"
+      ],
+      "sanitizers": [
+        "filter_escape() function",
+        "Filter::eq() builder method",
+        "Validated against LDAP special chars (*, (, ), \\, NUL)"
+      ],
+      "references": [
+        "CWE-90: https://cwe.mitre.org/data/definitions/90.html",
+        "SonarQube: S4817 (LDAP Injection)",
+        "OWASP: A03:2021-Injection"
+      ],
+      "examples": {
+        "vulnerable": [
+          "ldap.search(&format!(\"(uid={})\", user))",
+          "let mut f = String::from(\"(cn=\"); f.push_str(&user_input); f.push_str(\")\")"
+        ],
+        "safe": [
+          "let filter = format!(\"(uid={})\", filter_escape(&user)); ldap.simple_search(&filter)?",
+          "let filter = Filter::eq(\"uid\", &validated_input)"
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_SEC_INP_007",
+      "name": "XPath Injection via Expression Concatenation",
+      "description": "Detects XPath expression construction where user input is concatenated without parameterization, allowing XPath query manipulation.",
+      "severity": "MAJOR",
+      "category": "Security/Injection",
+      "languages": ["Rust"],
+      "cwe": "CWE-643",
+      "cwe_title": "XPath Injection",
+      "detection_strategy": "Detect call_expression to XPath evaluation methods (evaluate, select, query) where expression argument contains format! macro or string concatenation.\n\nAST query pattern:\n```\n(call_expression\n  function: (field_expression\n    field: (identifier) @field (#any-of? @field \"evaluate\" \"select\" \"query\"))\n  arguments: (arguments\n    (macro_invocation macro: (identifier) @macro (#eq? @macro \"format!\"))))\n```\n\nAlso detect binary_expression concatenation in XPath arguments:\n```\n(call_expression\n  function: (method_identifier)\n  arguments: (arguments (binary_expression)))\n```\n\nPreflight scan for: xpath, evaluate, query, select, Node, Document, format, xpath",
+      "preflight_keywords": ["xpath", "evaluate", "query", "select", "Node", "Document", "format"],
+      "false_positive_guards": [
+        "Using prepared/parameterized XPath with bind()",
+        "Constant XPath expression",
+        "Input validated/escaped before use",
+        "Using xpath crate's safe API",
+        "Code is in test module"
+      ],
+      "sanitizers": [
+        "XPath prepared statements with parameter binding",
+        "Input escaping for XPath special chars",
+        "Whitelist validation"
+      ],
+      "references": [
+        "CWE-643: https://cwe.mitre.org/data/definitions/643.html",
+        "SonarQube: S4818 (XPath Injection)",
+        "OWASP: A03:2021-Injection"
+      ],
+      "examples": {
+        "vulnerable": [
+          "doc.select(&format!(\".//{}\", tag))",
+          "let expr = format!(\"//user[@name='{}']\", user_name); xpath.evaluate(&expr, document)?"
+        ],
+        "safe": [
+          "let query = xpath.prepare(\"//item[@id=$1]\")?; query.bind(&[&item_id])?",
+          "doc.select(\"//item[@id='safe']\")  // constant expression"
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_SEC_INP_008",
+      "name": "Cross-Site Scripting via Unsanitized Output",
+      "description": "Detects HTML/JS output to web responses where user input is rendered without sanitization, allowing XSS attacks.",
+      "severity": "MAJOR",
+      "category": "Security/XSS",
+      "languages": ["Rust"],
+      "cwe": "CWE-79",
+      "cwe_title": "Cross-site Scripting (XSS)",
+      "detection_strategy": "Detect call_expression to HTTP response methods where body/content contains format! macro interpolating user variables into HTML/JavaScript context.\n\nAST query pattern:\n```\n(call_expression\n  function: (field_expression\n    field: (identifier) @field (#any-of? @field \"body\" \"html\" \"content\" \"render\"))\n  arguments: (arguments\n    (macro_invocation macro: (identifier) @macro (#eq? @macro \"format!\")\n      arguments: (token_tree) @args)))\n```\n\nDetect format! into HTML context:\n```\n(macro_invocation\n  macro: (identifier) @macro (#eq? @macro \"format!\")\n  arguments: (token_tree (string_literal) @lit (#contains? @lit \"<\")))\n```\n\nPreflight scan for: Html, render, response, body, content, format, json, html, HttpResponse, HttpRequest",
+      "preflight_keywords": ["Html", "render", "response", "body", "content", "format", "json", "html", "HttpResponse", "HttpRequest"],
+      "false_positive_guards": [
+        "Using escape_html() or similar sanitization",
+        "Template engine with auto-escape (askama, maud)",
+        "JSON response content-type (application/json)",
+        "Constant HTML without user data",
+        "Code is in test module"
+      ],
+      "sanitizers": [
+        "escape_html() function",
+        "Template engines with auto-escaping",
+        "JSON content-type responses",
+        "DOMPurify or similar sanitization"
+      ],
+      "references": [
+        "CWE-79: https://cwe.mitre.org/data/definitions/79.html",
+        "SonarQube: S5131 (XSS)",
+        "OWASP: A03:2021-Injection"
+      ],
+      "examples": {
+        "vulnerable": [
+          "HttpResponse::Ok().body(format!(\"<div>{}</div>\", name))",
+          "format!(\"<script>alert('{}')</script>\", msg)"
+        ],
+        "safe": [
+          "HttpResponse::Ok().body(format!(\"<div>{}</div>\", escape_html(&user)))",
+          "HttpResponse::Ok().json(&user_data)  // JSON content-type"
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_SEC_INP_009",
+      "name": "Path Equivalence Without Verification",
+      "description": "Detects path normalization operations (canonicalize, components, normalize) that don't verify the resulting path is within expected boundaries.",
+      "severity": "MAJOR",
+      "category": "Security/PathTraversal",
+      "languages": ["Rust"],
+      "cwe": "CWE-41",
+      "cwe_title": "Path Equivalence",
+      "detection_strategy": "Detect call_expression to path normalization methods without subsequent starts_with() or equality check against base path.\n\nAST query pattern:\n```\n(call_expression\n  function: (field_expression\n    field: (identifier) @field (#any-of? @field \"canonicalize\" \"components\" \"normalize\"))\n  arguments: (arguments (identifier) @input))\n\n; Check for absence of starts_with check\n(macro_invocation\n  macro: (identifier) @macro (#eq? @macro \"if\")\n  arguments: (token_tree (binary_expression\n    field: (identifier) @check (#eq? @check \"starts_with\"))))\n```\n\nPreflight scan for: canonicalize, components, normalize, join, Path, path",
+      "preflight_keywords": ["canonicalize", "components", "normalize", "join", "Path", "path"],
+      "false_positive_guards": [
+        "Canonicalized path checked with starts_with() against base",
+        "Constant path (no user input)",
+        "Whitelist validation after normalization",
+        "Realpath followed by existence check",
+        "Code is in test module"
+      ],
+      "sanitizers": [
+        "starts_with() check after canonicalize",
+        "Whitelist validation",
+        "Equality check against expected path"
+      ],
+      "references": [
+        "CWE-41: https://cwe.mitre.org/data/definitions/41.html",
+        "SonarQube: S2598 (Path Traversal) variant"
+      ],
+      "examples": {
+        "vulnerable": [
+          "Path::new(filename).canonicalize()?",
+          "base_path.join(&user_path).normalize()"
+        ],
+        "safe": [
+          "let p = base.join(&input).canonicalize()?; if !p.starts_with(base) { return Err(()); }",
+          "std::fs::read(\"/etc/config.toml\")  // constant"
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_SEC_INP_010",
+      "name": "Open Redirect via Unvalidated URL",
+      "description": "Detects HTTP redirects where the destination URL is constructed from user input without validation, allowing attackers to redirect to malicious sites.",
+      "severity": "MAJOR",
+      "category": "Security/Injection",
+      "languages": ["Rust"],
+      "cwe": "CWE-601",
+      "cwe_title": "Open Redirect",
+      "detection_strategy": "Detect call_expression to redirect methods (redirect, Location header, MovedPermanently, Found) where URL argument contains format! macro or user input.\n\nAST query pattern:\n```\n(call_expression\n  function: (field_expression
+    field: (identifier) @field (#any-of? @field \"redirect\" \"Location\" \"MovedPermanently\" \"Found\" \"SeeOther\"))\n  arguments: (arguments\n    (macro_invocation macro: (identifier) @macro (#eq? @macro \"format!\"))))\n```\n\nDetect insert_header with Location containing user input:\n```\n(call_expression\n  function: (method_identifier)\n  arguments: (arguments\n    (string_literal) @lit (#contains? @lit \"Location\")\n    (macro_invocation)))\n```\n\nPreflight scan for: redirect, location, to_url, Moved, Found, SeeOther, Permanent, format, HttpResponse",
+      "preflight_keywords": ["redirect", "location", "to_url", "Moved", "Found", "SeeOther", "Permanent", "format", "HttpResponse"],
+      "false_positive_guards": [
+        "Whitelist validation of redirect URLs",
+        "Path-only redirect with validation (no protocol)",
+        "Named route redirect (no user URL)",
+        "Static URL constant",
+        "Code is in test module"
+      ],
+      "sanitizers": [
+        "Whitelist of allowed domains/paths",
+        "Path-only redirect with regex validation",
+        "Named route redirects"
+      ],
+      "references": [
+        "CWE-601: https://cwe.mitre.org/data/definitions/601.html",
+        "SonarQube: S5147 (Open Redirect)",
+        "OWASP: A01:2021-Broken Access Control"
+      ],
+      "examples": {
+        "vulnerable": [
+          "redirect(&format!(\"{}/{}\", base_url, user_path))",
+          "HttpResponse::Found().insert_header((\"Location\", &user_input))"
+        ],
+        "safe": [
+          "if !is_allowed_redirect(&url) { return Err(()); } redirect(&url)",
+          "Redirect::to_named(\"dashboard\")  // named route"
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_SEC_INP_011",
+      "name": "HTTP Response Splitting via Header Injection",
+      "description": "Detects HTTP header construction where user input could inject CRLF characters to split responses, enabling cache poisoning or XSS.",
+      "severity": "MAJOR",
+      "category": "Security/Injection",
+      "languages": ["Rust"],
+      "cwe": "CWE-113",
+      "cwe_title": "HTTP Response Splitting",
+      "detection_strategy": "Detect call_expression to header insertion methods where header value contains format! macro or raw user input without CRLF sanitization.\n\nAST query pattern:\n```\n(call_expression\n  function: (field_expression\n    field: (identifier) @field (#any-of? @field \"insert_header\" \"append_header\"))\n  arguments: (arguments\n    (macro_invocation macro: (identifier) @macro (#eq? @macro \"format!\"))))\n```\n\nDetect raw identifier in header value:\n```\n(call_expression\n  function: (method_identifier)\n  arguments: (arguments (identifier) @val))\n```\n\nPreflight scan for: header, insert_header, append, Content, format, user, input, Set-Cookie",
+      "preflight_keywords": ["header", "insert_header", "append", "Content", "format", "user", "input", "Set-Cookie"],
+      "false_positive_guards": [
+        "Newlines stripped before header insertion",
+        "Constant header value",
+        "Using typed header builders",
+        "Validated header value (CRLF removed)",
+        "Code is in test module"
+      ],
+      "sanitizers": [
+        "replace(['\\r', '\\n'], \"\") before header",
+        "Typed header builders (ContentType, HeaderValue)",
+        "Header validation functions"
+      ],
+      "references": [
+        "CWE-113: https://cwe.mitre.org/data/definitions/113.html",
+        "SonarQube: S5146 (HTTP Response Splitting)",
+        "OWASP: A03:2021-Injection"
+      ],
+      "examples": {
+        "vulnerable": [
+          "insert_header(\"X-Greeting\", format!(\"Hello {}\", name))",
+          "let forwarded = req.headers().get(\"X-Forwarded-For\"); res.insert_header((\"X-Client-IP\", forwarded))"
+        ],
+        "safe": [
+          "let safe = user_input.replace(['\\r', '\\n'], \"\"); header.insert(\"X-Value\", safe)",
+          "header.insert(ContentType::json())  // typed header"
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_SEC_INP_012",
+      "name": "Integer Overflow in Size Calculation",
+      "description": "Detects arithmetic on size/length values where user-controlled multiplication or addition could overflow, leading to buffer overflows or memory issues.",
+      "severity": "MAJOR",
+      "category": "Security/Injection",
+      "languages": ["Rust"],
+      "cwe": "CWE-190",
+      "cwe_title": "Integer Overflow or Wraparound",
+      "detection_strategy": "Detect binary_expression with arithmetic operators (*, +, -) on size/length values where at least one operand is user-controlled, used in memory allocation context.\n\nAST query pattern:\n```\n(call_expression\n  function: (identifier) @func (#any-of? @func \"vec!\" \"Vec::with_capacity\" \"Vec::new\" \"Vec::resize\"))\n  arguments: (arguments\n    (binary_expression\n      operator: (operator) @op (#any-of? @op \"*\" \"+\" \"-\")\n      left: (field_expression field: (identifier) @len (#eq? @len \"len\"))\n      right: (identifier) @user_val)))\n```\n\nDetect vec! macro with multiplication:\n```\n(macro_invocation\n  macro: (identifier) @macro (#eq? @macro \"vec!\")\n  arguments: (token_tree\n    (binary_expression operator: (operator) @op (#any-of? @op \"*\" \"+\"))))\n```\n\nPreflight scan for: len, size, capacity, Vec, vec, new, with_capacity, read, malloc, allocate",
+      "preflight_keywords": ["len", "size", "capacity", "Vec", "vec", "new", "with_capacity", "read", "malloc", "allocate"],
+      "false_positive_guards": [
+        "Using checked_add, checked_mul operations",
+        "Input validated to be within safe range",
+        "Constant values in arithmetic",
+        "Size from trusted internal source",
+        "Code is in test module"
+      ],
+      "sanitizers": [
+        "checked_mul(), checked_add() methods",
+        "Input range validation",
+        " saturating_*() methods"
+      ],
+      "references": [
+        "CWE-190: https://cwe.mitre.org/data/definitions/190.html",
+        "SonarQube: S1155 (Integer multiplication overflow)"
+      ],
+      "examples": {
+        "vulnerable": [
+          "vec![0u8; a.len() * b.len()]",
+          "Vec::resize(old_size + user_input, 0)"
+        ],
+        "safe": [
+          "let size = a.len().checked_mul(b.len()).ok_or(Overflow)?; vec![0u8; size]",
+          "let size = validate_size(user_input)?; Vec::with_capacity(size)"
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_SEC_INP_013",
+      "name": "Missing Input Sanitization on Public Interface",
+      "description": "Detects function parameters that accept user input without any visible validation or sanitization before being used in sensitive operations.",
+      "severity": "MINOR",
+      "category": "Security/Validation",
+      "languages": ["Rust"],
+      "cwe": "CWE-20",
+      "cwe_title": "Improper Input Validation",
+      "detection_strategy": "Detect function definitions with parameters that flow to sensitive operations (database queries, file I/O, process execution) without prior validation calls.\n\nAST query pattern:\n```\n(function_item\n  parameters: (parameters (parameter (identifier) @param))\n  body: (block\n    (expression_statement\n      (call_expression\n        function: (identifier) @sink (#any-of? @sink \"execute\" \"query\" \"open\" \"Command::new\")))))\n```\n\nLook for validation patterns before sink:\n```\n(call_expression\n  function: (identifier) @fn (#eq? @fn \"validate\")\n  arguments: (arguments (identifier) @param))\n```\n\nPreflight scan for: fn, pub, user, input, request, query, param, validate",
+      "preflight_keywords": ["fn", "pub", "user", "input", "request", "query", "param", "validate"],
+      "false_positive_guards": [
+        "Validation function called before sensitive operation",
+        "Newtype pattern with validation in constructor",
+        "Validated helper function used",
+        "Type system provides guarantees (newtype wrapper)",
+        "Code is in test module"
+      ],
+      "sanitizers": [
+        "validate!() or similar validation macro",
+        "Result type with early return on invalid input",
+        "Newtype pattern with validated constructor"
+      ],
+      "references": [
+        "CWE-20: https://cwe.mitre.org/data/definitions/20.html",
+        "SonarQube: S5122 (General Violation of Input Validation)"
+      ],
+      "examples": {
+        "vulnerable": [
+          "pub fn process_user_input(data: String) { store_in_db(&data); }",
+          "fn new_user(name: String, email: String) -> User { User { name, email } }"
+        ],
+        "safe": [
+          "pub fn process(data: String) -> Result<()> { validate_input(&data)?; store(&data) }",
+          "struct UserInput(String); impl UserInput { pub fn new(s: String) -> Result<Self> { validate(&s)?; Ok(UserInput(s)) } }"
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_SEC_INP_014",
+      "name": "Unvalidated URL Scheme Allows Dangerous Protocols",
+      "description": "Detects URL construction where the scheme is not validated, allowing http:// or ftp:// when only https:// should be allowed.",
+      "severity": "MINOR",
+      "category": "Security/Validation",
+      "languages": ["Rust"],
+      "cwe": "CWE-829",
+      "cwe_title": "Inclusion of Functionality from Untrusted Control Sphere",
+      "detection_strategy": "Detect call_expression to URL parsing methods (Url::parse, reqwest::get) where user input is used without scheme validation.\n\nAST query pattern:\n```\n(call_expression\n  function: (field_expression\n    field: (identifier) @method (#eq? @method \"parse\"))\n  arguments: (arguments (identifier) @user_input))\n\n; Check for absence of scheme validation\n(binary_expression\n  field: (identifier) @field (#eq? @field \"scheme\"))\n```\n\nDetect format! constructing URL with user scheme:\n```\n(macro_invocation\n  macro: (identifier) @macro (#eq? @macro \"format!\")\n  arguments: (token_tree (string_literal) @lit (#contains? @lit \"://\")))\n```\n\nPreflight scan for: Url, parse, url, scheme, http, https, ftp, format, reqwest",
+      "preflight_keywords": ["Url", "parse", "url", "scheme", "http", "https", "ftp", "format", "reqwest"],
+      "false_positive_guards": [
+        "Scheme validated (e.g., if url.scheme() != \"https\")",
+        "Using require_https() or similar enforcement",
+        "Static/hardcoded URL",
+        "URL validated against pattern/regex",
+        "Code is in test module"
+      ],
+      "sanitizers": [
+        "scheme() validation with equality check",
+        "require_https() method",
+        "Url parser with scheme restriction",
+        "Regex validation of URL pattern"
+      ],
+      "references": [
+        "CWE-829: https://cwe.mitre.org/data/definitions/829.html",
+        "SonarQube: S5128 (Relaxing SSL/TLS certificate validation)"
+      ],
+      "examples": {
+        "vulnerable": [
+          "Url::parse(&user_url)?; reqwest::get(url.as_str())?",
+          "let url = format!(\"{}://{}\", user_scheme, user_host); reqwest::get(&url)?"
+        ],
+        "safe": [
+          "let url = Url::parse(&user_url)?; if url.scheme() != \"https\" { return Err(()); }",
+          "url.require_https()?; reqwest::get(url.as_str())?"
+        ]
+      }
+    }
+  ],
+  "research_notes": [
+    "Based on CWE (MITRE) - public domain security weakness descriptions",
+    "SonarQube security rules: S3649 (SQL Injection), S5131 (XSS), S2076/S2077 (Injection), S4721 (Command Injection)",
+    "CodeQL security queries for taint analysis patterns",
+    "OWASP Top 10 2021 - A01 (Broken Access Control), A03 (Injection), A05 (Security Misconfiguration), A08 (Software Integrity)",
+    "Detection strategies use tree-sitter Rust grammar for AST analysis",
+    "All concepts are reference-only from public specifications"
+  ],
+  "next_phase": "implement"
+}

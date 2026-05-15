@@ -1,0 +1,466 @@
+# Implementation Tasks: security-input-validation batch
+# Generated: 2026-05-14
+# Rules: 14 (CRITICAL: 5, MAJOR: 7, Minor: 2)
+
+rules:
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # CRITICAL RULES
+  # ═══════════════════════════════════════════════════════════════════════════════
+
+  - rule_id: sqli-string-concat
+    severity: CRITICAL
+    cwe: CWE-89
+    file_path: crates/cognicode-axiom/src/rules/rules/rust/security/input_validation/sqli_string_concat.rs
+    detection_strategy: |
+      Use tree-sitter query to detect function calls matching database query patterns
+      where string concatenation/interpolation is used in query arguments.
+    implementation_tasks:
+      - Create SqliStringConcatRule struct implementing Rule trait
+      - Implement required_keywords() preflight: [query, execute, sql, format, format!]
+      - Implement check() with tree-sitter query for call_expression with sql/execute
+      - Detect binary_expression with operator::+ inside query arguments
+      - Skip if query uses ? or $1/$2 parameter placeholders
+      - Add false_positive_guards: parameterized queries, constant strings, logging
+      - Write unit tests: 3 positives, 5 negatives, 2 edge cases
+      - Register in input_validation/mod.rs and security/mod.rs
+    test_tasks:
+      - Test: FP-001 format!("SELECT * FROM users WHERE id = {}", id)
+      - Test: FP-002 format!("INSERT INTO logs VALUES ('{}', '{}')", user, msg)
+      - Test: FP-003 Multi-statement query with push_str
+      - Negative: FN-001 parameterized query with $1
+      - Negative: FN-002 constant SQL string
+      - Negative: FN-003 logging format, not SQL
+      - Negative: FN-004 test module code
+      - Negative: FN-005 sanitized input
+      - Edge: EC-001 nested format calls
+      - Edge: EC-002 query via macro
+    benchmark_tasks:
+      - Benchmark on corpus (50+ files with SQL patterns)
+      - Verify < 1ms per file (layer 1 budget)
+      - Profile tree-sitter query performance
+
+  - rule_id: command-injection-shell
+    severity: CRITICAL
+    cwe: CWE-78
+    file_path: crates/cognicode-axiom/src/rules/rules/rust/security/input_validation/command_injection_shell.rs
+    detection_strategy: |
+      Use tree-sitter query to detect Command::new or process spawning functions
+      where arguments include string formatting with user input.
+    implementation_tasks:
+      - Create CommandInjectionShellRule struct implementing Rule trait
+      - Implement required_keywords() preflight: [Command, new, exec, popen, system, sh, bash, cmd]
+      - Implement check() with tree-sitter query for Command::new with format!
+      - Detect call_expression to std::process::Command
+      - Skip if using .arg() method (safe pattern)
+      - Add false_positive_guards: .arg() usage, constant args, validated input
+      - Write unit tests: 3 positives, 4 negatives, 2 edge cases
+      - Register in input_validation/mod.rs and security/mod.rs
+    test_tasks:
+      - Test: FP-001 Command::new(&format!("rm -rf {}", path))
+      - Test: FP-002 std::process::Command::new("sh").arg("-c").arg(&format!(...))
+      - Test: FP-003 Command built from user-controlled base path
+      - Negative: FN-001 Command::new("ls").arg(user_path) - safe .arg()
+      - Negative: FN-002 constant arguments
+      - Negative: FN-003 pre-validated command
+      - Negative: FN-004 test code
+      - Edge: EC-001 multiple format args
+      - Edge: EC-002 args() with user vector
+    benchmark_tasks:
+      - Benchmark on corpus (50+ files with Command patterns)
+      - Verify < 1ms per file (layer 1 budget)
+      - Profile tree-sitter query performance
+
+  - rule_id: path-traversal
+    severity: CRITICAL
+    cwe: CWE-22
+    file_path: crates/cognicode-axiom/src/rules/rules/rust/security/input_validation/path_traversal.rs
+    detection_strategy: |
+      Use tree-sitter query to detect file path operations where user input
+      is joined with paths without proper validation of ../ sequences.
+    implementation_tasks:
+      - Create PathTraversalRule struct implementing Rule trait
+      - Implement required_keywords() preflight: [open, read, write, Path, join, canonicalize, from, user, input]
+      - Implement check() with tree-sitter query for fs operations with format!
+      - Detect File::open, std::fs::read, Path::new with string concat
+      - Skip if canonicalize() and starts_with() check present
+      - Add false_positive_guards: canonicalize with bounds check, whitelist validation
+      - Write unit tests: 3 positives, 4 negatives, 2 edge cases
+      - Register in input_validation/mod.rs and security/mod.rs
+    test_tasks:
+      - Test: FP-001 File::open(&format!("{}/{}", dir, name))
+      - Test: FP-002 std::fs::read(&format!("files/{}/{}", user_id, filename))
+      - Test: FP-003 String concatenation in path construction
+      - Negative: FN-001 canonicalize with starts_with check
+      - Negative: FN-002 whitelist validation
+      - Negative: FN-003 constant path
+      - Negative: FN-004 test code
+      - Edge: EC-001 nested path building
+      - Edge: EC-002 PathBuf with push
+    benchmark_tasks:
+      - Benchmark on corpus (50+ files with path operations)
+      - Verify < 1ms per file (layer 1 budget)
+      - Profile tree-sitter query performance
+
+  - rule_id: xxe
+    severity: CRITICAL
+    cwe: CWE-611
+    file_path: crates/cognicode-axiom/src/rules/rules/rust/security/input_validation/xxe.rs
+    detection_strategy: |
+      Use tree-sitter query to detect XML parser configuration that enables
+      external entity expansion.
+    implementation_tasks:
+      - Create XxeRule struct implementing Rule trait
+      - Implement required_keywords() preflight: [XmlReader, Parser, Document, DTD, Entity, external, feature, set]
+      - Implement check() with tree-sitter query for xml parser creation
+      - Detect quick_xml::Reader::new without feature configuration
+      - Skip if external entities explicitly disabled
+      - Add false_positive_guards: DTD disabled, safe config preset
+      - Write unit tests: 2 positives, 3 negatives, 1 edge case
+      - Register in input_validation/mod.rs and security/mod.rs
+    test_tasks:
+      - Test: FP-001 XmlReader::new(input) without features
+      - Test: FP-002 Parser::from_reader with no DTD restrictions
+      - Negative: FN-001 features explicitly disabled
+      - Negative: FN-002 using serde_json instead
+      - Negative: FN-003 test environment
+      - Edge: EC-001 feature set after creation
+    benchmark_tasks:
+      - Benchmark on corpus (30+ files with XML parsing)
+      - Verify < 1ms per file (layer 1 budget)
+      - Profile tree-sitter query performance
+
+  - rule_id: insecure-deserialization
+    severity: CRITICAL
+    cwe: CWE-502
+    file_path: crates/cognicode-axiom/src/rules/rules/rust/security/input_validation/insecure_deserialization.rs
+    detection_strategy: |
+      Use tree-sitter query to detect deserialization of untrusted data
+      using formats known to be unsafe (bincode, MessagePack, etc.).
+    implementation_tasks:
+      - Create InsecureDeserializationRule struct implementing Rule trait
+      - Implement required_keywords() preflight: [deserialize, from_slice, from_str, bincode, yaml, serde, MessagePack, rmp]
+      - Implement check() with tree-sitter query for deserialize calls
+      - Detect bincode::deserialize, serde_yaml::from_str, rmp_serde calls
+      - Skip if using serde_json (safe) or trusted source
+      - Add false_positive_guards: serde_json, trusted source, integrity check
+      - Write unit tests: 3 positives, 4 negatives, 2 edge cases
+      - Register in input_validation/mod.rs and security/mod.rs
+    test_tasks:
+      - Test: FP-001 bincode::deserialize::<Config>(&user_data)
+      - Test: FP-002 serde_yaml::from_str(&user_yaml)?
+      - Test: FP-003 rmp_serde::from_read(user_stream)?
+      - Negative: FN-001 serde_json from user (safe)
+      - Negative: FN-002 trusted internal source
+      - Negative: FN-003 integrity check before deserialize
+      - Negative: FN-004 test with known data
+      - Edge: EC-001 nested deserialization
+      - Edge: EC-002 deserialization into trait object
+    benchmark_tasks:
+      - Benchmark on corpus (40+ files with deserialization)
+      - Verify < 1ms per file (layer 1 budget)
+      - Profile tree-sitter query performance
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # MAJOR RULES
+  # ═══════════════════════════════════════════════════════════════════════════════
+
+  - rule_id: ldap-injection
+    severity: MAJOR
+    cwe: CWE-90
+    file_path: crates/cognicode-axiom/src/rules/rules/rust/security/input_validation/ldap_injection.rs
+    detection_strategy: |
+      Use tree-sitter query to detect LDAP query construction with string
+      concatenation of user input without proper escaping.
+    implementation_tasks:
+      - Create LdapInjectionRule struct implementing Rule trait
+      - Implement required_keywords() preflight: [ldap, search, filter, find, User, dn, format]
+      - Implement check() with tree-sitter query for ldap search/filter
+      - Detect format! in LDAP filter construction
+      - Skip if filter_escape or safe filter builder used
+      - Add false_positive_guards: filter_escape, constant filter, safe builder
+      - Write unit tests: 2 positives, 4 negatives, 2 edge cases
+      - Register in input_validation/mod.rs and security/mod.rs
+    test_tasks:
+      - Test: FP-001 ldap.search(&format!("(uid={})", user))
+      - Test: FP-002 Multi-step filter construction with push_str
+      - Negative: FN-001 filter_escape used
+      - Negative: FN-002 constant filter
+      - Negative: FN-003 safe library abstraction
+      - Negative: FN-004 test environment
+      - Edge: EC-001 multiple user inputs in filter
+      - Edge: EC-002 filter via macro
+    benchmark_tasks:
+      - Benchmark on corpus (20+ files with LDAP)
+      - Verify < 1ms per file (layer 1 budget)
+      - Profile tree-sitter query performance
+
+  - rule_id: xpath-injection
+    severity: MAJOR
+    cwe: CWE-643
+    file_path: crates/cognicode-axiom/src/rules/rules/rust/security/input_validation/xpath_injection.rs
+    detection_strategy: |
+      Use tree-sitter query to detect XPath expression construction with
+      string concatenation of user input.
+    implementation_tasks:
+      - Create XpathInjectionRule struct implementing Rule trait
+      - Implement required_keywords() preflight: [xpath, evaluate, query, select, Node, Document, format]
+      - Implement check() with tree-sitter query for xpath evaluation
+      - Detect format! in XPath expression construction
+      - Skip if parameterized/prepared XPath or validated input
+      - Add false_positive_guards: prepared statements, constant, validated input
+      - Write unit tests: 3 positives, 4 negatives, 1 edge case
+      - Register in input_validation/mod.rs and security/mod.rs
+    test_tasks:
+      - Test: FP-001 xpath.evaluate(&format!(".//{}", tag))
+      - Test: FP-002 format!("//user[@name='{}']", user_name)
+      - Test: FP-003 String concatenation in XPath
+      - Negative: FN-001 prepared statement with bind
+      - Negative: FN-002 constant expression
+      - Negative: FN-003 validated input
+      - Negative: FN-004 test environment
+      - Edge: EC-001 multiple interpolations
+    benchmark_tasks:
+      - Benchmark on corpus (20+ files with XPath)
+      - Verify < 1ms per file (layer 1 budget)
+      - Profile tree-sitter query performance
+
+  - rule_id: xss-unsanitized-output
+    severity: MAJOR
+    cwe: CWE-79
+    file_path: crates/cognicode-axiom/src/rules/rules/rust/security/input_validation/xss_unsanitized_output.rs
+    detection_strategy: |
+      Use tree-sitter query to detect HTML/JS output to web responses
+      where user input is not sanitized.
+    implementation_tasks:
+      - Create XssUnsantizedOutputRule struct implementing Rule trait
+      - Implement required_keywords() preflight: [Html, render, response, body, content, format, json, html]
+      - Implement check() with tree-sitter query for response rendering
+      - Detect format! in HttpResponse body without escape function
+      - Skip if escape_html, template engine auto-escape, or JSON content-type
+      - Add false_positive_guards: escape function, auto-escape, JSON response
+      - Write unit tests: 3 positives, 4 negatives, 2 edge cases
+      - Register in input_validation/mod.rs and security/mod.rs
+    test_tasks:
+      - Test: FP-001 Response::Ok().body(format!("<div>{}</div>", name))
+      - Test: FP-002 format!("<script>alert('{}')</script>", msg)
+      - Test: FP-003 Multiple user inputs in HTML
+      - Negative: FN-001 escape_html used
+      - Negative: FN-002 Json response
+      - Negative: FN-003 template engine auto-escape
+      - Negative: FN-004 test environment
+      - Edge: EC-001 nested rendering
+      - Edge: EC-002 JSON in HTML page
+    benchmark_tasks:
+      - Benchmark on corpus (40+ files with HTTP responses)
+      - Verify < 1ms per file (layer 1 budget)
+      - Profile tree-sitter query performance
+
+  - rule_id: path-equivalence
+    severity: MAJOR
+    cwe: CWE-41
+    file_path: crates/cognicode-axiom/src/rules/rules/rust/security/input_validation/path_equivalence.rs
+    detection_strategy: |
+      Use tree-sitter query to detect path normalization operations that
+      don't verify equivalence after normalization.
+    implementation_tasks:
+      - Create PathEquivalenceRule struct implementing Rule trait
+      - Implement required_keywords() preflight: [canonicalize, components, normalize, join, Path, path]
+      - Implement check() with tree-sitter query for path normalization
+      - Detect canonicalize, components, normalize without starts_with check
+      - Skip if canonicalized path checked with starts_with or whitelist
+      - Add false_positive_guards: starts_with check, constant path, whitelist
+      - Write unit tests: 3 positives, 4 negatives, 2 edge cases
+      - Register in input_validation/mod.rs and security/mod.rs
+    test_tasks:
+      - Test: FP-001 canonicalize(user_path)? without bounds
+      - Test: FP-002 Path::new(&input).components() without check
+      - Test: FP-003 normalize(user_path) without verification
+      - Negative: FN-001 canonicalize with starts_with check
+      - Negative: FN-002 constant path
+      - Negative: FN-003 whitelist validation
+      - Negative: FN-004 test environment
+      - Edge: EC-001 delayed verification
+      - Edge: EC-002 symlink handling
+    benchmark_tasks:
+      - Benchmark on corpus (30+ files with path operations)
+      - Verify < 1ms per file (layer 1 budget)
+      - Profile tree-sitter query performance
+
+  - rule_id: open-redirect
+    severity: MAJOR
+    cwe: CWE-601
+    file_path: crates/cognicode-axiom/src/rules/rules/rust/security/input_validation/open_redirect.rs
+    detection_strategy: |
+      Use tree-sitter query to detect HTTP redirects where the destination
+      URL is constructed from user input without validation.
+    implementation_tasks:
+      - Create OpenRedirectRule struct implementing Rule trait
+      - Implement required_keywords() preflight: [redirect, location, to_url, Moved, Found, SeeOther, Permanent, format]
+      - Implement check() with tree-sitter query for redirect operations
+      - Detect Location header with format! or user input
+      - Skip if whitelist validation or path-only redirect
+      - Add false_positive_guards: whitelist, path-only, named route
+      - Write unit tests: 3 positives, 4 negatives, 2 edge cases
+      - Register in input_validation/mod.rs and security/mod.rs
+    test_tasks:
+      - Test: FP-001 redirect(&format!("{}/{}", base_url, user_path))
+      - Test: FP-002 HttpResponse::Found().insert_header(("Location", dest))
+      - Test: FP-003 user_input in Location header
+      - Negative: FN-001 path-only with validation
+      - Negative: FN-002 whitelist validation
+      - Negative: FN-003 named route
+      - Negative: FN-004 test environment
+      - Edge: EC-001 protocol-relative URL
+      - Edge: EC-002 double encoding
+    benchmark_tasks:
+      - Benchmark on corpus (30+ files with redirects)
+      - Verify < 1ms per file (layer 1 budget)
+      - Profile tree-sitter query performance
+
+  - rule_id: http-response-splitting
+    severity: MAJOR
+    cwe: CWE-113
+    file_path: crates/cognicode-axiom/src/rules/rules/rust/security/input_validation/http_response_splitting.rs
+    detection_strategy: |
+      Use tree-sitter query to detect HTTP header construction where
+      user input could inject CRLF characters to split responses.
+    implementation_tasks:
+      - Create HttpResponseSplittingRule struct implementing Rule trait
+      - Implement required_keywords() preflight: [header, insert_header, append, Content, format, user, input]
+      - Implement check() with tree-sitter query for header insertion
+      - Detect insert_header with format! or raw user input
+      - Skip if newlines stripped or typed headers used
+      - Add false_positive_guards: newline sanitization, constant, typed headers
+      - Write unit tests: 3 positives, 4 negatives, 2 edge cases
+      - Register in input_validation/mod.rs and security/mod.rs
+    test_tasks:
+      - Test: FP-001 insert_header("X-Greeting", format!("Hello {}", name))
+      - Test: FP-002 Set-Cookie with format!
+      - Test: FP-003 raw header value forwarded
+      - Negative: FN-001 newlines stripped
+      - Negative: FN-002 constant header
+      - Negative: FN-003 typed header builder
+      - Negative: FN-004 test environment
+      - Edge: EC-001 unicode newlines
+      - Edge: EC-002 iterating user-provided headers
+    benchmark_tasks:
+      - Benchmark on corpus (30+ files with headers)
+      - Verify < 1ms per file (layer 1 budget)
+      - Profile tree-sitter query performance
+
+  - rule_id: integer-overflow-size
+    severity: MAJOR
+    cwe: CWE-190
+    file_path: crates/cognicode-axiom/src/rules/rules/rust/security/input_validation/integer_overflow_size.rs
+    detection_strategy: |
+      Use tree-sitter query to detect arithmetic on size/length values
+      without overflow checking.
+    implementation_tasks:
+      - Create IntegerOverflowSizeRule struct implementing Rule trait
+      - Implement required_keywords() preflight: [len, size, capacity, Vec, vec, new, with_capacity, read, malloc, allocate]
+      - Implement check() with tree-sitter query for size arithmetic
+      - Detect vec![], with_capacity with unchecked arithmetic
+      - Skip if checked_add, checked_mul, or validation present
+      - Add false_positive_guards: checked operations, validated input, constant
+      - Write unit tests: 3 positives, 4 negatives, 2 edge cases
+      - Register in input_validation/mod.rs and security/mod.rs
+    test_tasks:
+      - Test: FP-001 vec![0u8; a.len() * b.len()]
+      - Test: FP-002 Vec::resize(old_size + user_input, 0)
+      - Test: FP-003 capacity from user-controlled collection
+      - Negative: FN-001 checked_mul used
+      - Negative: FN-002 validated input
+      - Negative: FN-003 constant
+      - Negative: FN-004 test environment
+      - Edge: EC-001 chained operations
+      - Edge: EC-002 size from deserialization
+    benchmark_tasks:
+      - Benchmark on corpus (40+ files with size calculations)
+      - Verify < 1ms per file (layer 1 budget)
+      - Profile tree-sitter query performance
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # MINOR RULES
+  # ═══════════════════════════════════════════════════════════════════════════════
+
+  - rule_id: missing-input-sanitization
+    severity: Minor
+    cwe: CWE-20
+    file_path: crates/cognicode-axiom/src/rules/rules/rust/security/input_validation/missing_input_sanitization.rs
+    detection_strategy: |
+      Use tree-sitter query to detect function parameters that accept
+      user input without any visible validation or sanitization.
+    implementation_tasks:
+      - Create MissingInputSanitizationRule struct implementing Rule trait
+      - Implement required_keywords() preflight: [fn, pub, user, input, request, query, param]
+      - Implement check() with tree-sitter query for function parameters
+      - Detect parameters flowing to sensitive operations without validation
+      - Skip if validate! or Result type with early return
+      - Add false_positive_guards: validation present, newtype pattern, validated helper
+      - Write unit tests: 3 positives, 4 negatives, 2 edge cases
+      - Register in input_validation/mod.rs and security/mod.rs
+    test_tasks:
+      - Test: FP-001 fn handle(data: String) with no validation
+      - Test: FP-002 User { name, email } stored without sanitization
+      - Test: FP-003 Request param passed directly to query
+      - Negative: FN-001 validated at entry
+      - Negative: FN-002 newtype pattern
+      - Negative: FN-003 validated helper
+      - Negative: FN-004 test environment
+      - Edge: EC-001 partial validation
+      - Edge: EC-002 selective validation
+    benchmark_tasks:
+      - Benchmark on corpus (50+ files with functions)
+      - Verify < 1ms per file (layer 1 budget)
+      - Profile tree-sitter query performance
+
+  - rule_id: trusting-url-scheme
+    severity: Minor
+    cwe: CWE-829
+    file_path: crates/cognicode-axiom/src/rules/rules/rust/security/input_validation/trusting_url_scheme.rs
+    detection_strategy: |
+      Use tree-sitter query to detect URL construction where the scheme
+      is not validated (allowing http:// or ftp:// when https:// expected).
+    implementation_tasks:
+      - Create TrustingUrlSchemeRule struct implementing Rule trait
+      - Implement required_keywords() preflight: [Url, parse, url, scheme, http, https, ftp, format]
+      - Implement check() with tree-sitter query for URL construction
+      - Detect Url::parse without scheme validation
+      - Skip if scheme checked or require_https used
+      - Add false_positive_guards: scheme validated, trusted source, static URL
+      - Write unit tests: 3 positives, 4 negatives, 2 edge cases
+      - Register in input_validation/mod.rs and security/mod.rs
+    test_tasks:
+      - Test: FP-001 Url::parse(&user_url)? without scheme check
+      - Test: FP-002 format!("{}://{}", user_scheme, user_host)
+      - Test: FP-003 reqwest::get(&user_url)
+      - Negative: FN-001 scheme validated
+      - Negative: FN-002 require_https used
+      - Negative: FN-003 static URL
+      - Negative: FN-004 test environment
+      - Edge: EC-001 protocol-relative URL
+      - Edge: EC-002 data URL
+    benchmark_tasks:
+      - Benchmark on corpus (30+ files with URLs)
+      - Verify < 1ms per file (layer 1 budget)
+      - Profile tree-sitter query performance
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMMON TASKS (apply to all rules)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+common_implementation_tasks:
+  - Create input_validation/mod.rs with module declarations
+  - Add all 14 rules to security/mod.rs exports
+  - Add all 14 rules to rules/rust/mod.rs exports
+  - Ensure RuleEntry inventory registrations for all rules
+  - Run cargo build to verify compilation
+  - Run cargo test to verify all tests pass
+  - Run cargo clippy for linting
+  - Update batch state: fixtures_ready → implementing
+
+priority_order:
+  - "CRITICAL rules first: sqli-string-concat, command-injection-shell, path-traversal, xxe, insecure-deserialization"
+  - "MAJOR rules second: ldap-injection, xpath-injection, xss-unsanitized-output, path-equivalence, open-redirect, http-response-splitting, integer-overflow-size"
+  - "MINOR rules last: missing-input-sanitization, trusting-url-scheme"

@@ -1,0 +1,122 @@
+{
+  "audit_date": "2026-05-15",
+  "batch_id": "security-input-validation",
+  "auditor": "rule-designer",
+  "legal_provenance_check": {
+    "status": "passed",
+    "sources_verified": [
+      "CWE (Common Weakness Enumeration) - MITRE Corporation (public domain)",
+      "SonarQube Security Rules - SonarSource (permissive reference)",
+      "OWASP Top 10 2021 - OWASP Foundation (public domain)",
+      "CodeQL Security Queries - GitHub (Apache 2.0 / MIT)",
+      "NIST National Vulnerability Database (public domain)"
+    ],
+    "no_proprietary_content": true,
+    "no_patent_risk": true,
+    "attribution_notes": "CWE descriptions are from MITRE's CWE List (public domain). SonarQube and CodeQL rule specifications referenced for behavioral patterns and detection strategies. No proprietary algorithm implementations copied."
+  },
+  "concepts_audited": 14,
+  "approved": [
+    {
+      "rule_id": "CC_SEC_INP_001",
+      "concept_id": "sql-injection",
+      "name": "SQL Injection via String Concatenation",
+      "legal_status": "approved",
+      "provenance": "CWE-89 (MITRE) + SonarQube S3649/S2077 + CodeQL java/sql-injection"
+    },
+    {
+      "rule_id": "CC_SEC_INP_002",
+      "concept_id": "command-injection",
+      "name": "OS Command Injection via Shell Execution",
+      "legal_status": "approved",
+      "provenance": "CWE-78 (MITRE) + SonarQube S4721 + CodeQL cpp/command-injection"
+    },
+    {
+      "rule_id": "CC_SEC_INP_003",
+      "concept_id": "path-traversal",
+      "name": "Path Traversal via User Input in File Operations",
+      "legal_status": "approved",
+      "provenance": "CWE-22 (MITRE) + SonarQube S2598 + CodeQL js/path-injection"
+    },
+    {
+      "rule_id": "CC_SEC_INP_004",
+      "concept_id": "xxe",
+      "name": "XML External Entity (XXE) Injection",
+      "legal_status": "approved",
+      "provenance": "CWE-611 (MITRE) + SonarQube S2755 + CodeQL xml/external-entity"
+    },
+    {
+      "rule_id": "CC_SEC_INP_005",
+      "concept_id": "insecure-deserialization",
+      "name": "Insecure Deserialization of Untrusted Data",
+      "legal_status": "approved",
+      "provenance": "CWE-502 (MITRE) + SonarQube S3363 + CodeQL java/unsafe-deserialization"
+    },
+    {
+      "rule_id": "CC_SEC_INP_006",
+      "concept_id": "ldap-injection",
+      "name": "LDAP Injection via Filter String Concatenation",
+      "legal_status": "approved",
+      "provenance": "CWE-90 (MITRE) + SonarQube S4817 + CodeQL ldap-injection"
+    },
+    {
+      "rule_id": "CC_SEC_INP_007",
+      "concept_id": "xpath-injection",
+      "name": "XPath Injection via Expression Concatenation",
+      "legal_status": "approved",
+      "provenance": "CWE-643 (MITRE) + SonarQube S4818 + CodeQL xpath-injection"
+    },
+    {
+      "rule_id": "CC_SEC_INP_008",
+      "concept_id": "xss",
+      "name": "Cross-Site Scripting via Unsanitized Output",
+      "legal_status": "approved",
+      "provenance": "CWE-79 (MITRE) + SonarQube S5131 + CodeQL js/xss"
+    },
+    {
+      "rule_id": "CC_SEC_INP_009",
+      "concept_id": "path-equivalence",
+      "name": "Path Equivalence Without Verification",
+      "legal_status": "approved",
+      "provenance": "CWE-41 (MITRE) + SonarQube S2598 variant"
+    },
+    {
+      "rule_id": "CC_SEC_INP_010",
+      "concept_id": "open-redirect",
+      "name": "Open Redirect via Unvalidated URL",
+      "legal_status": "approved",
+      "provenance": "CWE-601 (MITRE) + SonarQube S5147 + CodeQL open-redirect"
+    },
+    {
+      "rule_id": "CC_SEC_INP_011",
+      "concept_id": "http-response-splitting",
+      "name": "HTTP Response Splitting via Header Injection",
+      "legal_status": "approved",
+      "provenance": "CWE-113 (MITRE) + SonarQube S5146 + CodeQL http-response-splitting"
+    },
+    {
+      "rule_id": "CC_SEC_INP_012",
+      "concept_id": "integer-overflow",
+      "name": "Integer Overflow in Size Calculation",
+      "legal_status": "approved",
+      "provenance": "CWE-190 (MITRE) + SonarQube S1155"
+    },
+    {
+      "rule_id": "CC_SEC_INP_013",
+      "concept_id": "missing-input-sanitization",
+      "name": "Missing Input Sanitization on Public Interface",
+      "legal_status": "approved",
+      "provenance": "CWE-20 (MITRE) + SonarQube S5122"
+    },
+    {
+      "rule_id": "CC_SEC_INP_014",
+      "concept_id": "trusting-url-scheme",
+      "name": "Unvalidated URL Scheme Allows Dangerous Protocols",
+      "legal_status": "approved",
+      "provenance": "CWE-829 (MITRE) + SonarQube S5128"
+    }
+  ],
+  "blocked": [],
+  "legal_blocked_count": 0,
+  "notes": "All security-input-validation concepts are derived from publicly available CWE descriptions, established static analysis security rules, and OWASP guidelines. Detection strategies use tree-sitter AST queries with language-specific patterns. No proprietary algorithm implementations or patented technology involved."
+}

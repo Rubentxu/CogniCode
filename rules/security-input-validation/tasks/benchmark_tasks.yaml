@@ -1,0 +1,484 @@
+# Benchmark Tasks: security-input-validation batch
+# Generated: 2026-05-14
+# Rules: 14 (CRITICAL: 5, MAJOR: 7, Minor: 2)
+
+batch_summary:
+  total_rules: 14
+  performance_budget_per_file_ms: 1
+  layer: 1
+  total_benchmark_files_estimated: 500
+
+benchmark_strategy:
+  approach: "Measure per-file latency on representative corpus"
+  tools:
+    - "criterion (Rust benchmarking)"
+    - "criterion-deriver (CSV output)"
+    - "/custom latency harness"
+  environment:
+    warmup_iterations: 3
+    measurement_time_seconds: 5
+    sample_size: 100
+
+rules:
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # CRITICAL RULES - Priority benchmarking
+  # ═══════════════════════════════════════════════════════════════════════════════
+
+  - rule_id: sqli-string-concat
+    cwe: CWE-89
+    severity: CRITICAL
+    budget_ms: 1
+    corpus:
+      description: "SQL query patterns in Rust codebases"
+      files: 50
+      sources:
+        - "Diesel ORM usage patterns"
+        - "sqlx query patterns"
+        - "raw SQL execution patterns"
+        - "ORM model queries"
+    benchmark_scenarios:
+      - name: "detect_format_in_query"
+        pattern: "format! in query call"
+        expected_latency_p50_ms: 0.15
+        expected_latency_p99_ms: 0.8
+
+      - name: "skip_parameterized_query"
+        pattern: "$1 placeholders"
+        expected_latency_p50_ms: 0.1
+        expected_latency_p99_ms: 0.5
+
+      - name: "skip_constant_sql"
+        pattern: "hardcoded strings"
+        expected_latency_p50_ms: 0.05
+        expected_latency_p99_ms: 0.3
+
+    acceptance_criteria:
+      - "p50 < 0.2ms per file"
+      - "p99 < 1.0ms per file"
+      - "No memory growth over 1000 files"
+
+  - rule_id: command-injection-shell
+    cwe: CWE-78
+    severity: CRITICAL
+    budget_ms: 1
+    corpus:
+      description: "Process spawning patterns"
+      files: 50
+      sources:
+        - "std::process::Command usage"
+        - "shell invocation patterns"
+        - " subprocess execution"
+    benchmark_scenarios:
+      - name: "detect_command_format"
+        pattern: "Command::new with format!"
+        expected_latency_p50_ms: 0.12
+        expected_latency_p99_ms: 0.7
+
+      - name: "skip_safe_arg_usage"
+        pattern: ".arg() method"
+        expected_latency_p50_ms: 0.08
+        expected_latency_p99_ms: 0.4
+
+    acceptance_criteria:
+      - "p50 < 0.2ms per file"
+      - "p99 < 1.0ms per file"
+      - "No false positives on safe patterns"
+
+  - rule_id: path-traversal
+    cwe: CWE-22
+    severity: CRITICAL
+    budget_ms: 1
+    corpus:
+      description: "File system operations"
+      files: 60
+      sources:
+        - "std::fs operations"
+        - "Path manipulation"
+        - "File I/O patterns"
+    benchmark_scenarios:
+      - name: "detect_path_concat"
+        pattern: "format! in path"
+        expected_latency_p50_ms: 0.18
+        expected_latency_p99_ms: 0.85
+
+      - name: "skip_canonicalized"
+        pattern: "canonicalize with starts_with"
+        expected_latency_p50_ms: 0.1
+        expected_latency_p99_ms: 0.5
+
+    acceptance_criteria:
+      - "p50 < 0.2ms per file"
+      - "p99 < 1.0ms per file"
+
+  - rule_id: xxe
+    cwe: CWE-611
+    severity: CRITICAL
+    budget_ms: 1
+    corpus:
+      description: "XML parsing patterns"
+      files: 30
+      sources:
+        - "quick-xml usage"
+        - "sxd-document patterns"
+        - "XML reader configurations"
+    benchmark_scenarios:
+      - name: "detect_xml_parser"
+        pattern: "Reader::new without features"
+        expected_latency_p50_ms: 0.1
+        expected_latency_p99_ms: 0.6
+
+      - name: "skip_safe_config"
+        pattern: "features disabled"
+        expected_latency_p50_ms: 0.08
+        expected_latency_p99_ms: 0.4
+
+    acceptance_criteria:
+      - "p50 < 0.15ms per file"
+      - "p99 < 0.8ms per file"
+
+  - rule_id: insecure-deserialization
+    cwe: CWE-502
+    severity: CRITICAL
+    budget_ms: 1
+    corpus:
+      description: "Deserialization patterns"
+      files: 40
+      sources:
+        - "bincode usage"
+        - "serde_yaml patterns"
+        - "rmp_serde patterns"
+        - "MessagePack handling"
+    benchmark_scenarios:
+      - name: "detect_unsafe_deser"
+        pattern: "bincode::deserialize"
+        expected_latency_p50_ms: 0.14
+        expected_latency_p99_ms: 0.75
+
+      - name: "skip_json_safe"
+        pattern: "serde_json"
+        expected_latency_p50_ms: 0.06
+        expected_latency_p99_ms: 0.3
+
+    acceptance_criteria:
+      - "p50 < 0.2ms per file"
+      - "p99 < 1.0ms per file"
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # MAJOR RULES
+  # ═══════════════════════════════════════════════════════════════════════════════
+
+  - rule_id: ldap-injection
+    cwe: CWE-90
+    severity: MAJOR
+    budget_ms: 1
+    corpus:
+      description: "LDAP operation patterns"
+      files: 20
+      sources:
+        - "ldap3 crate usage"
+        - "LDAP search filters"
+    benchmark_scenarios:
+      - name: "detect_filter_concat"
+        pattern: "format! in filter"
+        expected_latency_p50_ms: 0.1
+        expected_latency_p99_ms: 0.6
+
+      - name: "skip_escaped"
+        pattern: "filter_escape"
+        expected_latency_p50_ms: 0.08
+        expected_latency_p99_ms: 0.4
+
+    acceptance_criteria:
+      - "p50 < 0.15ms per file"
+      - "p99 < 0.8ms per file"
+
+  - rule_id: xpath-injection
+    cwe: CWE-643
+    severity: MAJOR
+    budget_ms: 1
+    corpus:
+      description: "XPath usage patterns"
+      files: 20
+      sources:
+        - "select crate usage"
+        - "XPath evaluation"
+    benchmark_scenarios:
+      - name: "detect_xpath_concat"
+        pattern: "format! in xpath"
+        expected_latency_p50_ms: 0.1
+        expected_latency_p99_ms: 0.6
+
+      - name: "skip_prepared"
+        pattern: "prepare with bind"
+        expected_latency_p50_ms: 0.07
+        expected_latency_p99_ms: 0.35
+
+    acceptance_criteria:
+      - "p50 < 0.15ms per file"
+      - "p99 < 0.8ms per file"
+
+  - rule_id: xss-unsanitized-output
+    cwe: CWE-79
+    severity: MAJOR
+    budget_ms: 1
+    corpus:
+      description: "HTTP response patterns"
+      files: 40
+      sources:
+        - "actix-web responses"
+        - "HttpResponse construction"
+        - "HTML rendering patterns"
+    benchmark_scenarios:
+      - name: "detect_html_format"
+        pattern: "format! in body"
+        expected_latency_p50_ms: 0.16
+        expected_latency_p99_ms: 0.8
+
+      - name: "skip_escaped"
+        pattern: "escape_html"
+        expected_latency_p50_ms: 0.08
+        expected_latency_p99_ms: 0.4
+
+      - name: "skip_json_response"
+        pattern: ".json()"
+        expected_latency_p50_ms: 0.05
+        expected_latency_p99_ms: 0.25
+
+    acceptance_criteria:
+      - "p50 < 0.2ms per file"
+      - "p99 < 1.0ms per file"
+
+  - rule_id: path-equivalence
+    cwe: CWE-41
+    severity: MAJOR
+    budget_ms: 1
+    corpus:
+      description: "Path normalization patterns"
+      files: 30
+      sources:
+        - "canonicalize usage"
+        - "components iteration"
+        - "normalize operations"
+    benchmark_scenarios:
+      - name: "detect_uncchecked_canonicalize"
+        pattern: "canonicalize without check"
+        expected_latency_p50_ms: 0.12
+        expected_latency_p99_ms: 0.65
+
+      - name: "skip_with_check"
+        pattern: "starts_with after canonicalize"
+        expected_latency_p50_ms: 0.1
+        expected_latency_p99_ms: 0.5
+
+    acceptance_criteria:
+      - "p50 < 0.15ms per file"
+      - "p99 < 0.8ms per file"
+
+  - rule_id: open-redirect
+    cwe: CWE-601
+    severity: MAJOR
+    budget_ms: 1
+    corpus:
+      description: "HTTP redirect patterns"
+      files: 30
+      sources:
+        - "actix-web redirects"
+        - "Location headers"
+        - "Redirect responses"
+    benchmark_scenarios:
+      - name: "detect_redirect_concat"
+        pattern: "format! in redirect"
+        expected_latency_p50_ms: 0.11
+        expected_latency_p99_ms: 0.6
+
+      - name: "skip_whitelist"
+        pattern: "whitelist validation"
+        expected_latency_p50_ms: 0.08
+        expected_latency_p99_ms: 0.4
+
+    acceptance_criteria:
+      - "p50 < 0.15ms per file"
+      - "p99 < 0.8ms per file"
+
+  - rule_id: http-response-splitting
+    cwe: CWE-113
+    severity: MAJOR
+    budget_ms: 1
+    corpus:
+      description: "HTTP header patterns"
+      files: 30
+      sources:
+        - "insert_header usage"
+        - "header construction"
+        - "Set-Cookie patterns"
+    benchmark_scenarios:
+      - name: "detect_header_concat"
+        pattern: "format! in header"
+        expected_latency_p50_ms: 0.1
+        expected_latency_p99_ms: 0.55
+
+      - name: "skip_sanitized"
+        pattern: "replace newlines"
+        expected_latency_p50_ms: 0.07
+        expected_latency_p99_ms: 0.35
+
+    acceptance_criteria:
+      - "p50 < 0.15ms per file"
+      - "p99 < 0.8ms per file"
+
+  - rule_id: integer-overflow-size
+    cwe: CWE-190
+    severity: MAJOR
+    budget_ms: 1
+    corpus:
+      description: "Size calculation patterns"
+      files: 40
+      sources:
+        - "vec! usage"
+        - "with_capacity patterns"
+        - "size calculations"
+    benchmark_scenarios:
+      - name: "detect_size_math"
+        pattern: "len() * len()"
+        expected_latency_p50_ms: 0.13
+        expected_latency_p99_ms: 0.7
+
+      - name: "skip_checked"
+        pattern: "checked_mul"
+        expected_latency_p50_ms: 0.06
+        expected_latency_p99_ms: 0.3
+
+    acceptance_criteria:
+      - "p50 < 0.15ms per file"
+      - "p99 < 0.8ms per file"
+
+  # ═══════════════════════════════════════════════════════════════════════════════
+  # MINOR RULES
+  # ═══════════════════════════════════════════════════════════════════════════════
+
+  - rule_id: missing-input-sanitization
+    cwe: CWE-20
+    severity: Minor
+    budget_ms: 1
+    corpus:
+      description: "Function parameter patterns"
+      files: 50
+      sources:
+        - "Public API functions"
+        - "Request handlers"
+        - "User input acceptance"
+    benchmark_scenarios:
+      - name: "detect_no_validation"
+        pattern: "params without validate"
+        expected_latency_p50_ms: 0.2
+        expected_latency_p99_ms: 0.9
+
+      - name: "skip_validated"
+        pattern: "validate! call"
+        expected_latency_p50_ms: 0.1
+        expected_latency_p99_ms: 0.5
+
+    acceptance_criteria:
+      - "p50 < 0.25ms per file"
+      - "p99 < 1.0ms per file"
+
+  - rule_id: trusting-url-scheme
+    cwe: CWE-829
+    severity: Minor
+    budget_ms: 1
+    corpus:
+      description: "URL construction patterns"
+      files: 30
+      sources:
+        - "Url::parse usage"
+        - "reqwest get patterns"
+        - "URL construction"
+    benchmark_scenarios:
+      - name: "detect_url_no_check"
+        pattern: "parse without scheme check"
+        expected_latency_p50_ms: 0.09
+        expected_latency_p99_ms: 0.5
+
+      - name: "skip_https_required"
+        pattern: "require_https"
+        expected_latency_p50_ms: 0.06
+        expected_latency_p99_ms: 0.3
+
+    acceptance_criteria:
+      - "p50 < 0.12ms per file"
+      - "p99 < 0.6ms per file"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BATCH-LEVEL BENCHMARKING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+batch_benchmark:
+  total_corpus_size: 500
+  estimated_total_time_minutes: 15
+
+  full_batch_run:
+    command: "cargo bench --package cognicode-axiom --lib -- rules::security::input_validation 2>&1"
+    expected_duration_minutes: 10
+    output_format: "criterion CSV + JSON"
+
+  latency_distribution:
+    - metric: "p50"
+      target_ms: 0.15
+    - metric: "p90"
+      target_ms: 0.5
+    - metric: "p99"
+      target_ms: 1.0
+    - metric: "p99.9"
+      target_ms: 2.0
+
+  memory_budget:
+    baseline_mb: 50
+    max_mb: 200
+    growth_per_1000_files_mb: 5
+
+  regression_thresholds:
+    latency_increase_percent: 10
+    memory_increase_percent: 15
+
+# Benchmark corpus creation
+corpus_sources:
+  - name: "rust-security-corpus"
+    url: "https://github.com/rust-sec/audit-sec-corpus"
+    files: 200
+
+  - name: "actix-web-examples"
+    url: "https://github.com/actix/examples"
+    files: 100
+
+  - name: "serde-test-fixtures"
+    generated: true
+    files: 50
+
+  - name: "custom-security-patterns"
+    generated: true
+    files: 150
+    patterns:
+      - "SQL concat patterns"
+      - "Command injection patterns"
+      - "Path traversal patterns"
+      - "XXE patterns"
+      - "Deserialization patterns"
+
+# Acceptance criteria
+acceptance:
+  all_rules:
+    - "Each rule must complete analysis in < 1ms per file (p99)"
+    - "No rule may have > 5% memory growth over baseline"
+    - "Tree-sitter queries must complete in < 500µs per query"
+
+  batch_overall:
+    - "Total benchmark time < 15 minutes for 500 files"
+    - "Combined p50 latency < 0.2ms per file across all rules"
+    - "No rule may exceed its individual budget_ms"
+
+  reporting:
+    - "Generate criterion reports for each rule"
+    - "Generate summary CSV with p50, p90, p99, max"
+    - "Generate flamegraph for slowest rule"
+    - "Store results in benchmark_results/ directory"

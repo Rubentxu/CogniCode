@@ -1,0 +1,81 @@
+{
+  "normalized_date": "2026-05-14",
+  "batch_id": "security-crypto-basics",
+  "concepts": [
+    {
+      "concept_id": "CC_SEC_CRY_001",
+      "name": "hardcoded-credentials",
+      "cwe_ids": ["CWE-798", "CWE-312"],
+      "description": "Detection of hardcoded credentials (passwords, API keys, tokens) embedded directly in source code",
+      "languages": ["rust", "python", "javascript", "typescript", "go", "java", "c", "cpp"],
+      "source_reference": "SonarQube S2068, CWE-798",
+      "severity": "BLOCKER",
+      "precision_target": "high",
+      "related_concepts": ["hardcoded-crypto-key"],
+      "detection_pattern_notes": "String literals assigned to variables with names like 'password', 'secret', 'token', 'api_key', 'apikey', 'credential', 'auth'"
+    },
+    {
+      "concept_id": "CC_SEC_CRY_002",
+      "name": "weak-crypto-hash",
+      "cwe_ids": ["CWE-327"],
+      "description": "Use of cryptographically weak hash functions (MD5, SHA1) for security purposes",
+      "languages": ["rust", "python", "javascript", "typescript", "go", "java", "c", "cpp"],
+      "source_reference": "SonarQube S4792, CWE-327",
+      "severity": "CRITICAL",
+      "precision_target": "high",
+      "related_concepts": ["weak-encryption", "deprecated-crypto-functions"],
+      "detection_pattern_notes": "Import or use of md5, sha1 (unless for non-security purposes like checksums)"
+    },
+    {
+      "concept_id": "CC_SEC_CRY_003",
+      "name": "weak-encryption",
+      "cwe_ids": ["CWE-327"],
+      "description": "Use of weak encryption algorithms (DES, 3DES, RC2, RC4, ECB mode)",
+      "languages": ["rust", "python", "javascript", "typescript", "go", "java", "c", "cpp"],
+      "source_reference": "SonarQube S2254, CWE-327",
+      "severity": "CRITICAL",
+      "precision_target": "high",
+      "related_concepts": ["weak-crypto-hash", "deprecated-crypto-functions"],
+      "detection_pattern_notes": "Import or use of des, 3des, rc2, rc4,-ecb, `CipherMode::ECB`"
+    },
+    {
+      "concept_id": "CC_SEC_CRY_004",
+      "name": "hardcoded-crypto-key",
+      "cwe_ids": ["CWE-321"],
+      "description": "Hardcoded cryptographic keys (symmetric, asymmetric, HMAC) in source code",
+      "languages": ["rust", "python", "javascript", "typescript", "go", "java", "c", "cpp"],
+      "source_reference": "SonarQube S2068 variant, CWE-321",
+      "severity": "BLOCKER",
+      "precision_target": "high",
+      "related_concepts": ["hardcoded-credentials"],
+      "detection_pattern_notes": "String literals assigned to variables with names like 'key', 'secret_key', 'private_key', 'public_key', 'encryption_key', 'crypto_key', 'hmac_key'"
+    },
+    {
+      "concept_id": "CC_SEC_CRY_005",
+      "name": "insecure-tls-config",
+      "cwe_ids": ["CWE-295", "CWE-296"],
+      "description": "Insecure TLS/SSL configuration (disabled verification, self-signed certificates allowed, weak protocols)",
+      "languages": ["rust", "python", "javascript", "typescript", "go", "java"],
+      "source_reference": "SonarQube S4834, CWE-295",
+      "severity": "CRITICAL",
+      "precision_target": "medium",
+      "related_concepts": ["deprecated-crypto-functions"],
+      "detection_pattern_notes": "verify: false, NoVerify, ALLOW_SELF_SIGNED, danger_accept_invalid_certs, accept_invalid_certs, ssl_verify: false, tls_verify: false"
+    },
+    {
+      "concept_id": "CC_SEC_CRY_006",
+      "name": "deprecated-crypto-functions",
+      "cwe_ids": ["CWE-327"],
+      "description": "Use of deprecated cryptographic functions (Crypto.subtle deprecated methods, EVP_* legacy functions)",
+      "languages": ["rust", "python", "javascript", "typescript", "go", "java", "c", "cpp"],
+      "source_reference": "SonarQube S5122, CWE-327",
+      "severity": "MAJOR",
+      "precision_target": "high",
+      "related_concepts": ["weak-crypto-hash", "weak-encryption"],
+      "detection_pattern_notes": "Deprecated APIs like Node.js crypto.createCipher, Python's crypt(), Java's DESKeySpec"
+    }
+  ],
+  "duplicates_found": 0,
+  "normalized_concepts": 6,
+  "legal_review_required": true
+}
