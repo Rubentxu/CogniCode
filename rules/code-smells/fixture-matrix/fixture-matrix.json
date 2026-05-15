@@ -1,0 +1,399 @@
+{
+  "fixture_date": "2026-05-15",
+  "batch_id": "code-smells",
+  "total_rules": 9,
+  "total_fixtures": 0,
+  "fixture_status": "pending",
+  "fixtures": [
+    {
+      "rule_id": "CC_CS_001",
+      "rule_name": "TODO and FIXME comments should be resolved",
+      "detection_strategy": "AST-based (comment token analysis)",
+      "languages": ["rust"],
+      "fixture_templates": {
+        "positive": [
+          {
+            "fixture_id": "CC_CS_001_pos_001",
+            "description": "TODO comment in regular code",
+            "code": "// TODO: implement this function",
+            "expected": "trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_001_pos_002",
+            "description": "FIXME comment in function body",
+            "code": "fn foo() {\n    // FIXME: handle edge case\n    let x = 5;\n}",
+            "expected": "trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_001_pos_003",
+            "description": "XXX comment in module",
+            "code": "/* XXX: this needs refactoring */\nfn main() {}",
+            "expected": "trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_001_pos_004",
+            "description": "HACK comment in implementation",
+            "code": "// HACK: temporary workaround\nfn test() {}",
+            "expected": "trigger",
+            "language": "rust"
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_CS_001_neg_001",
+            "description": "TODO in string literal should not trigger",
+            "code": "let msg = \"TODO: implement this\";",
+            "expected": "no_trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_001_neg_002",
+            "description": "TODO in test function is acceptable",
+            "code": "#[test]\nfn test_foo() {\n    // TODO: add more assertions\n}",
+            "expected": "no_trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_001_neg_003",
+            "description": "Generated code marker",
+            "code": "// GENERATED CODE - DO NOT EDIT\n// TODO: implement",
+            "expected": "no_trigger",
+            "language": "rust"
+          }
+        ],
+        "edge_cases": [
+          {
+            "fixture_id": "CC_CS_001_edge_001",
+            "description": "Case insensitive TODO",
+            "code": "// todo: lowercase",
+            "expected": "trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_001_edge_002",
+            "description": "Multiple markers in one comment",
+            "code": "// TODO and FIXME in same comment",
+            "expected": "trigger",
+            "language": "rust"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_CS_002",
+      "rule_name": "Empty nested blocks should be removed",
+      "detection_strategy": "AST-based (empty block detection)",
+      "languages": ["rust"],
+      "fixture_templates": {
+        "positive": [
+          {
+            "fixture_id": "CC_CS_002_pos_001",
+            "description": "Empty if block",
+            "code": "if cond {\n}",
+            "expected": "trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_002_pos_002",
+            "description": "Empty else block",
+            "code": "if cond {\n    x;\n} else {\n}",
+            "expected": "trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_002_pos_003",
+            "description": "Empty loop block",
+            "code": "while cond {\n}",
+            "expected": "trigger",
+            "language": "rust"
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_CS_002_neg_001",
+            "description": "Function body can be empty",
+            "code": "fn empty() {}",
+            "expected": "no_trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_002_neg_002",
+            "description": "Trait with only signatures",
+            "code": "trait Foo {\n    fn bar();\n}",
+            "expected": "no_trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_002_neg_003",
+            "description": "Impl with only method signatures",
+            "code": "impl Foo for Bar {\n    fn baz();\n}",
+            "expected": "no_trigger",
+            "language": "rust"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_CS_003",
+      "rule_name": "Duplicate branches in if-else chain should be consolidated",
+      "detection_strategy": "AST-based (branch condition and body comparison)",
+      "languages": ["rust"],
+      "fixture_templates": {
+        "positive": [
+          {
+            "fixture_id": "CC_CS_003_pos_001",
+            "description": "Two if branches with identical bodies",
+            "code": "if a > 0 {\n    x;\n} else if b > 0 {\n    x;\n}",
+            "expected": "trigger",
+            "language": "rust"
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_CS_003_neg_001",
+            "description": "Different branch bodies",
+            "code": "if a > 0 {\n    x;\n} else if b > 0 {\n    y;\n}",
+            "expected": "no_trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_003_neg_002",
+            "description": "Panic branches are acceptable",
+            "code": "if cond {\n    panic!(\"a\");\n} else {\n    panic!(\"b\");\n}",
+            "expected": "no_trigger",
+            "language": "rust"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_CS_004",
+      "rule_name": "Empty statements should be removed",
+      "detection_strategy": "AST-based (empty statement detection)",
+      "languages": ["rust"],
+      "fixture_templates": {
+        "positive": [
+          {
+            "fixture_id": "CC_CS_004_pos_001",
+            "description": "Empty statement (semicolon alone)",
+            "code": "fn foo() { ; }",
+            "expected": "trigger",
+            "language": "rust"
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_CS_004_neg_001",
+            "description": "Normal statement",
+            "code": "fn foo() { x; }",
+            "expected": "no_trigger",
+            "language": "rust"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_CS_005",
+      "rule_name": "Redundant semicolons should be removed",
+      "detection_strategy": "AST-based (redundant semicolon detection)",
+      "languages": ["rust"],
+      "fixture_templates": {
+        "positive": [
+          {
+            "fixture_id": "CC_CS_005_pos_001",
+            "description": "Double semicolon",
+            "code": "let x = 5;;",
+            "expected": "trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_005_pos_002",
+            "description": "Semicolon after block",
+            "code": "fn foo() {};",
+            "expected": "trigger",
+            "language": "rust"
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_CS_005_neg_001",
+            "description": "Normal semicolon",
+            "code": "let x = 5;",
+            "expected": "no_trigger",
+            "language": "rust"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_CS_006",
+      "rule_name": "Wildcard patterns should not precede specific patterns in match",
+      "detection_strategy": "AST-based (match arm pattern analysis)",
+      "languages": ["rust"],
+      "fixture_templates": {
+        "positive": [
+          {
+            "fixture_id": "CC_CS_006_pos_001",
+            "description": "Wildcard before specific pattern",
+            "code": "match x {\n    _ | A => 1,\n    B => 2,\n}",
+            "expected": "trigger",
+            "language": "rust"
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_CS_006_neg_001",
+            "description": "Wildcard last is correct",
+            "code": "match x {\n    A | B => 1,\n    _ => 2,\n}",
+            "expected": "no_trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_006_neg_002",
+            "description": "Only wildcard",
+            "code": "match x {\n    _ => 1,\n}",
+            "expected": "no_trigger",
+            "language": "rust"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_CS_007",
+      "rule_name": "Function names should follow snake_case convention",
+      "detection_strategy": "AST-based (identifier pattern analysis)",
+      "languages": ["rust"],
+      "fixture_templates": {
+        "positive": [
+          {
+            "fixture_id": "CC_CS_007_pos_001",
+            "description": "camelCase function name",
+            "code": "fn myFunction() {}",
+            "expected": "trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_007_pos_002",
+            "description": "PascalCase function name",
+            "code": "fn MyFunction() {}",
+            "expected": "trigger",
+            "language": "rust"
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_CS_007_neg_001",
+            "description": "snake_case is correct",
+            "code": "fn my_function() {}",
+            "expected": "no_trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_007_neg_002",
+            "description": "main function is allowed",
+            "code": "fn main() {}",
+            "expected": "no_trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_007_neg_003",
+            "description": "Test function with camelCase",
+            "code": "#[test]\nfn testMyFunction() {}",
+            "expected": "no_trigger",
+            "language": "rust"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_CS_008",
+      "rule_name": "Functions containing only todo!() or unimplemented!() should be completed",
+      "detection_strategy": "AST-based (function body analysis)",
+      "languages": ["rust"],
+      "fixture_templates": {
+        "positive": [
+          {
+            "fixture_id": "CC_CS_008_pos_001",
+            "description": "Function with todo!() only",
+            "code": "fn foo() {\n    todo!()\n}",
+            "expected": "trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_008_pos_002",
+            "description": "Function with unimplemented!() only",
+            "code": "fn bar() {\n    unimplemented!()\n}",
+            "expected": "trigger",
+            "language": "rust"
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_CS_008_neg_001",
+            "description": "main function with panic!() is ok",
+            "code": "fn main() {\n    panic!(\"intentional\")\n}",
+            "expected": "no_trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_008_neg_002",
+            "description": "Test function with todo!() is ok",
+            "code": "#[test]\nfn test_foo() {\n    todo!()\n}",
+            "expected": "no_trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_008_neg_003",
+            "description": "Function with actual implementation",
+            "code": "fn foo() {\n    let x = 5;\n    println!(\"{}\", x);\n}",
+            "expected": "no_trigger",
+            "language": "rust"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "CC_CS_009",
+      "rule_name": "Redundant parenthesized expressions should be removed",
+      "detection_strategy": "AST-based (expression structure analysis)",
+      "languages": ["rust"],
+      "fixture_templates": {
+        "positive": [
+          {
+            "fixture_id": "CC_CS_009_pos_001",
+            "description": "Unnecessary parentheses around literal",
+            "code": "let x = (5);",
+            "expected": "trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_009_pos_002",
+            "description": "Unnecessary parentheses around identifier",
+            "code": "let x = (y);",
+            "expected": "trigger",
+            "language": "rust"
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_CS_009_neg_001",
+            "description": "Parentheses affecting precedence",
+            "code": "let x = (a + b) * c;",
+            "expected": "no_trigger",
+            "language": "rust"
+          },
+          {
+            "fixture_id": "CC_CS_009_neg_002",
+            "description": "Return with parentheses",
+            "code": "fn foo() { return (x); }",
+            "expected": "no_trigger",
+            "language": "rust"
+          }
+        ]
+      }
+    }
+  ]
+}

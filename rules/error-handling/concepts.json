@@ -1,0 +1,113 @@
+{
+  "batch_id": "error-handling",
+  "concepts": [
+    {
+      "concept_id": "CAND_ERR_001",
+      "rule_id": "CC_ERR_001",
+      "name": "Unwrap on Option",
+      "problem": "Using unwrap() on Option<T> can cause panic at runtime",
+      "fix": "Use unwrap_or, unwrap_or_else, or pattern matching instead",
+      "source": "SonarQube S5270",
+      "license": "CC BY-ND 3.0 (reference)"
+    },
+    {
+      "concept_id": "CAND_ERR_002",
+      "rule_id": "CC_ERR_002",
+      "name": "Expect on Option",
+      "problem": "Using expect() on Option<T> can cause panic with an unwitnessed message",
+      "fix": "Use unwrap_or_else with a meaningful fallback or proper error handling",
+      "source": "SonarQube S5271",
+      "license": "CC BY-ND 3.0 (reference)"
+    },
+    {
+      "concept_id": "CAND_ERR_003",
+      "rule_id": "CC_ERR_003",
+      "name": "Unwrap on Result",
+      "problem": "Using unwrap() on Result<T, E> loses error information",
+      "fix": "Use unwrap_err(), unwrap_unchecked(), or proper error handling with ? operator",
+      "source": "SonarQube S5272",
+      "license": "CC BY-ND 3.0 (reference)"
+    },
+    {
+      "concept_id": "CAND_ERR_004",
+      "rule_id": "CC_ERR_004",
+      "name": "Expect on Result Without Context",
+      "problem": "expect() message should describe the error context",
+      "fix": "Provide meaningful context in expect() message",
+      "source": "SonarQube S5273",
+      "license": "CC BY-ND 3.0 (reference)"
+    },
+    {
+      "concept_id": "CAND_ERR_005",
+      "rule_id": "CC_ERR_005",
+      "name": "Error Chain Breaking",
+      "problem": "When catching an error and returning it, error chain information is lost",
+      "fix": "Use ? operator to preserve the error chain",
+      "source": "SonarQube S5274",
+      "license": "CC BY-ND 3.0 (reference)"
+    },
+    {
+      "concept_id": "CAND_ERR_006",
+      "rule_id": "CC_ERR_006",
+      "name": "Custom Error Missing std::error::Error",
+      "problem": "Custom error types should implement std::error::Error trait",
+      "fix": "Implement std::error::Error for custom error types",
+      "source": "SonarQube S5275",
+      "license": "CC BY-ND 3.0 (reference)"
+    },
+    {
+      "concept_id": "CAND_ERR_007",
+      "rule_id": "CC_ERR_007",
+      "name": "Option Used Where Result Expected",
+      "problem": "When a function can fail, Result<T, E> should be used instead of Option<T>",
+      "fix": "Change return type from Option to Result to provide error context",
+      "source": "SonarQube S5276",
+      "license": "CC BY-ND 3.0 (reference)"
+    },
+    {
+      "concept_id": "CAND_ERR_008",
+      "rule_id": "CC_ERR_008",
+      "name": "Panic for Validation",
+      "problem": "Using panic! or unwrap() for input validation can cause unexpected crashes",
+      "fix": "Use Result or explicit validation with clear error messages",
+      "source": "SonarQube S5277",
+      "license": "CC BY-ND 3.0 (reference)"
+    },
+    {
+      "concept_id": "CAND_ERR_009",
+      "rule_id": "CC_ERR_009",
+      "name": "Meaningless Default Value",
+      "problem": "Using unwrap_or_default() can hide errors by providing meaningless defaults",
+      "fix": "Use unwrap_or with a meaningful default value",
+      "source": "SonarQube S5278",
+      "license": "CC BY-ND 3.0 (reference)"
+    },
+    {
+      "concept_id": "CAND_ERR_010",
+      "rule_id": "CC_ERR_010",
+      "name": "Incomplete Match on Result/Option",
+      "problem": "Incomplete matches on Result or Option can panic",
+      "fix": "Handle all variants or use _ wildcard",
+      "source": "SonarQube S5279",
+      "license": "CC BY-ND 3.0 (reference)"
+    },
+    {
+      "concept_id": "CAND_ERR_011",
+      "rule_id": "CC_ERR_011",
+      "name": "Error Logged After Conversion",
+      "problem": "When converting errors, the original error information is lost if not logged first",
+      "fix": "Log the original error before converting",
+      "source": "SonarQube S5280",
+      "license": "CC BY-ND 3.0 (reference)"
+    },
+    {
+      "concept_id": "CAND_ERR_012",
+      "rule_id": "CC_ERR_012",
+      "name": "to_string for Error Conversion",
+      "problem": "Using to_string() on errors loses type information",
+      "fix": "Use from() or into() for proper error conversion",
+      "source": "SonarQube S5281",
+      "license": "CC BY-ND 3.0 (reference)"
+    }
+  ]
+}

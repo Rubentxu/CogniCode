@@ -1,0 +1,670 @@
+{
+  "batch_id": "code-smells",
+  "version": "1.0.0",
+  "created": "2026-05-15",
+  "total_rules": 9,
+  "rules": [
+    {
+      "rule_id": "CC_CS_001",
+      "name": "TODO and FIXME comments should be resolved",
+      "description": "TODO and FIXME comments indicate incomplete code that should be addressed. Leaving them in production code creates technical debt and can hide important incomplete work. This rule detects comments containing TODO, FIXME, XXX, or HACK markers.",
+      "severity": "Minor",
+      "category": "CodeSmell",
+      "languages": ["rust"],
+      "precision_target": "high",
+      "parent_sonar": "S113",
+      "Axiom metadata": {
+        "layer": "preflight",
+        "required_keywords": ["todo", "fixme", "comment", "technical debt"],
+        "performance": "O(n) per file",
+        "event_kind": "code_smell.unresolved_comment"
+      },
+      "detection_strategy": "AST-based (comment token analysis)",
+      "detection_details": {
+        "ast_query": "Collect all comment nodes from the AST using tree-sitter comment queries",
+        "pattern_match": "Check if comment text contains case-insensitive patterns: TODO, FIXME, XXX, HACK, UNDONE, DEPRECATED",
+        "context_aware_whitelist": [
+          "Test files (*.rs files with #[test] modules) - TODOs are often intentional test placeholders",
+          "Example code in examples/ directory",
+          "Generated code markers (// GENERATED, // DO NOT EDIT)"
+        ],
+        "false_positive_whitelist": [
+          "TODO in string literals: let msg = \"TODO: implement this\"",
+          "TODO in doc comments that describe planned API changes",
+          "FIXME in code that is intentionally left incomplete for later"
+        ]
+      },
+      "exclusions": [
+        "Test files (*.rs with #[test] attribute)",
+        "Example binaries in examples/ directory",
+        "Documentation tests in doc comments",
+        "String literals containing TODO/FIXME"
+      ],
+      "false_positive_conditions": [
+        "Generated code from build scripts",
+        "Code with //noinspection comment markers",
+        "TODO in comments that describe future API deprecation (not incomplete code)"
+      ],
+      "remediation": "Either implement the missing functionality, remove the TODO comment if no longer needed, or create a GitHub issue to track the work and reference it in the comment.",
+      "fix_playbook": "1. Identify the TODO/FIXME comment\n2. Determine if the task is still relevant\n3. If relevant: implement the fix or create an issue to track it\n4. If obsolete: remove the comment\n5. Update any associated documentation",
+      "SARIF_mapping": {
+        "ruleId": "CC_CS_001",
+        "name": "TODO and FIXME comments should be resolved",
+        "severity": "note",
+        "properties": {
+          "category": "CodeSmell",
+          "technology": ["Rust"]
+        }
+      },
+      "agent_semantics": {
+        "summary": "Unresolved TODO/FIXME comment found - indicates incomplete code",
+        "reasoning_model": "gpt-4o",
+        "review_questions": [
+          "Is this TODO still relevant to the current code?",
+          "Should this be a GitHub issue instead of an inline comment?",
+          "Is this in test code where TODOs are acceptable?",
+          "Has this been superseded by a later implementation?"
+        ],
+        "semantic_chunks": [
+          "TODO/FIXME comments are technical debt markers",
+          "In production code, these should be resolved or tracked in issue tracker",
+          "Test files are generally exempt from this rule",
+          "Fix: Implement the TODO, remove it, or create an issue"
+        ],
+        "safe_autofix": false,
+        "autofix_guidance": "Cannot safely autofix - requires human judgment on whether TODO is still valid"
+      },
+      "performance_budget": {
+        "estimated_ms": 0.5,
+        "budget_ms": 2,
+        "strategy": "Simple string scan on comment tokens"
+      },
+      "complexity": "low"
+    },
+    {
+      "rule_id": "CC_CS_002",
+      "name": "Empty nested blocks should be removed",
+      "description": "Empty blocks in if/else statements, loops, or closures add no logic but reduce code readability and can indicate forgotten implementation. This rule detects empty block statements that should be cleaned up.",
+      "severity": "Minor",
+      "category": "CodeSmell",
+      "languages": ["rust"],
+      "precision_target": "high",
+      "parent_sonar": "S1764",
+      "Axiom metadata": {
+        "layer": "preflight",
+        "required_keywords": ["empty", "block", "nested", "if", "loop"],
+        "performance": "O(n) per file",
+        "event_kind": "code_smell.empty_block"
+      },
+      "detection_strategy": "AST-based (empty block detection)",
+      "detection_details": {
+        "ast_query": "Find block nodes in the AST that have no statements inside them",
+        "pattern_match": "Detect blocks with zero child statements, excluding function bodies",
+        "context_aware_whitelist": [
+          "Function bodies - legitimate for function declarations without bodies (traits, extern)",
+          "Impl blocks with only method signatures",
+          "Trait definitions with only signatures",
+          "Struct definitions with no body (unit structs)"
+        ],
+        "false_positive_whitelist": [
+          "Empty loop bodies that intentionally spin: loop { std::hint::spin_loop(); }",
+          "Empty match arms that are explicitly unreachable: _ => unreachable!()",
+          "Conditional compilation blocks: #[cfg(test)] with empty module"
+        ]
+      },
+      "exclusions": [
+        "Function item bodies",
+        "Trait and impl blocks with only signatures",
+        "Struct enum variant definitions",
+        "Extern blocks"
+      ],
+      "false_positive_conditions": [
+        "Empty loops used for synchronization (spin loops)",
+        "Empty match arms with explicit unreachable!()",
+        "Blocks in test code used as placeholders"
+      ],
+      "remediation": "Remove empty blocks entirely, or add the intended logic inside the block.",
+      "fix_playbook": "1. Identify the empty block\n2. If the block serves no purpose: remove it entirely\n3. If it should contain logic: add the intended implementation\n4. Ensure any surrounding control flow still makes sense",
+      "SARIF_mapping": {
+        "ruleId": "CC_CS_002",
+        "name": "Empty nested blocks should be removed",
+        "severity": "note",
+        "properties": {
+          "category": "CodeSmell",
+          "technology": ["Rust"]
+        }
+      },
+      "agent_semantics": {
+        "summary": "Empty block detected - indicates incomplete implementation or dead code",
+        "reasoning_model": "gpt-4o",
+        "review_questions": [
+          "Is this block intentionally empty?",
+          "Should this block contain any logic?",
+          "Is this a placeholder for future code?",
+          "Should the surrounding control flow be simplified?"
+        ],
+        "semantic_chunks": [
+          "Empty blocks are usually unnecessary and reduce readability",
+          "May indicate forgotten implementation",
+          "Exception: Some empty blocks in traits/impls are legitimate",
+          "Fix: Remove the empty block or add intended logic"
+        ],
+        "safe_autofix": true,
+        "autofix_guidance": "Safe to remove empty blocks in most cases. Exclude function bodies, trait/impl blocks."
+      },
+      "performance_budget": {
+        "estimated_ms": 1,
+        "budget_ms": 3,
+        "strategy": "AST block node traversal with statement count"
+      },
+      "complexity": "low"
+    },
+    {
+      "rule_id": "CC_CS_003",
+      "name": "Duplicate branches in if-else chain should be consolidated",
+      "description": "When multiple branches in an if-else chain have identical code, it indicates dead code and confusion about which condition is actually being checked. Only one branch will ever execute, making the conditions misleading.",
+      "severity": "Major",
+      "category": "CodeSmell",
+      "languages": ["rust"],
+      "precision_target": "high",
+      "parent_sonar": "S1871",
+      "Axiom metadata": {
+        "layer": "preflight",
+        "required_keywords": ["duplicate", "branch", "if-else", "conditional"],
+        "performance": "O(n) per file",
+        "event_kind": "code_smell.duplicate_branch"
+      },
+      "detection_strategy": "AST-based (branch condition and body comparison)",
+      "detection_details": {
+        "ast_query": "Traverse if/else expression tree, collect all branch bodies and conditions",
+        "pattern_match": "Compare AST structure of consecutive branch bodies using tree-sitter capture",
+        "context_aware_whitelist": [
+          "Early return pattern where conditions are intentionally different but body is same (code reuse pattern)",
+          "Logging/metrics branches with identical logic but different log levels",
+          "Branches containing only panic!() or unreachable!() with different messages"
+        ],
+        "false_positive_whitelist": [
+          "Braches that are semantically different but syntactically similar (e.g., a > 0 vs 0 < a)",
+          "Macro-expanded code that looks identical after macro expansion",
+          "Different literal values in otherwise identical code: return 1; vs return 2;"
+        ]
+      },
+      "exclusions": [
+        "Match expressions (covered by other rules)",
+        "Pattern matching with guard conditions",
+        "Branches containing only panic!/unreachable! with different messages"
+      ],
+      "false_positive_conditions": [
+        "Code that looks identical but uses different captured variables",
+        "Brances with equivalent conditions expressed differently",
+        "Macro-generated code"
+      ],
+      "remediation": "Consolidate duplicate branches into a single branch with a combined condition, or extract the common logic into a helper function.",
+      "fix_playbook": "1. Identify the duplicate branch bodies\n2. Analyze the conditions to determine if they can be combined (e.g., A || B)\n3. If conditions are mutually exclusive: remove the redundant branch\n4. If conditions can be combined: merge into single branch\n5. Extract common logic to helper function if conditions cannot be combined",
+      "SARIF_mapping": {
+        "ruleId": "CC_CS_003",
+        "name": "Duplicate branches in if-else chain should be consolidated",
+        "severity": "warning",
+        "properties": {
+          "category": "CodeSmell",
+          "technology": ["Rust"]
+        }
+      },
+      "agent_semantics": {
+        "summary": "Duplicate if-else branches detected - only one will ever execute",
+        "reasoning_model": "gpt-4o",
+        "review_questions": [
+          "Are the conditions mutually exclusive?",
+          "Should these conditions be combined with || ?",
+          "Is the duplicate code intentional (e.g., for documentation)?",
+          "Can the common logic be extracted to a helper function?"
+        ],
+        "semantic_chunks": [
+          "Duplicate branches mean only one condition can be true",
+          "This is dead code - one branch is unreachable",
+          "Often indicates confusion about which condition to check",
+          "Fix: Combine conditions with ||, or remove the dead branch"
+        ],
+        "safe_autofix": false,
+        "autofix_guidance": "Cannot safely autofix - requires understanding if branches are intentionally duplicated or conditions can be merged"
+      },
+      "performance_budget": {
+        "estimated_ms": 2,
+        "budget_ms": 5,
+        "strategy": "AST traversal with structural comparison of branch bodies"
+      },
+      "complexity": "medium"
+    },
+    {
+      "rule_id": "CC_CS_004",
+      "name": "Empty statements should be removed",
+      "description": "Standalone semicolons or empty statements add no value and indicate incomplete work or copy-paste errors. In Rust, empty statements are almost always bugs.",
+      "severity": "Minor",
+      "category": "CodeSmell",
+      "languages": ["rust"],
+      "precision_target": "high",
+      "parent_sonar": "S1116",
+      "Axiom metadata": {
+        "layer": "preflight",
+        "required_keywords": ["empty", "statement", "semicolon"],
+        "performance": "O(n) per file",
+        "event_kind": "code_smell.empty_statement"
+      },
+      "detection_strategy": "AST-based (empty statement detection)",
+      "detection_details": {
+        "ast_query": "Find expression_statement nodes that have no expression child",
+        "pattern_match": "Detect statements that consist only of a semicolon",
+        "context_aware_whitelist": [],
+        "false_positive_whitelist": []
+      },
+      "exclusions": [],
+      "false_positive_conditions": [],
+      "remediation": "Remove the empty statement or replace with meaningful code.",
+      "fix_playbook": "1. Identify the empty statement\n2. Either remove it entirely\n3. Or replace with meaningful expression if it was accidentally truncated",
+      "SARIF_mapping": {
+        "ruleId": "CC_CS_004",
+        "name": "Empty statements should be removed",
+        "severity": "note",
+        "properties": {
+          "category": "CodeSmell",
+          "technology": ["Rust"]
+        }
+      },
+      "agent_semantics": {
+        "summary": "Empty statement detected - likely incomplete code",
+        "reasoning_model": "gpt-4o",
+        "review_questions": [
+          "Is this a truncated statement?",
+          "Should there be code between the semicolons?"
+        ],
+        "semantic_chunks": [
+          "Empty statements are almost always errors in Rust",
+          "Usually caused by accidental extra semicolons",
+          "Fix: Remove the empty statement"
+        ],
+        "safe_autofix": true,
+        "autofix_guidance": "Safe to remove empty statement - just delete the semicolon"
+      },
+      "performance_budget": {
+        "estimated_ms": 0.5,
+        "budget_ms": 2,
+        "strategy": "AST expression_statement node check"
+      },
+      "complexity": "low"
+    },
+    {
+      "rule_id": "CC_CS_005",
+      "name": "Redundant semicolons should be removed",
+      "description": "Extra semicolons after expressions or at the end of blocks are unnecessary in Rust and indicate sloppy code. This detects redundant semicolons that don't affect program semantics.",
+      "severity": "Minor",
+      "category": "CodeSmell",
+      "languages": ["rust"],
+      "precision_target": "high",
+      "parent_sonar": "S1117",
+      "Axiom metadata": {
+        "layer": "preflight",
+        "required_keywords": ["semicolon", "redundant", "extra"],
+        "performance": "O(n) per file",
+        "event_kind": "code_smell.redundant_semicolon"
+      },
+      "detection_strategy": "AST-based (redundant semicolon detection)",
+      "detection_details": {
+        "ast_query": "Find consecutive semicolons or semicolons in positions where they terminate nothing",
+        "pattern_match": "Detect patterns like let x = 5;; or fn() {};;",
+        "context_aware_whitelist": [
+          "Semicolons in macro_rules that are required for the macro syntax",
+          "Semicolons in const/static definitions that are required"
+        ],
+        "false_positive_whitelist": [
+          "Semicolons at end of block expressions that return values",
+          "Semicolons in for loop heads: for i in 0..10; { ... } (if supported)"
+        ]
+      },
+      "exclusions": [
+        "Semicolons in macro definitions",
+        "Semicolons required for syntax"
+      ],
+      "false_positive_conditions": [
+        "Semicolons in extern crate declarations"
+      ],
+      "remediation": "Remove the redundant semicolon.",
+      "fix_playbook": "1. Identify the redundant semicolon\n2. Remove it\n3. Ensure the code still compiles correctly",
+      "SARIF_mapping": {
+        "ruleId": "CC_CS_005",
+        "name": "Redundant semicolons should be removed",
+        "severity": "note",
+        "properties": {
+          "category": "CodeSmell",
+          "technology": ["Rust"]
+        }
+      },
+      "agent_semantics": {
+        "summary": "Redundant semicolon detected - unnecessary punctuation",
+        "reasoning_model": "gpt-4o",
+        "review_questions": [
+          "Is this an extra semicolon that adds no value?",
+          "Does removing it change the code semantics?"
+        ],
+        "semantic_chunks": [
+          "Redundant semicolons add visual noise",
+          "Usually caused by typos oraccidental double semicolons",
+          "Fix: Remove the extra semicolon"
+        ],
+        "safe_autofix": true,
+        "autofix_guidance": "Safe to remove - extra semicolons in Rust are ignored by the compiler"
+      },
+      "performance_budget": {
+        "estimated_ms": 0.5,
+        "budget_ms": 2,
+        "strategy": "AST semicolon position analysis"
+      },
+      "complexity": "low"
+    },
+    {
+      "rule_id": "CC_CS_006",
+      "name": "Wildcard patterns should not precede specific patterns in match",
+      "description": "When a wildcard (_) pattern appears before more specific patterns in a match arm's Or pattern, the subsequent patterns will never match. This is likely a bug where the programmer misunderstood pattern ordering.",
+      "severity": "Major",
+      "category": "CodeSmell",
+      "languages": ["rust"],
+      "precision_target": "high",
+      "parent_sonar": "S3353",
+      "Axiom metadata": {
+        "layer": "preflight",
+        "required_keywords": ["match", "wildcard", "pattern", "_"],
+        "performance": "O(n) per file",
+        "event_kind": "code_smell.wildcard_before_specific"
+      },
+      "detection_strategy": "AST-based (match arm pattern analysis)",
+      "detection_details": {
+        "ast_query": "Find match_arm nodes with or_pattern containing wildcard_pattern followed by other patterns",
+        "pattern_match": "Detect pattern structures like A | _ | B where the wildcard would catch everything",
+        "context_aware_whitelist": [
+          "_ as the only pattern (correctly exhaustive)",
+          "Or patterns where wildcard is last: A | B | _ (correct ordering)",
+          "Guarded arms where order is intentional for readability"
+        ],
+        "false_positive_whitelist": [
+          "Match arms with different guards - wildcard may be before to catch specific guard combinations",
+          "Exhaustive matches with _ that is correctly positioned"
+        ]
+      },
+      "exclusions": [
+        "_ as the only pattern in an arm",
+        "A | B | _ where _ is correctly last"
+      ],
+      "false_positive_conditions": [
+        "Match arms with mutually exclusive guard conditions",
+        "When the semantics require catching remaining cases with wildcard"
+      ],
+      "remediation": "Reorder the match arm patterns so that wildcard (_) appears last within an Or pattern.",
+      "fix_playbook": "1. Identify the match arm with misplaced wildcard\n2. Reorder patterns so _ comes last: A | B | _ instead of _ | A | B\n3. Or remove the wildcard if the other patterns are already exhaustive",
+      "SARIF_mapping": {
+        "ruleId": "CC_CS_006",
+        "name": "Wildcard patterns should not precede specific patterns in match",
+        "severity": "warning",
+        "properties": {
+          "category": "CodeSmell",
+          "technology": ["Rust"]
+        }
+      },
+      "agent_semantics": {
+        "summary": "Wildcard pattern in wrong position - subsequent patterns unreachable",
+        "reasoning_model": "gpt-4o",
+        "review_questions": [
+          "Is the wildcard correctly positioned in the Or pattern?",
+          "Should the _ be moved to the end of the pattern?",
+          "Are there guard conditions that make this ordering intentional?"
+        ],
+        "semantic_chunks": [
+          "In Rust match patterns, _ catches all remaining values",
+          "If _ appears before other patterns in an Or, those patterns are unreachable",
+          "This is a common bug from misunderstanding pattern order",
+          "Fix: Move _ to the end of the Or pattern"
+        ],
+        "safe_autofix": true,
+        "autofix_guidance": "Safe to reorder patterns - just move _ to the end of the Or pattern"
+      },
+      "performance_budget": {
+        "estimated_ms": 1,
+        "budget_ms": 3,
+        "strategy": "AST match_arm pattern structure analysis"
+      },
+      "complexity": "low"
+    },
+    {
+      "rule_id": "CC_CS_007",
+      "name": "Function names should follow snake_case convention",
+      "description": "Rust convention is snake_case for function and method names. Using camelCase, PascalCase, or SCREAMING_SNAKE_CASE violates the Rust API guidelines and reduces code readability for Rust developers.",
+      "severity": "Minor",
+      "category": "CodeSmell",
+      "languages": ["rust"],
+      "precision_target": "medium",
+      "parent_sonar": "S100",
+      "Axiom metadata": {
+        "layer": "preflight",
+        "required_keywords": ["naming", "function", "snake_case", "convention"],
+        "performance": "O(n) per file",
+        "event_kind": "code_smell.naming_convention"
+      },
+      "detection_strategy": "AST-based (identifier pattern analysis)",
+      "detection_details": {
+        "ast_query": "Collect function_item and method_declaration nodes, extract identifier names",
+        "pattern_match": "Check if identifier matches snake_case pattern: ^[a-z][a-z0-9_]*$",
+        "context_aware_whitelist": [
+          "main function (convention allows)",
+          "Test functions: #[test] functions (often use camelCase for test names)",
+          "FFI declarations in extern blocks",
+          "Generated code with // GENERATED comment marker",
+          "Special main-like entry points"
+        ],
+        "false_positive_whitelist": [
+          "CamelCase in test function names (common practice)",
+          "Functions that must match external C APIs (FFI)",
+          "Iterator adapters andconsumers that match std library conventions"
+        ]
+      },
+      "exclusions": [
+        "main function",
+        "#[test] annotated functions",
+        "extern block declarations",
+        "Generated code markers"
+      ],
+      "false_positive_conditions": [
+        "Test functions using camelCase for readability",
+        "FFI functions that must match C naming",
+        "Trait required functions that must match external trait signatures"
+      ],
+      "remediation": "Rename the function to use snake_case: myFunction -> my_function, calculateTotal -> calculate_total.",
+      "fix_playbook": "1. Identify the non-snake_case function name\n2. Convert to snake_case: remove capitals, insert underscores\n3. Update all call sites to use the new name\n4. If in a public API, consider maintaining backwards compatibility aliases",
+      "SARIF_mapping": {
+        "ruleId": "CC_CS_007",
+        "name": "Function names should follow snake_case convention",
+        "severity": "note",
+        "properties": {
+          "category": "CodeSmell",
+          "technology": ["Rust"]
+        }
+      },
+      "agent_semantics": {
+        "summary": "Non-snake_case function name detected - violates Rust conventions",
+        "reasoning_model": "gpt-4o",
+        "review_questions": [
+          "Is this a test function that should use camelCase?",
+          "Is this an FFI declaration that must match C naming?",
+          "Is this generated code that should not be modified?",
+          "Should this be renamed to snake_case?"
+        ],
+        "semantic_chunks": [
+          "Rust convention is snake_case for functions",
+          "Violating convention reduces readability for Rust developers",
+          "Exception: test functions, FFI, generated code",
+          "Fix: Rename to snake_case"
+        ],
+        "safe_autofix": false,
+        "autofix_guidance": "Cannot safely autofix - requires updating all call sites and potential API compatibility concerns"
+      },
+      "performance_budget": {
+        "estimated_ms": 1,
+        "budget_ms": 3,
+        "strategy": "AST identifier collection + regex pattern match"
+      },
+      "complexity": "low"
+    },
+    {
+      "rule_id": "CC_CS_008",
+      "name": "Functions containing only todo!() or unimplemented!() should be completed",
+      "description": "Functions whose body contains only a todo!(), unimplemented!(), or panic!() macro indicate incomplete implementation. These will panic at runtime if called, making them unsuitable for production code.",
+      "severity": "Minor",
+      "category": "CodeSmell",
+      "languages": ["rust"],
+      "precision_target": "medium",
+      "parent_sonar": null,
+      "Axiom metadata": {
+        "layer": "preflight",
+        "required_keywords": ["todo", "unimplemented", "function", "stub"],
+        "performance": "O(n) per file",
+        "event_kind": "code_smell.incomplete_function"
+      },
+      "detection_strategy": "AST-based (function body analysis)",
+      "detection_details": {
+        "ast_query": "Find function_item nodes whose body is a block containing only a macro_invocation for todo!, unimplemented!, or panic!",
+        "pattern_match": "Detect function bodies that consist solely of panic-family macros",
+        "context_aware_whitelist": [
+          "main() functions that intentionally panic on invalid state",
+          "Test setup functions that are meant to fail",
+          "Skeleton example binaries",
+          "Benchmark functions (often contain unimplemented!())"
+        ],
+        "false_positive_whitelist": [
+          "Functions with panic!() that include informative messages about why it's unreachable",
+          "Trait implementations where the method must exist but cannot be implemented",
+          "Never-type functions: fn foo() -> ! { unimplemented!() }"
+        ]
+      },
+      "exclusions": [
+        "main() functions",
+        "Test functions",
+        "Example binaries",
+        "Benchmark functions",
+        "Functions returning ! (never type)"
+      ],
+      "false_positive_conditions": [
+        "unreachable!() in functions that truly should never be called",
+        "panic!() with location-specific error messages",
+        "Trait methods with default implementations"
+      ],
+      "remediation": "Implement the function properly, or if intentionally stubbed, consider using a placeholder pattern that makes the intent clearer.",
+      "fix_playbook": "1. Identify the stub function\n2. Implement the intended functionality\n3. If intentionally stubbed for later, consider adding a descriptive message\n4. Ensure the function handles all expected cases properly",
+      "SARIF_mapping": {
+        "ruleId": "CC_CS_008",
+        "name": "Functions containing only todo!() or unimplemented!() should be completed",
+        "severity": "note",
+        "properties": {
+          "category": "CodeSmell",
+          "technology": ["Rust"]
+        }
+      },
+      "agent_semantics": {
+        "summary": "Stub function with todo!/unimplemented! detected - will panic if called",
+        "reasoning_model": "gpt-4o",
+        "review_questions": [
+          "Is this function intentionally stubbed for later implementation?",
+          "Should this function actually be implemented?",
+          "Is this in test/example code where stubs are acceptable?",
+          "Could this function be called in production?"
+        ],
+        "semantic_chunks": [
+          "todo!() and unimplemented!() will panic if called",
+          "Production code should not contain these unless truly unreachable",
+          "Stubs in tests/examples are generally acceptable",
+          "Fix: Implement the function or mark as #[fake] if intentional placeholder"
+        ],
+        "safe_autofix": false,
+        "autofix_guidance": "Cannot safely autofix - requires understanding the intended function behavior"
+      },
+      "performance_budget": {
+        "estimated_ms": 1,
+        "budget_ms": 3,
+        "strategy": "AST function body macro detection"
+      },
+      "complexity": "low"
+    },
+    {
+      "rule_id": "CC_CS_009",
+      "name": "Redundant parenthesized expressions should be removed",
+      "description": "Unnecessary parentheses around expressions add visual noise and suggest the developer was unsure of operator precedence. This rule detects parenthesized expressions where the parentheses don't affect evaluation.",
+      "severity": "Minor",
+      "category": "CodeSmell",
+      "languages": ["rust"],
+      "precision_target": "high",
+      "parent_sonar": null,
+      "Axiom metadata": {
+        "layer": "preflight",
+        "required_keywords": ["parentheses", "redundant", "expression"],
+        "performance": "O(n) per file",
+        "event_kind": "code_smell.redundant_parentheses"
+      },
+      "detection_strategy": "AST-based (expression structure analysis)",
+      "detection_details": {
+        "ast_query": "Find parenthesized_expression nodes and analyze if inner expression is simple",
+        "pattern_match": "Detect parentheses around simple expressions like literals, identifiers, or simple binary expressions where order is unambiguous",
+        "context_aware_whitelist": [
+          "Parentheses in macro contexts where they are required",
+          "Parentheses in return statements for clarity: return (x);",
+          "Parentheses that affect async/await parsing",
+          "Parentheses in closure signatures: |x| (x + 1)"
+        ],
+        "false_positive_whitelist": [
+          "Parentheses that affect operator precedence",
+          "Parentheses in method calls: (foo.bar)()",
+          "Parentheses in tuple context"
+        ]
+      },
+      "exclusions": [
+        "Macro contexts",
+        "Return statements",
+        "Closure bodies",
+        "Tuple expressions"
+      ],
+      "false_positive_conditions": [
+        "Parentheses in complex expressions that clarify intent",
+        "Parentheses in match patterns"
+      ],
+      "remediation": "Remove unnecessary parentheses while preserving any semantic meaning or precedence.",
+      "fix_playbook": "1. Identify the parenthesized expression\n2. Verify parentheses don't affect evaluation order\n3. Remove the parentheses\n4. Ensure code still compiles and has same behavior",
+      "SARIF_mapping": {
+        "ruleId": "CC_CS_009",
+        "name": "Redundant parenthesized expressions should be removed",
+        "severity": "note",
+        "properties": {
+          "category": "CodeSmell",
+          "technology": ["Rust"]
+        }
+      },
+      "agent_semantics": {
+        "summary": "Redundant parentheses detected - unnecessary visual noise",
+        "reasoning_model": "gpt-4o",
+        "review_questions": [
+          "Do these parentheses affect operator precedence?",
+          "Are they needed for macro parsing?",
+          "Do they clarify intent in a complex expression?"
+        ],
+        "semantic_chunks": [
+          "Unnecessary parentheses add visual noise",
+          "Usually safe to remove if they don't affect evaluation",
+          "Some contexts require parentheses (macros, returns)",
+          "Fix: Remove unnecessary parentheses"
+        ],
+        "safe_autofix": true,
+        "autofix_guidance": "Safe to remove when verified that parentheses don't affect precedence or parsing"
+      },
+      "performance_budget": {
+        "estimated_ms": 1,
+        "budget_ms": 3,
+        "strategy": "AST parenthesized expression analysis with precedence check"
+      },
+      "complexity": "low"
+    }
+  ]
+}

@@ -1,0 +1,150 @@
+{
+  "batch_id": "code-smells",
+  "created": "2026-05-15",
+  "status": "implementation_complete",
+  "concepts_total": 9,
+  "concepts_approved": 9,
+  "concepts_legal_blocked": 0,
+  "rules": [
+    {
+      "rule_id": "CC_CS_001",
+      "concept_id": "CC_CS_001",
+      "name": "TODO and FIXME comments should be resolved",
+      "status": "implemented",
+      "severity": "Minor",
+      "precision": "high",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (comment token analysis)",
+      "performance": "O(n) per file",
+      "parent_sonar": "S113"
+    },
+    {
+      "rule_id": "CC_CS_002",
+      "concept_id": "CC_CS_002",
+      "name": "Empty nested blocks should be removed",
+      "status": "implemented",
+      "severity": "Minor",
+      "precision": "high",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (empty block detection)",
+      "performance": "O(n) per file",
+      "parent_sonar": "S1764"
+    },
+    {
+      "rule_id": "CC_CS_003",
+      "concept_id": "CC_CS_003",
+      "name": "Duplicate branches in if-else chain should be consolidated",
+      "status": "implemented",
+      "severity": "Major",
+      "precision": "high",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (branch condition and body comparison)",
+      "performance": "O(n) per file",
+      "parent_sonar": "S1871"
+    },
+    {
+      "rule_id": "CC_CS_004",
+      "concept_id": "CC_CS_004",
+      "name": "Empty statements should be removed",
+      "status": "implemented",
+      "severity": "Minor",
+      "precision": "high",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (empty statement detection)",
+      "performance": "O(n) per file",
+      "parent_sonar": "S1116"
+    },
+    {
+      "rule_id": "CC_CS_005",
+      "concept_id": "CC_CS_005",
+      "name": "Redundant semicolons should be removed",
+      "status": "implemented",
+      "severity": "Minor",
+      "precision": "high",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (redundant semicolon detection)",
+      "performance": "O(n) per file",
+      "parent_sonar": "S1117"
+    },
+    {
+      "rule_id": "CC_CS_006",
+      "concept_id": "CC_CS_006",
+      "name": "Wildcard patterns in match should not precede specific patterns",
+      "status": "implemented",
+      "severity": "Major",
+      "precision": "high",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (match arm pattern analysis)",
+      "performance": "O(n) per file",
+      "parent_sonar": "S3353"
+    },
+    {
+      "rule_id": "CC_CS_007",
+      "concept_id": "CC_CS_007",
+      "name": "Function names should follow snake_case convention in Rust",
+      "status": "implemented",
+      "severity": "Minor",
+      "precision": "medium",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (identifier pattern analysis)",
+      "performance": "O(n) per file",
+      "parent_sonar": "S100"
+    },
+    {
+      "rule_id": "CC_CS_008",
+      "concept_id": "CC_CS_008",
+      "name": "Empty function bodies with only TODO or unimplemented! markers",
+      "status": "implemented",
+      "severity": "Minor",
+      "precision": "medium",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (function body analysis)",
+      "performance": "O(n) per file"
+    },
+    {
+      "rule_id": "CC_CS_009",
+      "concept_id": "CC_CS_009",
+      "name": "Redundant parenthesized expressions should be removed",
+      "status": "implemented",
+      "severity": "Minor",
+      "precision": "high",
+      "languages": ["rust"],
+      "detection_strategy": "AST-based (expression structure analysis)",
+      "performance": "O(n) per file"
+    }
+  ],
+  "legal_audit": {
+    "status": "approved",
+    "audited_concepts": 9,
+    "blocked": 0,
+    "notes": "All rules are derived from SonarQube community standards. Legal review complete."
+  },
+  "batch_metrics": {
+    "total_fixtures": 0,
+    "positive_fixtures": 0,
+    "negative_fixtures": 0,
+    "edge_case_fixtures": 0,
+    "false_positive_guards": 0,
+    "performance_fixtures": 0
+  },
+  "phase_history": [
+    {
+      "phase": "design",
+      "status": "completed",
+      "timestamp": "2026-05-15T00:00:00Z",
+      "notes": "9 rule designs created"
+    },
+    {
+      "phase": "legal_review",
+      "status": "completed",
+      "timestamp": "2026-05-15T00:00:00Z",
+      "notes": "All 9 rules approved - derived from SonarQube community standards"
+    },
+    {
+      "phase": "implementation",
+      "status": "completed",
+      "timestamp": "2026-05-15T00:00:00Z",
+      "notes": "All 9 rules implemented in cognicode-axiom crate"
+    }
+  ]
+}

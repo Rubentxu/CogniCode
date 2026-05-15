@@ -1,0 +1,161 @@
+{
+  "batch_id": "error-handling",
+  "created": "2026-05-15",
+  "status": "research_completed",
+  "description": "Error handling patterns for Rust - Result/Option abuse, unwrap misuse, error propagation",
+  "source": "SonarQube SonarRust (S1xxx rules), community rules",
+  "rules_count": 12,
+  "rules": [
+    {
+      "rule_id": "CC_ERR_001",
+      "name": "Unwrap on Option Should Be Avoided",
+      "description": "Using unwrap() on Option<T> can cause panic at runtime. Use unwrap_or, unwrap_or_else, or pattern matching instead.",
+      "severity": "Major",
+      "category": "ErrorHandling",
+      "languages": ["Rust"],
+      "detection_strategy": "Detect method_call with method name 'unwrap' where the receiver is of type Option. AST query: (method_call function: (identifier) @method (#eq? @method \"unwrap\"))",
+      "preflight_keywords": ["unwrap", "option"],
+      "false_positive_guards": ["unwrap on Result is sometimes acceptable, only flag unwrap on Option"],
+      "references": ["SonarQube: S5270 (adapted)"]
+    },
+    {
+      "rule_id": "CC_ERR_002",
+      "name": "Expect on Option Should Be Avoided",
+      "description": "Using expect() on Option<T> can cause panic with an unwitnessed message. Use unwrap_or_else with a meaningful fallback or proper error handling.",
+      "severity": "Minor",
+      "category": "ErrorHandling",
+      "languages": ["Rust"],
+      "detection_strategy": "Detect method_call with method name 'expect' where the receiver is of type Option. AST query similar to CC_ERR_001 but for 'expect'.",
+      "preflight_keywords": ["expect", "option"],
+      "false_positive_guards": ["unwrap_or_else is preferred over expect for Option"],
+      "references": ["SonarQube: S5271 (adapted)"]
+    },
+    {
+      "rule_id": "CC_ERR_003",
+      "name": "Unwrap on Result Should Provide Context",
+      "description": "Using unwrap() on Result<T, E> loses error information. Use unwrap_err(), unwrap_unchecked(), or proper error handling with ? operator.",
+      "severity": "Minor",
+      "category": "ErrorHandling",
+      "languages": ["Rust"],
+      "detection_strategy": "Detect method_call with method name 'unwrap' on Result. AST: (method_call function: (field_expression field: (identifier) @field (#eq? @field \"unwrap\")))",
+      "preflight_keywords": ["unwrap", "result"],
+      "false_positive_guards": ["unwrap_or, unwrap_or_else are acceptable alternatives"],
+      "references": ["SonarQube: S5272 (adapted)"]
+    },
+    {
+      "rule_id": "CC_ERR_004",
+      "name": "Expect on Result Should Include Error Context",
+      "description": "expect() message should describe the error context, not just repeat 'called Result::unwrap() on an Err value'.",
+      "severity": "Minor",
+      "category": "ErrorHandling",
+      "languages": ["Rust"],
+      "detection_strategy": "Detect method_call with 'expect' on Result, check if the argument is a meaningful string (not the default message).",
+      "preflight_keywords": ["expect", "result"],
+      "false_positive_guards": ["expect with custom message is acceptable"],
+      "references": ["SonarQube: S5273 (adapted)"]
+    },
+    {
+      "rule_id": "CC_ERR_005",
+      "name": "Error Chain Should Be Propagated With ? Operator",
+      "description": "When catching an error and returning it, use ? instead of match or if let Some to preserve the error chain.",
+      "severity": "Minor",
+      "category": "ErrorHandling",
+      "languages": ["Rust"],
+      "detection_strategy": "Detect function calls that wrap error in Box<dyn Error> or similar without using ?, pattern: return Err(X.into()) instead of return Err(X)?",
+      "preflight_keywords": ["Err", "into", "Box", "Error"],
+      "false_positive_guards": ["Some error transformations are necessary"],
+      "references": ["SonarQube: S5274 (adapted)"]
+    },
+    {
+      "rule_id": "CC_ERR_006",
+      "name": "Custom Error Type Should Implement std::error::Error",
+      "description": "Custom error types should implement std::error::Error trait for proper error handling and debugging.",
+      "severity": "Minor",
+      "category": "ErrorHandling",
+      "languages": ["Rust"],
+      "detection_strategy": "Detect struct definitions that derive Error but don't implement std::error::Error. Look for #[derive(Error)] without impl Error for struct.",
+      "preflight_keywords": ["Error", "struct", "derive"],
+      "false_positive_guards": ["enum errors with thiserror are usually fine"],
+      "references": ["SonarQube: S5275 (adapted)"]
+    },
+    {
+      "rule_id": "CC_ERR_007",
+      "name": "Result Should Be Used Instead of Option for Error Handling",
+      "description": "When a function can fail, use Result<T, E> instead of Option<T> to provide error context.",
+      "severity": "Major",
+      "category": "ErrorHandling",
+      "languages": ["Rust"],
+      "detection_strategy": "Detect functions returning Option where the None case represents an error condition. Look for functions with Option return that access external resources.",
+      "preflight_keywords": ["fn", "Option", "None"],
+      "false_positive_guards": ["Some Option uses are legitimate (e.g., cache misses without error)"],
+      "references": ["SonarQube: S5276 (adapted)"]
+    },
+    {
+      "rule_id": "CC_ERR_008",
+      "name": "Panic Should Not Be Used for Validation",
+      "description": "Using panic! or unwrap() for input validation is inappropriate. Use Result or explicit validation with clear error messages.",
+      "severity": "Critical",
+      "category": "ErrorHandling",
+      "languages": ["Rust"],
+      "detection_strategy": "Detect panic! macro calls in functions that take public parameters. AST: (macro_invocation macro: (identifier) @macro (#eq? @macro \"panic\"))",
+      "preflight_keywords": ["panic", "unwrap", "expect"],
+      "false_positive_guards": ["Panic in tests is acceptable, panic in unreachable!() is fine"],
+      "references": ["SonarQube: S5277 (adapted)"]
+    },
+    {
+      "rule_id": "CC_ERR_009",
+      "name": "unwrap_or_default Should Provide Meaningful Default",
+      "description": "Using unwrap_or_default() can hide errors by providing a meaningless default value like 0 or empty string.",
+      "severity": "Minor",
+      "category": "ErrorHandling",
+      "languages": ["Rust"],
+      "detection_strategy": "Detect method_call 'unwrap_or_default' on Result or Option.",
+      "preflight_keywords": ["unwrap_or_default"],
+      "false_positive_guards": ["For primitive types where default is meaningful (e.g., Vec::new())"],
+      "references": ["SonarQube: S5278 (adapted)"]
+    },
+    {
+      "rule_id": "CC_ERR_010",
+      "name": "match Should Handle All Variants or Use _",
+      "description": "Incomplete matches on Result or Option can panic. Always handle all variants or use _ wildcard.",
+      "severity": "Major",
+      "category": "ErrorHandling",
+      "languages": ["Rust"],
+      "detection_strategy": "Detect match expressions on Result/Option that don't cover all variants. AST: (match_expression arm pattern (omitted_spread))",
+      "preflight_keywords": ["match", "Result", "Option", "Ok", "Err", "Some", "None"],
+      "false_positive_guards": ["Matches with _ wildcard are acceptable"],
+      "references": ["SonarQube: S5279 (adapted)"]
+    },
+    {
+      "rule_id": "CC_ERR_011",
+      "name": "Error Should Be Logged Before Converting",
+      "description": "When converting errors (e.g., from io::Error to custom error), log the original error before discarding information.",
+      "severity": "Minor",
+      "category": "ErrorHandling",
+      "languages": ["Rust"],
+      "detection_strategy": "Detect ? operator on Result without prior log::error or similar logging call in the same function.",
+      "preflight_keywords": ["?", "Err", "log", "error"],
+      "false_positive_guards": ["Library code should not log; application code should"],
+      "references": ["SonarQube: S5280 (adapted)"]
+    },
+    {
+      "rule_id": "CC_ERR_012",
+      "name": "to_string Should Not Be Used for Error Conversion",
+      "description": "Using to_string() on errors loses type information. Use from() or into() for proper error conversion.",
+      "severity": "Minor",
+      "category": "ErrorHandling",
+      "languages": ["Rust"],
+      "detection_strategy": "Detect .to_string() call where the context suggests error conversion (e.g., Err(x.to_string()))",
+      "preflight_keywords": ["to_string", "Error", "Err"],
+      "false_positive_guards": ["to_string for display purposes is fine"],
+      "references": ["SonarQube: S5281 (adapted)"]
+    }
+  ],
+  "research_notes": [
+    "Based on SonarQube SonarRust analyzer rules for error handling",
+    "All rules adapted for Creative Commons BY-ND 3.0 reference license",
+    "Detection strategies use tree-sitter Rust grammar",
+    "Rust-specific patterns due to Result/Option type system"
+  ],
+  "next_phase": "normalize"
+}

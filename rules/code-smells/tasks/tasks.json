@@ -1,0 +1,152 @@
+{
+  "batch_id": "code-smells",
+  "created": "2026-05-15",
+  "total_tasks": 9,
+  "tasks": [
+    {
+      "task_id": "CC_CS_001_TASK",
+      "rule_id": "CC_CS_001",
+      "rule_name": "TODO and FIXME comments should be resolved",
+      "status": "pending",
+      "implementation_steps": [
+        "1. Create tree-sitter query to capture all comment nodes",
+        "2. Filter comments matching patterns: TODO, FIXME, XXX, HACK (case-insensitive)",
+        "3. Apply exclusions for test files, generated code, string literals",
+        "4. Create test fixtures following fixture-matrix.json",
+        "5. Implement rule with proper SARIF mapping",
+        "6. Run tests and verify detection"
+      ],
+      "dependencies": [],
+      "estimated_effort": "2 hours"
+    },
+    {
+      "task_id": "CC_CS_002_TASK",
+      "rule_id": "CC_CS_002",
+      "rule_name": "Empty nested blocks should be removed",
+      "status": "pending",
+      "implementation_steps": [
+        "1. Create tree-sitter query for block nodes",
+        "2. Identify blocks with empty statements",
+        "3. Exclude function bodies, trait/impl blocks",
+        "4. Create test fixtures following fixture-matrix.json",
+        "5. Implement rule with safe autofix (remove empty block)",
+        "6. Run tests and verify detection"
+      ],
+      "dependencies": [],
+      "estimated_effort": "2 hours"
+    },
+    {
+      "task_id": "CC_CS_003_TASK",
+      "rule_id": "CC_CS_003",
+      "rule_name": "Duplicate branches in if-else chain should be consolidated",
+      "status": "pending",
+      "implementation_steps": [
+        "1. Create tree-sitter query for if/else expressions",
+        "2. Extract branch conditions and bodies",
+        "3. Compare AST structure of branch bodies",
+        "4. Detect duplicate bodies across consecutive branches",
+        "5. Create test fixtures following fixture-matrix.json",
+        "6. Implement rule with structural comparison",
+        "7. Run tests and verify detection"
+      ],
+      "dependencies": [],
+      "estimated_effort": "4 hours"
+    },
+    {
+      "task_id": "CC_CS_004_TASK",
+      "rule_id": "CC_CS_004",
+      "rule_name": "Empty statements should be removed",
+      "status": "pending",
+      "implementation_steps": [
+        "1. Create tree-sitter query for expression_statement nodes",
+        "2. Identify statements with no expression",
+        "3. Create test fixtures following fixture-matrix.json",
+        "4. Implement rule with safe autofix (remove empty statement)",
+        "5. Run tests and verify detection"
+      ],
+      "dependencies": [],
+      "estimated_effort": "1 hour"
+    },
+    {
+      "task_id": "CC_CS_005_TASK",
+      "rule_id": "CC_CS_005",
+      "rule_name": "Redundant semicolons should be removed",
+      "status": "pending",
+      "implementation_steps": [
+        "1. Create tree-sitter query for redundant semicolons",
+        "2. Identify double semicolons and trailing semicolons",
+        "3. Create test fixtures following fixture-matrix.json",
+        "4. Implement rule with safe autofix",
+        "5. Run tests and verify detection"
+      ],
+      "dependencies": [],
+      "estimated_effort": "1 hour"
+    },
+    {
+      "task_id": "CC_CS_006_TASK",
+      "rule_id": "CC_CS_006",
+      "rule_name": "Wildcard patterns should not precede specific patterns in match",
+      "status": "pending",
+      "implementation_steps": [
+        "1. Create tree-sitter query for match_arm nodes",
+        "2. Analyze or_pattern structure",
+        "3. Detect wildcard before other patterns",
+        "4. Create test fixtures following fixture-matrix.json",
+        "5. Implement rule with safe autofix (reorder patterns)",
+        "6. Run tests and verify detection"
+      ],
+      "dependencies": [],
+      "estimated_effort": "3 hours"
+    },
+    {
+      "task_id": "CC_CS_007_TASK",
+      "rule_id": "CC_CS_007",
+      "rule_name": "Function names should follow snake_case convention",
+      "status": "pending",
+      "implementation_steps": [
+        "1. Create tree-sitter query for function_item and method_declaration",
+        "2. Extract identifier names",
+        "3. Apply regex pattern: ^[a-z][a-z0-9_]*$",
+        "4. Apply exclusions: main, #[test], extern, generated code",
+        "5. Create test fixtures following fixture-matrix.json",
+        "6. Implement rule with renaming guidance",
+        "7. Run tests and verify detection"
+      ],
+      "dependencies": [],
+      "estimated_effort": "2 hours"
+    },
+    {
+      "task_id": "CC_CS_008_TASK",
+      "rule_id": "CC_CS_008",
+      "rule_name": "Functions containing only todo!() or unimplemented!() should be completed",
+      "status": "pending",
+      "implementation_steps": [
+        "1. Create tree-sitter query for function bodies",
+        "2. Detect functions with only todo!(), unimplemented!(), or panic!()",
+        "3. Apply exclusions: main(), #[test], examples, benchmarks",
+        "4. Create test fixtures following fixture-matrix.json",
+        "5. Implement rule with guidance to implement or document",
+        "6. Run tests and verify detection"
+      ],
+      "dependencies": [],
+      "estimated_effort": "2 hours"
+    },
+    {
+      "task_id": "CC_CS_009_TASK",
+      "rule_id": "CC_CS_009",
+      "rule_name": "Redundant parenthesized expressions should be removed",
+      "status": "pending",
+      "implementation_steps": [
+        "1. Create tree-sitter query for parenthesized_expression",
+        "2. Analyze inner expression complexity",
+        "3. Detect unnecessary parentheses (simple expressions)",
+        "4. Apply exclusions: macro contexts, return, closures",
+        "5. Create test fixtures following fixture-matrix.json",
+        "6. Implement rule with safe autofix",
+        "7. Run tests and verify detection"
+      ],
+      "dependencies": [],
+      "estimated_effort": "2 hours"
+    }
+  ]
+}
