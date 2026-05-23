@@ -1,0 +1,261 @@
+{
+  "batch": "test-batch",
+  "phase": "normalize",
+  "concepts": [
+    {
+      "concept_id": "CC_TEST_001",
+      "name": "Test Without Assertion",
+      "problem_description": "Test executes code but never verifies the outcome - test function completes without any assertion call",
+      "category": "assertion_pattern",
+      "languages": ["python", "javascript", "java", "rust"],
+      "severity": "major",
+      "precision_target": "high",
+      "detection_strategy": "AST-based: tree-sitter to detect test function nodes; traverse body to verify at least one assertion call exists (expect(), assert*, should, assertThat, pytest assert statements)",
+      "false_positive_conditions": [
+        "Tests that return a value to be verified externally",
+        "Tests that use mock verification instead of assertions",
+        "Tests that expect exceptions (should use expect(() => ...).toThrow())"
+      ],
+      "source_candidates": ["CAND_TEST_001"],
+      "license_clean": true
+    },
+    {
+      "concept_id": "CC_TEST_002",
+      "name": "Test Using Sleep",
+      "problem_description": "Test using time.sleep() or equivalent - causes slow tests and flaky behavior due to timing dependencies",
+      "category": "fixture_misuse",
+      "languages": ["python", "javascript", "java"],
+      "severity": "minor",
+      "precision_target": "high",
+      "detection_strategy": "Pattern match via tree-sitter: detect sleep(duration), delay(), wait_for_seconds(), Thread.sleep() calls in test functions",
+      "false_positive_conditions": [
+        "Sleep in setUp/tearDown for resource cleanup timing",
+        "Sleep in performance tests measuring timing behavior",
+        "Sleeps in integration tests waiting for external services"
+      ],
+      "source_candidates": ["CAND_TEST_002"],
+      "license_clean": true
+    },
+    {
+      "concept_id": "CC_TEST_003",
+      "name": "Test Skipped Without Reason",
+      "problem_description": "Test skipped without explanation - @unittest.skip, describe.skip, or it.skip without reason string",
+      "category": "organization_issue",
+      "languages": ["python", "javascript", "java"],
+      "severity": "minor",
+      "precision_target": "high",
+      "detection_strategy": "AST-based: detect skip decorators with empty reason string; pattern @skip, @skipIf, @skipUnless without message; JavaScript: describe.skip(), it.skip(), test.skip() with no explanation",
+      "false_positive_conditions": [
+        "Skip with detailed ticket number or explanation",
+        "Skip conditionally based on environment variables",
+        "Skip for known platform-specific issues"
+      ],
+      "source_candidates": ["CAND_TEST_003"],
+      "license_clean": true
+    },
+    {
+      "concept_id": "CC_TEST_004",
+      "name": "Test Method Naming Convention Violation",
+      "problem_description": "Test method not following naming convention - should start with test_ prefix but doesn't",
+      "category": "organization_issue",
+      "languages": ["python"],
+      "severity": "minor",
+      "precision_target": "medium",
+      "detection_strategy": "AST-based: detect method definitions in test classes; verify name starts with 'test'; pattern def test_*, async def test_*; flag methods in Test* classes that don't start with test",
+      "false_positive_conditions": [
+        "Helper methods that support tests (not test methods themselves)",
+        "setUp/tearDown methods",
+        "Class methods like __init__"
+      ],
+      "source_candidates": ["CAND_TEST_004"],
+      "license_clean": true
+    },
+    {
+      "concept_id": "CC_TEST_005",
+      "name": "Complex Test Fixture Setup",
+      "problem_description": "Test fixture setup too complex - setUp with excessive lines indicates high coupling and maintenance burden",
+      "category": "fixture_misuse",
+      "languages": ["python", "javascript", "java"],
+      "severity": "minor",
+      "precision_target": "medium",
+      "detection_strategy": "AST-based: count lines in setUp/setUpClass fixture methods; flag setUp methods exceeding 20 lines of code; check for excessive mocking or complex object construction",
+      "false_positive_conditions": [
+        "Fixtures that initialize complex domain objects",
+        "Database migration fixtures",
+        "Integration test fixtures requiring multiple services"
+      ],
+      "source_candidates": ["CAND_TEST_005"],
+      "license_clean": true
+    },
+    {
+      "concept_id": "CC_TEST_006",
+      "name": "Multiple Assertions In Single Test",
+      "problem_description": "Multiple assertions in one test - test should have single logical assertion for better isolation and diagnostics",
+      "category": "assertion_pattern",
+      "languages": ["python", "javascript", "java"],
+      "severity": "minor",
+      "precision_target": "medium",
+      "detection_strategy": "AST-based: count assertion statements in test function body; flag tests with >3 assertion calls; detect assertTrue/assertEqual chains",
+      "false_positive_conditions": [
+        "Assertions on related properties of same object",
+        "Assertions in loops checking multiple elements",
+        "Setup assertions that guard test prerequisites"
+      ],
+      "source_candidates": ["CAND_TEST_006"],
+      "license_clean": true
+    },
+    {
+      "concept_id": "CC_TEST_007",
+      "name": "Duplicated Test Method",
+      "problem_description": "Duplicated test method - identical or near-identical test code that should be refactored or parametrized",
+      "category": "organization_issue",
+      "languages": ["python", "javascript", "java"],
+      "severity": "minor",
+      "precision_target": "medium",
+      "detection_strategy": "AST comparison: detect test functions with identical or highly similar bodies; similarity hashing of test function bodies; flag test methods with same assertions and same setup",
+      "false_positive_conditions": [
+        "Tests that verify same behavior with different inputs (parametrized tests)",
+        "Tests with same intent but different assertions",
+        "Tests for error handling vs success paths"
+      ],
+      "source_candidates": ["CAND_TEST_007"],
+      "license_clean": true
+    },
+    {
+      "concept_id": "CC_TEST_008",
+      "name": "Test Using Random Values",
+      "problem_description": "Test using random values - creates non-deterministic and flaky tests that fail intermittently",
+      "category": "fixture_misuse",
+      "languages": ["python", "javascript", "java"],
+      "severity": "major",
+      "precision_target": "high",
+      "detection_strategy": "AST-based: detect random.*, Math.random(), random.randint() calls in test body; flag use of random module, numpy.random, java.util.Random in tests; check for @RepeatedTest with random seed",
+      "false_positive_conditions": [
+        "Random used to generate test data that's then explicitly asserted",
+        "Tests that use fixed seeds (random.seed(42))",
+        "Property-based tests intentionally using random"
+      ],
+      "source_candidates": ["CAND_TEST_008"],
+      "license_clean": true
+    },
+    {
+      "concept_id": "CC_TEST_009",
+      "name": "Test Without Describe Block",
+      "problem_description": "Test without describe block - tests should be grouped in describe containers for organization",
+      "category": "organization_issue",
+      "languages": ["javascript"],
+      "severity": "minor",
+      "precision_target": "low",
+      "detection_strategy": "AST-based: detect it/test calls not nested inside describe blocks; flag root-level it(), test(), describe() without parent describe; check for test入れ子構造",
+      "false_positive_conditions": [
+        "Top-level integration tests",
+        "Tests in __tests__ directories with descriptive file names",
+        "Single test files that don't require grouping"
+      ],
+      "source_candidates": ["CAND_TEST_009"],
+      "license_clean": true
+    },
+    {
+      "concept_id": "CC_TEST_010",
+      "name": "Assertions Count Mismatch",
+      "problem_description": "expect.assertions() count mismatch - declared count doesn't match actual assertion count in async tests",
+      "category": "assertion_pattern",
+      "languages": ["javascript"],
+      "severity": "major",
+      "precision_target": "high",
+      "detection_strategy": "AST-based: detect expect.assertions(N) calls; count actual expect() calls in async test; dataflow track assertion count; flag mismatch between declared and actual assertion count",
+      "false_positive_conditions": [
+        "expect.assertions in test files that use only expect() without count verification",
+        "Tests that use expect.hasAssertions() instead",
+        "Conditional assertions based on platform/features"
+      ],
+      "source_candidates": ["CAND_TEST_010"],
+      "license_clean": true
+    },
+    {
+      "concept_id": "CC_TEST_011",
+      "name": "Nested Test Hooks",
+      "problem_description": "beforeAll/afterAll in nested describe - hooks should only be at top level to avoid scoping issues",
+      "category": "fixture_misuse",
+      "languages": ["javascript"],
+      "severity": "minor",
+      "precision_target": "high",
+      "detection_strategy": "AST-based: detect beforeAll/afterAll/beforeEach/afterEach in nested describe blocks; flag hooks inside describe blocks that are themselves nested; verify hook scope is only top-level",
+      "false_positive_conditions": [
+        "Hooks in nested describe for specific test groups",
+        "Hooks for conditionally grouped tests",
+        "Hooks in test classes with inheritance"
+      ],
+      "source_candidates": ["CAND_TEST_011"],
+      "license_clean": true
+    },
+    {
+      "concept_id": "CC_TEST_012",
+      "name": "Mock Implementation Confusion",
+      "problem_description": "mockImplementation used with mockReturnValue on same mock - should pick one approach",
+      "category": "fixture_misuse",
+      "languages": ["javascript"],
+      "severity": "minor",
+      "precision_target": "high",
+      "detection_strategy": "AST-based: detect mock objects with both mockImplementation and mockReturnValue calls; flag same mock with conflicting return value specifications; check for .mockImplementation().mockReturnValue() chains",
+      "false_positive_conditions": [
+        "Different methods on same mock (one uses implementation, another uses return value)",
+        "mockImplementation for some calls, mockReturnValue for others",
+        "Conditional mock behavior"
+      ],
+      "source_candidates": ["CAND_TEST_012"],
+      "license_clean": true
+    },
+    {
+      "concept_id": "CC_TEST_013",
+      "name": "SpyOn Not Restored",
+      "problem_description": "spyOn with original implementation not restored - causes test pollution across tests",
+      "category": "fixture_misuse",
+      "languages": ["javascript"],
+      "severity": "major",
+      "precision_target": "high",
+      "detection_strategy": "AST-based: detect spyOn calls without corresponding jest.restoreAllMocks(); track spyOn calls and verify cleanup in afterEach/tearDown; flag missing mock restoration pattern",
+      "false_positive_conditions": [
+        "spyOn on jest.fn() mocks that auto-cleanup",
+        "Mocks created with jest.spyOn + mockImplementation in same test",
+        "Tests using jest.clearAllMocks() instead"
+      ],
+      "source_candidates": ["CAND_TEST_013"],
+      "license_clean": true
+    },
+    {
+      "concept_id": "CC_TEST_014",
+      "name": "Act Wrapper Missing",
+      "problem_description": "act() wrapper missing for async state updates in React tests - causes 'not wrapped in act' warnings",
+      "category": "fixture_misuse",
+      "languages": ["javascript"],
+      "severity": "major",
+      "precision_target": "high",
+      "detection_strategy": "AST-based: detect async test functions that call setState/useState without act() wrapper; flag fireEvent/userEvent calls in async tests without act(); check for waitFor/waitForElementToBeRemoved without act()",
+      "false_positive_conditions": [
+        "Sync state updates that don't require act()",
+        "Tests using @testing-library/react waitFor which handles act internally",
+        "Enzyme shallow render tests"
+      ],
+      "source_candidates": ["CAND_TEST_014"],
+      "license_clean": true
+    },
+    {
+      "concept_id": "CC_TEST_015",
+      "name": "Weak Assertion Style",
+      "problem_description": "Weak assertion style - toBeTruthy vs toBe(true) causes ambiguity and less precise failure messages",
+      "category": "assertion_pattern",
+      "languages": ["javascript", "python"],
+      "severity": "minor",
+      "precision_target": "medium",
+      "detection_strategy": "AST-based: detect expect(x).toBeTruthy() and suggest toBe(true) for boolean checks; flag toBeFalsy() that should be toBe(false); detect assertTrue(x) that should assertEqual(x, expected)",
+      "false_positive_conditions": [
+        "toBeTruthy for checking object existence",
+        "toBeFalsy for checking null/undefined",
+        "Assertions on functions that return boolean-like values"
+      ],
+      "source_candidates": ["CAND_TEST_015"],
+      "license_clean": true
+    }
+  ]
+}

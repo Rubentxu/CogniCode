@@ -887,9 +887,11 @@ def improver(rule_id):
         imp_type = change.get("improvement_type", "none")
         if imp_type == "none":
             return {"success": False, "error": "no improvement needed"}
+        # P12 FIX: Removed strategy enforcement rejection.
+        # If LLM proposes ast_migrate for regex, accept it — the LLM knows better.
+        # The P5 compilation and P6/P10 quality gates still validate the code.
         if imp_type not in get_strategy_allowed_types(strategy):
-            log.info(f"  {rule_id} — strategy enforcement: {imp_type} not allowed for strategy={strategy}")
-            return {"success": False, "error": f"strategy_mismatch: {imp_type} not allowed for {strategy}"}
+            log.info(f"  {rule_id} — strategy note: {imp_type} proposed for {strategy} strategy (accepted)")
 
         old_code = change.get("old_code", "")
         new_code = change.get("new_code", "")
@@ -974,59 +976,42 @@ def improver(rule_id):
         return {"success": False, "error": str(e)}
 
 
+def _load_rule_authoring_api() -> str:
+    """Load the compact API reference from the cognicode-rule-authoring skill.
+
+    Returns the condensed API section between '## Compact Rule' markers,
+    or falls back to an inline reference if the skill file is missing.
+    """
+    skill_path = ROOT / ".claude" / "skills" / "cognicode-rule-authoring" / "SKILL.md"
+    if skill_path.exists():
+        content = skill_path.read_text()
+        # Extract the "Compact Rule (for LLM prompt injection)" section
+        marker = "## Compact Rule (for LLM prompt injection)"
+        idx = content.find(marker)
+        if idx != -1:
+            # Take everything from the marker to the end of file
+            section = content[idx + len(marker):].strip()
+            # Remove any trailing ``` fences
+            if section.startswith("```"):
+                section = section[3:]
+            if section.endswith("```"):
+                section = section[:-3]
+            return section.strip()
+        # Fallback: take the whole file if marker not found
+        return content
+    # Inline fallback (should not happen if skill is installed)
+    return "See .claude/skills/cognicode-rule-authoring/SKILL.md for API reference."
+
+# Load once at module level
+_API_REFERENCE = _load_rule_authoring_api()
+
+
 def _build_strategy_prompt(strategy: str) -> str:
     """Build strategy-aware system prompt for the LLM.
 
-    P10: Rewritten with complete RuleContext API reference, strict prohibitions
-    against line-based scanning, and few-shot examples of correct tree-sitter rules.
+    Uses the cognicode-rule-authoring skill for complete API reference.
+    Injects strategy-specific guidance on top of the shared API context.
     """
-
-    # ── Shared API reference (injected in ALL strategies) ──
-    api_reference = r"""
-RULECONTEXT API (available in every check() closure):
-
-  ctx.tree          — Full parsed AST (tree_sitter::Tree)
-  ctx.source        — Raw source text
-  ctx.file_path     — Path to file being analyzed
-  ctx.language      — Language enum (Rust, Python, JavaScript, TypeScript, Go, Java)
-  ctx.graph         — Project-wide CallGraph (callers, callees, dead code)
-  ctx.symbol_table  — Per-file SymbolTable (variable bindings, scopes)
-  ctx.metrics       — FileMetrics (struct count, function count, etc.)
-
-TREE-SITTER QUERY METHODS (ALWAYS prefer over ctx.source.lines()):
-  ctx.query_nodes(query_str)             -> Vec<Node>        — Arbitrary AST query
-  ctx.query_functions()                  -> Vec<Node>        — All function/method defs
-  ctx.query_imports()                    -> Vec<(line, text)>— All import/use statements
-  ctx.query_classes()                    -> Vec<(line, text)>— All struct/class/impl defs
-  ctx.query_patterns(query_str)          -> Vec<(line,col,t)>)— Custom query with captures
-  ctx.count_matches(query_str)           -> usize            — Count matching nodes
-  ctx.function_name(node)                -> Option<&str>     — Extract function name
-  ctx.nesting_depth(node)                -> usize            — Max control flow nesting
-  ctx.cognitive_complexity(node)         -> i32              — SonarSource complexity
-  ctx.line_count(node)                   -> usize            — Lines occupied by node
-
-CALL GRAPH METHODS (for dataflow/semantic rules):
-  ctx.callers_of(symbol_name)            -> Vec<String>      — Who calls this symbol
-  ctx.callees_of(symbol_name)            -> Vec<String>      — What this symbol calls
-  ctx.find_dead_symbols()                -> Vec<(name,file)> — Unreachable code
-
-RUST TREE-SITTER NODE TYPES:
-  function_item, impl_item, struct_item, enum_item, trait_item
-  let_declaration, assignment_expression, call_expression
-  if_expression, match_expression, match_arm, for_expression, while_expression, loop_expression
-  field_expression, method_call_expression, return_expression
-  use_declaration, mod_item, type_item
-  parameters, parameter, type_identifier, identifier
-  block_comment, line_comment, string_literal, raw_string_literal
-  attribute_item, inner_attribute_item, unsafe_expression
-
-COMMON TREE-SITTER QUERY PATTERNS:
-  "(function_item name: (identifier) @name) @func"
-  "(call_expression function: (field_expression field: (field_identifier) @method)) @call"
-  "(impl_item trait: (type_identifier) @trait type: (type_identifier) @type) @impl"
-  "(let_declaration pattern: (identifier) @var value: (_)) @assign"
-  "(function_item parameters: (parameters (parameter pattern: (identifier) @param))) @func"
-"""
 
     base = (
         "You edit Rust static analysis rules for the CogniCode analyzer.\n"
@@ -1042,51 +1027,58 @@ COMMON TREE-SITTER QUERY PATTERNS:
         "and can distinguish a function call from a string literal containing the same text.\n\n"
         "Rust regex limitations: NO lookahead/lookbehind/backreferences.\n"
         "Rust regex supports: (?:...), (?i), \\b, \\d{2}.\n\n"
-        f"{api_reference}\n"
+        f"{_API_REFERENCE}\n"
     )
 
-    # ── Few-shot example of a CORRECT tree-sitter rule ──
-    good_example = r"""
-CORRECT EXAMPLE (S1226 — parameter reassignment detection):
+    # ── Few-shot examples: CORRECT patterns ──
+    good_examples = r"""
+CORRECT EXAMPLE 1 (S4784 — eval() detection using ctx.query_nodes):
 ```rust
 check: => {
     let mut issues = Vec::new();
-    let query_str = "(function_item parameters: (parameters \
-        (parameter pattern: (identifier) @param))) @func";
-    if let Ok(query) = tree_sitter::Query::new(
-        &ctx.language.to_ts_language(), query_str) {
-        let mut cursor = tree_sitter::QueryCursor::new();
-        let mut matches = cursor.matches(
-            &query, ctx.tree.root_node(), ctx.source.as_bytes());
-        let mut params: std::collections::HashSet<String> = std::collections::HashSet::new();
-        while let Some(m) = matches.next() {
-            for capture in m.captures {
-                if let Ok(name) = capture.node.utf8_text(ctx.source.as_bytes()) {
-                    params.insert(name.to_string());
-                }
+    for node in ctx.query_nodes("(call_expression (identifier) @call (#eq? @call \"eval\"))") {
+        let start = node.start_position();
+        issues.push(Issue::new(self.id(), "Security issue detected",
+            self.severity(), self.category(), ctx.file_path, start.row + 1));
+    }
+    issues
+}
+```
+
+CORRECT EXAMPLE 2 (S1541 — branch count using ctx.query_functions + helper):
+```rust
+check: => {
+    let mut issues = Vec::new();
+    for func_node in ctx.query_functions() {
+        let mut branch_count = 0;
+        crate::rules::helpers::count_branches_impl(func_node, &mut branch_count);
+        if branch_count > self.threshold {
+            let pt = func_node.start_position();
+            if let Some(name) = ctx.function_name(func_node) {
+                issues.push(Issue::new("S1541",
+                    format!("Function '{}' has {} branches", name, branch_count),
+                    Severity::Major, Category::CodeSmell, ctx.file_path, pt.row + 1));
             }
         }
-        let assign_query = "(let_declaration pattern: (_) @var)";
-        if let Ok(query2) = tree_sitter::Query::new(
-            &ctx.language.to_ts_language(), assign_query) {
-            let mut cursor2 = tree_sitter::QueryCursor::new();
-            let mut matches2 = cursor2.matches(
-                &query2, ctx.tree.root_node(), ctx.source.as_bytes());
-            while let Some(m) = matches2.next() {
-                for capture in m.captures {
-                    if let Ok(name) = capture.node.utf8_text(ctx.source.as_bytes())
-                        && params.contains(name) {
-                            let pt = capture.node.start_position();
-                            issues.push(Issue::new("S1226",
-                                format!("Parameter '{}' should not be reassigned", name),
-                                Severity::Major, Category::CodeSmell,
-                                ctx.file_path, pt.row + 1,
-                            ).with_remediation(Remediation::moderate(
-                                "Use a new local variable instead"
-                            )));
-                        }
-                }
-            }
+    }
+    issues
+}
+```
+
+CORRECT EXAMPLE 3 (S3776 — cognitive complexity with remediation):
+```rust
+check: => {
+    let mut issues = Vec::new();
+    for func_node in ctx.query_functions() {
+        let complexity = ctx.cognitive_complexity(func_node);
+        if complexity > self.threshold {
+            let pt = func_node.start_position();
+            let name = ctx.function_name(func_node).unwrap_or("anonymous");
+            issues.push(Issue::new("S3776",
+                format!("Function `{}` has cognitive complexity {}, exceeds {}",
+                    name, complexity, self.threshold),
+                Severity::Major, Category::CodeSmell, ctx.file_path, pt.row + 1)
+            .with_remediation(Remediation::substantial("Extract helper functions")));
         }
     }
     issues
@@ -1095,7 +1087,6 @@ check: => {
 
 WRONG EXAMPLE (REJECTED by quality gate — causes false positives):
 ```rust
-// This matches "password" in comments, strings, and variable names
 for line in ctx.source.lines() {       // ← FORBIDDEN
     if line.contains("password") {     // ← FORBIDDEN — matches comments!
         issues.push(Issue::new(...));
@@ -1105,7 +1096,7 @@ for line in ctx.source.lines() {       // ← FORBIDDEN
 """
 
     if strategy == "regex":
-        return base + good_example + (
+        return base + good_examples + (
             "This rule is classified as regex-based. Only use regex for simple single-line "
             "pattern matching where AST is not applicable (e.g., line length checks). "
             "For ANY structural detection (functions, calls, assignments, imports), "
@@ -1119,7 +1110,7 @@ for line in ctx.source.lines() {       // ← FORBIDDEN
         )
 
     elif strategy == "ast":
-        return base + good_example + (
+        return base + good_examples + (
             "This rule is classified as AST/structural. You MUST use tree-sitter queries.\n\n"
             "PATTERN FOR EVERY AST RULE:\n"
             "1. Build a tree-sitter query string for the target node type\n"
@@ -1141,7 +1132,7 @@ for line in ctx.source.lines() {       // ← FORBIDDEN
         )
 
     elif strategy == "semantic":
-        return base + good_example + (
+        return base + good_examples + (
             "This rule is classified as semantic (symbol/scope/usage analysis).\n\n"
             "YOU MUST USE these semantic capabilities:\n"
             "- ctx.callers_of(name) — find who calls a function (cross-function analysis)\n"
@@ -1158,7 +1149,7 @@ for line in ctx.source.lines() {       // ← FORBIDDEN
         )
 
     elif strategy == "dataflow":
-        return base + good_example + (
+        return base + good_examples + (
             "This rule is classified as dataflow (source-sink/taint analysis).\n\n"
             "YOU MUST USE these dataflow capabilities:\n"
             "- ctx.query_nodes() to find source nodes (user input, config, env)\n"
@@ -1183,7 +1174,7 @@ for line in ctx.source.lines() {       // ← FORBIDDEN
         )
 
     elif strategy == "metric":
-        return base + good_example + (
+        return base + good_examples + (
             "This rule is classified as metric-based (thresholds, counting, complexity).\n\n"
             "PREFERRED METRIC METHODS:\n"
             "- ctx.nesting_depth(node) — control flow nesting (replaces line counting)\n"
@@ -1204,7 +1195,7 @@ for line in ctx.source.lines() {       // ← FORBIDDEN
         )
 
     elif strategy == "hybrid":
-        return base + good_example + (
+        return base + good_examples + (
             "This rule is classified as hybrid (multiple analysis approaches).\n"
             "Combine AST queries, semantic methods, and metric calculations.\n"
             "Always prefer ctx.query_nodes() over ctx.source.lines().\n"
@@ -1218,7 +1209,7 @@ for line in ctx.source.lines() {       // ← FORBIDDEN
         )
 
     else:
-        return base + good_example + (
+        return base + good_examples + (
             "Return ONLY valid JSON: "
             '{"improvement_type":"threshold_tune|regex_tighten|ast_migrate|metadata",'
             '"description":"what and why (focus on FP reduction)",'

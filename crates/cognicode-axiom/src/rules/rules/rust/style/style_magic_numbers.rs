@@ -3,7 +3,7 @@
 //! Detects numeric literals (integer or float) that appear in concerning contexts
 //! and should be replaced with named constants for better code maintainability.
 
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use crate::rules::{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity};
 use cognicode_macros::declare_rule;
 use inventory::submit;

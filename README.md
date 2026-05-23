@@ -283,6 +283,47 @@ CogniCode follows **Domain-Driven Design** with Clean Architecture and 4 bounded
 | `cognicode-cli` | Terminal interface (`cognicode`) |
 | `cognicode-sandbox` | Automated scenario testing and benchmarking |
 | `rcode-debug` | Time-travel debugging integration (Chronos MCP) |
+| `cognicode-studio-bff` | Backend-for-Frontend API server (Axum) |
+| `cognicode-studio-web` | React-based web UI for CogniCode Studio |
+| `cognicode-signals` | Signal/Pattern domain types |
+| `cognicode-evidence` | Evidence/Case domain types |
+| `cognicode-research` | Hypothesis/Research domain types |
+| `cognicode-signals-mcp` | MCP binary for signals operations |
+| `cognicode-research-mcp` | MCP binary for research operations |
+
+## CogniCode Studio
+
+CogniCode Studio is the modern web-based interface for code quality analysis:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    CogniCode Studio                          │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────┐   ┌────────────────────────────────┐ │
+│  │  Studio Web UI   │   │      Studio BFF (Axum)         │ │
+│  │  (React + TS)    │◄──│  • Analysis handler           │ │
+│  │                  │   │  • Signals handler             │ │
+│  │  • Explorer      │   │  • Evidence handler           │ │
+│  │  • Signals       │   │  • Research handler           │ │
+│  │  • Evidence      │   │  • Metrics handler            │ │
+│  │  • Metrics       │   │                               │ │
+│  └─────────────────┘   └───────────────┬────────────────┘ │
+│                                          │                   │
+│                    ┌─────────────────────┼─────────────────┐ │
+│                    │    MCP Binaries      │                 │ │
+│                    │  • signals-mcp       │                 │ │
+│                    │  • research-mcp      │                 │ │
+│                    └─────────────────────┘                 │ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Components:**
+- **`cognicode-studio-bff`**: Axum-based BFF that orchestrates between MCPs and provides REST API
+- **`cognicode-studio-web`**: React + TypeScript web UI with shadcn/ui components
+- **`cognicode-signals-mcp`**: MCP binary for signal/pattern operations (5 tools)
+- **`cognicode-research-mcp`**: MCP binary for research/evidence operations (14 tools)
+
+> **Note**: The legacy `cognicode-dashboard` crate is deprecated. Use CogniCode Studio instead.
 
 ## Configuration
 

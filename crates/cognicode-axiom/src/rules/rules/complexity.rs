@@ -4,7 +4,7 @@
 //! - S138: Long Method rule
 //! - S3776: Cognitive Complexity rule
 
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext};
 use streaming_iterator::StreamingIterator;
 use tree_sitter::Query as TsQuery;
 use tree_sitter::QueryCursor;

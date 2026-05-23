@@ -3,7 +3,7 @@
 //! Detects RefCell::borrow() or RefCell::borrow_mut() calls where the borrow
 //! spans an .await point, which can cause panics in async code.
 
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use crate::rules::{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity};
 use cognicode_macros::declare_rule;
 use inventory::submit;
@@ -55,8 +55,9 @@ fn detect_refcell_across_await(ctx: &RuleContext) -> Vec<Issue> {
         return issues;
     }
 
-    // Pattern 1: let value = refcell.borrow() followed by .await and use of value
-    let borrow_await_pattern = regex::Regex::new(r"let\s+(\w+)\s*=\s*(\w+)\.(borrow|borrow_mut)\([^)]*\)[^;]*?\.await[^;]*?\1").unwrap();
+    // Pattern 1: let value = refcell.borrow() followed by .await
+    // Note: Simplified without backreference since regex crate doesn't support \1
+    let borrow_await_pattern = regex::Regex::new(r"let\s+\w+\s*=\s*\w+\.(borrow|borrow_mut)\([^)]*\)[^;]*?\.await").unwrap();
 
     for cap in borrow_await_pattern.find_iter(source) {
         let text = cap.as_str();

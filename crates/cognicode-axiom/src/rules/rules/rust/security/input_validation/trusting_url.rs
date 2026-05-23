@@ -11,7 +11,7 @@
 //! - window.location = user_url
 //! - Redirect to javascript: URLs
 //! - data: URIs in places expecting same-origin resources
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use crate::rules::{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity};
 use cognicode_macros::declare_rule;
 use inventory::submit;

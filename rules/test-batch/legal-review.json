@@ -1,0 +1,188 @@
+{
+  "batch": "test-batch",
+  "phase": "legal",
+  "audited_at": "2026-05-15T02:00:00Z",
+  "auditor": "rule-legal-provenance",
+  "total_concepts": 15,
+  "approved": 15,
+  "reference_only": 0,
+  "legal_blocked": 0,
+  "reviews": [
+    {
+      "concept_id": "CC_TEST_001",
+      "concept_name": "Test Without Assertion",
+      "decision": "approved",
+      "rationale": "All source candidates have acceptable licenses. ESLint jest-plugin (MIT) is primary source. SonarQube RSpec is reference only but license is Creative Commons (non-commercial but acceptable for rule research). concepts.json license_clean=true confirmed.",
+      "sources_reviewed": [
+        {"source": "ESLint jest-plugin", "rule_id": "jest/valid-expect", "license": "MIT", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "PY_T1", "license": "SonarQube RSpec (CC)", "acceptable": true, "note": "Reference only"}
+      ],
+      "license_summary": "MIT + CC (SonarQube reference). Both acceptable for rule derivation."
+    },
+    {
+      "concept_id": "CC_TEST_002",
+      "concept_name": "Test Using Sleep",
+      "decision": "approved",
+      "rationale": "ESLint jest-plugin (MIT) is primary. SonarQube reference has CC license. Both acceptable. license_clean=true confirmed.",
+      "sources_reviewed": [
+        {"source": "ESLint jest-plugin", "rule_id": "jest/no-disabled-tests", "license": "MIT", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "PY_T2", "license": "SonarQube RSpec (CC)", "acceptable": true, "note": "Reference only"}
+      ],
+      "license_summary": "MIT + CC. Both acceptable."
+    },
+    {
+      "concept_id": "CC_TEST_003",
+      "concept_name": "Test Skipped Without Reason",
+      "decision": "approved",
+      "rationale": "ESLint jest-plugin (MIT) primary source. SonarQube reference with CC license. Both acceptable. license_clean=true.",
+      "sources_reviewed": [
+        {"source": "ESLint jest-plugin", "rule_id": "jest/no-skipped-tests", "license": "MIT", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "PY_T5", "license": "SonarQube RSpec (CC)", "acceptable": true, "note": "Reference only"}
+      ],
+      "license_summary": "MIT + CC. Both acceptable."
+    },
+    {
+      "concept_id": "CC_TEST_004",
+      "concept_name": "Test Method Naming Convention Violation",
+      "decision": "approved",
+      "rationale": "Python unittest documentation (PSF license) and SonarQube reference. PSF is acceptable. license_clean=true.",
+      "sources_reviewed": [
+        {"source": "unittest", "rule_id": "naming convention", "license": "PSF", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "PY_T6", "license": "SonarQube RSpec (CC)", "acceptable": true, "note": "Reference only"}
+      ],
+      "license_summary": "PSF + CC. Both acceptable."
+    },
+    {
+      "concept_id": "CC_TEST_005",
+      "concept_name": "Complex Test Fixture Setup",
+      "decision": "approved",
+      "rationale": "JUnit (Eclipse Public License) and SonarQube reference. EPL is on approved list. license_clean=true.",
+      "sources_reviewed": [
+        {"source": "JUnit", "rule_id": "test setup complexity", "license": "Eclipse Public License", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "PY_T7", "license": "SonarQube RSpec (CC)", "acceptable": true, "note": "Reference only"}
+      ],
+      "license_summary": "EPL + CC. Both acceptable."
+    },
+    {
+      "concept_id": "CC_TEST_006",
+      "concept_name": "Multiple Assertions In Single Test",
+      "decision": "approved",
+      "rationale": "SonarQube references only (both CC licensed). CC license acceptable for research. license_clean=true.",
+      "sources_reviewed": [
+        {"source": "SonarQube", "rule_id": "PY_T8", "license": "SonarQube RSpec (CC)", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "S2699", "license": "SonarQube RSpec (CC)", "acceptable": true}
+      ],
+      "license_summary": "CC (SonarQube). Acceptable for rule research."
+    },
+    {
+      "concept_id": "CC_TEST_007",
+      "concept_name": "Duplicated Test Method",
+      "decision": "approved",
+      "rationale": "ESLint (MIT) and SonarQube (CC). Both acceptable. license_clean=true.",
+      "sources_reviewed": [
+        {"source": "ESLint", "rule_id": "no duplicate tests", "license": "MIT", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "PY_T9", "license": "SonarQube RSpec (CC)", "acceptable": true, "note": "Reference only"}
+      ],
+      "license_summary": "MIT + CC. Both acceptable."
+    },
+    {
+      "concept_id": "CC_TEST_008",
+      "concept_name": "Test Using Random Values",
+      "decision": "approved",
+      "rationale": "JUnit (EPL) and SonarQube (CC). Both acceptable. license_clean=true.",
+      "sources_reviewed": [
+        {"source": "JUnit", "rule_id": "flaky test random", "license": "Eclipse Public License", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "PY_T10", "license": "SonarQube RSpec (CC)", "acceptable": true, "note": "Reference only"}
+      ],
+      "license_summary": "EPL + CC. Both acceptable."
+    },
+    {
+      "concept_id": "CC_TEST_009",
+      "concept_name": "Test Without Describe Block",
+      "decision": "approved",
+      "rationale": "ESLint jest-plugin (MIT) and SonarQube (CC). Both acceptable. license_clean=true.",
+      "sources_reviewed": [
+        {"source": "ESLint jest-plugin", "rule_id": "jest/prefer-todo", "license": "MIT", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "JS_TEST11", "license": "SonarQube RSpec (CC)", "acceptable": true, "note": "Reference only"}
+      ],
+      "license_summary": "MIT + CC. Both acceptable."
+    },
+    {
+      "concept_id": "CC_TEST_010",
+      "concept_name": "Assertions Count Mismatch",
+      "decision": "approved",
+      "rationale": "ESLint jest-plugin (MIT) and SonarQube (CC). Both acceptable. license_clean=true.",
+      "sources_reviewed": [
+        {"source": "ESLint jest-plugin", "rule_id": "jest/valid-expect", "license": "MIT", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "JS_TEST12", "license": "SonarQube RSpec (CC)", "acceptable": true, "note": "Reference only"}
+      ],
+      "license_summary": "MIT + CC. Both acceptable."
+    },
+    {
+      "concept_id": "CC_TEST_011",
+      "concept_name": "Nested Test Hooks",
+      "decision": "approved",
+      "rationale": "ESLint jest-plugin (MIT) and SonarQube (CC). Both acceptable. license_clean=true.",
+      "sources_reviewed": [
+        {"source": "ESLint jest-plugin", "rule_id": "jest/no-hook-skip", "license": "MIT", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "JS_TEST13", "license": "SonarQube RSpec (CC)", "acceptable": true, "note": "Reference only"}
+      ],
+      "license_summary": "MIT + CC. Both acceptable."
+    },
+    {
+      "concept_id": "CC_TEST_012",
+      "concept_name": "Mock Implementation Confusion",
+      "decision": "approved",
+      "rationale": "ESLint jest-plugin (MIT) and SonarQube (CC). Both acceptable. license_clean=true.",
+      "sources_reviewed": [
+        {"source": "ESLint jest-plugin", "rule_id": "jest/unnecessary-mock", "license": "MIT", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "JS_TEST14", "license": "SonarQube RSpec (CC)", "acceptable": true, "note": "Reference only"}
+      ],
+      "license_summary": "MIT + CC. Both acceptable."
+    },
+    {
+      "concept_id": "CC_TEST_013",
+      "concept_name": "SpyOn Not Restored",
+      "decision": "approved",
+      "rationale": "ESLint jest-plugin (MIT) and SonarQube (CC). Both acceptable. license_clean=true.",
+      "sources_reviewed": [
+        {"source": "ESLint jest-plugin", "rule_id": "jest/unmocked-mock", "license": "MIT", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "JS_TEST15", "license": "SonarQube RSpec (CC)", "acceptable": true, "note": "Reference only"}
+      ],
+      "license_summary": "MIT + CC. Both acceptable."
+    },
+    {
+      "concept_id": "CC_TEST_014",
+      "concept_name": "Act Wrapper Missing",
+      "decision": "approved",
+      "rationale": "React Testing Library (MIT) and SonarQube (CC). Both acceptable. license_clean=true.",
+      "sources_reviewed": [
+        {"source": "React Testing Library", "rule_id": "act warning", "license": "MIT", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "JS_TEST16", "license": "SonarQube RSpec (CC)", "acceptable": true, "note": "Reference only"}
+      ],
+      "license_summary": "MIT + CC. Both acceptable."
+    },
+    {
+      "concept_id": "CC_TEST_015",
+      "concept_name": "Weak Assertion Style",
+      "decision": "approved",
+      "rationale": "ESLint jest-plugin (MIT) and SonarQube (CC). Both acceptable. license_clean=true.",
+      "sources_reviewed": [
+        {"source": "ESLint jest-plugin", "rule_id": "jest/prefer-strict-equal", "license": "MIT", "acceptable": true},
+        {"source": "SonarQube", "rule_id": "JS_TEST19", "license": "SonarQube RSpec (CC)", "acceptable": true, "note": "Reference only"}
+      ],
+      "license_summary": "MIT + CC. Both acceptable."
+    }
+  ],
+  "license_matrix": {
+    "MIT": {"count": 12, "sources": ["ESLint jest-plugin", "ESLint", "React Testing Library"]},
+    "PSF": {"count": 1, "sources": ["Python unittest"]},
+    "Eclipse Public License": {"count": 2, "sources": ["JUnit"]},
+    "Creative Commons (SonarQube)": {"count": 15, "sources": ["SonarQube RSpec"], "note": "Reference only, non-commercial but acceptable for rule research"}
+  },
+  "risk_assessment": {
+    "overall_risk": "low",
+    "concerns": [],
+    "notes": "All sources have clearly identifiable licenses. SonarQube RSpec uses Creative Commons which is acceptable for rule research and reference. MIT, PSF, and EPL are all approved licenses."
+  }
+}

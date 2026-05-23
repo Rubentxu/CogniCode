@@ -3,7 +3,7 @@
 //! Detects Box::new(), Vec::new(), String::new() allocated inside loops
 //! without being stored/used, causing immediate drop and wasted allocation.
 
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use crate::rules::{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity};
 use crate::rules::rules::rust::performance::perf_helpers::{
     count_brace_balance, find_brace_close, extract_loop_body, is_test_file,

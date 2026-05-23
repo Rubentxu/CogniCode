@@ -1,0 +1,522 @@
+{
+  "batch": "test-batch",
+  "phase": "research",
+  "started_at": "2026-05-15T00:00:00Z",
+  "concepts": [
+    {
+      "concept_id": "test_no_assertion",
+      "taxonomy": "test_smell",
+      "category": "assertion_pattern",
+      "severity": "major",
+      "description": "Test without any assertion - test executes code but never verifies the outcome",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "PY_T1",
+          "url": "https://rules.sonarsource.com/python/test/",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "ESLint jest-plugin",
+          "rule_id": "jest/valid-expect",
+          "url": "https://github.com/jest-community/eslint-plugin-jest",
+          "license": "MIT",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: detect test function nodes; traverse body to verify at least one assertion call exists",
+        "assertion calls: expect(), assert*, should, assertThat, pytest: assert statements",
+        "flag test functions where no assertion is found in body"
+      ],
+      "false_positives": [
+        "tests that return a value to be verified externally",
+        "tests that use mock verification instead of assertions",
+        "tests that expect exceptions (should use expect(() => ...).toThrow())"
+      ],
+      "search_keywords": ["test without assertion", "empty test", "test no verify", "no assert"]
+    },
+    {
+      "concept_id": "test_with_sleep",
+      "taxonomy": "test_smell",
+      "category": "fixture_misuse",
+      "severity": "minor",
+      "description": "Test using time.sleep() - causes slow tests and flaky behavior",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "PY_T2",
+          "url": "https://rules.sonarsource.com/python/test/",
+          "license": "SonarSource RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "ESLint jest-plugin",
+          "rule_id": "jest/no-disabled-tests",
+          "url": "https://github.com/jest-community/eslint-plugin-jest",
+          "license": "MIT",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: detect time.sleep() calls or equivalent in test functions",
+        "pattern match: sleep(duration), delay(), wait_for_seconds(), Thread.sleep()",
+        "flag any sleep > 0 in test context"
+      ],
+      "false_positives": [
+        "sleep in setUp/tearDown for resource cleanup timing",
+        "sleep in performance tests measuring timing behavior",
+        " sleeps in integration tests waiting for external services"
+      ],
+      "exclusions": ["setUp/tearDown methods", "performance measurement tests"],
+      "search_keywords": ["test sleep", "time sleep", "delay test", "flaky test", "slow test"]
+    },
+    {
+      "concept_id": "test_skipped_no_reason",
+      "taxonomy": "test_smell",
+      "category": "organization_issue",
+      "severity": "minor",
+      "description": "Test skipped without explanation - @unittest.skip or describe.skip without reason",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "PY_T5",
+          "url": "https://rules.sonarsource.com/python/test/",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "ESLint jest-plugin",
+          "rule_id": "jest/no-skipped-tests",
+          "url": "https://github.com/jest-community/eslint-plugin-jest",
+          "license": "MIT",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: detect skip decorators with empty reason string",
+        "pattern: @skip, @skipIf, @skipUnless without message",
+        "JavaScript: describe.skip(), it.skip(), test.skip() with no explanation"
+      ],
+      "false_positives": [
+        "skip with detailed ticket number or explanation",
+        "skip conditionally based on environment variables",
+        "skip for known platform-specific issues"
+      ],
+      "search_keywords": ["skipped test", "skip without reason", "@unittest.skip", "describe.skip"]
+    },
+    {
+      "concept_id": "test_method_naming",
+      "taxonomy": "test_smell",
+      "category": "organization_issue",
+      "severity": "minor",
+      "description": "Test method not following naming convention - should start with test_",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "PY_T6",
+          "url": "https://rules.sonarsource.com/python/test/",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "unittest",
+          "rule_id": "naming convention",
+          "url": "https://docs.python.org/3/library/unittest.html",
+          "license": "PSF",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: detect method definitions in test classes; verify name starts with 'test'",
+        "pattern: def test_*, async def test_*",
+        "flag methods in Test* classes that don't start with test"
+      ],
+      "false_positives": [
+        "helper methods that support tests (not test methods themselves)",
+        "setUp/tearDown methods",
+        "class methods like __init__"
+      ],
+      "exclusions": ["setUp", "tearDown", "__init__", "helper methods"],
+      "search_keywords": ["test naming", "test method name", "unittest naming", "test_ prefix"]
+    },
+    {
+      "concept_id": "test_fixture_complex",
+      "taxonomy": "test_smell",
+      "category": "fixture_misuse",
+      "severity": "minor",
+      "description": "Test fixture setup too complex - setUp with >20 lines indicates high coupling",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "PY_T7",
+          "url": "https://rules.sonarsource.com/python/test/",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "JUnit",
+          "rule_id": "test setup complexity",
+          "url": "https://junit.org/junit5/docs/current/user-guide/",
+          "license": "Eclipse Public License",
+          "version": "5.x"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: count lines in setUp/setUpClass fixture methods",
+        "flag setUp methods exceeding 20 lines of code",
+        "check for excessive mocking or complex object construction"
+      ],
+      "false_positives": [
+        "fixtures that initialize complex domain objects",
+        "database migration fixtures",
+        "integration test fixtures requiring multiple services"
+      ],
+      "search_keywords": ["complex fixture", "large setUp", "test setup", "fixture complexity"]
+    },
+    {
+      "concept_id": "test_multiple_asserts",
+      "taxonomy": "test_smell",
+      "category": "assertion_pattern",
+      "severity": "minor",
+      "description": "Multiple assertions in one test - test should have single logical assertion",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "PY_T8",
+          "url": "https://rules.sonarsource.com/python/test/",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "JUnit",
+          "rule_id": "S2699",
+          "url": "https://sonarsource.github.io/rspec/rspec/S2699.html",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: count assertion statements in test function body",
+        "flag tests with >3 assertion calls",
+        "detect assertTrue/assertEqual chains"
+      ],
+      "false_positives": [
+        "assertions on related properties of same object",
+        "assertions in loops checking multiple elements",
+        "setup assertions that guard test prerequisites"
+      ],
+      "search_keywords": ["multiple assertions", "too many asserts", "assertion count", "single assertion"]
+    },
+    {
+      "concept_id": "test_duplicated",
+      "taxonomy": "test_smell",
+      "category": "organization_issue",
+      "severity": "minor",
+      "description": "Duplicated test method - identical or near-identical test code",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "PY_T9",
+          "url": "https://rules.sonarsource.com/python/test/",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "ESLint",
+          "rule_id": "no duplicate tests",
+          "url": "https://eslint.org/docs/rules/no-duplicate-tests",
+          "license": "MIT",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "AST comparison: detect test functions with identical or highly similar bodies",
+        "similarity hashing of test function bodies",
+        "flag test methods with same assertions and same setup"
+      ],
+      "false_positives": [
+        "tests that verify same behavior with different inputs (parametrized tests)",
+        "tests with same intent but different assertions",
+        "tests for error handling vs success paths"
+      ],
+      "search_keywords": ["duplicate test", "duplicated test", "test duplication", "identical tests"]
+    },
+    {
+      "concept_id": "test_using_random",
+      "taxonomy": "test_smell",
+      "category": "fixture_misuse",
+      "severity": "major",
+      "description": "Test using random values - creates non-deterministic/flaky tests",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "PY_T10",
+          "url": "https://rules.sonarsource.com/python/test/",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "JUnit",
+          "rule_id": "flaky test random",
+          "url": "https://junit.org/junit5/docs/current/user-guide/",
+          "license": "Eclipse Public License",
+          "version": "5.x"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: detect random.*, Math.random(), random.randint() calls in test body",
+        "flag use of random module, numpy.random, java.util.Random in tests",
+        "check for @RepeatedTest with random seed"
+      ],
+      "false_positives": [
+        "random used to generate test data that's then explicitly asserted",
+        "tests that use fixed seeds (random.seed(42))",
+        "property-based tests intentionally using random"
+      ],
+      "exclusions": ["random.seed(fixed_value)", "property-based testing frameworks"],
+      "search_keywords": ["random test", "flaky random", "non-deterministic test", "random value test"]
+    },
+    {
+      "concept_id": "test_no_describe",
+      "taxonomy": "test_smell",
+      "category": "organization_issue",
+      "severity": "minor",
+      "description": "Test without describe block - tests should be grouped in describe containers",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "JS_TEST11",
+          "url": "https://rules.sonarsource.com/javascript/test/",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "ESLint jest-plugin",
+          "rule_id": "jest/prefer-todo",
+          "url": "https://github.com/jest-community/eslint-plugin-jest",
+          "license": "MIT",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: detect it/test calls not nested inside describe blocks",
+        "flag root-level it(), test(), describe() without parent describe",
+        "check for test入れ子構造"
+      ],
+      "false_positives": [
+        "top-level integration tests",
+        "tests in __tests__ directories with descriptive file names",
+        "single test files that don't require grouping"
+      ],
+      "search_keywords": ["test without describe", "root level test", "test organization", "nested test"]
+    },
+    {
+      "concept_id": "assertions_count_mismatch",
+      "taxonomy": "test_smell",
+      "category": "assertion_pattern",
+      "severity": "major",
+      "description": "expect.assertions() count mismatch - declared count doesn't match actual",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "JS_TEST12",
+          "url": "https://rules.sonarsource.com/javascript/test/",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "ESLint jest-plugin",
+          "rule_id": "jest/valid-expect",
+          "url": "https://github.com/jest-community/eslint-plugin-jest",
+          "license": "MIT",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: detect expect.assertions(N) calls; count actual expect() calls in async test",
+        "dataflow: track assertion count for async tests with expect.assertions()",
+        "flag mismatch between declared and actual assertion count"
+      ],
+      "false_positives": [
+        "expect.assertions in test files that use only expect() without count verification",
+        "tests that use expect.hasAssertions() instead",
+        "conditional assertions based on platform/features"
+      ],
+      "search_keywords": ["assertions count", "expect assertions", "async test count", "mismatch"]
+    },
+    {
+      "concept_id": "nested_hooks",
+      "taxonomy": "test_smell",
+      "category": "fixture_misuse",
+      "severity": "minor",
+      "description": "beforeAll/afterAll in nested describe - hooks should only be at top level",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "JS_TEST13",
+          "url": "https://rules.sonarsource.com/javascript/test/",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "ESLint jest-plugin",
+          "rule_id": "jest/no-hook-skip",
+          "url": "https://github.com/jest-community/eslint-plugin-jest",
+          "license": "MIT",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: detect beforeAll/afterAll/beforeEach/afterEach in nested describe blocks",
+        "flag hooks inside describe blocks that are themselves nested",
+        "verify hook scope is only top-level"
+      ],
+      "false_positives": [
+        "hooks in nested describe for specific test groups",
+        "hooks for conditionally grouped tests",
+        "hooks in test classes with inheritance"
+      ],
+      "search_keywords": ["nested hooks", "beforeAll nested", "test hooks", "describe hooks"]
+    },
+    {
+      "concept_id": "mock_implementation_confusion",
+      "taxonomy": "test_smell",
+      "category": "fixture_misuse",
+      "severity": "minor",
+      "description": "mockImplementation used with mockReturnValue - should pick one",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "JS_TEST14",
+          "url": "https://rules.sonarsource.com/javascript/test/",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "ESLint jest-plugin",
+          "rule_id": "jest/unnecessary-mock",
+          "url": "https://github.com/jest-community/eslint-plugin-jest",
+          "license": "MIT",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: detect mock objects with both mockImplementation and mockReturnValue calls",
+        "flag same mock with conflicting return value specifications",
+        "check for .mockImplementation().mockReturnValue() chains"
+      ],
+      "false_positives": [
+        "different methods on same mock (one uses implementation, another uses return value)",
+        "mockImplementation for some calls, mockReturnValue for others",
+        "conditional mock behavior"
+      ],
+      "search_keywords": ["mock implementation", "mock return value", "mock confusion", "jest mock"]
+    },
+    {
+      "concept_id": "spyon_not_restored",
+      "taxonomy": "test_smell",
+      "category": "fixture_misuse",
+      "severity": "major",
+      "description": "spyOn with original implementation not restored - causes test pollution",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "JS_TEST15",
+          "url": "https://rules.sonarsource.com/javascript/test/",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "ESLint jest-plugin",
+          "rule_id": "jest/unmocked-mock",
+          "url": "https://github.com/jest-community/eslint-plugin-jest",
+          "license": "MIT",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: detect spyOn calls without corresponding jest.restoreAllMocks()",
+        "track spyOn calls and verify cleanup in afterEach/tearDown",
+        "flag missing mock restoration pattern"
+      ],
+      "false_positives": [
+        "spyOn on jest.fn() mocks that auto-cleanup",
+        "mocks created with jest.spyOn + mockImplementation in same test",
+        "tests using jest.clearAllMocks() instead"
+      ],
+      "exclusions": ["jest.restoreAllMocks() called", "jest.clearAllMocks() called", "mock jest.fn()"],
+      "search_keywords": ["spyon not restored", "mock cleanup", "test pollution", "spyon cleanup"]
+    },
+    {
+      "concept_id": "act_wrapper_missing",
+      "taxonomy": "test_smell",
+      "category": "fixture_misuse",
+      "severity": "major",
+      "description": "act() wrapper missing for async state updates in React tests",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "JS_TEST16",
+          "url": "https://rules.sonarsource.com/javascript/test/",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "React Testing Library",
+          "rule_id": "act warning",
+          "url": "https://react.dev/learn/wrap-functions-with-act",
+          "license": "MIT",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: detect async test functions that call setState/useState without act() wrapper",
+        "flag fireEvent/userEvent calls in async tests without act()",
+        "check for waitFor/waitForElementToBeRemoved without act()"
+      ],
+      "false_positives": [
+        "sync state updates that don't require act()",
+        "tests using @testing-library/react waitFor which handles act internally",
+        "enzyme shallow render tests"
+      ],
+      "exclusions": ["waitFor", "waitForElementToBeRemoved", "@testing-library/react"],
+      "search_keywords": ["act wrapper", "async act", "react test act", "state update act"]
+    },
+    {
+      "concept_id": "assertion_style_weak",
+      "taxonomy": "test_smell",
+      "category": "assertion_pattern",
+      "severity": "minor",
+      "description": "Weak assertion style - toBeTruthy vs toBe(true) causes ambiguity",
+      "source_references": [
+        {
+          "tool": "SonarQube",
+          "rule_id": "JS_TEST19",
+          "url": "https://rules.sonarsource.com/javascript/test/",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        },
+        {
+          "tool": "ESLint jest-plugin",
+          "rule_id": "jest/prefer-strict-equal",
+          "url": "https://github.com/jest-community/eslint-plugin-jest",
+          "license": "MIT",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: detect expect(x).toBeTruthy() and suggest toBe(true) for boolean checks",
+        "flag toBeFalsy() that should be toBe(false)",
+        "detect assertTrue(x) that should assertEqual(x, expected)"
+      ],
+      "false_positives": [
+        "toBeTruthy for checking object existence",
+        "toBeFalsy for checking null/undefined",
+        "assertions on functions that return boolean-like values"
+      ],
+      "search_keywords": ["toBeTruthy", "assertTrue", "weak assertion", "assertion style"]
+    }
+  ]
+}

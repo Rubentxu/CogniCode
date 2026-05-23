@@ -10,6 +10,9 @@ description = "Quality analysis crate for CogniCode — rule engine, code smells
 cognicode-core = { path = "../cognicode-core" }
 cognicode-macros = { path = "../cognicode-macros" }
 
+# Collections
+dashmap = { workspace = true }
+
 # Async
 tokio = { workspace = true }
 
@@ -29,6 +32,8 @@ tracing = { workspace = true }
 
 # Regex
 regex = { workspace = true }
+# fancy_regex supports lookahead/lookbehind that std regex doesn't have
+fancy-regex = "0.4"
 
 # Aho-Corasick for preflight filtering
 aho-corasick = "1"
@@ -44,6 +49,11 @@ inventory = "0.3"
 
 # Tree-sitter for AST analysis
 tree-sitter = "0.24"
+tree-sitter-rust = "0.23"
+tree-sitter-python = "0.23"
+tree-sitter-javascript = "0.23"
+tree-sitter-go = "0.23"
+tree-sitter-java = "0.23"
 streaming-iterator = "0.1"
 
 # ast-grep for structural pattern matching (using version compatible with tree-sitter 0.24)

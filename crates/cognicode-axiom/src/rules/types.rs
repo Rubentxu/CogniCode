@@ -14,7 +14,7 @@ use cognicode_core::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use cognicode_core::infrastructure::parser::Language;
 use streaming_iterator::StreamingIterator;
 
-use crate::rules::symbol_table::SymbolTable;
+use super::symbol_table::SymbolTable;
 
 /// Severity level for issues detected by rules
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]

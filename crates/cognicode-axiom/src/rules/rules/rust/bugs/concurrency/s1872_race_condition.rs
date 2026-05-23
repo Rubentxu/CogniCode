@@ -3,7 +3,7 @@
 //! S1872a: Detects shared mutable state accessed from multiple threads without synchronization
 //! S1872b: Detects Arc::clone() in hot paths without proper benchmarking
 
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use crate::rules::{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity};
 use cognicode_macros::declare_rule;
 use inventory::submit;

@@ -1,0 +1,172 @@
+{
+  "batch_id": "test-batch",
+  "phase": "verify",
+  "generated_at": "2026-05-15T06:30:00Z",
+  "quality_gates": {
+    "benchmark_gate": {
+      "status": "FAILED",
+      "criteria": "All unit tests must pass",
+      "actual": "24 of 38 tests passing (63%)",
+      "rules_passed": ["CC_TEST_006", "CC_TEST_007", "CC_TEST_010", "CC_TEST_013"],
+      "rules_failed": ["CC_TEST_001", "CC_TEST_002", "CC_TEST_003", "CC_TEST_004", "CC_TEST_005", "CC_TEST_008", "CC_TEST_009", "CC_TEST_011", "CC_TEST_012", "CC_TEST_014", "CC_TEST_015"]
+    },
+    "review_gate": {
+      "status": "BLOCKED",
+      "criteria": "Benchmark must pass first",
+      "actual": "Benchmark gate failed - cannot proceed to review"
+    },
+    "commit_gate": {
+      "status": "BLOCKED",
+      "criteria": "Review gate must pass first",
+      "actual": "Review gate blocked by benchmark failure"
+    }
+  },
+  "quality_assessment": {
+    "infrastructure": {
+      "status": "PASS",
+      "details": "Rule trait, RuleContext, Issue types, StreamingIterator all working correctly"
+    },
+    "rules_structure": {
+      "status": "PASS",
+      "details": "All 15 rules follow correct patterns: id(), name(), description(), category(), severity(), languages(), check(), preflight_keywords()"
+    },
+    "tree_sitter_usage": {
+      "status": "PARTIAL",
+      "details": "Rules that pass use correct AST queries. Failing rules need pattern refinement."
+    },
+    "metadata": {
+      "status": "NOT_REVIEWED",
+      "reason": "Awaiting test pass for each rule"
+    },
+    "sarif_output": {
+      "status": "NOT_REVIEWED",
+      "reason": "Awaiting test pass for each rule"
+    },
+    "agent_semantics": {
+      "status": "NOT_REVIEWED",
+      "reason": "Awaiting test pass for each rule"
+    }
+  },
+  "rules_quality_detail": {
+    "CC_TEST_006": {
+      "name": "Multiple Assertions In Single Test",
+      "status": "APPROVED",
+      "tests_passed": 3,
+      "tests_failed": 0,
+      "tree_sitter_query": "CORRECT - Properly counts assertions in test body",
+      "metadata": "Complete - has fix_playbook and review_questions",
+      "sarif": "Valid format - Issue::new() with all required fields",
+      "notes": "Best example of tree-sitter query pattern implementation"
+    },
+    "CC_TEST_007": {
+      "name": "Duplicated Test Method",
+      "status": "APPROVED",
+      "tests_passed": 3,
+      "tests_failed": 0,
+      "tree_sitter_query": "CORRECT - Post-processing similarity comparison works",
+      "metadata": "Complete - has fix_playbook and review_questions",
+      "sarif": "Valid format - Issue::new() with all required fields",
+      "notes": "Pioneering approach: Levenshtein distance post-processing avoids #similar? predicate limitation"
+    },
+    "CC_TEST_010": {
+      "name": "Assertions Count Mismatch",
+      "status": "APPROVED",
+      "tests_passed": 2,
+      "tests_failed": 0,
+      "tree_sitter_query": "CORRECT",
+      "metadata": "Complete",
+      "sarif": "Valid format",
+      "notes": "All tests passing"
+    },
+    "CC_TEST_013": {
+      "name": "SpyOn Not Restored",
+      "status": "APPROVED",
+      "tests_passed": 2,
+      "tests_failed": 0,
+      "tree_sitter_query": "CORRECT",
+      "metadata": "Complete",
+      "sarif": "Valid format",
+      "notes": "All tests passing"
+    }
+  },
+  "blocking_issues": [
+    {
+      "rule_id": "CC_TEST_001",
+      "name": "Test Without Assertion",
+      "tests_failing": ["test_detects_async_test_without_expect", "test_no_false_positive_with_assertion"],
+      "likely_cause": "AST query pattern may not correctly capture async test structure or assertion detection logic"
+    },
+    {
+      "rule_id": "CC_TEST_002",
+      "name": "Test Using Sleep",
+      "tests_failing": ["test_detects_time_sleep", "test_no_false_positive_with_wait_for"],
+      "likely_cause": "Query pattern may not correctly distinguish sleep from waitFor patterns"
+    },
+    {
+      "rule_id": "CC_TEST_003",
+      "name": "Test Skipped Without Reason",
+      "tests_failing": ["test_detects_skip_without_reason"],
+      "likely_cause": "Decorator detection pattern may need adjustment for Python"
+    },
+    {
+      "rule_id": "CC_TEST_004",
+      "name": "Test Naming Convention",
+      "tests_failing": ["test_detects_naming_violation"],
+      "likely_cause": "Pattern may not correctly match class method naming violations"
+    },
+    {
+      "rule_id": "CC_TEST_005",
+      "name": "Complex Fixture Setup",
+      "tests_failing": ["test_detects_complex_setup"],
+      "likely_cause": "Metrics-based detection (line counting) may need different approach"
+    },
+    {
+      "rule_id": "CC_TEST_008",
+      "name": "Test Using Random Values",
+      "tests_failing": ["test_detects_math_random", "test_detects_random_without_seed"],
+      "likely_cause": "Query pattern may not correctly capture random value usage"
+    },
+    {
+      "rule_id": "CC_TEST_009",
+      "name": "Test Without Describe",
+      "tests_failing": ["test_detects_root_level_it"],
+      "likely_cause": "Nested structure detection may need refinement"
+    },
+    {
+      "rule_id": "CC_TEST_011",
+      "name": "Nested Test Hooks",
+      "tests_failing": ["test_detects_nested_before_each"],
+      "likely_cause": "Nested hook detection may need different approach"
+    },
+    {
+      "rule_id": "CC_TEST_012",
+      "name": "Mock Implementation Confusion",
+      "tests_failing": ["test_detects_mock_confusion"],
+      "likely_cause": "Conflict detection between mockImplementation and mockReturnValue may need refinement"
+    },
+    {
+      "rule_id": "CC_TEST_014",
+      "name": "Act Wrapper Missing",
+      "tests_failing": ["test_detects_fire_event_without_act"],
+      "likely_cause": "act() wrapper detection may need more sophisticated AST traversal"
+    },
+    {
+      "rule_id": "CC_TEST_015",
+      "name": "Weak Assertion Style",
+      "tests_failing": ["test_detects_to_be_truthy"],
+      "likely_cause": "Weak assertion pattern detection may need refinement"
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": "CRITICAL",
+      "action": "Fix tree-sitter query patterns for 11 failing rules",
+      "approach": "Use CC_TEST_007's post-processing approach where tree-sitter predicates are insufficient"
+    },
+    {
+      "priority": "HIGH",
+      "action": "Run verification again after fixes",
+      "approach": "Ensure all 38 tests pass before re-triggering /rules-verify"
+    }
+  ]
+}

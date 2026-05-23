@@ -3,7 +3,7 @@
 //! Detects unnecessary collect() followed by iteration, or collecting
 //! to Vec when iteration would suffice.
 
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use crate::rules::{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity};
 use cognicode_macros::declare_rule;
 

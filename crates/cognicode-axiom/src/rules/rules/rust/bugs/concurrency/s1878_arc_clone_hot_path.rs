@@ -3,7 +3,7 @@
 //! Detects Arc::clone() calls in loops or frequently-called functions
 //! without proper benchmarking justification.
 
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use crate::rules::{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity};
 use cognicode_macros::declare_rule;
 use inventory::submit;
@@ -111,8 +111,9 @@ fn detect_arc_clone_hot_path(ctx: &RuleContext) -> Vec<Issue> {
         }
     }
 
-    // Pattern 4: Recursive function with Arc::clone
-    let recursive_fn_pattern = regex::Regex::new(r"fn\s+(\w+)\s*<[^>]*>[^}]*?Arc::clone\(\)[^}]*?\1\s*\(|fn\s+(\w+)\s*\([^)]*\)[^}]*?Arc::clone\(\)[^}]*?\1\s*\(").unwrap();
+    // Pattern 4: Function named with "recursive" or containing both fn declaration and Arc::clone
+    // Note: Simpler pattern without backreference since regex crate doesn't support \1
+    let recursive_fn_pattern = regex::Regex::new(r"fn\s+\w+[^}]*?Arc::clone\(\)").unwrap();
 
     for cap in recursive_fn_pattern.find_iter(source) {
         let text = cap.as_str();

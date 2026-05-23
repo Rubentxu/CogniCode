@@ -1,0 +1,180 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "rule-orchestrator",
+  "skills": {
+    "paths": [
+      ".opencode/skills"
+    ]
+  },
+  "agent": {
+    "rule-orchestrator": {
+      "description": "Rules Workflow Orchestrator - coordinates CogniCode rule research, design, implementation, verification, and publication. Use for /rules-* commands and rule pipeline work.",
+      "mode": "primary",
+      "model": "minimax-coding-plan/MiniMax-M2.7-highspeed",
+      "permission": {
+        "task": {
+          "*": "deny",
+          "rule-*": "allow"
+        }
+      },
+      "prompt": "{file:/home/rubentxu/Proyectos/rust/CogniCode/.opencode/prompts/rules/rule-orchestrator.md}",
+      "tools": {
+        "bash": true,
+        "cognicode_build_lightweight_index": true,
+        "cognicode_check_architecture": true,
+        "cognicode_get_entry_points": true,
+        "cognicode_get_hot_paths": true,
+        "cognicode-quality_analyze_project": true,
+        "cognicode-quality_get_quality_diff": true,
+        "delegate": true,
+        "delegation_list": true,
+        "delegation_read": true,
+        "edit": true,
+        "read": true,
+        "write": true
+      }
+    },
+    "rule-knowledge-researcher": {
+      "description": "Researches public rule knowledge, source provenance, taxonomy, and candidate concepts for CogniCode rules.",
+      "hidden": true,
+      "mode": "subagent",
+      "model": "minimax-coding-plan/MiniMax-M2.7-highspeed",
+      "prompt": "{file:/home/rubentxu/Proyectos/rust/CogniCode/.opencode/prompts/rules/rule-knowledge-researcher.md}",
+      "tools": {
+        "bash": true,
+        "context7_query-docs": true,
+        "context7_resolve-library-id": true,
+        "cognicode_semantic_search": true,
+        "edit": true,
+        "read": true,
+        "webfetch": true,
+        "write": true
+      }
+    },
+    "rule-concept-normalizer": {
+      "description": "Deduplicates imported rule candidates and normalizes them into RuleKnowledge concepts.",
+      "hidden": true,
+      "mode": "subagent",
+      "model": "minimax-coding-plan/MiniMax-M2.7-highspeed",
+      "prompt": "{file:/home/rubentxu/Proyectos/rust/CogniCode/.opencode/prompts/rules/rule-concept-normalizer.md}",
+      "tools": {
+        "bash": true,
+        "cognicode_build_lightweight_index": true,
+        "cognicode_semantic_search": true,
+        "edit": true,
+        "read": true,
+        "write": true
+      }
+    },
+    "rule-legal-auditor": {
+      "description": "Audits rule candidate provenance and license risk before design or implementation.",
+      "hidden": true,
+      "mode": "subagent",
+      "model": "minimax-coding-plan/MiniMax-M2.7-highspeed",
+      "prompt": "{file:/home/rubentxu/Proyectos/rust/CogniCode/.opencode/prompts/rules/rule-legal-auditor.md}",
+      "tools": {
+        "bash": true,
+        "read": true,
+        "webfetch": true,
+        "write": true
+      }
+    },
+    "rule-designer": {
+      "description": "Designs CogniCode rule detection strategies, Axiom metadata, fixtures, gates, and agent semantics.",
+      "hidden": true,
+      "mode": "subagent",
+      "model": "minimax-coding-plan/MiniMax-M2.7-highspeed",
+      "prompt": "{file:/home/rubentxu/Proyectos/rust/CogniCode/.opencode/prompts/rules/rule-designer.md}",
+      "tools": {
+        "bash": true,
+        "cognicode_analyze_impact": true,
+        "cognicode_build_graph": true,
+        "cognicode_get_call_hierarchy": true,
+        "cognicode_get_complexity": true,
+        "cognicode_query_symbol_index": true,
+        "cognicode_semantic_search": true,
+        "edit": true,
+        "read": true,
+        "write": true
+      }
+    },
+    "rule-test-engineer": {
+      "description": "Builds fixture matrices and Rust tests for CogniCode rules before and after implementation.",
+      "hidden": true,
+      "mode": "subagent",
+      "model": "minimax-coding-plan/MiniMax-M2.7-highspeed",
+      "prompt": "{file:/home/rubentxu/Proyectos/rust/CogniCode/.opencode/prompts/rules/rule-test-engineer.md}",
+      "tools": {
+        "bash": true,
+        "cognicode_find_usages": true,
+        "cognicode_get_symbol_code": true,
+        "edit": true,
+        "read": true,
+        "write": true
+      }
+    },
+    "rule-implementer": {
+      "description": "Implements CogniCode rules from approved designs and fixture matrices.",
+      "hidden": true,
+      "mode": "subagent",
+      "model": "minimax-coding-plan/MiniMax-M2.7-highspeed",
+      "prompt": "{file:/home/rubentxu/Proyectos/rust/CogniCode/.opencode/prompts/rules/rule-implementer.md}",
+      "tools": {
+        "bash": true,
+        "cognicode_analyze_impact": true,
+        "cognicode_build_lightweight_index": true,
+        "cognicode_find_usages": true,
+        "cognicode_get_symbol_code": true,
+        "cognicode-quality_analyze_file": true,
+        "cognicode-quality_check_code_smell": true,
+        "edit": true,
+        "read": true,
+        "write": true
+      }
+    },
+    "rule-benchmark-auditor": {
+      "description": "Measures per-rule performance budgets, regressions, and scalability risks.",
+      "hidden": true,
+      "mode": "subagent",
+      "model": "minimax-coding-plan/MiniMax-M2.7-highspeed",
+      "prompt": "{file:/home/rubentxu/Proyectos/rust/CogniCode/.opencode/prompts/rules/rule-benchmark-auditor.md}",
+      "tools": {
+        "bash": true,
+        "cognicode-quality_analyze_project": true,
+        "cognicode-quality_get_quality_diff": true,
+        "edit": true,
+        "read": true,
+        "write": true
+      }
+    },
+    "rule-reviewer": {
+      "description": "Reviews implemented rules for precision, metadata, SARIF, agent semantics, and quality gates.",
+      "hidden": true,
+      "mode": "subagent",
+      "model": "minimax-coding-plan/MiniMax-M2.7-highspeed",
+      "prompt": "{file:/home/rubentxu/Proyectos/rust/CogniCode/.opencode/prompts/rules/rule-reviewer.md}",
+      "tools": {
+        "bash": true,
+        "cognicode_check_architecture": true,
+        "cognicode_find_usages": true,
+        "cognicode-quality_analyze_project": true,
+        "cognicode-quality_run_quality_gate": true,
+        "edit": true,
+        "read": true,
+        "write": true
+      }
+    },
+    "rule-commit-orchestrator": {
+      "description": "Plans coherent git commit batches and PR summaries for completed rule batches.",
+      "hidden": true,
+      "mode": "subagent",
+      "model": "minimax-coding-plan/MiniMax-M2.7-highspeed",
+      "prompt": "{file:/home/rubentxu/Proyectos/rust/CogniCode/.opencode/prompts/rules/rule-commit-orchestrator.md}",
+      "tools": {
+        "bash": true,
+        "read": true,
+        "write": true
+      }
+    }
+  }
+}

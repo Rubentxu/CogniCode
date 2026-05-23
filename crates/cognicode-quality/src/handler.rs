@@ -3,18 +3,16 @@
 //! Contains the QualityAnalysisHandler and all related types.
 
 use anyhow::Result;
-use cognicode_axiom::linters::Linter;
-use cognicode_axiom::rules::types::{Issue, RuleContext, RuleRegistry, Severity, Category, Remediation};
-use cognicode_axiom::rules::{
-    CompareOperator, FileMetrics, GateCondition, MetricValue, QualityGate,
-};
+use cognicode_axiom::rules::types::{Category, FileMetrics, Issue, Remediation, RuleContext, RuleRegistry, Severity};
+use cognicode_axiom::rules::gates::{CompareOperator, GateCondition, MetricValue, QualityGate};
 use cognicode_core::domain::aggregates::call_graph::CallGraph;
 use cognicode_core::infrastructure::parser::Language;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::PathBuf;
-use tracing::info;
+use std::panic::catch_unwind;
+use tracing::{info, warn, error};
 
 use crate::incremental::{AnalysisState, BaselineDiff};
 
@@ -96,7 +94,22 @@ impl QualityAnalysisHandler {
         let lang_name = Self::language_name(language);
         let rules = self.rule_registry.for_language(&lang_name);
         for rule in rules {
-            let issues = rule.check(&ctx);
+            // Catch panics from rules to prevent analysis from crashing
+            let issues = match catch_unwind(std::panic::AssertUnwindSafe(|| rule.check(&ctx))) {
+                Ok(issues) => issues,
+                Err(panic_info) => {
+                    let rule_id = rule.id();
+                    let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "Unknown panic".to_string()
+                    };
+                    warn!("Rule {} panicked during analysis: {}", rule_id, msg);
+                    vec![]
+                }
+            };
             all_issues.extend(issues);
         }
 
@@ -206,7 +219,22 @@ impl QualityAnalysisHandler {
                 if params.quick && rule.severity() < min_severity {
                     continue;
                 }
-                let issues = rule.check(&ctx);
+                // Catch panics from rules to prevent analysis from crashing
+                let issues = match catch_unwind(std::panic::AssertUnwindSafe(|| rule.check(&ctx))) {
+                    Ok(issues) => issues,
+                    Err(panic_info) => {
+                        let rule_id = rule.id();
+                        let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                            s.to_string()
+                        } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                            s.clone()
+                        } else {
+                            "Unknown panic".to_string()
+                        };
+                        warn!("Rule {} panicked during analysis: {}", rule_id, msg);
+                        vec![]
+                    }
+                };
                 file_issues.extend(issues);
             }
 

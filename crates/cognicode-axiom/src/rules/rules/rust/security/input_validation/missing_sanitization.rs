@@ -8,7 +8,7 @@
 //! This is a catch-all rule for cases where user input flows into security-sensitive
 //! operations without visible sanitization. For more specific cases (SQL injection,
 //! XSS, etc.), other rules should take precedence.
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use crate::rules::{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity};
 use cognicode_macros::declare_rule;
 use inventory::submit;

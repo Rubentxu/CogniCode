@@ -1,0 +1,103 @@
+{
+  "batch": "bug-logic-errors",
+  "phase": "verify_complete",
+  "started_at": "2026-05-14T17:58:38Z",
+  "updated_at": "2026-05-14T21:00:00Z",
+  "concepts": [
+    {"concept_id": "infinite_loop", "state": "review_failed", "priority": "major", "issues": ["missing_agent_semantics", "loc_exceeded"]},
+    {"concept_id": "division_by_zero", "state": "review_failed", "priority": "critical", "issues": ["missing_agent_semantics"]},
+    {"concept_id": "mem_uninitialized", "state": "review_failed", "priority": "critical", "issues": ["missing_agent_semantics"]},
+    {"concept_id": "null_pointer_deref", "state": "review_failed", "priority": "critical", "issues": ["missing_agent_semantics", "loc_exceeded"]},
+    {"concept_id": "index_out_of_bounds", "state": "review_failed", "priority": "major", "issues": ["missing_agent_semantics"]},
+    {"concept_id": "dead_code", "state": "review_failed", "priority": "minor", "issues": ["missing_agent_semantics", "loc_exceeded"]},
+    {"concept_id": "nan_comparison", "state": "review_failed", "priority": "major", "issues": ["missing_agent_semantics"]},
+    {"concept_id": "integer_overflow", "state": "review_failed", "priority": "major", "issues": ["missing_agent_semantics"]},
+    {"concept_id": "panic_unwrap", "state": "review_failed", "priority": "major", "issues": ["missing_agent_semantics", "loc_exceeded"]},
+    {"concept_id": "invalid_regex", "state": "review_failed", "priority": "major", "issues": ["missing_agent_semantics"]},
+    {"concept_id": "off_by_one", "state": "review_failed", "priority": "major", "issues": ["missing_agent_semantics"]},
+    {"concept_id": "double_drop", "state": "review_failed", "priority": "major", "issues": ["missing_agent_semantics"]},
+    {"concept_id": "logical_precedence", "state": "review_failed", "priority": "minor", "issues": ["missing_agent_semantics"]},
+    {"concept_id": "contradictory_condition", "state": "review_failed", "priority": "minor", "issues": ["missing_agent_semantics"]},
+    {"concept_id": "redundant_assignment", "state": "review_failed", "priority": "minor", "issues": ["missing_agent_semantics", "loc_exceeded"]}
+  ],
+  "metrics": {
+    "total_concepts": 15,
+    "critical": 3,
+    "major": 8,
+    "minor": 4,
+    "blocked": 0,
+    "designed": 15,
+    "implemented": 15,
+    "tested": 0,
+    "benchmarked": 0,
+    "review_passed": 0,
+    "review_failed": 15
+  },
+  "verify_phase": {
+    "verification_completed_at": "2026-05-14T21:00:00Z",
+    "build_status": "success",
+    "build_errors": 0,
+    "build_warnings": 243,
+    "declare_rule_macro_used": false,
+    "agent_semantics_implemented": false,
+    "fix_playbook_present": false,
+    "review_questions_present": false,
+    "loc_issues": 5,
+    "rules_exceeding_loc": [
+      {"rule": "infinite_loop", "loc": 216, "budget": 150},
+      {"rule": "null_pointer_deref", "loc": 244, "budget": 150},
+      {"rule": "dead_code", "loc": 231, "budget": 150},
+      {"rule": "panic_unwrap", "loc": 231, "budget": 150},
+      {"rule": "redundant_assignment", "loc": 246, "budget": 150}
+    ],
+    "sarif_compliance": "unverified",
+    "test_infrastructure_issues": ["symbol_table", "tree_sitter_rust"]
+  },
+  "gates": {
+    "quality_gate": "FAILED",
+    "benchmark_gate": "FAILED",
+    "build_gate": "PASSED",
+    "registration_gate": "PASSED"
+  },
+  "design_summary": {
+    "average_cognitive_complexity": 9.1,
+    "average_loc": 118,
+    "max_complexity": 14,
+    "max_loc": 145,
+    "all_rules_passed_gate": true
+  },
+  "artifacts_created": [
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/infinite_loop.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/division_by_zero.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/mem_uninitialized.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/null_pointer_deref.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/index_out_of_bounds.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/dead_code.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/nan_comparison.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/integer_overflow.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/panic_unwrap.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/invalid_regex.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/off_by_one.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/double_drop.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/logical_precedence.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/contradictory_condition.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/redundant_assignment.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/logic/mod.rs",
+    "crates/cognicode-axiom/src/rules/rules/rust/bugs/mod.rs (updated with logic module)",
+    "crates/cognicode-axiom/src/rules/rules/rust/mod.rs (updated with logic exports)",
+    "engram/rules/bug-logic-errors/rule-designs.json",
+    "engram/rules/bug-logic-errors/fixture-matrix.json",
+    "engram/rules/bug-logic-errors/tasks.json",
+    "engram/rules/bug-logic-errors/state.json",
+    "engram/rules/bug-logic-errors/review-report.json"
+  ],
+  "commit_plan": {
+    "ready": false,
+    "blocking_issues": [
+      "All 15 rules missing declare_rule! macro",
+      "All 15 rules missing agent_semantics() implementation",
+      "5 rules exceed LOC budget of 150"
+    ],
+    "estimated_effort_hours": "6-9"
+  }
+}

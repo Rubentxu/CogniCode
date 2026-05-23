@@ -26,7 +26,7 @@ pub fn IssuesPage() -> impl IntoView {
     // React to project context changes — reload issues when project changes
     {
         let st = state.clone();
-        create_effect(move |_| {
+        Effect::new(move || {
             let project = project_ctx.current_project.get();
             if let Some(info) = project {
                 st.project_path.set(info.path.clone());

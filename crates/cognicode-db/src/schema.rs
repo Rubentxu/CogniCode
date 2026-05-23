@@ -1,11 +1,13 @@
 //! Database schema initialization and migration
 
 use rusqlite::Connection;
+use crate::research::add_research_tables;
 
 /// Initialize all tables and indexes. Idempotent (CREATE IF NOT EXISTS).
 pub fn initialize_schema(db: &Connection) {
     db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;").ok();
-    
+
+    // Core tables
     db.execute_batch("
         -- Quality analysis runs
         CREATE TABLE IF NOT EXISTS analysis_runs (
@@ -175,6 +177,11 @@ pub fn initialize_schema(db: &Connection) {
         CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks(status);
         CREATE INDEX IF NOT EXISTS idx_agent_tasks_priority ON agent_tasks(priority);
     ").expect("Failed to initialize schema");
+
+    // Add research/evidence tables (signals, evidence, hypotheses, cases, etc.)
+    // This is called separately to maintain backward compatibility
+    // Errors are logged at call site if needed
+    let _ = add_research_tables(db);
 }
 
 /// Get current schema version for migration tracking

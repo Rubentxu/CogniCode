@@ -1,0 +1,1561 @@
+{
+  "batch_id": "test-batch",
+  "phase": "fixture-matrix",
+  "generated_at": "2026-05-15T04:00:00Z",
+  "total_rules": 15,
+  "fixture_summary": {
+    "total_positive": 45,
+    "total_negative": 45,
+    "total_edge_case": 30,
+    "total_fp_guards": 15,
+    "total_performance": 15,
+    "total_fixtures": 150
+  },
+  "rules": [
+    {
+      "rule_id": "test/CC_TEST_001",
+      "concept_id": "CC_TEST_001",
+      "name": "Test Without Assertion",
+      "category": "test-smell",
+      "severity": "major",
+      "languages": ["python", "javascript"],
+      "layer": 1,
+      "detection_strategy": "ast-query",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_001_P001",
+            "type": "positive",
+            "description": "test function with no assertion",
+            "language": "python",
+            "code_snippet": "def test_user_login():\n    user = User.login('testuser', 'password')\n    # No assertion - test passes incorrectly",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_001_P002",
+            "type": "positive",
+            "description": "async test without expect call",
+            "language": "javascript",
+            "code_snippet": "test('fetches user data', async () => {\n    const data = await fetchUser();\n    // Missing expect - passes without verification\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_001_P003",
+            "type": "positive",
+            "description": "test that only calls mock without verify",
+            "language": "python",
+            "code_snippet": "def test_mock_call():\n    mock_obj.some_method()\n    # No mock.assert_called - test has no verification",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_001_N001",
+            "type": "negative",
+            "description": "test with assertEqual assertion",
+            "language": "python",
+            "code_snippet": "def test_addition():\n    result = 2 + 2\n    assertEqual(result, 4)  # Valid assertion",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_001_N002",
+            "type": "negative",
+            "description": "test with expect().toBe()",
+            "language": "javascript",
+            "code_snippet": "test('check value', () => {\n    expect(add(2, 2)).toBe(4);\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_001_N003",
+            "type": "negative",
+            "description": "test with mock.assert_called_once()",
+            "language": "python",
+            "code_snippet": "def test_mock_verify():\n    mock_obj.method()\n    mock_obj.assert_called_once()  # Valid mock verification",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_001_E001",
+            "type": "edge_case",
+            "description": "test with boolean expression but no assertion",
+            "language": "python",
+            "code_snippet": "def test_flag():\n    x = True\n    # Boolean expression without assertion",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_001_E002",
+            "type": "edge_case",
+            "description": "test returning value for external verification",
+            "language": "python",
+            "code_snippet": "def test_compute():\n    return compute_value()  # Returns for external verification",
+            "expected_match": false
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_001_FP001",
+            "type": "fp_guard",
+            "description": "test using expect.hasAssertions() without explicit assertions",
+            "language": "javascript",
+            "code_snippet": "test('has assertions check', () => {\n    expect.hasAssertions();\n    // Uses hasAssertions instead of explicit assertions\n});",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_001_PERF001",
+            "type": "performance",
+            "description": "large test file with 500+ test functions",
+            "language": "python",
+            "code_snippet": "# File with 500+ test functions, each without assertions\n[repeating pattern of test functions without assertions]",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_002",
+      "concept_id": "CC_TEST_002",
+      "name": "Test Using Sleep",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["python", "javascript"],
+      "layer": 1,
+      "detection_strategy": "ast-query",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_002_P001",
+            "type": "positive",
+            "description": "test with time.sleep(1)",
+            "language": "python",
+            "code_snippet": "import time\n\ndef test_network_request():\n    response = fetch_data()\n    time.sleep(1)  # Arbitrary sleep - flaky",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_002_P002",
+            "type": "positive",
+            "description": "async test with await delay(100)",
+            "language": "javascript",
+            "code_snippet": "test('delayed operation', async () => {\n    await delay(100);\n    // Using delay instead of proper synchronization\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_002_P003",
+            "type": "positive",
+            "description": "test using Thread.sleep(500)",
+            "language": "python",
+            "code_snippet": "from threading import Thread\n\ndef test_thread():\n    t = Thread(target=work)\n    t.start()\n    Thread.sleep(0.5)  # Hard-coded sleep for thread sync",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_002_N001",
+            "type": "negative",
+            "description": "test using waitFor(() => expect...)",
+            "language": "javascript",
+            "code_snippet": "test('proper wait', async () => {\n    await waitFor(() => expect(el).toBeVisible());\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_002_N002",
+            "type": "negative",
+            "description": "test using await waitForElementToBeRemoved",
+            "language": "javascript",
+            "code_snippet": "test('element removal', async () => {\n    await waitForElementToBeRemoved(el);\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_002_N003",
+            "type": "negative",
+            "description": "test using proper event listener pattern",
+            "language": "javascript",
+            "code_snippet": "test('event handling', (done) => {\n    emitter.on('data', () => {\n        expect(state).toBe('updated');\n        done();\n    });\n});",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_002_E001",
+            "type": "edge_case",
+            "description": "sleep in performance test measuring timing",
+            "language": "python",
+            "code_snippet": "def test_performance_timing():\n    start = time.time()\n    time.sleep(0.1)  # Measuring actual delay behavior\n    elapsed = time.time() - start",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_002_E002",
+            "type": "edge_case",
+            "description": "sleep in setUp for cleanup timing",
+            "language": "python",
+            "code_snippet": "def setUp():\n    time.sleep(0.5)  # Allow cleanup to complete\n    self.resource = acquire_resource()",
+            "expected_match": false
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_002_FP001",
+            "type": "fp_guard",
+            "description": "sleep in integration test for external service",
+            "language": "python",
+            "code_snippet": "@pytest.mark.integration\ndef test_external_api():\n    # Integration test with external dependency\n    time.sleep(2)  # Waiting for external service to stabilize",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_002_PERF001",
+            "type": "performance",
+            "description": "file with 100 tests each containing sleep",
+            "language": "python",
+            "code_snippet": "# 100 tests each with time.sleep(0.5)\n# Total added delay: 50+ seconds per run",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_003",
+      "concept_id": "CC_TEST_003",
+      "name": "Test Skipped Without Reason",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["python", "javascript"],
+      "layer": 0,
+      "detection_strategy": "regex/token",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_003_P001",
+            "type": "positive",
+            "description": "@skip decorator without reason",
+            "language": "python",
+            "code_snippet": "@skip\ndef test_old_feature():\n    pass",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_003_P002",
+            "type": "positive",
+            "description": "it.skip() with no argument",
+            "language": "javascript",
+            "code_snippet": "it.skip('test pending implementation');",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_003_P003",
+            "type": "positive",
+            "description": "test.skip('no reason')",
+            "language": "javascript",
+            "code_snippet": "test.skip();",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_003_N001",
+            "type": "negative",
+            "description": "@skip('JIRA-123: flaky network test')",
+            "language": "python",
+            "code_snippet": "@skip('JIRA-123: flaky network test')\ndef test_network():\n    pass",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_003_N002",
+            "type": "negative",
+            "description": "it.skip('TODO: implement after API change')",
+            "language": "javascript",
+            "code_snippet": "it.skip('TODO: implement after API change');",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_003_N003",
+            "type": "negative",
+            "description": "@pytest.mark.skip(reason='depends on DB setup')",
+            "language": "python",
+            "code_snippet": "@pytest.mark.skip(reason='depends on DB setup')\ndef test_db():\n    pass",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_003_E001",
+            "type": "edge_case",
+            "description": "@skipIf(condition) without reason",
+            "language": "python",
+            "code_snippet": "@skipIf(sys.platform == 'win32')\ndef test_windows_only():\n    pass",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_003_E002",
+            "type": "edge_case",
+            "description": "@skipUnless(os.name != 'Windows')",
+            "language": "python",
+            "code_snippet": "@skipUnless(os.name != 'Windows')\ndef test_unix():\n    pass",
+            "expected_match": false
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_003_FP001",
+            "type": "fp_guard",
+            "description": "skip with environment variable condition",
+            "language": "python",
+            "code_snippet": "@skipIf(os.getenv('CI') == 'true', 'Skipped in CI environment')\ndef test_ci_only():\n    pass",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_003_PERF001",
+            "type": "performance",
+            "description": "file with 200 skipped tests",
+            "language": "python",
+            "code_snippet": "# 200 @skip decorators without reasons\n# Maintenance debt: unclear why tests are skipped",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_004",
+      "concept_id": "CC_TEST_004",
+      "name": "Test Method Naming Convention Violation",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["python"],
+      "layer": 0,
+      "detection_strategy": "regex/token",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_004_P001",
+            "type": "positive",
+            "description": "class TestUser: def user_login(self)",
+            "language": "python",
+            "code_snippet": "class TestUser(unittest.TestCase):\n    def user_login(self):\n        pass  # Missing 'test_' prefix",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_004_P002",
+            "type": "positive",
+            "description": "class TestCase: def check_auth(self)",
+            "language": "python",
+            "code_snippet": "class TestCase:\n    def check_auth(self):\n        pass  # Not a test method",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_004_P003",
+            "type": "positive",
+            "description": "class MyTests: def validate_data(self)",
+            "language": "python",
+            "code_snippet": "class MyTests(TestCase):\n    def validate_data(self):\n        pass  # Missing test_ prefix",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_004_N001",
+            "type": "negative",
+            "description": "class TestUser: def test_login(self)",
+            "language": "python",
+            "code_snippet": "class TestUser(unittest.TestCase):\n    def test_login(self):\n        pass",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_004_N002",
+            "type": "negative",
+            "description": "class TestBase: def setUp(self)",
+            "language": "python",
+            "code_snippet": "class TestBase(unittest.TestCase):\n    def setUp(self):\n        self.client = Client()",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_004_N003",
+            "type": "negative",
+            "description": "class TestCase: def __init__(self)",
+            "language": "python",
+            "code_snippet": "class TestCase:\n    def __init__(self):\n        pass  # Magic method, not a test",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_004_E001",
+            "type": "edge_case",
+            "description": "helper method inside TestCase class",
+            "language": "python",
+            "code_snippet": "class TestUser(TestCase):\n    def _helper(self):\n        return prepare_data()\n    def test_login(self):\n        pass",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_004_E002",
+            "type": "edge_case",
+            "description": "class named TestHelper (not a test class)",
+            "language": "python",
+            "code_snippet": "class TestHelper:\n    def process(self):\n        pass  # Not inheriting from TestCase",
+            "expected_match": false
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_004_FP001",
+            "type": "fp_guard",
+            "description": "setUp and tearDown methods",
+            "language": "python",
+            "code_snippet": "class TestBase(TestCase):\n    def setUp(self):\n        self.setup()\n    def tearDown(self):\n        self.cleanup()",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_004_PERF001",
+            "type": "performance",
+            "description": "file with 100 classes with naming violations",
+            "language": "python",
+            "code_snippet": "# 100 classes each with methods like user_login, check_auth\n# without test_ prefix",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_005",
+      "concept_id": "CC_TEST_005",
+      "name": "Complex Test Fixture Setup",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["python", "javascript"],
+      "layer": 2,
+      "detection_strategy": "metrics",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_005_P001",
+            "type": "positive",
+            "description": "setUp with 25 lines of object construction",
+            "language": "python",
+            "code_snippet": "def setUp(self):\n    self.client = APIClient()\n    self.client.set_auth('token123')\n    self.user = User()\n    self.user.id = 1\n    self.user.name = 'test'\n    self.db = Database()\n    self.db.connect('localhost')\n    # ... 25+ lines of setup",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_005_P002",
+            "type": "positive",
+            "description": "beforeEach with complex mock setup",
+            "language": "javascript",
+            "code_snippet": "beforeEach(() => {\n    mockFn = jest.fn();\n    mockFn.mockResolvedValue({ id: 1 });\n    service = new Service(mockFn);\n    store = createStore();\n    store.dispatch = jest.fn();\n    // Complex setup spanning 20+ lines\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_005_P003",
+            "type": "positive",
+            "description": "setup method with multiple service initializations",
+            "language": "python",
+            "code_snippet": "def setup_method():\n    self.svc1 = Service1()\n    self.svc2 = Service2()\n    self.svc3 = Service3()\n    self.svc1.connect()\n    self.svc2.init()\n    self.svc3.setup()\n    # ... 25+ lines",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_005_N001",
+            "type": "negative",
+            "description": "setUp with single object creation",
+            "language": "python",
+            "code_snippet": "def setUp(self):\n    self.client = APIClient()",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_005_N002",
+            "type": "negative",
+            "description": "beforeEach with simple variable assignment",
+            "language": "javascript",
+            "code_snippet": "beforeEach(() => {\n    count = 0;\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_005_N003",
+            "type": "negative",
+            "description": "fixture returning database connection",
+            "language": "python",
+            "code_snippet": "@pytest.fixture\ndef db_connection():\n    return DatabaseConnection('localhost')",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_005_E001",
+            "type": "edge_case",
+            "description": "setUp with 20 lines (boundary)",
+            "language": "python",
+            "code_snippet": "def setUp(self):\n    # Exactly 20 lines - boundary case\n    self.a = 1\n    self.b = 2\n    # ... 18 more lines",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_005_E002",
+            "type": "edge_case",
+            "description": "setUp with comments but minimal logic",
+            "language": "python",
+            "code_snippet": "def setUp(self):\n    # Initialize client\n    # Connect to services\n    # Setup mocks\n    self.client = Client()\n    self.mock = Mock()",
+            "expected_match": false
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_005_FP001",
+            "type": "fp_guard",
+            "description": "integration test with necessary complex setup",
+            "language": "python",
+            "code_snippet": "@pytest.mark.integration\ndef setup_method():\n    # Integration test needs 30+ lines of service setup\n    self.kafka = KafkaProducer()\n    self.db = RealDatabase()\n    self.redis = RedisClient()\n    # ... complex but necessary setup",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_005_PERF001",
+            "type": "performance",
+            "description": "file with 50 test classes each with complex setup",
+            "language": "python",
+            "code_snippet": "# 50 test classes, each with setUp exceeding 20 lines\n# Total setup overhead: significant slowdown per test run",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_006",
+      "concept_id": "CC_TEST_006",
+      "name": "Multiple Assertions In Single Test",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["python", "javascript"],
+      "layer": 1,
+      "detection_strategy": "ast-query",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_006_P001",
+            "type": "positive",
+            "description": "test with 4 assertEqual calls",
+            "language": "python",
+            "code_snippet": "def test_user():\n    assertEqual(user.name, 'Alice')\n    assertEqual(user.age, 30)\n    assertEqual(user.email, 'alice@test.com')\n    assertEqual(user.active, True)",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_006_P002",
+            "type": "positive",
+            "description": "it block with 5 expect statements",
+            "language": "javascript",
+            "code_snippet": "it('validates user', () => {\n    expect(user.name).toBe('Alice');\n    expect(user.age).toBe(30);\n    expect(user.email).toContain('@');\n    expect(user.active).toBe(true);\n    expect(user.role).toBe('admin');\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_006_P003",
+            "type": "positive",
+            "description": "test checking user, order, payment, shipping",
+            "language": "python",
+            "code_snippet": "def test_checkout():\n    assertEqual(order.user, expected_user)\n    assertEqual(order.payment, 'paid')\n    assertEqual(order.shipping, 'delivered')\n    assertEqual(order.total, 100.00)",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_006_N001",
+            "type": "negative",
+            "description": "test with single assertion",
+            "language": "python",
+            "code_snippet": "def test_user_name():\n    assertEqual(user.name, 'Alice')",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_006_N002",
+            "type": "negative",
+            "description": "test with 2 assertions on same object",
+            "language": "python",
+            "code_snippet": "def test_user():\n    assertEqual(user.name, 'Alice')\n    assertEqual(user.age, 30)",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_006_N003",
+            "type": "negative",
+            "description": "test using assertAll for multiple expectations",
+            "language": "javascript",
+            "code_snippet": "it('valid user', () => {\n    expect.assertions(5);\n    // Using assertAll pattern\n});",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_006_E001",
+            "type": "edge_case",
+            "description": "test with 3 assertions (boundary)",
+            "language": "python",
+            "code_snippet": "def test_boundary():\n    assertEqual(x, 1)\n    assertEqual(y, 2)\n    assertEqual(z, 3)",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_006_E002",
+            "type": "edge_case",
+            "description": "assertion in loop checking multiple elements",
+            "language": "python",
+            "code_snippet": "def test_all_users():\n    for user in users:\n        assertIn(user.id, valid_ids)",
+            "expected_match": false
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_006_FP001",
+            "type": "fp_guard",
+            "description": "assertions on related properties of same object",
+            "language": "python",
+            "code_snippet": "def test_user_consistency():\n    assertEqual(user.name, 'Alice')\n    assertEqual(user.email, 'alice@test.com')\n    assertEqual(user.id, user.email.split('@')[0])",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_006_PERF001",
+            "type": "performance",
+            "description": "file with 200 tests with multiple assertions",
+            "language": "python",
+            "code_snippet": "# 200 tests each with 4+ assertions\n# When first assertion fails, others don't run\n# Diagnostic information is lost",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_007",
+      "concept_id": "CC_TEST_007",
+      "name": "Duplicated Test Method",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["python", "javascript"],
+      "layer": 2,
+      "detection_strategy": "call-graph",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_007_P001",
+            "type": "positive",
+            "description": "test_login and test_login_copy with identical body",
+            "language": "python",
+            "code_snippet": "def test_login():\n    user = authenticate('user', 'pass')\n    assertEqual(user.token, 'valid')\n\ndef test_login_copy():\n    user = authenticate('user', 'pass')\n    assertEqual(user.token, 'valid')",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_007_P002",
+            "type": "positive",
+            "description": "two it blocks with same expect calls",
+            "language": "javascript",
+            "code_snippet": "it('should login', () => {\n    const user = auth('user', 'pass');\n    expect(user.token).toBe('valid');\n});\n\nit('login test copy', () => {\n    const user = auth('user', 'pass');\n    expect(user.token).toBe('valid');\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_007_P003",
+            "type": "positive",
+            "description": "parametrized-like duplicate tests",
+            "language": "python",
+            "code_snippet": "def test_add_2_and_3():\n    assertEqual(add(2, 3), 5)\n\ndef test_add_3_and_2():\n    assertEqual(add(3, 2), 5)",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_007_N001",
+            "type": "negative",
+            "description": "test_login_success and test_login_failure",
+            "language": "python",
+            "code_snippet": "def test_login_success():\n    assertEqual(login('user', 'pass'), 'ok')\n\ndef test_login_failure():\n    assertEqual(login('user', 'wrong'), 'denied')",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_007_N002",
+            "type": "negative",
+            "description": "it checking error case vs success case",
+            "language": "javascript",
+            "code_snippet": "it('throws on invalid', () => {\n    expect(() => validate(null)).toThrow();\n});\n\nit('returns true for valid', () => {\n    expect(validate('ok')).toBe(true);\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_007_N003",
+            "type": "negative",
+            "description": "tests with same setup but different assertions",
+            "language": "python",
+            "code_snippet": "def test_user_name():\n    setup_user()\n    assertEqual(user.name, 'Alice')\n\ndef test_user_email():\n    setup_user()\n    assertEqual(user.email, 'alice@test.com')",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_007_E001",
+            "type": "edge_case",
+            "description": "tests with 85% similarity (near duplicate)",
+            "language": "python",
+            "code_snippet": "def test_calc_add():\n    assertEqual(calc(1, 2), 3)\n\ndef test_calc_add_same():\n    assertEqual(calc(1, 2), 3)\n    # 85% similar - borderline case",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_007_E002",
+            "type": "edge_case",
+            "description": "test with same name pattern but different params",
+            "language": "python",
+            "code_snippet": "def test_user_id_1():\n    assertEqual(get_user(1).name, 'Alice')\n\ndef test_user_id_2():\n    assertEqual(get_user(2).name, 'Bob')",
+            "expected_match": false
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_007_FP001",
+            "type": "fp_guard",
+            "description": "tests verifying same behavior with different inputs",
+            "language": "python",
+            "code_snippet": "def test_valid_email_format():\n    assertTrue(validate_email('a@b.com'))\n\ndef test_valid_email_local():\n    assertTrue(validate_email('user@domain.org'))",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_007_PERF001",
+            "type": "performance",
+            "description": "file with 100 test functions",
+            "language": "python",
+            "code_snippet": "# 100 tests, many near-duplicates\n# Maintenance burden and slow test runs",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_008",
+      "concept_id": "CC_TEST_008",
+      "name": "Test Using Random Values",
+      "category": "test-smell",
+      "severity": "major",
+      "languages": ["python", "javascript"],
+      "layer": 1,
+      "detection_strategy": "ast-query",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_008_P001",
+            "type": "positive",
+            "description": "test using Math.random() directly",
+            "language": "javascript",
+            "code_snippet": "test('random id generation', () => {\n    const id = Math.random();\n    expect(generateId()).toBe(id);\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_008_P002",
+            "type": "positive",
+            "description": "test with random.randint(1, 100)",
+            "language": "python",
+            "code_snippet": "import random\n\ndef test_lottery():\n    number = random.randint(1, 100)\n    assertTrue(number > 0)",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_008_P003",
+            "type": "positive",
+            "description": "test calling numpy.random.randn()",
+            "language": "python",
+            "code_snippet": "import numpy as np\n\ndef test_array_generation():\n    data = np.random.randn(10)\n    assertEqual(len(data), 10)",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_008_N001",
+            "type": "negative",
+            "description": "test using random.seed(42) before random",
+            "language": "python",
+            "code_snippet": "def test_deterministic():\n    random.seed(42)\n    result = random.randint(1, 100)\n    assertEqual(result, 81)",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_008_N002",
+            "type": "negative",
+            "description": "test using faker with fixed seed",
+            "language": "python",
+            "code_snippet": "from faker import Faker\n\ndef test_with_faker():\n    fake = Faker()\n    fake.seed_instance(1234)\n    name = fake.name()",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_008_N003",
+            "type": "negative",
+            "description": "test explicitly asserting generated value",
+            "language": "python",
+            "code_snippet": "def test_generate_and_assert():\n    value = random.uniform(0, 1)\n    assertEqual(value, 0.5)  # Explicitly checking exact value",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_008_E001",
+            "type": "edge_case",
+            "description": "random in property-based test (hypothesis)",
+            "language": "python",
+            "code_snippet": "from hypothesis import given, strategies as st\n\n@given(st.integers())\ndef test_properties(n):\n    assert validate(n)",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_008_E002",
+            "type": "edge_case",
+            "description": "random used to generate test data then asserted",
+            "language": "python",
+            "code_snippet": "def test_with_random_data():\n    data = random.choice(['a', 'b', 'c'])\n    assertIn(data, ['a', 'b', 'c'])",
+            "expected_match": false
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_008_FP001",
+            "type": "fp_guard",
+            "description": "property-based tests intentionally using random",
+            "language": "python",
+            "code_snippet": "@pytest.fixture\ndef random_data():\n    # Property-based testing intentionally uses randomness\n    return random.sample(population, k=10)",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_008_PERF001",
+            "type": "performance",
+            "description": "file with 100 tests using random values",
+            "language": "python",
+            "code_snippet": "# 100 tests each calling random\n# Flaky: fails intermittently\n# Race conditions possible",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_009",
+      "concept_id": "CC_TEST_009",
+      "name": "Test Without Describe Block",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["javascript"],
+      "layer": 0,
+      "detection_strategy": "regex/token",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_009_P001",
+            "type": "positive",
+            "description": "root-level it() without describe",
+            "language": "javascript",
+            "code_snippet": "it('should work', () => {\n    expect(true).toBe(true);\n});\n\nit('should also work', () => {\n    expect(1).toBe(1);\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_009_P002",
+            "type": "positive",
+            "description": "test() at top of file without wrapper",
+            "language": "javascript",
+            "code_snippet": "test('top level test', () => {\n    return callApi().then(data => {\n        expect(data.ok).toBe(true);\n    });\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_009_P003",
+            "type": "positive",
+            "description": "multiple it() blocks without organization",
+            "language": "javascript",
+            "code_snippet": "it('user login', () => { /* ... */ });\nit('user logout', () => { /* ... */ });\nit('user update', () => { /* ... */ });\nit('user delete', () => { /* ... */ });",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_009_N001",
+            "type": "negative",
+            "description": "it() inside describe('feature')",
+            "language": "javascript",
+            "code_snippet": "describe('User', () => {\n    it('should login', () => { /* ... */ });\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_009_N002",
+            "type": "negative",
+            "description": "test() nested in describe('component')",
+            "language": "javascript",
+            "code_snippet": "describe('LoginForm', () => {\n    test('validates input', () => { /* ... */ });\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_009_N003",
+            "type": "negative",
+            "description": "root-level in __tests__/descriptive_filename.test.js",
+            "language": "javascript",
+            "code_snippet": "// In __tests__/user-auth.test.js\nit('should authenticate', () => { /* ... */ });",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_009_E001",
+            "type": "edge_case",
+            "description": "describe-only file with no tests",
+            "language": "javascript",
+            "code_snippet": "describe('Feature', () => {\n    // No tests defined\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_009_E002",
+            "type": "edge_case",
+            "description": "single integration test file",
+            "language": "javascript",
+            "code_snippet": "// __tests__/e2e-checkout.test.js\ntest('complete checkout flow', () => { /* ... */ });",
+            "expected_match": false
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_009_FP001",
+            "type": "fp_guard",
+            "description": "test file in __tests__ directory with descriptive name",
+            "language": "javascript",
+            "code_snippet": "// __tests__/user-profile-management.test.js\ntest('updates email', () => { /* ... */ });\ntest('changes password', () => { /* ... */ });",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_009_PERF001",
+            "type": "performance",
+            "description": "file with 50 root-level it blocks",
+            "language": "javascript",
+            "code_snippet": "// 50 it() blocks without describe grouping\n// Hard to navigate and maintain",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_010",
+      "concept_id": "CC_TEST_010",
+      "name": "Assertions Count Mismatch",
+      "category": "test-smell",
+      "severity": "major",
+      "languages": ["javascript"],
+      "layer": 1,
+      "detection_strategy": "ast-query",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_010_P001",
+            "type": "positive",
+            "description": "expect.assertions(2) with only 1 expect call",
+            "language": "javascript",
+            "code_snippet": "test('async test', async () => {\n    expect.assertions(2);\n    const data = await fetchData();\n    expect(data).toBeTruthy();\n    // Missing second assertion\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_010_P002",
+            "type": "positive",
+            "description": "expect.assertions(3) with 2 assertions",
+            "language": "javascript",
+            "code_snippet": "test('count mismatch', async () => {\n    expect.assertions(3);\n    const a = await getA();\n    const b = await getB();\n    expect(a).toBeDefined();\n    expect(b).toBeDefined();\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_010_P003",
+            "type": "positive",
+            "description": "async test with wrong count declaration",
+            "language": "javascript",
+            "code_snippet": "test('multiple async', async () => {\n    expect.assertions(4);\n    const [a, b, c] = await Promise.all([p1(), p2(), p3()]);\n    expect(a).toBe(a);\n    expect(b).toBe(b);\n});",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_010_N001",
+            "type": "negative",
+            "description": "expect.assertions(2) with 2 expect calls",
+            "language": "javascript",
+            "code_snippet": "test('correct count', async () => {\n    expect.assertions(2);\n    const a = await getA();\n    const b = await getB();\n    expect(a).toBeDefined();\n    expect(b).toBeDefined();\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_010_N002",
+            "type": "negative",
+            "description": "expect.hasAssertions() instead of count",
+            "language": "javascript",
+            "code_snippet": "test('has assertions', async () => {\n    expect.hasAssertions();\n    const data = await fetchData();\n    expect(data).toBeTruthy();\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_010_N003",
+            "type": "negative",
+            "description": "sync test without assertions declaration",
+            "language": "javascript",
+            "code_snippet": "test('sync test', () => {\n    const result = compute();\n    expect(result).toBe(42);\n});",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_010_E001",
+            "type": "edge_case",
+            "description": "expect.assertions(0) for no assertions",
+            "language": "javascript",
+            "code_snippet": "test('no assertions expected', () => {\n    expect.assertions(0);\n    // Deliberately no assertions\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_010_E002",
+            "type": "edge_case",
+            "description": "conditional assertion paths",
+            "language": "javascript",
+            "code_snippet": "test('conditional', async () => {\n    expect.assertions(2);\n    const data = await fetchData();\n    if (data.valid) {\n        expect(data.value).toBeDefined();\n    }\n    expect(data.status).toBe('ok');\n});",
+            "expected_match": true
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_010_FP001",
+            "type": "fp_guard",
+            "description": "test using expect.hasAssertions()",
+            "language": "javascript",
+            "code_snippet": "test('uses hasAssertions', () => {\n    expect.hasAssertions();\n    runSomething();\n});",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_010_PERF001",
+            "type": "performance",
+            "description": "file with 100 async tests with assertions",
+            "language": "javascript",
+            "code_snippet": "// 100 async tests, many with assertion count mismatches\n// Potential for silent async test failures",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_011",
+      "concept_id": "CC_TEST_011",
+      "name": "Nested Test Hooks",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["javascript"],
+      "layer": 1,
+      "detection_strategy": "ast-query",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_011_P001",
+            "type": "positive",
+            "description": "beforeEach inside nested describe",
+            "language": "javascript",
+            "code_snippet": "describe('outer', () => {\n    describe('inner', () => {\n        beforeEach(() => {\n            setup();\n        });\n        it('test', () => { /* ... */ });\n    });\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_011_P002",
+            "type": "positive",
+            "description": "beforeAll in inner describe block",
+            "language": "javascript",
+            "code_snippet": "describe('Feature', () => {\n    describe('SubFeature', () => {\n        beforeAll(() => {\n            initialize();\n        });\n        it('works', () => { /* ... */ });\n    });\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_011_P003",
+            "type": "positive",
+            "description": "afterAll in deeply nested describe",
+            "language": "javascript",
+            "code_snippet": "describe('Level1', () => {\n    describe('Level2', () => {\n        describe('Level3', () => {\n            afterAll(() => {\n                cleanup();\n            });\n        });\n    });\n});",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_011_N001",
+            "type": "negative",
+            "description": "beforeEach in top-level describe",
+            "language": "javascript",
+            "code_snippet": "describe('Feature', () => {\n    beforeEach(() => {\n        setup();\n    });\n    it('works', () => { /* ... */ });\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_011_N002",
+            "type": "negative",
+            "description": "beforeAll in outer describe only",
+            "language": "javascript",
+            "code_snippet": "describe('Outer', () => {\n    beforeAll(() => {\n        init();\n    });\n    describe('Inner', () => {\n        it('test', () => { /* ... */ });\n    });\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_011_N003",
+            "type": "negative",
+            "description": "hooks in single describe level",
+            "language": "javascript",
+            "code_snippet": "describe('Tests', () => {\n    beforeEach(() => { setup(); });\n    afterEach(() => { teardown(); });\n    it('works', () => { /* ... */ });\n});",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_011_E001",
+            "type": "edge_case",
+            "description": "beforeEach in describe with only()",
+            "language": "javascript",
+            "code_snippet": "describe('Feature', () => {\n    describe.skip('disabled', () => {\n        beforeEach(() => { /* ... */ });\n    });\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_011_E002",
+            "type": "edge_case",
+            "description": "conditional hook placement",
+            "language": "javascript",
+            "code_snippet": "describe('Tests', () => {\n    if (isAsync) {\n        beforeEach(() => { /* ... */ });\n    }\n});",
+            "expected_match": false
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_011_FP001",
+            "type": "fp_guard",
+            "description": "hooks for specific test groups in nested describe",
+            "language": "javascript",
+            "code_snippet": "describe('API', () => {\n    describe('v1', () => {\n        beforeEach(() => {\n            setupV1();\n        });\n        // Tests specific to v1\n    });\n});",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_011_PERF001",
+            "type": "performance",
+            "description": "file with 50 nested describe hooks",
+            "language": "javascript",
+            "code_snippet": "// 50 nested describe blocks each with hooks\n// Hook execution order becomes unpredictable",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_012",
+      "concept_id": "CC_TEST_012",
+      "name": "Mock Implementation Confusion",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["javascript"],
+      "layer": 1,
+      "detection_strategy": "ast-query",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_012_P001",
+            "type": "positive",
+            "description": "mockImplementation(() => 42) then mockReturnValue(10)",
+            "language": "javascript",
+            "code_snippet": "const mockFn = jest.fn();\nmockFn.mockImplementation(() => 42);\nmockFn.mockReturnValue(10);\n// Conflict: implementation takes precedence but confusing",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_012_P002",
+            "type": "positive",
+            "description": "jest.fn().mockReturnValue(1).mockImplementation(() => 2)",
+            "language": "javascript",
+            "code_snippet": "const fn = jest.fn()\n    .mockReturnValue(1)\n    .mockImplementation(() => 2);",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_012_P003",
+            "type": "positive",
+            "description": "same mock with both approaches",
+            "language": "javascript",
+            "code_snippet": "const mock = jest.fn();\nmock.mockReturnValue('value');\nmock.mockImplementation(() => 'impl');",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_012_N001",
+            "type": "negative",
+            "description": "mockImplementation(() => value) only",
+            "language": "javascript",
+            "code_snippet": "const fn = jest.fn(() => 'value');",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_012_N002",
+            "type": "negative",
+            "description": "mockReturnValue(value) only",
+            "language": "javascript",
+            "code_snippet": "const fn = jest.fn();\nfn.mockReturnValue('value');",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_012_N003",
+            "type": "negative",
+            "description": "different methods on same mock",
+            "language": "javascript",
+            "code_snippet": "const mock = jest.fn();\nmock.mockReturnValue('first');\nmock.mockResolvedValue('second');",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_012_E001",
+            "type": "edge_case",
+            "description": "mockImplementation for some calls, return for others",
+            "language": "javascript",
+            "code_snippet": "const fn = jest.fn();\nfn.mockReturnValue('default');\nfn.mockImplementationOnce(() => 'special');",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_012_E002",
+            "type": "edge_case",
+            "description": "conditional mock behavior",
+            "language": "javascript",
+            "code_snippet": "let callCount = 0;\nconst fn = jest.fn(() => {\n    callCount++;\n    return callCount > 1 ? 'special' : 'default';\n});",
+            "expected_match": false
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_012_FP001",
+            "type": "fp_guard",
+            "description": "different methods using different approaches",
+            "language": "javascript",
+            "code_snippet": "const mock = jest.fn();\nmock.mockImplementation(() => 'impl');\nmock.mockResolvedValue('async');",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_012_PERF001",
+            "type": "performance",
+            "description": "file with 100 mock configurations",
+            "language": "javascript",
+            "code_snippet": "// 100 mocks, some with conflicting configurations\n// Maintenance nightmare and debugging difficulty",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_013",
+      "concept_id": "CC_TEST_013",
+      "name": "SpyOn Not Restored",
+      "category": "test-smell",
+      "severity": "major",
+      "languages": ["javascript"],
+      "layer": 1,
+      "detection_strategy": "ast-query",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_013_P001",
+            "type": "positive",
+            "description": "spyOn(obj, 'method') without restore",
+            "language": "javascript",
+            "code_snippet": "test('uses spy', () => {\n    const spy = jest.spyOn(obj, 'method');\n    obj.method();\n    expect(spy).toHaveBeenCalled();\n    // Missing restoreAllMocks in afterEach\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_013_P002",
+            "type": "positive",
+            "description": "jest.spyOn in test without cleanup",
+            "language": "javascript",
+            "code_snippet": "test('spies persist', () => {\n    jest.spyOn(console, 'log');\n    log('test');\n    expect(console.log).toHaveBeenCalled();\n});\n// After test completes, spy remains active",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_013_P003",
+            "type": "positive",
+            "description": "multiple spyOn calls without afterEach restore",
+            "language": "javascript",
+            "code_snippet": "describe('Tests', () => {\n    test('multiple spies', () => {\n        jest.spyOn(obj1, 'a');\n        jest.spyOn(obj2, 'b');\n        jest.spyOn(obj3, 'c');\n    });\n    // No afterEach cleanup\n});",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_013_N001",
+            "type": "negative",
+            "description": "jest.spyOn with mockImplementation in same test",
+            "language": "javascript",
+            "code_snippet": "test('spy with impl', () => {\n    const spy = jest.spyOn(obj, 'method').mockImplementation(() => 42);\n    expect(obj.method()).toBe(42);\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_013_N002",
+            "type": "negative",
+            "description": "test using jest.restoreAllMocks() in afterEach",
+            "language": "javascript",
+            "code_snippet": "describe('Tests', () => {\n    afterEach(() => {\n        jest.restoreAllMocks();\n    });\n    test('uses spy', () => {\n        jest.spyOn(obj, 'method');\n    });\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_013_N003",
+            "type": "negative",
+            "description": "spyOn on jest.fn() which auto-cleans",
+            "language": "javascript",
+            "code_snippet": "test('fn mock', () => {\n    const fn = jest.fn();\n    fn.mockReturnValue('test');\n    expect(fn()).toBe('test');\n});",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_013_E001",
+            "type": "edge_case",
+            "description": "spyOn with mockRestore called manually",
+            "language": "javascript",
+            "code_snippet": "test('manual restore', () => {\n    const spy = jest.spyOn(obj, 'method');\n    obj.method();\n    spy.mockRestore();\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_013_E002",
+            "type": "edge_case",
+            "description": "conditional spyOn",
+            "language": "javascript",
+            "code_snippet": "test('conditional spy', () => {\n    if (needsSpy) {\n        jest.spyOn(obj, 'method');\n    }\n});",
+            "expected_match": true
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_013_FP001",
+            "type": "fp_guard",
+            "description": "jest.clearAllMocks() instead of restoreAllMocks",
+            "language": "javascript",
+            "code_snippet": "afterEach(() => {\n    jest.clearAllMocks();\n});",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_013_PERF001",
+            "type": "performance",
+            "description": "file with 100 spyOn calls",
+            "language": "javascript",
+            "code_snippet": "// 100 spyOn calls without proper cleanup\n// Cross-test contamination guaranteed",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_014",
+      "concept_id": "CC_TEST_014",
+      "name": "Act Wrapper Missing",
+      "category": "test-smell",
+      "severity": "major",
+      "languages": ["javascript"],
+      "layer": 1,
+      "detection_strategy": "ast-query",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_014_P001",
+            "type": "positive",
+            "description": "fireEvent.click without act()",
+            "language": "javascript",
+            "code_snippet": "test('clicks button', async () => {\n    fireEvent.click(button);\n    expect(screen.getByText('Clicked')).toBeInTheDocument();\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_014_P002",
+            "type": "positive",
+            "description": "userEvent.type without act wrapper",
+            "language": "javascript",
+            "code_snippet": "test('types in input', async () => {\n    userEvent.type(input, 'hello');\n    expect(input.value).toBe('hello');\n});",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_014_P003",
+            "type": "positive",
+            "description": "store.dispatch in async test",
+            "language": "javascript",
+            "code_snippet": "test('dispatches action', async () => {\n    store.dispatch({ type: 'INCREMENT' });\n    expect(store.getState()).toBe(1);\n});",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_014_N001",
+            "type": "negative",
+            "description": "act(() => { fireEvent.click(...) })",
+            "language": "javascript",
+            "code_snippet": "test('proper act', async () => {\n    await act(async () => {\n        fireEvent.click(button);\n    });\n    expect(screen.getByText('Clicked')).toBeInTheDocument();\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_014_N002",
+            "type": "negative",
+            "description": "waitFor(() => fireEvent.change(...))",
+            "language": "javascript",
+            "code_snippet": "test('with waitFor', async () => {\n    await waitFor(() => {\n        fireEvent.change(input, { target: { value: 'hi' } });\n    });\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_014_N003",
+            "type": "negative",
+            "description": "sync state update not requiring act",
+            "language": "javascript",
+            "code_snippet": "test('sync update', () => {\n    const [state, setState] = useState(0);\n    setState(1);\n    expect(state).toBe(1);\n});",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_014_E001",
+            "type": "edge_case",
+            "description": "multiple fireEvents in one act",
+            "language": "javascript",
+            "code_snippet": "test('multiple events', async () => {\n    await act(async () => {\n        fireEvent.click(button);\n        fireEvent.change(input, { target: { value: 'hi' } });\n    });\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_014_E002",
+            "type": "edge_case",
+            "description": "conditional event dispatch",
+            "language": "javascript",
+            "code_snippet": "test('conditional', async () => {\n    if (condition) {\n        fireEvent.click(button);\n    }\n});",
+            "expected_match": true
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_014_FP001",
+            "type": "fp_guard",
+            "description": "testing-library waitFor handling act internally",
+            "language": "javascript",
+            "code_snippet": "test('uses waitFor', async () => {\n    await waitFor(() => {\n        expect(screen.getByText('Hello')).toBeInTheDocument();\n    });\n});",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_014_PERF001",
+            "type": "performance",
+            "description": "file with 100 React interaction tests",
+            "language": "javascript",
+            "code_snippet": "// 100 React tests, many without act()\n// 'not wrapped in act' warnings abundant",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_015",
+      "concept_id": "CC_TEST_015",
+      "name": "Weak Assertion Style",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["javascript", "python"],
+      "layer": 1,
+      "detection_strategy": "ast-query",
+      "fixtures": {
+        "positive": [
+          {
+            "fixture_id": "CC_TEST_015_P001",
+            "type": "positive",
+            "description": "expect(x).toBeTruthy() for boolean",
+            "language": "javascript",
+            "code_snippet": "test('weak truthy', () => {\n    const isValid = check();\n    expect(isValid).toBeTruthy();\n    // Should be: toBe(true) for boolean",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_015_P002",
+            "type": "positive",
+            "description": "expect(result).toBeFalsy() for boolean",
+            "language": "javascript",
+            "code_snippet": "test('weak falsy', () => {\n    const hasError = hasErrors();\n    expect(hasError).toBeFalsy();\n    // Should be: toBe(false) for boolean",
+            "expected_match": true
+          },
+          {
+            "fixture_id": "CC_TEST_015_P003",
+            "type": "positive",
+            "description": "assertTrue(x == 'yes')",
+            "language": "python",
+            "code_snippet": "def test_weak():\n    result = get_status()\n    assertTrue(result == 'yes')\n    # Should be: assertEqual(result, 'yes')",
+            "expected_match": true
+          }
+        ],
+        "negative": [
+          {
+            "fixture_id": "CC_TEST_015_N001",
+            "type": "negative",
+            "description": "expect(x).toBe(true) for boolean check",
+            "language": "javascript",
+            "code_snippet": "test('precise', () => {\n    expect(isValid).toBe(true);\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_015_N002",
+            "type": "negative",
+            "description": "expect(x).toBe(false)",
+            "language": "javascript",
+            "code_snippet": "test('precise false', () => {\n    expect(hasError).toBe(false);\n});",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_015_N003",
+            "type": "negative",
+            "description": "assertEqual(x, 'yes')",
+            "language": "python",
+            "code_snippet": "def test_exact():\n    assertEqual(status, 'yes')",
+            "expected_match": false
+          }
+        ],
+        "edge_case": [
+          {
+            "fixture_id": "CC_TEST_015_E001",
+            "type": "edge_case",
+            "description": "toBeTruthy for object existence check",
+            "language": "javascript",
+            "code_snippet": "test('object exists', () => {\n    expect(obj).toBeTruthy();\n    // toBeTruthy is appropriate here - checking existence",
+            "expected_match": false
+          },
+          {
+            "fixture_id": "CC_TEST_015_E002",
+            "type": "edge_case",
+            "description": "assertTrue(x) where x is complex expression",
+            "language": "python",
+            "code_snippet": "def test_complex():\n    assertTrue(a and b and c)\n    # Complex expression - appropriate for assertTrue",
+            "expected_match": false
+          }
+        ],
+        "fp_guards": [
+          {
+            "fixture_id": "CC_TEST_015_FP001",
+            "type": "fp_guard",
+            "description": "toBeTruthy for checking non-boolean truthy values",
+            "language": "javascript",
+            "code_snippet": "test('checks truthiness', () => {\n    const value = getOptionalValue();\n    expect(value).toBeTruthy();\n    // Appropriate: checking truthiness, not boolean equality",
+            "expected_match": false
+          }
+        ],
+        "performance": [
+          {
+            "fixture_id": "CC_TEST_015_PERF001",
+            "type": "performance",
+            "description": "file with 200 weak assertions",
+            "language": "javascript",
+            "code_snippet": "// 200 weak assertions\n// Poor failure diagnostics when tests fail",
+            "expected_match": true,
+            "file_size_category": "large"
+          }
+        ]
+      }
+    }
+  ]
+}

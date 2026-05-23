@@ -63,11 +63,11 @@ impl QualityReport {
         let mi = maintainability_index(15.0, duplications_pct, ncloc);
 
         let rating = match debt.rating {
-            crate::rules::DebtRating::A => 'A',
-            crate::rules::DebtRating::B => 'B',
-            crate::rules::DebtRating::C => 'C',
-            crate::rules::DebtRating::D => 'D',
-            crate::rules::DebtRating::E => 'E',
+            crate::rules::debt::DebtRating::A => 'A',
+            crate::rules::debt::DebtRating::B => 'B',
+            crate::rules::debt::DebtRating::C => 'C',
+            crate::rules::debt::DebtRating::D => 'D',
+            crate::rules::debt::DebtRating::E => 'E',
         };
 
         Self {

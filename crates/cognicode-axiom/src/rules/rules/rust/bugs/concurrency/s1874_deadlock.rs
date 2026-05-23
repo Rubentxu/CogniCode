@@ -3,7 +3,7 @@
 //! S1874a: Detects nested lock acquisition with inconsistent ordering (same function)
 //! S1874b: Detects cross-function lock ordering issues that may cause deadlocks
 
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use crate::rules::{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity};
 use cognicode_macros::declare_rule;
 use inventory::submit;

@@ -3,7 +3,7 @@
 //! Detects database queries inside loops fetching related entities
 //! one-by-one instead of batch loading.
 
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use crate::rules::{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity};
 use crate::rules::rules::rust::performance::perf_helpers::extract_loop_body;
 use cognicode_macros::declare_rule;

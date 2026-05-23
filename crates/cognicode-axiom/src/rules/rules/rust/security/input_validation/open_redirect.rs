@@ -4,7 +4,7 @@
 //! Languages: *
 //! Severity: Major
 //! Category: Vulnerability
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use crate::rules::{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity};
 use cognicode_macros::declare_rule;
 use inventory::submit;
@@ -80,8 +80,9 @@ static DANGEROUS_URL_SCHEME_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
 });
 
 /// Pattern for external domain patterns
-static EXTERNAL_DOMAIN_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r#"(?i)^https?://(?!localhost|127\.0\.0\.1|\[::1\])(?!/)(?![\w-]+/)"#).unwrap()
+/// Uses fancy_regex for lookahead support
+static EXTERNAL_DOMAIN_PATTERN: LazyLock<fancy_regex::Regex> = LazyLock::new(|| {
+    fancy_regex::Regex::new(r#"(?i)^https?://(?!localhost|127\.0\.0\.1|\[::1\])(?!/)(?![\w-]+/)"#).unwrap()
 });
 
 declare_rule! {

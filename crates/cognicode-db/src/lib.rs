@@ -17,6 +17,7 @@ pub mod agent_outputs;
 pub mod agent_tasks;
 pub mod drift_events;
 pub mod tool_names;
+pub mod research;
 
 pub use quality::{QualityStore, IssueKey, IssueRow, IssueStatus};
 pub use files::FileStore;
@@ -29,3 +30,8 @@ pub use agent_tasks::{AgentTasksStore, AgentTask};
 pub use drift_events::{DriftEventStore, DriftEvent};
 pub use tool_names::*;
 pub use types::*;
+pub use research::{
+    add_research_tables,
+    EvidenceRow, CaseRow, HypothesisRow, RefutationRow,
+    ResearchSessionRow, ResearchCaseRow, SignalRow, PatternRow,
+};

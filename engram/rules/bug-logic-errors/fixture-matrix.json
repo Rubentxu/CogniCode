@@ -1,0 +1,637 @@
+{
+  "batch": "bug-logic-errors",
+  "phase": "fixtures_complete",
+  "created_at": "2026-05-14T19:01:00Z",
+  "fixture_matrix": [
+    {
+      "rule_id": "rust_bugs_logic_infinite_loop",
+      "concept_id": "infinite_loop",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "basic_infinite_loop",
+            "code": "fn main() { loop { println!(\"hello\"); } }",
+            "should_detect": true
+          },
+          {
+            "name": "loop_without_break",
+            "code": "fn main() { let mut i = 0; loop { i += 1; } }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "loop_with_break",
+            "code": "fn main() { let mut i = 0; loop { i += 1; if i > 10 { break; } } }",
+            "should_detect": false
+          },
+          {
+            "name": "while_loop",
+            "code": "fn main() { let mut i = 0; while i < 10 { i += 1; } }",
+            "should_detect": false
+          },
+          {
+            "name": "for_loop",
+            "code": "fn main() { for i in 0..10 { println!(\"{}\", i); } }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "empty_loop_body",
+            "code": "fn main() { loop {} }",
+            "should_detect": true
+          },
+          {
+            "name": "nested_loops",
+            "code": "fn main() { loop { loop { break; } break; } }",
+            "should_detect": false
+          }
+        ],
+        "false_positives": [
+          {
+            "name": "tokio_main_loop",
+            "code": "#[tokio::main] async fn main() { loop { tokio::select! { _ = shutdown => break; } } }",
+            "should_detect": false,
+            "reason": "tokio select with shutdown signal"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "rust_bugs_logic_division_by_zero",
+      "concept_id": "division_by_zero",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "literal_division_by_zero",
+            "code": "fn div(a: i32) -> i32 { a / 0 }",
+            "should_detect": true
+          },
+          {
+            "name": "modulo_by_zero",
+            "code": "fn mod_zero(a: i32) -> i32 { a % 0 }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "checked_division",
+            "code": "fn div(a: i32, b: i32) -> Option<i32> { b.checked_div(a) }",
+            "should_detect": false
+          },
+          {
+            "name": "nonzero_guard",
+            "code": "fn div(a: i32, b: i32) -> i32 { if b != 0 { a / b } else { 0 } }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "variable_denominator",
+            "code": "fn div(a: i32, b: i32) -> i32 { a / b }",
+            "should_detect": false,
+            "reason": "Cannot determine at static analysis if b can be zero"
+          }
+        ],
+        "false_positives": [
+          {
+            "name": "constant_nonzero",
+            "code": "const DIVISOR: i32 = 5; fn div(a: i32) -> i32 { a / DIVISOR }",
+            "should_detect": false,
+            "reason": "Compile-time constant known to be non-zero"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "rust_bugs_logic_mem_uninitialized",
+      "concept_id": "mem_uninitialized",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "mem_uninitialized_call",
+            "code": "use std::mem; fn foo() { let x: i32 = mem::uninitialized(); }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "maybe_uninit_zeroed",
+            "code": "use std::mem::MaybeUninit; fn foo() { let x: MaybeUninit<i32> = MaybeUninit::zeroed(); }",
+            "should_detect": false
+          },
+          {
+            "name": "proper_maybe_uninit",
+            "code": "use std::mem::MaybeUninit; fn foo() { let x = MaybeUninit::<i32>::zeroed(); let val = unsafe { x.assume_init() }; }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "nested_maybe_uninit",
+            "code": "use std::mem::MaybeUninit; struct Foo { x: i32 } fn foo() { let f: MaybeUninit<Foo> = MaybeUninit::zeroed(); }",
+            "should_detect": false
+          }
+        ],
+        "false_positives": []
+      }
+    },
+    {
+      "rule_id": "rust_bugs_logic_null_pointer_deref",
+      "concept_id": "null_pointer_deref",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "direct_unwrap_none",
+            "code": "fn main() { let opt: Option<i32> = None; let val = opt.unwrap(); }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "if_let_guard",
+            "code": "fn main() { let opt: Option<i32> = Some(42); if let Some(val) = opt { println!(\"{}\", val); } }",
+            "should_detect": false
+          },
+          {
+            "name": "match_guard",
+            "code": "fn main() { let opt: Option<i32> = Some(42); match opt { Some(val) => println!(\"{}\", val), None => println!(\"none\"), } }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "expect_with_message",
+            "code": "fn main() { let opt: Option<i32> = None; opt.expect(\"should have value\"); }",
+            "should_detect": true
+          }
+        ],
+        "false_positives": [
+          {
+            "name": "unwrap_in_test",
+            "code": "#[cfg(test)] mod tests { #[test] fn test_unwrap() { let opt = Some(42); let val = opt.unwrap(); } }",
+            "should_detect": false,
+            "reason": "Test code is excluded"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "rust_bugs_logic_index_out_of_bounds",
+      "concept_id": "index_out_of_bounds",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "direct_array_index",
+            "code": "fn main() { let arr = [1, 2, 3]; let x = arr[5]; }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "safe_get_index",
+            "code": "fn main() { let arr = [1, 2, 3]; if let Some(x) = arr.get(5) { println!(\"{}\", x); } }",
+            "should_detect": false
+          },
+          {
+            "name": "iterator_loop",
+            "code": "fn main() { let arr = [1, 2, 3]; for x in &arr { println!(\"{}\", x); } }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "variable_index",
+            "code": "fn main() { let arr = [1, 2, 3]; let i = 5; let x = arr[i]; }",
+            "should_detect": true
+          }
+        ],
+        "false_positives": [
+          {
+            "name": "bounds_checked_index",
+            "code": "fn main() { let arr = [1, 2, 3]; let i = 5; if i < arr.len() { let x = arr[i]; } }",
+            "should_detect": false,
+            "reason": "Manual bounds check present"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "rust_bugs_logic_dead_code",
+      "concept_id": "dead_code",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "code_after_return",
+            "code": "fn foo() { return; println!(\"dead\"); }",
+            "should_detect": true
+          },
+          {
+            "name": "code_after_panic",
+            "code": "fn foo() { panic!(\"error\"); println!(\"dead\"); }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "valid_code",
+            "code": "fn foo() { println!(\"alive\"); }",
+            "should_detect": false
+          },
+          {
+            "name": "exhaustive_match",
+            "code": "fn foo(opt: Option<i32>) -> i32 { match opt { Some(x) => x, None => 0, } }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "unreachable_panic_arm",
+            "code": "fn foo(x: i32) -> i32 { match x { 1 => 10, _ => panic!(\"unreachable\"), } }",
+            "should_detect": false,
+            "reason": "Panic in match is intentional exhaustive handling"
+          }
+        ],
+        "false_positives": [
+          {
+            "name": "dead_code_in_test",
+            "code": "#[cfg(test)] mod tests { #[test] fn test_dead() { return; println!(\"dead but in test\"); } }",
+            "should_detect": false,
+            "reason": "Test modules are excluded"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "rust_bugs_logic_nan_comparison",
+      "concept_id": "nan_comparison",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "nan_equality",
+            "code": "fn main() { let x: f32 = 0.0/0.0; if x == x { println!(\"nan\"); } }",
+            "should_detect": true
+          },
+          {
+            "name": "f32_inequality",
+            "code": "fn main() { let x: f32 = 0.0/0.0; if x != x { println!(\"nan\"); } }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "ordering_comparison",
+            "code": "fn main() { let x: f32 = 1.0; if x > 0.0 { println!(\"positive\"); } }",
+            "should_detect": false
+          },
+          {
+            "name": "nan_check_first",
+            "code": "fn main() { let x: f32 = 0.0/0.0; if !x.is_nan() && x > 0.0 { println!(\"ok\"); } }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "f64_nan",
+            "code": "fn main() { let x: f64 = 0.0/0.0; if x == x { } }",
+            "should_detect": true
+          }
+        ],
+        "false_positives": []
+      }
+    },
+    {
+      "rule_id": "rust_bugs_logic_integer_overflow",
+      "concept_id": "integer_overflow",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "addition_overflow",
+            "code": "fn main() { let x: i32 = 2147483647; let y = x + 1; }",
+            "should_detect": true
+          },
+          {
+            "name": "multiplication_overflow",
+            "code": "fn main() { let x: i32 = 1000000; let y = x * x; }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "checked_add",
+            "code": "fn main() { let x: i32 = 2147483647; let y = x.checked_add(1); }",
+            "should_detect": false
+          },
+          {
+            "name": "saturating_mul",
+            "code": "fn main() { let x: i32 = 1000000; let y = x.saturating_mul(x); }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "unsigned_overflow",
+            "code": "fn main() { let x: u8 = 255; let y = x + 1; }",
+            "should_detect": true
+          }
+        ],
+        "false_positives": [
+          {
+            "name": "wrapping_type",
+            "code": "fn main() { let x: std::num::Wrapping<i32> = Wrapping(2147483647); let y = x + Wrapping(1); }",
+            "should_detect": false,
+            "reason": "Wrapping type intentionally wraps"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "rust_bugs_logic_panic_unwrap",
+      "concept_id": "panic_unwrap",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "unwrap_none",
+            "code": "fn main() { let opt: Option<i32> = None; opt.unwrap(); }",
+            "should_detect": true
+          },
+          {
+            "name": "expect_none",
+            "code": "fn main() { let opt: Option<i32> = None; opt.expect(\"msg\"); }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "unwrap_or",
+            "code": "fn main() { let opt: Option<i32> = None; let val = opt.unwrap_or(0); }",
+            "should_detect": false
+          },
+          {
+            "name": "question_mark",
+            "code": "fn main() -> Result<i32, ()> { let opt: Option<i32> = Some(42); Ok(opt?) }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "unwrap_result_err",
+            "code": "fn main() { let res: Result<i32, &str> = Err(\"error\"); res.unwrap(); }",
+            "should_detect": true
+          }
+        ],
+        "false_positives": [
+          {
+            "name": "unwrap_in_test",
+            "code": "#[cfg(test)] mod tests { #[test] fn test() { Some(42).unwrap(); } }",
+            "should_detect": false,
+            "reason": "Test modules are excluded"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "rust_bugs_logic_invalid_regex",
+      "concept_id": "invalid_regex",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "regex_new",
+            "code": "use regex::Regex; fn main() { let _ = Regex::new(\"[\"); }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "lazy_regex",
+            "code": "use lazy_regex::lazy_regex; fn main() { let _ = lazy_regex!(\"[a-z]+\"); }",
+            "should_detect": false
+          },
+          {
+            "name": "regex_macro",
+            "code": "use regex::regex; fn main() { let _ = regex!(\"[a-z]+\"); }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "regex_builder",
+            "code": "use regex::RegexBuilder; fn main() { let _ = RegexBuilder::new(\"[\").build(); }",
+            "should_detect": true
+          }
+        ],
+        "false_positives": [
+          {
+            "name": "validated_regex",
+            "code": "use regex::Regex; fn main() { if let Ok(re) = Regex::new(\"[\") { } }",
+            "should_detect": false,
+            "reason": "Pattern is validated before use"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "rust_bugs_logic_off_by_one",
+      "concept_id": "off_by_one",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "inclusive_range_with_len",
+            "code": "fn main() { let arr = vec![1,2,3]; for i in 0..=arr.len() { let _ = arr.get(i); } }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "exclusive_range",
+            "code": "fn main() { let arr = vec![1,2,3]; for i in 0..arr.len() { let _ = arr.get(i); } }",
+            "should_detect": false
+          },
+          {
+            "name": "iterator_loop",
+            "code": "fn main() { let arr = vec![1,2,3]; for x in &arr { println!(\"{}\", x); } }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "range_to_len",
+            "code": "fn main() { let arr = vec![1,2,3]; for i in 0..=arr.len()-1 { let _ = arr[i]; } }",
+            "should_detect": false
+          }
+        ],
+        "false_positives": [
+          {
+            "name": "with_bounds_check",
+            "code": "fn main() { let arr = vec![1,2,3]; for i in 0..=arr.len() { if i < arr.len() { let _ = arr[i]; } } }",
+            "should_detect": false,
+            "reason": "Bounds check inside loop"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "rust_bugs_logic_double_drop",
+      "concept_id": "double_drop",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "explicit_drop",
+            "code": "fn main() { let x = String::from(\"hello\"); drop(x); }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "mem_forget",
+            "code": "use std::mem; fn main() { let x = String::from(\"hello\"); mem::forget(x); }",
+            "should_detect": false
+          },
+          {
+            "name": "different_variables",
+            "code": "fn main() { let x = String::from(\"hello\"); let y = x; drop(y); }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "drop_copy_type",
+            "code": "fn main() { let x = 42; drop(x); }",
+            "should_detect": true
+          }
+        ],
+        "false_positives": [
+          {
+            "name": "after_move",
+            "code": "fn main() { let x = String::from(\"hello\"); let y = x; drop(y); }",
+            "should_detect": false,
+            "reason": "x was moved to y, not dropped twice"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "rust_bugs_logic_logical_precedence",
+      "concept_id": "logical_precedence",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "mixed_operators",
+            "code": "fn main() { if a || b && c { } }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "parenthesized",
+            "code": "fn main() { if (a || b) && c { } }",
+            "should_detect": false
+          },
+          {
+            "name": "only_and",
+            "code": "fn main() { if a && b && c { } }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "complex_parenthesized",
+            "code": "fn main() { if a || (b && c) { } }",
+            "should_detect": false
+          }
+        ],
+        "false_positives": []
+      }
+    },
+    {
+      "rule_id": "rust_bugs_logic_contradictory_condition",
+      "concept_id": "contradictory_condition",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "obvious_contradiction",
+            "code": "fn main() { let x = 5; if x > 10 && x < 5 { } }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "valid_range",
+            "code": "fn main() { let x = 5; if x > 0 && x < 10 { } }",
+            "should_detect": false
+          },
+          {
+            "name": "different_vars",
+            "code": "fn main() { let x = 5; let y = 10; if x > 0 && y < 10 { } }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "same_value_equality",
+            "code": "fn main() { let x = 5; if x >= 5 && x < 5 { } }",
+            "should_detect": true
+          }
+        ],
+        "false_positives": [
+          {
+            "name": "float_comparison",
+            "code": "fn main() { let x: f32 = 5.0; if x > 0.0 && x < 10.0 { } }",
+            "should_detect": false,
+            "reason": "Float comparisons can have special cases"
+          }
+        ]
+      }
+    },
+    {
+      "rule_id": "rust_bugs_logic_redundant_assignment",
+      "concept_id": "redundant_assignment",
+      "fixtures": {
+        "positive": [
+          {
+            "name": "immediate_shadow",
+            "code": "fn main() { let x = 5; let x = 10; println!(\"{}\", x); }",
+            "should_detect": true
+          }
+        ],
+        "negative": [
+          {
+            "name": "loop_accumulator",
+            "code": "fn main() { let mut x = 0; for i in 0..10 { x += i; } }",
+            "should_detect": false
+          },
+          {
+            "name": "swap_pattern",
+            "code": "fn main() { let mut a = 1; let mut b = 2; let temp = a; a = b; b = temp; }",
+            "should_detect": false
+          }
+        ],
+        "edge_cases": [
+          {
+            "name": "debug_use",
+            "code": "fn main() { let x = 5; println!(\"{}\", x); let x = 10; }",
+            "should_detect": false,
+            "reason": "First x is used in debug print"
+          }
+        ],
+        "false_positives": [
+          {
+            "name": "conditional_assignment",
+            "code": "fn main() { let x; if cond { x = 5; } else { x = 10; } println!(\"{}\", x); }",
+            "should_detect": false,
+            "reason": "x is used after assignment"
+          }
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "total_rules": 15,
+    "total_fixtures": 87,
+    "positive_count": 30,
+    "negative_count": 32,
+    "edge_case_count": 15,
+    "false_positive_count": 10
+  }
+}

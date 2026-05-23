@@ -1840,7 +1840,7 @@ pub async fn start_server(port: u16) {
     let project_path = app_state.config.read().await.project_path.clone();
 
     // Create WebSocket state with 2-second debounce
-    let ws_state = WsState::new(project_path, 2000);
+    let ws_state = WsState::new(PathBuf::from(&project_path), 2000);
 
     // Create the WebSocket router
     let ws_router = ws_handler::create_ws_router(ws_state);

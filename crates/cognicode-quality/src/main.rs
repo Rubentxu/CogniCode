@@ -28,6 +28,8 @@ use cognicode_core::domain::aggregates::call_graph::CallGraph;
 use cognicode_core::infrastructure::parser::Language;
 use rayon::ThreadPoolBuilder;
 use rmcp::handler::server::ServerHandler;
+use std::panic::catch_unwind;
+use tracing::warn;
 use rmcp::model::{CallToolRequestParams, CallToolResult, Content, ListToolsResult, ServerCapabilities, ServerInfo, Tool};
 use rmcp::service::{RequestContext, RoleServer};
 use std::collections::HashMap;
@@ -275,7 +277,21 @@ impl QualityAnalysisHandler {
                 let mut found_issues = Vec::new();
                 for rule in self.rule_registry.all() {
                     if rule.id() == params.rule_id {
-                        let issues = rule.check(&ctx);
+                        // Catch panics from rules to prevent crashes
+                        let issues = match catch_unwind(std::panic::AssertUnwindSafe(|| rule.check(&ctx))) {
+                            Ok(issues) => issues,
+                            Err(panic_info) => {
+                                let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                                    s.to_string()
+                                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                                    s.clone()
+                                } else {
+                                    "Unknown panic".to_string()
+                                };
+                                warn!("Rule {} panicked during analysis: {}", rule.id(), msg);
+                                vec![]
+                            }
+                        };
                         found_issues.extend(issues);
                         break;
                     }
@@ -519,7 +535,21 @@ profiles:
                 let mut results = Vec::new();
                 for rule in self.rule_registry.all() {
                     if rule.id() == params.rule_id {
-                        let issues = rule.check(&ctx);
+                        // Catch panics from rules to prevent crashes
+                        let issues = match catch_unwind(std::panic::AssertUnwindSafe(|| rule.check(&ctx))) {
+                            Ok(issues) => issues,
+                            Err(panic_info) => {
+                                let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                                    s.to_string()
+                                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                                    s.clone()
+                                } else {
+                                    "Unknown panic".to_string()
+                                };
+                                warn!("Rule {} panicked during test: {}", rule.id(), msg);
+                                vec![]
+                            }
+                        };
                         results = issues.into_iter().map(IssueResult::from).collect();
                         break;
                     }

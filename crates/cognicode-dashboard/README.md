@@ -1,10 +1,38 @@
-# CogniCode Dashboard
+# ⚠️ DEPRECATED: CogniCode Dashboard
+
+> **Warning**: This crate is deprecated. Use [CogniCode Studio](https://github.com/cognicode/studio) instead.
+
+##迁移指南 (Migration Guide)
+
+The CogniCode Dashboard has been superseded by **CogniCode Studio**, a modern React-based web application:
+
+| Característica | Dashboard (deprecated) | Studio (recommended) |
+|----------------|------------------------|---------------------|
+| Frontend | Leptos 0.7 (Rust/WASM) | React + TypeScript |
+| Servidor BFF | N/A | Axum-based BFF |
+| Visualización | Mock data | Real visualizations |
+| Componentes | Leptos | shadcn/ui |
+| Estado | Local | React Query + Zustand |
+
+### 用什么替代 (What to use instead)
+
+- **Para análisis de código**: Usa `cognicode-studio-bff` + `cognicode-studio-web`
+- **Para MCP de signals**: Usa `cognicode-signals-mcp`
+- **Para MCP de research**: Usa `cognicode-research-mcp`
+
+## Resumen de deprecated
+
+Este crate se mantenido por compatibilidad backwards pero será eliminado en una versión futura.
+
+---
+
+## Original README (para referencia)
 
 Web UI for CogniCode code quality analysis, built with Leptos 0.7.
 
 ## Overview
 
-The CogniCode Dashboard provides a visual interface for:
+The CogniCode Dashboard provided a visual interface for:
 
 - **Dashboard**: Overview of project quality with ratings, metrics, and recent issues
 - **Issues**: Browse and filter code quality issues found during analysis

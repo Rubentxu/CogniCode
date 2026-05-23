@@ -55,7 +55,7 @@ judgment-day, skill-creator
 
 bug-find, rust-ddd-expert, ralph-rust, pretty-mermaid, product-owner,
 documentacion, investigacion, review-wasm, frontend-design, pruebas-cli,
-refactor, git-versioning, doc-writer, cognicode-rules
+refactor, git-versioning, doc-writer, cognicode-rules, cognicode-rule-authoring
 
 ## CogniCode Rules Development
 
@@ -63,6 +63,12 @@ refactor, git-versioning, doc-writer, cognicode-rules
 **Trigger**: When creating, modifying, testing, or auditing CogniCode detection rules in cognicode-axiom,
 fixing false positives detected by dashboard, migrating regex rules to tree-sitter, or working with
 rule catalogs and the quality analysis pipeline.
+
+**Skill**: `cognicode-rule-authoring` (`.claude/skills/cognicode-rule-authoring/SKILL.md`)
+**Trigger**: When writing new rules, improving existing rules, or injecting API context into LLM prompts
+for rule evolution. Provides the complete RuleContext API, Issue construction, declare_rule! macro syntax,
+tree-sitter query patterns per language, and curated rule examples. **This is the primary reference for
+LLM-based rule generation (evolve.py pipeline).**
 
 ### Compact Rules (inject for rule development, testing, audit)
 
@@ -77,6 +83,44 @@ rule catalogs and the quality analysis pipeline.
 - Use ctx.graph (CallGraph) and ctx.metrics (FileMetrics) for semantic context
 - Self-improvement loop: FP report → fix rule → add regression test → verify → commit
 - Migrate security rules (S2068, S4792, S5332) from regex to tree-sitter for accuracy
+```
+
+### Compact Rules: Rule Authoring API (inject for LLM rule generation)
+
+```
+RULECONTEXT METHODS:
+  ctx.query_nodes(query_str) -> Vec<Node>          — tree-sitter query
+  ctx.query_functions() -> Vec<Node>                — all function nodes
+  ctx.query_imports() -> Vec<(usize, String)>       — imports (line, text)
+  ctx.query_classes() -> Vec<(usize, String)>       — classes (line, name)
+  ctx.query_patterns(query_str) -> Vec<(usize, usize, String)>
+  ctx.count_matches(query_str) -> usize
+  ctx.function_name(node) -> Option<&str>
+  ctx.line_count(node) -> usize
+  ctx.nesting_depth(node) -> usize
+  ctx.cognitive_complexity(node) -> i32
+  ctx.callers_of(symbol) -> Vec<String>
+  ctx.callees_of(symbol) -> Vec<String>
+  ctx.find_dead_symbols() -> Vec<(String, String)>
+
+NODE METHODS:
+  node.start_position() -> Point{row, col}  (0-indexed, use +1 for line)
+  node.utf8_text(ctx.source.as_bytes()) -> &str
+  node.kind() -> &str
+  node.child_by_field_name("name") -> Option<Node>
+
+ISSUE CONSTRUCTION:
+  Issue::new(id, msg, severity, category, file, line)
+  Issue::from_node(id, msg, sev, cat, file, line, ctx, node)
+    .with_column(col) .with_end_line(end) .with_remediation(...)
+
+SEVERITY: Info | Minor | Major | Critical | Blocker
+CATEGORY: Bug | Vulnerability | CodeSmell | SecurityHotspot
+REMEDIATION: quick("5min") | moderate("15min") | substantial("60min")
+
+PREFER ctx.query_nodes() over raw tree_sitter::Query::new().
+PREFER Issue::from_node() over Issue::new() when you have a node.
+Use self.id(), self.severity(), self.category() — never hardcode.
 ```
 
 ### Ecosystem Integration

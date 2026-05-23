@@ -1,0 +1,832 @@
+{
+  "batch_id": "test-batch",
+  "phase": "tasks",
+  "generated_at": "2026-05-15T04:00:00Z",
+  "total_rules": 15,
+  "total_tasks": 75,
+  "layer_distribution": {
+    "layer_0": 3,
+    "layer_1": 10,
+    "layer_2": 2
+  },
+  "tasks": [
+    {
+      "task_id": "CC_TEST_001_T001",
+      "rule_id": "test/CC_TEST_001",
+      "concept_id": "CC_TEST_001",
+      "name": "Test Without Assertion",
+      "category": "test-smell",
+      "priority": "high",
+      "layer": 1,
+      "estimated_hours": 4,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_001_T001_ST001",
+          "description": "Create tree-sitter query for Python test function detection",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "python",
+          "pattern_details": "Match function_definition with name matching ^test_|^Test, body without assertion call"
+        },
+        {
+          "subtask_id": "CC_TEST_001_T001_ST002",
+          "description": "Create tree-sitter query for JavaScript test function detection",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "javascript",
+          "pattern_details": "Match call_expression with test/it/specify, arguments containing arrow_function without expect assertion"
+        },
+        {
+          "subtask_id": "CC_TEST_001_T001_ST003",
+          "description": "Implement assertion detection for Python (assertEqual, assertTrue, pytest.raises, etc.)",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "python"
+        },
+        {
+          "subtask_id": "CC_TEST_001_T001_ST004",
+          "description": "Implement assertion detection for JavaScript (expect().toBe(), mock.assert_called*, etc.)",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "javascript"
+        },
+        {
+          "subtask_id": "CC_TEST_001_T001_ST005",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_001_P001", "CC_TEST_001_P002", "CC_TEST_001_P003",
+            "CC_TEST_001_N001", "CC_TEST_001_N002", "CC_TEST_001_N003",
+            "CC_TEST_001_E001", "CC_TEST_001_E002",
+            "CC_TEST_001_FP001",
+            "CC_TEST_001_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_001_T001_ST006",
+          "description": "Add fix playbook and review questions to rule metadata",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    },
+    {
+      "task_id": "CC_TEST_002_T001",
+      "rule_id": "test/CC_TEST_002",
+      "concept_id": "CC_TEST_002",
+      "name": "Test Using Sleep",
+      "category": "test-smell",
+      "priority": "medium",
+      "layer": 1,
+      "estimated_hours": 3,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_002_T001_ST001",
+          "description": "Create tree-sitter query for Python sleep detection (time.sleep, Thread.sleep)",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "python",
+          "pattern_details": "Match call to sleep/wait/delay functions, excluding those inside with_statement"
+        },
+        {
+          "subtask_id": "CC_TEST_002_T001_ST002",
+          "description": "Create tree-sitter query for JavaScript sleep/delay detection",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "javascript",
+          "pattern_details": "Match call_expression to sleep/delay/wait/waitFor/setTimeout, excluding skip/only"
+        },
+        {
+          "subtask_id": "CC_TEST_002_T001_ST003",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_002_P001", "CC_TEST_002_P002", "CC_TEST_002_P003",
+            "CC_TEST_002_N001", "CC_TEST_002_N002", "CC_TEST_002_N003",
+            "CC_TEST_002_E001", "CC_TEST_002_E002",
+            "CC_TEST_002_FP001",
+            "CC_TEST_002_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_002_T001_ST004",
+          "description": "Add fix playbook with proper sync alternatives (waitFor, findBy*, etc.)",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    },
+    {
+      "task_id": "CC_TEST_003_T001",
+      "rule_id": "test/CC_TEST_003",
+      "concept_id": "CC_TEST_003",
+      "name": "Test Skipped Without Reason",
+      "category": "test-smell",
+      "priority": "medium",
+      "layer": 0,
+      "estimated_hours": 2,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_003_T001_ST001",
+          "description": "Create regex/token pattern for Python skip decorators without reason",
+          "status": "pending",
+          "detection_strategy": "regex/token",
+          "language": "python",
+          "pattern_details": "Match decorator with name matching skip/skipIf/skipUnless/xfail, with empty or missing reason"
+        },
+        {
+          "subtask_id": "CC_TEST_003_T001_ST002",
+          "description": "Create regex/token pattern for JavaScript skip calls without reason",
+          "status": "pending",
+          "detection_strategy": "regex/token",
+          "language": "javascript",
+          "pattern_details": "Match call_expression to describe.skip/it.skip/test.skip with empty arguments"
+        },
+        {
+          "subtask_id": "CC_TEST_003_T001_ST003",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_003_P001", "CC_TEST_003_P002", "CC_TEST_003_P003",
+            "CC_TEST_003_N001", "CC_TEST_003_N002", "CC_TEST_003_N003",
+            "CC_TEST_003_E001", "CC_TEST_003_E002",
+            "CC_TEST_003_FP001",
+            "CC_TEST_003_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_003_T001_ST004",
+          "description": "Add fix playbook with skip reason templates",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    },
+    {
+      "task_id": "CC_TEST_004_T001",
+      "rule_id": "test/CC_TEST_004",
+      "concept_id": "CC_TEST_004",
+      "name": "Test Method Naming Convention Violation",
+      "category": "test-smell",
+      "priority": "low",
+      "layer": 0,
+      "estimated_hours": 2,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_004_T001_ST001",
+          "description": "Create regex/token pattern for Python test method naming",
+          "status": "pending",
+          "detection_strategy": "regex/token",
+          "language": "python",
+          "pattern_details": "Match class_definition inheriting from TestCase/Test* with method not starting test_ or setUp/tearDown"
+        },
+        {
+          "subtask_id": "CC_TEST_004_T001_ST002",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_004_P001", "CC_TEST_004_P002", "CC_TEST_004_P003",
+            "CC_TEST_004_N001", "CC_TEST_004_N002", "CC_TEST_004_N003",
+            "CC_TEST_004_E001", "CC_TEST_004_E002",
+            "CC_TEST_004_FP001",
+            "CC_TEST_004_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_004_T001_ST003",
+          "description": "Add fix playbook with renaming instructions",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    },
+    {
+      "task_id": "CC_TEST_005_T001",
+      "rule_id": "test/CC_TEST_005",
+      "concept_id": "CC_TEST_005",
+      "name": "Complex Test Fixture Setup",
+      "category": "test-smell",
+      "priority": "low",
+      "layer": 2,
+      "estimated_hours": 4,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_005_T001_ST001",
+          "description": "Create metrics-based detection for Python setUp methods exceeding 20 lines",
+          "status": "pending",
+          "detection_strategy": "metrics",
+          "language": "python",
+          "pattern_details": "Match function_definition named setUp/setup/setup_method with line_count > 20"
+        },
+        {
+          "subtask_id": "CC_TEST_005_T001_ST002",
+          "description": "Create metrics-based detection for JavaScript beforeEach with >15 statements",
+          "status": "pending",
+          "detection_strategy": "metrics",
+          "language": "javascript",
+          "pattern_details": "Match call_expression to beforeEach/beforeAll/setup with statement_count > 15"
+        },
+        {
+          "subtask_id": "CC_TEST_005_T001_ST003",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_005_P001", "CC_TEST_005_P002", "CC_TEST_005_P003",
+            "CC_TEST_005_N001", "CC_TEST_005_N002", "CC_TEST_005_N003",
+            "CC_TEST_005_E001", "CC_TEST_005_E002",
+            "CC_TEST_005_FP001",
+            "CC_TEST_005_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_005_T001_ST004",
+          "description": "Add fix playbook with fixture extraction patterns",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    },
+    {
+      "task_id": "CC_TEST_006_T001",
+      "rule_id": "test/CC_TEST_006",
+      "concept_id": "CC_TEST_006",
+      "name": "Multiple Assertions In Single Test",
+      "category": "test-smell",
+      "priority": "medium",
+      "layer": 1,
+      "estimated_hours": 4,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_006_T001_ST001",
+          "description": "Create tree-sitter query for Python multi-assertion detection",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "python",
+          "pattern_details": "Match function_definition with >3 assertion calls (assertEqual, assertTrue, etc.)"
+        },
+        {
+          "subtask_id": "CC_TEST_006_T001_ST002",
+          "description": "Create tree-sitter query for JavaScript multi-expect detection",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "javascript",
+          "pattern_details": "Match call_expression to test/it with >3 expect() calls inside"
+        },
+        {
+          "subtask_id": "CC_TEST_006_T001_ST003",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_006_P001", "CC_TEST_006_P002", "CC_TEST_006_P003",
+            "CC_TEST_006_N001", "CC_TEST_006_N002", "CC_TEST_006_N003",
+            "CC_TEST_006_E001", "CC_TEST_006_E002",
+            "CC_TEST_006_FP001",
+            "CC_TEST_006_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_006_T001_ST004",
+          "description": "Add fix playbook with test splitting strategies",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    },
+    {
+      "task_id": "CC_TEST_007_T001",
+      "rule_id": "test/CC_TEST_007",
+      "concept_id": "CC_TEST_007",
+      "name": "Duplicated Test Method",
+      "category": "test-smell",
+      "priority": "medium",
+      "layer": 2,
+      "estimated_hours": 6,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_007_T001_ST001",
+          "description": "Create call-graph based detection for Python duplicate tests (90% similarity)",
+          "status": "pending",
+          "detection_strategy": "call-graph",
+          "language": "python",
+          "pattern_details": "Match sibling function_definitions with ^test_ prefix and similar body (AST similarity > 0.9)"
+        },
+        {
+          "subtask_id": "CC_TEST_007_T001_ST002",
+          "description": "Create call-graph based detection for JavaScript duplicate tests",
+          "status": "pending",
+          "detection_strategy": "call-graph",
+          "language": "javascript",
+          "pattern_details": "Match sibling call_expression to test/it with similar arrow_function body"
+        },
+        {
+          "subtask_id": "CC_TEST_007_T001_ST003",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_007_P001", "CC_TEST_007_P002", "CC_TEST_007_P003",
+            "CC_TEST_007_N001", "CC_TEST_007_N002", "CC_TEST_007_N003",
+            "CC_TEST_007_E001", "CC_TEST_007_E002",
+            "CC_TEST_007_FP001",
+            "CC_TEST_007_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_007_T001_ST004",
+          "description": "Add fix playbook with parameterization patterns",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    },
+    {
+      "task_id": "CC_TEST_008_T001",
+      "rule_id": "test/CC_TEST_008",
+      "concept_id": "CC_TEST_008",
+      "name": "Test Using Random Values",
+      "category": "test-smell",
+      "priority": "high",
+      "layer": 1,
+      "estimated_hours": 4,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_008_T001_ST001",
+          "description": "Create tree-sitter query for Python random value detection",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "python",
+          "pattern_details": "Match call to random.randint/randrange/uniform/choice without prior random.seed() call"
+        },
+        {
+          "subtask_id": "CC_TEST_008_T001_ST002",
+          "description": "Create tree-sitter query for JavaScript Math.random detection",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "javascript",
+          "pattern_details": "Match call_expression to Math.random"
+        },
+        {
+          "subtask_id": "CC_TEST_008_T001_ST003",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_008_P001", "CC_TEST_008_P002", "CC_TEST_008_P003",
+            "CC_TEST_008_N001", "CC_TEST_008_N002", "CC_TEST_008_N003",
+            "CC_TEST_008_E001", "CC_TEST_008_E002",
+            "CC_TEST_008_FP001",
+            "CC_TEST_008_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_008_T001_ST004",
+          "description": "Add fix playbook with random.seed() and fixed data patterns",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    },
+    {
+      "task_id": "CC_TEST_009_T001",
+      "rule_id": "test/CC_TEST_009",
+      "concept_id": "CC_TEST_009",
+      "name": "Test Without Describe Block",
+      "category": "test-smell",
+      "priority": "low",
+      "layer": 0,
+      "estimated_hours": 2,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_009_T001_ST001",
+          "description": "Create regex/token pattern for JavaScript root-level test detection",
+          "status": "pending",
+          "detection_strategy": "regex/token",
+          "language": "javascript",
+          "pattern_details": "Match call_expression to test/it/specify not nested inside describe"
+        },
+        {
+          "subtask_id": "CC_TEST_009_T001_ST002",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_009_P001", "CC_TEST_009_P002", "CC_TEST_009_P003",
+            "CC_TEST_009_N001", "CC_TEST_009_N002", "CC_TEST_009_N003",
+            "CC_TEST_009_E001", "CC_TEST_009_E002",
+            "CC_TEST_009_FP001",
+            "CC_TEST_009_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_009_T001_ST003",
+          "description": "Add fix playbook with describe grouping patterns",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    },
+    {
+      "task_id": "CC_TEST_010_T001",
+      "rule_id": "test/CC_TEST_010",
+      "concept_id": "CC_TEST_010",
+      "name": "Assertions Count Mismatch",
+      "category": "test-smell",
+      "priority": "high",
+      "layer": 1,
+      "estimated_hours": 5,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_010_T001_ST001",
+          "description": "Create tree-sitter query for JavaScript expect.assertions count validation",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "javascript",
+          "pattern_details": "Match expect.assertions(N) and count actual expect() calls in async test, flag mismatch"
+        },
+        {
+          "subtask_id": "CC_TEST_010_T001_ST002",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_010_P001", "CC_TEST_010_P002", "CC_TEST_010_P003",
+            "CC_TEST_010_N001", "CC_TEST_010_N002", "CC_TEST_010_N003",
+            "CC_TEST_010_E001", "CC_TEST_010_E002",
+            "CC_TEST_010_FP001",
+            "CC_TEST_010_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_010_T001_ST003",
+          "description": "Add fix playbook with count correction patterns",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    },
+    {
+      "task_id": "CC_TEST_011_T001",
+      "rule_id": "test/CC_TEST_011",
+      "concept_id": "CC_TEST_011",
+      "name": "Nested Test Hooks",
+      "category": "test-smell",
+      "priority": "medium",
+      "layer": 1,
+      "estimated_hours": 4,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_011_T001_ST001",
+          "description": "Create tree-sitter query for JavaScript nested hook detection",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "javascript",
+          "pattern_details": "Match beforeAll/afterAll/beforeEach/afterEach inside nested describe blocks"
+        },
+        {
+          "subtask_id": "CC_TEST_011_T001_ST002",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_011_P001", "CC_TEST_011_P002", "CC_TEST_011_P003",
+            "CC_TEST_011_N001", "CC_TEST_011_N002", "CC_TEST_011_N003",
+            "CC_TEST_011_E001", "CC_TEST_011_E002",
+            "CC_TEST_011_FP001",
+            "CC_TEST_011_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_011_T001_ST003",
+          "description": "Add fix playbook with hook scoping patterns",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    },
+    {
+      "task_id": "CC_TEST_012_T001",
+      "rule_id": "test/CC_TEST_012",
+      "concept_id": "CC_TEST_012",
+      "name": "Mock Implementation Confusion",
+      "category": "test-smell",
+      "priority": "medium",
+      "layer": 1,
+      "estimated_hours": 4,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_012_T001_ST001",
+          "description": "Create tree-sitter query for JavaScript mock conflict detection",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "javascript",
+          "pattern_details": "Match same mock with both mockImplementation and mockReturnValue/mockResolvedValue calls"
+        },
+        {
+          "subtask_id": "CC_TEST_012_T001_ST002",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_012_P001", "CC_TEST_012_P002", "CC_TEST_012_P003",
+            "CC_TEST_012_N001", "CC_TEST_012_N002", "CC_TEST_012_N003",
+            "CC_TEST_012_E001", "CC_TEST_012_E002",
+            "CC_TEST_012_FP001",
+            "CC_TEST_012_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_012_T001_ST003",
+          "description": "Add fix playbook with mock approach selection",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    },
+    {
+      "task_id": "CC_TEST_013_T001",
+      "rule_id": "test/CC_TEST_013",
+      "concept_id": "CC_TEST_013",
+      "name": "SpyOn Not Restored",
+      "category": "test-smell",
+      "priority": "high",
+      "layer": 1,
+      "estimated_hours": 4,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_013_T001_ST001",
+          "description": "Create tree-sitter query for JavaScript spyOn without cleanup detection",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "javascript",
+          "pattern_details": "Match spyOn without corresponding restoreAllMocks/clearAllMocks in afterEach"
+        },
+        {
+          "subtask_id": "CC_TEST_013_T001_ST002",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_013_P001", "CC_TEST_013_P002", "CC_TEST_013_P003",
+            "CC_TEST_013_N001", "CC_TEST_013_N002", "CC_TEST_013_N003",
+            "CC_TEST_013_E001", "CC_TEST_013_E002",
+            "CC_TEST_013_FP001",
+            "CC_TEST_013_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_013_T001_ST003",
+          "description": "Add fix playbook with restore patterns",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    },
+    {
+      "task_id": "CC_TEST_014_T001",
+      "rule_id": "test/CC_TEST_014",
+      "concept_id": "CC_TEST_014",
+      "name": "Act Wrapper Missing",
+      "category": "test-smell",
+      "priority": "high",
+      "layer": 1,
+      "estimated_hours": 5,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_014_T001_ST001",
+          "description": "Create tree-sitter query for JavaScript act() wrapper detection",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "javascript",
+          "pattern_details": "Match fireEvent/userEvent/dispatch calls not wrapped in act()"
+        },
+        {
+          "subtask_id": "CC_TEST_014_T001_ST002",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_014_P001", "CC_TEST_014_P002", "CC_TEST_014_P003",
+            "CC_TEST_014_N001", "CC_TEST_014_N002", "CC_TEST_014_N003",
+            "CC_TEST_014_E001", "CC_TEST_014_E002",
+            "CC_TEST_014_FP001",
+            "CC_TEST_014_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_014_T001_ST003",
+          "description": "Add fix playbook with act() wrapping patterns",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    },
+    {
+      "task_id": "CC_TEST_015_T001",
+      "rule_id": "test/CC_TEST_015",
+      "concept_id": "CC_TEST_015",
+      "name": "Weak Assertion Style",
+      "category": "test-smell",
+      "priority": "low",
+      "layer": 1,
+      "estimated_hours": 4,
+      "subtasks": [
+        {
+          "subtask_id": "CC_TEST_015_T001_ST001",
+          "description": "Create tree-sitter query for JavaScript weak assertion detection",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "javascript",
+          "pattern_details": "Match expect().toBeTruthy()/toBeFalsy() when used on boolean values"
+        },
+        {
+          "subtask_id": "CC_TEST_015_T001_ST002",
+          "description": "Create tree-sitter query for Python weak assertion detection",
+          "status": "pending",
+          "detection_strategy": "ast-query",
+          "language": "python",
+          "pattern_details": "Match assertTrue(x == value) instead of assertEqual(x, value)"
+        },
+        {
+          "subtask_id": "CC_TEST_015_T001_ST003",
+          "description": "Write unit tests with 3 positive, 3 negative, 2 edge case, 1 FP guard, 1 performance fixture",
+          "status": "pending",
+          "fixture_count": 10,
+          "fixtures_required": [
+            "CC_TEST_015_P001", "CC_TEST_015_P002", "CC_TEST_015_P003",
+            "CC_TEST_015_N001", "CC_TEST_015_N002", "CC_TEST_015_N003",
+            "CC_TEST_015_E001", "CC_TEST_015_E002",
+            "CC_TEST_015_FP001",
+            "CC_TEST_015_PERF001"
+          ]
+        },
+        {
+          "subtask_id": "CC_TEST_015_T001_ST004",
+          "description": "Add fix playbook with precise assertion patterns",
+          "status": "pending",
+          "metadata": true
+        }
+      ],
+      "dependencies": [],
+      "metrics": {
+        "positive_fixtures": 3,
+        "negative_fixtures": 3,
+        "edge_case_fixtures": 2,
+        "fp_guard_fixtures": 1,
+        "performance_fixtures": 1
+      }
+    }
+  ],
+  "implementation_order": [
+    "CC_TEST_001_T001",
+    "CC_TEST_002_T001",
+    "CC_TEST_003_T001",
+    "CC_TEST_004_T001",
+    "CC_TEST_005_T001",
+    "CC_TEST_006_T001",
+    "CC_TEST_007_T001",
+    "CC_TEST_008_T001",
+    "CC_TEST_009_T001",
+    "CC_TEST_010_T001",
+    "CC_TEST_011_T001",
+    "CC_TEST_012_T001",
+    "CC_TEST_013_T001",
+    "CC_TEST_014_T001",
+    "CC_TEST_015_T001"
+  ],
+  "total_estimated_hours": 55,
+  "layer_budget_summary": {
+    "layer_0": {
+      "rules": 3,
+      "estimated_hours": 6,
+      "detection_approach": "regex/token"
+    },
+    "layer_1": {
+      "rules": 10,
+      "estimated_hours": 43,
+      "detection_approach": "ast-query"
+    },
+    "layer_2": {
+      "rules": 2,
+      "estimated_hours": 10,
+      "detection_approach": "metrics/call-graph"
+    }
+  }
+}

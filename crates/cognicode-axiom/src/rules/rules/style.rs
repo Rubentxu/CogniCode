@@ -5,7 +5,7 @@
 //! - S1066: Collapsible If Statements rule
 //! - S1192: String Literal Duplicates rule
 
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext};
 use streaming_iterator::StreamingIterator;
 use tree_sitter::Query as TsQuery;
 use tree_sitter::QueryCursor;

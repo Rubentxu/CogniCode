@@ -402,11 +402,11 @@ impl ProjectContext {
         };
         #[cfg(target_arch = "wasm32")]
         {
-            if let Ok(Some(storage)) = web_sys::window()
-                .and_then(|w| w.session_storage())
-                .transpose()
-            {
-                if let Ok(Some(saved)) = storage.get_item("cognicode_selected_project") {
+            let storage: Option<web_sys::Storage> = web_sys::window()
+                .and_then(|w| w.session_storage().ok())
+                .flatten();
+            if let Some(storage) = storage {
+                if let Some(saved) = storage.get_item("cognicode_selected_project").ok().flatten() {
                     if !saved.is_empty() {
                         let name = saved.rsplit('/').next().unwrap_or(&saved).to_string();
                         ctx.current_project.set(Some(ProjectInfo {
@@ -428,10 +428,10 @@ impl ProjectContext {
         self.error.set(None);
         #[cfg(target_arch = "wasm32")]
         {
-            if let Ok(Some(storage)) = web_sys::window()
-                .and_then(|w| w.session_storage())
-                .transpose()
-            {
+            let storage: Option<web_sys::Storage> = web_sys::window()
+                .and_then(|w| w.session_storage().ok())
+                .flatten();
+            if let Some(storage) = storage {
                 let _ = storage.set_item("cognicode_selected_project", &project.path);
             }
         }
@@ -442,10 +442,10 @@ impl ProjectContext {
         self.service_status.set(None);
         #[cfg(target_arch = "wasm32")]
         {
-            if let Ok(Some(storage)) = web_sys::window()
-                .and_then(|w| w.session_storage())
-                .transpose()
-            {
+            let storage: Option<web_sys::Storage> = web_sys::window()
+                .and_then(|w| w.session_storage().ok())
+                .flatten();
+            if let Some(storage) = storage {
                 let _ = storage.remove_item("cognicode_selected_project");
             }
         }

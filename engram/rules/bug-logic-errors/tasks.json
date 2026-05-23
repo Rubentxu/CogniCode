@@ -1,0 +1,418 @@
+{
+  "batch": "bug-logic-errors",
+  "phase": "tasks_generated",
+  "generated_at": "2026-05-14T19:02:00Z",
+  "tasks": [
+    {
+      "rule_id": "rust_bugs_logic_infinite_loop",
+      "concept_id": "infinite_loop",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "INF-001",
+          "description": "Create infinite_loop.rs rule file with tree-sitter AST traversal",
+          "status": "completed"
+        },
+        {
+          "id": "INF-002",
+          "description": "Implement has_break_statement helper function",
+          "status": "completed"
+        },
+        {
+          "id": "INF-003",
+          "description": "Add unit tests for positive cases",
+          "status": "completed"
+        },
+        {
+          "id": "INF-004",
+          "description": "Add unit tests for negative cases (loop with break, while loop)",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "rule_id": "rust_bugs_logic_division_by_zero",
+      "concept_id": "division_by_zero",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "DIV-001",
+          "description": "Create division_by_zero.rs rule file",
+          "status": "completed"
+        },
+        {
+          "id": "DIV-002",
+          "description": "Implement binary expression operator detection",
+          "status": "completed"
+        },
+        {
+          "id": "DIV-003",
+          "description": "Add literal zero detection",
+          "status": "completed"
+        },
+        {
+          "id": "DIV-004",
+          "description": "Add unit tests",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "rule_id": "rust_bugs_logic_mem_uninitialized",
+      "concept_id": "mem_uninitialized",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "MEM-001",
+          "description": "Create mem_uninitialized.rs rule file",
+          "status": "completed"
+        },
+        {
+          "id": "MEM-002",
+          "description": "Implement call expression function name extraction",
+          "status": "completed"
+        },
+        {
+          "id": "MEM-003",
+          "description": "Add MaybeUninit false positive guards",
+          "status": "completed"
+        },
+        {
+          "id": "MEM-004",
+          "description": "Add unit tests",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "rule_id": "rust_bugs_logic_null_pointer_deref",
+      "concept_id": "null_pointer_deref",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "NUL-001",
+          "description": "Create null_pointer_deref.rs rule file",
+          "status": "completed"
+        },
+        {
+          "id": "NUL-002",
+          "description": "Implement guard detection before unwrap",
+          "status": "completed"
+        },
+        {
+          "id": "NUL-003",
+          "description": "Add test module exclusion",
+          "status": "completed"
+        },
+        {
+          "id": "NUL-004",
+          "description": "Add unit tests",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "rule_id": "rust_bugs_logic_index_out_of_bounds",
+      "concept_id": "index_out_of_bounds",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "IDX-001",
+          "description": "Create index_out_of_bounds.rs rule file",
+          "status": "completed"
+        },
+        {
+          "id": "IDX-002",
+          "description": "Implement index_expression detection",
+          "status": "completed"
+        },
+        {
+          "id": "IDX-003",
+          "description": "Add .get() method false positive guard",
+          "status": "completed"
+        },
+        {
+          "id": "IDX-004",
+          "description": "Add unit tests",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "rule_id": "rust_bugs_logic_dead_code",
+      "concept_id": "dead_code",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "DEA-001",
+          "description": "Create dead_code.rs rule file",
+          "status": "completed"
+        },
+        {
+          "id": "DEA-002",
+          "description": "Implement sibling statement detection",
+          "status": "completed"
+        },
+        {
+          "id": "DEA-003",
+          "description": "Add test module exclusion",
+          "status": "completed"
+        },
+        {
+          "id": "DEA-004",
+          "description": "Add unit tests",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "rule_id": "rust_bugs_logic_nan_comparison",
+      "concept_id": "nan_comparison",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "NAN-001",
+          "description": "Create nan_comparison.rs rule file",
+          "status": "completed"
+        },
+        {
+          "id": "NAN-002",
+          "description": "Implement f32/f64 type detection in comparisons",
+          "status": "completed"
+        },
+        {
+          "id": "NAN-003",
+          "description": "Focus on == and != operators only",
+          "status": "completed"
+        },
+        {
+          "id": "NAN-004",
+          "description": "Add unit tests",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "rule_id": "rust_bugs_logic_integer_overflow",
+      "concept_id": "integer_overflow",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "INT-001",
+          "description": "Create integer_overflow.rs rule file",
+          "status": "completed"
+        },
+        {
+          "id": "INT-002",
+          "description": "Implement arithmetic operator detection",
+          "status": "completed"
+        },
+        {
+          "id": "INT-003",
+          "description": "Add checked_/saturating_/wrapping_ guards",
+          "status": "completed"
+        },
+        {
+          "id": "INT-004",
+          "description": "Add unit tests",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "rule_id": "rust_bugs_logic_panic_unwrap",
+      "concept_id": "panic_unwrap",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "PAN-001",
+          "description": "Create panic_unwrap.rs rule file",
+          "status": "completed"
+        },
+        {
+          "id": "PAN-002",
+          "description": "Implement method call expression detection",
+          "status": "completed"
+        },
+        {
+          "id": "PAN-003",
+          "description": "Add test module exclusion",
+          "status": "completed"
+        },
+        {
+          "id": "PAN-004",
+          "description": "Add unit tests",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "rule_id": "rust_bugs_logic_invalid_regex",
+      "concept_id": "invalid_regex",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "REG-001",
+          "description": "Create invalid_regex.rs rule file",
+          "status": "completed"
+        },
+        {
+          "id": "REG-002",
+          "description": "Implement Regex::new detection",
+          "status": "completed"
+        },
+        {
+          "id": "REG-003",
+          "description": "Add lazy_regex and regex! macro guards",
+          "status": "completed"
+        },
+        {
+          "id": "REG-004",
+          "description": "Add unit tests",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "rule_id": "rust_bugs_logic_off_by_one",
+      "concept_id": "off_by_one",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "OFF-001",
+          "description": "Create off_by_one.rs rule file",
+          "status": "completed"
+        },
+        {
+          "id": "OFF-002",
+          "description": "Implement for_expression range detection",
+          "status": "completed"
+        },
+        {
+          "id": "OFF-003",
+          "description": "Detect inclusive ranges with .len()",
+          "status": "completed"
+        },
+        {
+          "id": "OFF-004",
+          "description": "Add unit tests",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "rule_id": "rust_bugs_logic_double_drop",
+      "concept_id": "double_drop",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "DRO-001",
+          "description": "Create double_drop.rs rule file",
+          "status": "completed"
+        },
+        {
+          "id": "DRO-002",
+          "description": "Implement drop() call detection",
+          "status": "completed"
+        },
+        {
+          "id": "DRO-003",
+          "description": "Add mem::forget false positive guard",
+          "status": "completed"
+        },
+        {
+          "id": "DRO-004",
+          "description": "Add unit tests",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "rule_id": "rust_bugs_logic_logical_precedence",
+      "concept_id": "logical_precedence",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "LOG-001",
+          "description": "Create logical_precedence.rs rule file",
+          "status": "completed"
+        },
+        {
+          "id": "LOG-002",
+          "description": "Implement && and || mixed detection",
+          "status": "completed"
+        },
+        {
+          "id": "LOG-003",
+          "description": "Add parentheses false positive guard",
+          "status": "completed"
+        },
+        {
+          "id": "LOG-004",
+          "description": "Add unit tests",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "rule_id": "rust_bugs_logic_contradictory_condition",
+      "concept_id": "contradictory_condition",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "CON-001",
+          "description": "Create contradictory_condition.rs rule file",
+          "status": "completed"
+        },
+        {
+          "id": "CON-002",
+          "description": "Implement range analysis for comparisons",
+          "status": "completed"
+        },
+        {
+          "id": "CON-003",
+          "description": "Add different variables guard",
+          "status": "completed"
+        },
+        {
+          "id": "CON-004",
+          "description": "Add unit tests",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "rule_id": "rust_bugs_logic_redundant_assignment",
+      "concept_id": "redundant_assignment",
+      "status": "implemented",
+      "tasks": [
+        {
+          "id": "RED-001",
+          "description": "Create redundant_assignment.rs rule file",
+          "status": "completed"
+        },
+        {
+          "id": "RED-002",
+          "description": "Implement assignment tracking",
+          "status": "completed"
+        },
+        {
+          "id": "RED-003",
+          "description": "Add loop accumulator false positive guard",
+          "status": "completed"
+        },
+        {
+          "id": "RED-004",
+          "description": "Add unit tests",
+          "status": "completed"
+        }
+      ]
+    }
+  ],
+  "next_steps": [
+    "Register rules in catalog.rs",
+    "Run cargo build to verify compilation",
+    "Run cargo test to verify rule tests pass",
+    "Run integration tests against fixture matrix"
+  ]
+}

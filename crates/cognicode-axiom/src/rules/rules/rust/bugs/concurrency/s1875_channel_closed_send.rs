@@ -3,7 +3,7 @@
 //! Detects .send() operations on channels that may be closed or disconnected
 //! without proper error handling.
 
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use crate::rules::{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity};
 use cognicode_macros::declare_rule;
 use inventory::submit;
@@ -56,9 +56,16 @@ fn detect_channel_closed_send(ctx: &RuleContext) -> Vec<Issue> {
     }
 
     // Pattern 1: tx.send(...) without unwrap/expect/if_let_err
-    let send_pattern = regex::Regex::new(r"(\w+)\.send\([^)]+\)(?!\.(unwrap|expect))").unwrap();
+    // Uses fancy_regex for lookahead support (?!)
+    let send_pattern = match fancy_regex::Regex::new(r"(\w+)\.send\([^)]+\)(?!\.(unwrap|expect))") {
+        Ok(re) => re,
+        Err(_) => return issues, // Skip if regex is invalid
+    };
 
-    for cap in send_pattern.find_iter(source) {
+    // Manual iteration since fancy_regex doesn't have find_iter
+    let mut search_start = 0;
+    while let Ok(Some(cap)) = send_pattern.find(&source[search_start..]) {
+        let abs_start = search_start + cap.start();
         let text = cap.as_str();
         let tx_name = regex::Regex::new(r"(\w+)\.send").unwrap()
             .captures(text)
@@ -67,12 +74,13 @@ fn detect_channel_closed_send(ctx: &RuleContext) -> Vec<Issue> {
             .unwrap_or("tx");
 
         // Skip if there's proper error handling
-        let full_line = source.lines().nth(source[..cap.start()].lines().count()).unwrap_or("");
+        let full_line = source.lines().nth(source[..abs_start].lines().count()).unwrap_or("");
         if full_line.contains("if let Err") || full_line.contains("match ") {
+            search_start = abs_start + 1;
             continue;
         }
 
-        let pt = source[..cap.start()].lines().count();
+        let pt = source[..abs_start].lines().count();
         issues.push(Issue::new(
             RULE_ID,
             format!("Send on channel '{}' may fail if receiver is dropped - result unchecked", tx_name),
@@ -83,6 +91,8 @@ fn detect_channel_closed_send(ctx: &RuleContext) -> Vec<Issue> {
         ).with_remediation(Remediation::moderate(
             "Handle the Result from send() or use try_send() with proper error handling"
         )));
+
+        search_start = abs_start + 1;
     }
 
     // Pattern 2: send after drop(tx)

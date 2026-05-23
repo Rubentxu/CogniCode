@@ -1,0 +1,1124 @@
+{
+  "batch_id": "test-batch",
+  "phase": "design",
+  "designed_at": "2026-05-15T03:00:00Z",
+  "total_rules": 15,
+  "designs": [
+    {
+      "rule_id": "test/CC_TEST_001",
+      "concept_id": "CC_TEST_001",
+      "name": "Test Without Assertion",
+      "category": "test-smell",
+      "severity": "major",
+      "languages": ["python", "javascript"],
+      "layer": 1,
+      "preflight_keywords": ["test", "describe", "it", "def test_", "async def test_", "expect", "assert"],
+      "axiom": {
+        "cwe": "CWE-483",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "Tests pass without verifying behavior, producing false confidence",
+          "availability": "None",
+          "correctness": "Critical - incorrect code appears tested"
+        },
+        "fix_effort": "Low",
+        "remediation": "Add at least one assertion to verify the expected outcome. Use expect(), assert*, should, or assertThat to verify behavior."
+      },
+      "detection": {
+        "strategy": "ast-query",
+        "pattern_python": "(function_definition\n  name: (identifier) @name\n  body: (block\n    (statement)* $BODY)\n  (#match? @name \"^test_|^test_|^Test\")\n  (#not? \n    (call\n      function: (identifier) @assert\n      (#any? @assert \"assertEqual\" \"assertTrue\" \"assertFalse\" \"assertIs\" \"assertIsNone\" \"assertIn\" \"assertNotIn\" \"assertRaises\" \"assertAlmostEqual\" \"pytest.raises\")))\n  (#not?\n    (expression_statement\n      (boolean_operator)))\n  (#not?\n    (call\n      function: (identifier) @mock_verify\n      (#any? @mock_verify \"mock.assert_called\" \"mock.assert_called_once\" \"mock.assert_called_with\" \"spy.expect\"))))",
+        "pattern_javascript": "(expression_statement\n  (call_expression\n    function: (identifier) @test_func\n    (#match? @test_func \"^test$|^it$|^specify$|^async$|^test\\(|^it\\(\"))\n  arguments: (arguments (arrow_function) @test_body)\n  (#not?\n    (call_expression\n      function: (member_expression\n        object: (call_expression\n          function: (identifier) @expect\n          (#eq? @expect \"expect\"))\n        property: (property_identifier) @assert\n        (#any? @assert \"toBe\" \"toEqual\" \"toStrictEqual\" \"toContain\" \"toContainEqual\" \"toHaveBeenCalled\" \"toHaveBeenCalledWith\" \"toThrow\" \"toBeTruthy\" \"toBeFalsy\" \"toBeNull\" \"toBeUndefined\" \"toBeDefined\" \"toBeInstanceOf\" \"toBeGreaterThan\" \"toBeLessThan\" \"toBeCloseTo\")))))\n  (#not?\n    (call_expression\n      function: (member_expression\n        object: (call_expression)\n        property: (property_identifier) @assert\n        (#any? @assert \"assert\" \"assertEquals\" \"assertStrictEqual\" \"expect\")))))",
+        "exclusions": ["*.test.py", "*.spec.js", "vendor/**", "node_modules/**", "*_generated.*", "conftest.py"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "test function with no assertion",
+            "async test without expect call",
+            "test that only calls mock without verify"
+          ],
+          "negative": [
+            "test with assertEqual assertion",
+            "test with expect().toBe()",
+            "test with mock.assert_called_once()"
+          ],
+          "edge_case": [
+            "test with boolean expression but no assertion",
+            "test returning value for external verification"
+          ],
+          "fp_guards": [
+            "test using expect.hasAssertions() without explicit assertions"
+          ],
+          "performance": [
+            "large test file with 500+ test functions"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Identify the test function without assertion",
+          "2. Determine the expected behavior being tested",
+          "3. Add appropriate assertion (expect/assert) to verify outcome",
+          "4. For mock verification, add mock.assert_called_* or expect(spy).toHaveBeenCalled*"
+        ],
+        "review_questions": [
+          "Does this test verify any behavior?",
+          "Is the test checking for exceptions with try/catch?",
+          "Does the test use mock verification instead of assertions?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 3,
+        "layer": 1,
+        "budget_category": "ast-query"
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_002",
+      "concept_id": "CC_TEST_002",
+      "name": "Test Using Sleep",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["python", "javascript"],
+      "layer": 1,
+      "preflight_keywords": ["sleep", "delay", "wait", "setTimeout", "time.sleep", "Thread.sleep"],
+      "axiom": {
+        "cwe": "CWE-400",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "Causes flaky tests and timing-dependent failures",
+          "availability": "Test suite takes longer to execute",
+          "correctness": "Medium - test may pass incorrectly due to timing luck"
+        },
+        "fix_effort": "Medium",
+        "remediation": "Replace sleep with proper synchronization primitives: waitFor, waitForElementToBeRemoved, assert.waitUntil, or explicit promises. Use testing library's findBy* queries instead of arbitrary delays."
+      },
+      "detection": {
+        "strategy": "ast-query",
+        "pattern_python": "(call\n  function: (identifier) @sleep_func\n  arguments: (arguments $DURATION)\n  (#match? @sleep_func \"sleep|wait|delay\")\n  (#not? (parent\n    (with_statement))))",
+        "pattern_javascript": "(call_expression\n  function: (identifier) @delay_func\n  arguments: (arguments $DURATION)\n  (#any? @delay_func \"sleep\" \"delay\" \"wait\" \"waitFor\" \"setTimeout\")\n  (#not? (parent\n    (call_expression\n      function: (identifier) @skip\n      (#match? @skip \"skip|only\")))))",
+        "exclusions": ["*.test.py", "*.spec.js", "vendor/**", "node_modules/**", "**/conftest.py", "**/setup.py"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "test with time.sleep(1)",
+            "async test with await delay(100)",
+            "test using Thread.sleep(500)"
+          ],
+          "negative": [
+            "test using waitFor(() => expect...)",
+            "test using await waitForElementToBeRemoved",
+            "test using proper event listener pattern"
+          ],
+          "edge_case": [
+            "sleep in performance test measuring timing",
+            "sleep in setUp for cleanup timing"
+          ],
+          "fp_guards": [
+            "sleep in integration test for external service"
+          ],
+          "performance": [
+            "file with 100 tests each containing sleep"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Identify the sleep/delay call in test",
+          "2. Determine what condition the sleep was waiting for",
+          "3. Replace with proper async waiting: waitFor, waitForElementToBeRemoved, polling",
+          "4. Use testing-library's findBy* queries or jest's built-in waiting mechanisms"
+        ],
+        "review_questions": [
+          "What is the sleep waiting for?",
+          "Is there a testing-library waitFor that could replace this?",
+          "Is this in a performance test measuring timing behavior?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 2,
+        "layer": 1,
+        "budget_category": "ast-query"
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_003",
+      "concept_id": "CC_TEST_003",
+      "name": "Test Skipped Without Reason",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["python", "javascript"],
+      "layer": 0,
+      "preflight_keywords": ["skip", "xit", "skipIf", "skipUnless", "@unittest.skip", "@pytest.mark.skip"],
+      "axiom": {
+        "cwe": "CWE-1041",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "Skipped tests rot and hide potential regressions",
+          "availability": "None",
+          "correctness": "Medium - technical debt in test suite"
+        },
+        "fix_effort": "Low",
+        "remediation": "Add a reason string to skip decorators: @skip('reason'), it.skip('reason'), or convert to @todo. Include ticket number or issue reference if known."
+      },
+      "detection": {
+        "strategy": "regex/token",
+        "pattern_python": "(decorator\n  name: (identifier) @skip_decorator\n  (#match? @skip_decorator \"skip|skipIf|skipUnless|xfail\")\n  (argument_list ($ARG)?)?\n  (#not? \n    (string\n      (#match? @ARG \".+\"))))",
+        "pattern_javascript": "(call_expression\n  function: (member_expression\n    object: (identifier) @skip_obj\n    property: (property_identifier) @skip_prop\n    (#any? @skip_obj \"describe\" \"it\" \"test\" \"xdescribe\" \"xit\" \"xtest\")\n    (#eq? @skip_prop \"skip\"))\n  arguments: (arguments $REASON)\n  (#not? \n    (string\n      (#match? @REASON \".+\"))))",
+        "exclusions": ["vendor/**", "node_modules/**"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "@skip decorator without reason",
+            "it.skip() with no argument",
+            "test.skip('no reason')"
+          ],
+          "negative": [
+            "@skip('JIRA-123: flaky network test')",
+            "it.skip('TODO: implement after API change')",
+            "@pytest.mark.skip(reason='depends on DB setup')"
+          ],
+          "edge_case": [
+            "@skipIf(condition) without reason",
+            "@skipUnless(os.name != 'Windows')"
+          ],
+          "fp_guards": [
+            "skip with environment variable condition"
+          ],
+          "performance": [
+            "file with 200 skipped tests"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Identify the skip without reason",
+          "2. If reason is known, add descriptive reason with ticket/issue reference",
+          "3. If test is obsolete, remove it entirely",
+          "4. If test is @todo, convert to proper todo structure"
+        ],
+        "review_questions": [
+          "Is there a ticket or issue related to this skipped test?",
+          "Should this test be removed entirely?",
+          "Is this a conditional skip that should remain?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 1,
+        "layer": 0,
+        "budget_category": "regex-token"
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_004",
+      "concept_id": "CC_TEST_004",
+      "name": "Test Method Naming Convention Violation",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["python"],
+      "layer": 0,
+      "preflight_keywords": ["def", "test_", "Test", "setUp", "tearDown"],
+      "axiom": {
+        "cwe": "CWE-1041",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "Tests may not be discovered by test runner",
+          "availability": "None",
+          "correctness": "Minor - discoverability issue"
+        },
+        "fix_effort": "Low",
+        "remediation": "Rename test method to start with 'test_' prefix. Example: 'def test_user_login' instead of 'def user_login'."
+      },
+      "detection": {
+        "strategy": "regex/token",
+        "pattern_python": "(class_definition\n  name: (identifier) @class_name\n  body: (block\n    (function_definition\n      name: (identifier) @method_name\n      (#not? (match @method_name \"^test_|^test_|^Test\"))\n      (#not? (match @method_name \"^setUp|^tearDown|^setup_method|^teardown_method|__.*__\"))))\n  (#match? @class_name \"^Test|TestCase$\"))",
+        "pattern_javascript": null,
+        "exclusions": ["vendor/**", "node_modules/**"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "class TestUser: def user_login(self)",
+            "class TestCase: def check_auth(self)",
+            "class MyTests: def validate_data(self)"
+          ],
+          "negative": [
+            "class TestUser: def test_login(self)",
+            "class TestBase: def setUp(self)",
+            "class TestCase: def __init__(self)"
+          ],
+          "edge_case": [
+            "helper method inside TestCase class",
+            "class named TestHelper (not a test class)"
+          ],
+          "fp_guards": [
+            "setUp and tearDown methods"
+          ],
+          "performance": [
+            "file with 100 classes with naming violations"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Identify test class with improperly named method",
+          "2. Prepend 'test_' prefix to method name",
+          "3. Ensure method is still callable and test logic unchanged"
+        ],
+        "review_questions": [
+          "Is this a helper method (not a test)?",
+          "Is this a setUp/tearDown method?",
+          "Should this method be a test?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 1,
+        "layer": 0,
+        "budget_category": "regex-token"
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_005",
+      "concept_id": "CC_TEST_005",
+      "name": "Complex Test Fixture Setup",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["python", "javascript"],
+      "layer": 2,
+      "preflight_keywords": ["setUp", "beforeEach", "beforeAll", "setup", "fixture"],
+      "axiom": {
+        "cwe": "CWE-1041",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "High coupling makes tests fragile and hard to maintain",
+          "availability": "None",
+          "correctness": "Medium - maintenance burden"
+        },
+        "fix_effort": "High",
+        "remediation": "Extract complex fixture setup into reusable fixtures or helper classes. Use dependency injection. Consider pytest fixtures or Jest beforeEach patterns that compose simply."
+      },
+      "detection": {
+        "strategy": "metrics",
+        "pattern_python": "(function_definition\n  name: (identifier) @setup_name\n  body: (block $BODY)\n  (#match? @setup_name \"setUp|setup|setup_method\")\n  (metric: (line_count $LINES)\n    (#gt? $LINES 20)))",
+        "pattern_javascript": "(call_expression\n  function: (identifier) @beforeeach\n  arguments: (arguments (arrow_function\n    body: (block $BODY)))\n  (#any? @beforeeach \"beforeEach\" \"beforeAll\" \"setup\")\n  (metric: (statement_count $COUNT)\n    (#gt? $COUNT 15)))",
+        "exclusions": ["vendor/**", "node_modules/**"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "setUp with 25 lines of object construction",
+            "beforeEach with complex mock setup",
+            "setup method with multiple service initializations"
+          ],
+          "negative": [
+            "setUp with single object creation",
+            "beforeEach with simple variable assignment",
+            "fixture returning database connection"
+          ],
+          "edge_case": [
+            "setUp with 20 lines (boundary)",
+            "setUp with comments but minimal logic"
+          ],
+          "fp_guards": [
+            "integration test with necessary complex setup"
+          ],
+          "performance": [
+            "file with 50 test classes each with complex setup"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Analyze setUp/beforeEach for complex object construction",
+          "2. Extract shared objects into shared fixtures",
+          "3. Use factory functions or builders for complex objects",
+          "4. Consider parametrized fixtures for variation"
+        ],
+        "review_questions": [
+          "What objects are being constructed?",
+          "Can these objects be shared across tests?",
+          "Is this complexity necessary for test isolation?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 2,
+        "layer": 2,
+        "budget_category": "metrics"
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_006",
+      "concept_id": "CC_TEST_006",
+      "name": "Multiple Assertions In Single Test",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["python", "javascript"],
+      "layer": 1,
+      "preflight_keywords": ["assert", "expect", "should", "then", "toBe", "toEqual"],
+      "axiom": {
+        "cwe": "CWE-483",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "Fails on first assertion, hiding other failures",
+          "availability": "None",
+          "correctness": "Medium - incomplete diagnostics"
+        },
+        "fix_effort": "Medium",
+        "remediation": "Split into multiple focused tests, each with single assertion. Use parameterized tests for variations. If assertions are related, group logically with clear test names."
+      },
+      "detection": {
+        "strategy": "ast-query",
+        "pattern_python": "(function_definition\n  name: (identifier) @test_name\n  body: (block\n    (expression_statement\n      (call\n        function: (identifier) @assert\n        (#any? @assert \"assertEqual\" \"assertTrue\" \"assertFalse\" \"assertIs\" \"assertIn\" \"assertNotIn\" \"assertRaises\" \"assertAlmostEqual\")))\n    (expression_statement\n      (call\n        function: (identifier) @assert2\n        (#any? @assert2 \"assertEqual\" \"assertTrue\" \"assertFalse\" \"assertIs\" \"assertIn\" \"assertNotIn\" \"assertRaises\" \"assertAlmostEqual\")))\n    (expression_statement\n      (call\n        function: (identifier) @assert3\n        (#any? @assert3 \"assertEqual\" \"assertTrue\" \"assertFalse\" \"assertIs\" \"assertIn\" \"assertNotIn\" \"assertRaises\" \"assertAlmostEqual\")))\n  (#match? @test_name \"^test_\"))\n  (metric: (assertion_count $COUNT)\n    (#gt? $COUNT 3)))",
+        "pattern_javascript": "(call_expression\n  function: (identifier) @test_func\n  arguments: (arguments (arrow_function\n    body: (block\n      (expression_statement\n        (call_expression\n          function: (call_expression\n            function: (identifier) @expect\n            (#eq? @expect \"expect\"))\n          arguments: (arguments)))\n      (expression_statement\n        (call_expression\n          function: (call_expression\n            function: (identifier) @expect2\n            (#eq? @expect2 \"expect\"))\n          arguments: (arguments)))\n      (expression_statement\n        (call_expression\n          function: (call_expression\n            function: (identifier) @expect3\n            (#eq? @expect3 \"expect\"))\n          arguments: (arguments))))))\n  (#match? @test_func \"^test$|^it$|^specify$\")\n  (metric: (expect_count $COUNT)\n    (#gt? $COUNT 3)))",
+        "exclusions": ["vendor/**", "node_modules/**"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "test with 4 assertEqual calls",
+            "it block with 5 expect statements",
+            "test checking user, order, payment, shipping"
+          ],
+          "negative": [
+            "test with single assertion",
+            "test with 2 assertions on same object",
+            "test using assertAll for multiple expectations"
+          ],
+          "edge_case": [
+            "test with 3 assertions (boundary)",
+            "assertion in loop checking multiple elements"
+          ],
+          "fp_guards": [
+            "assertions on related properties of same object"
+          ],
+          "performance": [
+            "file with 200 tests with multiple assertions"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Count assertions in test",
+          "2. Identify distinct behaviors being tested",
+          "3. Split into separate tests with one assertion each",
+          "4. Use descriptive test names for each split test"
+        ],
+        "review_questions": [
+          "What are the distinct behaviors being verified?",
+          "Are assertions checking related properties?",
+          "Could parameterized tests reduce duplication?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 3,
+        "layer": 1,
+        "budget_category": "ast-query"
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_007",
+      "concept_id": "CC_TEST_007",
+      "name": "Duplicated Test Method",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["python", "javascript"],
+      "layer": 2,
+      "preflight_keywords": ["def test_", "function test_", "it(", "test("],
+      "axiom": {
+        "cwe": "CWE-1041",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "Redundant tests waste maintenance effort",
+          "availability": "Longer test runs",
+          "correctness": "Minor - maintenance burden"
+        },
+        "fix_effort": "Medium",
+        "remediation": "Use parameterized tests or data-driven test patterns. Extract common setup. Create test suite with table-driven tests."
+      },
+      "detection": {
+        "strategy": "call-graph",
+        "pattern_python": "(function_definition\n  name: (identifier) @test1\n  body: (block $BODY1)\n  (#match? @test1 \"^test_\")\n  (sibling\n    (function_definition\n      name: (identifier) @test2\n      body: (block $BODY2)\n      (#match? @test2 \"^test_\")\n      (#similar? $BODY1 $BODY2 0.9))))",
+        "pattern_javascript": "(call_expression\n  function: (identifier) @test1\n  arguments: (arguments (arrow_function\n    body: (block $BODY1)))\n  (#match? @test1 \"^test$|^it$\")\n  (sibling\n    (call_expression\n      function: (identifier) @test2\n      arguments: (arguments (arrow_function\n        body: (block $BODY2)))\n      (#match? @test2 \"^test$|^it$\")\n      (#similar? $BODY1 $BODY2 0.9))))",
+        "exclusions": ["vendor/**", "node_modules/**", "*.test.*", "*.spec.*"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "test_login and test_login_copy with identical body",
+            "two it blocks with same expect calls",
+            "parametrized-like duplicate tests"
+          ],
+          "negative": [
+            "test_login_success and test_login_failure",
+            "it checking error case vs success case",
+            "tests with same setup but different assertions"
+          ],
+          "edge_case": [
+            "tests with 85% similarity (near duplicate)",
+            "test with same name pattern but different params"
+          ],
+          "fp_guards": [
+            "tests verifying same behavior with different inputs"
+          ],
+          "performance": [
+            "file with 100 test functions"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Compare duplicated test bodies",
+          "2. Identify common setup and differences",
+          "3. Convert to parameterized test or table-driven approach",
+          "4. Remove duplicate, keep single parameterized version"
+        ],
+        "review_questions": [
+          "Are tests checking same behavior with different inputs?",
+          "Can these be parameterized?",
+          "Is the duplication intentional for different test scenarios?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 10,
+        "layer": 2,
+        "budget_category": "call-graph"
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_008",
+      "concept_id": "CC_TEST_008",
+      "name": "Test Using Random Values",
+      "category": "test-smell",
+      "severity": "major",
+      "languages": ["python", "javascript"],
+      "layer": 1,
+      "preflight_keywords": ["random", "Random", "Math.random", "randint", "randrange", "uniform"],
+      "axiom": {
+        "cwe": "CWE-400",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "Creates non-deterministic, flaky tests that fail intermittently",
+          "availability": "Test suite reliability degraded",
+          "correctness": "Critical - intermittent failures mask real issues"
+        },
+        "fix_effort": "Low",
+        "remediation": "Use fixed seed with random.seed(42) or random.seed(fixed_value). Alternatively, use predefined test data factories. For property-based testing, use proper libraries."
+      },
+      "detection": {
+        "strategy": "ast-query",
+        "pattern_python": "(call\n  function: (attribute\n    object: (identifier) @rand_obj\n    attr: (identifier) @rand_method)\n  arguments: (arguments $ARGS)\n  (#any? @rand_obj \"random\" \"np.random\" \"numpy.random\" \"Random\"))\n  (#any? @rand_method \"random\" \"randint\" \"randrange\" \"uniform\" \"choice\" \"sample\" \"shuffle\"))\n  (#not?\n    (call\n      function: (attribute\n        object: (identifier) @seed_obj\n        attr: (identifier) @seed_method)\n      arguments: (arguments (integer))\n      (#eq? @seed_obj \"random\")\n      (#eq? @seed_method \"seed\"))))",
+        "pattern_javascript": "(call_expression\n  function: (member_expression\n    object: (member_expression\n      object: (identifier) @math\n      property: (property_identifier) @random)\n    property: (property_identifier) @call)\n  (#eq? @math \"Math\")\n  (#eq? @random \"random\")\n  (#any? @call \"call\"))",
+        "exclusions": ["vendor/**", "node_modules/**", "**/conftest.py", "*_generated.*"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "test using Math.random() directly",
+            "test with random.randint(1, 100)",
+            "test calling numpy.random.randn()"
+          ],
+          "negative": [
+            "test using random.seed(42) before random",
+            "test using faker with fixed seed",
+            "test explicitly asserting generated value"
+          ],
+          "edge_case": [
+            "random in property-based test (hypothesis)",
+            "random used to generate test data then asserted"
+          ],
+          "fp_guards": [
+            "property-based tests intentionally using random"
+          ],
+          "performance": [
+            "file with 100 tests using random values"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Identify random value generation in test",
+          "2. Add random.seed(fixed_value) at test start",
+          "3. Or replace with fixed test data factory",
+          "4. Document the seed value for reproducibility"
+        ],
+        "review_questions": [
+          "Is the random value being asserted?",
+          "Is this a property-based test?",
+          "Should this use a fixed seed?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 2,
+        "layer": 1,
+        "budget_category": "ast-query"
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_009",
+      "concept_id": "CC_TEST_009",
+      "name": "Test Without Describe Block",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["javascript"],
+      "layer": 0,
+      "preflight_keywords": ["it(", "test(", "describe(", "specify("],
+      "axiom": {
+        "cwe": "CWE-1041",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "Poor test organization makes suite hard to navigate",
+          "availability": "None",
+          "correctness": "Minor - organization issue"
+        },
+        "fix_effort": "Low",
+        "remediation": "Wrap related tests in describe blocks. Group tests by feature, component, or behavior. Use nested describes for sub-groupings."
+      },
+      "detection": {
+        "strategy": "regex/token",
+        "pattern_javascript": "(expression_statement\n  (call_expression\n    function: (identifier) @test_func\n    arguments: (arguments $DESC (arrow_function) $BODY)\n    (#any? @test_func \"test\" \"it\" \"specify\")\n    (#not?\n      (parent\n        (call_expression\n          function: (identifier) @describe\n          (#eq? @describe \"describe\"))))))",
+        "exclusions": ["vendor/**", "node_modules/**", "__tests__/**", "*.test.js", "*.spec.js"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "root-level it() without describe",
+            "test() at top of file without wrapper",
+            "multiple it() blocks without organization"
+          ],
+          "negative": [
+            "it() inside describe('feature')",
+            "test() nested in describe('component')",
+            "root-level in __tests__/descriptive_filename.test.js"
+          ],
+          "edge_case": [
+            "describe-only file with no tests",
+            "single integration test file"
+          ],
+          "fp_guards": [
+            "test file in __tests__ directory with descriptive name"
+          ],
+          "performance": [
+            "file with 50 root-level it blocks"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Identify root-level test functions",
+          "2. Determine feature/component they test",
+          "3. Wrap in describe block with appropriate name",
+          "4. Consider nested describes for sub-groupings"
+        ],
+        "review_questions": [
+          "What feature/component does this test belong to?",
+          "Is this a single integration test?",
+          "Should this file be in __tests__ with descriptive name?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 1,
+        "layer": 0,
+        "budget_category": "regex-token"
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_010",
+      "concept_id": "CC_TEST_010",
+      "name": "Assertions Count Mismatch",
+      "category": "test-smell",
+      "severity": "major",
+      "languages": ["javascript"],
+      "layer": 1,
+      "preflight_keywords": ["expect", "assertions", "hasAssertions", "async", "await"],
+      "axiom": {
+        "cwe": "CWE-483",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "Async tests may complete before all assertions run",
+          "availability": "None",
+          "correctness": "Critical - false passes in async tests"
+        },
+        "fix_effort": "Low",
+        "remediation": "Ensure expect.assertions(N) matches actual assertion count. Or use expect.hasAssertions() for at-least-one checking. Consider await Promise.all() for parallel async operations."
+      },
+      "detection": {
+        "strategy": "ast-query",
+        "pattern_javascript": "(call_expression\n  function: (call_expression\n    function: (identifier) @expect\n    (#eq? @expect \"expect\"))\n  arguments: (arguments\n    (number) @count))\n  (parent\n    (expression_statement\n      (call_expression\n        function: (member_expression\n          object: (identifier) @expect_obj\n          property: (property_identifier) @assertions\n          (#eq? @expect_obj \"expect\"))\n        (#eq? @assertions \"assertions\"))))",
+        "exclusions": ["vendor/**", "node_modules/**"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "expect.assertions(2) with only 1 expect call",
+            "expect.assertions(3) with 2 assertions",
+            "async test with wrong count declaration"
+          ],
+          "negative": [
+            "expect.assertions(2) with 2 expect calls",
+            "expect.hasAssertions() instead of count",
+            "sync test without assertions declaration"
+          ],
+          "edge_case": [
+            "expect.assertions(0) for no assertions",
+            "conditional assertion paths"
+          ],
+          "fp_guards": [
+            "test using expect.hasAssertions()"
+          ],
+          "performance": [
+            "file with 100 async tests with assertions"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Find expect.assertions(N) declaration",
+          "2. Count actual expect() calls in async test",
+          "3. Update count to match actual assertions",
+          "4. Or replace with expect.hasAssertions() if count varies"
+        ],
+        "review_questions": [
+          "How many expect() calls are in the test?",
+          "Are there conditional assertions?",
+          "Should this use expect.hasAssertions() instead?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 3,
+        "layer": 1,
+        "budget_category": "ast-query"
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_011",
+      "concept_id": "CC_TEST_011",
+      "name": "Nested Test Hooks",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["javascript"],
+      "layer": 1,
+      "preflight_keywords": ["beforeAll", "afterAll", "beforeEach", "afterEach", "describe"],
+      "axiom": {
+        "cwe": "CWE-1041",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "Hooks in nested describes cause scoping issues and unexpected execution order",
+          "availability": "None",
+          "correctness": "Medium - test pollution risk"
+        },
+        "fix_effort": "Medium",
+        "remediation": "Move hooks to top-level describe blocks. Use beforeEach at the appropriate scope. Consider test胖子 setup patterns or fixtures for complex initialization."
+      },
+      "detection": {
+        "strategy": "ast-query",
+        "pattern_javascript": "(call_expression\n  function: (identifier) @hook\n  arguments: (arguments $HOOK_BODY)\n  (#any? @hook \"beforeAll\" \"afterAll\" \"beforeEach\" \"afterEach\")\n  (parent\n    (call_expression\n      function: (identifier) @outer_describe\n      (#eq? @outer_describe \"describe\")\n      (parent\n        (call_expression\n          function: (identifier) @inner_describe\n          (#eq? @inner_describe \"describe\")\n          arguments: (arguments $INNER_DESC)\n          (contains $HOOK_BODY))))))",
+        "exclusions": ["vendor/**", "node_modules/**"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "beforeEach inside nested describe",
+            "beforeAll in inner describe block",
+            "afterAll in deeply nested describe"
+          ],
+          "negative": [
+            "beforeEach in top-level describe",
+            "beforeAll in outer describe only",
+            "hooks in single describe level"
+          ],
+          "edge_case": [
+            "beforeEach in describe with only()",
+            "conditional hook placement"
+          ],
+          "fp_guards": [
+            "hooks for specific test groups in nested describe"
+          ],
+          "performance": [
+            "file with 50 nested describe hooks"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Identify hook in nested describe",
+          "2. Determine which tests need this setup",
+          "3. Move hook to appropriate scope (top-level or beforeEach)",
+          "4. Use descriptive names for nested describe contexts"
+        ],
+        "review_questions": [
+          "Which tests use this hook?",
+          "Should this be in the outer or inner describe?",
+          "Can fixtures replace this hook?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 3,
+        "layer": 1,
+        "budget_category": "ast-query"
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_012",
+      "concept_id": "CC_TEST_012",
+      "name": "Mock Implementation Confusion",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["javascript"],
+      "layer": 1,
+      "preflight_keywords": ["mockImplementation", "mockReturnValue", "mockResolvedValue", "jest.fn"],
+      "axiom": {
+        "cwe": "CWE-483",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "Conflicting mock configuration causes unexpected behavior",
+          "availability": "None",
+          "correctness": "Medium - incorrect mock behavior"
+        },
+        "fix_effort": "Low",
+        "remediation": "Choose one approach: either mockImplementation() for custom logic OR mockReturnValue()/mockResolvedValue() for simple values. Do not chain both on the same mock."
+      },
+      "detection": {
+        "strategy": "ast-query",
+        "pattern_javascript": "(call_expression\n  function: (member_expression\n    object: (call_expression\n      function: (identifier) @mock\n      (#any? @mock \"jest.fn\" \"spyOn\" \"mock\"))\n    property: (property_identifier) @impl_method\n    (#eq? @impl_method \"mockImplementation\"))\n  arguments: (arguments $IMPL)\n  (sibling\n    (call_expression\n      function: (member_expression\n        object: (identifier) @same_mock\n        property: (property_identifier) @ret_method\n        (#any? @ret_method \"mockReturnValue\" \"mockResolvedValue\" \"mockRejectedValue\"))\n        (#eq? @same_mock @mock))))",
+        "exclusions": ["vendor/**", "node_modules/**"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "mockImplementation(() => 42) then mockReturnValue(10)",
+            "jest.fn().mockReturnValue(1).mockImplementation(() => 2)",
+            "same mock with both approaches"
+          ],
+          "negative": [
+            "mockImplementation(() => value) only",
+            "mockReturnValue(value) only",
+            "different methods on same mock"
+          ],
+          "edge_case": [
+            "mockImplementation for some calls, return for others",
+            "conditional mock behavior"
+          ],
+          "fp_guards": [
+            "different methods using different approaches"
+          ],
+          "performance": [
+            "file with 100 mock configurations"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Identify mock with conflicting configurations",
+          "2. Determine which approach is appropriate",
+          "3. Remove conflicting method call",
+          "4. Use mockImplementation for complex logic, mockReturnValue for simple values"
+        ],
+        "review_questions": [
+          "Does the mock need custom logic or just a return value?",
+          "Is this intentional for different call scenarios?",
+          "Which approach is clearer for future maintainers?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 3,
+        "layer": 1,
+        "budget_category": "ast-query"
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_013",
+      "concept_id": "CC_TEST_013",
+      "name": "SpyOn Not Restored",
+      "category": "test-smell",
+      "severity": "major",
+      "languages": ["javascript"],
+      "layer": 1,
+      "preflight_keywords": ["spyOn", "restoreAllMocks", "clearAllMocks", "mockRestore"],
+      "axiom": {
+        "cwe": "CWE-483",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "Spy pollution across tests causes cross-test contamination",
+          "availability": "None",
+          "correctness": "Critical - tests affect each other"
+        },
+        "fix_effort": "Low",
+        "remediation": "Call jest.restoreAllMocks() in afterEach. Or use jest.spyOn() which auto-restores. Or manually call mockRestore() on each spy."
+      },
+      "detection": {
+        "strategy": "ast-query",
+        "pattern_javascript": "(call_expression\n  function: (identifier) @spy\n  arguments: (arguments $TARGET)\n  (#eq? @spy \"spyOn\")\n  (#not?\n    (sibling\n      (call_expression\n        function: (identifier) @restore\n        (#any? @restore \"restoreAllMocks\" \"clearAllMocks\"))))\n  (#not?\n    (parent\n      (call_expression\n        function: (identifier) @after_each\n        (#eq? @after_each \"afterEach\")\n        (contains\n          (call_expression\n            function: (identifier) @inner_restore\n            (#any? @inner_restore \"restoreAllMocks\" \"clearAllMocks\")))))))",
+        "exclusions": ["vendor/**", "node_modules/**"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "spyOn(obj, 'method') without restore",
+            "jest.spyOn in test without cleanup",
+            "multiple spyOn calls without afterEach restore"
+          ],
+          "negative": [
+            "jest.spyOn with mockImplementation in same test",
+            "test using jest.restoreAllMocks() in afterEach",
+            "spyOn on jest.fn() which auto-cleans"
+          ],
+          "edge_case": [
+            "spyOn with mockRestore called manually",
+            "conditional spyOn"
+          ],
+          "fp_guards": [
+            "jest.clearAllMocks() instead of restoreAllMocks"
+          ],
+          "performance": [
+            "file with 100 spyOn calls"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Identify spyOn without corresponding restore",
+          "2. Add afterEach with jest.restoreAllMocks()",
+          "3. Or use jest.spyOn() which auto-restores",
+          "4. Or manually call spy.mockRestore() in afterEach"
+        ],
+        "review_questions": [
+          "Is there an afterEach block?",
+          "Does it call restoreAllMocks or clearAllMocks?",
+          "Is jest.spyOn being used instead of direct spyOn?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 3,
+        "layer": 1,
+        "budget_category": "ast-query"
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_014",
+      "concept_id": "CC_TEST_014",
+      "name": "Act Wrapper Missing",
+      "category": "test-smell",
+      "severity": "major",
+      "languages": ["javascript"],
+      "layer": 1,
+      "preflight_keywords": ["act", "fireEvent", "userEvent", "setState", "useState", "dispatch"],
+      "axiom": {
+        "cwe": "CWE-483",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "Not wrapped in act causes 'not wrapped in act' warnings and flaky assertions",
+          "availability": "None",
+          "correctness": "Critical - state updates may not complete"
+        },
+        "fix_effort": "Medium",
+        "remediation": "Wrap state updates in act(): act(() => { fireEvent.click(...) }). Or use waitFor from @testing-library/react which handles act internally."
+      },
+      "detection": {
+        "strategy": "ast-query",
+        "pattern_javascript": "(call_expression\n  function: (identifier) @event_handler\n  arguments: (arguments $EVENT)\n  (#any? @event_handler \"fireEvent\" \"userEvent\" \"dispatch\" \"store.dispatch\")\n  (#not?\n    (parent\n      (call_expression\n        function: (identifier) @act\n        (#eq? @act \"act\"))\n      (contains $EVENT))))",
+        "exclusions": ["vendor/**", "node_modules/**", "*.test.tsx", "*.test.jsx"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "fireEvent.click without act()",
+            "userEvent.type without act wrapper",
+            "store.dispatch in async test"
+          ],
+          "negative": [
+            "act(() => { fireEvent.click(...) })",
+            "waitFor(() => fireEvent.change(...))",
+            "sync state update not requiring act"
+          ],
+          "edge_case": [
+            "multiple fireEvents in one act",
+            "conditional event dispatch"
+          ],
+          "fp_guards": [
+            "testing-library waitFor handling act internally"
+          ],
+          "performance": [
+            "file with 100 React interaction tests"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Identify fireEvent/userEvent/dispatch call",
+          "2. Wrap in act(() => { ... })",
+          "3. For async, use: await act(async () => { ... })",
+          "4. Or replace with testing-library waitFor which handles act"
+        ],
+        "review_questions": [
+          "Is this triggering state updates?",
+          "Should this use waitFor from testing-library?",
+          "Is this a sync or async state update?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 3,
+        "layer": 1,
+        "budget_category": "ast-query"
+      }
+    },
+    {
+      "rule_id": "test/CC_TEST_015",
+      "concept_id": "CC_TEST_015",
+      "name": "Weak Assertion Style",
+      "category": "test-smell",
+      "severity": "minor",
+      "languages": ["javascript", "python"],
+      "layer": 1,
+      "preflight_keywords": ["toBeTruthy", "toBeFalsy", "toBe", "assertTrue", "assertEqual"],
+      "axiom": {
+        "cwe": "CWE-483",
+        "owasp": "AXX:2021",
+        "impact": {
+          "reliability": "Ambiguous assertions produce unclear failure messages",
+          "availability": "None",
+          "correctness": "Minor - diagnostics issue"
+        },
+        "fix_effort": "Low",
+        "remediation": "Use precise equality: toBe(true) instead of toBeTruthy(), toBe(false) instead of toBeFalsy(). Use toEqual for objects. Use assertEqual(x, expected) instead of assertTrue(x == expected)."
+      },
+      "detection": {
+        "strategy": "ast-query",
+        "pattern_javascript": "(call_expression\n  function: (call_expression\n    function: (identifier) @expect\n    (#eq? @expect \"expect\"))\n  arguments: (arguments $ACTUAL)\n  (parent\n    (call_expression\n      function: (member_expression\n        object: (call_expression)\n        property: (property_identifier) @weak_assert\n        (#any? @weak_assert \"toBeTruthy\" \"toBeFalsy\")))))",
+        "pattern_python": "(call\n  function: (identifier) @assert\n  arguments: (arguments $VALUE)\n  (#eq? @assert \"assertTrue\")\n  (not\n    (tuple\n      (identifier) @expected\n      (#match? @expected \"True|False\"))))",
+        "exclusions": ["vendor/**", "node_modules/**"]
+      },
+      "fixtures": {
+        "positive": 3,
+        "negative": 3,
+        "edge_case": 2,
+        "fp_guards": 1,
+        "performance": 1,
+        "matrix": {
+          "positive": [
+            "expect(x).toBeTruthy() for boolean",
+            "expect(result).toBeFalsy() for boolean",
+            "assertTrue(x == 'yes')"
+          ],
+          "negative": [
+            "expect(x).toBe(true) for boolean check",
+            "expect(x).toBe(false)",
+            "assertEqual(x, 'yes')"
+          ],
+          "edge_case": [
+            "toBeTruthy for object existence check",
+            "assertTrue(x) where x is complex expression"
+          ],
+          "fp_guards": [
+            "toBeTruthy for checking non-boolean truthy values"
+          ],
+          "performance": [
+            "file with 200 weak assertions"
+          ]
+        }
+      },
+      "agent_semantics": {
+        "fix_playbook": [
+          "1. Identify weak assertion (toBeTruthy/toBeFalsy on boolean)",
+          "2. Replace toBeTruthy with toBe(true) for boolean checks",
+          "3. Replace toBeFalsy with toBe(false) for boolean checks",
+          "4. For assertTrue, use assertEqual(x, expected_value)"
+        ],
+        "review_questions": [
+          "Is this assertion checking for boolean true/false?",
+          "Is toBeTruthy checking for object existence?",
+          "What would make the failure message clearer?"
+        ]
+      },
+      "performance": {
+        "estimated_ms_per_file": 2,
+        "layer": 1,
+        "budget_category": "ast-query"
+      }
+    }
+  ],
+  "layer_distribution": {
+    "layer_0": 3,
+    "layer_1": 10,
+    "layer_2": 2
+  },
+  "fixture_summary": {
+    "total_positive": 45,
+    "total_negative": 45,
+    "total_edge_case": 30,
+    "total_fp_guards": 15,
+    "total_performance": 15,
+    "total_fixtures": 150
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "batch_id": "maintainability-complexity",
+  "created": "2026-05-14",
+  "status": "implemented",
+  "concepts_total": 1,
+  "concepts_approved": 1,
+  "concepts_legal_blocked": 0,
+  "rules": [
+    {
+      "rule_id": "S819",
+      "concept_id": "file-too-large",
+      "status": "implemented",
+      "severity": "MAJOR",
+      "precision": "high",
+      "file": "crates/cognicode-axiom/src/rules/rules/rust/code_smells/s819_rule.rs",
+      "tests": [
+        "test_rule_S819_registered",
+        "test_is_test_file_detection",
+        "test_is_generated_file_detection",
+        "test_s819_default_threshold",
+        "test_s819_custom_threshold"
+      ],
+      "params": {
+        "threshold": 500,
+        "test_threshold": 800
+      },
+      "false_positive_handling": [
+        "generated_file_markers",
+        "test_file_exemption",
+        "proto_generated_patterns"
+      ]
+    }
+  ],
+  "legal_audit": {
+    "status": "approved",
+    "audited_concepts": 1,
+    "blocked": 0,
+    "notes": "S819 is derived from SonarQube rule S819 (File Too Long) and standard code smell detection practices."
+  }
+}

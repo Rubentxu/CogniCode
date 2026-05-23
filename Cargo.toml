@@ -14,6 +14,14 @@ members = [
     "crates/cognicode-quality",
     "crates/cognicode-rule-test-harness",
     "crates/cognicode-dashboard",
+    "crates/cognicode-visual",
+    "crates/cognicode-studio-bff",
+    "crates/cognicode-domain",
+    "crates/cognicode-signals",
+    "crates/cognicode-evidence",
+    "crates/cognicode-research",
+    "crates/cognicode-signals-mcp",
+    "crates/cognicode-research-mcp",
     # "crates/cognicode-diagram",  # TEMPORARILY DISABLED — missing Cargo.toml
 ]
 
@@ -29,6 +37,14 @@ cognicode-db = { path = "crates/cognicode-db" }
 cognicode-store-traits = { path = "crates/cognicode-store-traits" }
 cognicode-axiom = { path = "crates/cognicode-axiom" }
 cognicode-macros = { path = "crates/cognicode-macros" }
+cognicode-visual = { path = "crates/cognicode-visual" }
+cognicode-studio-bff = { path = "crates/cognicode-studio-bff" }
+cognicode-domain = { path = "crates/cognicode-domain" }
+cognicode-signals = { path = "crates/cognicode-signals" }
+cognicode-evidence = { path = "crates/cognicode-evidence" }
+cognicode-research = { path = "crates/cognicode-research" }
+cognicode-signals-mcp = { path = "crates/cognicode-signals-mcp" }
+cognicode-research-mcp = { path = "crates/cognicode-research-mcp" }
 # cognicode-diagram = { path = "crates/cognicode-diagram" }  # TEMPORARILY DISABLED
 
 # Parsing

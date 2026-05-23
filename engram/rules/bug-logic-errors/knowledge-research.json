@@ -1,0 +1,512 @@
+{
+  "batch": "bug-logic-errors",
+  "phase": "research",
+  "started_at": "2026-05-14T17:58:38Z",
+  "concepts": [
+    {
+      "concept_id": "infinite_loop",
+      "taxonomy": "logic_error",
+      "category": "loop_safety",
+      "severity": "major",
+      "description": "Loop sin condición de salida - causa CPU infinite y bloqueo",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "non_infinite_loop",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#non_infinite_loop",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "SonarQube",
+          "rule_id": "S2583",
+          "url": "https://sonarsource.github.io/rspec/rspec/S2583.html",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: detect 'loop' keyword with no 'break' statement in body and no condition that can become false",
+        "track loop condition variable mutations within loop body"
+      ],
+      "false_positives": [
+        "loop con break condicional que depende de input",
+        "loop con contador que se incrementa",
+        "tokio::spawn宏观loop con shutdown flag"
+      ],
+      "search_keywords": ["infinite loop", "endless loop", "loop sin salida", "non infinite loop"]
+    },
+    {
+      "concept_id": "division_by_zero",
+      "taxonomy": "logic_error",
+      "category": "arithmetic_safety",
+      "severity": "critical",
+      "description": "División donde el denominador puede ser cero en runtime",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "integer_division",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#integer_division",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "SonarQube",
+          "rule_id": "S1155",
+          "url": "https://sonarsource.github.io/rspec/rspec/S1155.html",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        }
+      ],
+      "detection_approaches": [
+        "track variable used as denominator, check if zero is reachable path",
+        "constant folding: division by literal zero",
+        "dataflow: denominador puede ser variable igualada a 0"
+      ],
+      "false_positives": [
+        "denominador checkeado con if x != 0 antes de dividir",
+        "división por constante no-cero conocida en compile time"
+      ],
+      "search_keywords": ["division by zero", "división por cero", "integer division", "divide by zero"]
+    },
+    {
+      "concept_id": "mem_uninitialized",
+      "taxonomy": "logic_error",
+      "category": "memory_safety",
+      "severity": "critical",
+      "description": "Uso de mem::uninitialized() que crea valores no inicializados",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "mem_uninitialized",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#mem_uninitialized",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "unsafe_code_guideline",
+          "rule_id": "MEM01",
+          "url": "https://github.com/rust-lang/unsafe-code-guidelines",
+          "license": "MIT/Apache-2.0",
+          "version": "latest"
+        }
+      ],
+      "detection_approaches": [
+        "tree-sitter: detect call_expr 'mem::uninitialized' or 'std::mem::uninitialized'",
+        "also detect MaybeUninit without assume_init"
+      ],
+      "false_positives": [
+        "MaybeUninit con assume_init bien usado",
+        "mem::zeroed cuando cero es valor válido"
+      ],
+      "search_keywords": ["mem uninitialized", "uninitialized memory", "MaybeUninit", "assume_init"]
+    },
+    {
+      "concept_id": "null_pointer_deref",
+      "taxonomy": "logic_error",
+      "category": "null_safety",
+      "severity": "critical",
+      "description": "Desreferenciación de null - acceso a Option::None como si tuviera valor",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "option unwrap used",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#option unwrap used",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "SonarQube",
+          "rule_id": "S2589",
+          "url": "https://sonarsource.github.io/rspec/rspec/S2589.html",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        }
+      ],
+      "detection_approaches": [
+        "detect unwrap()/expect() en Option/Result en path sin check previo",
+        "dataflow: variablebind to Some/Ok value before unwrap"
+      ],
+      "false_positives": [
+        "unwrap en test code",
+        "unwrap después de is_some()/is_ok() check",
+        "unwrap en resultado de parse que se valida"
+      ],
+      "search_keywords": ["null pointer dereference", "unwrap None", "option unwrap", "unwrap on None"]
+    },
+    {
+      "concept_id": "index_out_of_bounds",
+      "taxonomy": "logic_error",
+      "category": "array_bounds",
+      "severity": "major",
+      "description": "Acceso a índice fuera del rango válido de un array/slice/vec",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "out of bounds index",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#out_of_bounds_indexing",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "SonarQube",
+          "rule_id": "S2252",
+          "url": "https://sonarsource.github.io/rspec/rspec/S2252.html",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        }
+      ],
+      "detection_approaches": [
+        "track array length vs index expression",
+        "detect index >= len() or index < 0 patterns",
+        "constant folding en índices"
+      ],
+      "false_positives": [
+        "uso de get() que retorna Option",
+        "check de bounds con if antes del acceso",
+        "iteradores en lugar de index"
+      ],
+      "search_keywords": ["index out of bounds", "array index", "bounds check", "index overflow"]
+    },
+    {
+      "concept_id": "dead_code",
+      "taxonomy": "logic_error",
+      "category": "code_quality",
+      "severity": "minor",
+      "description": "Código inalcanzable - código que nunca se ejecuta",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "dead_code",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#dead_code",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "rustc",
+          "rule_id": "dead_code",
+          "url": "https://doc.rust-lang.org/rustc/lints/listing/warn-by-default.html#dead-code",
+          "license": "MIT/Apache-2.0",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "control flow analysis: code after return/break/continue",
+        "pattern matching: unreachable arms",
+        "detect if-else where both branches call panic/abort"
+      ],
+      "false_positives": [
+        "code behind #[cfg(test)]",
+        "match arms with panic! that are intentionally exhaustive",
+        "generics con type bounds que solo se satisfacen en tests"
+      ],
+      "search_keywords": ["dead code", "unreachable code", "código inalcanzable", "unreachable"]
+    },
+    {
+      "concept_id": "nan_comparison",
+      "taxonomy": "logic_error",
+      "category": "float_safety",
+      "severity": "major",
+      "description": "Comparación con NaN - comparaciones con floats NaN siempre retornan false",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "invalid nan comparisons",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#invalid_nan_comparisons",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "SonarQube",
+          "rule_id": "S1724",
+          "url": "https://sonarsource.github.io/rspec/rspec/S1724.html",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        }
+      ],
+      "detection_approaches": [
+        "detect comparisons (==, !=, <, >, <=, >=) with NaN constant or f32/f64 NaN return",
+        "track f32/f64 type annotations and NaN-creating operations"
+      ],
+      "false_positives": [
+        "use of is_nan() to explicitly check",
+        "comparisons in test code con OrderedFloat",
+        "partialeq on NaN contexts"
+      ],
+      "search_keywords": ["NaN comparison", "nan", "not a number", "float comparison"]
+    },
+    {
+      "concept_id": "integer_overflow",
+      "taxonomy": "logic_error",
+      "category": "arithmetic_safety",
+      "severity": "major",
+      "description": "Overflow de entero sin check - operación aritmética que excede el rango del tipo en modo debug",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "integer_arithmetic",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#integer_arithmetic",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "SonarQube",
+          "rule_id": "S1751",
+          "url": "https://sonarsource.github.io/rspec/rspec/S1751.html",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        }
+      ],
+      "detection_approaches": [
+        "detect +, -, *, / operations on integer types without checked_/saturating_/wrapping_",
+        "constant folding: overflow in literal expressions",
+        "track increment/decrement in loops"
+      ],
+      "false_positives": [
+        "use of checked_add/saturating_mul/etc",
+        "wrapping types (Wrapping<T>)",
+        "release builds donde overflow es modular"
+      ],
+      "search_keywords": ["integer overflow", "overflow", "arithmetics", "check overflow"]
+    },
+    {
+      "concept_id": "panic_unwrap",
+      "taxonomy": "logic_error",
+      "category": "error_handling",
+      "severity": "major",
+      "description": "unwrap()/expect() en producción - causa panic si el valor es None/Err",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "unwrap_used",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#unwrap_used",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "Clippy",
+          "rule_id": "expect_used",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#expect_used",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "detect .unwrap() and .expect() calls on Option/Result",
+        "filter: allow in test modules (#[cfg(test)])",
+        "filter: allow in main.rs o lib.rs con appropriate context"
+      ],
+      "false_positives": [
+        "unwrap en test code",
+        "unwrap en examples",
+        "unwrap after validation check",
+        "unwrap on known-good parse results"
+      ],
+      "search_keywords": ["unwrap used", "expect used", "unwrap panic", "option unwrap production"]
+    },
+    {
+      "concept_id": "invalid_regex",
+      "taxonomy": "logic_error",
+      "category": "parsing",
+      "severity": "major",
+      "description": "Patrón regex inválido - Regex::new() con patrón malformado causa panic",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "regex creation",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#regex creation",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "SonarQube",
+          "rule_id": "S5842",
+          "url": "https://sonarsource.github.io/rspec/rspec/S5842.html",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        }
+      ],
+      "detection_approaches": [
+        "detect Regex::new() / RegexBuilder::new() calls with string literals",
+        "constant folding: validate regex at compile time if possible",
+        "track dynamic regex patterns"
+      ],
+      "false_positives": [
+        "use of lazy_regex or regex! macros",
+        "regex patterns validated with is_match() before new()",
+        "test code"
+      ],
+      "search_keywords": ["invalid regex", "regex panic", "regex error", "regex::new"]
+    },
+    {
+      "concept_id": "off_by_one",
+      "taxonomy": "logic_error",
+      "category": "loop_safety",
+      "severity": "major",
+      "description": "Off-by-one error - bound incorrecto en condiciones de rango de loop",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "useless for loop",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#useless_for_each",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "SonarQube",
+          "rule_id": "S1264",
+          "url": "https://sonarsource.github.io/rspec/rspec/S1264.html",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        }
+      ],
+      "detection_approaches": [
+        "compare loop bound with container.len() / .iter().count()",
+        "detect i <= len vs i < len off-by-one patterns",
+        "track for loop range vs collection size"
+      ],
+      "false_positives": [
+        "range literals con correct inclusive/exclusive bounds",
+        "use of .iter() instead of index-based loop",
+        "custom iterators con known correct bounds"
+      ],
+      "search_keywords": ["off by one", "off-by-one", "boundary error", "loop bounds"]
+    },
+    {
+      "concept_id": "double_drop",
+      "taxonomy": "logic_error",
+      "category": "memory_safety",
+      "severity": "major",
+      "description": "drop() llamado dos veces - doble limpieza del mismo recurso",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "drop_copy",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#drop_copy",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "Clippy",
+          "rule_id": " drops",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#drops",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        }
+      ],
+      "detection_approaches": [
+        "detect explicit drop() calls on variables",
+        "track scope exits with values moved out",
+        "identify Copy types passed to drop"
+      ],
+      "false_positives": [
+        "drop on different variables",
+        "drop after mem::forget",
+        "Drop impl on type with interior mutability"
+      ],
+      "search_keywords": ["double drop", "drop copy", "double free", "double cleanup"]
+    },
+    {
+      "concept_id": "logical_precedence",
+      "taxonomy": "logic_error",
+      "category": "operator_semantics",
+      "severity": "minor",
+      "description": "Confusión de precedencia lógica - && y || mezclados sin paréntesis",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "boolean expression",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#boolean_expression",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "SonarQube",
+          "rule_id": "S864",
+          "url": "https://sonarsource.github.io/rspec/rspec/S864.html",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        }
+      ],
+      "detection_approaches": [
+        "detect binary expressions mixing && and || without parentheses",
+        "flag && precedence confusion: a || b && c should be a || (b && c) but often means (a || b) && c"
+      ],
+      "false_positives": [
+        "explicit parentheses clarifying intent",
+        "simple cases where precedence is unambiguous",
+        "test code with documented expected behavior"
+      ],
+      "search_keywords": ["logical precedence", "operator precedence", "&& || confusion", "boolean precedence"]
+    },
+    {
+      "concept_id": "contradictory_condition",
+      "taxonomy": "logic_error",
+      "category": "logic_analysis",
+      "severity": "minor",
+      "description": "Condiciones contradictorias - x > 10 && x < 5 siempre es falso",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "absurd asymmetric comparison",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#absurd_asymmetric_comparison",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "SonarQube",
+          "rule_id": "S2583",
+          "url": "https://sonarsource.github.io/rspec/rspec/S2583.html",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        }
+      ],
+      "detection_approaches": [
+        "detect binary comparisons with same variable that are mutually exclusive",
+        "constant folding: x > 10 && x < 5",
+        "track variable range constraints across conditions"
+      ],
+      "false_positives": [
+        "conditions involving different variables",
+        "float types donde NaN makes comparisons non-trivial",
+        "generic type parameters con unknown bounds"
+      ],
+      "search_keywords": ["contradictory condition", "impossible condition", "always false", "unreachable condition"]
+    },
+    {
+      "concept_id": "redundant_assignment",
+      "taxonomy": "logic_error",
+      "category": "code_quality",
+      "severity": "minor",
+      "description": "Asignación redundante - variable asignada pero nunca leída antes de nueva asignación",
+      "source_references": [
+        {
+          "tool": "Clippy",
+          "rule_id": "no_effect",
+          "url": "https://rust-lang.github.io/rust-clippy/master/index.html#no_effect",
+          "license": "Apache-2.0/MIT",
+          "version": "stable"
+        },
+        {
+          "tool": "SonarQube",
+          "rule_id": "S1854",
+          "url": "https://sonarsource.github.io/rspec/rspec/S1854.html",
+          "license": "SonarQube RSpec",
+          "version": "latest"
+        }
+      ],
+      "detection_approaches": [
+        "dataflow: variable written but never read before next write",
+        "track use-definition chains",
+        "identify unused assignments in basic blocks"
+      ],
+      "false_positives": [
+        "variable reassigned in loop",
+        "variable used for debug logging",
+        "variable with side effects in assignment expression",
+        "reassignment as swap pattern"
+      ],
+      "search_keywords": ["redundant assignment", "unused variable", "dead store", "no effect assignment"]
+    }
+  ]
+}

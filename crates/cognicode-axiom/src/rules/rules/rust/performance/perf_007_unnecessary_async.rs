@@ -3,7 +3,7 @@
 //! Detects async fn that immediately returns without any await,
 //! adding async overhead for no benefit.
 
-use crate::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
+use crate::rules::types::{Severity, Category, Issue, Remediation, Rule, RuleContext, RuleEntry};
 use crate::rules::{CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact, ImpactSeverity};
 use crate::rules::rules::rust::performance::perf_helpers::{
     count_brace_balance, find_brace_close,

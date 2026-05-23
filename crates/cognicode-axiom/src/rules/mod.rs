@@ -7,6 +7,19 @@ pub mod bug_concurrency;
 pub mod code_smells;
 pub mod security_crypto;
 pub mod security_input;
+pub mod types;
+pub mod gates;
+pub mod symbol_table;
+pub mod subscription_engine;
+pub mod preflight;
+pub mod rules;
+pub mod debt;
+pub mod duplication;
+pub mod ratings;
+pub mod visitor;
+pub mod helpers;
+pub mod profiles;
+pub mod adr_parser;
 
 pub use catalog::*;
 pub use test_smell::*;
@@ -102,3 +115,31 @@ pub use security_input::{
     MissingInputSanitizationRule,       // CC_SEC_INP_013
     UnvalidatedUrlSchemeRule,            // CC_SEC_INP_014
 };
+
+// Re-export types
+pub use types::{
+    Severity, Category, Issue, Remediation, RuleEntry, Rule, RuleContext,
+    FileMetrics, CleanCodeAttribute, SoftwareQuality, SoftwareQualityImpact,
+    EntityType, Scope, ParseCache, RuleRegistry, ImpactSeverity,
+};
+
+// Re-export gates
+pub use gates::{
+    CompareOperator, GateCondition, MetricValue, QualityGate,
+    QualityGateResult, QualityGateEvaluator, ProjectMetrics,
+};
+
+// Re-export debt
+pub use debt::TechnicalDebtCalculator;
+
+// Re-export duplication
+pub use duplication::DuplicationDetector;
+
+// Re-export ratings
+pub use ratings::ProjectRatings;
+
+// Re-export profiles
+pub use profiles::QualityProfileEngine;
+
+// Re-export adr_parser
+pub use adr_parser::AdrParser;

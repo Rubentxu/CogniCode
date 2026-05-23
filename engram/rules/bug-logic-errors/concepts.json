@@ -1,0 +1,387 @@
+{
+  "batch": "bug-logic-errors",
+  "phase": "normalize",
+  "normalized_at": "2026-05-14T18:01:00Z",
+  "concepts": [
+    {
+      "concept_id": "infinite_loop",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "major",
+      "precision_target": "high",
+      "detection_strategy": "tree-sitter AST: detect 'loop' keyword nodes; traverse body to verify no 'break' statement exists; check condition expression is absent or always-true",
+      "false_positive_conditions": [
+        "loop contains break statement (possibly conditional)",
+        "loop condition variable is mutated inside body",
+        "loop has counter increment that can exceed limit",
+        "tokio select/recv loops with shutdown signal"
+      ],
+      "exclusions": ["test modules (#[cfg(test)])", "examples"],
+      "axiom_mapping": {
+        "category": "correctness",
+        "subcategory": "logic",
+        "impact": "cpu_infinite_loop"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Add a break condition or modify loop condition to eventually become false. Consider using 'while' instead of 'loop' when a termination condition exists.",
+        "review_questions": ["Does the loop have a guaranteed exit path?", "Is the loop condition modified inside the body?"]
+      }
+    },
+    {
+      "concept_id": "division_by_zero",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "critical",
+      "precision_target": "medium",
+      "detection_strategy": "dataflow AST: detect '/' or '%' binary ops; track denominator operand; check if zero is a reachable constant value for that variable; flag if denominator can be zero at any path",
+      "false_positive_conditions": [
+        "denominator is checked with if x != 0 before division",
+        "denominator is a compile-time constant known to be non-zero",
+        "division uses checked_div() or saturating_div()"
+      ],
+      "exclusions": ["checked_div usage", "constant non-zero denominator"],
+      "axiom_mapping": {
+        "category": "correctness",
+        "subcategory": "arithmetic",
+        "impact": "panic_division_by_zero"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Add a bounds check before division: if divisor == 0 { handle_zero() } else { a / b }. Or use a.checked_div(b) which returns Option.",
+        "review_questions": ["Can the denominator be zero at runtime?", "Is there a guard check before division?"]
+      }
+    },
+    {
+      "concept_id": "mem_uninitialized",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "critical",
+      "precision_target": "high",
+      "detection_strategy": "tree-sitter AST: detect call_expr matching 'mem::uninitialized' or 'std::mem::uninitialized'; flag any use of the resulting value without proper MaybeUninit pattern",
+      "false_positive_conditions": [
+        "Result wrapped in MaybeUninit and accessed via assume_init",
+        "mem::zeroed when zero is a valid bit pattern for the type"
+      ],
+      "exclusions": ["MaybeUninit<T>::zeroed()", "MaybeUninit with assume_init after full initialization"],
+      "axiom_mapping": {
+        "category": "correctness",
+        "subcategory": "memory",
+        "impact": "undefined_behavior_uninitialized"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Replace mem::uninitialized() with MaybeUninit<T>::zeroed() or properly initialize the value. Use MaybeUninit<T> and call assume_init() only after all fields are initialized.",
+        "review_questions": ["Is the type Copy with a valid all-zero bit pattern?", "Is MaybeUninit being used correctly?"]
+      }
+    },
+    {
+      "concept_id": "null_pointer_deref",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "critical",
+      "precision_target": "medium",
+      "detection_strategy": "dataflow AST: detect unwrap()/expect() method calls on Option/Result; verify through dataflow if a Some/Ok value is guaranteed before the call; flag if None/Err path is reachable",
+      "false_positive_conditions": [
+        "unwrap called after is_some()/is_ok() guard check",
+        "unwrap on result of parse() after validation",
+        "unwrap in test code",
+        "unwrap on known-good static strings"
+      ],
+      "exclusions": ["#[cfg(test)] modules", "unwrap after explicit validation", "unwrap on literal constants"],
+      "axiom_mapping": {
+        "category": "correctness",
+        "subcategory": "null_safety",
+        "impact": "panic_unwrap_none"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Replace unwrap() with ? operator, unwrap_or(), unwrap_or_else(), or if let Some(x) = ... pattern. Add proper error handling.",
+        "review_questions": ["Is the Option/Result guaranteed to be Some/Ok at this point?", "Should this use ? instead of unwrap?"]
+      }
+    },
+    {
+      "concept_id": "index_out_of_bounds",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "major",
+      "precision_target": "medium",
+      "detection_strategy": "dataflow + constant folding: detect index expression on array/slice/Vec; compare against .len() or known size; flag if index >= len or index can be negative",
+      "false_positive_conditions": [
+        "Access via .get(index) which returns Option",
+        "Bounds check with if index < len() before access",
+        "Loop uses iterators instead of index",
+        "Custom Index impl with different bounds semantics"
+      ],
+      "exclusions": [".get() usage", "iterator-based loops", "checked indexing"],
+      "axiom_mapping": {
+        "category": "correctness",
+        "subcategory": "bounds",
+        "impact": "panic_index_out_of_bounds"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Use .get(index) instead of [index] for Option-based handling, or add a bounds check: if index < arr.len() { arr[index] } else { handle_oob() }.",
+        "review_questions": ["Is the index guaranteed to be within bounds?", "Should this use .get() for safe indexing?"]
+      }
+    },
+    {
+      "concept_id": "dead_code",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "minor",
+      "precision_target": "high",
+      "detection_strategy": "control flow AST: detect code paths after return/break/continue; flag unreachable statements; detect match arms that can never be reached; identify if branches that always panic",
+      "false_positive_conditions": [
+        "Code in #[cfg(test)] or #[cfg_attr(...)]",
+        "Match arms with panic! that are intentionally exhaustive",
+        "Generics with type bounds only satisfied in specific contexts"
+      ],
+      "exclusions": ["#[cfg(test)]", "test modules", "exhaustive match panic arms"],
+      "axiom_mapping": {
+        "category": "maintainability",
+        "subcategory": "dead_code",
+        "impact": "unreachable_code"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Remove the unreachable code, or add #[allow(dead_code)] if intentionally kept for documentation or future use. Ensure match expressions have all cases handled.",
+        "review_questions": ["Is this code intentionally unreachable?", "Should #[allow(dead_code)] be added?"]
+      }
+    },
+    {
+      "concept_id": "nan_comparison",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "major",
+      "precision_target": "medium",
+      "detection_strategy": "type-aware AST: detect comparison ops on f32/f64 types; track if either operand could be NaN (e.g., result of division, sqrt, parse); flag any direct == or != comparison as likely bug",
+      "false_positive_conditions": [
+        "Explicit is_nan() check before comparison",
+        "PartialEq implementation that handles NaN specially",
+        "Test code with OrderedFloat or similar wrappers"
+      ],
+      "exclusions": ["is_nan() guard", "test code", "OrderedFloat/Nanolerant wrappers"],
+      "axiom_mapping": {
+        "category": "correctness",
+        "subcategory": "float",
+        "impact": "logic_error_nan_comparison"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Use partial_cmp and handle Ordering::Less, Ordering::Greater, Ordering::Equal explicitly. Or use f32::is_nan() to check before comparison. For ordering, use partial_cmp().unwrap() only when NaN cannot occur.",
+        "review_questions": ["Can any operand be NaN at this comparison point?", "Should this use f32::is_nan() first?"]
+      }
+    },
+    {
+      "concept_id": "integer_overflow",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "major",
+      "precision_target": "medium",
+      "detection_strategy": "AST + constant folding: detect arithmetic ops (+, -, *, /) on integer types without checked_/saturating_/wrapping_ prefix; flag literal overflow; track variable increments that could overflow",
+      "false_positive_conditions": [
+        "Use of checked_add/saturating_mul/etc",
+        "Wrapping<T> types",
+        "Release builds where overflow is defined as two's complement"
+      ],
+      "exclusions": ["checked_* methods", "saturating_* methods", "Wrapping<T>", "release builds with #[cfg(not(debug_assertions))]"],
+      "axiom_mapping": {
+        "category": "correctness",
+        "subcategory": "arithmetic",
+        "impact": "panic_integer_overflow"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Use checked_add(), checked_sub(), checked_mul() and handle the None case. Or use saturating_* for clamping behavior. Or explicitly use wrapping_* if wrap-around is intended.",
+        "review_questions": ["Is overflow possible here?", "Should this use a checked arithmetic method?"]
+      }
+    },
+    {
+      "concept_id": "panic_unwrap",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "major",
+      "precision_target": "medium",
+      "detection_strategy": "tree-sitter AST: detect .unwrap() and .expect() method calls on Option/Result types; exclude test modules and contexts where value is guaranteed",
+      "false_positive_conditions": [
+        "unwrap in #[cfg(test)] modules",
+        "unwrap after is_some()/is_ok() guard",
+        "unwrap on result of safe parse with validation",
+        "unwrap in examples"
+      ],
+      "exclusions": ["#[cfg(test)]", "examples/", "after validation check", "literals"],
+      "axiom_mapping": {
+        "category": "reliability",
+        "subcategory": "error_handling",
+        "impact": "panic_unwrap"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Replace with ? operator for propagation, unwrap_or(default), unwrap_or_else(|| ...), or proper match/if let handling. Use expect() only with a descriptive message in test/dev code.",
+        "review_questions": ["Is unwrap acceptable here (test/dev)?", "Should this propagate errors with ? instead?"]
+      }
+    },
+    {
+      "concept_id": "invalid_regex",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "major",
+      "precision_target": "medium",
+      "detection_strategy": "AST + constant analysis: detect Regex::new() / RegexBuilder::new() calls with string literal; validate regex syntax at analysis time if possible; flag dynamic patterns that could panic",
+      "false_positive_conditions": [
+        "lazy_regex! macro or regex! compile-time regex",
+        "Pattern validated with is_match() before Regex::new()",
+        "regex captured in a const with known-good pattern"
+      ],
+      "exclusions": ["lazy_regex", "regex! macro", "validated patterns"],
+      "axiom_mapping": {
+        "category": "correctness",
+        "subcategory": "parsing",
+        "impact": "panic_invalid_regex"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Use lazy_regex::lazy_regex! or regex::regex! for compile-time validation. Or validate pattern with Regex::new().is_ok() before using, handling the error case.",
+        "review_questions": ["Can the pattern be validated at compile time?", "Should this use lazy_regex or regex! macro?"]
+      }
+    },
+    {
+      "concept_id": "off_by_one",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "major",
+      "precision_target": "low",
+      "detection_strategy": "AST pattern matching: compare for loop range bounds against container.len() or .iter().count(); flag i <= len vs i < len off-by-one patterns; heuristic-based for variable bounds",
+      "false_positive_conditions": [
+        "Correct inclusive/exclusive range literals",
+        "Iterator-based loop instead of index-based",
+        "Custom iterators with correct semantics",
+        "Bounds check before array access"
+      ],
+      "exclusions": ["iterator-based loops", "custom iterators", "already-bounds-checked access"],
+      "axiom_mapping": {
+        "category": "correctness",
+        "subcategory": "logic",
+        "impact": "logic_error_off_by_one"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Verify loop bounds match intent: for i in 0..n gives 0..n-1; for i in 0..=n gives 0..n. Check if comparison operator should be < instead of <=.",
+        "review_questions": ["Does the loop iterate the correct number of times?", "Should the bound use = for inclusive?"]
+      }
+    },
+    {
+      "concept_id": "double_drop",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "major",
+      "precision_target": "medium",
+      "detection_strategy": "AST + scope analysis: detect explicit drop() calls; track variable moves and scope exits; identify when a value is dropped explicitly and then goes out of scope",
+      "false_positive_conditions": [
+        "drop() on different variables",
+        "drop after mem::forget",
+        "Copy types that can be safely dropped multiple times"
+      ],
+      "exclusions": ["different variables", "after mem::forget", "Copy types"],
+      "axiom_mapping": {
+        "category": "correctness",
+        "subcategory": "memory",
+        "impact": "double_drop"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Remove the explicit drop() call or ensure the variable is not used after scope exit. Use std::mem::forget if drop prevention is intentional.",
+        "review_questions": ["Is the explicit drop() call necessary?", "Is the variable used after the drop?"]
+      }
+    },
+    {
+      "concept_id": "logical_precedence",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "minor",
+      "precision_target": "medium",
+      "detection_strategy": "AST pattern: detect binary expressions mixing && and || without parentheses; flag a || b && c (&& has higher precedence) when || might be intended",
+      "false_positive_conditions": [
+        "Explicit parentheses present",
+        "Simple unambiguous precedence cases",
+        "Test code with comments documenting intent"
+      ],
+      "exclusions": ["parenthesized expressions", "simple single-operator cases"],
+      "axiom_mapping": {
+        "category": "maintainability",
+        "subcategory": "readability",
+        "impact": "logic_error_precedence"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Add explicit parentheses to clarify intended grouping: (a || b) && c instead of a || b && c. Prefer breaking complex boolean expressions into named variables.",
+        "review_questions": ["Is the intended grouping clear?", "Should parentheses be added for clarity?"]
+      }
+    },
+    {
+      "concept_id": "contradictory_condition",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "minor",
+      "precision_target": "medium",
+      "detection_strategy": "AST + range analysis: detect binary comparisons on same variable with mutually exclusive ranges (x > 10 && x < 5, x >= 10 && x < 10); flag always-false and always-true conditions",
+      "false_positive_conditions": [
+        "Different variables in each comparison",
+        "Float comparisons where NaN affects logic",
+        "Generic types with unknown comparable bounds"
+      ],
+      "exclusions": ["different variables", "float comparisons", "generic contexts"],
+      "axiom_mapping": {
+        "category": "correctness",
+        "subcategory": "logic",
+        "impact": "logic_error_contradictory"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Fix the contradictory condition logic. Likely a copy-paste error or incorrect operator. Check if one comparison should use a different variable or different operator.",
+        "review_questions": ["Is this condition actually contradictory?", "Should one comparison use a different variable or operator?"]
+      }
+    },
+    {
+      "concept_id": "redundant_assignment",
+      "state": "normalized",
+      "category": "logic_error",
+      "domain": "rust_bugs",
+      "languages": ["rust"],
+      "severity": "minor",
+      "precision_target": "medium",
+      "detection_strategy": "dataflow AST: track use-definition chains; detect variable writes that are never read before the next write; flag dead stores within basic blocks",
+      "false_positive_conditions": [
+        "Variable reassigned in loop (accumulates result)",
+        "Variable used for debug logging between assignments",
+        "Side-effect expressions in assignment",
+        "Swap pattern (a = b; b = a)"
+      ],
+      "exclusions": ["loop accumulators", "debug logging", "swap patterns", "side-effect assignments"],
+      "axiom_mapping": {
+        "category": "maintainability",
+        "subcategory": "dead_store",
+        "impact": "redundant_assignment"
+      },
+      "agent_semantics": {
+        "fix_playbook": "Remove the redundant assignment if the first value is never used. Or initialize the variable with the correct value directly. Or use the first assignment's value.",
+        "review_questions": ["Is the first assignment value ever read?", "Should this be a single assignment?"]
+      }
+    }
+  ]
+}
