@@ -90,3 +90,16 @@
     outline-offset: 2px;
   }
 }
+
+/* Miller Columns — preserve the visible focus ring on roving
+   listbox / option elements. The global rule above would also apply
+   here, but these listbox/option elements are inside containers that
+   historically stripped the outline, so we re-assert it explicitly. */
+[role="option"]:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+[role="listbox"]:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}

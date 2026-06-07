@@ -588,6 +588,7 @@ export type ContextualView = z.infer<typeof contextualViewSchema>;
 export const explorationColumnSchema = z.object({
   object_id: z.string(),
   active_view: z.string().nullable(),
+  kind: z.string().default("symbol"),
 });
 export type ExplorationColumn = z.infer<typeof explorationColumnSchema>;
 

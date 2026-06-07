@@ -176,9 +176,11 @@ export function useRovingFocus(
   const moveBy = useCallback(
     (delta: number) => {
       if (itemCount === 0) return;
-      setActiveIndex((activeIndex + delta + itemCount) % itemCount);
+      // Functional update — avoids stale-closure on `activeIndex` when
+      // multiple keydowns land in the same React batch.
+      setActiveIndexState((prev) => (prev + delta + itemCount) % itemCount);
     },
-    [activeIndex, itemCount, setActiveIndex],
+    [itemCount],
   );
 
   const onKeyDown = useCallback(

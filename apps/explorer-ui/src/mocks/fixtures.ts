@@ -396,9 +396,9 @@ export const explorationPathFixture: ExplorationPath = {
   id: "exploration-001",
   workspace_id: WORKSPACE_ID,
   columns: [
-    { object_id: SCOPE_ID, active_view: "overview" },
-    { object_id: FILE_ID, active_view: "overview" },
-    { object_id: SYMBOL_ID, active_view: "overview" },
+    { object_id: SCOPE_ID, active_view: "overview", kind: "scope" },
+    { object_id: FILE_ID, active_view: "overview", kind: "file" },
+    { object_id: SYMBOL_ID, active_view: "overview", kind: "symbol" },
   ],
   objects: [
     { id: SYMBOL_ID, object_type: "symbol", natural_key: "crates/cognicode-explorer/src/lib.rs:build_overview:16", first_seen: "2026-06-07T12:00:00Z" },

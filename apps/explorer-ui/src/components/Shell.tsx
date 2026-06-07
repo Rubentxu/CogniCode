@@ -191,6 +191,9 @@ function renderPanels(
             aria-modal="true"
             aria-label="Lens panel"
             data-testid="lens-overlay"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") onLensClose();
+            }}
             className="absolute right-0 top-0 z-20 h-full"
             style={{
               width: "min(100%, 28rem)",

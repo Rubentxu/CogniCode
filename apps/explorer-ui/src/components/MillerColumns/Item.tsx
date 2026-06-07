@@ -78,7 +78,6 @@ export function Item({
       style={{
         backgroundColor: active ? "var(--color-surface-overlay)" : "transparent",
         color: "var(--color-text-primary)",
-        outline: "none",
       }}
       onMouseEnter={(event) => {
         if (!active) {

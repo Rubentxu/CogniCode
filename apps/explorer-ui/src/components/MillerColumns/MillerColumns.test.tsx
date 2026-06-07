@@ -63,9 +63,9 @@ describe("MillerColumns", () => {
 
   it("renders one column per entry in state.columns", async () => {
     const initial: ExplorationColumn[] = [
-      { object_id: "scope:crates/cognicode-explorer/src", active_view: "overview" },
-      { object_id: "file:crates/cognicode-explorer/src/lib.rs", active_view: "overview" },
-      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "overview" },
+      { object_id: "scope:crates/cognicode-explorer/src", active_view: "overview", kind: "scope" },
+      { object_id: "file:crates/cognicode-explorer/src/lib.rs", active_view: "overview", kind: "file" },
+      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "overview", kind: "symbol" },
     ];
     render(<Harness initialColumns={initial} />);
     await waitFor(() => {
@@ -77,7 +77,7 @@ describe("MillerColumns", () => {
 
   it("each column has an aria-label that includes the item count", async () => {
     const initial: ExplorationColumn[] = [
-      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph" },
+      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph", kind: "symbol" },
     ];
     render(<Harness initialColumns={initial} />);
     await waitFor(() => {
@@ -89,7 +89,7 @@ describe("MillerColumns", () => {
   it("keyboard flow: ArrowDown → ArrowRight dispatches PUSH_COLUMN", async () => {
     const user = userEvent.setup();
     const initial: ExplorationColumn[] = [
-      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph" },
+      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph", kind: "symbol" },
     ];
     let captured: AppState | null = null;
     render(
@@ -115,8 +115,8 @@ describe("MillerColumns", () => {
   it("ArrowLeft dispatches POP_COLUMN and trims the path", async () => {
     const user = userEvent.setup();
     const initial: ExplorationColumn[] = [
-      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph" },
-      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:explore:42", active_view: "overview" },
+      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph", kind: "symbol" },
+      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:explore:42", active_view: "overview", kind: "symbol" },
     ];
     let captured: AppState | null = null;
     render(
@@ -147,7 +147,7 @@ describe("MillerColumns", () => {
   it("Enter on an expandable item dispatches PUSH_COLUMN", async () => {
     const user = userEvent.setup();
     const initial: ExplorationColumn[] = [
-      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph" },
+      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph", kind: "symbol" },
     ];
     // Use a ref-like holder so waitFor can read the latest state
     // without TS narrowing the variable to `null` between renders.
@@ -183,7 +183,7 @@ describe("MillerColumns", () => {
 
   it("renders aria-live regions for screen reader announcements", async () => {
     const initial: ExplorationColumn[] = [
-      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph" },
+      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph", kind: "symbol" },
     ];
     render(<Harness initialColumns={initial} />);
     await waitFor(() => {
@@ -194,7 +194,7 @@ describe("MillerColumns", () => {
 
   it("column header shows the label and item count", async () => {
     const initial: ExplorationColumn[] = [
-      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph" },
+      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph", kind: "symbol" },
     ];
     render(<Harness initialColumns={initial} />);
     const column = await screen.findByTestId("miller-column-0");
@@ -214,7 +214,7 @@ describe("MillerColumns", () => {
       ),
     );
     const initial: ExplorationColumn[] = [
-      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph" },
+      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph", kind: "symbol" },
     ];
     render(<Harness initialColumns={initial} />);
     await waitFor(() => {
@@ -225,7 +225,7 @@ describe("MillerColumns", () => {
   it("Home/End jump to first/last item", async () => {
     const user = userEvent.setup();
     const initial: ExplorationColumn[] = [
-      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph" },
+      { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", active_view: "call-graph", kind: "symbol" },
     ];
     render(<Harness initialColumns={initial} />);
     const listbox = await screen.findByRole("listbox");

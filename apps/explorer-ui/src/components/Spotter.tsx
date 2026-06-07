@@ -178,9 +178,7 @@ export function Spotter() {
       className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:p-12"
       style={{ backgroundColor: "rgba(0, 0, 0, 0.55)" }}
     >
-      <button
-        type="button"
-        aria-label="Close spotter"
+      <div
         data-testid="spotter-backdrop"
         onClick={() =>
           dispatch({ type: "SET_SPOTTER", payload: { open: false } })

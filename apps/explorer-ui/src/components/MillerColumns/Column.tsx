@@ -151,7 +151,6 @@ export function Column({
             {...containerProps}
             aria-label={containerLabel}
             className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2"
-            style={{ outline: "none" }}
           >
             {items?.map((item, idx) => {
               const itemProps = roving.getItemProps(idx, index);

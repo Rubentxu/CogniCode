@@ -241,7 +241,12 @@ export function MillerColumns({ workspaceLabel = "Workspace" }: MillerColumnsPro
   // ---------------------------------------------------------------------
   const pushColumn = useCallback(
     (item: MillerColumnItem) => {
-      const newCol = { object_id: item.id, active_view: "overview" };
+      const newCol = {
+        object_id: item.id,
+        active_view:
+          CHILD_VIEW_BY_PARENT_KIND[item.kind] ?? "overview",
+        kind: item.kind,
+      };
       dispatch({ type: "PUSH_COLUMN", payload: newCol });
       setActiveIndex(0);
     },
@@ -259,7 +264,7 @@ export function MillerColumns({ workspaceLabel = "Workspace" }: MillerColumnsPro
     (item: MillerColumnItem) => {
       dispatch({
         type: "SELECT_OBJECT",
-        payload: { objectId: item.id, viewId: "overview" },
+        payload: { objectId: item.id, viewId: "overview", kind: item.kind },
       });
     },
     [dispatch],
@@ -341,9 +346,13 @@ export function MillerColumns({ workspaceLabel = "Workspace" }: MillerColumnsPro
             key={`${col.object_id}-${idx}`}
             index={idx}
             parentObjectId={col.object_id}
-            parentKind="symbol"
+            parentKind={col.kind ?? "symbol"}
             parentLabel={label}
-            parentViewId={col.active_view ?? "overview"}
+            parentViewId={
+              col.active_view ??
+              CHILD_VIEW_BY_PARENT_KIND[col.kind ?? "symbol"] ??
+              "overview"
+            }
             isLeaf={isLeaf}
             autoFocus={isLeaf}
             activeIndex={isLeaf ? activeIndex : -1}

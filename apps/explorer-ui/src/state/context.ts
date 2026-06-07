@@ -53,7 +53,7 @@ export type Action =
   | { type: "POP_COLUMN"; payload: { index: number } }
   | {
       type: "SELECT_OBJECT";
-      payload: { objectId: string; viewId?: string };
+      payload: { objectId: string; viewId?: string; kind?: string };
     }
   | { type: "SET_ACTIVE_VIEW"; payload: ContextualView }
   | { type: "SET_ACTIVE_LENS"; payload: { lensId: string | null } }
@@ -107,10 +107,11 @@ export function appReducer(state: AppState, action: Action): AppState {
     }
 
     case "SELECT_OBJECT": {
-      const { objectId, viewId } = action.payload;
+      const { objectId, viewId, kind } = action.payload;
       const newColumn: ExplorationColumn = {
         object_id: objectId,
         active_view: viewId ?? null,
+        kind: kind ?? "symbol",
       };
       // Replace the last column if the user is re-selecting on the
       // same object; otherwise append.
