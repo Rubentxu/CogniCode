@@ -92,10 +92,10 @@ export function Column({
   useEffect(() => {
     if (!autoFocus) return;
     if (typeof document === "undefined") return;
-    const id = `miller-column-item-${activeIndex}`;
+    const id = `miller-column-${index}-item-${activeIndex}`;
     const el = document.getElementById(id);
     el?.focus({ preventScroll: false });
-  }, [autoFocus, activeIndex]);
+  }, [autoFocus, activeIndex, index]);
 
   // Snapshot the container props synchronously — `roving` carries
   // refs and we only want the onKeyDown/role/tabIndex/aria-label
@@ -154,7 +154,7 @@ export function Column({
             style={{ outline: "none" }}
           >
             {items?.map((item, idx) => {
-              const itemProps = roving.getItemProps(idx);
+              const itemProps = roving.getItemProps(idx, index);
               return (
                 <Item
                   key={item.id}

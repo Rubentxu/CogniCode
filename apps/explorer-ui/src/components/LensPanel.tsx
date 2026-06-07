@@ -589,7 +589,18 @@ function SeverityBadge({ severity }: { severity: string }) {
   );
 }
 
-function ConfidenceBar({ confidence }: { confidence: number }) {
+function ConfidenceBar({ confidence }: { confidence: number | null }) {
+  if (confidence == null) {
+    return (
+      <span
+        data-testid="lens-confidence"
+        className="text-xs"
+        style={{ color: "var(--color-text-muted)" }}
+      >
+        N/A
+      </span>
+    );
+  }
   const pct = Math.round(confidence * 100);
   const colour = confidenceColor(confidence);
   return (

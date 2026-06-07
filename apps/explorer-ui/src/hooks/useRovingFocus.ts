@@ -89,8 +89,11 @@ export type RovingFocusApi = {
   /**
    * Wire this to each `<li role="option">` so the active item gets
    * `tabIndex={0}` and others get `tabIndex={-1}`.
+   *
+   * `columnIndex` namespaces the generated DOM id so adjacent columns
+   * do not collide on `miller-column-item-N`.
    */
-  getItemProps: (index: number) => {
+  getItemProps: (index: number, columnIndex?: number) => {
     id: string;
     role: "option";
     tabIndex: number;
@@ -248,10 +251,14 @@ export function useRovingFocus(
     ...(containerLabel !== undefined ? { "aria-label": containerLabel } : {}),
   });
 
-  const getItemProps: RovingFocusApi["getItemProps"] = (index) => {
+  const getItemProps: RovingFocusApi["getItemProps"] = (index, columnIndex) => {
     const isActive = index === activeIndex;
+    // Namespace the id by column position so adjacent Miller columns
+    // do not emit duplicate ids (invalid HTML, breaks label-for +
+    // document.getElementById lookups).
+    const col = columnIndex ?? 0;
     return {
-      id: `miller-column-item-${index}`,
+      id: `miller-column-${col}-item-${index}`,
       role: "option" as const,
       tabIndex: isActive ? 0 : -1,
       "aria-selected": isActive,

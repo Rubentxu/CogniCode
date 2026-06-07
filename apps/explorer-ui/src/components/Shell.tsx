@@ -12,7 +12,7 @@
  * The Shell owns the responsive decision and renders the panels
  * accordingly. Panels themselves do not know about breakpoints.
  */
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { useAppDispatch } from "../state/context";
 import { MillerColumns } from "./MillerColumns/MillerColumns";
@@ -35,47 +35,28 @@ export interface ShellProps {
 export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
   // We default to "desktop" on the server and on the first render to
   // avoid hydration mismatches. After mount, we sync to the actual
-  // window width.
+  // window width and listen for resize events.
   const [viewport, setViewport] = useState<ShellViewport>("desktop");
   // Lens overlay toggle (tablet mode only).
   const [lensOpen, setLensOpen] = useState(false);
   const dispatch = useAppDispatch();
 
-  // Sync the viewport state to the actual window size. SSR-safe —
-  // the listener only registers after `window` is defined.
-  if (typeof window !== "undefined" && viewportOverride === undefined) {
-    // We use a useState initializer to read once and then a
-    // useEffect to subscribe — but to keep Shell zero-effect
-    // unless needed, we read the size at first render and rely on
-    // the global resize listener below.
-    if (viewport === "desktop") {
-      // intentionally empty — the effect will pick up the real size
-    }
-  }
+  // Sync the viewport state to the actual window size and re-evaluate
+  // on resize. SSR-safe — `window` is undefined on the server and we
+  // bail out before touching it. When a `viewportOverride` is supplied
+  // (tests + Playwright), the resize listener is skipped entirely so
+  // the controlled value always wins.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (viewportOverride !== undefined) return;
 
-  // Wire the resize listener imperatively on mount.
-  // Using a useEffect-like pattern via a render guard is fragile,
-  // so we use a one-time window size sync via useSyncExternalStore
-  // semantics — but for simplicity we just register a listener
-  // once.
-  if (viewportOverride === undefined) {
-    // Use the inline listener approach for the first paint; we
-    // attach it via a setState callback to avoid SSR noise.
-    if (typeof window !== "undefined") {
-      const current = detectViewport(window.innerWidth);
-      if (current !== viewport) {
-        // Schedule a state update after render to avoid
-        // setState-in-render warnings.
-        queueMicrotask(() => setViewport(current));
-      }
-    }
-  } else if (viewportOverride !== viewport) {
-    // Synchronous override (tests).
-    // We deliberately do not call setState here — instead, callers
-    // who need a controlled viewport should pass a `key` to remount.
-    // For the test path, the override is read on every render via
-    // the `viewportOverride` variable above.
-  }
+    const update = () => {
+      setViewport(detectViewport(window.innerWidth));
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [viewportOverride]);
 
   const activeViewport: ShellViewport =
     viewportOverride ?? viewport;
