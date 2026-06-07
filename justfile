@@ -17,6 +17,10 @@
 set dotenv-load := true
 set positional-arguments := false
 
+EXPLORER_UI_DIR := "apps/explorer-ui"
+EXPLORER_API_BIN := "target/debug/cognicode-explorer-api"
+EXPLORER_PORT := env_var_or_default("EXPLORER_PORT", "5173")
+EXPLORER_API_PORT := env_var_or_default("EXPLORER_API_PORT", "3456")
 DASHBOARD_DIR := "crates/cognicode-dashboard"
 DIST_DIR := DASHBOARD_DIR / "dist"
 SERVER_BIN := "target/release/cognicode-dashboard-server"
@@ -285,3 +289,60 @@ setup: install build
     @echo "✅ Setup complete!"
     @echo "Run 'just run' to start the dashboard."
     @echo "Then visit http://localhost:{{PORT}}"
+
+# ============================================================================
+# Explorer UI (React + TypeScript)
+# ============================================================================
+
+# Dev mode: frontend with MSW mocks (no backend needed)
+explorer-dev:
+    @echo "🚀 Starting Explorer UI with mock data..."
+    cd {{EXPLORER_UI_DIR}} && npm run dev:mock
+
+# Dev mode: frontend + API server (requires built binary)
+explorer-full:
+    @echo "🚀 Starting Explorer full stack..."
+    @echo "  Terminal 1 (API server):"
+    @echo "    just explorer-api"
+    @echo ""
+    @echo "  Terminal 2 (Frontend with live API):"
+    @echo "    cd {{EXPLORER_UI_DIR}} && npm run dev -- --host 127.0.0.1 --port {{EXPLORER_PORT}}"
+    @echo ""
+    @echo "  Frontend: http://127.0.0.1:{{EXPLORER_PORT}}"
+    @echo "  API:      http://127.0.0.1:{{EXPLORER_API_PORT}}"
+
+# Build and start the Explorer API server
+explorer-api:
+    @echo "🔨 Building Explorer API..."
+    cargo build -p cognicode-explorer --bin cognicode-explorer-api
+    @echo "🚀 Starting Explorer API on http://127.0.0.1:{{EXPLORER_API_PORT}}..."
+    cargo run -p cognicode-explorer --bin cognicode-explorer-api
+
+# Build Explorer frontend for production
+explorer-build:
+    @echo "📦 Building Explorer UI..."
+    cd {{EXPLORER_UI_DIR}} && npm ci && npm run build
+
+# Run Explorer unit tests
+explorer-test:
+    @echo "🧪 Running Explorer UI tests..."
+    cd {{EXPLORER_UI_DIR}} && npm test
+
+# Run Explorer E2E tests
+explorer-e2e:
+    @echo "🎭 Running Explorer E2E tests..."
+    cd {{EXPLORER_UI_DIR}} && npm run test:e2e
+
+# Run Explorer lint
+explorer-lint:
+    @echo "🔍 Linting Explorer UI..."
+    cd {{EXPLORER_UI_DIR}} && npm run lint
+
+# Explorer: run all checks (lint + unit + e2e)
+explorer-check: explorer-lint explorer-test explorer-e2e
+
+# Explorer: capture screenshots for docs
+explorer-screenshots:
+    @echo "📸 Capturing Explorer screenshots..."
+    @test -d docs/explorer-ui/screenshots || mkdir -p docs/explorer-ui/screenshots
+    @echo "Run 'just explorer-dev' first, then use playwright-cli to capture."
