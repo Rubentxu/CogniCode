@@ -1,0 +1,92 @@
+/* =============================================================================
+   CogniCode Explorer — Tailwind 4 CSS-first design tokens
+   Dark-only, WCAG 2.2 AA compliant palette.
+   ============================================================================= */
+
+@import "tailwindcss";
+
+@theme {
+  /* ── Surfaces ─────────────────────────────────────────────────────────── */
+  --color-surface: #0d1117;          /* App background (GitHub dark) */
+  --color-surface-raised: #161b22;   /* Panels, cards, modals */
+  --color-surface-overlay: #1f242c;  /* Hover, focus rings on raised */
+  --color-border: #30363d;           /* Subtle dividers, card borders */
+
+  /* ── Text ────────────────────────────────────────────────────────────── */
+  --color-text-primary: #e6edf3;     /* Headings, body copy (AA on surface) */
+  --color-text-secondary: #aab1ba;   /* Captions, helper text (AA on overlay) */
+  --color-text-muted: #8b949e;       /* Disabled, placeholders (AA on overlay) */
+
+  /* ── Brand / Accent ──────────────────────────────────────────────────── */
+  --color-primary: #58a6ff;          /* Interactive accent (links, focus) */
+  --color-primary-hover: #79b8ff;
+  --color-primary-foreground: #0d1117;
+
+  /* ── Graph visualization ─────────────────────────────────────────────── */
+  --color-graph-edge: #484f58;       /* Default edge stroke */
+  --color-graph-edge-highlight: #58a6ff;
+  --color-graph-node: #58a6ff;       /* Default node fill */
+  --color-graph-node-focus: #f78166;
+  --color-graph-node-selected: #3fb950;
+
+  /* ── Semantic ────────────────────────────────────────────────────────── */
+  --color-success: #3fb950;
+  --color-warning: #d29922;
+  --color-error: #f85149;
+  --color-info: #58a6ff;
+
+  /* ── Severity (lens findings) ────────────────────────────────────────── */
+  --color-severity-critical: #f85149;
+  --color-severity-high: #ff7b72;
+  --color-severity-medium: #d29922;
+  --color-severity-low: #aab1ba;
+
+  /* ── Spacing tokens (Explorer-specific) ─────────────────────────────── */
+  --spacing-panel-gap: 1px;          /* Hairline gap between panels */
+  --spacing-column-min-width: 12rem; /* Miller Columns minimum width */
+  --spacing-column-max-width: 18rem;
+
+  /* ── Typography scale ────────────────────────────────────────────────── */
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;              /* Default UI body */
+  --text-base: 0.875rem;             /* Dense UI base */
+  --text-lg: 1rem;
+  --text-xl: 1.125rem;
+  --text-2xl: 1.5rem;
+
+  /* ── Font families ───────────────────────────────────────────────────── */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* ── Radii ───────────────────────────────────────────────────────────── */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+/* ── Global reset additions (dark-only) ────────────────────────────────── */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    background-color: var(--color-surface);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}

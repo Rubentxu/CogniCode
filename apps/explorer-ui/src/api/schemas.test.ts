@@ -1,0 +1,392 @@
+/**
+ * Tests for the Zod schemas in `src/api/schemas.ts`.
+ *
+ * Coverage:
+ * - All top-level DTOs accept a minimal valid fixture.
+ * - The discriminated union accepts every block id in the union.
+ * - The fallback schema accepts any unknown id and any body.
+ * - Invalid data is rejected (status, missing fields, wrong types).
+ */
+import { describe, expect, it } from "vitest";
+
+import {
+  contextualViewSchema,
+  decisionArtifactSummarySchema,
+  designFindingSchema,
+  explorationColumnSchema,
+  explorationPathSchema,
+  generateArtifactRequestSchema,
+  healthResponseSchema,
+  inspectableObjectSummarySchema,
+  inspectableObjectTypeSchema,
+  lensDescriptorSchema,
+  lensResultSchema,
+  openWorkspaceRequestSchema,
+  qualityIssueItemSchema,
+  saveExplorationRequestSchema,
+  spotterResultSchema,
+  viewBlockAnySchema,
+  viewBlockSchema,
+  viewDescriptorSchema,
+  workspaceSummarySchema,
+  unknownViewBlockSchema,
+} from "./schemas";
+import {
+  contextualViewFixture,
+  decisionArtifactFixture,
+  explorationPathFixture,
+  inspectableObjectFixture,
+  lensDescriptorsFixture,
+  lensResultFixture,
+  spotterResultsFixture,
+  workspaceSummaryFixture,
+} from "../mocks/fixtures";
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Build a minimal-but-valid `qualityIssueItem` for tests that need
+ * one. The shared fixture already includes one, but the helper makes
+ * the input shape obvious at every call site.
+ */
+const baseIssueItem = {
+  id: 1,
+  rule_id: "rust:S100",
+  severity: "warning",
+  category: "naming",
+  file: "src/lib.rs",
+  line: 10,
+  message: "naming convention",
+  status: "open",
+  object_id: "issue:1",
+};
+
+// ============================================================================
+// Top-level DTOs
+// ============================================================================
+
+describe("workspaceSummarySchema", () => {
+  it("accepts a valid summary", () => {
+    expect(() => workspaceSummarySchema.parse(workspaceSummaryFixture)).not.toThrow();
+  });
+
+  it("rejects a missing root_path", () => {
+    const broken = { ...workspaceSummaryFixture, root_path: undefined };
+    expect(() => workspaceSummarySchema.parse(broken)).toThrow();
+  });
+
+  it("rejects an unknown graph_status", () => {
+    const broken = { ...workspaceSummaryFixture, graph_status: "wat" };
+    expect(() => workspaceSummarySchema.parse(broken)).toThrow();
+  });
+});
+
+describe("inspectableObjectSummarySchema", () => {
+  it("accepts a valid object", () => {
+    expect(() =>
+      inspectableObjectSummarySchema.parse(inspectableObjectFixture),
+    ).not.toThrow();
+  });
+
+  it("rejects an unknown object_type", () => {
+    const broken = { ...inspectableObjectFixture, object_type: "alien" };
+    expect(() => inspectableObjectSummarySchema.parse(broken)).toThrow();
+  });
+});
+
+describe("spotterResultSchema", () => {
+  it("accepts a list of results", () => {
+    expect(() => spotterResultSchema.parse(spotterResultsFixture[0])).not.toThrow();
+  });
+
+  it("rejects a result with a non-numeric score", () => {
+    const broken = { ...spotterResultsFixture[0], score: "high" };
+    expect(() => spotterResultSchema.parse(broken)).toThrow();
+  });
+});
+
+describe("viewDescriptorSchema", () => {
+  it("accepts a descriptor", () => {
+    expect(() => viewDescriptorSchema.parse({ id: "x", title: "X" })).not.toThrow();
+  });
+});
+
+// ============================================================================
+// Quality + lenses
+// ============================================================================
+
+describe("qualityIssueItemSchema", () => {
+  it("accepts a valid issue", () => {
+    expect(() => qualityIssueItemSchema.parse(baseIssueItem)).not.toThrow();
+  });
+
+  it("rejects a zero id", () => {
+    const broken = { ...baseIssueItem, id: 0 };
+    expect(() => qualityIssueItemSchema.parse(broken)).toThrow();
+  });
+});
+
+describe("designFindingSchema", () => {
+  it("accepts a valid finding", () => {
+    const finding = lensResultFixture.findings[0]!;
+    expect(() => designFindingSchema.parse(finding)).not.toThrow();
+  });
+
+  it("rejects an out-of-range confidence", () => {
+    const finding = { ...lensResultFixture.findings[0]!, confidence: 1.5 };
+    expect(() => designFindingSchema.parse(finding)).toThrow();
+  });
+});
+
+describe("lensDescriptorSchema", () => {
+  it("accepts a descriptor", () => {
+    expect(() => lensDescriptorSchema.parse(lensDescriptorsFixture[0])).not.toThrow();
+  });
+});
+
+describe("lensResultSchema", () => {
+  it("accepts a result", () => {
+    expect(() => lensResultSchema.parse(lensResultFixture)).not.toThrow();
+  });
+});
+
+// ============================================================================
+// Contextual view + blocks
+// ============================================================================
+
+describe("contextualViewSchema", () => {
+  it("accepts a fully populated view", () => {
+    expect(() =>
+      contextualViewSchema.parse(contextualViewFixture),
+    ).not.toThrow();
+  });
+
+  it("defaults `findings` to an empty list when missing", () => {
+    const { findings: _findings, ...rest } = contextualViewFixture;
+    void _findings;
+    const parsed = contextualViewSchema.parse(rest);
+    expect(parsed.findings).toEqual([]);
+  });
+});
+
+describe("viewBlockAnySchema — fallback for unknown block ids", () => {
+  it("accepts a known block id and types it as a ViewBlock", () => {
+    const block = contextualViewFixture.blocks[0]!;
+    const parsed = viewBlockAnySchema.parse(block);
+    expect(parsed.id).toBe(block.id);
+  });
+
+  it("falls back to UnknownViewBlock for an unknown id", () => {
+    const weird = {
+      id: "totally_new_block_kind",
+      title: "Future",
+      body: { something: "anything", count: 42 },
+    };
+    const parsed = viewBlockAnySchema.parse(weird);
+    expect(parsed.id).toBe("totally_new_block_kind");
+    // The fallback schema is `body: z.unknown()`, so any shape survives.
+    expect(parsed).toEqual(weird);
+  });
+
+  it("the typed union rejects the unknown id", () => {
+    const weird = {
+      id: "totally_new_block_kind",
+      title: "Future",
+      body: { something: "anything" },
+    };
+    expect(() => viewBlockSchema.parse(weird)).toThrow();
+  });
+
+  it("unknownViewBlockSchema accepts any block shape", () => {
+    const weird = {
+      id: "any-future-id",
+      title: "Anything",
+      body: null,
+    };
+    expect(() => unknownViewBlockSchema.parse(weird)).not.toThrow();
+  });
+});
+
+describe("viewBlockSchema — every known block id", () => {
+  it("accepts a block for each shape in the union", () => {
+    // Build a small, valid body for every block id in the union.
+    const sampleBodies: Record<string, unknown> = {
+      identity: { name: "f", kind: "function", file: "a.rs", line: 1 },
+      call_metrics: { fan_in: 0, fan_out: 0 },
+      signature: { signature: "fn f()" },
+      callers: { count: 0, items: [] },
+      callees: { count: 0, items: [] },
+      source_slice: {
+        file: "a.rs",
+        line: 1,
+        lines: [{ line: 1, text: "x" }],
+      },
+      symbol_quality_identity: { file: "a.rs", line: 1, issue_count: 0 },
+      symbol_quality_issues: { count: 0, items: [] },
+      file_quality_identity: { path: "a.rs", issue_count: 0 },
+      file_quality_issues: { count: 0, items: [] },
+      file_quality_gate: {
+        rating: null,
+        total_issues: 0,
+        blockers: 0,
+        criticals: 0,
+        debt_minutes: 0,
+        last_run: null,
+      },
+      scope_quality_identity: {
+        scope: "src",
+        issue_count: 0,
+        by_severity: {},
+      },
+      scope_quality_gate: {
+        rating: null,
+        total_issues: 0,
+        blockers: 0,
+        criticals: 0,
+        debt_minutes: 0,
+        last_run: null,
+      },
+      scope_quality_issues: { count: 0, items: [] },
+      issue_identity: {
+        id: 1,
+        rule_id: "rust:S100",
+        severity: "warning",
+        category: "naming",
+        status: "open",
+      },
+      issue_location: { file: "a.rs", line: 1 },
+      issue_message: { message: "msg" },
+      rule_identity: { rule_id: "rust:S100", description: "x", open_count: 0 },
+      rule_related: { count: 0, items: [] },
+      file_identity: { path: "a.rs", line_count: 1, symbol_count: 0 },
+      kinds: { breakdown: {} },
+      symbols: { count: 0, items: [] },
+      scope_identity: {
+        path: "src",
+        file_count: 0,
+        symbol_count: 0,
+        promotion_ready: false,
+      },
+      scope_kinds: { breakdown: {} },
+      scope_files: { files: [] },
+      cross_scope: { scope: "src", file_count: 0, symbol_count: 0, entries: [] },
+      hotspots: { scope: "src", count: 0, items: [] },
+    };
+
+    for (const [id, body] of Object.entries(sampleBodies)) {
+      const block = { id, title: id, body };
+      expect(() => viewBlockSchema.parse(block), `id=${id}`).not.toThrow();
+    }
+  });
+
+  it("rejects a body that does not match the discriminator", () => {
+    // Wrong body shape for `call_metrics` — needs numbers, got strings.
+    const block = {
+      id: "call_metrics",
+      title: "metrics",
+      body: { fan_in: "0", fan_out: "0" },
+    };
+    expect(() => viewBlockSchema.parse(block)).toThrow();
+  });
+});
+
+// ============================================================================
+// Explorations + requests
+// ============================================================================
+
+describe("explorationColumnSchema", () => {
+  it("accepts a column", () => {
+    expect(() =>
+      explorationColumnSchema.parse({ object_id: "x", active_view: null }),
+    ).not.toThrow();
+  });
+});
+
+describe("explorationPathSchema", () => {
+  it("accepts a path", () => {
+    expect(() => explorationPathSchema.parse(explorationPathFixture)).not.toThrow();
+  });
+
+  it("defaults `objects` to an empty list when missing", () => {
+    const { objects: _objects, ...rest } = explorationPathFixture;
+    void _objects;
+    const parsed = explorationPathSchema.parse(rest);
+    expect(parsed.objects).toEqual([]);
+  });
+});
+
+describe("request schemas", () => {
+  it("openWorkspaceRequestSchema accepts a root_path", () => {
+    expect(() =>
+      openWorkspaceRequestSchema.parse({ root_path: "/tmp" }),
+    ).not.toThrow();
+  });
+
+  it("saveExplorationRequestSchema validates columns + lens", () => {
+    const request = {
+      workspace_id: "ws-1",
+      columns: [{ object_id: "x", active_view: "overview" }],
+      lens: null,
+    };
+    expect(() => saveExplorationRequestSchema.parse(request)).not.toThrow();
+  });
+
+  it("generateArtifactRequestSchema accepts known formats", () => {
+    expect(() =>
+      generateArtifactRequestSchema.parse({ format: "markdown" }),
+    ).not.toThrow();
+    expect(() =>
+      generateArtifactRequestSchema.parse({ format: "json_replay" }),
+    ).not.toThrow();
+    expect(() =>
+      generateArtifactRequestSchema.parse({ format: "html" }),
+    ).not.toThrow();
+  });
+
+  it("generateArtifactRequestSchema rejects unknown formats", () => {
+    expect(() =>
+      generateArtifactRequestSchema.parse({ format: "xml" }),
+    ).toThrow();
+  });
+});
+
+describe("decisionArtifactSummarySchema", () => {
+  it("accepts a summary", () => {
+    expect(() =>
+      decisionArtifactSummarySchema.parse(decisionArtifactFixture),
+    ).not.toThrow();
+  });
+});
+
+describe("healthResponseSchema", () => {
+  it("accepts a healthy response", () => {
+    expect(() =>
+      healthResponseSchema.parse({ status: "ok", service: "x" }),
+    ).not.toThrow();
+  });
+});
+
+describe("inspectableObjectTypeSchema", () => {
+  it("accepts all 9 known types", () => {
+    const types = [
+      "workspace",
+      "scope",
+      "symbol",
+      "file",
+      "module",
+      "evidence",
+      "decision_artifact",
+      "quality_issue",
+      "rule",
+    ] as const;
+    for (const t of types) {
+      expect(inspectableObjectTypeSchema.parse(t)).toBe(t);
+    }
+  });
+
+  it("rejects an unknown type", () => {
+    expect(() => inspectableObjectTypeSchema.parse("alien")).toThrow();
+  });
+});

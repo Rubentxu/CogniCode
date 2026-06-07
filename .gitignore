@@ -91,3 +91,4 @@ sandbox/fixtures/rust-intelligence/
 cognicode-*.tar.gz
 results/
 rust-clippy/
+.atl/
