@@ -1,0 +1,3 @@
+# Minimum Evidence Block Contract
+
+CogniCode Explorer Phase 1 will use a minimum `EvidenceBlock` contract containing `id`, `kind`, `claim_id`, `source_kind`, `source_ref`, `object_ids`, `file`, `line_range`, `tool_or_query`, `observed_at`, `freshness`, and `confidence`. Phase 1A accepts `source_file`, `call_graph`, `tool_result`, and `cached_graph` as source kinds, and `fresh`, `stale`, or `unknown` as freshness values. No UI claim may be rendered without at least one `evidence_id`; direct source and call graph claims can use `confidence = 1.0`, while inferred claims must use lower confidence and explain the inference.

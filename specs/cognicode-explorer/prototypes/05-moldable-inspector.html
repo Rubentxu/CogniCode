@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Moldable Inspector — Miller Columns</title>
+<style>
+:root{
+  --bg:#0a0e17; --p1:#0f1624; --p2:#141d2f; --p3:#192438; --line:#26334d;
+  --t1:#edf2fb; --t2:#bcc8e2; --t3:#7b8ead;
+  --cyan:#6cd4ff; --green:#a4f766; --amber:#ffc940; --rose:#ff92c2; --red:#ff5757;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:13px;line-height:1.45;color:var(--t1);background:var(--bg);
+  height:100vh;display:flex;flex-direction:column;overflow:hidden;
+}
+.topbar{
+  display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--p1);
+  border-bottom:1px solid var(--line);flex-shrink:0;
+}
+.topbar .spotter{
+  flex:1;max-width:520px;padding:7px 14px;border-radius:999px;background:var(--p3);
+  border:1px solid var(--line);color:var(--t2);font-size:.82rem;cursor:pointer;display:flex;align-items:center;gap:8px;
+}
+.topbar .spotter:hover{border-color:var(--cyan)}
+.topbar .spotter kbd{font-size:.65rem;padding:2px 6px;border-radius:4px;background:var(--p2);color:var(--t3);margin-left:auto}
+.spotter-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;align-items:flex-start;
+  justify-content:center;padding-top:12vh;z-index:200;
+}
+.spotter-overlay.show{display:flex}
+.spotter-box{
+  width:600px;max-height:450px;background:var(--p1);border:1px solid var(--line);border-radius:20px;overflow:hidden;
+  box-shadow:0 30px 90px rgba(0,0,0,.6);
+}
+.spotter-box input{
+  width:100%;padding:14px 18px;background:transparent;border:none;color:var(--t1);font-size:1.05rem;outline:none;
+}
+.spotter-box .results{padding:6px 0;overflow-y:auto;max-height:340px}
+.spotter-box .result{
+  padding:10px 18px;cursor:pointer;display:flex;align-items:center;gap:10px;font-size:.82rem;
+}
+.spotter-box .result:hover{background:var(--p3)}
+.spotter-box .result .cat{font-size:.64rem;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;width:80px;flex-shrink:0}
+.spotter-box .result .name{color:var(--t1)}
+.spotter-box .result .detail{font-size:.7rem;color:var(--t3);margin-left:auto}
+/* Miller Columns */
+.columns{
+  flex:1;display:flex;overflow-x:auto;overflow-y:hidden;
+  background:radial-gradient(circle at 30% 50%,rgba(108,212,255,.03),transparent 50%),
+             radial-gradient(circle at 80% 30%,rgba(164,247,102,.03),transparent 50%),
+             var(--bg);
+}
+.column{
+  width:380px;min-width:340px;flex-shrink:0;border-right:1px solid var(--line);
+  display:flex;flex-direction:column;background:rgba(15,22,36,.92);
+}
+.column:last-child{border-right:none}
+.column-header{
+  display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--p2);
+  border-bottom:1px solid var(--line);flex-shrink:0;
+}
+.column-header .obj-name{font-weight:600;font-size:.85rem;color:var(--t1)}
+.column-header .obj-type{font-size:.64rem;text-transform:uppercase;letter-spacing:.06em;color:var(--t3)}
+.column-header .actions{display:flex;gap:4px;margin-left:auto}
+.column-header .actions button{
+  padding:3px 8px;border-radius:999px;border:1px solid var(--line);background:var(--p3);
+  color:var(--t2);cursor:pointer;font-size:.66rem;
+}
+.column-header .actions button:hover{background:var(--line)}
+.column-views{
+  display:flex;border-bottom:1px solid var(--line);flex-shrink:0;overflow-x:auto;
+}
+.column-view{
+  padding:6px 12px;cursor:pointer;font-size:.74rem;color:var(--t3);white-space:nowrap;
+  border-bottom:2px solid transparent;
+}
+.column-view:hover{color:var(--t2)}
+.column-view.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+.column-body{flex:1;overflow-y:auto;padding:8px}
+.list-row{
+  display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;cursor:pointer;font-size:.78rem;margin:1px 0;
+}
+.list-row:hover{background:var(--p3)}
+.list-row:active{background:var(--line)}
+.list-row .ar{color:var(--t3);margin-left:auto;font-size:.7rem}
+.list-row .ar::after{content:'→'}
+.card-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.card{
+  padding:10px;border-radius:10px;cursor:pointer;border:1px solid var(--line);
+  background:var(--p3);font-size:.74rem;transition:all .15s;
+}
+.card:hover{border-color:var(--cyan);background:rgba(108,212,255,.06)}
+.card .label{font-size:.64rem;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);margin-bottom:3px}
+.card .val{font-weight:600}
+.card .val.warn{color:var(--amber)}
+.card .val.danger{color:var(--red)}
+.card .val.ok{color:var(--green)}
+.simple-table{width:100%;border-collapse:collapse}
+.simple-table td{padding:6px 8px;border-bottom:1px solid var(--line);font-size:.76rem}
+.simple-table td:first-child{color:var(--t3);width:120px}
+.simple-table td:last-child{color:var(--t2)}
+.playground{
+  height:60px;border-top:1px solid var(--line);padding:6px 10px;display:flex;
+  align-items:center;gap:8px;background:var(--p1);flex-shrink:0;
+}
+.playground input{
+  flex:1;padding:6px 10px;border-radius:8px;background:var(--bg);border:1px solid var(--line);
+  color:var(--t2);font-size:.76rem;font-family:monospace;outline:none;
+}
+.playground input:focus{border-color:var(--cyan)}
+.playground .btn{padding:4px 10px;border-radius:999px;background:var(--cyan);color:#0a0e17;border:none;font-weight:700;cursor:pointer;font-size:.7rem}
+.start-hint{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;color:var(--t3);gap:12px;
+}
+.start-hint h2{font-size:1.3rem;color:var(--t2)}
+.start-hint kbd{
+  padding:4px 8px;border-radius:6px;background:var(--p3);color:var(--t3);font-size:.8rem;border:1px solid var(--line);
+}
+.section-title{font-size:.64rem;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);padding:8px 10px 4px}
+.breadcrumb{
+  font-size:.65rem;color:var(--t3);display:flex;align-items:center;gap:4px;padding:2px 0;overflow:hidden;
+}
+.breadcrumb span{color:var(--cyan);cursor:pointer;white-space:nowrap}
+.breadcrumb span:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="spotter" onclick="toggleSpotter()">
+    🔍 Find object... <kbd>⌘Shift+F</kbd>
+  </div>
+  <span style="font-size:.68rem;color:var(--t3);margin-left:auto">ecommerce-platform · 12.4K nodes</span>
+</div>
+
+<div class="columns" id="columns">
+  <div class="start-hint" id="startHint">
+    <h2>Moldable Inspector</h2>
+    <p style="max-width:320px;text-align:center;font-size:.82rem">Start by searching for a repository, module, file, class or function.</p>
+    <p><kbd>⌘Shift+F</kbd> to search</p>
+  </div>
+</div>
+
+<div class="spotter-overlay" id="spotterOverlay" onclick="if(event.target===this)toggleSpotter()">
+  <div class="spotter-box">
+    <input type="text" placeholder="Search modules, classes, functions, routes, decisions..." id="spotterInput" oninput="filterSpotter()" onkeydown="spotterKey(event)" autofocus>
+    <div class="results" id="spotterResults">
+      <div class="result" data-type="repo" onclick="openColumn('repo','Repository','ecommerce-platform')"><span class="cat">Repository</span><span class="name">📦 ecommerce-platform</span><span class="detail">6 modules · 247 files</span></div>
+      <div class="result" data-type="module" onclick="openColumn('module','Module','billing')"><span class="cat">Module</span><span class="name">💳 billing</span><span class="detail">34 files · 187 functions</span></div>
+      <div class="result" data-type="module" onclick="openColumn('module','Module','auth')"><span class="cat">Module</span><span class="name">🔐 auth</span><span class="detail">12 files · 68 functions</span></div>
+      <div class="result" data-type="module" onclick="openColumn('module','Module','orders')"><span class="cat">Module</span><span class="name">📋 orders</span><span class="detail">28 files · 142 functions</span></div>
+      <div class="result" data-type="class" onclick="openColumn('class','Class','OrderService')"><span class="cat">Class</span><span class="name">⚙️ OrderService</span><span class="detail">billing/OrderService.ts</span></div>
+      <div class="result" data-type="function" onclick="openColumn('function','Function','processPayment')"><span class="cat">Function</span><span class="name">ƒ processPayment</span><span class="detail">billing/PaymentGateway.ts</span></div>
+      <div class="result" data-type="route" onclick="openColumn('route','Route','POST /checkout')"><span class="cat">Route</span><span class="name">→ POST /checkout</span><span class="detail">auth → billing → Stripe</span></div>
+      <div class="result" data-type="pr" onclick="openColumn('pr','PR','#42')"><span class="cat">PR</span><span class="name">🔀 #42 Refactor billing</span><span class="detail">5 files changed</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+var columns=[];
+var columnCounter=0;
+
+function toggleSpotter(){
+  var o=document.getElementById('spotterOverlay');
+  o.classList.toggle('show');
+  if(o.classList.contains('show')){
+    document.getElementById('spotterInput').value='';
+    document.getElementById('spotterInput').focus();
+    document.querySelectorAll('#spotterResults .result').forEach(r=>r.style.display='');
+  }
+}
+function filterSpotter(){
+  var q=document.getElementById('spotterInput').value.toLowerCase();
+  document.querySelectorAll('#spotterResults .result').forEach(r=>{
+    r.style.display=r.textContent.toLowerCase().includes(q)?'':'none';
+  });
+}
+function spotterKey(e){
+  if(e.key==='Escape'){toggleSpotter();return}
+  if(e.key==='Enter'){
+    var vis=Array.from(document.querySelectorAll('#spotterResults .result')).filter(r=>r.style.display!=='none');
+    if(vis.length>0){vis[0].click();toggleSpotter()}
+  }
+}
+
+function openColumn(type,name,detail){
+  document.getElementById('startHint')&&document.getElementById('startHint').remove();
+  columnCounter++;
+  var id='col'+columnCounter;
+  columns.push({id:id,type:type,name:name,detail:detail});
+  renderColumns();
+}
+
+function closeColumnsFrom(colEl){
+  var index=Array.from(colEl.parentNode.children).indexOf(colEl);
+  while(columns.length>index+1)columns.pop();
+  renderColumns();
+  if(columns.length===0){
+    var hint=document.createElement('div');
+    hint.className='start-hint';hint.id='startHint';
+    hint.innerHTML='<h2>Moldable Inspector</h2><p style="max-width:320px;text-align:center;font-size:.82rem">Start by searching for a repository, module, file, class or function.</p><p><kbd>⌘Shift+F</kbd> to search</p>';
+    document.getElementById('columns').appendChild(hint);
+  }
+}
+
+function navFrom(type,name,detail){
+  columnCounter++;
+  var id='col'+columnCounter;
+  columns.push({id:id,type:type,name:name,detail:detail});
+  renderColumns();
+}
+
+function renderColumns(){
+  var container=document.getElementById('columns');
+  container.querySelectorAll('.column,.start-hint').forEach(e=>e.remove());
+  if(columns.length===0){
+    var hint=document.createElement('div');
+    hint.className='start-hint';hint.id='startHint';
+    hint.innerHTML='<h2>Moldable Inspector</h2><p style="max-width:320px;text-align:center;font-size:.82rem">Start by searching for a repository, module, file, class or function.</p><p><kbd>⌘Shift+F</kbd> to search</p>';
+    container.appendChild(hint);
+    return;
+  }
+  columns.forEach(function(col,idx){
+    var c=document.createElement('div');
+    c.className='column';c.id=col.id;
+    c.innerHTML=buildColumnHTML(col,idx);
+    container.appendChild(c);
+    // Activate first view tab
+    c.querySelector('.column-view')&&c.querySelector('.column-view').classList.add('active');
+    var body=c.querySelector('.column-body');
+    if(body)body.innerHTML=getViewContent(col,'overview');
+    setupColumnEvents(c,col);
+  });
+  // Scroll to right
+  var last=document.getElementById(columns[columns.length-1].id);
+  if(last)last.scrollIntoView({behavior:'smooth',inline:'end'});
+}
+
+function buildColumnHTML(col,idx){
+  var bread='';
+  if(idx>0){
+    bread='<div class="breadcrumb">';
+    for(var i=0;i<=idx;i++){
+      var c=columns[i];
+      bread+=(i>0?' › ':'')+'<span onclick="clickBreadcrumb('+i+')">'+c.name+'</span>';
+    }
+    bread+='</div>';
+  }
+  var views=getViewsFor(col.type);
+  var vtabs=views.map(function(v,i){return '<div class="column-view'+(i===0?' active':'')+'" data-view="'+v.id+'">'+v.label+'</div>'}).join('');
+  var actions=getActionsFor(col.type).map(function(a){return '<button onclick="'+a.action+'">'+a.label+'</button>'}).join('');
+  var icon={'repo':'📦','module':'📦','class':'⚙️','function':'ƒ','route':'→','pr':'🔀','file':'📄','analysis':'📊','decision':'📝'}[col.type]||'•';
+  return '<div class="column-header">'+
+    '<span>'+icon+'</span>'+
+    '<div><div class="obj-name">'+col.name+'</div><div class="obj-type">'+col.type+'</div></div>'+
+    (bread?''+bread:'')+
+    '<div class="actions">'+actions+'</div>'+
+    '</div>'+
+    '<div class="column-views">'+vtabs+'</div>'+
+    '<div class="column-body"></div>'+
+    '<div class="playground"><span style="font-size:.64rem;color:var(--t3)">self.</span><input type="text" placeholder="query, filter, or compute..." onkeydown="if(event.key===\'Enter\'&&this.value.trim())runPlayground(\''+col.id+'\',this.value)"><button class="btn" onclick="var inp=this.parentElement.querySelector(\'input\');if(inp.value.trim())runPlayground(\''+col.id+'\',inp.value)">Do</button></div>';
+}
+
+function getViewsFor(type){
+  var all={
+    repo:[{id:'overview',label:'Overview'},{id:'modules',label:'Modules'},{id:'communities',label:'Communities'},{id:'deps',label:'Dependencies'},{id:'connascence',label:'Connascence'},{id:'solid',label:'SOLID'},{id:'flows',label:'Flows'},{id:'decisions',label:'Decisions'}],
+    module:[{id:'overview',label:'Overview'},{id:'files',label:'Files'},{id:'deps',label:'Dependencies'},{id:'connascence',label:'Connascence'},{id:'solid',label:'SOLID'},{id:'tests',label:'Tests'},{id:'decisions',label:'Decisions'}],
+    class:[{id:'overview',label:'Overview'},{id:'methods',label:'Methods'},{id:'callers',label:'Callers'},{id:'callees',label:'Callees'},{id:'connascence',label:'Connascence'},{id:'solid',label:'SOLID'},{id:'source',label:'Source'}],
+    function:[{id:'overview',label:'Overview'},{id:'signature',label:'Signature'},{id:'callers',label:'Callers'},{id:'callees',label:'Callees'},{id:'effects',label:'Effects'},{id:'source',label:'Source'}],
+    route:[{id:'overview',label:'Overview'},{id:'trace',label:'Trace'},{id:'callers',label:'Callers'},{id:'deps',label:'Dependencies'}],
+    pr:[{id:'overview',label:'Overview'},{id:'changed',label:'Changed'},{id:'blast',label:'Blast Radius'},{id:'tests',label:'Tests'}],
+    analysis:[{id:'overview',label:'Result'},{id:'evidence',label:'Evidence'}],
+    decision:[{id:'overview',label:'Content'},{id:'evidence',label:'Evidence'},{id:'related',label:'Related'}],
+    file:[{id:'overview',label:'Overview'},{id:'symbols',label:'Symbols'},{id:'imports',label:'Imports'},{id:'source',label:'Source'}],
+  };
+  return all[type]||all.repo;
+}
+function getActionsFor(type){
+  return [
+    {label:'🔍',action:'toggleSpotter()'},
+    {label:'📸',action:'alert(\'View exported as Mermaid\')'},
+    {label:'✕',action:'var col=this.closest(".column");closeColumnsFrom(col)'},
+  ];
+}
+
+function getViewContent(col,v){
+  var n=col.name,t=col.type;
+  if(v==='overview'){
+    if(t==='repo')return '<div class="card-grid">'+
+      '<div class="card"><div class="label">Modules</div><div class="val">6</div></div>'+
+      '<div class="card"><div class="label">Files</div><div class="val">247</div></div>'+
+      '<div class="card"><div class="label">Functions</div><div class="val">1,843</div></div>'+
+      '<div class="card"><div class="label">Routes</div><div class="val">34 + 12 events</div></div>'+
+      '<div class="card"><div class="label">Health</div><div class="val warn">Moderate</div></div>'+
+      '<div class="card"><div class="label">Risk hotspots</div><div class="val danger">2</div></div>'+
+      '</div>';
+    if(t==='module')return '<div class="card-grid">'+
+      '<div class="card"><div class="label">Files</div><div class="val">34</div></div>'+
+      '<div class="card"><div class="label">Functions</div><div class="val">187</div></div>'+
+      '<div class="card"><div class="label">Risk</div><div class="val warn">Medium</div></div>'+
+      '<div class="card"><div class="label">Test cov.</div><div class="val warn">43% critical</div></div>'+
+      '</div>';
+    return '<p style="color:var(--t3)">'+t+': '+n+'</p>';
+  }
+  if(v==='modules'){
+    return '<div class="section-title">Modules</div>'+
+      '<div class="list-row" onclick="navFrom(\'module\',\'auth\',\'12 files\')"><span>🔐</span> auth<span class="ar"></span></div>'+
+      '<div class="list-row" onclick="navFrom(\'module\',\'billing\',\'34 files\')"><span>💳</span> billing<span class="ar"></span></div>'+
+      '<div class="list-row" onclick="navFrom(\'module\',\'orders\',\'28 files\')"><span>📋</span> orders<span class="ar"></span></div>'+
+      '<div class="list-row" onclick="navFrom(\'module\',\'catalog\',\'28 files\')"><span>🛍</span> catalog<span class="ar"></span></div>'+
+      '<div class="list-row" onclick="navFrom(\'module\',\'shipping\',\'18 files\')"><span>🚚</span> shipping<span class="ar"></span></div>'+
+      '<div class="list-row" onclick="navFrom(\'module\',\'notify\',\'18 files\')"><span>🔔</span> notify<span class="ar"></span></div>';
+  }
+  if(v==='deps'||v==='dependencies'){
+    return '<div class="section-title">Dependencies</div>'+
+      '<div class="list-row" onclick="navFrom(\'module\',\'orders\',\'Incoming deps\')"><span>📋</span> orders <span style="color:var(--t3);font-size:.7rem">incoming</span><span class="ar"></span></div>'+
+      '<div class="list-row" onclick="navFrom(\'module\',\'auth\',\'Incoming deps\')"><span>🔐</span> auth <span style="color:var(--t3);font-size:.7rem">incoming</span><span class="ar"></span></div>'+
+      '<div class="list-row"><span>↗</span> Stripe <span style="color:var(--t3);font-size:.7rem">outgoing</span></div>'+
+      '<div class="list-row"><span>↗</span> SendGrid <span style="color:var(--t3);font-size:.7rem">outgoing</span></div>';
+  }
+  if(v==='connascence'){
+    return '<div class="section-title">Connascence Hotspots</div>'+
+      '<div class="list-row" onclick="navFrom(\'analysis\',\'billing↔orders\',\'Value connascence\')"><span style="color:var(--red)">⚠</span> billing ↔ orders<span class="ar"></span><span style="font-size:.64rem;color:var(--red)">Dynamic · Value · 12 pairs</span></div>'+
+      '<div class="list-row"><span style="color:var(--amber)">⚠</span> auth session tokens<span style="font-size:.64rem;color:var(--amber);margin-left:auto">Static · Meaning · 8 refs</span></div>'+
+      '<div class="list-row"><span style="color:var(--amber)">⚠</span> shipping address params<span style="font-size:.64rem;color:var(--amber);margin-left:auto">Static · Position · 5 callers</span></div>';
+  }
+  if(v==='solid'){
+    return '<div class="section-title">SOLID Analysis</div>'+
+      '<div class="list-row" onclick="navFrom(\'class\',\'OrderService\',\'SRP violation\')"><span style="color:var(--red)">⚠</span> SRP: OrderService<span class="ar"></span><span style="font-size:.64rem;color:var(--t3)">4 reasons to change</span></div>'+
+      '<div class="list-row"><span style="color:var(--amber)">⚠</span> DIP: Stripe SDK leak<span style="font-size:.64rem;color:var(--t3);margin-left:auto">3 modules</span></div>'+
+      '<div class="list-row"><span style="color:var(--amber)">⚠</span> OCP: PaymentGateway switch<span style="font-size:.64rem;color:var(--t3);margin-left:auto">if/else chain</span></div>'+
+      '<div class="list-row"><span style="color:var(--green)">✓</span> ISP: OK</div>'+
+      '<div class="list-row"><span style="color:var(--green)">✓</span> LSP: OK</div>';
+  }
+  if(v==='files'){
+    return '<div class="section-title">Files</div>'+
+      '<div class="list-row" onclick="navFrom(\'file\',\'BillingService.ts\',\'187 LOC\')"><span>📄</span> BillingService.ts<span class="ar"></span></div>'+
+      '<div class="list-row" onclick="navFrom(\'class\',\'OrderService\',\'SRP violation\')"><span>📄</span> OrderService.ts<span class="ar"></span></div>'+
+      '<div class="list-row"><span>📄</span> InvoiceGenerator.ts</div>'+
+      '<div class="list-row"><span>📄</span> PaymentGateway.ts</div>';
+  }
+  if(v==='methods'||v==='symbols'){
+    return '<div class="section-title">Symbols</div>'+
+      '<div class="list-row" onclick="navFrom(\'function\',\'processPayment\',\'OrderService\')"><span>ƒ</span> processPayment()<span class="ar"></span></div>'+
+      '<div class="list-row"><span>ƒ</span> validateOrder()</div>'+
+      '<div class="list-row"><span>ƒ</span> calculatePrice()</div>'+
+      '<div class="list-row"><span>ƒ</span> sendNotification()</div>';
+  }
+  if(v==='callers'){
+    return '<div class="section-title">Callers</div>'+
+      '<div class="list-row" onclick="navFrom(\'function\',\'checkout\',\'CheckoutFlow\')"><span>ƒ</span> checkout()<span class="ar"></span></div>'+
+      '<div class="list-row"><span>ƒ</span> createOrder()</div>'+
+      '<div class="list-row"><span>ƒ</span> retryPayment()</div>';
+  }
+  if(v==='callees'){
+    return '<div class="section-title">Callees</div>'+
+      '<div class="list-row"><span>ƒ</span> Stripe.charges.create()</div>'+
+      '<div class="list-row"><span>ƒ</span> OrderRepository.save()</div>'+
+      '<div class="list-row"><span>ƒ</span> NotificationService.send()</div>';
+  }
+  if(v==='changed'){
+    return '<div class="section-title">Changed files</div>'+
+      '<div class="list-row"><span style="color:var(--green)">➕</span> Money.ts</div>'+
+      '<div class="list-row"><span>✏</span> BillingService.ts</div>'+
+      '<div class="list-row"><span>✏</span> OrderService.ts</div>';
+  }
+  if(v==='blast'){
+    return '<div class="section-title">Blast Radius</div>'+
+      '<div class="list-row" style="color:var(--red)"><span>💥</span> RevenueReport.ts <span style="font-size:.64rem;margin-left:auto">No tests</span></div>'+
+      '<div class="list-row" style="color:var(--amber)"><span>💥</span> StripeHandler.ts</div>';
+  }
+  if(v==='tests'){
+    return '<div class="section-title">Test Coverage</div>'+
+      '<div class="list-row"><span style="color:var(--green)">✓</span> 62% overall</div>'+
+      '<div class="list-row"><span style="color:var(--amber)">⚠</span> 43% critical path</div>'+
+      '<div class="list-row"><span style="color:var(--red)">✗</span> 12 untested functions</div>';
+  }
+  if(v==='decisions'){
+    return '<div class="section-title">Decisions</div>'+
+      '<div class="list-row" onclick="navFrom(\'decision\',\'ADR-001\',\'Money value object\')"><span>📝</span> Money value object<span class="ar"></span></div>'+
+      '<div class="list-row"><span>📝</span> Payment gateway abstraction</div>'+
+      '<div class="list-row"><span>📝</span> Split OrderService</div>';
+  }
+  if(v==='trace'){
+    return '<div class="section-title">Execution Trace</div>'+
+      '<div class="list-row"><span>1</span> auth middleware</div>'+
+      '<div class="list-row"><span>2</span> validate request</div>'+
+      '<div class="list-row"><span>3</span> checkout handler</div>'+
+      '<div class="list-row" onclick="navFrom(\'function\',\'processPayment\',\'billing\')"><span>4</span> processPayment()<span class="ar"></span></div>';
+  }
+  if(v==='communities'){
+    return '<div class="section-title">Communities</div>'+
+      '<div class="list-row"><span style="color:var(--cyan)">●</span> Core Platform<span class="ar"></span></div>'+
+      '<div class="list-row"><span style="color:var(--green)">●</span> Billing & Ordering<span class="ar"></span></div>'+
+      '<div class="list-row"><span style="color:var(--green)">●</span> Catalog & Search<span class="ar"></span></div>'+
+      '<div class="list-row"><span style="color:var(--amber)">●</span> Notifications<span class="ar"></span></div>';
+  }
+  if(v==='evidence'){
+    return '<div class="section-title">Evidence</div>'+
+      '<div class="list-row"><span style="color:var(--cyan)">query</span> MATCH (m:Module) RETURN m<span style="font-size:.64rem;color:var(--green);margin-left:auto">fresh</span></div>'+
+      '<div class="list-row"><span style="color:var(--cyan)">lens</span> connascence billing↔orders<span style="font-size:.64rem;color:var(--green);margin-left:auto">conf 0.89</span></div>';
+  }
+  if(v==='source'){
+    return '<pre style="font-size:.7rem;color:var(--t2);white-space:pre-wrap;font-family:monospace">class OrderService {\n  constructor(\n    private validator: OrderValidator,\n    private pricer: OrderPricer,\n    private repo: OrderRepository,\n    private notify: NotificationService\n  ) {}\n\n  async processOrder(order: Order): Promise<Result> {\n    // SRP violation: validates, prices, persists, notifies\n  }\n}</pre>';
+  }
+  if(v==='signature'||v==='effects'){
+    return '<div class="simple-table"><table>'+
+      '<tr><td>Name</td><td>processPayment</td></tr>'+
+      '<tr><td>Params</td><td>amount: number, currency: string, source: string</td></tr>'+
+      '<tr><td>Returns</td><td>Promise&lt;PaymentResult&gt;</td></tr>'+
+      '<tr><td>Effects</td><td>Stripe API, Redis cache, SendGrid email</td></tr>'+
+      '<tr><td>Errors</td><td>PaymentFailed, Timeout, InvalidCurrency</td></tr>'+
+      '</table></div>';
+  }
+  if(v==='imports'){
+    return '<div class="list-row"><span>📦</span> stripe</div><div class="list-row"><span>📦</span> uuid</div><div class="list-row"><span>📦</span> ./validators</div>';
+  }
+  return '<p style="color:var(--t3)">'+v+' view for '+n+'</p>';
+}
+
+function setupColumnEvents(colEl,col){
+  colEl.querySelectorAll('.column-view').forEach(function(tab){
+    tab.addEventListener('click',function(){
+      colEl.querySelectorAll('.column-view').forEach(t=>t.classList.remove('active'));
+      tab.classList.add('active');
+      var body=colEl.querySelector('.column-body');
+      if(body)body.innerHTML=getViewContent(col,tab.dataset.view);
+    });
+  });
+}
+
+function clickBreadcrumb(idx){
+  while(columns.length>idx+1)columns.pop();
+  renderColumns();
+}
+
+function runPlayground(colId,query){
+  var col=columns.find(function(c){return c.id===colId});
+  if(!col)return;
+  // Navigate based on simple commands
+  var q=query.trim().toLowerCase();
+  if(q.includes('dependencies')||q.includes('deps')){switchView(colId,'deps');return}
+  if(q.includes('connascence')){switchView(colId,'connascence');return}
+  if(q.includes('solid')){switchView(colId,'solid');return}
+  if(q.includes('callers')){switchView(colId,'callers');return}
+  if(q.includes('files')){switchView(colId,'files');return}
+  if(q.includes('source')){switchView(colId,'source');return}
+  if(q.includes('tests')){switchView(colId,'tests');return}
+  if(q.includes('communities')){switchView(colId,'communities');return}
+  if(q.includes('modules')&&col.type==='repo'){switchView(colId,'modules');return}
+  if(q.includes('blast')||q.includes('impact')){switchView(colId,'blast');return}
+  navFrom('analysis',query,'playground result');
+}
+
+function switchView(colId,view){
+  var colEl=document.getElementById(colId);
+  if(!colEl)return;
+  colEl.querySelectorAll('.column-view').forEach(t=>t.classList.remove('active'));
+  var tabs=colEl.querySelectorAll('.column-view');
+  for(var i=0;i<tabs.length;i++){
+    if(tabs[i].dataset.view===view){tabs[i].classList.add('active');break}
+  }
+  var body=colEl.querySelector('.column-body');
+  var col=columns.find(function(c){return c.id===colId});
+  if(body&&col)body.innerHTML=getViewContent(col,view);
+}
+
+document.addEventListener('keydown',function(e){
+  if((e.metaKey||e.ctrlKey)&&e.shiftKey&&e.key==='F'){e.preventDefault();toggleSpotter()}
+  if(e.key==='Escape'){document.getElementById('spotterOverlay').classList.remove('show')}
+});
+</script>
+</body>
+</html>

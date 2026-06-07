@@ -1,0 +1,3 @@
+# Explorer Product Contracts Over CogniCode Tools
+
+`cognicode-explorer` will expose product-level API endpoints and MCP tools instead of exposing raw CogniCode tool calls directly to the visual UI. The first contracts aggregate existing CogniCode capabilities such as `semantic_search`, `query_symbol_index`, `get_symbol_code`, `get_call_hierarchy`, `find_usages_with_context`, `CallGraph`, and `SqliteGraphStore` into Explorer concepts: inspectable objects, contextual views, typed relations, evidence blocks, exploration paths, and decision artifacts. This preserves reuse of CogniCode's code intelligence while keeping Explorer's UI and agent interfaces aligned with the moldable exploration workflow.

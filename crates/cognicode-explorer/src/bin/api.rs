@@ -1,0 +1,98 @@
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use clap::Parser;
+use cognicode_db::SqliteGraphStore;
+use cognicode_explorer::adapters::{
+    CallGraphRepository, FsSourceReader, Fts5SearchAdapter, SqliteQualityAdapter,
+};
+use cognicode_explorer::api;
+use cognicode_explorer::ports::quality_repository::QualityRepository;
+use cognicode_explorer::ports::search_repository::SearchRepository;
+use cognicode_explorer::ports::symbol_repository::SymbolRepository;
+use cognicode_explorer::service::ExplorerService;
+
+#[derive(Debug, Parser)]
+#[command(name = "cognicode-explorer-api", version, about)]
+struct Args {
+    #[arg(short, long, default_value = ".")]
+    cwd: PathBuf,
+
+    #[arg(long, default_value = "127.0.0.1:8010")]
+    listen: SocketAddr,
+}
+
+fn empty_graph() -> Arc<cognicode_core::domain::aggregates::CallGraph> {
+    Arc::new(cognicode_core::domain::aggregates::CallGraph::new())
+}
+
+fn open_graph(db_path: &std::path::Path) -> anyhow::Result<Arc<cognicode_core::domain::aggregates::CallGraph>> {
+    if !db_path.exists() {
+        tracing::warn!(db = %db_path.display(), "no cognicode.db — starting empty graph");
+        return Ok(empty_graph());
+    }
+    let store = SqliteGraphStore::open(db_path)
+        .map_err(|e| anyhow::anyhow!("opening {}: {}", db_path.display(), e))?;
+    match store.load_graph() {
+        Ok(Some(graph)) => Ok(Arc::new(graph)),
+        Ok(None) => Ok(empty_graph()),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load graph — starting with empty index");
+            Ok(empty_graph())
+        }
+    }
+}
+
+/// Build the FTS5 search adapter if the DB exists. The adapter degrades
+/// gracefully when the DB is missing (returns empty hits), but we still
+/// surface a clean `None` to the service when the file is absent so the
+/// spotter short-circuits to exact-only.
+fn maybe_fts5_adapter(db_path: &std::path::Path) -> Option<Arc<dyn SearchRepository>> {
+    if !db_path.exists() {
+        tracing::info!(
+            db = %db_path.display(),
+            "no cognicode.db — FTS5 backend disabled (exact-match only)"
+        );
+        return None;
+    }
+    Some(Arc::new(Fts5SearchAdapter::new(db_path.to_path_buf())))
+}
+
+/// Build the SQLite quality adapter if the DB exists. The adapter
+/// degrades to empty results when the DB is missing, but we still
+/// surface a clean `None` to the service so quality views are
+/// hidden from the descriptor list — that is, callers see a `None`
+/// quality backend rather than an empty one (the service is the
+/// place that decides "do I show a 'quality' view descriptor?").
+fn maybe_quality_adapter(db_path: &std::path::Path) -> Option<Arc<dyn QualityRepository>> {
+    if !db_path.exists() {
+        tracing::info!(
+            db = %db_path.display(),
+            "no cognicode.db — quality backend disabled"
+        );
+        return None;
+    }
+    Some(Arc::new(SqliteQualityAdapter::new(db_path.to_path_buf())))
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
+
+    let cwd = args.cwd.clone();
+    let db_path = cwd.join(".cognicode/cognicode.db");
+    let reader = Arc::new(FsSourceReader::new(cwd.clone()));
+    let graph = open_graph(&db_path)?;
+    let repo: Arc<dyn SymbolRepository> = Arc::new(CallGraphRepository::new(graph));
+    let search = maybe_fts5_adapter(&db_path);
+    let quality = maybe_quality_adapter(&db_path);
+
+    let service = ExplorerService::with_all(repo, reader, cwd, search, quality);
+    tracing::info!(listen = %args.listen, "starting cognicode explorer API");
+    api::serve(service, args.listen).await
+}

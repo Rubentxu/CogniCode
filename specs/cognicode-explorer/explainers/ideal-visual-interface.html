@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interfaz ideal para exploración moldable</title>
+  <style>
+    :root { color-scheme: dark; --bg:#06080d; --panel:#101722; --panel2:#151f2d; --line:#2d3b50; --text:#f4f7fb; --muted:#aab5c7; --cyan:#8ee7ff; --green:#c9ff9a; --amber:#ffd16e; --pink:#ff9ecb; --red:#ff6b6b; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--text); background:radial-gradient(circle at 14% 0%, rgba(142,231,255,.20), transparent 28rem), radial-gradient(circle at 90% 12%, rgba(255,158,203,.16), transparent 24rem), var(--bg); line-height:1.55; }
+    main { width:min(1200px, calc(100% - 32px)); margin:0 auto; padding:46px 0 72px; }
+    header, section { border:1px solid var(--line); background:rgba(16,23,34,.86); border-radius:30px; padding:28px; box-shadow:0 24px 80px rgba(0,0,0,.28); }
+    section { margin-top:18px; }
+    h1 { margin:0 0 14px; max-width:980px; font-size:clamp(2.2rem,6vw,5.4rem); line-height:.93; letter-spacing:-.07em; }
+    h2 { margin:0 0 12px; font-size:clamp(1.45rem,3vw,2.4rem); letter-spacing:-.04em; }
+    h3 { margin:0 0 8px; }
+    p { margin:0 0 14px; color:var(--muted); }
+    a { color:var(--cyan); }
+    code { background:#070a10; color:#dce9ff; border:1px solid #243044; border-radius:7px; padding:2px 6px; }
+    pre { overflow:auto; padding:18px; border-radius:18px; border:1px solid var(--line); background:#070a10; }
+    .tag { display:inline-block; margin-bottom:12px; padding:6px 10px; border-radius:999px; color:#06111c; background:var(--green); font-weight:900; font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; }
+    .lead { max-width:860px; color:#dce4f4; font-size:1.17rem; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; margin-top:16px; }
+    .card { padding:18px; border:1px solid var(--line); border-radius:20px; background:var(--panel2); }
+    .card strong { color:var(--text); }
+    .layout { display:grid; grid-template-columns: 180px minmax(320px, 1fr) 230px; gap:10px; min-width:760px; }
+    .mock { overflow-x:auto; padding:12px; border-radius:22px; background:#090d15; border:1px solid var(--line); }
+    .pane { min-height:180px; border:1px solid var(--line); border-radius:16px; background:#111a29; padding:12px; }
+    .pane.main { min-height:260px; background:linear-gradient(135deg, #0e1726, #111d31); position:relative; overflow:hidden; }
+    .node { position:absolute; width:92px; height:46px; border:1px solid rgba(142,231,255,.6); border-radius:14px; display:grid; place-items:center; color:#dff7ff; background:rgba(142,231,255,.08); font-size:.76rem; }
+    .n1 { left:8%; top:18%; } .n2 { left:36%; top:38%; } .n3 { left:68%; top:22%; } .n4 { left:58%; top:66%; border-color:rgba(255,107,107,.7); background:rgba(255,107,107,.10); }
+    .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-top:12px; }
+    .tab { padding:6px 9px; border:1px solid var(--line); border-radius:999px; color:var(--muted); font-size:.8rem; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { text-align:left; vertical-align:top; border:1px solid var(--line); padding:12px; color:var(--muted); }
+    th { color:var(--text); background:#10192b; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="tag">Interface model</span>
+      <h1>La interfaz ideal es un inspector moldable, no un grafo gigante</h1>
+      <p class="lead">Moldable Development es un punto de partida excelente si tomamos su principio: cada objeto del sistema debe revelar las vistas, acciones y búsquedas que tienen sentido para ese contexto.</p>
+    </header>
+
+    <section>
+      <h2>El layout recomendado</h2>
+      <div class="mock">
+        <div class="layout">
+          <div class="pane"><strong>Scope rail</strong><p>Repo<br>Modules<br>Files<br>PR<br>Flows</p></div>
+          <div class="pane main"><strong>Main visual canvas</strong><div class="node n1">auth</div><div class="node n2">billing</div><div class="node n3">orders</div><div class="node n4">risk</div></div>
+          <div class="pane"><strong>Agent sidecar</strong><p>Explain<br>Suggest<br>Generate<br>Record</p></div>
+        </div>
+        <div class="pane" style="margin-top:10px"><strong>Moldable Inspector</strong><div class="tabs"><span class="tab">Overview</span><span class="tab">Dependencies</span><span class="tab">Connascence</span><span class="tab">SOLID</span><span class="tab">Tests</span><span class="tab">Decisions</span></div></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Qué tomamos de Moldable Development</h2>
+      <div class="grid">
+        <div class="card"><h3>Moldable object</h3><p>Repo, módulo, fichero, clase, función, route, PR o trace se vuelven objetos inspeccionables.</p></div>
+        <div class="card"><h3>Contextual view</h3><p>El objeto muestra vistas específicas: dependencias, impacto, tests, runtime, connascence.</p></div>
+        <div class="card"><h3>Contextual action</h3><p>Acciones útiles: exportar Mermaid, abrir en IDE, generar reporte, registrar ADR.</p></div>
+        <div class="card"><h3>Contextual search</h3><p>La búsqueda cambia según el objeto: callers en función, módulos afectados en PR, rutas en repo.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Flujo principal</h2>
+      <pre><code>System Overview
+-> Select Scope
+-> Apply Lens
+-> Inspect Evidence
+-> Ask Agent
+-> Export / Decide</code></pre>
+      <p>Esto traduce el mantra de visualización: overview primero, zoom/filtro después, detalles bajo demanda y extracción final.</p>
+    </section>
+
+    <section>
+      <h2>Comparación de conceptos</h2>
+      <table>
+        <thead><tr><th>Concepto</th><th>Valor</th><th>Riesgo</th><th>Uso recomendado</th></tr></thead>
+        <tbody>
+          <tr><td>Inspector-first</td><td>Máxima precisión y utilidad diaria</td><td>Menos espectacular</td><td>Core del producto</td></tr>
+          <tr><td>Infinite canvas</td><td>Bueno para narrativas y reportes</td><td>Puede desordenarse</td><td>Story/report mode</td></tr>
+          <tr><td>Code city</td><td>Gran onboarding y hotspots</td><td>Poca precisión decisional</td><td>Lente opcional</td></tr>
+          <tr><td>PR cockpit</td><td>Valor inmediato en equipos</td><td>Más estrecho</td><td>Workflow temprano</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Fuentes</h2>
+      <p><a href="https://book.gtoolkit.com/moldable-tool-98p0537dgjllrko3jqmdk8243">Moldable Tool</a>, <a href="https://book.gtoolkit.com/contextual-view-9jkob0898tctthh5o3m23fv4e">Contextual View</a>, <a href="https://book.gtoolkit.com/contextual-action-7ed0nuwfqc5qp8b1b257cavgy">Contextual Action</a> y <a href="https://book.gtoolkit.com/contextual-search-98p05389q8o71a8fh6zcaedac">Contextual Search</a>.</p>
+      <p><a href="https://www.cs.umd.edu/~ben/papers/Shneiderman1996eyes.pdf">Shneiderman</a>: overview first, zoom and filter, details-on-demand.</p>
+      <p><a href="https://arxiv.org/html/2407.21621v1">Interactive Diagrams for Software Documentation</a>: diagramas interactivos filtrables para documentación generada.</p>
+      <p><a href="https://devlens.io/">DevLens</a>, <a href="https://www.codesee.io/">CodeSee</a> y <a href="https://github.com/shanglt/GitNexus">GitNexus</a>: referencias de producto.</p>
+    </section>
+  </main>
+</body>
+</html>

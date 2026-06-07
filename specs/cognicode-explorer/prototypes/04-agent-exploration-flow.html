@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent-Guided Exploration — Moldable Explorer</title>
+<style>
+:root{--bg:#06080d;--p1:#0d1321;--p2:#111a2b;--p3:#162136;--line:#24304a;--t1:#f0f4fc;--t2:#b8c5e0;--t3:#7b8cad;--cyan:#73dcff;--green:#b0ff6e;--amber:#ffc948;--rose:#ff8fc4;--red:#ff5252;--purple:#c49fff;--rad:18px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;line-height:1.45;color:var(--t1);background:var(--bg);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.topbar{display:flex;align-items:center;gap:10px;padding:10px 18px;background:var(--p1);border-bottom:1px solid var(--line);flex-shrink:0}
+.topbar .repo{font-weight:700;font-size:1rem;color:var(--cyan)}
+.topbar .spacer{flex:1}
+.topbar .mode{font-size:.72rem;padding:3px 10px;border-radius:999px;background:rgba(196,159,255,.15);color:var(--purple);border:1px solid rgba(196,159,255,.4)}
+.body{display:flex;flex:1;overflow:hidden}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--p2)}
+.viewport{flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;padding:20px}
+.view-card{max-width:640px;width:100%;padding:28px;border:1px solid var(--line);border-radius:var(--rad);background:var(--p1);transition:all .4s;opacity:0;transform:translateY(20px);position:absolute}
+.view-card.active{opacity:1;transform:translateY(0);position:relative}
+.view-card h2{font-size:1.3rem;margin:0 0 10px;color:var(--cyan)}
+.view-card p{color:var(--t2);font-size:.85rem;margin-bottom:12px}
+.view-card .mini-graph{display:flex;gap:12px;align-items:center;padding:14px;border-radius:12px;background:var(--p3);margin:10px 0;flex-wrap:wrap}
+.mini-node{padding:6px 12px;border-radius:10px;font-size:.7rem;font-weight:600;border:1px solid}
+.mini-node.core{border-color:rgba(115,220,255,.5);color:var(--cyan);background:rgba(115,220,255,.08)}
+.mini-node.biz{border-color:rgba(176,255,110,.5);color:var(--green);background:rgba(176,255,110,.08)}
+.mini-node.risk{border-color:rgba(255,82,82,.5);color:var(--red);background:rgba(255,82,82,.08)}
+.arrow{color:var(--t3);font-size:.8rem}
+.options{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.option{padding:10px 14px;border-radius:10px;border:1px solid var(--line);cursor:pointer;display:flex;align-items:center;gap:10px;transition:all .2s;font-size:.82rem}
+.option:hover{background:var(--p3);border-color:var(--cyan)}
+.option .emoji{font-size:1.2rem}
+.option .desc{font-size:.7rem;color:var(--t3)}
+.agent-bar{width:380px;flex-shrink:0;background:var(--p1);border-left:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden}
+.agent-header{padding:12px;background:var(--p2);border-bottom:1px solid var(--line)}
+.agent-header h3{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--t3)}
+.agent-log{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.log-msg{padding:10px;border-radius:12px;font-size:.78rem;line-height:1.4;max-width:90%}
+.log-msg.agent{background:var(--p3);border:1px solid var(--line);color:var(--t2);align-self:flex-start}
+.log-msg.user{align-self:flex-end;background:rgba(115,220,255,.1);border:1px solid rgba(115,220,255,.25);color:var(--t1)}
+.log-msg.system{background:transparent;border:1px dashed var(--line);color:var(--t3);font-size:.72rem;text-align:center;align-self:center;max-width:100%}
+.log-msg .label{font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;color:var(--cyan);margin-bottom:4px}
+.agent-input{padding:10px;border-top:1px solid var(--line);display:flex;gap:6px;background:var(--p2)}
+.agent-input input{flex:1;padding:8px 12px;border-radius:999px;background:var(--p3);border:1px solid var(--line);color:var(--t1);font-size:.8rem;outline:none}
+.agent-input input:focus{border-color:var(--cyan)}
+.agent-input button{padding:6px 14px;border-radius:999px;background:var(--cyan);color:#06111c;border:none;font-weight:700;cursor:pointer;font-size:.76rem}
+.evidence-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:.65rem;background:rgba(176,255,110,.1);color:var(--green);border:1px solid rgba(176,255,110,.25)}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="repo">📦 ecommerce-platform</span>
+  <span class="spacer"></span>
+  <span class="mode">Agent-Guided Mode</span>
+</div>
+<div class="body">
+  <div class="main">
+    <div class="viewport" id="viewport">
+      <div class="view-card active" id="card-0">
+        <h2>Welcome to ecommerce-platform</h2>
+        <p>I am your architecture guide. I have analyzed this repository and can help you understand what matters most. How would you like to start?</p>
+        <div class="mini-graph">
+          <span class="mini-node core">auth</span><span class="arrow">→</span><span class="mini-node biz">billing</span><span class="arrow">→</span><span class="mini-node biz">orders</span>
+          <span class="mini-node risk" style="margin-left:12px">2 risk spots</span>
+        </div>
+        <div class="options">
+          <div class="option" onclick="explore('overview')"><span class="emoji">🗺️</span><span>Give me the architecture overview</span><span class="desc">Modules, communities, external systems</span></div>
+          <div class="option" onclick="explore('hotspots')"><span class="emoji">🔥</span><span>Show me the risk hotspots first</span><span class="desc">Connascence, SOLID violations, cycles</span></div>
+          <div class="option" onclick="explore('flow')"><span class="emoji">⚡</span><span>Walk me through the payment flow</span><span class="desc">From checkout to Stripe to confirmation</span></div>
+          <div class="option" onclick="explore('onboard')"><span class="emoji">🧑‍💻</span><span>I am new here — guide me</span><span class="desc">Safe files to touch, team boundaries, key concepts</span></div>
+          <div class="option" onclick="explore('custom')"><span class="emoji">💬</span><span>I have a specific question</span><span class="desc">Type your own query in the agent sidebar</span></div>
+        </div>
+      </div>
+      <div class="view-card" id="card-overview">
+        <h2>Architecture Overview</h2>
+        <p>The platform has 6 module communities. Core services: auth, billing, orders, catalog, shipping, notify.</p>
+        <div class="mini-graph">
+          <span class="mini-node core">Core: auth</span>
+          <span class="mini-node biz">Business: billing · orders · catalog</span>
+          <span class="mini-node risk">Risk: billing↔orders (connascence of value)</span>
+        </div>
+        <div class="options">
+          <div class="option" onclick="explore('billing')"><span class="emoji">💳</span><span>Deep dive into billing module</span><span class="desc">Highest coupling, 12 value dependencies, SRP violation</span></div>
+          <div class="option" onclick="explore('hotspots')"><span class="emoji">📊</span><span>Show me the risk analysis</span><span class="desc">Connascence heatmap + SOLID report</span></div>
+          <div class="option" onclick="explore('flow')"><span class="emoji">⚡</span><span>Show the payment flow</span></div>
+        </div>
+      </div>
+      <div class="view-card" id="card-hotspots">
+        <h2>Top 3 Risk Hotspots</h2>
+        <p style="color:var(--red);font-weight:600">1. billing ↔ orders — Connascence of Value</p><p style="color:var(--t2);font-size:.78rem">Monetary amounts flow without a shared value object. 12 cross-module value pairs. Fix: introduce Money value object.</p>
+        <p style="color:var(--amber);font-weight:600;margin-top:8px">2. OrderService — SRP Violation</p><p style="color:var(--t2);font-size:.78rem">Validates, prices, persists, and notifies. 4 reasons to change. Fix: split by responsibility: OrderValidator, OrderPricer, OrderRepository.</p>
+        <p style="color:var(--amber);font-weight:600;margin-top:8px">3. Stripe SDK leak — DIP Violation</p><p style="color:var(--t2);font-size:.78rem">3 modules depend directly on Stripe SDK. Fix: introduce PaymentGateway interface.</p>
+        <div class="options">
+          <div class="option" onclick="explore('billing')"><span class="emoji">🔧</span><span>Inspect billing module details</span><span class="desc">See the full connascence table + SOLID analysis</span></div>
+          <div class="option" onclick="alert('Mermaid exported!\n\ngraph TD\n  billing-->|value|orders\n  OrderService-->|SRP|4_concerns')"><span class="emoji">📸</span><span>Export as diagram</span></div>
+        </div>
+      </div>
+      <div class="view-card" id="card-flow">
+        <h2>Payment Flow</h2>
+        <div class="mini-graph">
+          <span class="mini-node core">auth</span><span class="arrow">→</span><span class="mini-node biz">checkout</span><span class="arrow">→</span><span class="mini-node biz">billing</span><span class="arrow">→</span><span class="mini-node risk">Stripe</span><span class="arrow">→</span><span class="mini-node biz">orders</span><span class="arrow">→</span><span class="mini-node core">notify</span>
+        </div>
+        <p style="color:var(--t2);font-size:.78rem">7 steps, 4 modules, 1 external system. <span class="evidence-badge">traced</span> Avg latency: 320ms. Idempotency: partial (checkout key, no retry on Stripe timeout).</p>
+        <div class="options">
+          <div class="option" onclick="alert('Idempotency risk: Stripe timeout retries could double-charge. Add idempotency key propagation.')"><span class="emoji">⚠️</span><span>Analyze risks in this flow</span></div>
+          <div class="option" onclick="explore('billing')"><span class="emoji">💳</span><span>Inspect billing module</span></div>
+        </div>
+      </div>
+      <div class="view-card" id="card-billing">
+        <h2>Module: billing</h2>
+        <p>34 files · 187 functions · <span style="color:var(--amber)">Medium risk</span></p>
+        <table style="width:100%;font-size:.76rem;margin:10px 0">
+          <tr><td style="color:var(--t3);padding:4px">Connascence</td><td style="color:var(--red)">12 value pairs with orders</td></tr>
+          <tr><td style="color:var(--t3);padding:4px">SOLID</td><td style="color:var(--amber)">DIP: Stripe leak / SRP: OrderService</td></tr>
+          <tr><td style="color:var(--t3);padding:4px">Tests</td><td style="color:var(--amber)">43% on critical path</td></tr>
+          <tr><td style="color:var(--t3);padding:4px">Decision</td><td>Introduce Money, split OrderService</td></tr>
+        </table>
+        <div class="options">
+          <div class="option" onclick="alert('Mermaid exported!\n\nerDiagram\n  billing ||--o{ orders : value_pairs\n  billing ||--|| Stripe : DIP_violation')"><span class="emoji">📸</span><span>Export module diagram</span></div>
+          <div class="option" onclick="alert('ADR recorded: Introduce Money value object to resolve connascence of value between billing and orders. Status: proposed.')"><span class="emoji">📝</span><span>Record this as an ADR</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <aside class="agent-bar">
+    <div class="agent-header"><h3>🧠 Architecture Guide Agent</h3></div>
+    <div class="agent-log" id="agentLog">
+      <div class="log-msg agent"><div class="label">Agent</div>Hi! I have indexed this repository. It has 6 modules, 247 files, 1,843 functions. I found 2 risk hotspots and 5 SOLID violations. What would you like to explore? <span class="evidence-badge">graph.json</span></div>
+    </div>
+    <div class="agent-input">
+      <input type="text" placeholder="Ask about the codebase..." id="agentInput" onkeydown="if(event.key==='Enter')sendAgentMessage()">
+      <button onclick="sendAgentMessage()">Send</button>
+    </div>
+  </aside>
+</div>
+<script>
+function explore(type){
+  document.querySelectorAll('.view-card').forEach(c=>c.classList.remove('active'));
+  var targetId='card-'+type;
+  var target=document.getElementById(targetId);
+  if(target)target.classList.add('active');
+  else document.getElementById('card-0').classList.add('active');
+  addLog('system','Exploring: '+type);
+  if(type==='overview')addLog('agent','The platform has 6 communities. The highest coupling is between billing and orders. I recommend checking the risk hotspots next. <span class="evidence-badge">communities.json</span>');
+  else if(type==='hotspots')addLog('agent','Top risk: connascence of value between billing and orders. 12 value pairs. Fix: introduce Money value object. Second risk: SRP in OrderService. <span class="evidence-badge">connascence_lens</span>');
+  else if(type==='flow')addLog('agent','Payment flow: auth → checkout → billing → Stripe → orders → notify. 7 steps, 4 modules. Idempotency risk detected on Stripe timeout. <span class="evidence-badge">runtime_trace</span>');
+  else if(type==='billing')addLog('agent','Billing module details: 34 files, 187 functions. Key risks: connascence of value (12 pairs), Stripe SDK leak (DIP). Suggested decision: introduce Money value object. <span class="evidence-badge">solid_lens</span>');
+}
+function sendAgentMessage(){
+  var input=document.getElementById('agentInput');
+  var text=input.value.trim();
+  if(!text)return;
+  addLog('user',text);
+  input.value='';
+  setTimeout(function(){
+    if(text.toLowerCase().includes('risk')||text.toLowerCase().includes('riesgo')){
+      addLog('agent','The top risks are: (1) connascence of value billing↔orders, (2) SRP OrderService, (3) Stripe SDK leak. Would you like me to show the risk hotspots view? <span class="evidence-badge">risk_analysis</span>');
+    }else if(text.toLowerCase().includes('test')||text.toLowerCase().includes('coverage')){
+      addLog('agent','Overall test coverage is 62%, but only 43% on the critical path. The billing module has 12 untested functions. RevenueReport.spec.ts is missing entirely. <span class="evidence-badge">test_coverage</span>');
+    }else{
+      addLog('agent','I can help with: understanding module structure, finding risks, tracing flows, suggesting decisions, or generating reports. What would be most useful? <span class="evidence-badge">agent_context</span>');
+    }
+  },600);
+}
+function addLog(type,text){
+  var log=document.getElementById('agentLog');
+  var div=document.createElement('div');
+  div.className='log-msg '+type;
+  if(type==='agent')div.innerHTML='<div class="label">Agent</div>'+text;
+  else if(type==='user')div.innerHTML=text;
+  else div.innerHTML=text;
+  log.appendChild(div);
+  log.scrollTop=log.scrollHeight;
+}
+</script>
+</body>
+</html>

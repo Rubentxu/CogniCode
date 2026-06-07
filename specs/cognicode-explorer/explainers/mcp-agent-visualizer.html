@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MCP + Agentes para un visualizador moldable</title>
+  <style>
+    :root { color-scheme: dark; --bg:#080a10; --panel:#111827; --panel2:#172033; --line:#2e3a51; --text:#f5f7fb; --muted:#aab3c7; --cyan:#85ddff; --lime:#c6ff91; --gold:#ffd36e; --rose:#ff9ecb; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:radial-gradient(circle at 20% 0%, rgba(133,221,255,.2), transparent 28rem), radial-gradient(circle at 86% 18%, rgba(255,158,203,.16), transparent 26rem), var(--bg); color:var(--text); line-height:1.55; }
+    main { width:min(1180px, calc(100% - 32px)); margin:0 auto; padding:46px 0 72px; }
+    header, section { border:1px solid var(--line); background:rgba(17,24,39,.84); border-radius:28px; padding:28px; box-shadow:0 22px 70px rgba(0,0,0,.25); }
+    section { margin-top:18px; }
+    h1 { margin:0 0 14px; max-width:920px; font-size:clamp(2.2rem, 6vw, 5.2rem); line-height:.94; letter-spacing:-.065em; }
+    h2 { margin:0 0 12px; font-size:clamp(1.4rem, 3vw, 2.35rem); letter-spacing:-.04em; }
+    h3 { margin:0 0 8px; }
+    p { margin:0 0 14px; color:var(--muted); }
+    a { color:var(--cyan); }
+    code { background:#070a10; color:#dce9ff; border:1px solid #243044; border-radius:7px; padding:2px 6px; }
+    pre { overflow:auto; padding:18px; border-radius:18px; border:1px solid var(--line); background:#070a10; }
+    .lead { max-width:820px; color:#dce4f4; font-size:1.17rem; }
+    .tag { display:inline-block; margin-bottom:12px; padding:6px 10px; border-radius:999px; color:#06111c; background:var(--lime); font-weight:900; font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px; margin-top:16px; }
+    .card { padding:18px; border:1px solid var(--line); border-radius:20px; background:var(--panel2); }
+    .card b { color:var(--text); }
+    .flow { display:grid; grid-template-columns:repeat(6,minmax(145px,1fr)); gap:10px; overflow-x:auto; }
+    .step { min-width:145px; padding:14px; border:1px solid var(--line); border-radius:16px; background:#10192b; }
+    .step strong { display:block; color:var(--gold); margin-bottom:8px; }
+    table { width:100%; border-collapse:collapse; overflow:hidden; border-radius:16px; }
+    th, td { text-align:left; vertical-align:top; border:1px solid var(--line); padding:12px; color:var(--muted); }
+    th { color:var(--text); background:#10192b; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="tag">Propuesta de producto</span>
+      <h1>MCP como capacidades, agente como guía, UI como inspector</h1>
+      <p class="lead">La aplicación más útil no sería un chat ni un grafo gigante. Sería un inspector moldable donde el developer selecciona un scope, aplica un lente, ve evidencia y termina con una decisión.</p>
+    </header>
+
+    <section>
+      <h2>Arquitectura mental</h2>
+      <div class="flow">
+        <div class="step"><strong>Repo</strong>Código, docs, tests, git, runtime.</div>
+        <div class="step"><strong>Graph</strong>Entidades, relaciones, comunidades, cambios.</div>
+        <div class="step"><strong>MCP</strong>Tools, resources, prompts, roots, sampling.</div>
+        <div class="step"><strong>Agent</strong>Interpreta, pregunta, explica, propone.</div>
+        <div class="step"><strong>Views</strong>C4, Mermaid, tablas, grafos, heatmaps.</div>
+        <div class="step"><strong>Decision</strong>Refactor, test, ADR, review, investigar.</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Tres propuestas</h2>
+      <div class="grid">
+        <div class="card"><h3>A. MCP-first</h3><p>Servidor MCP con herramientas de indexado, consulta, impacto, diagramas y decisiones. Rápido de integrar con IDEs, pero UX chat-first.</p></div>
+        <div class="card"><h3>B. Visual app</h3><p>Aplicación dedicada que actúa como cliente/host MCP. Mejor experiencia moldable, más coste de producto.</p></div>
+        <div class="card"><h3>C. Híbrido IDE + workbench</h3><p>IDE para flujo diario, workbench visual para inspección profunda. Mejor balance para empezar y escalar.</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Extensión y especialización</h2>
+      <table>
+        <thead><tr><th>Extensión</th><th>Qué hace</th><th>Ejemplo</th></tr></thead>
+        <tbody>
+          <tr><td>Extractors</td><td>Convierten artefactos en evidencia de grafo.</td><td>AST TS, SQL, OpenAPI, Terraform, logs.</td></tr>
+          <tr><td>Lenses</td><td>Calculan perspectivas de diagnóstico.</td><td>SOLID, connascence, C4, runtime, dominio.</td></tr>
+          <tr><td>Views</td><td>Renderizan una respuesta task-fit.</td><td>Mermaid, C4, Sankey, force graph, matriz.</td></tr>
+          <tr><td>Agents</td><td>Guían interpretación y workflow.</td><td>Navigator, Evidence, Design Critic, Review.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Vertical slice recomendado</h2>
+      <pre><code>Inspect Module
+-> Connascence Lens
+-> Hotspot View
+-> Agent Explanation with Evidence
+-> Mermaid Export
+-> Record Decision</code></pre>
+      <p>Esto prueba todo el loop de valor sin intentar construir “la plataforma total” desde el día uno.</p>
+    </section>
+
+    <section>
+      <h2>Fuentes</h2>
+      <p><a href="https://modelcontextprotocol.io/docs/learn/server-concepts">MCP server concepts</a>: tools, resources y prompts como primitives.</p>
+      <p><a href="https://modelcontextprotocol.io/docs/learn/client-concepts">MCP client concepts</a>: roots, elicitation y sampling para workflows controlados por el usuario.</p>
+      <p><a href="https://arxiv.org/html/2603.27277v1">Codebase-Memory</a>: evidencia de code graphs vía MCP para reducir tokens y tool calls.</p>
+      <p><a href="https://github.com/bharath03-a/gitcortex">GitCortex</a>: visual graph, branch diff, blast-radius y MCP prompts.</p>
+      <p><a href="https://gtoolkit.com/">Glamorous Toolkit</a>: contextual tools y sistemas explicables.</p>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,3 @@
+# Independent CogniCode Explorer Application
+
+The moldable visual explorer will live as an independent `cognicode-explorer` application in the CogniCode family, not as a page, module, or route inside `cognicode-dashboard`. This keeps the product centered on Spotter, Miller Columns, inspectable objects, contextual views, exploration paths, and decision artifacts instead of inheriting the dashboard's scan/metric/issue orientation. The explorer can still reuse `cognicode-core`, `cognicode-db`, `cognicode-mcp`, shared UI infrastructure, and family conventions, but it owns its information architecture from the start.

@@ -1,0 +1,39 @@
+[package]
+name = "cognicode-explorer"
+description = "CogniCode Explorer — moldable code exploration API and MCP"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[lib]
+name = "cognicode_explorer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cognicode-explorer-api"
+path = "src/bin/api.rs"
+
+[[bin]]
+name = "cognicode-explorer-mcp"
+path = "src/bin/mcp.rs"
+
+[dependencies]
+cognicode-core.workspace = true
+cognicode-db.workspace = true
+rusqlite.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+rmcp.workspace = true
+chrono.workspace = true
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+[dev-dependencies]
+tokio-test.workspace = true
+tempfile = "3.27"
