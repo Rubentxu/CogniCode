@@ -2,9 +2,9 @@
 //!
 //! Implements the Tool trait from rig-core for all CogniCode operations.
 
-use std::sync::Arc;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
+use std::sync::Arc;
 
 #[cfg(feature = "rig")]
 use rig::completion::ToolDefinition;
@@ -13,14 +13,11 @@ use rig::tool::Tool;
 #[cfg(feature = "rig")]
 use rig::tool::ToolDyn;
 
-use crate::application::workspace_session::WorkspaceSession;
 use crate::application::dto::{
-    ReadFileRequest, ReadMode,
+    EditFileRequest, FileEdit, ListFilesRequest, ReadFileRequest, ReadMode, SearchContentRequest,
     WriteFileRequest,
-    EditFileRequest, FileEdit,
-    SearchContentRequest,
-    ListFilesRequest,
 };
+use crate::application::workspace_session::WorkspaceSession;
 
 // =============================================================================
 // Tool Error
@@ -66,11 +63,7 @@ fn build_parameters(required: &[&str], properties: JsonValue) -> JsonValue {
 
 /// Create a tool definition
 #[cfg(feature = "rig")]
-fn create_tool_definition(
-    name: &str,
-    description: &str,
-    parameters: JsonValue,
-) -> ToolDefinition {
+fn create_tool_definition(name: &str, description: &str, parameters: JsonValue) -> ToolDefinition {
     ToolDefinition {
         name: name.to_string(),
         description: description.to_string(),
@@ -114,7 +107,10 @@ impl Tool for ReadFileTool {
     type Args = ReadFileArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "path": param("path", "string", "Path to the file to read"),
@@ -130,7 +126,10 @@ impl Tool for ReadFileTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
             let read_mode = args.mode.as_deref().unwrap_or("raw");
             let mode = match read_mode {
@@ -149,7 +148,10 @@ impl Tool for ReadFileTool {
                 continuation_token: None,
             };
 
-            let result = self.session.read_file(request).await
+            let result = self
+                .session
+                .read_file(request)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -189,7 +191,10 @@ impl Tool for SearchContentTool {
     type Args = SearchContentArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "pattern": param("pattern", "string", "Search pattern or regex"),
@@ -205,7 +210,10 @@ impl Tool for SearchContentTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
             let request = SearchContentRequest {
                 pattern: args.pattern,
@@ -217,7 +225,10 @@ impl Tool for SearchContentTool {
                 context_lines: None,
             };
 
-            let result = self.session.search_content(request).await
+            let result = self
+                .session
+                .search_content(request)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -256,7 +267,10 @@ impl Tool for ListFilesTool {
     type Args = ListFilesArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "path": param("path", "string", "Directory path to list files from"),
@@ -271,7 +285,10 @@ impl Tool for ListFilesTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
             let request = ListFilesRequest {
                 path: args.path,
@@ -282,7 +299,10 @@ impl Tool for ListFilesTool {
                 max_depth: None,
             };
 
-            let result = self.session.list_files(request).await
+            let result = self
+                .session
+                .list_files(request)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -319,7 +339,10 @@ impl Tool for WriteFileTool {
     type Args = WriteFileArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "path": param("path", "string", "Path to the file to write"),
@@ -334,7 +357,10 @@ impl Tool for WriteFileTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
             let request = WriteFileRequest {
                 path: args.path,
@@ -342,7 +368,10 @@ impl Tool for WriteFileTool {
                 create_dirs: args.create_dirs,
             };
 
-            let result = self.session.write_file(request).await
+            let result = self
+                .session
+                .write_file(request)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -383,7 +412,10 @@ impl Tool for EditFileTool {
     type Args = EditFileArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "path": param("path", "string", "Path to the file to edit"),
@@ -407,19 +439,29 @@ impl Tool for EditFileTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
-            let edits: Vec<FileEdit> = args.edits.into_iter().map(|e| FileEdit {
-                old_string: e.old_text,
-                new_string: e.new_text,
-            }).collect();
+            let edits: Vec<FileEdit> = args
+                .edits
+                .into_iter()
+                .map(|e| FileEdit {
+                    old_string: e.old_text,
+                    new_string: e.new_text,
+                })
+                .collect();
 
             let request = EditFileRequest {
                 path: args.path,
                 edits,
             };
 
-            let result = self.session.edit_file(request).await
+            let result = self
+                .session
+                .edit_file(request)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -457,7 +499,10 @@ impl Tool for GetFileSymbolsTool {
     type Args = GetFileSymbolsArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "file_path": param("file_path", "string", "Path to the source file")
@@ -470,9 +515,15 @@ impl Tool for GetFileSymbolsTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
-            let result = self.session.get_file_symbols(&args.file_path).await
+            let result = self
+                .session
+                .get_file_symbols(&args.file_path)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -508,7 +559,10 @@ impl Tool for GetOutlineTool {
     type Args = GetOutlineArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "file_path": param("file_path", "string", "Path to the source file"),
@@ -522,10 +576,16 @@ impl Tool for GetOutlineTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
             let include_private = args.include_private.unwrap_or(false);
-            let result = self.session.get_outline(&args.file_path, include_private).await
+            let result = self
+                .session
+                .get_outline(&args.file_path, include_private)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(result)
@@ -561,7 +621,10 @@ impl Tool for GetComplexityTool {
     type Args = GetComplexityArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "file_path": param("file_path", "string", "Path to the source file"),
@@ -575,9 +638,15 @@ impl Tool for GetComplexityTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
-            let result = self.session.get_complexity(&args.file_path, args.function_name.as_deref()).await
+            let result = self
+                .session
+                .get_complexity(&args.file_path, args.function_name.as_deref())
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -613,7 +682,10 @@ impl Tool for SemanticSearchTool {
     type Args = SemanticSearchArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "query": param("query", "string", "Semantic search query"),
@@ -627,10 +699,16 @@ impl Tool for SemanticSearchTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
             let max_results = args.max_results.unwrap_or(10);
-            let result = self.session.semantic_search(&args.query, max_results).await
+            let result = self
+                .session
+                .semantic_search(&args.query, max_results)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -669,7 +747,10 @@ impl Tool for BuildGraphTool {
     type Args = BuildGraphArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "strategy": param("strategy", "string", "Build strategy: lightweight, on_demand, per_file, or full")
@@ -682,13 +763,21 @@ impl Tool for BuildGraphTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
             let strategy = args.strategy.unwrap_or_else(|| "full".to_string());
-            self.session.build_graph(&strategy).await
+            self.session
+                .build_graph(&strategy)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
-            Ok(format!("Graph built successfully with strategy: {}", strategy))
+            Ok(format!(
+                "Graph built successfully with strategy: {}",
+                strategy
+            ))
         }
     }
 }
@@ -723,7 +812,10 @@ impl Tool for GetCallHierarchyTool {
     type Args = GetCallHierarchyArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "symbol": param("symbol", "string", "Symbol name to get call hierarchy for"),
@@ -738,12 +830,18 @@ impl Tool for GetCallHierarchyTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
             let direction = args.direction.unwrap_or_else(|| "both".to_string());
             let depth = args.depth.unwrap_or(3);
 
-            let result = self.session.get_call_hierarchy(&args.symbol, &direction, depth).await
+            let result = self
+                .session
+                .get_call_hierarchy(&args.symbol, &direction, depth)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -777,7 +875,10 @@ impl Tool for AnalyzeImpactTool {
     type Args = AnalyzeImpactArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "symbol": param("symbol", "string", "Symbol name to analyze impact for")
@@ -790,9 +891,15 @@ impl Tool for AnalyzeImpactTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
-            let result = self.session.analyze_impact(&args.symbol).await
+            let result = self
+                .session
+                .analyze_impact(&args.symbol)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -826,7 +933,10 @@ impl Tool for GetEntryPointsTool {
     type Args = GetEntryPointsArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             create_tool_definition(
                 Self::NAME,
@@ -840,9 +950,15 @@ impl Tool for GetEntryPointsTool {
         }
     }
 
-    fn call(&self, _args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        _args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
-            let result = self.session.get_entry_points().await
+            let result = self
+                .session
+                .get_entry_points()
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -876,7 +992,10 @@ impl Tool for GetLeafFunctionsTool {
     type Args = GetLeafFunctionsArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             create_tool_definition(
                 Self::NAME,
@@ -890,9 +1009,15 @@ impl Tool for GetLeafFunctionsTool {
         }
     }
 
-    fn call(&self, _args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        _args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
-            let result = self.session.get_leaf_functions().await
+            let result = self
+                .session
+                .get_leaf_functions()
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -929,7 +1054,10 @@ impl Tool for TracePathTool {
     type Args = TracePathArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "source": param("source", "string", "Source symbol name"),
@@ -944,10 +1072,16 @@ impl Tool for TracePathTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
             let max_depth = args.max_depth.unwrap_or(10);
-            let result = self.session.trace_path(&args.source, &args.target, max_depth).await
+            let result = self
+                .session
+                .trace_path(&args.source, &args.target, max_depth)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -988,7 +1122,10 @@ impl Tool for ExportMermaidTool {
     type Args = ExportMermaidArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "format": param("format", "string", "Output format (currently only 'code' is supported)"),
@@ -1004,10 +1141,21 @@ impl Tool for ExportMermaidTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
             let format = args.format.as_deref().unwrap_or("code");
-            let result = self.session.export_mermaid(format, args.theme.as_deref(), args.root_symbol.as_deref(), args.module_filter.as_deref()).await
+            let result = self
+                .session
+                .export_mermaid(
+                    format,
+                    args.theme.as_deref(),
+                    args.root_symbol.as_deref(),
+                    args.module_filter.as_deref(),
+                )
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(result)
@@ -1042,7 +1190,10 @@ impl Tool for CheckArchitectureTool {
     type Args = CheckArchitectureArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "scope": param("scope", "string", "Optional scope to check (e.g., module name)")
@@ -1055,9 +1206,15 @@ impl Tool for CheckArchitectureTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
-            let result = self.session.check_architecture(args.scope.as_deref()).await
+            let result = self
+                .session
+                .check_architecture(args.scope.as_deref())
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -1099,7 +1256,10 @@ impl Tool for FindUsagesTool {
     type Args = FindUsagesArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "file": param("file", "string", "File path where the symbol is located"),
@@ -1115,10 +1275,16 @@ impl Tool for FindUsagesTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
             let include_decl = args.include_declaration.unwrap_or(true);
-            let result = self.session.find_references(&args.file, args.line, args.column, include_decl).await
+            let result = self
+                .session
+                .find_references(&args.file, args.line, args.column, include_decl)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -1154,7 +1320,10 @@ impl Tool for GetSymbolCodeTool {
     type Args = GetSymbolCodeArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "file_path": param("file_path", "string", "Path to the source file"),
@@ -1169,9 +1338,15 @@ impl Tool for GetSymbolCodeTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
-            let result = self.session.get_symbol_code(&args.file_path, args.line, args.column).await
+            let result = self
+                .session
+                .get_symbol_code(&args.file_path, args.line, args.column)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(result)
@@ -1211,7 +1386,10 @@ impl Tool for SafeRefactorTool {
     type Args = SafeRefactorArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "symbol": param("symbol", "string", "Current symbol name to rename"),
@@ -1226,9 +1404,15 @@ impl Tool for SafeRefactorTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
-            let result = self.session.rename_symbol(&args.symbol, &args.new_name, &args.file).await
+            let result = self
+                .session
+                .rename_symbol(&args.symbol, &args.new_name, &args.file)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())
@@ -1262,7 +1446,10 @@ impl Tool for ValidateSyntaxTool {
     type Args = ValidateSyntaxArgs;
     type Output = String;
 
-    fn definition(&self, _prompt: String) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
+    fn definition(
+        &self,
+        _prompt: String,
+    ) -> impl std::future::Future<Output = ToolDefinition> + Send + Sync {
         async move {
             let properties = serde_json::json!({
                 "file_path": param("file_path", "string", "Path to the file to validate")
@@ -1275,9 +1462,15 @@ impl Tool for ValidateSyntaxTool {
         }
     }
 
-    fn call(&self, args: Self::Args) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
+    fn call(
+        &self,
+        args: Self::Args,
+    ) -> impl std::future::Future<Output = Result<Self::Output, Self::Error>> + Send {
         async move {
-            let result = self.session.validate_syntax(&args.file_path).await
+            let result = self
+                .session
+                .validate_syntax(&args.file_path)
+                .await
                 .map_err(|e| ToolError::ToolCallError(e.to_string()))?;
 
             Ok(serde_json::to_string_pretty(&result).unwrap_or_default())

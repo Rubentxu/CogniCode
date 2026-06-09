@@ -4,6 +4,7 @@
 
 mod call_graph_analyzer;
 mod complexity;
+mod confidence_rules;
 mod cycle_detector;
 mod impact_analyzer;
 
@@ -13,5 +14,6 @@ pub use call_graph_analyzer::{
 pub use complexity::{
     CFGNode, CFGNodeType, ComplexityCalculator, ComplexityReport, ComplexityRisk, DecisionPoint,
 };
+pub use confidence_rules::{ConfidenceError, ConfidenceRules, ExtractionContext};
 pub use cycle_detector::{Cycle, CycleDetectionResult, CycleDetector};
 pub use impact_analyzer::{ImpactAnalyzer, ImpactLevel, ImpactReport, ImpactThreshold};

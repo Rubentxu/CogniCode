@@ -63,10 +63,7 @@ pub async fn handle_go_to_definition(
 }
 
 /// Handler for hover tool
-pub async fn handle_hover(
-    ctx: &HandlerContext,
-    input: HoverInput,
-) -> HandlerResult<HoverOutput> {
+pub async fn handle_hover(ctx: &HandlerContext, input: HoverInput) -> HandlerResult<HoverOutput> {
     let provider = get_provider(ctx);
     let location = crate::domain::value_objects::Location::new(
         input.file_path.clone(),
@@ -108,15 +105,21 @@ pub async fn handle_find_references(
         input.column,
     );
 
-    match provider.find_references(&location, input.include_declaration).await {
+    match provider
+        .find_references(&location, input.include_declaration)
+        .await
+    {
         Ok(refs) => {
-            let entries: Vec<ReferenceEntry> = refs.iter().map(|r| ReferenceEntry {
-                file: r.location.file().to_string(),
-                line: r.location.line(),
-                column: r.location.column(),
-                kind: format!("{:?}", r.reference_kind),
-                context: r.container.clone().unwrap_or_default(),
-            }).collect();
+            let entries: Vec<ReferenceEntry> = refs
+                .iter()
+                .map(|r| ReferenceEntry {
+                    file: r.location.file().to_string(),
+                    line: r.location.line(),
+                    column: r.location.column(),
+                    kind: format!("{:?}", r.reference_kind),
+                    context: r.container.clone().unwrap_or_default(),
+                })
+                .collect();
             let total = entries.len();
             Ok(FindReferencesOutput {
                 symbol: input.file_path,
@@ -166,7 +169,9 @@ pub async fn handle_get_document_symbols(
 
     match provider.get_document_symbols(path).await {
         Ok(symbols) => {
-            fn convert_symbol(ds: &crate::domain::traits::code_intelligence::DocumentSymbol) -> DocumentSymbolInfo {
+            fn convert_symbol(
+                ds: &crate::domain::traits::code_intelligence::DocumentSymbol,
+            ) -> DocumentSymbolInfo {
                 DocumentSymbolInfo {
                     name: ds.symbol.name().to_string(),
                     kind: format!("{:?}", ds.document_kind),
@@ -176,7 +181,8 @@ pub async fn handle_get_document_symbols(
                 }
             }
 
-            let symbol_infos: Vec<DocumentSymbolInfo> = symbols.iter().map(convert_symbol).collect();
+            let symbol_infos: Vec<DocumentSymbolInfo> =
+                symbols.iter().map(convert_symbol).collect();
             let total = symbol_infos.len();
 
             Ok(GetDocumentSymbolsOutput {
@@ -200,11 +206,11 @@ pub async fn handle_get_document_symbols(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::aggregates::Symbol;
     use crate::domain::traits::code_intelligence::{
         CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, DocumentSymbolKind,
         HoverInfo, HoverKind, Reference, ReferenceKind,
     };
-    use crate::domain::aggregates::Symbol;
     use crate::domain::value_objects::{Location, SourceRange, SymbolKind};
     use std::sync::Arc;
 
@@ -226,7 +232,10 @@ mod tests {
             }
         }
 
-        fn with_definition(mut self, result: Result<Option<Location>, CodeIntelligenceError>) -> Self {
+        fn with_definition(
+            mut self,
+            result: Result<Option<Location>, CodeIntelligenceError>,
+        ) -> Self {
             self.definition_result = Arc::new(result);
             self
         }
@@ -236,12 +245,18 @@ mod tests {
             self
         }
 
-        fn with_references(mut self, result: Result<Vec<Reference>, CodeIntelligenceError>) -> Self {
+        fn with_references(
+            mut self,
+            result: Result<Vec<Reference>, CodeIntelligenceError>,
+        ) -> Self {
             self.references_result = Arc::new(result);
             self
         }
 
-        fn with_document_symbols(mut self, result: Result<Vec<DocumentSymbol>, CodeIntelligenceError>) -> Self {
+        fn with_document_symbols(
+            mut self,
+            result: Result<Vec<DocumentSymbol>, CodeIntelligenceError>,
+        ) -> Self {
             self.document_symbols_result = Arc::new(result);
             self
         }
@@ -249,7 +264,10 @@ mod tests {
 
     #[async_trait::async_trait]
     impl CodeIntelligenceProvider for MockLspProvider {
-        async fn get_symbols(&self, _path: &std::path::Path) -> Result<Vec<Symbol>, CodeIntelligenceError> {
+        async fn get_symbols(
+            &self,
+            _path: &std::path::Path,
+        ) -> Result<Vec<Symbol>, CodeIntelligenceError> {
             Ok(vec![])
         }
 
@@ -265,25 +283,40 @@ mod tests {
             }
         }
 
-        async fn get_hierarchy(&self, _location: &Location) -> Result<crate::domain::traits::code_intelligence::TypeHierarchy, CodeIntelligenceError> {
-            Err(CodeIntelligenceError::Internal("Not implemented".to_string()))
+        async fn get_hierarchy(
+            &self,
+            _location: &Location,
+        ) -> Result<crate::domain::traits::code_intelligence::TypeHierarchy, CodeIntelligenceError>
+        {
+            Err(CodeIntelligenceError::Internal(
+                "Not implemented".to_string(),
+            ))
         }
 
-        async fn get_definition(&self, _location: &Location) -> Result<Option<Location>, CodeIntelligenceError> {
+        async fn get_definition(
+            &self,
+            _location: &Location,
+        ) -> Result<Option<Location>, CodeIntelligenceError> {
             match self.definition_result.as_ref() {
                 Ok(v) => Ok(v.clone()),
                 Err(e) => Err(CodeIntelligenceError::Internal(e.to_string())),
             }
         }
 
-        async fn get_document_symbols(&self, _path: &std::path::Path) -> Result<Vec<DocumentSymbol>, CodeIntelligenceError> {
+        async fn get_document_symbols(
+            &self,
+            _path: &std::path::Path,
+        ) -> Result<Vec<DocumentSymbol>, CodeIntelligenceError> {
             match self.document_symbols_result.as_ref() {
                 Ok(v) => Ok(v.clone()),
                 Err(e) => Err(CodeIntelligenceError::Internal(e.to_string())),
             }
         }
 
-        async fn hover(&self, _location: &Location) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
+        async fn hover(
+            &self,
+            _location: &Location,
+        ) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
             match self.hover_result.as_ref() {
                 Ok(v) => Ok(v.clone()),
                 Err(e) => Err(CodeIntelligenceError::Internal(e.to_string())),
@@ -299,7 +332,13 @@ mod tests {
         Symbol::new(name, kind, loc)
     }
 
-    fn create_test_source_range(file: &str, start_line: u32, start_col: u32, end_line: u32, end_col: u32) -> SourceRange {
+    fn create_test_source_range(
+        file: &str,
+        start_line: u32,
+        start_col: u32,
+        end_line: u32,
+        end_col: u32,
+    ) -> SourceRange {
         SourceRange::new(
             Location::new(file, start_line, start_col),
             Location::new(file, end_line, end_col),
@@ -313,7 +352,8 @@ mod tests {
     #[tokio::test]
     async fn test_handle_go_to_definition_success() {
         let def_location = Location::new("test.rs", 10, 5);
-        let provider = Arc::new(MockLspProvider::new().with_definition(Ok(Some(def_location.clone()))));
+        let provider =
+            Arc::new(MockLspProvider::new().with_definition(Ok(Some(def_location.clone()))));
 
         let temp_dir = tempfile::tempdir().unwrap();
         let ctx = HandlerContext::with_code_intelligence_provider(
@@ -361,9 +401,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_go_to_definition_error() {
-        let provider = Arc::new(MockLspProvider::new().with_definition(
-            Err(CodeIntelligenceError::LspError("Server unavailable".to_string()))
-        ));
+        let provider = Arc::new(MockLspProvider::new().with_definition(Err(
+            CodeIntelligenceError::LspError("Server unavailable".to_string()),
+        )));
 
         let temp_dir = tempfile::tempdir().unwrap();
         let ctx = HandlerContext::with_code_intelligence_provider(
@@ -440,9 +480,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_hover_error() {
-        let provider = Arc::new(MockLspProvider::new().with_hover(
-            Err(CodeIntelligenceError::LspError("Server unavailable".to_string()))
-        ));
+        let provider = Arc::new(MockLspProvider::new().with_hover(Err(
+            CodeIntelligenceError::LspError("Server unavailable".to_string()),
+        )));
 
         let temp_dir = tempfile::tempdir().unwrap();
         let ctx = HandlerContext::with_code_intelligence_provider(
@@ -527,9 +567,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_find_references_error() {
-        let provider = Arc::new(MockLspProvider::new().with_references(
-            Err(CodeIntelligenceError::LspError("Server unavailable".to_string()))
-        ));
+        let provider = Arc::new(MockLspProvider::new().with_references(Err(
+            CodeIntelligenceError::LspError("Server unavailable".to_string()),
+        )));
 
         let temp_dir = tempfile::tempdir().unwrap();
         let ctx = HandlerContext::with_code_intelligence_provider(
@@ -571,14 +611,12 @@ mod tests {
                 symbol: Symbol::new("MyClass", SymbolKind::Class, loc2.clone()),
                 document_kind: DocumentSymbolKind::Class,
                 range: SourceRange::new(loc2.clone(), loc3.clone()),
-                children: vec![
-                    DocumentSymbol {
-                        symbol: Symbol::new("field1", SymbolKind::Field, loc2.clone()),
-                        document_kind: DocumentSymbolKind::Field,
-                        range: SourceRange::new(loc2.clone(), loc2.clone()),
-                        children: vec![],
-                    },
-                ],
+                children: vec![DocumentSymbol {
+                    symbol: Symbol::new("field1", SymbolKind::Field, loc2.clone()),
+                    document_kind: DocumentSymbolKind::Field,
+                    range: SourceRange::new(loc2.clone(), loc2.clone()),
+                    children: vec![],
+                }],
             },
         ];
         let provider = Arc::new(MockLspProvider::new().with_document_symbols(Ok(symbols)));
@@ -631,7 +669,11 @@ mod tests {
         for i in 0..100 {
             let loc = Location::new("large.rs", i * 5, 0);
             symbols.push(DocumentSymbol {
-                symbol: Symbol::new(&format!("function_{}", i), SymbolKind::Function, loc.clone()),
+                symbol: Symbol::new(
+                    &format!("function_{}", i),
+                    SymbolKind::Function,
+                    loc.clone(),
+                ),
                 document_kind: DocumentSymbolKind::Function,
                 range: SourceRange::new(loc.clone(), Location::new("large.rs", (i + 1) * 5, 0)),
                 children: vec![],
@@ -656,9 +698,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_get_document_symbols_error() {
-        let provider = Arc::new(MockLspProvider::new().with_document_symbols(
-            Err(CodeIntelligenceError::LspError("Server unavailable".to_string()))
-        ));
+        let provider = Arc::new(MockLspProvider::new().with_document_symbols(Err(
+            CodeIntelligenceError::LspError("Server unavailable".to_string()),
+        )));
 
         let temp_dir = tempfile::tempdir().unwrap();
         let ctx = HandlerContext::with_code_intelligence_provider(

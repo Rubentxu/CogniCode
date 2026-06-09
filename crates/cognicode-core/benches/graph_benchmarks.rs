@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 use cognicode_core::infrastructure::graph::{
     GraphCache, LightweightIndex, OnDemandGraphBuilder, PerFileGraphCache, SymbolIndex,
@@ -26,7 +26,8 @@ fn generate_python_source(line_count: usize) -> String {
     let lines_per_function = line_count / 20;
 
     // Generate classes with methods
-    let class_count = (line_count as f64 / (functions_per_class as f64 * lines_per_function as f64)) as usize;
+    let class_count =
+        (line_count as f64 / (functions_per_class as f64 * lines_per_function as f64)) as usize;
 
     for class_idx in 0..class_count {
         source.push_str(&format!("class Class{}:\n", class_idx));
@@ -39,7 +40,10 @@ fn generate_python_source(line_count: usize) -> String {
                 "    def method_{}(self, arg1: int, arg2: str) -> Optional[Dict]:\n",
                 method_idx
             ));
-            source.push_str(&format!("        result = {{\"class\": {}, \"method\": {}}}\n", class_idx, method_idx));
+            source.push_str(&format!(
+                "        result = {{\"class\": {}, \"method\": {}}}\n",
+                class_idx, method_idx
+            ));
             source.push_str("        local_var = arg1 * 2\n");
             source.push_str("        another = arg2.lower()\n");
             source.push_str("        if local_var > 100:\n");
@@ -65,10 +69,7 @@ fn generate_python_source(line_count: usize) -> String {
         source.push_str("            result['positive'] = result.get('positive', 0) + 1\n");
         source.push_str("        else:\n");
         source.push_str("            result['negative'] = result.get('negative', 0) + 1\n");
-        source.push_str(&format!(
-            "    obj = Class{}()\n",
-            class_idx
-        ));
+        source.push_str(&format!("    obj = Class{}()\n", class_idx));
         source.push_str(&format!(
             "    obj.method_{}(1, \"test\")\n",
             class_idx % functions_per_class
@@ -89,7 +90,8 @@ fn generate_rust_source(line_count: usize) -> String {
     let functions_per_struct = 8;
     let lines_per_function = line_count / 16;
 
-    let struct_count = (line_count as f64 / (functions_per_struct as f64 * lines_per_function as f64)) as usize;
+    let struct_count =
+        (line_count as f64 / (functions_per_struct as f64 * lines_per_function as f64)) as usize;
 
     for struct_idx in 0..struct_count {
         source.push_str(&format!("struct Handler{} {{\n", struct_idx));
@@ -106,10 +108,14 @@ fn generate_rust_source(line_count: usize) -> String {
                 method_idx
             ));
             source.push_str(&format!("        let mut result = HashMap::new();\n"));
-            source.push_str(&format!("        result.insert(\"id\".to_string(), self.id);\n"));
+            source.push_str(&format!(
+                "        result.insert(\"id\".to_string(), self.id);\n"
+            ));
             source.push_str("        for item in &input {\n");
             source.push_str("            if *item > 0 {\n");
-            source.push_str("                *result.entry(\"positive\".to_string()).or_insert(0) += 1;\n");
+            source.push_str(
+                "                *result.entry(\"positive\".to_string()).or_insert(0) += 1;\n",
+            );
             source.push_str("            }\n");
             source.push_str("        }\n");
             source.push_str(&format!(
@@ -402,7 +408,9 @@ fn benchmark_p99_call_graph_construction(c: &mut Criterion) {
     let mut group = c.benchmark_group("p99_call_graph");
 
     // Run multiple iterations to get P99 distribution
-    group.sample_size(100).warm_up_time(std::time::Duration::from_millis(100));
+    group
+        .sample_size(100)
+        .warm_up_time(std::time::Duration::from_millis(100));
 
     group.bench_function("construction", |b| {
         b.iter(|| {
@@ -426,7 +434,9 @@ fn benchmark_p99_semantic_search(c: &mut Criterion) {
     let index = generate_large_index(500);
 
     let mut group = c.benchmark_group("p99_semantic_search");
-    group.sample_size(100).warm_up_time(std::time::Duration::from_millis(50));
+    group
+        .sample_size(100)
+        .warm_up_time(std::time::Duration::from_millis(50));
 
     group.bench_function("lookup", |b| {
         b.iter(|| {
@@ -447,7 +457,9 @@ fn benchmark_p99_graph_cache_update(c: &mut Criterion) {
     let cache = GraphCache::new();
 
     let mut group = c.benchmark_group("p99_graph_cache");
-    group.sample_size(100).warm_up_time(std::time::Duration::from_millis(50));
+    group
+        .sample_size(100)
+        .warm_up_time(std::time::Duration::from_millis(50));
 
     group.bench_function("update", |b| {
         b.iter(|| {

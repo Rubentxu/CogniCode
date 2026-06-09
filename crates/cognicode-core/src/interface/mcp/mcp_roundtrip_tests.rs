@@ -96,12 +96,12 @@ mod tests {
     mod file_operations_roundtrip {
         use super::*;
         use crate::interface::mcp::file_ops_handlers::{
-            handle_read_file, handle_write_file, handle_edit_file,
-            handle_search_content, handle_list_files,
+            handle_edit_file, handle_list_files, handle_read_file, handle_search_content,
+            handle_write_file,
         };
         use crate::interface::mcp::schemas::{
-            EditFileInput, FileEdit, ListFilesInput, ReadFileInput,
-            SearchContentInput, WriteFileInput,
+            EditFileInput, FileEdit, ListFilesInput, ReadFileInput, SearchContentInput,
+            WriteFileInput,
         };
 
         #[tokio::test]
@@ -428,7 +428,10 @@ fn simple_function() {
             // Roundtrip input
             let json = serde_json::to_string(&input).unwrap();
             let parsed_input: GetComplexityInput = serde_json::from_str(&json).unwrap();
-            assert_eq!(parsed_input.function_name, Some("simple_function".to_string()));
+            assert_eq!(
+                parsed_input.function_name,
+                Some("simple_function".to_string())
+            );
 
             // Call handler
             let output = handle_get_complexity(&ctx, parsed_input).await.unwrap();

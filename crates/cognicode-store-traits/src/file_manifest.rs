@@ -1,3 +1,6 @@
+//! DEPRECATED: this module is part of the deprecated `cognicode-store-traits` crate.
+//! Use `cognicode_core::domain::value_objects::FileManifest` instead.
+//!
 //! File manifest for tracking indexed files and their content hashes
 //!
 //! This value object tracks all indexed files in a project, enabling

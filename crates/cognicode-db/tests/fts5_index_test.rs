@@ -1,3 +1,4 @@
+#![cfg(feature = "sqlite")]
 //! Tests for FTS5 Symbol Index
 
 use rusqlite::Connection;

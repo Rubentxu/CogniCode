@@ -48,6 +48,7 @@ petgraph = "0.6"
 tokio = { version = "1.45", features = ["rt-multi-thread", "net", "sync", "time", "macros", "signal", "process", "io-util"] }
 async-trait = "0.1"
 futures-util = "0.3"
+tower = { version = "0.5", features = ["util"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -115,3 +116,12 @@ rig-core = { version = "0.35", default-features = false, features = ["rustls"] }
 # Dev deps
 tokio-test = "0.4"
 mockall = "0.11"
+
+# PostgreSQL async driver (gated behind the `postgres` feature in cognicode-core).
+# `macros` is required for `#[derive(sqlx::FromRow)]`. We intentionally do
+# NOT enable the `migrate` feature here because it pulls `sqlx-sqlite`,
+# which conflicts with `rusqlite` in the wider workspace. Integration
+# tests build their own per-test isolated database via a tiny manual
+# fixture instead of `#[sqlx::test]` — same isolation guarantee, no
+# extra features. Document this in the PR description.
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros"] }

@@ -649,6 +649,165 @@ export const healthResponseSchema = z.object({
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
 // ============================================================================
+// `cognicode_ask` response (contextual-help)
+// ============================================================================
+
+/**
+ * Response shape for `POST /api/ask` — the natural-language router
+ * used by the contextual-help suggestion strip. The backend currently
+ * returns the typed `McpResultEnvelope` from `cognicode_ask`; we keep
+ * this schema permissive (it is not the primary type) but a single
+ * known shape gives us runtime validation at the boundary.
+ */
+export const askResponseSchema = z.object({
+  status: z.string(),
+  primary_result: z.unknown().nullable().optional(),
+  supporting: z.array(z.unknown()).optional(),
+  suggested_follow_ups: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        tool: z.string(),
+        params: z.record(z.string(), z.string()),
+      }),
+    )
+    .optional(),
+});
+export type AskResponse = z.infer<typeof askResponseSchema>;
+
+// ============================================================================
+// Subgraph (visualization-stack Phase 1)
+// ============================================================================
+
+/**
+ * Node `style_class` taxonomy — strict mirror of the Rust
+ * `style_class_for` helper. Unknown buckets fail parse so the
+ * front-end can never silently mis-style a node.
+ */
+export const graphNodeStyleClassSchema = z.enum([
+  "function",
+  "module",
+  "external",
+]);
+export type GraphNodeStyleClass = z.infer<typeof graphNodeStyleClassSchema>;
+
+/**
+ * Edge `style_class` taxonomy — strict mirror of the Rust
+ * `edge_style_class_for` helper. Same rationale as the node variant.
+ */
+export const graphEdgeStyleClassSchema = z.enum([
+  "edge.calls",
+  "edge.implements",
+  "edge.uses",
+]);
+export type GraphEdgeStyleClass = z.infer<typeof graphEdgeStyleClassSchema>;
+
+/**
+ * One node in a sub-graph response. `id` matches the canonical MVP
+ * id; `style_class` is the cytoscape-taxonomy bucket the backend
+ * already derived — the front-end does NOT re-classify.
+ */
+export const graphNodeSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  kind: z.string(),
+  file: z.string().optional(),
+  line: z.number().int().nonnegative().optional(),
+  style_class: graphNodeStyleClassSchema,
+});
+export type GraphNode = z.infer<typeof graphNodeSchema>;
+
+/**
+ * One edge. `source` and `target` reference `graphNode.id` by
+ * equality — the adapter assumes the response is internally
+ * consistent (the backend guarantees this even after truncation).
+ */
+export const graphEdgeSchema = z.object({
+  source: z.string(),
+  target: z.string(),
+  relation: z.string(),
+  style_class: graphEdgeStyleClassSchema,
+});
+export type GraphEdge = z.infer<typeof graphEdgeSchema>;
+
+/**
+ * Top-level response for `GET /api/graph/:id/subgraph`.
+ *
+ * `truncated_reason` is `Some("node_cap")` whenever `truncated` is
+ * `true`. We type it as `optional + nullable` so the absence case
+ * (most responses) round-trips cleanly.
+ */
+export const subgraphResponseSchema = z.object({
+  root: z.string(),
+  nodes: z.array(graphNodeSchema),
+  edges: z.array(graphEdgeSchema),
+  truncated: z.boolean(),
+  truncated_reason: z.string().nullable().optional(),
+});
+export type SubgraphResponse = z.infer<typeof subgraphResponseSchema>;
+
+// ============================================================================
+// Contextual Graph — Contextual Views (Phase 1 of visualization-stack)
+// ============================================================================
+//
+// Mirrors the Rust `ContextualGraphResponse` family in
+// `crates/cognicode-explorer/src/dto.rs`. The four sections
+// (`focusNode`, `parent`, `children`, `sameLevel`) reuse the
+// `GraphNode` / `GraphEdge` shapes (ADR-CX-2).
+
+/**
+ * The `parent` section — the file the focus lives in, plus the
+ * `lives_in` edge connecting them. Null when the focus is an orphan.
+ */
+export const parentSectionSchema = z.object({
+  node: graphNodeSchema,
+  edge: graphEdgeSchema,
+});
+export type ParentSection = z.infer<typeof parentSectionSchema>;
+
+/**
+ * The `children` section — the siblings of the focus in its file,
+ * with the `lives_in` edges pointing at the focus. Null when the
+ * focus is an orphan.
+ */
+export const childrenSectionSchema = z.object({
+  nodes: z.array(graphNodeSchema),
+  edges: z.array(graphEdgeSchema),
+});
+export type ChildrenSection = z.infer<typeof childrenSectionSchema>;
+
+/**
+ * The `sameLevel` section — the BFS of callers + callees around the
+ * focus, bounded by `max_nodes` (combined with children).
+ */
+export const sameLevelSectionSchema = z.object({
+  nodes: z.array(graphNodeSchema),
+  edges: z.array(graphEdgeSchema),
+});
+export type SameLevelSection = z.infer<typeof sameLevelSectionSchema>;
+
+/**
+ * Top-level response for `GET /api/graph/:id/contextual`.
+ *
+ * `truncationReason` is `null` (or absent) when nothing was clipped;
+ * `"max_nodes_exceeded"` when the children / same-level combined
+ * set was trimmed to fit the cap.
+ */
+export const contextualGraphResponseSchema = z.object({
+  focusNode: graphNodeSchema,
+  parent: parentSectionSchema.nullable(),
+  children: childrenSectionSchema.nullable(),
+  sameLevel: sameLevelSectionSchema,
+  level: z.string(),
+  truncated: z.boolean(),
+  truncationReason: z.string().nullable().optional(),
+});
+export type ContextualGraphResponse = z.infer<
+  typeof contextualGraphResponseSchema
+>;
+
+// ============================================================================
 // Convenience aliases
 // ============================================================================
 

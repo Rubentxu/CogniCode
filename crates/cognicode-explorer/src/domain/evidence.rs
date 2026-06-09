@@ -55,6 +55,10 @@ fn symbol_metadata_evidence(symbol: &ResolvedSymbol) -> EvidenceBlock {
         confidence: Some(1.0),
         // Graph has no build-time exposed through the explorer port yet.
         freshness: Some("unknown".into()),
+        // This file does not own edge metadata; provenance is filled in
+        // by the call-graph view builder when the repository is
+        // metadata-aware. Stay `None` here.
+        provenance: None,
     }
 }
 
@@ -74,20 +78,24 @@ fn call_graph_evidence(symbol: &ResolvedSymbol, repo: &dyn SymbolRepository) -> 
         confidence: Some(1.0),
         // Same as symbol_metadata: graph build time not exposed.
         freshness: Some("unknown".into()),
+        // Same as symbol_metadata: this helper does not own edge
+        // metadata. The view builder in `views.rs` is the source of
+        // truth for the populated value.
+        provenance: None,
     }
 }
 
-fn source_file_evidence(
-    symbol: &ResolvedSymbol,
-    reader: &dyn SourceReader,
-) -> EvidenceBlock {
+fn source_file_evidence(symbol: &ResolvedSymbol, reader: &dyn SourceReader) -> EvidenceBlock {
     let result = reader.read_source(&symbol.file);
     let (confidence, tool) = match result {
         Ok(_) => (
             Some(1.0),
             format!("SourceReader::read_source({})", symbol.file),
         ),
-        Err(_) => (Some(0.0), format!("SourceReader::read_source(MISSING: {})", symbol.file)),
+        Err(_) => (
+            Some(0.0),
+            format!("SourceReader::read_source(MISSING: {})", symbol.file),
+        ),
     };
     // `read_source` already proved the file is reachable; the freshness
     // signal matches the same heuristic used by `fs_index_evidence` so the
@@ -109,6 +117,10 @@ fn source_file_evidence(
         source_tool_or_query: tool,
         confidence,
         freshness,
+        // Source file evidence carries no edge metadata — the
+        // `confidence` above reflects file reachability, not edge
+        // provenance.
+        provenance: None,
     }
 }
 
@@ -122,6 +134,9 @@ fn fs_index_evidence(symbol: &ResolvedSymbol) -> EvidenceBlock {
         source_tool_or_query: "FsSourceReader::root".into(),
         confidence: Some(1.0),
         freshness: file_freshness(&symbol.file),
+        // Filesystem index evidence is not edge-backed; leave provenance
+        // empty.
+        provenance: None,
     }
 }
 
@@ -150,16 +165,36 @@ mod tests {
 
     struct StubRepo;
     impl SymbolRepository for StubRepo {
-        fn resolve(&self, _id: &SymbolId) -> ExplorerResult<Option<ResolvedSymbol>> { Ok(None) }
-        fn callers(&self, _id: &SymbolId) -> Vec<crate::ports::RelationTarget> { Vec::new() }
-        fn callees(&self, _id: &SymbolId) -> Vec<crate::ports::RelationTarget> { Vec::new() }
-        fn fan_in(&self, _id: &SymbolId) -> usize { 0 }
-        fn fan_out(&self, _id: &SymbolId) -> usize { 0 }
-        fn find_symbols_by_name(&self, _name: &str) -> ExplorerResult<Vec<ResolvedSymbol>> { Ok(Vec::new()) }
-        fn find_symbols_by_file(&self, _file: &str) -> ExplorerResult<Vec<ResolvedSymbol>> { Ok(Vec::new()) }
-        fn module_list(&self) -> Vec<String> { Vec::new() }
-        fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> { Ok(Vec::new()) }
-        fn graph_stats(&self) -> GraphStats { GraphStats::default() }
+        fn resolve(&self, _id: &SymbolId) -> ExplorerResult<Option<ResolvedSymbol>> {
+            Ok(None)
+        }
+        fn callers(&self, _id: &SymbolId) -> Vec<crate::ports::RelationTarget> {
+            Vec::new()
+        }
+        fn callees(&self, _id: &SymbolId) -> Vec<crate::ports::RelationTarget> {
+            Vec::new()
+        }
+        fn fan_in(&self, _id: &SymbolId) -> usize {
+            0
+        }
+        fn fan_out(&self, _id: &SymbolId) -> usize {
+            0
+        }
+        fn find_symbols_by_name(&self, _name: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(Vec::new())
+        }
+        fn find_symbols_by_file(&self, _file: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(Vec::new())
+        }
+        fn module_list(&self) -> Vec<String> {
+            Vec::new()
+        }
+        fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(Vec::new())
+        }
+        fn graph_stats(&self) -> GraphStats {
+            GraphStats::default()
+        }
     }
 
     struct StubReader {
@@ -167,7 +202,9 @@ mod tests {
     }
     impl StubReader {
         fn new() -> Self {
-            Self { files: Mutex::new(StdHashMap::new()) }
+            Self {
+                files: Mutex::new(StdHashMap::new()),
+            }
         }
     }
     impl SourceReader for StubReader {
@@ -231,7 +268,9 @@ mod tests {
         // `reader.read_source` succeeding, not on `Path::exists`.
         let mut files = StdHashMap::new();
         files.insert(rel.clone(), "fn real() {}\n".to_string());
-        let reader = StubReader { files: Mutex::new(files) };
+        let reader = StubReader {
+            files: Mutex::new(files),
+        };
 
         let sym = make_resolved(&rel, "real", 1);
         let blocks = build_evidence_blocks(&sym, &StubRepo, &reader);

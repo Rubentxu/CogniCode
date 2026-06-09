@@ -3,9 +3,9 @@
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::events::GraphEvent;
 use arc_swap::ArcSwap;
-use tokio::sync::broadcast;
 use std::sync::Arc;
 use std::sync::Mutex;
+use tokio::sync::broadcast;
 
 /// Thread-safe cache for call graphs with incremental update support
 pub struct GraphCache {
@@ -107,8 +107,8 @@ impl Default for GraphCache {
 #[cfg(test)]
 mod tests {
     use crate::domain::aggregates::call_graph::CallGraph;
-    use crate::domain::events::graph_event::{DependencyEvent, SymbolAddedEvent};
     use crate::domain::events::GraphEvent;
+    use crate::domain::events::graph_event::{DependencyEvent, SymbolAddedEvent};
     use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
     use crate::infrastructure::graph::graph_cache::GraphCache;
 
@@ -317,8 +317,14 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        assert!(event1_received, "Receiver1 should have received GraphReplaced event");
-        assert!(event2_received, "Receiver2 should have received GraphReplaced event");
+        assert!(
+            event1_received,
+            "Receiver1 should have received GraphReplaced event"
+        );
+        assert!(
+            event2_received,
+            "Receiver2 should have received GraphReplaced event"
+        );
     }
 
     #[test]
@@ -358,8 +364,14 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        assert!(event1_received, "Should have received GraphReplaced after clear");
-        assert!(event2_received, "Should have received GraphCleared after clear");
+        assert!(
+            event1_received,
+            "Should have received GraphReplaced after clear"
+        );
+        assert!(
+            event2_received,
+            "Should have received GraphCleared after clear"
+        );
     }
 
     #[test]

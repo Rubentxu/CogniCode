@@ -263,6 +263,22 @@ src/
 | **Infrastructure** | Implementaciones concretas (tree-sitter, petgraph) | Domain (traits) |
 | **Interface** | Adaptadores externos (MCP, LSP, CLI) | Application |
 
+### 3.3 ExplorerQL (extensión de MoldQL)
+
+**ExplorerQL** es un superconjunto estricto de MoldQL (`crates/cognicode-explorer/src/moldql/`) que añade 5 primitivas graph-native:
+
+- `PATH FROM <a> TO <b> [MAX HOPS <n>]`
+- `NEIGHBORS <root> DEPTH <n> [DIRECTION incoming|outgoing|both]`
+- `SUBGRAPH ROOT <root> [DEPTH <n>]`
+- `CLUSTER [METHOD scc|connected]`
+- `EXPLAIN FROM <a> TO <b>`
+
+Más composición booleana (`AND`/`OR`/`NOT` con paréntesis, precedencia `NOT > AND > OR`) y filtros `WHERE` para provenance (`provenance.lsp = "rust"`) y confidence (`confidence >= 0.7`).
+
+Pipeline: `parse → compile → run`. La compilación es dual: AST → SQL parametrizado (PostgreSQL con `$N` binds) **o** `PetgraphPlan` (el executor lo recorre contra `cognicode_core::CallGraph`). Los tests de paridad (`compile::tests::parity_*`) garantizan que ambos backends producen planes semánticamente equivalentes.
+
+La tool MCP `explorer_query_moldql` acepta las nuevas primitivas; opcionalmente, el caller puede pasar `target: "pg" | "petgraph" | "auto"` (default `auto`).
+
 ---
 
 ## 4. Abstracciones SOLID

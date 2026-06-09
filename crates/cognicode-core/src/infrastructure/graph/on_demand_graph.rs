@@ -40,10 +40,7 @@ impl CallHierarchyResult {
         let mut result: HashMap<u32, Vec<&HierarchyEntry>> = HashMap::new();
         for entry in &self.entries {
             if entry.direction == TraversalDirection::Callees {
-                result
-                    .entry(entry.depth)
-                    .or_default()
-                    .push(entry);
+                result.entry(entry.depth).or_default().push(entry);
             }
         }
         result
@@ -54,10 +51,7 @@ impl CallHierarchyResult {
         let mut result: HashMap<u32, Vec<&HierarchyEntry>> = HashMap::new();
         for entry in &self.entries {
             if entry.direction == TraversalDirection::Callers {
-                result
-                    .entry(entry.depth)
-                    .or_default()
-                    .push(entry);
+                result.entry(entry.depth).or_default().push(entry);
             }
         }
         result

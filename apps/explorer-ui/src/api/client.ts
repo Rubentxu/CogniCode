@@ -177,6 +177,79 @@ async function handleResponse<T extends z.ZodTypeAny>(
 }
 
 // ============================================================================
+// Subgraph (visualization-stack Phase 1)
+// ============================================================================
+
+/**
+ * Subgraph query parameters. Matches `crates/cognicode-explorer/src/api.rs::SubgraphQuery`.
+ *
+ * All fields are optional on the wire; the backend applies defaults
+ * (depth=3, direction=both, max_nodes=500) when a key is missing.
+ */
+export type SubgraphQuery = {
+  depth?: number;
+  direction?: "incoming" | "outgoing" | "both";
+  max_nodes?: number;
+};
+
+/**
+ * Fetch a sub-graph for the given root id. Returns the typed
+ * `SubgraphResponse` (zod-validated at the boundary) or throws
+ * `ApiError` on non-2xx.
+ */
+export async function fetchSubgraph(
+  id: string,
+  params: SubgraphQuery,
+): Promise<import("./types").SubgraphResponse> {
+  const query: Record<string, string | number> = {};
+  if (params.depth !== undefined) query["depth"] = params.depth;
+  if (params.direction !== undefined) query["direction"] = params.direction;
+  if (params.max_nodes !== undefined) query["max_nodes"] = params.max_nodes;
+  // Re-use the existing `apiGet` so the path benefits from the same
+  // error + zod validation pipeline as every other DTO endpoint.
+  const { subgraphResponseSchema } = await import("./types");
+  return apiGet(`/graph/${encodeURIComponent(id)}/subgraph`, subgraphResponseSchema, query);
+}
+
+// ============================================================================
+// Contextual Graph — Contextual Views (Phase 1 of visualization-stack)
+// ============================================================================
+
+/**
+ * Options for `fetchContextual`. All fields are optional; the
+ * backend applies defaults (`level=file`, `depth=1`, `max_nodes=200`).
+ *
+ * Mirrors `crates/cognicode-explorer/src/api::ContextualQuery`.
+ */
+export type ContextualOptions = {
+  level?: "file";
+  depth?: 1 | 2;
+  maxNodes?: number;
+};
+
+/**
+ * Fetch a `ContextualGraphResponse` for the given focus id. The
+ * response is zod-validated at the boundary; non-2xx responses
+ * surface as `ApiError` (with `status: 404` for unknown symbols,
+ * `status: 400` for out-of-bounds params).
+ */
+export async function fetchContextual(
+  id: string,
+  opts: ContextualOptions = {},
+): Promise<import("./types").ContextualGraphResponse> {
+  const query: Record<string, string | number> = {};
+  if (opts.level !== undefined) query["level"] = opts.level;
+  if (opts.depth !== undefined) query["depth"] = opts.depth;
+  if (opts.maxNodes !== undefined) query["max_nodes"] = opts.maxNodes;
+  const { contextualGraphResponseSchema } = await import("./types");
+  return apiGet(
+    `/graph/${encodeURIComponent(id)}/contextual`,
+    contextualGraphResponseSchema,
+    query,
+  );
+}
+
+// ============================================================================
 // SWR-compatible fetcher factory
 // ============================================================================
 

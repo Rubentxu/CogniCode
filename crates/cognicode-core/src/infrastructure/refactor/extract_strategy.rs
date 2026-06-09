@@ -95,11 +95,13 @@ impl ExtractStrategy {
                 let child_kind = child.kind();
 
                 // Check if this is a block that contains multiple statements
-                if block_types.contains(&child_kind) && child.child_count() > 1
+                if block_types.contains(&child_kind)
+                    && child.child_count() > 1
                     && let Some(block) = self.analyze_block(child, source, file_path)
-                        && block.code.lines().count() >= 2 {
-                            blocks.push(block);
-                        }
+                    && block.code.lines().count() >= 2
+                {
+                    blocks.push(block);
+                }
 
                 self.find_statement_blocks(child, source, file_path, blocks);
             }
@@ -170,12 +172,13 @@ impl ExtractStrategy {
             for i in 0..node.child_count() {
                 if let Some(child) = node.child(i) {
                     if (child.kind() == "identifier" || child.kind() == "pattern")
-                        && let Ok(name) = child.utf8_text(source.as_bytes()) {
-                            // Skip self/box etc.
-                            if !name.is_empty() && !["self", "box", "ref", "mut"].contains(&name) {
-                                defined_vars.insert(name.to_string());
-                            }
+                        && let Ok(name) = child.utf8_text(source.as_bytes())
+                    {
+                        // Skip self/box etc.
+                        if !name.is_empty() && !["self", "box", "ref", "mut"].contains(&name) {
+                            defined_vars.insert(name.to_string());
                         }
+                    }
                     // Handle patterns like `let x = ...` or `let (a, b) = ...`
                     if child.kind() == "pattern" {
                         self.collect_pattern_identifiers(child, source, defined_vars);
@@ -191,17 +194,17 @@ impl ExtractStrategy {
             if let Some(parent) = node.parent() {
                 let parent_kind = parent.kind();
                 // Skip if this identifier is being defined (left side of assignment)
-                if parent_kind != "identifier" && parent_kind != "pattern"
+                if parent_kind != "identifier"
+                    && parent_kind != "pattern"
                     && let Ok(name) = node.utf8_text(source.as_bytes())
-                        && !name.is_empty()
-                            && ![
-                                "self", "box", "ref", "mut", "let", "const", "var", "fn", "def",
-                                "class",
-                            ]
-                            .contains(&name)
-                        {
-                            used_vars.insert(name.to_string());
-                        }
+                    && !name.is_empty()
+                    && ![
+                        "self", "box", "ref", "mut", "let", "const", "var", "fn", "def", "class",
+                    ]
+                    .contains(&name)
+                {
+                    used_vars.insert(name.to_string());
+                }
             }
         }
 
@@ -257,9 +260,10 @@ impl ExtractStrategy {
 
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i)
-                && let Some(name) = self.find_identifier_in_node(child, source) {
-                    return Some(name);
-                }
+                && let Some(name) = self.find_identifier_in_node(child, source)
+            {
+                return Some(name);
+            }
         }
 
         None
@@ -274,9 +278,11 @@ impl ExtractStrategy {
     ) {
         if node.kind() == "identifier"
             && let Ok(name) = node.utf8_text(source.as_bytes())
-                && !name.is_empty() && !["self", "box"].contains(&name) {
-                    defined_vars.insert(name.to_string());
-                }
+            && !name.is_empty()
+            && !["self", "box"].contains(&name)
+        {
+            defined_vars.insert(name.to_string());
+        }
 
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
@@ -851,7 +857,9 @@ impl RefactorStrategy for ExtractStrategy {
         // Return prepared edits with the extraction target name
         // The actual TextEdits would be applied by the caller using the generate_* methods
         Ok(PreparedEdits {
-            edits: vec![RefactorParameters::new().with_extraction_target(extraction_target.clone())],
+            edits: vec![
+                RefactorParameters::new().with_extraction_target(extraction_target.clone()),
+            ],
             files_to_modify: files_to_modify.into_keys().collect(),
             files_to_create: Vec::new(),
             files_to_delete: Vec::new(),

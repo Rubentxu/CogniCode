@@ -11,4 +11,7 @@ pub mod symbol_repository;
 pub use quality_repository::{QualityGateSummary, QualityIssue, QualityRepository, RuleSummary};
 pub use search_repository::{SearchHit, SearchRepository};
 pub use source_reader::SourceReader;
-pub use symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
+pub use symbol_repository::{
+    EdgeWithMetadata, MetadataAwareRepository, RelationTarget, RelationTargetWithMetadata,
+    ResolvedSymbol, SymbolRepository,
+};

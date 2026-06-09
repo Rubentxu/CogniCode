@@ -295,10 +295,7 @@ mod tests {
         }));
         r.register(Arc::new(TestLens {
             id: "both".into(),
-            types: vec![
-                InspectableObjectType::Symbol,
-                InspectableObjectType::File,
-            ],
+            types: vec![InspectableObjectType::Symbol, InspectableObjectType::File],
         }));
         let sym: Vec<String> = r
             .applicable_to(&InspectableObjectType::Symbol)
@@ -330,14 +327,16 @@ mod tests {
             types: vec![InspectableObjectType::Scope],
         }));
         // "a" should now be applicable to Scope but not Symbol; order preserved.
-        assert!(!r
-            .applicable_to(&InspectableObjectType::Symbol)
-            .iter()
-            .any(|d| d.id == "a"));
-        assert!(r
-            .applicable_to(&InspectableObjectType::Scope)
-            .iter()
-            .any(|d| d.id == "a"));
+        assert!(
+            !r.applicable_to(&InspectableObjectType::Symbol)
+                .iter()
+                .any(|d| d.id == "a")
+        );
+        assert!(
+            r.applicable_to(&InspectableObjectType::Scope)
+                .iter()
+                .any(|d| d.id == "a")
+        );
         let ids: Vec<String> = r.list().into_iter().map(|d| d.id).collect();
         assert_eq!(ids, vec!["a", "b"]);
     }
@@ -354,7 +353,10 @@ mod tests {
 
     #[test]
     fn finding_id_is_stable() {
-        assert_eq!(finding_id("hotspots", "src/foo.rs:alpha:1"), "finding:hotspots:src/foo.rs:alpha:1");
+        assert_eq!(
+            finding_id("hotspots", "src/foo.rs:alpha:1"),
+            "finding:hotspots:src/foo.rs:alpha:1"
+        );
     }
 
     #[test]

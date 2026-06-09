@@ -1,3 +1,6 @@
+//! DEPRECATED: this module is part of the deprecated `cognicode-store-traits` crate.
+//! Use `cognicode_core::domain::value_objects::DependencyType` instead.
+//!
 //! DependencyType - Value object representing the type of dependency between symbols
 
 use serde::{Deserialize, Serialize};

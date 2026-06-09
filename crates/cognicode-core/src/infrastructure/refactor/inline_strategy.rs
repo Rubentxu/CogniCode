@@ -67,20 +67,21 @@ impl InlineStrategy {
     ) {
         if node.kind() == call_type
             && let Some(callee_name) = self.extract_callee_name(node, source_bytes)
-                && callee_name == target_name {
-                    let start = node.start_position();
-                    let end = node.end_position();
-                    let arguments = self.extract_arguments(node, source_bytes);
-                    call_sites.push(CallSite {
-                        location: Location::new("source", start.row as u32, start.column as u32),
-                        range: SourceRange::new(
-                            Location::new("source", start.row as u32, start.column as u32),
-                            Location::new("source", end.row as u32, end.column as u32),
-                        ),
-                        arguments,
-                        context: self.extract_context(lines, start.row as u32),
-                    });
-                }
+            && callee_name == target_name
+        {
+            let start = node.start_position();
+            let end = node.end_position();
+            let arguments = self.extract_arguments(node, source_bytes);
+            call_sites.push(CallSite {
+                location: Location::new("source", start.row as u32, start.column as u32),
+                range: SourceRange::new(
+                    Location::new("source", start.row as u32, start.column as u32),
+                    Location::new("source", end.row as u32, end.column as u32),
+                ),
+                arguments,
+                context: self.extract_context(lines, start.row as u32),
+            });
+        }
 
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
@@ -108,9 +109,10 @@ impl InlineStrategy {
         if language.call_has_function_field() {
             for i in 0..call_node.child_count() {
                 if let Some(child) = call_node.child(i)
-                    && child.kind() == "function" {
-                        return self.find_identifier_in_node(child, source_bytes);
-                    }
+                    && child.kind() == "function"
+                {
+                    return self.find_identifier_in_node(child, source_bytes);
+                }
             }
         }
 
@@ -139,9 +141,10 @@ impl InlineStrategy {
         }
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i)
-                && let Some(name) = self.find_identifier_in_node(child, source_bytes) {
-                    return Some(name);
-                }
+                && let Some(name) = self.find_identifier_in_node(child, source_bytes)
+            {
+                return Some(name);
+            }
         }
         None
     }
@@ -151,17 +154,19 @@ impl InlineStrategy {
         let mut arguments = Vec::new();
         for i in 0..call_node.child_count() {
             if let Some(child) = call_node.child(i)
-                && child.kind() == "arguments" {
-                    for j in 0..child.child_count() {
-                        if let Some(arg) = child.child(j)
-                            && let Ok(text) = arg.utf8_text(source_bytes) {
-                                let trimmed = text.trim();
-                                if !trimmed.is_empty() && trimmed != "," {
-                                    arguments.push(trimmed.to_string());
-                                }
-                            }
+                && child.kind() == "arguments"
+            {
+                for j in 0..child.child_count() {
+                    if let Some(arg) = child.child(j)
+                        && let Ok(text) = arg.utf8_text(source_bytes)
+                    {
+                        let trimmed = text.trim();
+                        if !trimmed.is_empty() && trimmed != "," {
+                            arguments.push(trimmed.to_string());
+                        }
                     }
                 }
+            }
         }
         arguments
     }
@@ -209,27 +214,28 @@ impl InlineStrategy {
     ) {
         if node.kind() == function_type
             && let Some(name) = self.find_function_name(node, source_bytes)
-                && name == target_name {
-                    let start = node.start_position();
-                    let end = node.end_position();
-                    let params = self.extract_parameters(node, source_bytes);
-                    let body = self.extract_body(node, source_bytes);
-                    let return_type = self.extract_return_type(node, source_bytes);
+            && name == target_name
+        {
+            let start = node.start_position();
+            let end = node.end_position();
+            let params = self.extract_parameters(node, source_bytes);
+            let body = self.extract_body(node, source_bytes);
+            let return_type = self.extract_return_type(node, source_bytes);
 
-                    result.replace(FunctionDefinition {
-                        name,
-                        location: Location::new("source", start.row as u32, start.column as u32),
-                        range: SourceRange::new(
-                            Location::new("source", start.row as u32, start.column as u32),
-                            Location::new("source", end.row as u32, end.column as u32),
-                        ),
-                        parameters: params,
-                        body,
-                        return_type,
-                        source: Arc::from(""),
-                    });
-                    return;
-                }
+            result.replace(FunctionDefinition {
+                name,
+                location: Location::new("source", start.row as u32, start.column as u32),
+                range: SourceRange::new(
+                    Location::new("source", start.row as u32, start.column as u32),
+                    Location::new("source", end.row as u32, end.column as u32),
+                ),
+                parameters: params,
+                body,
+                return_type,
+                source: Arc::from(""),
+            });
+            return;
+        }
 
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
@@ -252,9 +258,10 @@ impl InlineStrategy {
     ) -> Option<String> {
         for i in 0..func_node.child_count() {
             if let Some(child) = func_node.child(i)
-                && (child.kind() == "identifier" || child.kind() == "type_identifier") {
-                    return child.utf8_text(source_bytes).ok().map(|s| s.to_string());
-                }
+                && (child.kind() == "identifier" || child.kind() == "type_identifier")
+            {
+                return child.utf8_text(source_bytes).ok().map(|s| s.to_string());
+            }
         }
         None
     }
@@ -264,17 +271,19 @@ impl InlineStrategy {
         let mut params = Vec::new();
         for i in 0..func_node.child_count() {
             if let Some(child) = func_node.child(i)
-                && child.kind() == "parameters" {
-                    for j in 0..child.child_count() {
-                        if let Some(param) = child.child(j)
-                            && let Ok(text) = param.utf8_text(source_bytes) {
-                                let trimmed = text.trim();
-                                if !trimmed.is_empty() && trimmed != "," {
-                                    params.push(trimmed.to_string());
-                                }
-                            }
+                && child.kind() == "parameters"
+            {
+                for j in 0..child.child_count() {
+                    if let Some(param) = child.child(j)
+                        && let Ok(text) = param.utf8_text(source_bytes)
+                    {
+                        let trimmed = text.trim();
+                        if !trimmed.is_empty() && trimmed != "," {
+                            params.push(trimmed.to_string());
+                        }
                     }
                 }
+            }
         }
         params
     }
@@ -283,9 +292,10 @@ impl InlineStrategy {
     fn extract_body(&self, func_node: tree_sitter::Node, source_bytes: &[u8]) -> Option<String> {
         for i in 0..func_node.child_count() {
             if let Some(child) = func_node.child(i)
-                && child.kind() == "block" {
-                    return child.utf8_text(source_bytes).ok().map(|s| s.to_string());
-                }
+                && child.kind() == "block"
+            {
+                return child.utf8_text(source_bytes).ok().map(|s| s.to_string());
+            }
         }
         None
     }

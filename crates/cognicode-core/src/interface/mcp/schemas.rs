@@ -3,8 +3,8 @@
 //! This module defines all input/output schemas for MCP tools following
 //! the JSON-RPC 2.0 specification.
 
-use serde::{Deserialize, Serialize};
 use crate::application::dto::{OverviewDetail, OverviewMeta};
+use serde::{Deserialize, Serialize};
 
 /// Default depth for call hierarchy traversal
 fn default_depth() -> u8 {

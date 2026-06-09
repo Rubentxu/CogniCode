@@ -3,9 +3,9 @@
 use crate::application::commands::RenameSymbolCommand;
 use crate::application::dto::RefactorPreviewDto;
 use crate::application::error::{AppError, AppResult};
+use crate::domain::aggregates::Symbol;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::refactor::{Refactor, RefactorKind, RefactorParameters, TextEdit};
-use crate::domain::aggregates::Symbol;
 use crate::domain::traits::{DependencyRepository, TextEdit as VfsTextEdit};
 use crate::domain::value_objects::{Location, SourceRange};
 use crate::infrastructure::graph::PetGraphStore;

@@ -66,9 +66,8 @@ mod tests {
 
     impl GraphStore for InMemoryGraphStore {
         fn save_graph(&self, graph: &CallGraph) -> Result<(), StoreError> {
-            let bytes =
-                bincode::serde::encode_to_vec(graph, bincode::config::standard())
-                    .map_err(|e| StoreError::Serialization(e.to_string()))?;
+            let bytes = bincode::serde::encode_to_vec(graph, bincode::config::standard())
+                .map_err(|e| StoreError::Serialization(e.to_string()))?;
             *self.graph.lock().unwrap() = Some(bytes);
             Ok(())
         }
@@ -89,9 +88,8 @@ mod tests {
         }
 
         fn save_manifest(&self, manifest: &FileManifest) -> Result<(), StoreError> {
-            let bytes =
-                bincode::serde::encode_to_vec(manifest, bincode::config::standard())
-                    .map_err(|e| StoreError::Serialization(e.to_string()))?;
+            let bytes = bincode::serde::encode_to_vec(manifest, bincode::config::standard())
+                .map_err(|e| StoreError::Serialization(e.to_string()))?;
             *self.manifest.lock().unwrap() = Some(bytes);
             Ok(())
         }
@@ -158,19 +156,17 @@ mod tests {
     fn test_save_and_load_manifest() {
         let store = InMemoryGraphStore::new();
         let mut manifest = FileManifest::new(PathBuf::from("/project"));
-        manifest.update_entries(&[(
-            PathBuf::from("src/main.rs"),
-            "hash123".to_string(),
-            1000,
-            5,
-        )]);
+        manifest.update_entries(&[(PathBuf::from("src/main.rs"), "hash123".to_string(), 1000, 5)]);
 
         store.save_manifest(&manifest).unwrap();
         let loaded = store.load_manifest().unwrap().unwrap();
 
         assert_eq!(loaded.entries.len(), 1);
         assert_eq!(
-            loaded.get(&PathBuf::from("src/main.rs")).unwrap().content_hash,
+            loaded
+                .get(&PathBuf::from("src/main.rs"))
+                .unwrap()
+                .content_hash,
             "hash123"
         );
     }
@@ -182,12 +178,7 @@ mod tests {
 
         store.save_graph(&graph).unwrap();
         let mut manifest = FileManifest::new(PathBuf::from("/project"));
-        manifest.update_entries(&[(
-            PathBuf::from("src/main.rs"),
-            "hash".to_string(),
-            1000,
-            5,
-        )]);
+        manifest.update_entries(&[(PathBuf::from("src/main.rs"), "hash".to_string(), 1000, 5)]);
         store.save_manifest(&manifest).unwrap();
 
         store.clear().unwrap();

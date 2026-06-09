@@ -1,3 +1,6 @@
+//! DEPRECATED: this module is part of the deprecated `cognicode-store-traits` crate.
+//! Use `cognicode_core::domain::aggregates::Symbol` instead.
+//!
 //! Aggregate Root for code symbols
 //!
 //! Represents a symbol (function, class, variable, etc.) in the codebase.

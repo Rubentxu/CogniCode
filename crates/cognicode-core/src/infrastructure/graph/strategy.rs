@@ -163,10 +163,7 @@ impl Default for OnDemandStrategy {
 impl GraphStrategy for OnDemandStrategy {
     fn build_index(&mut self, project_dir: &Path) -> std::io::Result<()> {
         // Build the strategy's own index — uses RwLock write guard (no silent failure)
-        self.index
-            .write()
-            .unwrap()
-            .build_index(project_dir)?;
+        self.index.write().unwrap().build_index(project_dir)?;
         // Also build the builder's index
         self.builder.set_index(project_dir)
     }
@@ -188,8 +185,8 @@ impl GraphStrategy for OnDemandStrategy {
                     std::io::Error::new(std::io::ErrorKind::InvalidInput, "Unsupported file type")
                 })?;
 
-        let parser = TreeSitterParser::new(language)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let parser =
+            TreeSitterParser::new(language).map_err(|e| std::io::Error::other(e.to_string()))?;
         let symbols = parser
             .find_all_symbols_with_path(&source, &file_path_str)
             .map_err(|e| std::io::Error::other(e.to_string()))?;
@@ -322,9 +319,10 @@ impl GraphStrategy for PerFileStrategy {
             let path = entry.path();
             if path.is_file()
                 && let Some(ext) = path.extension()
-                    && matches!(ext.to_str(), Some("rs" | "py" | "js" | "ts")) {
-                        paths.push(path.to_path_buf());
-                    }
+                && matches!(ext.to_str(), Some("rs" | "py" | "js" | "ts"))
+            {
+                paths.push(path.to_path_buf());
+            }
         }
 
         let path_refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
@@ -385,8 +383,8 @@ impl GraphStrategy for FullGraphStrategy {
                     std::io::Error::new(std::io::ErrorKind::InvalidInput, "Unsupported file type")
                 })?;
 
-        let parser = TreeSitterParser::new(language)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        let parser =
+            TreeSitterParser::new(language).map_err(|e| std::io::Error::other(e.to_string()))?;
         let symbols = parser
             .find_all_symbols_with_path(&source, &file_path_str)
             .map_err(|e| std::io::Error::other(e.to_string()))?;
@@ -428,7 +426,9 @@ impl GraphStrategy for FullGraphStrategy {
     ) -> CallHierarchyResult {
         let mut builder = OnDemandGraphBuilder::new();
         if let Some(ref idx) = self.symbol_index {
-            builder = OnDemandGraphBuilder::with_index(Arc::new(RwLock::new(idx.underlying_index().clone())));
+            builder = OnDemandGraphBuilder::with_index(Arc::new(RwLock::new(
+                idx.underlying_index().clone(),
+            )));
         }
         builder.build_for_symbol(symbol_name, depth, direction)
     }

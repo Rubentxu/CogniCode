@@ -9,8 +9,10 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
-use crate::domain::lens::{cap_and_order, clamp_confidence, finding_id, Lens, LensContext};
-use crate::dto::{DesignFinding, FindingSeverity, InspectableObjectType, LensDescriptor, LensResult};
+use crate::domain::lens::{Lens, LensContext, cap_and_order, clamp_confidence, finding_id};
+use crate::dto::{
+    DesignFinding, FindingSeverity, InspectableObjectType, LensDescriptor, LensResult,
+};
 use crate::error::ExplorerResult;
 use crate::ports::symbol_repository::ResolvedSymbol;
 
@@ -80,11 +82,7 @@ impl Lens for ArchitectureLens {
     }
 }
 
-fn analyse_scope(
-    scope: &str,
-    ctx: &LensContext,
-    quality_present: bool,
-) -> Vec<DesignFinding> {
+fn analyse_scope(scope: &str, ctx: &LensContext, quality_present: bool) -> Vec<DesignFinding> {
     let mut findings = Vec::new();
     let all = ctx.symbol_repo.all_symbols().unwrap_or_default();
     let members: Vec<ResolvedSymbol> = all
@@ -193,11 +191,7 @@ fn analyse_scope(
     findings
 }
 
-fn analyse_file(
-    file: &str,
-    ctx: &LensContext,
-    quality_present: bool,
-) -> Vec<DesignFinding> {
+fn analyse_file(file: &str, ctx: &LensContext, quality_present: bool) -> Vec<DesignFinding> {
     let mut findings = Vec::new();
     let symbols = ctx
         .symbol_repo
@@ -225,7 +219,11 @@ fn analyse_file(
                  typical range; surfaced so callers see the boundary \
                  shape.",
                 scopes_touched.len(),
-                scopes_touched.iter().cloned().collect::<Vec<_>>().join(", ")
+                scopes_touched
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
             severity: FindingSeverity::Info,
             confidence,
@@ -259,7 +257,10 @@ fn analyse_symbol(
     if !foreign_scopes.is_empty() {
         let confidence = clamp_confidence(if quality_present { 0.7 } else { 0.5 });
         findings.push(DesignFinding {
-            id: finding_id(LENS_ID, &format!("boundary:{}:{}:{}", symbol.file, symbol.name, symbol.line)),
+            id: finding_id(
+                LENS_ID,
+                &format!("boundary:{}:{}:{}", symbol.file, symbol.name, symbol.line),
+            ),
             lens_id: LENS_ID.into(),
             title: format!("Boundary touch: {} ({})", symbol.name, foreign_scopes.len()),
             hypothesis: format!(
@@ -340,7 +341,9 @@ mod tests {
     use super::*;
     use crate::adapters::FsSourceReader;
     use crate::dto::InspectableObjectType;
-    use crate::ports::symbol_repository::{GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository};
+    use crate::ports::symbol_repository::{
+        GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
+    };
     use cognicode_core::domain::aggregates::SymbolId;
     use cognicode_core::domain::value_objects::SymbolKind;
     use std::collections::HashMap as StdHashMap;
@@ -408,11 +411,21 @@ mod tests {
         fn fan_out(&self, id: &SymbolId) -> usize {
             self.callees.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
         }
-        fn find_symbols_by_name(&self, _n: &str) -> ExplorerResult<Vec<ResolvedSymbol>> { Ok(Vec::new()) }
-        fn find_symbols_by_file(&self, _f: &str) -> ExplorerResult<Vec<ResolvedSymbol>> { Ok(Vec::new()) }
-        fn module_list(&self) -> Vec<String> { Vec::new() }
-        fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> { Ok(self.all.clone()) }
-        fn graph_stats(&self) -> GraphStats { GraphStats::default() }
+        fn find_symbols_by_name(&self, _n: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(Vec::new())
+        }
+        fn find_symbols_by_file(&self, _f: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(Vec::new())
+        }
+        fn module_list(&self) -> Vec<String> {
+            Vec::new()
+        }
+        fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(self.all.clone())
+        }
+        fn graph_stats(&self) -> GraphStats {
+            GraphStats::default()
+        }
     }
 
     #[test]
@@ -475,7 +488,11 @@ mod tests {
             .findings
             .iter()
             .any(|f| matches!(f.severity, FindingSeverity::Critical));
-        assert!(has_critical, "expected a Critical cycle finding in {:?}", result.findings);
+        assert!(
+            has_critical,
+            "expected a Critical cycle finding in {:?}",
+            result.findings
+        );
     }
 
     #[test]

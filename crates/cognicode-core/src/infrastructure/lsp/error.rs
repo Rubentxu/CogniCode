@@ -54,10 +54,14 @@ pub enum LspProcessError {
 pub enum ServerStatus {
     #[default]
     Starting,
-    Indexing { progress: f32 },
+    Indexing {
+        progress: f32,
+    },
     Ready,
     Busy,
-    Crashed { reason: String },
+    Crashed {
+        reason: String,
+    },
 }
 
 impl ServerStatus {
@@ -254,10 +258,12 @@ mod tests {
         assert!(!ServerStatus::Indexing { progress: 50.0 }.is_ready());
         assert!(ServerStatus::Ready.is_ready());
         assert!(!ServerStatus::Busy.is_ready());
-        assert!(!ServerStatus::Crashed {
-            reason: "oops".to_string()
-        }
-        .is_ready());
+        assert!(
+            !ServerStatus::Crashed {
+                reason: "oops".to_string()
+            }
+            .is_ready()
+        );
     }
 
     #[test]
@@ -266,10 +272,12 @@ mod tests {
         assert!(!ServerStatus::Indexing { progress: 50.0 }.is_terminal());
         assert!(!ServerStatus::Ready.is_terminal());
         assert!(!ServerStatus::Busy.is_terminal());
-        assert!(ServerStatus::Crashed {
-            reason: "oops".to_string()
-        }
-        .is_terminal());
+        assert!(
+            ServerStatus::Crashed {
+                reason: "oops".to_string()
+            }
+            .is_terminal()
+        );
     }
 
     #[test]

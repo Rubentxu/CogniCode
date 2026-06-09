@@ -13,8 +13,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use thiserror::Error;
 use tracing::{debug, warn};
 
@@ -205,12 +205,13 @@ impl InputValidator {
         // CRITICAL: Check for symlinks BEFORE canonicalization using symlink_metadata()
         // (std::fs::metadata follows symlinks, so it CANNOT detect symlinks — must use symlink_metadata)
         if let Ok(metadata) = std::fs::symlink_metadata(&resolved)
-            && metadata.file_type().is_symlink() {
-                warn!("Symlink detected in path: {}", path);
-                return Err(SecurityError::SymlinkDetected {
-                    path: path.to_string(),
-                });
-            }
+            && metadata.file_type().is_symlink()
+        {
+            warn!("Symlink detected in path: {}", path);
+            return Err(SecurityError::SymlinkDetected {
+                path: path.to_string(),
+            });
+        }
 
         // Also check if any parent component is a symlink
         let mut current = PathBuf::from(&resolved);
@@ -219,12 +220,13 @@ impl InputValidator {
                 break;
             }
             if let Ok(metadata) = std::fs::symlink_metadata(parent)
-                && metadata.file_type().is_symlink() {
-                    warn!("Symlink detected in parent path: {}", parent.display());
-                    return Err(SecurityError::SymlinkDetected {
-                        path: parent.display().to_string(),
-                    });
-                }
+                && metadata.file_type().is_symlink()
+            {
+                warn!("Symlink detected in parent path: {}", parent.display());
+                return Err(SecurityError::SymlinkDetected {
+                    path: parent.display().to_string(),
+                });
+            }
             current = parent.to_path_buf();
         }
 
@@ -238,12 +240,13 @@ impl InputValidator {
                     // Check parent for symlinks too
                     if parent.exists()
                         && let Ok(metadata) = std::fs::symlink_metadata(parent)
-                            && metadata.file_type().is_symlink() {
-                                warn!("Symlink detected in parent path: {}", parent.display());
-                                return Err(SecurityError::SymlinkDetected {
-                                    path: parent.display().to_string(),
-                                });
-                            }
+                        && metadata.file_type().is_symlink()
+                    {
+                        warn!("Symlink detected in parent path: {}", parent.display());
+                        return Err(SecurityError::SymlinkDetected {
+                            path: parent.display().to_string(),
+                        });
+                    }
 
                     match std::fs::canonicalize(parent) {
                         Ok(c) => c,
@@ -1191,9 +1194,11 @@ mod tests {
 
         // These should be detected as traversal attempts
         assert!(validator.validate_file_path("../etc/passwd").is_err());
-        assert!(validator
-            .validate_file_path("foo/../../etc/passwd")
-            .is_err());
+        assert!(
+            validator
+                .validate_file_path("foo/../../etc/passwd")
+                .is_err()
+        );
     }
 
     #[test]
@@ -1256,9 +1261,11 @@ mod tests {
         // Path inside workspace should be allowed
         let inside_path = temp_dir.path().join("allowed.txt");
         std::fs::write(&inside_path, "test").unwrap();
-        assert!(validator
-            .validate_file_path(inside_path.to_str().unwrap())
-            .is_ok());
+        assert!(
+            validator
+                .validate_file_path(inside_path.to_str().unwrap())
+                .is_ok()
+        );
 
         // Path outside workspace should be rejected
         let outside_path = "/etc/passwd";
@@ -1318,7 +1325,7 @@ mod tests {
             "%2e%2E/etc/passwd",                       // Mixed case
             "%252e%252e/etc/passwd",                   // Double encoded
             "..%5c..%5cetc%5cpasswd",                  // Backslash encoded as %5c
-            r"%2e%2e\%2e%2e\%2e%2e\etc",             // Mixed encoding
+            r"%2e%2e\%2e%2e\%2e%2e\etc",               // Mixed encoding
             "..%2F..%2F..%2F..%2F..%2F",               // Deep traversal encoded
         ];
 

@@ -8,8 +8,8 @@ use lsp_types::ServerCapabilities;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex as StdMutex;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, warn};
@@ -230,7 +230,12 @@ impl LspProcessManager {
         Err(LspProcessError::NotInitialized)
     }
 
-    pub async fn open_document(&self, language: Language, file_path: &str, content: &str) -> Result<(), LspProcessError> {
+    pub async fn open_document(
+        &self,
+        language: Language,
+        file_path: &str,
+        content: &str,
+    ) -> Result<(), LspProcessError> {
         self.get_or_spawn(language).await?;
 
         if self.opened_documents.contains_key(file_path) {
@@ -243,7 +248,8 @@ impl LspProcessManager {
             let mut proc = proc.lock().await;
             let result = proc.open_document(file_path, content).await;
             if result.is_ok() {
-                self.opened_documents.insert(file_path.to_string(), language);
+                self.opened_documents
+                    .insert(file_path.to_string(), language);
             }
             return result;
         }

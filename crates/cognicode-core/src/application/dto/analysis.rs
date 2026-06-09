@@ -344,7 +344,11 @@ impl ProjectDiagnosticsDto {
         // Architecture violations as "error" severity
         if let Some(arch) = self.architecture.as_ref() {
             for v in &arch.violations {
-                let from = if v.from.is_empty() { "unknown" } else { &v.from };
+                let from = if v.from.is_empty() {
+                    "unknown"
+                } else {
+                    &v.from
+                };
                 let to = if v.to.is_empty() { "unknown" } else { &v.to };
                 diagnostics.push(format!(
                     "    error Architecture violation: {} -> {} ({})",
@@ -388,12 +392,7 @@ impl ProjectDiagnosticsDto {
   Languages: {}{}{}
   Last updated: 0s ago
 </code-intelligence>",
-            symbol_count,
-            edge_count,
-            index_time_ms,
-            languages_str,
-            diagnostics_str,
-            hot_paths_str
+            symbol_count, edge_count, index_time_ms, languages_str, diagnostics_str, hot_paths_str
         )
     }
 }
@@ -607,11 +606,11 @@ pub struct DiagnoseReportDto {
     pub edge_count: usize,
     pub file_count: usize,
     /// Architecture-specific findings
-    pub cycles: Vec<String>,  // cycle descriptions
+    pub cycles: Vec<String>, // cycle descriptions
     pub architecture_score: Option<f32>,
     /// Complexity summary
     pub avg_complexity: Option<f64>,
-    pub max_complexity: Option<(String, u32)>,  // (function, score)
+    pub max_complexity: Option<(String, u32)>, // (function, score)
     /// Dead code stats
     pub dead_code_count: usize,
     pub dead_code_percent: Option<f32>,
@@ -827,7 +826,10 @@ pub struct AskAboutCodeResult {
 // ============================================================================
 
 /// Token estimation for quick overview
-pub fn estimate_tokens_quick(symbols: usize, languages: &std::collections::HashMap<String, usize>) -> usize {
+pub fn estimate_tokens_quick(
+    symbols: usize,
+    languages: &std::collections::HashMap<String, usize>,
+) -> usize {
     let base = 80; // ~80 tokens for structure
     let lang_tokens = languages.len() * 15;
     let sym_tokens = if symbols > 0 { 20 } else { 0 }; // ~20 tokens for symbol count
@@ -843,8 +845,14 @@ pub fn estimate_tokens_medium(
     arch_score: Option<f32>,
 ) -> usize {
     let base = 120;
-    let ep_tokens = entry_points.iter().map(|e| e.name.len() / 4 + e.summary.len() / 4 + 20).sum::<usize>();
-    let hp_tokens = hot_paths.iter().map(|h| h.symbol_name.len() / 4 + h.file.len() / 4 + 25).sum::<usize>();
+    let ep_tokens = entry_points
+        .iter()
+        .map(|e| e.name.len() / 4 + e.summary.len() / 4 + 20)
+        .sum::<usize>();
+    let hp_tokens = hot_paths
+        .iter()
+        .map(|h| h.symbol_name.len() / 4 + h.file.len() / 4 + 25)
+        .sum::<usize>();
     let arch_tokens = if arch_score.is_some() { 30 } else { 0 };
     base + ep_tokens + hp_tokens + arch_tokens
 }
@@ -1074,7 +1082,10 @@ mod tests {
         };
 
         let result = dto.to_xml();
-        assert!(result.is_empty(), "Expected empty string when stats is None");
+        assert!(
+            result.is_empty(),
+            "Expected empty string when stats is None"
+        );
     }
 
     #[test]
@@ -1157,14 +1168,12 @@ mod tests {
         let mut lang_breakdown = HashMap::new();
         lang_breakdown.insert("Rust".to_string(), 100);
 
-        let violations = vec![
-            ViolationInfo {
-                rule: "no_cycles".to_string(),
-                from: "module_a".to_string(),
-                to: "module_b".to_string(),
-                severity: "high".to_string(),
-            },
-        ];
+        let violations = vec![ViolationInfo {
+            rule: "no_cycles".to_string(),
+            from: "module_a".to_string(),
+            to: "module_b".to_string(),
+            severity: "high".to_string(),
+        }];
 
         let dto = ProjectDiagnosticsDto {
             stats: Some(GraphStatsDto {
@@ -1227,15 +1236,13 @@ mod tests {
         languages.insert("Rust".to_string(), 50);
         languages.insert("TypeScript".to_string(), 30);
 
-        let hot_paths = vec![
-            HotPathDto {
-                symbol_name: "process".to_string(),
-                file: "src/lib.rs".to_string(),
-                line: 42,
-                fan_in: 5,
-                fan_out: 2,
-            },
-        ];
+        let hot_paths = vec![HotPathDto {
+            symbol_name: "process".to_string(),
+            file: "src/lib.rs".to_string(),
+            line: 42,
+            fan_in: 5,
+            fan_out: 2,
+        }];
 
         let dto = SmartOverviewDto {
             project_type: "library".to_string(),
@@ -1291,36 +1298,44 @@ mod tests {
 
         // Quick with no symbols
         let tokens = estimate_tokens_quick(0, &languages);
-        assert!(tokens < 200, "Quick estimate should be < 200 tokens, got {}", tokens);
+        assert!(
+            tokens < 200,
+            "Quick estimate should be < 200 tokens, got {}",
+            tokens
+        );
 
         // Quick with symbols
         let tokens = estimate_tokens_quick(100, &languages);
-        assert!(tokens < 200, "Quick estimate should be < 200 tokens, got {}", tokens);
+        assert!(
+            tokens < 200,
+            "Quick estimate should be < 200 tokens, got {}",
+            tokens
+        );
     }
 
     #[test]
     fn test_token_estimation_medium() {
-        let entry_points = vec![
-            EntryPointSummary {
-                name: "main".to_string(),
-                file: "src/main.rs".to_string(),
-                line: 1,
-                kind: "function".to_string(),
-                summary: "Application entry point".to_string(),
-            },
-        ];
-        let hot_paths = vec![
-            HotPathDto {
-                symbol_name: "process".to_string(),
-                file: "src/lib.rs".to_string(),
-                line: 42,
-                fan_in: 5,
-                fan_out: 2,
-            },
-        ];
+        let entry_points = vec![EntryPointSummary {
+            name: "main".to_string(),
+            file: "src/main.rs".to_string(),
+            line: 1,
+            kind: "function".to_string(),
+            summary: "Application entry point".to_string(),
+        }];
+        let hot_paths = vec![HotPathDto {
+            symbol_name: "process".to_string(),
+            file: "src/lib.rs".to_string(),
+            line: 42,
+            fan_in: 5,
+            fan_out: 2,
+        }];
 
         let tokens = estimate_tokens_medium(100, 50, &entry_points, &hot_paths, Some(95.0));
-        assert!(tokens < 600, "Medium estimate should be < 600 tokens, got {}", tokens);
+        assert!(
+            tokens < 600,
+            "Medium estimate should be < 600 tokens, got {}",
+            tokens
+        );
     }
 
     #[test]

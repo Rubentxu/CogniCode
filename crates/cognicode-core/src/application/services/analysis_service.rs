@@ -1,13 +1,12 @@
 //! Analysis Service - Handles code analysis operations
 
-use tracing::{debug, info, warn};
 use crate::application::dto::{
     AnalysisMetadata, DeadCodeEntry, DeadCodeReason, DeadCodeResult, GraphCoverageMetrics,
     GraphStatsDto, ModuleDependenciesResult, ModuleDependency, ModuleDependencyGraph, SymbolDto,
 };
 use crate::application::error::{AppError, AppResult};
-use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::CallGraph;
+use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, ImpactAnalyzer};
 use crate::domain::traits::DependencyRepository;
 use crate::domain::value_objects::DependencyType;
@@ -18,6 +17,7 @@ use crate::infrastructure::graph::{
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use tracing::{debug, info, warn};
 
 /// Service for analyzing code structure and complexity
 pub struct AnalysisService {
@@ -29,16 +29,18 @@ pub struct AnalysisService {
     on_demand_builder: Mutex<Option<OnDemandGraphBuilder>>,
     /// File cache: maps file path to (mtime, symbols, relationships)
     /// Uses Arc<Mutex<...>> to support Send across thread boundaries for async operations
-    file_cache: Arc<Mutex<
-        std::collections::HashMap<
-            String,
-            (
-                u64,
-                Vec<crate::domain::aggregates::Symbol>,
-                Vec<(crate::domain::aggregates::Symbol, String)>,
-            ),
+    file_cache: Arc<
+        Mutex<
+            std::collections::HashMap<
+                String,
+                (
+                    u64,
+                    Vec<crate::domain::aggregates::Symbol>,
+                    Vec<(crate::domain::aggregates::Symbol, String)>,
+                ),
+            >,
         >,
-    >>,
+    >,
     /// Coverage metrics from the last graph build
     coverage_metrics: Mutex<Option<GraphCoverageMetrics>>,
 }
@@ -106,8 +108,7 @@ impl AnalysisService {
             let graph = self.get_project_graph();
             let mut index = LightweightIndex::new();
             for symbol in graph.symbols() {
-                let location =
-                    SymbolLocation::from_location(symbol.location(), *symbol.kind());
+                let location = SymbolLocation::from_location(symbol.location(), *symbol.kind());
                 let name_lower = symbol.name().to_lowercase();
                 index.insert(name_lower, location);
             }
@@ -165,9 +166,7 @@ impl AnalysisService {
         &self,
         symbol_name: &str,
     ) -> Vec<crate::infrastructure::graph::SymbolLocation> {
-        self.ensure_symbol_index()
-            .find_symbol(symbol_name)
-            .to_vec()
+        self.ensure_symbol_index().find_symbol(symbol_name).to_vec()
     }
 
     /// Builds a call graph by scanning all source files in a directory
@@ -234,7 +233,10 @@ impl AnalysisService {
             .collect();
 
         let total_files = files.len();
-        let files_with_lang: usize = files.iter().filter(|(_, lang, _, _)| lang.is_some()).count();
+        let files_with_lang: usize = files
+            .iter()
+            .filter(|(_, lang, _, _)| lang.is_some())
+            .count();
 
         info!(
             "WalkBuilder found {} files, {} have recognized language extensions",
@@ -243,7 +245,11 @@ impl AnalysisService {
 
         // Log first few files for debugging
         for (path, lang, _, _) in files.iter().take(5) {
-            debug!("  Found file: {:?} with language: {:?}", path.file_name(), lang);
+            debug!(
+                "  Found file: {:?} with language: {:?}",
+                path.file_name(),
+                lang
+            );
         }
 
         let files: Vec<_> = files
@@ -260,15 +266,16 @@ impl AnalysisService {
                     let cache = self.file_cache.lock().unwrap();
                     if let Some((cached_mtime, cached_symbols, cached_relationships)) =
                         cache.get(&file_path)
-                        && *cached_mtime == mtime {
-                            return Some((
-                                file_path,
-                                mtime,
-                                cached_symbols.clone(),
-                                cached_relationships.clone(),
-                                false, // from_cache = true
-                            ));
-                        }
+                        && *cached_mtime == mtime
+                    {
+                        return Some((
+                            file_path,
+                            mtime,
+                            cached_symbols.clone(),
+                            cached_relationships.clone(),
+                            false, // from_cache = true
+                        ));
+                    }
                 }
 
                 let source = std::fs::read_to_string(&path).ok()?;
@@ -382,10 +389,10 @@ impl AnalysisService {
     /// Significantly faster than the full strategy for large codebases when only
     /// symbol lookup is required (e.g. `query_symbol_index`).
     fn build_graph_lightweight(&self, project_dir: &Path) -> AppResult<()> {
-        use crate::infrastructure::graph::LightweightIndex;
+        use crate::domain::aggregates::Symbol;
         use crate::domain::aggregates::call_graph::SymbolId;
         use crate::domain::value_objects::Location;
-        use crate::domain::aggregates::Symbol;
+        use crate::infrastructure::graph::LightweightIndex;
 
         let mut index = LightweightIndex::new();
         index
@@ -397,16 +404,8 @@ impl AnalysisService {
         for (name, locations) in index.entries() {
             for loc in locations {
                 let sym_kind = loc.symbol_kind;
-                let location = Location::new(
-                    loc.file.clone(),
-                    loc.line,
-                    loc.column,
-                );
-                let symbol = Symbol::new(
-                    name.clone(),
-                    sym_kind,
-                    location,
-                );
+                let location = Location::new(loc.file.clone(), loc.line, loc.column);
+                let symbol = Symbol::new(name.clone(), sym_kind, location);
                 let id = SymbolId::new(symbol.fully_qualified_name());
                 store.add_symbol_with_location(&id, symbol);
             }
@@ -424,9 +423,7 @@ impl AnalysisService {
     fn build_graph_per_file(&self, project_dir: &Path) -> AppResult<()> {
         use crate::infrastructure::graph::PerFileGraphCache;
 
-        let cache = PerFileGraphCache::with_project_dir(
-            project_dir.to_string_lossy().into_owned()
-        );
+        let cache = PerFileGraphCache::with_project_dir(project_dir.to_string_lossy().into_owned());
 
         // Index all supported files first — merge_all only merges cached entries
         let supported_extensions = ["rs", "py", "js", "ts", "go", "java", "c", "cpp", "h"];
@@ -435,9 +432,10 @@ impl AnalysisService {
                 let path = entry.path();
                 if path.is_file()
                     && let Some(ext) = path.extension().and_then(|e| e.to_str())
-                        && supported_extensions.contains(&ext) {
-                            let _ = cache.get_or_build(&path); // best-effort; ignore parse errors
-                        }
+                    && supported_extensions.contains(&ext)
+                {
+                    let _ = cache.get_or_build(&path); // best-effort; ignore parse errors
+                }
             }
         }
 
@@ -489,9 +487,7 @@ impl AnalysisService {
                 let path = e.path();
                 // Filter: only include files that are under one of the include_dirs
                 // include_dirs are absolute paths, so compare directly with the file path
-                include_dirs.iter().any(|dir| {
-                    path.starts_with(dir)
-                })
+                include_dirs.iter().any(|dir| path.starts_with(dir))
             })
             .filter(|e| e.path().is_file())
             .map(|e| {
@@ -523,15 +519,16 @@ impl AnalysisService {
                     let cache = self.file_cache.lock().unwrap();
                     if let Some((cached_mtime, cached_symbols, cached_relationships)) =
                         cache.get(&file_path)
-                        && *cached_mtime == mtime {
-                            return Some((
-                                file_path,
-                                mtime,
-                                cached_symbols.clone(),
-                                cached_relationships.clone(),
-                                false, // from_cache = true
-                            ));
-                        }
+                        && *cached_mtime == mtime
+                    {
+                        return Some((
+                            file_path,
+                            mtime,
+                            cached_symbols.clone(),
+                            cached_relationships.clone(),
+                            false, // from_cache = true
+                        ));
+                    }
                 }
 
                 let source = std::fs::read_to_string(&path).ok()?;
@@ -618,67 +615,70 @@ impl AnalysisService {
         let dir_path = dir.to_path_buf();
 
         // Spawn blocking task to run the heavy computation
-        let result: Result<Result<GraphCoverageMetrics, AppError>, tokio::task::JoinError> = tokio::task::spawn_blocking(move || {
-            // Create a minimal service context for building the graph
-            let store = std::sync::Mutex::new(crate::infrastructure::graph::PetGraphStore::new());
-            let mut name_to_symbol_id: std::collections::HashMap<String, SymbolId> =
-                std::collections::HashMap::new();
+        let result: Result<Result<GraphCoverageMetrics, AppError>, tokio::task::JoinError> =
+            tokio::task::spawn_blocking(move || {
+                // Create a minimal service context for building the graph
+                let store =
+                    std::sync::Mutex::new(crate::infrastructure::graph::PetGraphStore::new());
+                let mut name_to_symbol_id: std::collections::HashMap<String, SymbolId> =
+                    std::collections::HashMap::new();
 
-            // Coverage tracking
-            let mut parsed_files: usize = 0;
-            let mut unresolved_edges: usize = 0;
+                // Coverage tracking
+                let mut parsed_files: usize = 0;
+                let mut unresolved_edges: usize = 0;
 
-            use ignore::WalkBuilder;
-            use rayon::prelude::*;
+                use ignore::WalkBuilder;
+                use rayon::prelude::*;
 
-            const BLOCKED_DIRS: &[&str] = &["target", "node_modules", ".git", "dist", "build"];
+                const BLOCKED_DIRS: &[&str] = &["target", "node_modules", ".git", "dist", "build"];
 
-            let files: Vec<_> = WalkBuilder::new(&dir_path)
-                .hidden(true)
-                .git_ignore(true)
-                .git_exclude(true)
-                .build()
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    let path = e.path();
-                    !path.components().any(|c| {
-                        c.as_os_str()
-                            .to_str()
-                            .map(|s| BLOCKED_DIRS.contains(&s))
-                            .unwrap_or(false)
-                    })
-                })
-                .filter(|e| e.path().is_file())
-                .map(|e| {
-                    let path = e.path().to_path_buf();
-                    let language = Language::from_extension(path.extension());
-                    let file_path = path.to_string_lossy().into_owned();
-                    let mtime = std::fs::metadata(&path)
-                        .ok()
-                        .and_then(|m| m.modified().ok())
-                        .map(|t| {
-                            t.duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs()
+                let files: Vec<_> = WalkBuilder::new(&dir_path)
+                    .hidden(true)
+                    .git_ignore(true)
+                    .git_exclude(true)
+                    .build()
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        let path = e.path();
+                        !path.components().any(|c| {
+                            c.as_os_str()
+                                .to_str()
+                                .map(|s| BLOCKED_DIRS.contains(&s))
+                                .unwrap_or(false)
                         })
-                        .unwrap_or(0);
-                    (path, language, file_path, mtime)
-                })
-                .filter(|(_, lang, _, _)| lang.is_some())
-                .collect();
+                    })
+                    .filter(|e| e.path().is_file())
+                    .map(|e| {
+                        let path = e.path().to_path_buf();
+                        let language = Language::from_extension(path.extension());
+                        let file_path = path.to_string_lossy().into_owned();
+                        let mtime = std::fs::metadata(&path)
+                            .ok()
+                            .and_then(|m| m.modified().ok())
+                            .map(|t| {
+                                t.duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs()
+                            })
+                            .unwrap_or(0);
+                        (path, language, file_path, mtime)
+                    })
+                    .filter(|(_, lang, _, _)| lang.is_some())
+                    .collect();
 
-            let total_files = files.len();
+                let total_files = files.len();
 
-            let results: Vec<_> = files
-                .into_par_iter()
-                .filter_map(|(path, language, file_path, mtime)| {
-                    let language = language.unwrap();
+                let results: Vec<_> = files
+                    .into_par_iter()
+                    .filter_map(|(path, language, file_path, mtime)| {
+                        let language = language.unwrap();
 
-                    {
-                        let cache = file_cache.lock().unwrap();
-                        if let Some((cached_mtime, cached_symbols, cached_relationships)) =
-                            cache.get(&file_path)
-                            && *cached_mtime == mtime {
+                        {
+                            let cache = file_cache.lock().unwrap();
+                            if let Some((cached_mtime, cached_symbols, cached_relationships)) =
+                                cache.get(&file_path)
+                                && *cached_mtime == mtime
+                            {
                                 return Some((
                                     file_path,
                                     mtime,
@@ -687,79 +687,83 @@ impl AnalysisService {
                                     false, // from_cache = true
                                 ));
                             }
+                        }
+
+                        let source = std::fs::read_to_string(&path).ok()?;
+                        let parser = TreeSitterParser::with_cache(language).ok()?;
+
+                        let symbols = parser
+                            .find_all_symbols_with_path(&source, &file_path)
+                            .unwrap_or_default();
+                        let relationships = parser
+                            .find_call_relationships(&source, &file_path)
+                            .unwrap_or_default();
+
+                        Some((file_path, mtime, symbols, relationships, true)) // from_cache = false (parsed)
+                    })
+                    .collect();
+
+                let mut cache = file_cache.lock().unwrap();
+                let mut all_relationships = Vec::new();
+
+                for (file_path, mtime, symbols, relationships, was_parsed) in results {
+                    if was_parsed {
+                        parsed_files += 1;
+                    }
+                    cache.insert(
+                        file_path.clone(),
+                        (mtime, symbols.clone(), relationships.clone()),
+                    );
+
+                    for symbol in symbols {
+                        let symbol_id = SymbolId::new(symbol.fully_qualified_name());
+                        store
+                            .lock()
+                            .unwrap()
+                            .add_symbol_with_location(&symbol_id, symbol.clone());
+                        name_to_symbol_id.insert(symbol.name().to_lowercase(), symbol_id);
                     }
 
-                let source = std::fs::read_to_string(&path).ok()?;
-                let parser = TreeSitterParser::with_cache(language).ok()?;
-
-                let symbols = parser
-                    .find_all_symbols_with_path(&source, &file_path)
-                    .unwrap_or_default();
-                let relationships = parser
-                    .find_call_relationships(&source, &file_path)
-                    .unwrap_or_default();
-
-                Some((file_path, mtime, symbols, relationships, true)) // from_cache = false (parsed)
-                })
-                .collect();
-
-            let mut cache = file_cache.lock().unwrap();
-            let mut all_relationships = Vec::new();
-
-            for (file_path, mtime, symbols, relationships, was_parsed) in results {
-                if was_parsed {
-                    parsed_files += 1;
-                }
-                cache.insert(
-                    file_path.clone(),
-                    (mtime, symbols.clone(), relationships.clone()),
-                );
-
-                for symbol in symbols {
-                    let symbol_id = SymbolId::new(symbol.fully_qualified_name());
-                    store.lock().unwrap().add_symbol_with_location(&symbol_id, symbol.clone());
-                    name_to_symbol_id.insert(symbol.name().to_lowercase(), symbol_id);
+                    for (caller, callee_name) in relationships {
+                        all_relationships.push((caller, callee_name));
+                    }
                 }
 
-                for (caller, callee_name) in relationships {
-                    all_relationships.push((caller, callee_name));
+                for (caller, callee_name) in all_relationships {
+                    let caller_id = SymbolId::new(caller.fully_qualified_name());
+                    if let Some(callee_id) = name_to_symbol_id.get(&callee_name.to_lowercase()) {
+                        store
+                            .lock()
+                            .unwrap()
+                            .add_dependency(&caller_id, callee_id, DependencyType::Calls)
+                            .ok();
+                    } else {
+                        unresolved_edges += 1;
+                    }
                 }
-            }
 
-            for (caller, callee_name) in all_relationships {
-                let caller_id = SymbolId::new(caller.fully_qualified_name());
-                if let Some(callee_id) = name_to_symbol_id.get(&callee_name.to_lowercase()) {
-                    store
-                        .lock()
-                        .unwrap()
-                        .add_dependency(&caller_id, callee_id, DependencyType::Calls)
-                        .ok();
+                let call_graph = store.into_inner().unwrap().to_call_graph();
+                graph_cache.set(call_graph);
+
+                // Compute coverage
+                let coverage_percent = if total_files > 0 {
+                    (parsed_files as f64 / total_files as f64) * 100.0
                 } else {
-                    unresolved_edges += 1;
-                }
-            }
+                    0.0
+                };
+                let coverage = GraphCoverageMetrics {
+                    total_source_files: total_files,
+                    parsed_files,
+                    unresolved_edges,
+                    coverage_percent,
+                };
 
-            let call_graph = store.into_inner().unwrap().to_call_graph();
-            graph_cache.set(call_graph);
+                Ok(coverage)
+            })
+            .await;
 
-            // Compute coverage
-            let coverage_percent = if total_files > 0 {
-                (parsed_files as f64 / total_files as f64) * 100.0
-            } else {
-                0.0
-            };
-            let coverage = GraphCoverageMetrics {
-                total_source_files: total_files,
-                parsed_files,
-                unresolved_edges,
-                coverage_percent,
-            };
-
-            Ok(coverage)
-        })
-        .await;
-
-        let coverage = result.map_err(|e| AppError::AnalysisError(format!("Task join error: {}", e)))?
+        let coverage = result
+            .map_err(|e| AppError::AnalysisError(format!("Task join error: {}", e)))?
             .map_err(|e| AppError::AnalysisError(format!("Build error: {}", e)))?;
 
         // Store coverage metrics
@@ -778,8 +782,8 @@ impl AnalysisService {
     /// Coverage metrics are only available after `build_project_graph` or
     /// `build_project_graph_async` has been called.
     pub fn get_graph_stats(&self) -> GraphStatsDto {
-        use std::collections::HashMap;
         use crate::infrastructure::parser::Language;
+        use std::collections::HashMap;
 
         let graph = self.graph_cache.get();
         let symbol_count = graph.symbol_count();
@@ -796,7 +800,9 @@ impl AnalysisService {
             // Compute language from file extension
             let ext = std::path::Path::new(&file).extension();
             if let Some(lang) = Language::from_extension(ext) {
-                *language_breakdown.entry(lang.name().to_string()).or_insert(0) += 1;
+                *language_breakdown
+                    .entry(lang.name().to_string())
+                    .or_insert(0) += 1;
             } else {
                 *language_breakdown.entry("Unknown".to_string()).or_insert(0) += 1;
             }
@@ -918,11 +924,7 @@ impl AnalysisService {
         graph
             .roots()
             .iter()
-            .filter_map(|id| {
-                graph
-                    .get_symbol(id)
-                    .map(SymbolDto::from_symbol)
-            })
+            .filter_map(|id| graph.get_symbol(id).map(SymbolDto::from_symbol))
             .collect()
     }
 
@@ -936,11 +938,7 @@ impl AnalysisService {
         graph
             .leaves()
             .iter()
-            .filter_map(|id| {
-                graph
-                    .get_symbol(id)
-                    .map(SymbolDto::from_symbol)
-            })
+            .filter_map(|id| graph.get_symbol(id).map(SymbolDto::from_symbol))
             .collect()
     }
 
@@ -1071,7 +1069,11 @@ impl AnalysisService {
     /// Returns all symbols in the project graph with optional pagination.
     ///
     /// Returns symbols sorted by (file_path, line).
-    pub fn get_all_symbols(&self, limit: Option<usize>, offset: Option<usize>) -> Vec<super::super::dto::SymbolDto> {
+    pub fn get_all_symbols(
+        &self,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Vec<super::super::dto::SymbolDto> {
         let graph = self.get_project_graph();
 
         // Collect all symbols and sort by (file_path, line)
@@ -1080,9 +1082,7 @@ impl AnalysisService {
             .map(super::super::dto::SymbolDto::from_symbol)
             .collect();
 
-        symbols.sort_by(|a, b| {
-            a.file_path.cmp(&b.file_path).then(a.line.cmp(&b.line))
-        });
+        symbols.sort_by(|a, b| a.file_path.cmp(&b.file_path).then(a.line.cmp(&b.line)));
 
         // Apply pagination
         let offset = offset.unwrap_or(0);
@@ -1124,11 +1124,7 @@ impl AnalysisService {
         Ok(path.map(|symbol_ids| {
             symbol_ids
                 .iter()
-            .filter_map(|id| {
-                graph
-                    .get_symbol(id)
-                    .map(SymbolDto::from_symbol)
-            })
+                .filter_map(|id| graph.get_symbol(id).map(SymbolDto::from_symbol))
                 .collect()
         }))
     }
@@ -2067,7 +2063,7 @@ def d():
     async fn test_build_project_graph_async_completes_without_blocking() {
         use std::io::Write;
         use tempfile::TempDir;
-        use tokio::time::{timeout, Duration};
+        use tokio::time::{Duration, timeout};
 
         // Create a temp directory with Python files
         let temp_dir = TempDir::new().unwrap();
@@ -2093,12 +2089,18 @@ def b():
         // (If it blocked the tokio runtime, this would hang or take much longer)
         let result = timeout(
             Duration::from_secs(5),
-            service.build_project_graph_async(temp_path)
+            service.build_project_graph_async(temp_path),
         )
         .await;
 
-        assert!(result.is_ok(), "build_project_graph_async should complete within timeout");
-        assert!(result.unwrap().is_ok(), "build_project_graph_async should succeed");
+        assert!(
+            result.is_ok(),
+            "build_project_graph_async should complete within timeout"
+        );
+        assert!(
+            result.unwrap().is_ok(),
+            "build_project_graph_async should succeed"
+        );
 
         // Verify the graph was actually built
         let graph = service.get_project_graph();
@@ -2123,7 +2125,10 @@ def b():
 
         // The method should be awaitable directly
         let result = service.build_project_graph_async(temp_path).await;
-        assert!(result.is_ok(), "build_project_graph_async should be awaitable");
+        assert!(
+            result.is_ok(),
+            "build_project_graph_async should be awaitable"
+        );
     }
 
     // =========================================================================
@@ -2233,10 +2238,7 @@ def b():
         let service = AnalysisService::new();
 
         // Build filtered graph for module_a and module_b (exclude module_c)
-        let include_dirs = vec![
-            temp_path.join("module_a"),
-            temp_path.join("module_b"),
-        ];
+        let include_dirs = vec![temp_path.join("module_a"), temp_path.join("module_b")];
         let include_dir_refs: Vec<&Path> = include_dirs.iter().map(|p| p.as_path()).collect();
         let graph = service
             .build_project_graph_filtered(temp_path, &include_dir_refs)

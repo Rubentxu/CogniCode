@@ -3,6 +3,7 @@
  *
  * Composition:
  *   <ObjectInspector>
+ *     <SuggestionStrip />     ← "What can I do here?" (contextual-help)
  *     <ViewTabs />            ← top strip (tabs)
  *     <ViewPanel />           ← content area
  *       <Blocks view=… />     ← all 27 typed block renderers
@@ -15,13 +16,17 @@
  * `SET_ACTIVE_VIEW` so the reducer caches the latest view for
  * instant re-render after navigation.
  */
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { useApp, useAppDispatch } from "../../state/context";
 import { useObject } from "../../hooks/useObject";
 import { useAvailableViews, useViews } from "../../hooks/useViews";
+import { useAsk } from "../../hooks/useAsk";
+import { useWorkspaceList } from "../../hooks/useWorkspace";
 import { LoadingTier } from "../LoadingTier";
+import { detectViewport, type ShellViewport } from "../viewport";
 import { ViewTabs } from "./ViewTabs";
+import { SuggestionStrip } from "./SuggestionStrip";
 import { Blocks } from "./ViewBlock";
 
 // Public surface — `import { ObjectInspector, ViewBlock } from
@@ -30,6 +35,8 @@ export { ViewTabs } from "./ViewTabs";
 export type { ViewTabsProps } from "./ViewTabs";
 export { ViewBlock, Blocks } from "./ViewBlock";
 export type { ViewBlockProps, BlocksProps } from "./ViewBlock";
+export { SuggestionStrip } from "./SuggestionStrip";
+export type { SuggestionStripProps } from "./SuggestionStrip";
 
 export function ObjectInspector() {
   const { state } = useApp();
@@ -64,6 +71,35 @@ export function ObjectInspector() {
       dispatch({ type: "SET_ACTIVE_VIEW", payload: view });
     }
   }, [view, dispatch]);
+
+  // Contextual-help: surface "What can I do here?" prompts. The strip
+  // needs (a) the focused object's type/label, (b) the workspace's
+  // graph status, and (c) the current viewport. We read the graph
+  // status from the first workspace in the SWR cache (matches the
+  // existing pattern for the "no workspace open" empty state — the
+  // list is the source of truth).
+  const { data: workspaceList } = useWorkspaceList();
+  const graphStatus = workspaceList?.[0]?.graph_status ?? null;
+
+  const { dispatch: askDispatch } = useAsk({
+    objectId: activeObjectId,
+    objectLabel: object?.label ?? null,
+  });
+
+  // Viewport — local listener so we don't widen the Shell contract.
+  // The strip switches between pill row and popover at the 900px
+  // breakpoint.
+  const [viewport, setViewport] = useState<ShellViewport>(() =>
+    typeof window === "undefined"
+      ? "desktop"
+      : detectViewport(window.innerWidth),
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => setViewport(detectViewport(window.innerWidth));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // If the user navigates to a new object and the current
   // `activeViewId` is not in the new object's `available_views`,
@@ -144,6 +180,16 @@ export function ObjectInspector() {
             {blockCount} {blockCount === 1 ? "block" : "blocks"}
           </span>
         </header>
+        {object && (
+          <SuggestionStrip
+            objectType={object.object_type}
+            objectId={object.id}
+            objectLabel={object.label}
+            graphStatus={graphStatus}
+            viewport={viewport}
+            onDispatch={askDispatch}
+          />
+        )}
         {views && views.length > 0 && (
           <ViewTabs
             views={views}

@@ -1,7 +1,7 @@
 use crate::domain::aggregates::Symbol;
 use crate::domain::traits::code_intelligence::{
-    CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, DocumentSymbolKind,
-    HoverInfo, HoverKind, Reference, ReferenceKind, TypeHierarchy,
+    CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, DocumentSymbolKind, HoverInfo,
+    HoverKind, Reference, ReferenceKind, TypeHierarchy,
 };
 use crate::domain::value_objects::{Location, SymbolKind};
 use crate::infrastructure::graph::LightweightIndex;
@@ -60,10 +60,14 @@ impl TreesitterFallbackProvider {
 #[async_trait::async_trait]
 impl CodeIntelligenceProvider for TreesitterFallbackProvider {
     async fn get_symbols(&self, path: &Path) -> Result<Vec<Symbol>, CodeIntelligenceError> {
-        let language = Language::from_extension(path.extension())
-            .ok_or_else(|| CodeIntelligenceError::LanguageNotSupported(
-                path.extension().and_then(|e| e.to_str()).unwrap_or("unknown").to_string(),
-            ))?;
+        let language = Language::from_extension(path.extension()).ok_or_else(|| {
+            CodeIntelligenceError::LanguageNotSupported(
+                path.extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+            )
+        })?;
 
         let parser = TreeSitterParser::new(language)
             .map_err(|e| CodeIntelligenceError::Internal(e.to_string()))?;
@@ -84,18 +88,23 @@ impl CodeIntelligenceProvider for TreesitterFallbackProvider {
         _include_declaration: bool,
     ) -> Result<Vec<Reference>, CodeIntelligenceError> {
         let file_path = Path::new(location.file());
-        let language = Self::detect_language(file_path)
-            .ok_or_else(|| CodeIntelligenceError::LanguageNotSupported(location.file().to_string()))?;
+        let language = Self::detect_language(file_path).ok_or_else(|| {
+            CodeIntelligenceError::LanguageNotSupported(location.file().to_string())
+        })?;
 
         let source = std::fs::read_to_string(file_path)
             .map_err(|e| CodeIntelligenceError::FileNotFound(e.to_string()))?;
 
         let line = location.line().saturating_sub(1);
         let col = location.column().saturating_sub(1);
-        let identifier = Self::extract_identifier_at_position(&source, line, col)
-            .ok_or_else(|| CodeIntelligenceError::InvalidLocation(
-                format!("No identifier at {}:{}", location.file(), location.line()),
-            ))?;
+        let identifier =
+            Self::extract_identifier_at_position(&source, line, col).ok_or_else(|| {
+                CodeIntelligenceError::InvalidLocation(format!(
+                    "No identifier at {}:{}",
+                    location.file(),
+                    location.line()
+                ))
+            })?;
 
         let parser = TreeSitterParser::new(language)
             .map_err(|e| CodeIntelligenceError::Internal(e.to_string()))?;
@@ -135,10 +144,14 @@ impl CodeIntelligenceProvider for TreesitterFallbackProvider {
 
         let line = location.line().saturating_sub(1);
         let col = location.column().saturating_sub(1);
-        let identifier = Self::extract_identifier_at_position(&source, line, col)
-            .ok_or_else(|| CodeIntelligenceError::InvalidLocation(
-                format!("No identifier at {}:{}", location.file(), location.line()),
-            ))?;
+        let identifier =
+            Self::extract_identifier_at_position(&source, line, col).ok_or_else(|| {
+                CodeIntelligenceError::InvalidLocation(format!(
+                    "No identifier at {}:{}",
+                    location.file(),
+                    location.line()
+                ))
+            })?;
 
         if let Some(ref index) = self.index {
             let candidates = index.find_symbol(&identifier);
@@ -180,7 +193,10 @@ impl CodeIntelligenceProvider for TreesitterFallbackProvider {
         }
 
         let dir = file_path.parent().unwrap_or(Path::new("."));
-        for entry in walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
+        for entry in walkdir::WalkDir::new(dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             let path = entry.path();
             if !path.is_file() || Language::from_extension(path.extension()).is_none() {
                 continue;
@@ -218,7 +234,9 @@ impl CodeIntelligenceProvider for TreesitterFallbackProvider {
                 symbol: s.clone(),
                 document_kind: match s.kind() {
                     SymbolKind::Function | SymbolKind::Method => DocumentSymbolKind::Function,
-                    SymbolKind::Class | SymbolKind::Struct | SymbolKind::Interface => DocumentSymbolKind::Class,
+                    SymbolKind::Class | SymbolKind::Struct | SymbolKind::Interface => {
+                        DocumentSymbolKind::Class
+                    }
                     SymbolKind::Variable => DocumentSymbolKind::Variable,
                     SymbolKind::Constant => DocumentSymbolKind::Constant,
                     SymbolKind::Module | SymbolKind::Namespace => DocumentSymbolKind::Module,
@@ -236,10 +254,7 @@ impl CodeIntelligenceProvider for TreesitterFallbackProvider {
             .collect())
     }
 
-    async fn hover(
-        &self,
-        location: &Location,
-    ) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
+    async fn hover(&self, location: &Location) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
         let file_path = Path::new(location.file());
         let source = std::fs::read_to_string(file_path)
             .map_err(|e| CodeIntelligenceError::FileNotFound(e.to_string()))?;

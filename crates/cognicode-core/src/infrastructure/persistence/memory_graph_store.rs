@@ -3,10 +3,10 @@
 //! This implementation stores data in memory, useful for tests and scenarios
 //! where persistence is not required.
 
-use std::sync::Mutex;
-use crate::domain::traits::graph_store::{GraphStore, StoreError};
 use crate::domain::aggregates::call_graph::CallGraph;
+use crate::domain::traits::graph_store::{GraphStore, StoreError};
 use crate::domain::value_objects::file_manifest::FileManifest;
+use std::sync::Mutex;
 
 /// In-memory implementation of GraphStore for testing
 #[derive(Debug, Default)]
@@ -30,8 +30,8 @@ impl InMemoryGraphStore {
 
 impl GraphStore for InMemoryGraphStore {
     fn save_graph(&self, graph: &CallGraph) -> Result<(), StoreError> {
-        use bincode::serde::encode_to_vec;
         use bincode::config::standard;
+        use bincode::serde::encode_to_vec;
         let bytes = encode_to_vec(graph, standard())
             .map_err(|e| StoreError::Serialization(e.to_string()))?;
         *self.graph.lock().unwrap() = Some(bytes);
@@ -39,8 +39,8 @@ impl GraphStore for InMemoryGraphStore {
     }
 
     fn load_graph(&self) -> Result<Option<CallGraph>, StoreError> {
-        use bincode::serde::decode_from_slice;
         use bincode::config::standard;
+        use bincode::serde::decode_from_slice;
         let guard = self.graph.lock().unwrap();
         match guard.as_ref() {
             Some(bytes) => {
@@ -55,8 +55,8 @@ impl GraphStore for InMemoryGraphStore {
     }
 
     fn save_manifest(&self, manifest: &FileManifest) -> Result<(), StoreError> {
-        use bincode::serde::encode_to_vec;
         use bincode::config::standard;
+        use bincode::serde::encode_to_vec;
         let bytes = encode_to_vec(manifest, standard())
             .map_err(|e| StoreError::Serialization(e.to_string()))?;
         *self.manifest.lock().unwrap() = Some(bytes);
@@ -64,8 +64,8 @@ impl GraphStore for InMemoryGraphStore {
     }
 
     fn load_manifest(&self) -> Result<Option<FileManifest>, StoreError> {
-        use bincode::serde::decode_from_slice;
         use bincode::config::standard;
+        use bincode::serde::decode_from_slice;
         let guard = self.manifest.lock().unwrap();
         match guard.as_ref() {
             Some(bytes) => {
@@ -95,9 +95,9 @@ impl GraphStore for InMemoryGraphStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use crate::domain::aggregates::symbol::Symbol;
     use crate::domain::value_objects::{Location, SymbolKind};
+    use std::path::PathBuf;
 
     fn create_test_graph() -> CallGraph {
         let mut graph = CallGraph::new();
@@ -133,19 +133,17 @@ mod tests {
     fn test_save_and_load_manifest() {
         let store = InMemoryGraphStore::new();
         let mut manifest = FileManifest::new(PathBuf::from("/project"));
-        manifest.update_entries(&[(
-            PathBuf::from("src/main.rs"),
-            "hash123".to_string(),
-            1000,
-            5,
-        )]);
+        manifest.update_entries(&[(PathBuf::from("src/main.rs"), "hash123".to_string(), 1000, 5)]);
 
         store.save_manifest(&manifest).unwrap();
         let loaded = store.load_manifest().unwrap().unwrap();
 
         assert_eq!(loaded.entries.len(), 1);
         assert_eq!(
-            loaded.get(&PathBuf::from("src/main.rs")).unwrap().content_hash,
+            loaded
+                .get(&PathBuf::from("src/main.rs"))
+                .unwrap()
+                .content_hash,
             "hash123"
         );
     }
@@ -157,12 +155,7 @@ mod tests {
 
         store.save_graph(&graph).unwrap();
         let mut manifest = FileManifest::new(PathBuf::from("/project"));
-        manifest.update_entries(&[(
-            PathBuf::from("src/main.rs"),
-            "hash".to_string(),
-            1000,
-            5,
-        )]);
+        manifest.update_entries(&[(PathBuf::from("src/main.rs"), "hash".to_string(), 1000, 5)]);
         store.save_manifest(&manifest).unwrap();
 
         store.clear().unwrap();
@@ -192,6 +185,9 @@ mod tests {
         // Loading corrupted data should return Ok(None), not Err
         let result = store.load_graph();
         assert!(result.is_ok(), "Expected Ok, got Err");
-        assert!(result.unwrap().is_none(), "Expected None for corrupted data");
+        assert!(
+            result.unwrap().is_none(),
+            "Expected None for corrupted data"
+        );
     }
 }

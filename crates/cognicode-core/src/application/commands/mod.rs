@@ -3,6 +3,6 @@
 mod refactor_commands;
 
 pub use refactor_commands::{
-    ChangeSignatureCommand, ExtractFunctionCommand, MoveSymbolCommand,
-    ParameterDefinition, RenameSymbolCommand,
+    ChangeSignatureCommand, ExtractFunctionCommand, MoveSymbolCommand, ParameterDefinition,
+    RenameSymbolCommand,
 };

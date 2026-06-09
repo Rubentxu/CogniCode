@@ -1,3 +1,7 @@
+//! DEPRECATED: this module is part of the deprecated `cognicode-store-traits` crate.
+//! Use `cognicode_core::domain::traits::graph_store::GraphStore` instead — the
+//! canonical `GraphStore` is the one all current implementors depend on.
+//!
 //! Trait for persisting and loading the call graph
 //!
 //! This trait abstracts the persistence backend for the call graph,

@@ -43,7 +43,10 @@ mod tests {
 
     fn run_load_from_empty_returns_none<S: GraphStore>(store: &S) {
         let loaded = store.load_graph().unwrap();
-        assert!(loaded.is_none(), "Loading from empty store should return None");
+        assert!(
+            loaded.is_none(),
+            "Loading from empty store should return None"
+        );
     }
 
     fn run_save_and_load_roundtrip<S: GraphStore>(store: &S) {
@@ -83,7 +86,10 @@ mod tests {
             "Loaded manifest should have same number of entries"
         );
         assert_eq!(
-            loaded.get(&PathBuf::from("src/main.rs")).unwrap().content_hash,
+            loaded
+                .get(&PathBuf::from("src/main.rs"))
+                .unwrap()
+                .content_hash,
             "hash123"
         );
     }
@@ -109,13 +115,19 @@ mod tests {
     }
 
     fn run_exists_returns_false_when_empty<S: GraphStore>(store: &S) {
-        assert!(!store.exists().unwrap(), "exists() should be false when store is empty");
+        assert!(
+            !store.exists().unwrap(),
+            "exists() should be false when store is empty"
+        );
     }
 
     fn run_exists_returns_true_when_has_data<S: GraphStore>(store: &S) {
         let graph = create_test_graph();
         store.save_graph(&graph).unwrap();
-        assert!(store.exists().unwrap(), "exists() should be true after saving graph");
+        assert!(
+            store.exists().unwrap(),
+            "exists() should be true after saving graph"
+        );
     }
 
     // ========================================================================

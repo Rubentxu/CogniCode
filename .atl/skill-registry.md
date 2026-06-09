@@ -1,90 +1,101 @@
-# Skill Registry for CogniCode
+# Skill Registry — CogniCode
 
-**Generated**: 2026-04-21
+Generated: 2026-06-07
+Skills indexed: 55 (3 scopes)
 
-## SDD Pipeline
+## Registry Contract
+- SKILL.md is the source of truth — this file is an index only
+- Sub-agents receive skill paths, not summaries
+- Deduplication: project-level skills preferred over user-level
 
-init → explore → propose → design → spec → tasks → apply → verify → archive
+## Skills by Scope
 
-## CogniCode MCP Integration
+### Project-Level (.claude/skills/)
+| Name | Trigger | Path |
+|------|---------|------|
+| bug-find | debug, bug, crash | `.claude/skills/bug-find/SKILL.md` |
+| rust-ddd-expert | DDD, hexagonal, domain | `.claude/skills/rust-ddd-expert/SKILL.md` |
+| ralph-rust | Rust patterns, idioms | `.claude/skills/ralph-rust/SKILL.md` |
+| pretty-mermaid | render mermaid, flowchart, diagram | `.claude/skills/pretty-mermaid/SKILL.md` |
+| documentacion | docs, documentation | `.claude/skills/documentacion/SKILL.md` |
+| product-owner | PO, backlog, prioritization | `.claude/skills/product-owner/SKILL.md` |
+| review-wasm | WASM audit, ECS, performance | `.claude/skills/review-wasm/SKILL.md` |
+| frontend-design | UI, frontend, React, components | `.claude/skills/frontend-design/SKILL.md` |
+| pruebas-cli | CLI testing, integration tests | `.claude/skills/pruebas-cli/SKILL.md` |
+| investigacion | research, investigation | `.claude/skills/investigacion/SKILL.md` |
+| git-versioning | git, versioning, branching | `.claude/skills/git-versioning/SKILL.md` |
+| refactor | refactor, restructure | `.claude/skills/refactor/SKILL.md` |
+| doc-writer | docs writing, README, guides | `.claude/skills/doc-writer/SKILL.md` |
 
-**Skill**: `cognicode-sdd` (`~/.config/opencode/skills/cognicode-sdd/SKILL.md`)
-**MCP server**: `/home/rubentxu/Proyectos/rust/CogniCode/target/release/cognicode-mcp` (`enabled: true`)
-**Trigger**: Automatic for all sdd-* phases that involve code analysis, impact assessment, refactoring, or architecture validation.
+### User-Level (opencode config)
+| Name | Trigger | Path |
+|------|---------|------|
+| auto-grill | challenge plans/proposals/designs | `~/.config/opencode/skills/auto-grill/SKILL.md` |
+| auto-grill-loop | /auto-grill-loop, exhaustive questioning | `~/.config/opencode/skills/auto-grill-loop/SKILL.md` |
+| entropy-sdd | entropy, connascence, DQS, SOLID | `~/.config/opencode/skills/entropy-sdd/SKILL.md` |
+| cognicode-sdd | CogniCode analysis, impact, refactoring | `~/.config/opencode/skills/cognicode-sdd/SKILL.md` |
+| chronos-mcp | debug, crash, trace, time-travel | `~/.config/opencode/skills/chronos-mcp/SKILL.md` |
+| chronos-sdd | runtime evidence, regression | `~/.config/opencode/skills/chronos-sdd/SKILL.md` |
+| rust-patterns | Rust API design, generics, async | `~/.config/opencode/skills/rust-patterns/SKILL.md` |
+| branch-pr | PR creation, pull request | `~/.config/opencode/skills/branch-pr/SKILL.md` |
+| chained-pr | stacked PRs, review slices | `~/.config/opencode/skills/chained-pr/SKILL.md` |
+| issue-creation | GitHub issue, bug report | `~/.config/opencode/skills/issue-creation/SKILL.md` |
+| work-unit-commits | commit planning, atomic commits | `~/.config/opencode/skills/work-unit-commits/SKILL.md` |
+| test-pyramid | testing strategy, test design | `~/.config/opencode/skill/test-pyramid/SKILL.md` |
+| playwright-cli | browser automation, Playwright | `~/.config/opencode/skills/playwright-cli/SKILL.md` |
+| comment-writer | PR comments, review feedback | `~/.config/opencode/skills/comment-writer/SKILL.md` |
+| cognitive-doc-design | docs, README, RFC, architecture | `~/.config/opencode/skills/cognitive-doc-design/SKILL.md` |
+| frontend-evidence-loop | fix frontend, UI bug, visual regression | `~/.config/opencode/skills/frontend-evidence-loop/SKILL.md` |
+| layout-geometry-audit | layout issue, alignment, overflow | `~/.config/opencode/skills/layout-geometry-audit/SKILL.md` |
+| ui-audit-protocol | audit UI, visual QA, browser verification | `~/.config/opencode/skills/ui-audit-protocol/SKILL.md` |
+| go-testing | Go tests, teatest, golden files | `~/.config/opencode/skills/go-testing/SKILL.md` |
+| judgment-day | dual review, adversarial review | `~/.config/opencode/skills/judgment-day/SKILL.md` |
+| skill-creator | create skills, agent instructions | `~/.config/opencode/skills/skill-creator/SKILL.md` |
+| skill-improver | improve skills, audit skills | `~/.config/opencode/skills/skill-improver/SKILL.md` |
+| logseq-vault | LogSeq vault, SDD artifacts | `~/.config/opencode/skills/logseq-vault/SKILL.md` |
+| minimax-mcp | web search, image analysis | `~/.config/opencode/skills/minimax-mcp/SKILL.md` |
+| zai-mcp | web search fallback, z.ai | `~/.config/opencode/skills/zai-mcp/SKILL.md` |
 
-### Compact Rules (inject for sdd-explore, sdd-design, sdd-apply, sdd-verify)
+### User-Level (.agents/skills/)
+| Name | Trigger | Path |
+|------|---------|------|
+| accessibility | WCAG, a11y audit, screen reader | `~/.agents/skills/accessibility/SKILL.md` |
+| best-practices | security audit, modernize code | `~/.agents/skills/best-practices/SKILL.md` |
+| core-web-vitals | LCP, INP, CLS, page speed | `~/.agents/skills/core-web-vitals/SKILL.md` |
+| design-an-interface | design API, interface options | `~/.agents/skills/design-an-interface/SKILL.md` |
+| design-md | DESIGN.md, design system | `~/.agents/skills/design-md/SKILL.md` |
+| diagnose | debug, diagnose, broken, failing | `~/.agents/skills/diagnose/SKILL.md` |
+| find-skills | discover skills, install skills | `~/.agents/skills/find-skills/SKILL.md` |
+| frontend-design | web components, React, dashboard | `~/.agents/skills/frontend-design/SKILL.md` |
+| grill-me | stress-test plan, get grilled | `~/.agents/skills/grill-me/SKILL.md` |
+| grill-with-docs | grill against docs, ADRs, CONTEXT.md | `~/.agents/skills/grill-with-docs/SKILL.md` |
+| improve-codebase-architecture | refactoring, architecture improvement | `~/.agents/skills/improve-codebase-architecture/SKILL.md` |
+| leptos-guide | Leptos v0.8, signals, components | `~/.agents/skills/leptos-guide/SKILL.md` |
+| mmx-cli | MiniMax CLI, media generation | `~/.agents/skills/mmx-cli/SKILL.md` |
+| performance | speed up, optimize, load time | `~/.agents/skills/performance/SKILL.md` |
+| playwright-best-practices | Playwright tests, E2E, flaky tests | `~/.agents/skills/playwright-best-practices/SKILL.md` |
+| teach | teach concept, learn | `~/.agents/skills/teach/SKILL.md` |
+| web-quality-audit | audit site, lighthouse, quality | `~/.agents/skills/web-quality-audit/SKILL.md` |
+| webapp-testing | test web app, Playwright, browser | `~/.agents/skills/webapp-testing/SKILL.md` |
 
-```
-- ALWAYS call cognicode_build_graph before any other CogniCode tool
-- Use compressed: true in explore phases to preserve context window
-- cognicode_safe_refactor preview=true is MANDATORY before preview=false — no exceptions
-- cognicode_analyze_impact before any non-trivial change — surface the blast radius
-- cognicode_validate_syntax after every safe_refactor preview=false — non-negotiable
-- cognicode_check_architecture score < 80 = flag as existing debt in proposals and designs
-- New architecture cycles after apply = CRITICAL in verify (not a warning)
-- CogniCode is enhancement, not a requirement — if unavailable, proceed without it
-- Never block an SDD phase waiting for CogniCode — report unavailability and continue
-```
+## Compact Rules (pre-resolved for SDD phases)
 
-### Phase → CogniCode Tools
+### For sdd-explore / sdd-propose / sdd-design
+- entropy-sdd: Connascence landscape mandatory (Protocol A). Entropy budget mandatory (Protocol B). Information Bottleneck check mandatory (Protocol C). DQS = f(S, D, I, R, C). Threshold: I < 3.0 bits.
+- auto-grill: Challenge proposals/designs against codebase. Escalate to user when AES >= 0.5.
+- cognicode-sdd: Use cognicode_* tools for codebase analysis. Prefer over raw file reads.
 
-| Phase | Tools |
-|-------|-------|
-| sdd-explore | build_graph, get_entry_points, get_leaf_functions, get_hot_paths, analyze_impact, get_complexity, semantic_search, get_file_symbols, get_outline |
-| sdd-design | build_graph, analyze_impact, check_architecture, trace_path, get_complexity, get_call_hierarchy |
-| sdd-tasks | build_lightweight_index, get_call_hierarchy, find_usages, query_symbol_index |
-| sdd-apply | build_lightweight_index, validate_syntax, safe_refactor, find_usages, analyze_impact, get_symbol_code |
-| sdd-verify | find_usages, check_architecture, get_hot_paths, build_lightweight_index |
+### For sdd-apply
+- Correction mode: only fix CRITICAL findings, no new features.
+- Apply-progress: read-merge-write on continuation batches.
+- Strict TDD: write test first, then implementation.
 
-## Rust-Specific Skills (high relevance)
+### For sdd-verify
+- entropy-sdd Protocol D: Design Quality Score + SOLID-Entropy compliance.
+- Adversarial judgment: 2 blind judges, AES scoring, max 2 correction iterations.
+- Quality gate: ALL findings AES < 0.25 → PASS. ANY >= 0.5 → FAIL.
+- cognicode-quality: use get_quality_diff for quality comparison.
 
-- `rust-testing` — Rust test patterns, cargo test, mockall, tokio
-- `rust-refactor-helper` — Safe Rust refactoring with LSP
-- `rust-symbol-analyzer` — LSP symbol analysis
-- `rust-call-graph` — Call graph visualization with LSP
-- `rust-ddd-expert` — Domain-Driven Design for Rust
-- `review-wasm` — DOD/ECS/WASM performance audit
-
-## User Skills (~/.config/opencode/skills/)
-
-sdd-init, sdd-propose, sdd-design, sdd-spec, sdd-tasks, sdd-apply, sdd-verify,
-sdd-archive, sdd-explore, cognicode-sdd, go-testing, issue-creation, branch-pr,
-judgment-day, skill-creator
-
-## Project Skills (.claude/skills/)
-
-bug-find, rust-ddd-expert, ralph-rust, pretty-mermaid, product-owner,
-documentacion, investigacion, review-wasm, frontend-design, pruebas-cli,
-refactor, git-versioning, doc-writer, cognicode-rules
-
-## CogniCode Rules Development
-
-**Skill**: `cognicode-rules` (`.claude/skills/cognicode-rules/SKILL.md`)
-**Trigger**: When creating, modifying, testing, or auditing CogniCode detection rules in cognicode-axiom,
-fixing false positives detected by dashboard, migrating regex rules to tree-sitter, or working with
-rule catalogs and the quality analysis pipeline.
-
-### Compact Rules (inject for rule development, testing, audit)
-
-```
-- ALWAYS use word boundaries in regex: (?:\b|_)des\b not just "des" or "sha1"
-- ALWAYS skip comment lines in line-scanning rules (//, ///, //!, #, /*)
-- ALWAYS add 3+ false positive tests per rule (comment, identifier, English word)
-- RuleContext has tree_sitter::Tree — prefer queries over regex for structural patterns
-- Dashboard is the FP feedback loop: monitor issues → fix rule → add test → verify on dashboard
-- Tree-sitter queries match actual code nodes, never comments or strings
-- 854 rules exist; <2% have tests; prioritize security/vulnerability rules for test coverage
-- Use ctx.graph (CallGraph) and ctx.metrics (FileMetrics) for semantic context
-- Self-improvement loop: FP report → fix rule → add regression test → verify → commit
-- Migrate security rules (S2068, S4792, S5332) from regex to tree-sitter for accuracy
-```
-
-### Ecosystem Integration
-
-| Component | Role |
-|-----------|------|
-| `cognicode-axiom` | Rule engine (854 rules, catalog, types) |
-| `cognicode-quality` | Analysis handler (parses files, runs rules, persists to SQLite) |
-| `cognicode-db` | Persistence (analysis_runs, issues table with status tracking) |
-| `cognicode-dashboard` | Visualization (issue browser, metrics, quality gate, FP reports) |
-| `cognicode-core` | Infrastructure (tree-sitter parser, call graph, semantic analysis) |
+### For sdd-archive
+- entropy-sdd Protocol E: entropy trend across changes.
+- Sync final state to artifact store.

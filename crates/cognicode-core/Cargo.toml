@@ -6,13 +6,14 @@ edition.workspace = true
 authors.workspace = true
 
 [features]
-# PR 2 keeps `["persistence", "sqlite"]` as the default because the
-# full default flip to `postgres` requires gating the `rusqlite`
-# references in `cognicode-core` (~30 call sites in `aix_handlers.rs`
-# and `semantic_search.rs`). That gate is deferred to a follow-up
-# slice — PR 2 ships the `cli_dispatch` helper, the CLI precedence
-# wiring, and the precedence tests, all behind feature flags.
-default = ["persistence", "sqlite"]
+# Default is now `["persistence", "postgres"]`. The deferred
+# `postgres-default-config` follow-up slice gated every
+# `rusqlite::` call site in `cognicode-core` (3 files: handlers
+# `mod.rs`, `aix_handlers.rs`, and `semantic_search.rs`), so the
+# crate builds cleanly without `sqlite`. SQLite remains opt-in via
+# the `sqlite` feature for callers that want the dashboard / agent
+# telemetry / FTS5 batch paths.
+default = ["persistence", "postgres"]
 rig = ["dep:rig-core"]
 persistence = ["dep:blake3"]
 # `postgres` is additive to `persistence` — both can be active simultaneously.
@@ -20,8 +21,9 @@ persistence = ["dep:blake3"]
 # `runtime-tokio` + `postgres` features.
 postgres = ["dep:sqlx"]
 # `sqlite` is an opt-in feature. When enabled, the workspace
-# `rusqlite` dep (with the `bundled` feature) is pulled in. Still in
-# default for now; the next slice will flip the default to `postgres`.
+# `rusqlite` dep (with the `bundled` feature) is pulled in and the
+# gated `open_db` / `open_fts_db` / `record_tool_usage` / AVC
+# persistence paths become available. Off by default.
 sqlite = ["dep:rusqlite"]
 
 [dependencies]

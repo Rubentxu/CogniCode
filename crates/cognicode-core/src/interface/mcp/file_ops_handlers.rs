@@ -9,14 +9,14 @@
 //!
 //! Each handler is wrapped in instrument_tool for OTel metrics collection.
 
-use crate::application::services::file_operations::FileOperationsService;
 use crate::application::error::AppError;
-use crate::infrastructure::telemetry::{get_global_metrics, instrument_tool, ToolError};
+use crate::application::services::file_operations::FileOperationsService;
+use crate::infrastructure::telemetry::{ToolError, get_global_metrics, instrument_tool};
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::mcp::schemas::{
-    EditFileInput, EditFileOutput, ListFilesInput, ListFilesOutput, ReadFileInput,
-    ReadFileOutput, RetrieveAndVerifyInput, RetrieveAndVerifyOutput,
-    SearchContentInput, SearchContentOutput, WriteFileInput, WriteFileOutput,
+    EditFileInput, EditFileOutput, ListFilesInput, ListFilesOutput, ReadFileInput, ReadFileOutput,
+    RetrieveAndVerifyInput, RetrieveAndVerifyOutput, SearchContentInput, SearchContentOutput,
+    WriteFileInput, WriteFileOutput,
 };
 
 /// Converts AppError to ToolError for use with instrument_tool
@@ -60,7 +60,10 @@ pub async fn handle_read_file(
     match result {
         Ok(output) => {
             let mcp_output: ReadFileOutput = output.into();
-            metrics.record_bytes_read(mcp_output.metadata.size as f64, mode.as_deref().unwrap_or("raw"));
+            metrics.record_bytes_read(
+                mcp_output.metadata.size as f64,
+                mode.as_deref().unwrap_or("raw"),
+            );
             Ok(mcp_output)
         }
         Err(e) => Err(HandlerError::App(AppError::InternalError(e.message))),
@@ -165,7 +168,9 @@ pub async fn handle_search_content(
         None => {
             let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
             let dto_input: crate::application::dto::SearchContentRequest = input.into();
-            let dto_result = service.search_content(dto_input).map_err(HandlerError::App)?;
+            let dto_result = service
+                .search_content(dto_input)
+                .map_err(HandlerError::App)?;
             return Ok(dto_result.into());
         }
     };
@@ -260,33 +265,41 @@ pub async fn handle_retrieve_and_verify(
     };
 
     // Call the service (async with per-candidate 10s timeout)
-    let dto_result = service.retrieve_and_verify(dto_input)
+    let dto_result = service
+        .retrieve_and_verify(dto_input)
         .await
         .map_err(HandlerError::App)?;
 
     // Convert DTO result to MCP output
     let output = RetrieveAndVerifyOutput {
-        results: dto_result.results.into_iter().map(|r| {
-            let status = match r.status {
-                crate::application::dto::VerificationStatus::Verified =>
-                    crate::interface::mcp::schemas::VerificationStatus::Verified,
-                crate::application::dto::VerificationStatus::Rejected =>
-                    crate::interface::mcp::schemas::VerificationStatus::Rejected,
-                crate::application::dto::VerificationStatus::Skipped =>
-                    crate::interface::mcp::schemas::VerificationStatus::Skipped,
-            };
-            crate::interface::mcp::schemas::VerifiedMatch {
-                file: r.file,
-                line: r.line,
-                col: r.col,
-                matched_text: r.matched_text,
-                context: r.context,
-                status,
-                check_output: r.check_output,
-                error_snippet: r.error_snippet,
-                reason: r.reason,
-            }
-        }).collect(),
+        results: dto_result
+            .results
+            .into_iter()
+            .map(|r| {
+                let status = match r.status {
+                    crate::application::dto::VerificationStatus::Verified => {
+                        crate::interface::mcp::schemas::VerificationStatus::Verified
+                    }
+                    crate::application::dto::VerificationStatus::Rejected => {
+                        crate::interface::mcp::schemas::VerificationStatus::Rejected
+                    }
+                    crate::application::dto::VerificationStatus::Skipped => {
+                        crate::interface::mcp::schemas::VerificationStatus::Skipped
+                    }
+                };
+                crate::interface::mcp::schemas::VerifiedMatch {
+                    file: r.file,
+                    line: r.line,
+                    col: r.col,
+                    matched_text: r.matched_text,
+                    context: r.context,
+                    status,
+                    check_output: r.check_output,
+                    error_snippet: r.error_snippet,
+                    reason: r.reason,
+                }
+            })
+            .collect(),
         total: dto_result.total,
         verified_count: dto_result.verified_count,
         rejected_count: dto_result.rejected_count,
@@ -357,7 +370,10 @@ mod tests {
             };
 
             let result = handle_read_file(&ctx, input).await;
-            assert!(result.is_err(), "read_file should reject directory traversal via ../");
+            assert!(
+                result.is_err(),
+                "read_file should reject directory traversal via ../"
+            );
         }
 
         #[tokio::test]
@@ -375,7 +391,10 @@ mod tests {
             };
 
             let result = handle_read_file(&ctx, input).await;
-            assert!(result.is_err(), "read_file should reject absolute paths outside workspace");
+            assert!(
+                result.is_err(),
+                "read_file should reject absolute paths outside workspace"
+            );
         }
 
         #[tokio::test]
@@ -436,7 +455,10 @@ mod tests {
             };
 
             let result = handle_write_file(&ctx, input).await;
-            assert!(result.is_err(), "write_file should reject absolute paths outside workspace");
+            assert!(
+                result.is_err(),
+                "write_file should reject absolute paths outside workspace"
+            );
         }
 
         #[tokio::test]
@@ -472,7 +494,10 @@ mod tests {
             };
 
             let result = handle_search_content(&ctx, input).await;
-            assert!(result.is_err(), "search_content should reject path traversal");
+            assert!(
+                result.is_err(),
+                "search_content should reject path traversal"
+            );
         }
 
         #[tokio::test]
@@ -665,7 +690,10 @@ mod tests {
             };
 
             let result = handle_write_file(&ctx, input).await;
-            assert!(result.is_ok(), "write_file with create_dirs=true should succeed");
+            assert!(
+                result.is_ok(),
+                "write_file with create_dirs=true should succeed"
+            );
             assert!(file_path.exists());
         }
 
@@ -684,7 +712,10 @@ mod tests {
             };
 
             let result = handle_write_file(&ctx, input).await;
-            assert!(result.is_ok(), "write_file should succeed for existing file");
+            assert!(
+                result.is_ok(),
+                "write_file should succeed for existing file"
+            );
 
             let content = std::fs::read_to_string(&file_path).unwrap();
             assert_eq!(content, "new content");
@@ -738,7 +769,10 @@ mod tests {
             };
 
             let result = handle_edit_file(&ctx, input).await;
-            assert!(result.is_ok(), "edit_file should return result even for invalid");
+            assert!(
+                result.is_ok(),
+                "edit_file should return result even for invalid"
+            );
 
             let output = result.unwrap();
             // Validation should fail for syntax error
@@ -765,7 +799,10 @@ mod tests {
             };
 
             let result = handle_edit_file(&ctx, input).await;
-            assert!(result.is_ok(), "edit_file should handle no match gracefully");
+            assert!(
+                result.is_ok(),
+                "edit_file should handle no match gracefully"
+            );
 
             let output = result.unwrap();
             assert!(!output.applied, "edit should not be applied when no match");
@@ -795,7 +832,10 @@ mod tests {
             };
 
             let result = handle_edit_file(&ctx, input).await;
-            assert!(result.is_ok(), "edit_file with multiple edits should succeed");
+            assert!(
+                result.is_ok(),
+                "edit_file with multiple edits should succeed"
+            );
         }
     }
 
@@ -860,7 +900,10 @@ mod tests {
             assert!(result.is_ok(), "search_content literal should succeed");
 
             let output = result.unwrap();
-            assert_eq!(output.total, 1, "should find exactly 1 match for literal 'item_one'");
+            assert_eq!(
+                output.total, 1,
+                "should find exactly 1 match for literal 'item_one'"
+            );
         }
 
         #[tokio::test]
@@ -875,23 +918,11 @@ mod tests {
             std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
 
             // Create .gitignore that ignores *.secret files
-            std::fs::write(
-                temp_dir.path().join(".gitignore"),
-                "*.secret\n",
-            )
-            .unwrap();
+            std::fs::write(temp_dir.path().join(".gitignore"), "*.secret\n").unwrap();
 
             // Create files - one should be ignored
-            std::fs::write(
-                temp_dir.path().join("main.rs"),
-                "let password = \"hello\";",
-            )
-            .unwrap();
-            std::fs::write(
-                temp_dir.path().join("secret.secret"),
-                "API_KEY=supersecret",
-            )
-            .unwrap();
+            std::fs::write(temp_dir.path().join("main.rs"), "let password = \"hello\";").unwrap();
+            std::fs::write(temp_dir.path().join("secret.secret"), "API_KEY=supersecret").unwrap();
 
             let input = SearchContentInput {
                 pattern: "password".to_string(),
@@ -913,7 +944,10 @@ mod tests {
                 "should find match in main.rs"
             );
             assert!(
-                !output.matches.iter().any(|m| m.file.contains("secret.secret")),
+                !output
+                    .matches
+                    .iter()
+                    .any(|m| m.file.contains("secret.secret")),
                 "should not find matches in gitignored files"
             );
         }
@@ -1029,7 +1063,10 @@ mod tests {
 
             if let Some(file_entry) = output.files.first() {
                 assert!(file_entry.size > 0, "file should have size");
-                assert!(file_entry.modified > 0, "file should have modified timestamp");
+                assert!(
+                    file_entry.modified > 0,
+                    "file should have modified timestamp"
+                );
             }
         }
     }

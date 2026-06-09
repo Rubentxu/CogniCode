@@ -6,10 +6,9 @@ authors.workspace = true
 description = "Shared SQLite persistence layer for cognicode-mcp and cognicode-quality"
 
 [features]
-# PR 1 (postgres-default-config): default includes `sqlite` to preserve
-# the prior behavior. PR 2 will remove `sqlite` from the default list
-# and require downstream consumers to opt in explicitly.
-default = ["sqlite"]
+# Default is empty — rusqlite is opt-in via the `sqlite` feature.
+# The workspace default is now PostgreSQL.
+default = []
 # `sqlite` is the canonical opt-in feature. When enabled, the workspace
 # `rusqlite` dep is pulled in. This crate is the canonical SQLite
 # persistence layer used by cognicode-mcp and cognicode-quality — when

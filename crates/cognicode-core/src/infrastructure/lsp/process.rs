@@ -1,12 +1,12 @@
-use crate::infrastructure::parser::Language;
 use crate::infrastructure::lsp::error::{LspProcessError, ServerStatus};
 use crate::infrastructure::lsp::json_rpc::JsonRpcTransport;
+use crate::infrastructure::parser::Language;
 use lsp_types::{InitializeParams, ServerCapabilities};
 use serde_json::Value;
 use std::path::Path;
 use std::time::Instant;
 use tokio::process::{Child, Command};
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 use tracing::{debug, error, info, warn};
 
 const REQUEST_TIMEOUT_SECS: u64 = 30;
@@ -22,10 +22,7 @@ pub struct LspProcess {
 }
 
 impl LspProcess {
-    pub async fn spawn(
-        language: Language,
-        workspace_root: &Path,
-    ) -> Result<Self, LspProcessError> {
+    pub async fn spawn(language: Language, workspace_root: &Path) -> Result<Self, LspProcessError> {
         let binary = language.lsp_server_binary();
         let args = language.lsp_args();
 
@@ -43,15 +40,21 @@ impl LspProcess {
                 reason: e.to_string(),
             })?;
 
-        let stdin = child.stdin.take().ok_or_else(|| LspProcessError::SpawnFailed {
-            binary: binary.to_string(),
-            reason: "Failed to capture stdin".to_string(),
-        })?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| LspProcessError::SpawnFailed {
+                binary: binary.to_string(),
+                reason: "Failed to capture stdin".to_string(),
+            })?;
 
-        let stdout = child.stdout.take().ok_or_else(|| LspProcessError::SpawnFailed {
-            binary: binary.to_string(),
-            reason: "Failed to capture stdout".to_string(),
-        })?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| LspProcessError::SpawnFailed {
+                binary: binary.to_string(),
+                reason: "Failed to capture stdout".to_string(),
+            })?;
 
         let transport = JsonRpcTransport::new(stdin, stdout);
 
@@ -71,10 +74,7 @@ impl LspProcess {
         workspace_root: &Path,
     ) -> Result<ServerCapabilities, LspProcessError> {
         if self.initialized {
-            return Ok(self
-                .capabilities
-                .clone()
-                .unwrap_or_default());
+            return Ok(self.capabilities.clone().unwrap_or_default());
         }
 
         let root_uri = format!("file://{}", workspace_root.display());
@@ -106,10 +106,8 @@ impl LspProcess {
 
         let result = timeout(
             Duration::from_secs(REQUEST_TIMEOUT_SECS),
-            self.transport.send_request(
-                "initialize",
-                Some(serde_json::to_value(params).unwrap()),
-            ),
+            self.transport
+                .send_request("initialize", Some(serde_json::to_value(params).unwrap())),
         )
         .await
         .map_err(|_| LspProcessError::Timeout {
@@ -118,8 +116,8 @@ impl LspProcess {
         })?
         .map_err(LspProcessError::Transport)?;
 
-        let caps: ServerCapabilities = serde_json::from_value(result.result.unwrap_or_default())
-            .unwrap_or_default();
+        let caps: ServerCapabilities =
+            serde_json::from_value(result.result.unwrap_or_default()).unwrap_or_default();
 
         self.transport
             .send_notification("initialized", Some(Value::Null))
@@ -176,7 +174,11 @@ impl LspProcess {
             .map_err(LspProcessError::Transport)
     }
 
-    pub async fn open_document(&mut self, file_path: &str, content: &str) -> Result<(), LspProcessError> {
+    pub async fn open_document(
+        &mut self,
+        file_path: &str,
+        content: &str,
+    ) -> Result<(), LspProcessError> {
         // LSP spec requires lowercase languageId
         let language_id = match self.language {
             Language::Rust => "rust",
@@ -194,7 +196,8 @@ impl LspProcess {
                 "text": content
             }
         });
-        self.notification("textDocument/didOpen", Some(params)).await
+        self.notification("textDocument/didOpen", Some(params))
+            .await
     }
 
     pub async fn shutdown(&mut self) -> Result<(), LspProcessError> {
@@ -203,15 +206,9 @@ impl LspProcess {
             return Ok(());
         }
 
-        let _ = self
-            .transport
-            .send_request("shutdown", None)
-            .await;
+        let _ = self.transport.send_request("shutdown", None).await;
 
-        let _ = self
-            .transport
-            .send_notification("exit", None)
-            .await;
+        let _ = self.transport.send_notification("exit", None).await;
 
         match timeout(Duration::from_secs(5), self.child.wait()).await {
             Ok(Ok(status)) => {
@@ -222,10 +219,7 @@ impl LspProcess {
                 self.kill().await?;
             }
             Err(_) => {
-                warn!(
-                    "Timeout waiting for {} exit, killing",
-                    self.language.name()
-                );
+                warn!("Timeout waiting for {} exit, killing", self.language.name());
                 self.kill().await?;
             }
         }
@@ -293,12 +287,22 @@ mod tests {
         assert!(!ServerStatus::Starting.is_ready());
         assert!(!ServerStatus::Busy.is_ready());
         assert!(!ServerStatus::Indexing { progress: 50.0 }.is_ready());
-        assert!(!ServerStatus::Crashed { reason: "test".to_string() }.is_ready());
+        assert!(
+            !ServerStatus::Crashed {
+                reason: "test".to_string()
+            }
+            .is_ready()
+        );
     }
 
     #[test]
     fn test_server_status_is_terminal() {
-        assert!(ServerStatus::Crashed { reason: "test".to_string() }.is_terminal());
+        assert!(
+            ServerStatus::Crashed {
+                reason: "test".to_string()
+            }
+            .is_terminal()
+        );
         assert!(!ServerStatus::Ready.is_terminal());
         assert!(!ServerStatus::Starting.is_terminal());
         assert!(!ServerStatus::Busy.is_terminal());
@@ -310,9 +314,15 @@ mod tests {
         assert_eq!(ServerStatus::Starting.as_str(), "starting");
         assert_eq!(ServerStatus::Ready.as_str(), "ready");
         assert_eq!(ServerStatus::Busy.as_str(), "busy");
-        assert_eq!(ServerStatus::Indexing { progress: 50.0 }.as_str(), "indexing");
         assert_eq!(
-            ServerStatus::Crashed { reason: "error".to_string() }.as_str(),
+            ServerStatus::Indexing { progress: 50.0 }.as_str(),
+            "indexing"
+        );
+        assert_eq!(
+            ServerStatus::Crashed {
+                reason: "error".to_string()
+            }
+            .as_str(),
             "crashed"
         );
     }
@@ -322,9 +332,17 @@ mod tests {
         assert_eq!(format!("{}", ServerStatus::Starting), "starting");
         assert_eq!(format!("{}", ServerStatus::Ready), "ready");
         assert_eq!(format!("{}", ServerStatus::Busy), "busy");
-        assert_eq!(format!("{}", ServerStatus::Indexing { progress: 75.0 }), "indexing (75%)");
         assert_eq!(
-            format!("{}", ServerStatus::Crashed { reason: "segfault".to_string() }),
+            format!("{}", ServerStatus::Indexing { progress: 75.0 }),
+            "indexing (75%)"
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                ServerStatus::Crashed {
+                    reason: "segfault".to_string()
+                }
+            ),
             "crashed: segfault"
         );
     }

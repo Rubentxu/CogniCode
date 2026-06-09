@@ -3,9 +3,9 @@
 //! This value object tracks all indexed files in a project, enabling
 //! efficient change detection for incremental indexing.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use serde::{Serialize, Deserialize};
 
 /// Manifest tracking all indexed files and their metadata
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -133,9 +133,19 @@ mod tests {
     fn test_detect_new_modifed_deleted() {
         let mut manifest = FileManifest::new(PathBuf::from("/project"));
         manifest.update_entries(&[
-            (PathBuf::from("src/main.rs"), "same_hash".to_string(), 1000, 5),
+            (
+                PathBuf::from("src/main.rs"),
+                "same_hash".to_string(),
+                1000,
+                5,
+            ),
             (PathBuf::from("src/lib.rs"), "old_hash".to_string(), 1000, 3),
-            (PathBuf::from("src/dead.rs"), "dead_hash".to_string(), 1000, 2),
+            (
+                PathBuf::from("src/dead.rs"),
+                "dead_hash".to_string(),
+                1000,
+                2,
+            ),
         ]);
 
         // Now filesystem has: main.rs (same hash), lib.rs (modified), new.rs (new)
@@ -143,7 +153,11 @@ mod tests {
         let files = vec![
             (PathBuf::from("src/main.rs"), "same_hash".to_string(), 1000),
             (PathBuf::from("src/lib.rs"), "new_hash".to_string(), 2000),
-            (PathBuf::from("src/new.rs"), "new_file_hash".to_string(), 3000),
+            (
+                PathBuf::from("src/new.rs"),
+                "new_file_hash".to_string(),
+                3000,
+            ),
         ];
 
         let (new_files, modified_files, deleted_files) = manifest.detect_changes(&files);
@@ -158,21 +172,17 @@ mod tests {
         let mut manifest = FileManifest::new(PathBuf::from("/project"));
 
         // Add a new entry
-        manifest.update_entries(&[(
-            PathBuf::from("src/main.rs"),
-            "hash1".to_string(),
-            1000,
-            5,
-        )]);
-        assert_eq!(manifest.get(&PathBuf::from("src/main.rs")).unwrap().symbol_count, 5);
+        manifest.update_entries(&[(PathBuf::from("src/main.rs"), "hash1".to_string(), 1000, 5)]);
+        assert_eq!(
+            manifest
+                .get(&PathBuf::from("src/main.rs"))
+                .unwrap()
+                .symbol_count,
+            5
+        );
 
         // Update the same entry
-        manifest.update_entries(&[(
-            PathBuf::from("src/main.rs"),
-            "hash2".to_string(),
-            2000,
-            10,
-        )]);
+        manifest.update_entries(&[(PathBuf::from("src/main.rs"), "hash2".to_string(), 2000, 10)]);
         let entry = manifest.get(&PathBuf::from("src/main.rs")).unwrap();
         assert_eq!(entry.content_hash, "hash2");
         assert_eq!(entry.mtime, 2000);

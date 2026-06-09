@@ -1,7 +1,7 @@
 //! Change Signature Strategy - Strategy pattern implementation for change signature refactoring
 
 use crate::domain::aggregates::refactor::{Refactor, RefactorKind, RefactorParameters};
-use crate::domain::aggregates::symbol::{FunctionSignature};
+use crate::domain::aggregates::symbol::FunctionSignature;
 use crate::domain::traits::refactor_strategy::{
     PreparedEdits, RefactorError, RefactorStrategy, RefactorValidation, ValidationError,
     ValidationErrorCode,
@@ -65,24 +65,25 @@ impl ChangeSignatureStrategy {
 
         if node.kind() == call_type
             && let Some(callee_name) = self.extract_callee_name(node, source_bytes)
-                && callee_name == target_function {
-                    let start = node.start_position();
-                    let end = node.end_position();
+            && callee_name == target_function
+        {
+            let start = node.start_position();
+            let end = node.end_position();
 
-                    // Extract arguments from the call
-                    let arguments = self.extract_call_arguments(node, source_bytes);
+            // Extract arguments from the call
+            let arguments = self.extract_call_arguments(node, source_bytes);
 
-                    call_sites.push(CallSite {
-                        location: Location::new("source", start.row as u32, start.column as u32),
-                        range: SourceRange::new(
-                            Location::new("source", start.row as u32, start.column as u32),
-                            Location::new("source", end.row as u32, end.column as u32),
-                        ),
-                        callee_name,
-                        arguments,
-                        context: self.extract_context(lines, start.row as u32),
-                    });
-                }
+            call_sites.push(CallSite {
+                location: Location::new("source", start.row as u32, start.column as u32),
+                range: SourceRange::new(
+                    Location::new("source", start.row as u32, start.column as u32),
+                    Location::new("source", end.row as u32, end.column as u32),
+                ),
+                callee_name,
+                arguments,
+                context: self.extract_context(lines, start.row as u32),
+            });
+        }
 
         // Recurse into children
         for i in 0..node.child_count() {
@@ -110,9 +111,10 @@ impl ChangeSignatureStrategy {
         if language.call_has_function_field() {
             for i in 0..call_node.child_count() {
                 if let Some(child) = call_node.child(i)
-                    && child.kind() == "function" {
-                        return self.find_identifier_in_node(child, source_bytes);
-                    }
+                    && child.kind() == "function"
+                {
+                    return self.find_identifier_in_node(child, source_bytes);
+                }
             }
         }
 
@@ -147,9 +149,10 @@ impl ChangeSignatureStrategy {
 
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i)
-                && let Some(name) = self.find_identifier_in_node(child, source_bytes) {
-                    return Some(name);
-                }
+                && let Some(name) = self.find_identifier_in_node(child, source_bytes)
+            {
+                return Some(name);
+            }
         }
 
         None
@@ -196,9 +199,10 @@ impl ChangeSignatureStrategy {
             if let Some(child) = node.child(i) {
                 let kind = child.kind();
                 if (argument_kinds.contains(&kind) || kind.contains("argument"))
-                    && let Ok(text) = child.utf8_text(source_bytes) {
-                        arguments.push(text.to_string());
-                    }
+                    && let Ok(text) = child.utf8_text(source_bytes)
+                {
+                    arguments.push(text.to_string());
+                }
                 // Recurse to handle nested structures
                 if child.child_count() > 0 {
                     self.extract_arguments_from_node(child, source_bytes, arguments);
@@ -243,23 +247,24 @@ impl ChangeSignatureStrategy {
     ) -> Result<Option<ParsedFunctionInfo>, RefactorError> {
         if node.kind() == function_type
             && let Some(name) = self.find_identifier_in_node(node, source_bytes)
-                && name == function_name {
-                    let start = node.start_position();
-                    let end = node.end_position();
+            && name == function_name
+        {
+            let start = node.start_position();
+            let end = node.end_position();
 
-                    // Extract parameters
-                    let parameters = self.extract_parameters_from_function(node, source_bytes);
+            // Extract parameters
+            let parameters = self.extract_parameters_from_function(node, source_bytes);
 
-                    return Ok(Some(ParsedFunctionInfo {
-                        name,
-                        location: Location::new("source", start.row as u32, start.column as u32),
-                        range: SourceRange::new(
-                            Location::new("source", start.row as u32, start.column as u32),
-                            Location::new("source", end.row as u32, end.column as u32),
-                        ),
-                        parameters,
-                    }));
-                }
+            return Ok(Some(ParsedFunctionInfo {
+                name,
+                location: Location::new("source", start.row as u32, start.column as u32),
+                range: SourceRange::new(
+                    Location::new("source", start.row as u32, start.column as u32),
+                    Location::new("source", end.row as u32, end.column as u32),
+                ),
+                parameters,
+            }));
+        }
 
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i)
@@ -268,9 +273,10 @@ impl ChangeSignatureStrategy {
                     source_bytes,
                     function_name,
                     function_type,
-                )? {
-                    return Ok(Some(result));
-                }
+                )?
+            {
+                return Ok(Some(result));
+            }
         }
 
         Ok(None)
@@ -335,14 +341,18 @@ impl ChangeSignatureStrategy {
                 } else if kind == "identifier" || kind == "type_identifier" {
                     // Some parameter nodes directly contain identifiers
                     if let Ok(text) = child.utf8_text(source_bytes)
-                        && !text.is_empty() && text != "," && text != "(" && text != ")" {
-                            parameters.push(ParsedParameter {
-                                name: text.to_string(),
-                                type_annotation: None,
-                                has_default: false,
-                                raw_text: text.to_string(),
-                            });
-                        }
+                        && !text.is_empty()
+                        && text != ","
+                        && text != "("
+                        && text != ")"
+                    {
+                        parameters.push(ParsedParameter {
+                            name: text.to_string(),
+                            type_annotation: None,
+                            has_default: false,
+                            raw_text: text.to_string(),
+                        });
+                    }
                 }
             }
         }
@@ -380,9 +390,10 @@ impl ChangeSignatureStrategy {
                 }
                 // Also check if the raw text contains '=' which indicates a default
                 if let Ok(text) = child.utf8_text(source_bytes)
-                    && text.contains('=') {
-                        has_default = true;
-                    }
+                    && text.contains('=')
+                {
+                    has_default = true;
+                }
             }
         }
 
@@ -472,13 +483,14 @@ impl RefactorStrategy for ChangeSignatureStrategy {
         // Check for breaking changes
         if target_symbol.is_callable()
             && let Some(old_sig) = target_symbol.signature()
-                && old_sig.arity() != new_signature.arity() {
-                    warnings.push(format!(
-                        "Parameter count changed from {} to {}",
-                        old_sig.arity(),
-                        new_signature.arity()
-                    ));
-                }
+            && old_sig.arity() != new_signature.arity()
+        {
+            warnings.push(format!(
+                "Parameter count changed from {} to {}",
+                old_sig.arity(),
+                new_signature.arity()
+            ));
+        }
 
         if !errors.is_empty() {
             return RefactorValidation::failure(errors, refactor.clone());
@@ -717,41 +729,42 @@ impl ChangeSignatureStrategy {
         let args_pattern = regex::Regex::new(r"\(([^)]*)\)").ok();
 
         if let Some(re) = args_pattern
-            && let Some(caps) = re.captures(call_site_text) {
-                let args_str = &caps[1];
-                let args: Vec<&str> = args_str.split(',').map(|s| s.trim()).collect();
+            && let Some(caps) = re.captures(call_site_text)
+        {
+            let args_str = &caps[1];
+            let args: Vec<&str> = args_str.split(',').map(|s| s.trim()).collect();
 
-                // Build new argument list based on position mapping
-                // For reordered params, we rearrange the arguments at the call site
-                let mut new_args: Vec<String> = Vec::with_capacity(new_param_names.len());
+            // Build new argument list based on position mapping
+            // For reordered params, we rearrange the arguments at the call site
+            let mut new_args: Vec<String> = Vec::with_capacity(new_param_names.len());
 
-                // Initialize with empty strings
-                for _ in 0..new_param_names.len() {
-                    new_args.push(String::new());
-                }
+            // Initialize with empty strings
+            for _ in 0..new_param_names.len() {
+                new_args.push(String::new());
+            }
 
-                // Place arguments in their new positions
-                for (old_idx, new_idx) in position_mapping {
-                    if *old_idx < args.len() && *new_idx < new_args.len() {
-                        new_args[*new_idx] = args[*old_idx].to_string();
-                    }
-                }
-
-                // Replace the arguments in the call site
-                let new_args_str = new_args.join(", ");
-                let function_part = &call_site_text[..caps
-                    .get(0)
-                    .map(|m| m.start())
-                    .unwrap_or(call_site_text.len())];
-                let after_args =
-                    &call_site_text[caps.get(0).map(|m| m.end()).unwrap_or(call_site_text.len())..];
-
-                // Find where the opening paren was
-                if let Some(paren_pos) = function_part.rfind('(') {
-                    let prefix = &function_part[..=paren_pos];
-                    return format!("{}{}{}", prefix, new_args_str, after_args);
+            // Place arguments in their new positions
+            for (old_idx, new_idx) in position_mapping {
+                if *old_idx < args.len() && *new_idx < new_args.len() {
+                    new_args[*new_idx] = args[*old_idx].to_string();
                 }
             }
+
+            // Replace the arguments in the call site
+            let new_args_str = new_args.join(", ");
+            let function_part = &call_site_text[..caps
+                .get(0)
+                .map(|m| m.start())
+                .unwrap_or(call_site_text.len())];
+            let after_args =
+                &call_site_text[caps.get(0).map(|m| m.end()).unwrap_or(call_site_text.len())..];
+
+            // Find where the opening paren was
+            if let Some(paren_pos) = function_part.rfind('(') {
+                let prefix = &function_part[..=paren_pos];
+                return format!("{}{}{}", prefix, new_args_str, after_args);
+            }
+        }
 
         // Fallback: return original call site if we couldn't parse it
         call_site_text.to_string()

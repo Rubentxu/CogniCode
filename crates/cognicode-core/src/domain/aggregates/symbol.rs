@@ -2,8 +2,8 @@
 //!
 //! Represents a symbol (function, class, variable, etc.) in the codebase.
 
-use std::fmt;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 use super::super::value_objects::{Location, SymbolKind};
 
@@ -286,8 +286,8 @@ mod tests {
     #[cfg(feature = "persistence")]
     #[test]
     fn test_symbol_bincode_roundtrip() {
-        use bincode::serde::{decode_from_slice, encode_to_vec};
         use bincode::config::standard;
+        use bincode::serde::{decode_from_slice, encode_to_vec};
 
         let location = Location::new("test.rs", 10, 5);
         let signature = FunctionSignature::new(
@@ -307,6 +307,9 @@ mod tests {
         // Assert equality
         assert_eq!(symbol.name(), deserialized_symbol.name());
         assert_eq!(symbol.kind(), deserialized_symbol.kind());
-        assert_eq!(symbol.fully_qualified_name(), deserialized_symbol.fully_qualified_name());
+        assert_eq!(
+            symbol.fully_qualified_name(),
+            deserialized_symbol.fully_qualified_name()
+        );
     }
 }

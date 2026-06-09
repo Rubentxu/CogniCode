@@ -152,7 +152,11 @@ pub struct SearchMatch {
 impl SearchMatch {
     /// Returns the location of the match
     pub fn location(&self) -> Location {
-        Location::new(self.file.to_string_lossy().as_ref(), self.line_number, self.column_range.0 + 1)
+        Location::new(
+            self.file.to_string_lossy().as_ref(),
+            self.line_number,
+            self.column_range.0 + 1,
+        )
     }
 }
 
@@ -348,7 +352,10 @@ mod tests {
             Ok(vec![Replacement::mock()])
         }
 
-        async fn find_similar(&self, location: &Location) -> Result<Vec<SimilarMatch>, SearchError> {
+        async fn find_similar(
+            &self,
+            location: &Location,
+        ) -> Result<Vec<SimilarMatch>, SearchError> {
             let _ = location;
             Ok(vec![SimilarMatch::mock()])
         }
@@ -482,7 +489,11 @@ mod tests {
     fn test_replacement_new() {
         let start = Location::new("test.rs", 0, 0);
         let end = Location::new("test.rs", 0, 10);
-        let replacement = Replacement::new("test.rs", crate::domain::value_objects::SourceRange::new(start, end), "new_content");
+        let replacement = Replacement::new(
+            "test.rs",
+            crate::domain::value_objects::SourceRange::new(start, end),
+            "new_content",
+        );
         assert_eq!(replacement.file, std::path::PathBuf::from("test.rs"));
         assert_eq!(replacement.new_text, "new_content");
     }

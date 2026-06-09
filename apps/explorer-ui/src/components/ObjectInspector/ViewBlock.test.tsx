@@ -445,4 +445,38 @@ describe("ObjectInspector — container", () => {
     // At least one block from the fixture must render.
     expect(screen.getByTestId("view-blocks")).toBeInTheDocument();
   });
+
+  it("renders SuggestionStrip between header and ViewTabs when an object is focused", async () => {
+    render(
+      <InspectorHarness
+        initial={{
+          activeObjectId: "symbol:src/lib.rs:build_overview:16",
+          activeViewId: "overview",
+          activeView: contextualViewFixture as ContextualView,
+        }}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("object-inspector")).toBeInTheDocument();
+    });
+    // The contextual-help strip should be in the DOM.
+    const strip = await screen.findByTestId("suggestion-strip");
+    expect(strip).toBeInTheDocument();
+    // DOM order: header (h2 title) → strip → ViewTabs.
+    const inspector = screen.getByTestId("object-inspector");
+    const header = inspector.querySelector("header");
+    const tablist = screen.getByRole("tablist");
+    expect(header).not.toBeNull();
+    expect(tablist).not.toBeNull();
+    // `header` and `tablist` and `strip` are siblings — verify the
+    // strip sits between them in document order.
+    const order = Array.from(inspector.children).flatMap((node) => {
+      const el = node as HTMLElement;
+      if (el === header) return ["header"];
+      if (el.contains(strip)) return ["strip"];
+      if (el.contains(tablist)) return ["tablist"];
+      return [];
+    });
+    expect(order).toEqual(["header", "strip", "tablist"]);
+  });
 });

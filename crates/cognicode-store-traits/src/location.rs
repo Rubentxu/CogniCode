@@ -1,3 +1,6 @@
+//! DEPRECATED: this module is part of the deprecated `cognicode-store-traits` crate.
+//! Use `cognicode_core::domain::value_objects::Location` instead.
+//!
 //! Location - Value object representing a location in source code
 
 use serde::{Deserialize, Serialize};
