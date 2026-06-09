@@ -13,6 +13,16 @@ path = "src/main.rs"
 name = "mcp-client"
 path = "src/mcp_client.rs"
 
+[features]
+# Forward the `sqlite` feature to `cognicode-db` and `cognicode-core`.
+# PR 1 (postgres-default-config): default includes `sqlite` to preserve
+# the prior behavior of `cognicode-mcp`. PR 2 will remove `sqlite` from
+# the default and require consumers to opt in explicitly.
+default = ["sqlite"]
+sqlite = ["cognicode-db/sqlite", "cognicode-core/sqlite"]
+# Forwarded to `cognicode-core` so MCP handlers can use PostgreSQL.
+postgres = ["cognicode-core/postgres"]
+
 [dependencies]
 cognicode-core = { workspace = true }
 cognicode-diagram = { path = "../cognicode-diagram" }

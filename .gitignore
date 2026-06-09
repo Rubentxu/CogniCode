@@ -79,6 +79,10 @@ sandbox/reports/
 adder.go
 .cognicode/
 
+# Local environment overrides (PR 3 of postgres-default-config).
+# `.env.example` is the committed template; `.env` is per-developer.
+.env
+
 # SDD / OpenSpec artifacts (agent planning data)
 .tmp-cognicode-verify-extra/
 openspec/

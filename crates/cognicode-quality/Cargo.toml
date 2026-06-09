@@ -13,6 +13,14 @@ path = "src/main.rs"
 name = "cognicode_quality"
 path = "src/lib.rs"
 
+[features]
+# Forward the `sqlite` feature to `cognicode-db` and `cognicode-core`.
+# PR 1 (postgres-default-config): default includes `sqlite` to preserve
+# the prior behavior. PR 2 will remove `sqlite` from the default and
+# require consumers to opt in explicitly.
+default = ["sqlite"]
+sqlite = ["cognicode-db/sqlite", "cognicode-core/sqlite"]
+
 [dependencies]
 cognicode-axiom.workspace = true
 cognicode-core.workspace = true

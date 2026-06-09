@@ -6,9 +6,23 @@ edition.workspace = true
 authors.workspace = true
 
 [features]
-default = ["persistence"]
+# PR 2 keeps `["persistence", "sqlite"]` as the default because the
+# full default flip to `postgres` requires gating the `rusqlite`
+# references in `cognicode-core` (~30 call sites in `aix_handlers.rs`
+# and `semantic_search.rs`). That gate is deferred to a follow-up
+# slice — PR 2 ships the `cli_dispatch` helper, the CLI precedence
+# wiring, and the precedence tests, all behind feature flags.
+default = ["persistence", "sqlite"]
 rig = ["dep:rig-core"]
 persistence = ["dep:blake3"]
+# `postgres` is additive to `persistence` — both can be active simultaneously.
+# When enabled, the workspace `sqlx` dep is pulled in with its
+# `runtime-tokio` + `postgres` features.
+postgres = ["dep:sqlx"]
+# `sqlite` is an opt-in feature. When enabled, the workspace
+# `rusqlite` dep (with the `bundled` feature) is pulled in. Still in
+# default for now; the next slice will flip the default to `postgres`.
+sqlite = ["dep:rusqlite"]
 
 [dependencies]
 # Parsing
@@ -86,9 +100,16 @@ clap.workspace = true
 rmcp.workspace = true
 process-wrap.workspace = true
 
-# Store traits (extracted to break circular deps)
-cognicode-store-traits = { workspace = true }
-rusqlite.workspace = true
+# (REMOVED for `explorer-graph-repository-bridge` slice — `cognicode-store-traits`
+# is now deprecated and has zero Rust-level uses in this crate. The crate remains
+# in the workspace for now; removal is scheduled for after the PostgreSQL adapter
+# lands. See crates/cognicode-store-traits/src/lib.rs for the migration map.)
+
+rusqlite = { workspace = true, optional = true }
+
+# PostgreSQL async driver — optional, gated behind the `postgres` feature.
+# When the feature is off, this dep is absent from the build graph.
+sqlx = { workspace = true, optional = true }
 
 # Rig-core (optional)
 rig-core = { workspace = true, optional = true }
