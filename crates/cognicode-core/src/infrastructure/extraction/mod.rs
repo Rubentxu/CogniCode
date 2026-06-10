@@ -7,3 +7,7 @@
 pub mod docs_confidence_rules;
 #[cfg(feature = "multimodal")]
 pub mod docs_extractor;
+#[cfg(feature = "multimodal")]
+pub mod issues_confidence_rules;
+#[cfg(feature = "multimodal")]
+pub mod issues_extractor;

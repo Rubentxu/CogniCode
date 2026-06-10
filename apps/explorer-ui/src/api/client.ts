@@ -316,6 +316,38 @@ export async function graphSearch(
   return envelope.payload;
 }
 
+// ============================================================================
+// Rationale — `GET /api/graph/:id/rationale`
+// ============================================================================
+
+/**
+ * Options for `fetchRationale`. All fields are optional; the
+ * backend applies defaults (`max_depth=3`, `max_nodes=50`).
+ */
+export type RationaleOptions = {
+  maxDepth?: number;
+  maxNodes?: number;
+};
+
+/**
+ * Fetch a rationale sub-graph for the given focus id. Returns the
+ * typed `SubgraphResponse` with `corroboration_scores` populated.
+ */
+export async function fetchRationale(
+  id: string,
+  opts: RationaleOptions = {},
+): Promise<import("./types").SubgraphResponse> {
+  const query: Record<string, string | number> = {};
+  if (opts.maxDepth !== undefined) query["max_depth"] = opts.maxDepth;
+  if (opts.maxNodes !== undefined) query["max_nodes"] = opts.maxNodes;
+  const { subgraphResponseSchema } = await import("./types");
+  return apiGet(
+    `/graph/${encodeURIComponent(id)}/rationale`,
+    subgraphResponseSchema,
+    query,
+  );
+}
+
 /**
  * Build a SWR fetcher that performs a GET + schema validation. The
  * returned function matches the `(key) => data` signature SWR uses

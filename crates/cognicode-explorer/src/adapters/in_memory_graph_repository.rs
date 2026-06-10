@@ -7,9 +7,10 @@
 //!
 //! T21 — backs the `graph_search` MCP tool's unit tests.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
+use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
 
 use crate::error::ExplorerResult;
@@ -139,5 +140,131 @@ impl GraphRepository for InMemoryGraphRepository {
             .filter(|e| &e.source == id)
             .cloned()
             .collect())
+    }
+
+    #[cfg(feature = "multimodal")]
+    fn edges_by_kind(
+        &self,
+        node: &NodeId,
+        kinds: &[EdgeKind],
+    ) -> ExplorerResult<Vec<GraphEdge>> {
+        // Empty kinds short-circuit: no kind to match → no edges.
+        if kinds.is_empty() {
+            return Ok(Vec::new());
+        }
+        let kind_set: HashSet<&EdgeKind> = kinds.iter().collect();
+        let mut seen: HashSet<(NodeId, NodeId, EdgeKind)> = HashSet::new();
+        let mut results: Vec<GraphEdge> = Vec::new();
+
+        for e in self.edges.iter().filter(|e| &e.source == node) {
+            if !kind_set.contains(&e.kind) {
+                continue;
+            }
+            let key = (e.source.clone(), e.target.clone(), e.kind.clone());
+            // Dedup: keep the edge with the highest confidence.
+            if let Some(pos) = seen.get(&key).and_then(|k| {
+                results.iter().position(|r| {
+                    r.source == k.0 && r.target == k.1 && r.kind == k.2
+                })
+            }) {
+                if e.confidence > results[pos].confidence {
+                    results[pos] = e.clone();
+                }
+            } else {
+                seen.insert(key);
+                results.push(e.clone());
+            }
+        }
+        Ok(results)
+    }
+
+    #[cfg(feature = "multimodal")]
+    fn rationale_subgraph(
+        &self,
+        focus: &NodeId,
+        max_depth: u32,
+        max_nodes: usize,
+    ) -> ExplorerResult<(Vec<GraphNode>, Vec<GraphEdge>)> {
+        // Multimodal edge kinds for rationale traversal.
+        let rationale_kinds: HashSet<EdgeKind> = [
+            EdgeKind::Justifies,
+            EdgeKind::Cites,
+            EdgeKind::Resolves,
+            EdgeKind::CorroboratedBy,
+        ]
+        .into();
+
+        // Always include the focus node.
+        let focus_node = self.get_node(focus)?.unwrap_or_else(|| GraphNode {
+            id: focus.clone(),
+            kind: NodeKind::Doc,
+            label: focus.0.clone(),
+            source_path: None,
+            properties: HashMap::new(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        });
+
+        let mut nodes: Vec<GraphNode> = vec![focus_node];
+        let mut edges: Vec<GraphEdge> = Vec::new();
+        let mut visited: HashSet<NodeId> = HashSet::new();
+        let mut queue: VecDeque<(NodeId, u32)> = VecDeque::new();
+
+        visited.insert(focus.clone());
+        queue.push_back((focus.clone(), 0));
+
+        while let Some((current, depth)) = queue.pop_front() {
+            if depth >= max_depth {
+                continue;
+            }
+            if nodes.len() >= max_nodes {
+                break;
+            }
+
+            for e in self.edges.iter() {
+                if &e.source != &current {
+                    continue;
+                }
+                if !rationale_kinds.contains(&e.kind) {
+                    continue;
+                }
+                if nodes.len() >= max_nodes {
+                    break;
+                }
+
+                let is_new = visited.insert(e.target.clone());
+                if is_new {
+                    if let Some(target_node) = self
+                        .nodes
+                        .iter()
+                        .find(|n| n.id == e.target)
+                        .cloned()
+                    {
+                        nodes.push(target_node);
+                    } else {
+                        // Create a stub node for unknown targets.
+                        nodes.push(GraphNode {
+                            id: e.target.clone(),
+                            kind: NodeKind::Doc,
+                            label: e.target.0.clone(),
+                            source_path: None,
+                            properties: HashMap::new(),
+                            created_at: chrono::Utc::now(),
+                            updated_at: chrono::Utc::now(),
+                        });
+                    }
+                }
+                edges.push(e.clone());
+                if is_new {
+                    queue.push_back((e.target.clone(), depth + 1));
+                }
+            }
+        }
+
+        // Drop edges whose endpoints are not in the kept set.
+        let kept: HashSet<&NodeId> = nodes.iter().map(|n| &n.id).collect();
+        edges.retain(|e| kept.contains(&e.source) && kept.contains(&e.target));
+
+        Ok((nodes, edges))
     }
 }

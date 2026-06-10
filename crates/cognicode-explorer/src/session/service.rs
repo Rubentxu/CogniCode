@@ -21,6 +21,12 @@ use crate::session::state::{
     BrainSessionState, DEFAULT_HISTORY_CAP, DEFAULT_TTL_SECS, HistoryEntry,
 };
 
+// Multimodal (brain-federation) — per-session space registry.
+#[cfg(feature = "multimodal")]
+use cognicode_core::domain::value_objects::{Space, SpaceError, SpaceId};
+#[cfg(feature = "multimodal")]
+use crate::federation::space_registry::SpaceRegistry;
+
 /// Per-session service. Cheap to clone (the inner state sits behind
 /// a `Mutex`).
 pub struct BrainSessionService {
@@ -29,6 +35,13 @@ pub struct BrainSessionService {
     service: Arc<ExplorerService>,
     #[allow(dead_code)]
     graph: Option<Arc<CallGraph>>,
+    /// Multimodal (brain-federation) — per-session space registry.
+    /// Tracks every [`Space`] the session has registered. The
+    /// [`BrainSessionState::spaces`] field is kept in sync with
+    /// the registry for snapshot serialisation.
+    #[cfg(feature = "multimodal")]
+    #[allow(dead_code)]
+    space_registry: Mutex<SpaceRegistry>,
 }
 
 // Manual `Debug` impl because `ExplorerService` doesn't implement
@@ -61,6 +74,8 @@ impl BrainSessionService {
             state: Mutex::new(state),
             service,
             graph,
+            #[cfg(feature = "multimodal")]
+            space_registry: Mutex::new(SpaceRegistry::new()),
         }
     }
 
@@ -122,6 +137,54 @@ impl BrainSessionService {
             let excess = s.history.len() - cap;
             s.history.drain(..excess);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Multimodal (brain-federation) — space management.
+    //
+    // Each method is gated behind the `multimodal` Cargo feature. On
+    // default builds the `space_registry` field does not exist and
+    // these methods are absent.
+    // ------------------------------------------------------------------
+
+    /// Register a space in this session. The space is stored in the
+    /// per-session [`SpaceRegistry`] and its id is appended to the
+    /// session state's `spaces` list (for snapshot serialisation).
+    ///
+    /// Returns [`SpaceError::Duplicate`] when a space with the same
+    /// id is already registered.
+    #[cfg(feature = "multimodal")]
+    pub fn add_space(&self, space: Space) -> Result<(), SpaceError> {
+        let mut reg = self.space_registry.lock().expect("space registry poisoned");
+        // Register in the registry first (validates for duplicates).
+        reg.register(space)?;
+        // Sync the state's space id list with the registry.
+        let ids = reg.list_ids();
+        let mut s = self.state.lock().expect("session state poisoned");
+        s.spaces = ids;
+        Ok(())
+    }
+
+    /// Remove a space by id. Returns `true` when the space was
+    /// present and removed, `false` when unknown (idempotent).
+    /// The session state's `spaces` list is kept in sync.
+    #[cfg(feature = "multimodal")]
+    pub fn remove_space(&self, id: &SpaceId) -> bool {
+        let mut reg = self.space_registry.lock().expect("space registry poisoned");
+        let removed = reg.unregister(id);
+        if removed {
+            let ids = reg.list_ids();
+            let mut s = self.state.lock().expect("session state poisoned");
+            s.spaces = ids;
+        }
+        removed
+    }
+
+    /// List every registered space in insertion order.
+    #[cfg(feature = "multimodal")]
+    pub fn spaces(&self) -> Vec<Space> {
+        let reg = self.space_registry.lock().expect("space registry poisoned");
+        reg.list()
     }
 
     /// Number of entries currently in the history (test helper).

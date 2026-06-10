@@ -26,6 +26,11 @@ use std::str::FromStr;
 /// The default variant is [`Provenance::Extracted`] (the safe, common case
 /// for AST-derived edges). Persistence code that loads legacy blobs must
 /// also default to `Extracted` (see `CallGraphV1::into_v2`).
+///
+/// **Note**: `Manual` and `Tested` variants were added by the
+/// `corroboration-rationale-views` change. They are used by the
+/// corroboration scoring module to distinguish manually-entered edges
+/// from test-verified ones.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum Provenance {
     /// Edge observed directly in the source (AST extractor).
@@ -36,6 +41,10 @@ pub enum Provenance {
     Inferred,
     /// Edge could not be resolved to a single target; `confidence <= 0.5`.
     Ambiguous,
+    /// Manually-entered edge (e.g. user-curated relation in a .md file).
+    Manual,
+    /// Edge verified by a test or benchmark.
+    Tested,
 }
 
 impl fmt::Display for Provenance {
@@ -44,6 +53,8 @@ impl fmt::Display for Provenance {
             Provenance::Extracted => "Extracted",
             Provenance::Inferred => "Inferred",
             Provenance::Ambiguous => "Ambiguous",
+            Provenance::Manual => "Manual",
+            Provenance::Tested => "Tested",
         };
         f.write_str(s)
     }
@@ -65,6 +76,8 @@ impl FromStr for Provenance {
             "Extracted" => Ok(Provenance::Extracted),
             "Inferred" => Ok(Provenance::Inferred),
             "Ambiguous" => Ok(Provenance::Ambiguous),
+            "Manual" => Ok(Provenance::Manual),
+            "Tested" => Ok(Provenance::Tested),
             _ => Err(()),
         }
     }
@@ -84,6 +97,8 @@ mod tests {
         assert_eq!(format!("{}", Provenance::Extracted), "Extracted");
         assert_eq!(format!("{}", Provenance::Inferred), "Inferred");
         assert_eq!(format!("{}", Provenance::Ambiguous), "Ambiguous");
+        assert_eq!(format!("{}", Provenance::Manual), "Manual");
+        assert_eq!(format!("{}", Provenance::Tested), "Tested");
     }
 
     #[test]
@@ -92,6 +107,8 @@ mod tests {
             Provenance::Extracted,
             Provenance::Inferred,
             Provenance::Ambiguous,
+            Provenance::Manual,
+            Provenance::Tested,
         ] {
             let json = serde_json::to_string(&variant).expect("serialize");
             let parsed: Provenance = serde_json::from_str(&json).expect("deserialize");
@@ -105,6 +122,8 @@ mod tests {
             Provenance::Extracted,
             Provenance::Inferred,
             Provenance::Ambiguous,
+            Provenance::Manual,
+            Provenance::Tested,
         ] {
             let bytes = bincode::serde::encode_to_vec(&variant, bincode::config::standard())
                 .expect("bincode encode");
@@ -123,7 +142,9 @@ mod tests {
         set.insert(Provenance::Extracted);
         set.insert(Provenance::Inferred);
         set.insert(Provenance::Ambiguous);
-        assert_eq!(set.len(), 3);
+        set.insert(Provenance::Manual);
+        set.insert(Provenance::Tested);
+        assert_eq!(set.len(), 5);
         assert!(set.contains(&Provenance::Extracted));
     }
 
@@ -133,6 +154,8 @@ mod tests {
             Provenance::Extracted,
             Provenance::Inferred,
             Provenance::Ambiguous,
+            Provenance::Manual,
+            Provenance::Tested,
         ] {
             let s = variant.to_string();
             let parsed: Provenance = s.parse().expect("from_str must accept Display form");

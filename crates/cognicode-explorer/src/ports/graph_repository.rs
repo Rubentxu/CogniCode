@@ -19,6 +19,9 @@ use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, No
 #[cfg(feature = "multimodal")]
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
 
+#[cfg(feature = "multimodal")]
+use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
+
 use crate::error::ExplorerResult;
 
 /// One page of a search result. The cursor is opaque (a base64
@@ -70,4 +73,28 @@ pub trait GraphRepository: Send + Sync {
 
     /// Find all edges whose source equals `id`.
     fn find_outgoing_edges(&self, id: &NodeId) -> ExplorerResult<Vec<GraphEdge>>;
+
+    /// Find edges from `node` that match any of the given `kinds`.
+    /// Edges are deduplicated on `(source, target, kind)`, keeping the
+    /// highest confidence for duplicate tuples.
+    #[cfg(feature = "multimodal")]
+    fn edges_by_kind(
+        &self,
+        node: &NodeId,
+        kinds: &[EdgeKind],
+    ) -> ExplorerResult<Vec<GraphEdge>>;
+
+    /// BFS traversal of the multimodal sub-graph from `focus`, following
+    /// only multimodal edges (Justifies, Cites, Resolves, CorroboratedBy).
+    ///
+    /// Returns `(nodes, edges)`. The traversal is bounded by `max_depth`
+    /// and `max_nodes`. When the reachable set exceeds `max_nodes`, the
+    /// traversal stops early and edges with missing endpoints are dropped.
+    #[cfg(feature = "multimodal")]
+    fn rationale_subgraph(
+        &self,
+        focus: &NodeId,
+        max_depth: u32,
+        max_nodes: usize,
+    ) -> ExplorerResult<(Vec<GraphNode>, Vec<GraphEdge>)>;
 }

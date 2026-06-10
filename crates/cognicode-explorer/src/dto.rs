@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -478,7 +480,11 @@ pub struct GraphEdge {
 /// `true`. We use `#[serde(skip_serializing_if = "Option::is_none")]`
 /// so the field is absent on the wire when there's no truncation —
 /// cleaner clients and smaller payloads.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// `corroboration_scores` is an optional map of edge composite key
+/// (`"source->target"`) → score in `[0.0, 1.0]`. It is populated by
+/// the rationale endpoint; other endpoints leave it empty.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SubgraphResponse {
     /// Echo of the requested `:id` so the client can pair request and
     /// response without re-encoding.
@@ -495,6 +501,23 @@ pub struct SubgraphResponse {
     /// Reason for truncation, when `truncated` is `true`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub truncated_reason: Option<String>,
+    /// Per-edge corroboration scores, keyed by `"source->target"`.
+    /// Populated by the rationale endpoint; empty otherwise.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub corroboration_scores: HashMap<String, f64>,
+}
+
+/// Payload for a loaded rationale view. Wraps the subgraph response
+/// with summary corroboration metadata.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RationaleViewPayload {
+    /// The rationale sub-graph (nodes + edges + per-edge scores).
+    pub subgraph: SubgraphResponse,
+    /// Per-edge corroboration scores (same as `subgraph.corroboration_scores`).
+    /// Duplicated for top-level convenience.
+    pub corroboration_scores: HashMap<String, f64>,
+    /// Total number of edges in the rationale sub-graph.
+    pub source_count: u32,
 }
 
 // ============================================================================

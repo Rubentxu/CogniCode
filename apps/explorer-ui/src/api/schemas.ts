@@ -857,6 +857,9 @@ export type GraphEdge = z.infer<typeof graphEdgeSchema>;
  * `truncated_reason` is `Some("node_cap")` whenever `truncated` is
  * `true`. We type it as `optional + nullable` so the absence case
  * (most responses) round-trips cleanly.
+ *
+ * `corroboration_scores` is an optional map of `"source->target"` → score.
+ * Populated by the rationale endpoint; empty otherwise.
  */
 export const subgraphResponseSchema = z.object({
   root: z.string(),
@@ -864,8 +867,20 @@ export const subgraphResponseSchema = z.object({
   edges: z.array(graphEdgeSchema),
   truncated: z.boolean(),
   truncated_reason: z.string().nullable().optional(),
+  corroboration_scores: z.record(z.number().min(0).max(1)).default({}),
 });
 export type SubgraphResponse = z.infer<typeof subgraphResponseSchema>;
+
+/**
+ * Payload for a loaded rationale view, returned by the named-view
+ * system when `view_load` is called on a rationale lens.
+ */
+export const rationaleViewPayloadSchema = z.object({
+  subgraph: subgraphResponseSchema,
+  corroboration_scores: z.record(z.number().min(0).max(1)),
+  source_count: z.number().int().nonnegative(),
+});
+export type RationaleViewPayload = z.infer<typeof rationaleViewPayloadSchema>;
 
 // ============================================================================
 // Contextual Graph — Contextual Views (Phase 1 of visualization-stack)

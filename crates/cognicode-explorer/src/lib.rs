@@ -16,8 +16,16 @@ pub mod ports;
 pub mod service;
 pub mod session;
 
+// Multimodal (brain-federation) — `FederatedNodeId`,
+// `FederatedGraphService`, `SpaceRegistry`, `MergeDetector`. Hidden
+// on default builds so the byte-level surface is unchanged.
+#[cfg(feature = "multimodal")]
+pub mod federation;
+
 #[cfg(test)]
 mod api_graph_tests;
+#[cfg(feature = "multimodal")]
+mod api_rationale_tests;
 #[cfg(test)]
 mod dto_tests;
 #[cfg(test)]

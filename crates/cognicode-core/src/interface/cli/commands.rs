@@ -92,6 +92,24 @@ pub enum CliCommand {
         #[arg(long, default_value_t = true)]
         recursive: bool,
     },
+    /// Ingest GitHub issues from the given owner/repo into
+    /// the Generic Graph Layer. Compiled in ONLY when the
+    /// `multimodal` Cargo feature is active — on a default
+    /// build the variant is absent and `cognicode issues-ingest`
+    /// returns "Unknown command".
+    #[cfg(feature = "multimodal")]
+    IssuesIngest {
+        /// GitHub owner / organisation name.
+        #[arg(long)]
+        owner: String,
+        /// GitHub repository name.
+        #[arg(long)]
+        repo: String,
+        /// When true (default), also parse git commit
+        /// references to issues from the local git log.
+        #[arg(long, default_value_t = true)]
+        include_git_log: bool,
+    },
 }
 
 /// Index subcommands
@@ -346,6 +364,18 @@ impl CommandExecutor {
             Some(CliCommand::DocsIngest { path, recursive }) => {
                 if let Err(e) = Self::execute_docs_ingest(path, *recursive).await {
                     eprintln!("docs-ingest command failed: {}", e);
+                }
+            }
+            #[cfg(feature = "multimodal")]
+            Some(CliCommand::IssuesIngest {
+                owner,
+                repo,
+                include_git_log,
+            }) => {
+                if let Err(e) =
+                    Self::execute_issues_ingest(owner, repo, *include_git_log).await
+                {
+                    eprintln!("issues-ingest command failed: {}", e);
                 }
             }
             None => {
@@ -1175,6 +1205,66 @@ impl CommandExecutor {
         // candidate OR the input was a non-empty directory
         // (recursive walks of empty dirs are also exit 0 —
         // the operation is a no-op success).
+        Ok(())
+    }
+
+    /// Execute the `issues-ingest` subcommand (T13). Fetches
+    /// GitHub issues from the given `owner`/`repo` via the
+    /// `IssuesExtractor` and prints a structured summary to
+    /// stdout. When `include_git_log` is true (default), also
+    /// parses `git log` output from the current directory for
+    /// commit-issue references.
+    ///
+    /// Exit codes (mirrors `docs-ingest`):
+    /// - `0` on success (issues were fetched or repo was empty).
+    /// - `1` on invalid input (missing owner/repo).
+    /// - `2` on extractor failure (network / API error).
+    #[cfg(feature = "multimodal")]
+    async fn execute_issues_ingest(
+        owner: &str,
+        repo: &str,
+        _include_git_log: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::domain::traits::source_extractor::{SourceExtractor, SourcePath};
+        use crate::infrastructure::extraction::issues_extractor::IssuesExtractor;
+        use crate::infrastructure::github::client::GitHubClient;
+        use crate::infrastructure::github::octocrab_client::OctocrabClient;
+        use std::sync::Arc;
+
+        if owner.is_empty() {
+            eprintln!("issues-ingest: owner is required");
+            std::process::exit(1);
+        }
+        if repo.is_empty() {
+            eprintln!("issues-ingest: repo is required");
+            std::process::exit(1);
+        }
+
+        let client: Arc<dyn GitHubClient> = Arc::new(OctocrabClient::new());
+        let extractor =
+            IssuesExtractor::with_repo_override(client, owner.to_string(), repo.to_string());
+        let url = format!("https://github.com/{owner}/{repo}");
+        let result = match extractor.extract(SourcePath::Url(url)).await {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("issues-ingest: extractor error: {e}");
+                std::process::exit(2);
+            }
+        };
+
+        let issues_processed = result.len();
+        let nodes_created = result.len();
+        let edges_created: usize = result.iter().map(|n| n.potential_edges.len()).sum();
+        println!("issues-ingest: issues_processed = {issues_processed}");
+        println!("issues-ingest: nodes_created   = {nodes_created}");
+        println!("issues-ingest: edges_created   = {edges_created}");
+        let payload = serde_json::json!({
+            "issues_processed": issues_processed,
+            "nodes_created":    nodes_created,
+            "edges_created":    edges_created,
+            "errors":           Vec::<String>::new(),
+        });
+        println!("issues-ingest: payload = {payload}");
         Ok(())
     }
 

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -291,6 +291,7 @@ fn build_subgraph(
         } else {
             None
         },
+        corroboration_scores: HashMap::new(),
     })
 }
 
@@ -398,17 +399,173 @@ async fn contextual_handler(
     Ok(Json(response).into_response())
 }
 
+// ============================================================================
+// Rationale — `GET /api/graph/:id/rationale` (multimodal-only)
+// ============================================================================
+
+/// Query params for the rationale endpoint.
+///
+/// Defaults: `max_depth = 3`, `max_nodes = 50`.
+/// Valid ranges: `max_depth ∈ [1..=5]`, `max_nodes ∈ [1..=200]`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct RationaleParams {
+    pub max_depth: Option<u32>,
+    pub max_nodes: Option<usize>,
+}
+
+impl RationaleParams {
+    /// Apply defaults + range validation.
+    pub fn validated(&self) -> Result<(u32, usize), ExplorerError> {
+        let max_depth = self.max_depth.unwrap_or(3);
+        if !(1..=5).contains(&max_depth) {
+            return Err(ExplorerError::InvalidQuery(format!(
+                "max_depth out of range [1..=5] (got: {max_depth})"
+            )));
+        }
+        let max_nodes = self.max_nodes.unwrap_or(50);
+        if !(1..=200).contains(&max_nodes) {
+            return Err(ExplorerError::InvalidQuery(format!(
+                "max_nodes out of range [1..=200] (got: {max_nodes})"
+            )));
+        }
+        Ok((max_depth, max_nodes))
+    }
+}
+
+/// Handler for `GET /api/graph/:id/rationale`.
+///
+/// Returns a `SubgraphResponse` with `corroboration_scores` populated.
+/// Requires the `multimodal` feature.
+#[cfg(feature = "multimodal")]
+async fn rationale_handler(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Query(q): Query<RationaleParams>,
+) -> Result<Response, ApiError> {
+    let id = validate_id(&id).map_err(ApiError)?;
+    let (max_depth, max_nodes) = q.validated().map_err(ApiError)?;
+    let focus = NodeId::new(id);
+
+    let graph_repo = state
+        .graph_repo
+        .clone()
+        .ok_or_else(|| {
+            ExplorerError::FeatureDisabled("multimodal graph repository not wired".to_string())
+        })
+        .map_err(ApiError)?;
+
+    // 1) BFS rationale subgraph from the repository.
+    let (nodes, edges) = graph_repo
+        .rationale_subgraph(&focus, max_depth, max_nodes)
+        .map_err(ApiError)?;
+
+    // 2) Compute corroboration scores.
+    let corroboration_scores = score_subgraph(&nodes, &edges);
+
+    // 3) Convert to DTO types.
+    let dto_nodes: Vec<crate::dto::GraphNode> = nodes
+        .into_iter()
+        .map(|n| crate::dto::GraphNode {
+            id: n.id.0,
+            label: n.label,
+            kind: n.kind.as_str().to_string(),
+            file: n.source_path.map(|p| p.display().to_string()),
+            line: None,
+            style_class: crate::api::style_class_for(n.kind.as_str()).to_string(),
+        })
+        .collect();
+
+    let dto_edges: Vec<crate::dto::GraphEdge> = edges
+        .into_iter()
+        .map(|e| {
+            let rel = e.kind.as_str();
+            crate::dto::GraphEdge {
+                source: e.source.0,
+                target: e.target.0,
+                relation: rel.clone(),
+                style_class: crate::api::edge_style_class_for(&rel).to_string(),
+            }
+        })
+        .collect();
+
+    let truncated = false;
+    let response = SubgraphResponse {
+        root: id.to_string(),
+        nodes: dto_nodes,
+        edges: dto_edges,
+        truncated,
+        truncated_reason: if truncated {
+            Some("max_nodes_exceeded".to_string())
+        } else {
+            None
+        },
+        corroboration_scores,
+    };
+    Ok(Json(response).into_response())
+}
+
+#[cfg(feature = "multimodal")]
+use cognicode_core::domain::aggregates::generic_graph::NodeId;
+#[cfg(feature = "multimodal")]
+use cognicode_core::domain::services::{score_subgraph};
+#[cfg(feature = "multimodal")]
+use crate::ports::graph_repository::GraphRepository;
+
 #[derive(Clone)]
 pub struct ApiState {
     service: Arc<ExplorerService>,
+    /// Optional generic graph repository for multimodal endpoints
+    /// (rationale, graph_search, etc.).
+    #[cfg(feature = "multimodal")]
+    pub graph_repo: Option<Arc<dyn GraphRepository>>,
 }
 
 impl ApiState {
     pub fn new(service: ExplorerService) -> Self {
         Self {
             service: Arc::new(service),
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         }
     }
+
+    /// Wire a generic graph repository so multimodal endpoints
+    /// (rationale, graph_search) can access it.
+    #[cfg(feature = "multimodal")]
+    pub fn with_graph_repo(mut self, repo: Arc<dyn GraphRepository>) -> Self {
+        self.graph_repo = Some(repo);
+        self
+    }
+}
+
+/// Build a router with a pre-constructed `ApiState`. Used by tests
+/// that need to wire a `graph_repo` into the state.
+#[cfg(feature = "multimodal")]
+pub fn router_with_state(state: ApiState) -> Router {
+    Router::new()
+        .route("/health", get(health))
+        .route("/api/workspaces/open", post(open_workspace))
+        .route("/api/workspaces/:workspace_id/index", post(index_workspace))
+        .route("/api/workspaces/:workspace_id/spotter", get(spotter))
+        .route("/api/objects/:object_id", get(inspect_object))
+        .route("/api/objects/:object_id/views", get(available_views))
+        .route(
+            "/api/objects/:object_id/views/:view_id",
+            get(contextual_view),
+        )
+        .route("/api/objects/:object_id/lenses", get(available_lenses))
+        .route("/api/objects/:object_id/lenses/:lens_id", get(apply_lens))
+        .route("/api/explorations", post(save_exploration))
+        .route(
+            "/api/explorations/:exploration_id/artifacts",
+            post(generate_artifact),
+        )
+        .route("/api/graph/:id/subgraph", get(subgraph_handler))
+        .route("/api/graph/:id/contextual", get(contextual_handler))
+        .route("/api/graph/:id/rationale", get(rationale_handler))
+        .layer(CorsLayer::permissive())
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
 }
 
 pub fn router(service: ExplorerService) -> Router {
@@ -432,6 +589,15 @@ pub fn router(service: ExplorerService) -> Router {
         )
         .route("/api/graph/:id/subgraph", get(subgraph_handler))
         .route("/api/graph/:id/contextual", get(contextual_handler))
+        // Rationale endpoint is only mounted when the `multimodal`
+        // feature is active — without it, 404 is the correct response.
+        .route(
+            "/api/graph/:id/rationale",
+            #[cfg(feature = "multimodal")]
+            get(rationale_handler),
+            #[cfg(not(feature = "multimodal"))]
+            get(not_found_stub),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(ApiState::new(service))
@@ -441,6 +607,13 @@ pub async fn serve(service: ExplorerService, addr: SocketAddr) -> anyhow::Result
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, router(service)).await?;
     Ok(())
+}
+
+/// Stub handler for routes that are only available behind a feature gate.
+/// Returns 404 so the caller gets a clean "not found" rather than a
+/// cryptic method-not-allowed.
+async fn not_found_stub() -> impl IntoResponse {
+    StatusCode::NOT_FOUND
 }
 
 async fn health() -> Json<serde_json::Value> {

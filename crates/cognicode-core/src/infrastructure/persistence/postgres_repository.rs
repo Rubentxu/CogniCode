@@ -183,6 +183,8 @@ impl PostgresRepository {
             Provenance::Extracted => ExtractionContext::DirectExtraction,
             Provenance::Inferred => ExtractionContext::Heuristic { score: confidence },
             Provenance::Ambiguous => ExtractionContext::Unresolved,
+            Provenance::Manual => ExtractionContext::DirectExtraction,
+            Provenance::Tested => ExtractionContext::DirectExtraction,
         }
     }
 

@@ -43,6 +43,11 @@ pub struct HistoryEntry {
 /// `history` is `#[serde(default)]` so an empty vector serializes as
 /// `[]` (not `null`, not omitted). That keeps the wire-level
 /// contract stable for `brain_status` consumers.
+///
+/// `spaces` is also `#[serde(default)]` so pre-federation state
+/// snapshots (with no `spaces` field) deserialize cleanly. The
+/// `Vec` lives in insertion order, matching the
+/// `FederatedGraphService` and `SpaceRegistry` invariants.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrainSessionState {
     pub session_id: String,
@@ -64,6 +69,16 @@ pub struct BrainSessionState {
     /// [`DEFAULT_HISTORY_CAP`].
     #[serde(default)]
     pub history: Vec<HistoryEntry>,
+    /// Multimodal (brain-federation) — the list of federation
+    /// `SpaceId`s this session has registered. Default is empty
+    /// (no federation). The `Vec` is in insertion order; the
+    /// `FederatedGraphService` mirrors this order. The reserved
+    /// `"default"` space is NOT added here — the design's
+    /// AD-3 decision keeps the implicit default out of the
+    /// session's space list.
+    #[cfg(feature = "multimodal")]
+    #[serde(default)]
+    pub spaces: Vec<cognicode_core::domain::value_objects::SpaceId>,
 }
 
 impl BrainSessionState {
@@ -79,6 +94,8 @@ impl BrainSessionState {
             ttl,
             focus_node: None,
             history: Vec::new(),
+            #[cfg(feature = "multimodal")]
+            spaces: Vec::new(),
         }
     }
 }
