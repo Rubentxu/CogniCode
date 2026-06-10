@@ -250,8 +250,71 @@ export async function fetchContextual(
 }
 
 // ============================================================================
-// SWR-compatible fetcher factory
+// graph_search (T22) — multimodal Generic Graph Layer search
 // ============================================================================
+//
+// Frontend-side wrapper for the MCP `graph_search` tool. The
+// tool is exposed via the explorer's MCP server; the HTTP layer
+// here is a thin shim that calls the same backend. The wire
+// shape mirrors the Rust `dispatch_graph_search` envelope:
+//
+//   POST /api/mcp/tools/call { name: "graph_search", args: {...} }
+//   → { payload: { results, total_count, next_cursor, ... } }
+//
+// For T22 we expose a typed `graphSearch` helper that:
+//   - takes the user's search params (query, kinds, limit, cursor)
+//   - posts to the MCP endpoint
+//   - validates the response with the `graphSearchResponseSchema`
+//   - returns the typed `GraphSearchResponse`
+//
+// The function is intentionally a thin wrapper — all the
+// real work (FTS5 ranking, score normalization, cursor
+// pagination) is on the Rust side. The frontend just glues
+// the SWR hook to the wire.
+
+/**
+ * Parameters for the multimodal `graph_search` call.
+ * Mirrors the Rust `GraphSearchArgs` struct in
+ * `crates/cognicode-explorer/src/mcp.rs`.
+ */
+export type GraphSearchParams = {
+  /** Required, non-empty search query. */
+  query: string;
+  /** Optional kind filter (one or more of `symbol`, `decision`, `doc`, `issue`, `evidence`). */
+  node_kinds?: string[];
+  /** Opaque cursor from a previous response's `next_cursor`. */
+  cursor?: string;
+  /** Page size; defaults to 50, capped at 200. */
+  limit?: number;
+};
+
+/**
+ * Run a multimodal `graph_search` and return the typed
+ * `GraphSearchResponse`. Throws `ApiError` on non-2xx and
+ * `ZodError` on a malformed payload.
+ *
+ * The MCP `tools/call` endpoint returns a `McpResultEnvelope`
+ * whose `payload` is the `GraphSearchResponse` shape. We unwrap
+ * the envelope in-flight and validate the inner payload.
+ */
+export async function graphSearch(
+  params: GraphSearchParams,
+): Promise<import("./types").GraphSearchResponse> {
+  const { graphSearchResponseSchema } = await import("./types");
+  // Use a generic schema that accepts the envelope, then unwrap.
+  const envelopeSchema = await import("zod").then((z) =>
+    z.z.object({
+      tool_name: z.z.string(),
+      payload: graphSearchResponseSchema,
+    }),
+  );
+  const envelope = await apiPost(
+    "/mcp/tools/call",
+    { name: "graph_search", args: params },
+    envelopeSchema,
+  );
+  return envelope.payload;
+}
 
 /**
  * Build a SWR fetcher that performs a GET + schema validation. The

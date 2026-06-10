@@ -175,6 +175,34 @@ pub const TOOL_VIEW_LOAD: &str = "view_load";
 pub const TOOL_VIEW_LIST: &str = "view_list";
 pub const TOOL_VIEW_DELETE: &str = "view_delete";
 
+// multimodal (T14) — docs_ingest. Registered ONLY when the
+// `multimodal` Cargo feature is enabled (compile-time
+// `#[cfg(feature = "multimodal")]` on the constant + the
+// dispatch arm + the schema entry). On a default build the
+// tool is absent from `tools/list` and a stale call to
+// `docs_ingest` returns `-32601` from the framework, which
+// is the canonical "feature disabled" path for MCP.
+#[cfg(feature = "multimodal")]
+pub const TOOL_DOCS_INGEST: &str = "docs_ingest";
+
+// multimodal (T21) — graph_search. Same compile-time
+// feature gate as `docs_ingest`. FTS5-backed search across
+// the `graph_nodes` table. Returns a paginated
+// `McpResultEnvelope` payload `{results, total_count,
+// next_cursor, raw_rank, normalized_score}`.
+#[cfg(feature = "multimodal")]
+pub const TOOL_GRAPH_SEARCH: &str = "graph_search";
+
+/// Default page size for `graph_search` when the caller
+/// omits `limit`. Locked by the spec.
+#[cfg(feature = "multimodal")]
+pub const DEFAULT_GRAPH_SEARCH_LIMIT: usize = 50;
+
+/// Hard cap on `graph_search` `limit` per the spec — protects
+/// the PG backend from accidental DoS.
+#[cfg(feature = "multimodal")]
+pub const MAX_GRAPH_SEARCH_LIMIT: usize = 200;
+
 /// Default maximum BFS depth for `graph_subgraph` when the caller omits
 /// `max_depth`. Project-wide constant, locked by the spec.
 pub const DEFAULT_SUBGRAPH_DEPTH: usize = 3;
@@ -208,6 +236,10 @@ pub const TOOL_NAMES: &[&str] = &[
     TOOL_VIEW_LOAD,
     TOOL_VIEW_LIST,
     TOOL_VIEW_DELETE,
+    #[cfg(feature = "multimodal")]
+    TOOL_DOCS_INGEST,
+    #[cfg(feature = "multimodal")]
+    TOOL_GRAPH_SEARCH,
 ];
 
 /// Backwards-compatible accessor — returns the canonical tool list.
@@ -430,6 +462,31 @@ struct ViewDeleteArgs {
     owner: Option<String>,
 }
 
+// multimodal (T14) — arg shape for `docs_ingest`.
+// `path` is required (file or directory); `recursive` is
+// optional and defaults to `true`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct DocsIngestArgs {
+    path: Option<String>,
+    recursive: Option<bool>,
+}
+
+// multimodal (T21) — arg shape for `graph_search`.
+// All fields are optional EXCEPT `query`, which is required.
+// `node_kinds` filters to one or more multimodal kinds.
+// `limit` defaults to 50, capped at 200
+// (`MAX_GRAPH_SEARCH_LIMIT`). `cursor` is opaque (the previous
+// response's `next_cursor`).
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct GraphSearchArgs {
+    query: Option<String>,
+    node_kinds: Option<Vec<String>>,
+    cursor: Option<String>,
+    limit: Option<i64>,
+}
+
 /// Response shape for `impact_has_path`. Always carries the original
 /// `from`/`to` so agents can correlate the result with their request
 /// without having to round-trip the arguments.
@@ -459,11 +516,23 @@ struct HasPathResult {
 /// `brain_*` tools. It is always present and zero-cost when no
 /// session has been opened yet — every handler gets a fresh empty
 /// registry at construction.
+///
+/// `graph_repo` is the optional `GraphRepository` backing the
+/// multimodal `graph_search` tool (T21). It is held as
+/// `Option<Arc<dyn GraphRepository + Send + Sync>>` so default
+/// builds (no `multimodal` feature) stay zero-cost. Constructed
+/// via [`with_graph_repo`] when the multimodal feature is on.
 #[derive(Clone)]
 pub struct ExplorerMcpHandler {
     service: Arc<ExplorerService>,
     graph: Option<Arc<CallGraph>>,
     registry: crate::session::SessionRegistry,
+    /// Multimodal (T21) — backing store for the `graph_search`
+    /// MCP tool. `None` on default builds or when the caller
+    /// has not supplied a graph repo. The `graph_search` tool
+    /// reports `"graph_search_unavailable"` when this is `None`.
+    #[cfg(feature = "multimodal")]
+    graph_repo: Option<Arc<dyn crate::ports::graph_repository::GraphRepository>>,
 }
 
 impl ExplorerMcpHandler {
@@ -475,6 +544,8 @@ impl ExplorerMcpHandler {
             service,
             graph: None,
             registry: crate::session::SessionRegistry::new(),
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         }
     }
 
@@ -485,6 +556,25 @@ impl ExplorerMcpHandler {
             service,
             graph,
             registry: crate::session::SessionRegistry::new(),
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
+        }
+    }
+
+    /// Wrap a service in an MCP handler with both a call graph and a
+    /// multimodal `GraphRepository`. Multimodal builds (T21) call
+    /// this to wire the `graph_search` tool.
+    #[cfg(feature = "multimodal")]
+    pub fn with_graph_repo(
+        service: Arc<ExplorerService>,
+        graph: Option<Arc<CallGraph>>,
+        graph_repo: Option<Arc<dyn crate::ports::graph_repository::GraphRepository>>,
+    ) -> Self {
+        Self {
+            service,
+            graph,
+            registry: crate::session::SessionRegistry::new(),
+            graph_repo,
         }
     }
 
@@ -499,6 +589,15 @@ impl ExplorerMcpHandler {
     #[cfg(test)]
     pub fn graph(&self) -> Option<&Arc<CallGraph>> {
         self.graph.as_ref()
+    }
+
+    /// Borrow the optional `GraphRepository` (multimodal build
+    /// only). Test-only.
+    #[cfg(all(test, feature = "multimodal"))]
+    pub fn graph_repo(
+        &self,
+    ) -> Option<&Arc<dyn crate::ports::graph_repository::GraphRepository>> {
+        self.graph_repo.as_ref()
     }
 
     /// Borrow the in-memory brain-session registry. Test-only.
@@ -543,8 +642,20 @@ impl ServerHandler for ExplorerMcpHandler {
         let service = self.service.clone();
         let graph = self.graph.clone();
         let registry = self.registry.clone();
+        #[cfg(feature = "multimodal")]
+        let graph_repo = self.graph_repo.clone();
         async move {
-            let result = dispatch(&service, &graph, &registry, request).await;
+            let result = dispatch(
+                &service,
+                &graph,
+                &registry,
+                request,
+                #[cfg(feature = "multimodal")]
+                graph_repo.as_ref(),
+                #[cfg(not(feature = "multimodal"))]
+                &(),
+            )
+            .await;
             Ok(result)
         }
     }
@@ -559,6 +670,14 @@ async fn dispatch(
     graph: &Option<Arc<CallGraph>>,
     registry: &crate::session::SessionRegistry,
     request: CallToolRequestParams,
+    // Multimodal (T21) — `GraphRepository` for `graph_search`.
+    // On default builds the type is `()` (zero-cost stub). On
+    // multimodal builds it is the trait-object reference.
+    // This keeps the call sites identical across both builds.
+    #[cfg(feature = "multimodal")]
+    graph_repo: Option<&Arc<dyn crate::ports::graph_repository::GraphRepository>>,
+    #[cfg(not(feature = "multimodal"))]
+    _graph_repo: &(),
 ) -> CallToolResult {
     let name = request.name.as_ref();
     // CallToolRequestParams.arguments is a serde_json::Map<String, Value>;
@@ -1314,6 +1433,26 @@ async fn dispatch(
         TOOL_VIEW_LOAD => dispatch_view_load(service, arguments).await,
         TOOL_VIEW_LIST => dispatch_view_list(service, arguments).await,
         TOOL_VIEW_DELETE => dispatch_view_delete(service, arguments).await,
+        // ---- multimodal (T14): docs_ingest ---------------------
+        //
+        // Gated behind the `multimodal` Cargo feature. Without
+        // the feature, the constant is not in `TOOL_NAMES` and
+        // the dispatch arm below does not exist, so a stale
+        // client that tries to call `docs_ingest` on a
+        // non-multimodal build gets a clean
+        // "Unknown tool: docs_ingest" error envelope.
+        #[cfg(feature = "multimodal")]
+        TOOL_DOCS_INGEST => dispatch_docs_ingest(service, arguments).await,
+        // ---- multimodal (T21): graph_search --------------------
+        //
+        // FTS5-backed search across the `graph_nodes` table.
+        // Returns `{results, total_count, next_cursor,
+        // raw_rank, normalized_score}`. The `graph_repo` is
+        // optional — when absent (the handler was constructed
+        // without one), the tool returns
+        // `"graph_search_unavailable"`.
+        #[cfg(feature = "multimodal")]
+        TOOL_GRAPH_SEARCH => dispatch_graph_search(graph_repo, arguments).await,
         _ => err(format!("Unknown tool: {name}")),
     }
 }
@@ -1326,6 +1465,196 @@ async fn dispatch(
 #[allow(dead_code)]
 fn envelope_named_err_for(tool: &str, code: &str, message: &str) -> CallToolResult {
     envelope_err_with_code(tool, code, message)
+}
+
+// ============================================================================
+// multimodal (T14) — `docs_ingest` dispatch helper.
+// ============================================================================
+//
+// Compiled into the binary ONLY when the `multimodal` Cargo
+// feature is active. The dispatch arm in `dispatch` and the
+// `TOOL_DOCS_INGEST` constant are gated the same way.
+#[cfg(feature = "multimodal")]
+async fn dispatch_docs_ingest(
+    service: &Arc<ExplorerService>,
+    arguments: serde_json::Value,
+) -> CallToolResult {
+    use cognicode_core::domain::traits::source_extractor::{SourceExtractor, SourcePath};
+    use cognicode_core::infrastructure::extraction::docs_extractor::DocsExtractor;
+    use std::path::PathBuf;
+
+    let args: DocsIngestArgs = match serde_json::from_value(arguments) {
+        Ok(a) => a,
+        Err(e) => {
+            return envelope_named_err_for(
+                TOOL_DOCS_INGEST,
+                "invalid_input",
+                &format!("{TOOL_DOCS_INGEST}: invalid args: {e}"),
+            );
+        }
+    };
+    let path_str = match args.path {
+        Some(s) if !s.is_empty() => s,
+        _ => {
+            return envelope_named_err_for(
+                TOOL_DOCS_INGEST,
+                "invalid_input",
+                "missing required arg `path`",
+            );
+        }
+    };
+    let path = PathBuf::from(&path_str);
+    if !path.exists() {
+        return envelope_named_err_for(
+            TOOL_DOCS_INGEST,
+            "not_found",
+            &format!("path does not exist: {path_str}"),
+        );
+    }
+    let recursive = args.recursive.unwrap_or(true);
+    let source = if path.is_dir() {
+        let _ = recursive;
+        SourcePath::Directory(path)
+    } else {
+        SourcePath::File(path)
+    };
+    let extractor = DocsExtractor::new();
+    let result = match extractor.extract(source).await {
+        Ok(nodes) => nodes,
+        Err(e) => {
+            return envelope_named_err_for(
+                TOOL_DOCS_INGEST,
+                "extractor_error",
+                &format!("docs extractor failed: {e}"),
+            );
+        }
+    };
+    let files_processed = result
+        .iter()
+        .map(|n| n.potential_node.source_path.clone())
+        .filter_map(|p| p)
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    let nodes_created = result.len();
+    let edges_created: usize = result.iter().map(|n| n.potential_edges.len()).sum();
+    let payload = serde_json::json!({
+        "files_processed": files_processed,
+        "nodes_created": nodes_created,
+        "edges_created": edges_created,
+        "errors": Vec::<String>::new(),
+    });
+    let _ = service;
+    envelope_ok_direct(TOOL_DOCS_INGEST, &payload, None)
+}
+
+// ============================================================================
+// multimodal (T21) — `graph_search` dispatch helper.
+// ============================================================================
+//
+// FTS5-backed search across the `graph_nodes` table. Validates
+// the caller's args, delegates to the supplied
+// `GraphRepository::search`, and wraps the page in a
+// structured `McpResultEnvelope` payload with the documented 5
+// top-level fields.
+#[cfg(feature = "multimodal")]
+async fn dispatch_graph_search(
+    graph_repo: Option<&Arc<dyn crate::ports::graph_repository::GraphRepository>>,
+    arguments: serde_json::Value,
+) -> CallToolResult {
+    use cognicode_core::domain::value_objects::node_kind::NodeKind;
+
+    let args: GraphSearchArgs = match serde_json::from_value(arguments) {
+        Ok(a) => a,
+        Err(e) => {
+            return envelope_named_err_for(
+                TOOL_GRAPH_SEARCH,
+                "invalid_input",
+                &format!("{TOOL_GRAPH_SEARCH}: invalid args: {e}"),
+            );
+        }
+    };
+    let query = match args.query {
+        Some(q) if !q.is_empty() => q,
+        _ => {
+            return envelope_named_err_for(
+                TOOL_GRAPH_SEARCH,
+                "invalid_input",
+                "missing required arg `query` (must be a non-empty string)",
+            );
+        }
+    };
+    let limit = match args.limit {
+        Some(n) if n <= 0 => {
+            return envelope_named_err_for(
+                TOOL_GRAPH_SEARCH,
+                "invalid_input",
+                &format!("{TOOL_GRAPH_SEARCH}: `limit` must be a positive integer (got {n})"),
+            );
+        }
+        Some(n) => (n as usize).min(MAX_GRAPH_SEARCH_LIMIT),
+        None => DEFAULT_GRAPH_SEARCH_LIMIT,
+    };
+    let mut parsed_kinds: Vec<NodeKind> = Vec::new();
+    if let Some(raw) = args.node_kinds {
+        for k in raw {
+            match k.as_str() {
+                "symbol" => parsed_kinds.push(NodeKind::Symbol(
+                    cognicode_core::domain::value_objects::symbol_kind::SymbolKind::Function,
+                )),
+                "decision" => parsed_kinds.push(NodeKind::Decision),
+                "doc" => parsed_kinds.push(NodeKind::Doc),
+                "issue" => parsed_kinds.push(NodeKind::Issue),
+                "evidence" => parsed_kinds.push(NodeKind::Evidence),
+                other => {
+                    return envelope_named_err_for(
+                        TOOL_GRAPH_SEARCH,
+                        "invalid_input",
+                        &format!("{TOOL_GRAPH_SEARCH}: unknown `node_kinds` entry `{other}` (expected one of: symbol, decision, doc, issue, evidence)"),
+                    );
+                }
+            }
+        }
+    }
+    let repo = match graph_repo {
+        Some(r) => r,
+        None => {
+            return envelope_named_err_for(
+                TOOL_GRAPH_SEARCH,
+                "graph_search_unavailable",
+                "graph_search: no GraphRepository wired into the handler",
+            );
+        }
+    };
+    let page = match repo.search(&query, &parsed_kinds, limit, args.cursor.as_deref()) {
+        Ok(p) => p,
+        Err(e) => {
+            return envelope_named_err_for(
+                TOOL_GRAPH_SEARCH,
+                "repository_error",
+                &format!("{TOOL_GRAPH_SEARCH}: search failed: {e}"),
+            );
+        }
+    };
+    let normalized_score = page.raw_rank.clamp(0.0, 1.0);
+    let payload = serde_json::json!({
+        "results": page.items.iter().map(|n| serde_json::json!({
+            "node": {
+                "id": n.id.as_str(),
+                "label": n.label,
+                "kind": n.kind.as_str(),
+                "source_path": n.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                "metadata": n.properties,
+            },
+            "score": normalized_score,
+            "raw_rank": page.raw_rank,
+        })).collect::<Vec<_>>(),
+        "total_count": page.raw_total,
+        "next_cursor": page.next_cursor,
+        "raw_rank": page.raw_rank,
+        "normalized_score": normalized_score,
+    });
+    envelope_ok_direct(TOOL_GRAPH_SEARCH, &payload, None)
 }
 
 async fn dispatch_view_save(
@@ -2102,6 +2431,42 @@ fn build_tool_schemas() -> Vec<Tool> {
                 &["id", "workspace_id", "owner"],
             ),
         ),
+        // ---- multimodal (T14): docs_ingest (29) -----------------
+        //
+        // Schema entry is gated behind the `multimodal`
+        // feature so the tool is absent from `tools/list` on
+        // default builds.
+        #[cfg(feature = "multimodal")]
+        Tool::new(
+            TOOL_DOCS_INGEST,
+            "Ingest Markdown / ADR files into the Generic Graph Layer. Walks `path` (a single file or a directory) with `DocsExtractor` and upserts the resulting `Doc` / `Decision` nodes + `Cites` edges into the `graph_nodes` / `graph_edges` PG tables. Returns a structured `McpResultEnvelope` whose payload is `{files_processed, nodes_created, edges_created, errors}` — `errors` is the list of files the extractor skipped. `recursive` defaults to `true`. Idempotent: re-ingesting the same file updates the existing rows.",
+            schema(
+                serde_json::json!({
+                    "path":      { "type": "string", "description": "Filesystem path to ingest. Either a single `.md`/`.markdown`/`.mdx` file or a directory to walk (required, non-empty)." },
+                    "recursive": { "type": "boolean", "description": "When `path` is a directory, recurse into subdirectories. Defaults to `true`. Ignored when `path` is a single file." }
+                }),
+                &["path"],
+            ),
+        ),
+        // ---- multimodal (T21): graph_search (30) ---------------
+        //
+        // Same feature-gate pattern as `docs_ingest`. FTS5-
+        // backed search across `graph_nodes`. Returns a
+        // paginated payload (default 50 per page, max 200).
+        #[cfg(feature = "multimodal")]
+        Tool::new(
+            TOOL_GRAPH_SEARCH,
+            "FTS5-backed search across the `graph_nodes` table. Returns multimodal nodes (Symbol / Decision / Doc / Issue / Evidence) whose label or metadata matches `query`. The `node_kinds` filter restricts the search to one or more kinds; omit to search every kind. `limit` defaults to 50, capped at 200. Pagination is opaque: the response carries `next_cursor` (a string) which the caller passes back as `cursor` to fetch the next page; `null` means the last page. The payload also exposes `raw_rank` (the FTS5 `ts_rank_cd` value) and `normalized_score` (`raw_rank` clamped to `[0.0, 1.0]`) per the design's Information Bottleneck check. Without the `multimodal` Cargo feature active, the tool is absent from `tools/list`.",
+            schema(
+                serde_json::json!({
+                    "query":      { "type": "string", "description": "Search query (required, non-empty). The match is case-insensitive substring on the node's label and on the values of its `metadata` map." },
+                    "node_kinds": { "type": "array",  "items": { "type": "string" }, "description": "Optional filter — one or more of `symbol`, `decision`, `doc`, `issue`, `evidence`. Omit to search every kind." },
+                    "cursor":     { "type": "string", "description": "Opaque cursor returned by the previous call's `next_cursor`. Omit (or pass `null`) for the first page." },
+                    "limit":      { "type": "integer", "description": "Page size — defaults to 50, capped at 200. Values > 200 are silently capped; values <= 0 are rejected." }
+                }),
+                &["query"],
+            ),
+        ),
     ]
 }
 
@@ -2261,10 +2626,19 @@ mod tests {
     #[test]
     fn tool_schemas_list_twentyeight_tools() {
         let tools = build_tool_schemas();
-        assert_eq!(tools.len(), 28, "expected 28 tools, got {}", tools.len());
+        // The multimodal feature adds 2 tools (docs_ingest,
+        // graph_search). The count is 28 by default and 30
+        // with the feature.
+        let expected_count = if cfg!(feature = "multimodal") { 30 } else { 28 };
+        assert_eq!(
+            tools.len(),
+            expected_count,
+            "expected {expected_count} tools, got {}",
+            tools.len()
+        );
 
         let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
-        let expected = [
+        let mut expected: Vec<&str> = vec![
             TOOL_OPEN_WORKSPACE,
             TOOL_SPOTTER_SEARCH,
             TOOL_INSPECT_OBJECT,
@@ -2294,6 +2668,13 @@ mod tests {
             TOOL_VIEW_LIST,
             TOOL_VIEW_DELETE,
         ];
+        if cfg!(feature = "multimodal") {
+            #[cfg(feature = "multimodal")]
+            {
+                expected.push(TOOL_DOCS_INGEST);
+                expected.push(TOOL_GRAPH_SEARCH);
+            }
+        }
         for e in expected {
             assert!(
                 names.contains(&e),
@@ -2392,7 +2773,13 @@ mod tests {
     #[test]
     fn tool_names_exposed_via_back_compat_helper() {
         let names = tool_names();
-        assert_eq!(names.len(), 28, "expected 28 tools, got {}", names.len());
+        let expected_count = if cfg!(feature = "multimodal") { 30 } else { 28 };
+        assert_eq!(
+            names.len(),
+            expected_count,
+            "expected {expected_count} tools, got {}",
+            names.len()
+        );
         assert!(names.contains(&TOOL_OPEN_WORKSPACE));
         assert!(names.contains(&TOOL_APPLY_LENS));
         assert!(names.contains(&TOOL_QUERY_MOLDQL));
@@ -2406,6 +2793,11 @@ mod tests {
         assert!(names.contains(&TOOL_BRAIN_OPEN));
         assert!(names.contains(&TOOL_BRAIN_ASK));
         assert!(names.contains(&TOOL_BRAIN_CLOSE));
+        #[cfg(feature = "multimodal")]
+        {
+            assert!(names.contains(&TOOL_DOCS_INGEST));
+            assert!(names.contains(&TOOL_GRAPH_SEARCH));
+        }
     }
 
     // ---- handler basics -----------------------------------------------------
@@ -2529,6 +2921,10 @@ mod tests {
             &None,
             &registry,
             call_tool_args("not_a_real_tool", serde_json::json!({})),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(
@@ -2554,6 +2950,10 @@ mod tests {
             &None,
             &registry,
             call_tool_args(TOOL_SPOTTER_SEARCH, serde_json::json!({})),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(true));
@@ -2576,6 +2976,10 @@ mod tests {
                 TOOL_QUERY_MOLDQL,
                 serde_json::json!({ "query": "FIND symbols" }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(
@@ -2600,6 +3004,10 @@ mod tests {
             &None,
             &registry,
             call_tool_args(TOOL_QUERY_MOLDQL, serde_json::json!({})),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(true));
@@ -2619,6 +3027,10 @@ mod tests {
             &None,
             &registry,
             call_tool_args(TOOL_QUERY_MOLDQL, serde_json::json!({ "query": "FOO" })),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(true));
@@ -2645,6 +3057,10 @@ mod tests {
                 TOOL_QUERY_MOLDQL,
                 serde_json::json!({ "query": "PATH FROM a TO b" }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         // PATH is a valid ExplorerQL query → dispatch succeeds.
@@ -2672,6 +3088,10 @@ mod tests {
                 TOOL_QUERY_MOLDQL,
                 serde_json::json!({ "query": "NEIGHBORS a DEPTH 1" }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -2689,6 +3109,10 @@ mod tests {
                 TOOL_QUERY_MOLDQL,
                 serde_json::json!({ "query": "SUBGRAPH ROOT a" }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -2708,6 +3132,10 @@ mod tests {
                     "query": "PATH FROM a TO b OR PATH FROM c TO d"
                 }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         // Boolean composition is supported by the parser; execution
@@ -2737,6 +3165,10 @@ mod tests {
                     "target": "petgraph"
                 }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -2757,6 +3189,10 @@ mod tests {
                     "target": "pg"
                 }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         // Default build has the `postgres` feature off → envelope
@@ -2783,6 +3219,10 @@ mod tests {
                     "target": "redis"
                 }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(true));
@@ -2820,6 +3260,10 @@ mod tests {
                     "max_depth": 3
                 }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         let text = first_text(&result);
@@ -2845,6 +3289,10 @@ mod tests {
                     "owner": "u1"
                 }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         let text = first_text(&result);
@@ -2866,6 +3314,10 @@ mod tests {
                 TOOL_VIEW_LIST,
                 serde_json::json!({ "workspace_id": "w1", "owner": "u1" }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         let text = first_text(&result);
@@ -2891,6 +3343,10 @@ mod tests {
                     "owner": "u1"
                 }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         let text = first_text(&result);
@@ -2947,6 +3403,10 @@ mod tests {
                 &None,
                 &registry,
                 call_tool_args(tool, args.clone()),
+            #[cfg(feature = "multimodal")]
+            None,
+            #[cfg(not(feature = "multimodal"))]
+            &(),
             )
             .await;
             let text = first_text(&result);
@@ -2981,6 +3441,10 @@ mod tests {
                     "max_depth": 3
                 }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         let text = first_text(&result);
@@ -3013,6 +3477,10 @@ mod tests {
                     "max_depth": -1
                 }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         let text = first_text(&result);
@@ -3083,6 +3551,10 @@ mod tests {
                 TOOL_OPEN_WORKSPACE,
                 serde_json::json!({ "root_path": dir.path().to_string_lossy() }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(
@@ -3125,6 +3597,10 @@ mod tests {
                 TOOL_IMPACT_RADIUS,
                 serde_json::json!({"root": "x", "max_depth": 1}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(
@@ -3175,9 +3651,11 @@ mod tests {
             "with_graph(Some) must keep the same Arc<CallGraph>"
         );
 
-        // The 28-tool surface is unchanged by the constructor choice.
+        // The 28-tool surface (30 with multimodal) is unchanged
+        // by the constructor choice.
         let tools = build_tool_schemas();
-        assert_eq!(tools.len(), 28);
+        let expected = if cfg!(feature = "multimodal") { 30 } else { 28 };
+        assert_eq!(tools.len(), expected);
     }
 
     // ---- Phase 5: impact_radius dispatch (R3) -------------------------------
@@ -3235,6 +3713,10 @@ mod tests {
                 TOOL_IMPACT_RADIUS,
                 serde_json::json!({"root": "test.rs:C:1", "max_depth": 2}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3265,6 +3747,10 @@ mod tests {
             &Some(graph),
             &registry,
             call_tool_args(TOOL_IMPACT_RADIUS, serde_json::json!({})),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(true));
@@ -3306,6 +3792,10 @@ mod tests {
                 TOOL_IMPACT_RADIUS,
                 serde_json::json!({"root": "test.rs:a7:1"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3335,6 +3825,10 @@ mod tests {
                 TOOL_IMPACT_RADIUS,
                 serde_json::json!({"root": "test.rs:B:1", "max_depth": 0}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3361,6 +3855,10 @@ mod tests {
                 TOOL_IMPACT_RADIUS,
                 serde_json::json!({"root": "missing", "max_depth": 5}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3393,6 +3891,10 @@ mod tests {
                 TOOL_IMPACT_HAS_PATH,
                 serde_json::json!({"from": "test.rs:A:1", "to": "test.rs:B:1"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3412,6 +3914,10 @@ mod tests {
                 TOOL_IMPACT_HAS_PATH,
                 serde_json::json!({"from": "test.rs:A:1", "to": "test.rs:C:1"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         let env: McpResultEnvelope<serde_json::Value> =
@@ -3428,6 +3934,10 @@ mod tests {
                 TOOL_IMPACT_HAS_PATH,
                 serde_json::json!({"from": "test.rs:D:1", "to": "test.rs:A:1"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         let env: McpResultEnvelope<serde_json::Value> =
@@ -3452,6 +3962,10 @@ mod tests {
                 TOOL_IMPACT_HAS_PATH,
                 serde_json::json!({"from": "test.rs:A:1", "to": "test.rs:A:1"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3502,6 +4016,10 @@ mod tests {
                 TOOL_IMPACT_SHORTEST_PATH,
                 serde_json::json!({"from": "test.rs:A:1", "to": "test.rs:B:1"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3534,6 +4052,10 @@ mod tests {
                 TOOL_IMPACT_SHORTEST_PATH,
                 serde_json::json!({"from": "test.rs:A:1", "to": "test.rs:C:1"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3562,6 +4084,10 @@ mod tests {
                 TOOL_IMPACT_SHORTEST_PATH,
                 serde_json::json!({"from": "test.rs:A:1", "to": "test.rs:A:1"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3594,6 +4120,10 @@ mod tests {
             &Some(graph),
             &registry,
             call_tool_args(TOOL_IMPACT_DETECT_CYCLES, serde_json::json!({})),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3636,6 +4166,10 @@ mod tests {
             &Some(graph),
             &registry,
             call_tool_args(TOOL_IMPACT_DETECT_CYCLES, serde_json::json!({})),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3667,6 +4201,10 @@ mod tests {
                 TOOL_IMPACT_COMPONENT,
                 serde_json::json!({"id": "test.rs:A:1"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3699,6 +4237,10 @@ mod tests {
                 TOOL_IMPACT_FORWARD_RADIUS,
                 serde_json::json!({"root": "test.rs:A:1", "max_depth": 1}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3721,6 +4263,10 @@ mod tests {
             &Some(graph),
             &registry,
             call_tool_args(TOOL_IMPACT_FORWARD_RADIUS, serde_json::json!({})),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(true));
@@ -3762,6 +4308,10 @@ mod tests {
                 TOOL_IMPACT_FORWARD_RADIUS,
                 serde_json::json!({"root": "test.rs:b1:1"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3791,6 +4341,10 @@ mod tests {
                 TOOL_IMPACT_FORWARD_RADIUS,
                 serde_json::json!({"root": "test.rs:A:1", "max_depth": 0}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3817,6 +4371,10 @@ mod tests {
                 TOOL_IMPACT_FORWARD_RADIUS,
                 serde_json::json!({"root": "missing", "max_depth": 5}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3840,6 +4398,10 @@ mod tests {
                 TOOL_IMPACT_FORWARD_RADIUS,
                 serde_json::json!({"root": "test.rs:A:1", "max_depth": 1}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(true));
@@ -3865,6 +4427,10 @@ mod tests {
             &Some(graph),
             &registry,
             call_tool_args(TOOL_IMPACT_COMPONENT, serde_json::json!({"id": "missing"})),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -3933,7 +4499,8 @@ mod tests {
         );
 
         // Same tool surface on both.
-        assert_eq!(build_tool_schemas().len(), 28);
+        let expected = if cfg!(feature = "multimodal") { 30 } else { 28 };
+        assert_eq!(build_tool_schemas().len(), expected);
 
         // The 9 graph-aware tools (6 impact + 3 graph_*) surface the
         // unavailable error from both handlers. We pass `&None`
@@ -3960,6 +4527,10 @@ mod tests {
                 &None,
                 &registry,
                 call_tool_args(tool, serde_json::json!({})),
+                #[cfg(feature = "multimodal")]
+                None,
+                #[cfg(not(feature = "multimodal"))]
+                &(),
             )
             .await;
             let result_b = dispatch(
@@ -3967,6 +4538,10 @@ mod tests {
                 &None,
                 &registry,
                 call_tool_args(tool, serde_json::json!({})),
+                #[cfg(feature = "multimodal")]
+                None,
+                #[cfg(not(feature = "multimodal"))]
+                &(),
             )
             .await;
             let text_a = first_text(&result_a);
@@ -4012,6 +4587,10 @@ mod tests {
                     "max_depth": 1,
                 }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -4049,6 +4628,10 @@ mod tests {
             &Some(graph),
             &registry,
             call_tool_args(TOOL_GRAPH_SUBGRAPH, serde_json::json!({})),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(true));
@@ -4072,6 +4655,10 @@ mod tests {
                 TOOL_GRAPH_SUBGRAPH,
                 serde_json::json!({"root": "test.rs:A:1", "direction": "sideways"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(true));
@@ -4093,6 +4680,10 @@ mod tests {
             &Some(graph),
             &registry,
             call_tool_args(TOOL_GRAPH_CLUSTER, serde_json::json!({})),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -4122,6 +4713,10 @@ mod tests {
                 TOOL_GRAPH_CLUSTER,
                 serde_json::json!({"method": "connected"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -4148,6 +4743,10 @@ mod tests {
                 TOOL_GRAPH_EXPLAIN,
                 serde_json::json!({"from": "test.rs:A:1", "to": "test.rs:B:1"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -4176,6 +4775,10 @@ mod tests {
                 TOOL_GRAPH_EXPLAIN,
                 serde_json::json!({"from": "test.rs:A:1", "to": "test.rs:C:1"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         // NOT is_error — found=false is a structured payload.
@@ -4203,6 +4806,10 @@ mod tests {
                 TOOL_GRAPH_EXPLAIN,
                 serde_json::json!({"from": "test.rs:A:1"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(true));
@@ -4223,6 +4830,10 @@ mod tests {
                 TOOL_GRAPH_SUBGRAPH,
                 serde_json::json!({"root": "test.rs:A:1"}),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(true));
@@ -4568,7 +5179,7 @@ mod tests {
     // `question` (required) + `context` (optional), missing `question`
     // → validation error, full dispatch envelope has
     // `provenance.source = "ask-router"`, and a non-graph question
-    // dispatches successfully through `dispatch()`.
+    // dispatches successfully through `dispatch(`.
 
     #[test]
     fn ask_tool_constant_is_registered_in_tool_names() {
@@ -4627,6 +5238,10 @@ mod tests {
             &None,
             &registry,
             call_tool_args(TOOL_ASK, serde_json::json!({})),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(true));
@@ -4652,6 +5267,10 @@ mod tests {
                 TOOL_ASK,
                 serde_json::json!({ "question": "any smells in `parse_config`?" }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(
@@ -4708,6 +5327,10 @@ mod tests {
                     "question": "path between `alpha` and `beta`"
                 }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         // The ask router wraps the `graph_unavailable` response in a
@@ -4729,11 +5352,10 @@ mod tests {
     #[test]
     fn ask_tool_count_is_twentyeight_after_registration() {
         // Regression guard: the 28th tool was added by the
-        // named-views change. This test is intentionally
-        // separate from `tool_schemas_list_twentyeight_tools`
-        // so a future regression that breaks the constant but
-        // not the schema still fires here.
-        assert_eq!(TOOL_NAMES.len(), 28);
+        // named-views change. The multimodal feature adds
+        // 2 more (docs_ingest + graph_search → 30).
+        let expected = if cfg!(feature = "multimodal") { 30 } else { 28 };
+        assert_eq!(TOOL_NAMES.len(), expected);
     }
 
     // ---- brain-session: 6 dispatch tests --------------------------------
@@ -4750,6 +5372,10 @@ mod tests {
                 TOOL_BRAIN_OPEN,
                 serde_json::json!({ "workspace_id": "ws-test" }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -4787,6 +5413,10 @@ mod tests {
             &None,
             &registry,
             call_tool_args(TOOL_BRAIN_OPEN, serde_json::json!({ "workspace_id": "" })),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -4806,6 +5436,10 @@ mod tests {
                 TOOL_BRAIN_OPEN,
                 serde_json::json!({ "workspace_id": "ws", "ttl": 100_000 }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -4825,6 +5459,10 @@ mod tests {
                 TOOL_BRAIN_ATTACH,
                 serde_json::json!({ "session_id": "00000000-0000-4000-8000-000000000000" }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -4844,6 +5482,10 @@ mod tests {
                 TOOL_BRAIN_CLOSE,
                 serde_json::json!({ "session_id": "00000000-0000-4000-8000-000000000000" }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         // Critical: NOT an error envelope. closed:false is the
@@ -4865,6 +5507,10 @@ mod tests {
             &None,
             &registry,
             call_tool_args(TOOL_BRAIN_OPEN, serde_json::json!({ "workspace_id": "ws" })),
+            #[cfg(feature = "multimodal")]
+            None,
+            #[cfg(not(feature = "multimodal"))]
+            &(),
         )
         .await;
         let v: serde_json::Value = serde_json::from_str(&first_text(&open)).expect("envelope");
@@ -4883,6 +5529,10 @@ mod tests {
                 TOOL_BRAIN_FOCUS,
                 serde_json::json!({ "session_id": sid, "focus_node": "" }),
             ),
+        #[cfg(feature = "multimodal")]
+        None,
+        #[cfg(not(feature = "multimodal"))]
+        &(),
         )
         .await;
         assert_eq!(result.is_error, Some(false));
@@ -4900,6 +5550,10 @@ mod tests {
             &None,
             &registry,
             call_tool_args(TOOL_BRAIN_OPEN, serde_json::json!({ "workspace_id": "ws" })),
+            #[cfg(feature = "multimodal")]
+            None,
+            #[cfg(not(feature = "multimodal"))]
+            &(),
         )
         .await;
         let v: serde_json::Value = serde_json::from_str(&first_text(&open)).expect("envelope");
@@ -4914,6 +5568,10 @@ mod tests {
             &None,
             &registry,
             call_tool_args(TOOL_BRAIN_STATUS, serde_json::json!({ "session_id": sid })),
+            #[cfg(feature = "multimodal")]
+            None,
+            #[cfg(not(feature = "multimodal"))]
+            &(),
         )
         .await;
         assert_eq!(status.is_error, Some(false));
@@ -4944,6 +5602,10 @@ mod tests {
                 TOOL_BRAIN_OPEN,
                 serde_json::json!({ "workspace_id": "ws-lifecycle" }),
             ),
+            #[cfg(feature = "multimodal")]
+            None,
+            #[cfg(not(feature = "multimodal"))]
+            &(),
         )
         .await;
         let v: serde_json::Value = serde_json::from_str(&first_text(&open)).expect("open envelope");
@@ -4958,6 +5620,10 @@ mod tests {
             &None,
             &registry,
             call_tool_args(TOOL_BRAIN_ATTACH, serde_json::json!({ "session_id": sid })),
+            #[cfg(feature = "multimodal")]
+            None,
+            #[cfg(not(feature = "multimodal"))]
+            &(),
         )
         .await;
         assert!(first_text(&attach).contains("\"focus_node\": null"));
@@ -4971,6 +5637,10 @@ mod tests {
                 TOOL_BRAIN_FOCUS,
                 serde_json::json!({ "session_id": sid, "focus_node": "Foo::bar" }),
             ),
+            #[cfg(feature = "multimodal")]
+            None,
+            #[cfg(not(feature = "multimodal"))]
+            &(),
         )
         .await;
         let fv: serde_json::Value = serde_json::from_str(&first_text(&focus)).expect("focus");
@@ -4982,6 +5652,10 @@ mod tests {
             &None,
             &registry,
             call_tool_args(TOOL_BRAIN_STATUS, serde_json::json!({ "session_id": sid })),
+            #[cfg(feature = "multimodal")]
+            None,
+            #[cfg(not(feature = "multimodal"))]
+            &(),
         )
         .await;
         let sv: serde_json::Value = serde_json::from_str(&first_text(&status)).expect("status");
@@ -4997,6 +5671,10 @@ mod tests {
             &None,
             &registry,
             call_tool_args(TOOL_BRAIN_CLOSE, serde_json::json!({ "session_id": sid })),
+            #[cfg(feature = "multimodal")]
+            None,
+            #[cfg(not(feature = "multimodal"))]
+            &(),
         )
         .await;
         let cv: serde_json::Value = serde_json::from_str(&first_text(&close)).expect("close");
@@ -5008,6 +5686,10 @@ mod tests {
             &None,
             &registry,
             call_tool_args(TOOL_BRAIN_CLOSE, serde_json::json!({ "session_id": sid })),
+            #[cfg(feature = "multimodal")]
+            None,
+            #[cfg(not(feature = "multimodal"))]
+            &(),
         )
         .await;
         let c2v: serde_json::Value = serde_json::from_str(&first_text(&close2)).expect("close2");
@@ -5019,8 +5701,217 @@ mod tests {
             &None,
             &registry,
             call_tool_args(TOOL_BRAIN_ATTACH, serde_json::json!({ "session_id": sid })),
+            #[cfg(feature = "multimodal")]
+            None,
+            #[cfg(not(feature = "multimodal"))]
+            &(),
         )
         .await;
         assert!(first_text(&attach_after).contains("session_not_found"));
+    }
+
+    // ---- multimodal (T21): graph_search RED gates --------------
+
+    /// T21 RED gate: `graph_search` must return a structured
+    /// `McpResultEnvelope` payload with the documented 5
+    /// top-level fields (`results`, `total_count`,
+    /// `next_cursor`, `raw_rank`, `normalized_score`) when
+    /// called with a valid `query`.
+    #[cfg(feature = "multimodal")]
+    #[tokio::test]
+    async fn graph_search_returns_envelope() {
+        use cognicode_core::domain::aggregates::generic_graph::GraphNode;
+        use cognicode_core::domain::value_objects::node_kind::NodeKind;
+        let (service, _wdir) = build_test_service();
+        let mut nodes: Vec<GraphNode> = Vec::new();
+        nodes.push(GraphNode::builder("doc:adr-0007.md#adr-7", NodeKind::Decision)
+            .label("ADR-0007: Adopt GraphQL")
+            .source_path("docs/adr/0007.md")
+            .property("status", "accepted")
+            .build());
+        nodes.push(GraphNode::builder("doc:adr-0008.md#adr-8", NodeKind::Decision)
+            .label("ADR-0008: Use Federation")
+            .source_path("docs/adr/0008.md")
+            .property("status", "proposed")
+            .build());
+        nodes.push(GraphNode::builder("doc:readme.md#intro", NodeKind::Doc)
+            .label("Project README")
+            .source_path("README.md")
+            .property("section", "intro")
+            .build());
+        nodes.push(GraphNode::builder("issue:github#42", NodeKind::Issue)
+            .label("Bug: schema mismatch on federation")
+            .source_path("https://github.com/x/y/issues/42")
+            .build());
+        let repo_arc: Arc<dyn crate::ports::graph_repository::GraphRepository> =
+            Arc::new(crate::adapters::InMemoryGraphRepository::new(nodes, Vec::new()));
+        let handler = ExplorerMcpHandler::with_graph_repo(service, None, Some(repo_arc));
+
+        let request = call_tool_args(
+            TOOL_GRAPH_SEARCH,
+            serde_json::json!({ "query": "ADR" }),
+        );
+        let result = dispatch(
+            handler.service(),
+            &handler.graph().cloned(),
+            handler.registry(),
+            request,
+            handler.graph_repo(),
+        )
+        .await;
+        let text = first_text(&result);
+        let envelope: serde_json::Value =
+            serde_json::from_str(&text).expect("envelope must be valid JSON");
+        assert_eq!(envelope["tool_name"], TOOL_GRAPH_SEARCH);
+        let results = envelope["payload"]["results"]
+            .as_array()
+            .expect("results is an array");
+        assert_eq!(results.len(), 2);
+        for r in results {
+            assert!(r["node"].is_object());
+            assert!(r["score"].is_number());
+            assert!(r["raw_rank"].is_number());
+        }
+        assert_eq!(envelope["payload"]["total_count"].as_u64().unwrap(), 2);
+        assert!(envelope["payload"]["next_cursor"].is_null());
+        assert!(envelope["payload"]["raw_rank"].is_number());
+        assert!(envelope["payload"]["normalized_score"].is_number());
+    }
+
+    /// T21 RED gate: cursor pagination. With `limit=1` and 2
+    /// matches, the first page must include `next_cursor` and
+    /// the second page must include `next_cursor = null`.
+    #[cfg(feature = "multimodal")]
+    #[tokio::test]
+    async fn graph_search_cursor_pagination() {
+        use cognicode_core::domain::aggregates::generic_graph::GraphNode;
+        use cognicode_core::domain::value_objects::node_kind::NodeKind;
+        let (service, _wdir) = build_test_service();
+        let mut nodes: Vec<GraphNode> = Vec::new();
+        nodes.push(GraphNode::builder("doc:adr-0007.md#adr-7", NodeKind::Decision)
+            .label("ADR-0007: Adopt GraphQL")
+            .build());
+        nodes.push(GraphNode::builder("doc:adr-0008.md#adr-8", NodeKind::Decision)
+            .label("ADR-0008: Use Federation")
+            .build());
+        let repo_arc: Arc<dyn crate::ports::graph_repository::GraphRepository> =
+            Arc::new(crate::adapters::InMemoryGraphRepository::new(nodes, Vec::new()));
+        let handler = ExplorerMcpHandler::with_graph_repo(service, None, Some(repo_arc));
+
+        let request1 = call_tool_args(
+            TOOL_GRAPH_SEARCH,
+            serde_json::json!({ "query": "ADR", "limit": 1 }),
+        );
+        let result1 = dispatch(
+            handler.service(),
+            &handler.graph().cloned(),
+            handler.registry(),
+            request1,
+            handler.graph_repo(),
+        )
+        .await;
+        let env1: serde_json::Value = serde_json::from_str(&first_text(&result1)).unwrap();
+        assert_eq!(env1["payload"]["results"].as_array().unwrap().len(), 1);
+        let cursor = env1["payload"]["next_cursor"]
+            .as_str()
+            .expect("next_cursor must be a string on page 1");
+        let request2 = call_tool_args(
+            TOOL_GRAPH_SEARCH,
+            serde_json::json!({ "query": "ADR", "limit": 1, "cursor": cursor }),
+        );
+        let result2 = dispatch(
+            handler.service(),
+            &handler.graph().cloned(),
+            handler.registry(),
+            request2,
+            handler.graph_repo(),
+        )
+        .await;
+        let env2: serde_json::Value = serde_json::from_str(&first_text(&result2)).unwrap();
+        assert_eq!(env2["payload"]["results"].as_array().unwrap().len(), 1);
+        assert!(env2["payload"]["next_cursor"].is_null());
+        let id1 = env1["payload"]["results"][0]["node"]["id"].as_str().unwrap();
+        let id2 = env2["payload"]["results"][0]["node"]["id"].as_str().unwrap();
+        assert_ne!(id1, id2);
+    }
+
+    /// T21 RED gate: the `graph_search` tool is absent on
+    /// default builds (no `multimodal` feature).
+    #[test]
+    fn graph_search_hidden_without_feature() {
+        if cfg!(feature = "multimodal") {
+            let names: Vec<String> = build_tool_schemas()
+                .iter()
+                .map(|t| t.name.to_string())
+                .collect();
+            assert!(names.iter().any(|n| n == "graph_search"));
+        } else {
+            let names: Vec<String> = build_tool_schemas()
+                .iter()
+                .map(|t| t.name.to_string())
+                .collect();
+            assert!(names.iter().all(|n| n != "graph_search"));
+            assert!(tool_names().iter().all(|n| *n != "graph_search"));
+        }
+    }
+
+    // ---- multimodal (T14): docs_ingest RED gates ----------------
+
+    /// T14 RED gate: `docs_ingest` is absent on default builds.
+    #[test]
+    fn tool_schemas_docs_ingest_hidden_without_feature() {
+        if cfg!(feature = "multimodal") {
+            let names: Vec<String> = build_tool_schemas()
+                .iter()
+                .map(|t| t.name.to_string())
+                .collect();
+            #[cfg(feature = "multimodal")]
+            {
+                assert!(names.iter().any(|n| n == TOOL_DOCS_INGEST));
+            }
+        } else {
+            let names: Vec<String> = build_tool_schemas()
+                .iter()
+                .map(|t| t.name.to_string())
+                .collect();
+            assert!(names.iter().all(|n| n != "docs_ingest"));
+            assert!(tool_names().iter().all(|n| *n != "docs_ingest"));
+        }
+    }
+
+    /// T14 RED gate: `docs_ingest` must return a structured
+    /// `McpResultEnvelope` payload with the documented 4
+    /// top-level fields when the `path` argument is a
+    /// non-empty file.
+    #[cfg(feature = "multimodal")]
+    #[tokio::test]
+    async fn docs_ingest_returns_envelope() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let f = tmp.path().join("doc.md");
+        std::fs::write(&f, "# Hello\n\nsee [foo](src/foo.rs:foo:1) for details.\n").unwrap();
+
+        let (service, _wdir) = build_test_service();
+        let handler = ExplorerMcpHandler::new(service);
+
+        let request = call_tool_args(
+            TOOL_DOCS_INGEST,
+            serde_json::json!({ "path": f.to_string_lossy(), "recursive": false }),
+        );
+        let result = dispatch(
+            handler.service(),
+            &handler.graph().cloned(),
+            handler.registry(),
+            request,
+            None,
+        )
+        .await;
+        let text = first_text(&result);
+        let envelope: serde_json::Value =
+            serde_json::from_str(&text).expect("envelope must be valid JSON");
+        assert_eq!(envelope["tool_name"], TOOL_DOCS_INGEST);
+        assert!(envelope["payload"]["files_processed"].as_u64().unwrap() >= 1);
+        assert!(envelope["payload"]["nodes_created"].as_u64().unwrap() >= 1);
+        assert!(envelope["payload"]["edges_created"].is_number());
+        assert!(envelope["payload"]["errors"].is_array());
     }
 }

@@ -3,6 +3,8 @@
 //! Domain aggregates that encapsulate entity clusters and their invariants.
 
 pub mod call_graph;
+#[cfg(feature = "multimodal")]
+pub mod generic_graph;
 pub mod refactor;
 pub mod symbol;
 
@@ -12,6 +14,8 @@ pub mod symbol;
 // API for new consumers.
 #[allow(deprecated)]
 pub use call_graph::{CallEntry, CallGraph, CallGraphError, CallGraphV1, SymbolId};
+#[cfg(feature = "multimodal")]
+pub use generic_graph::{GraphEdge, GraphEdgeError, GraphNode, GraphNodeBuilder, NodeId};
 pub use refactor::{
     BreakingChange, Refactor, RefactorKind, RefactorParameters, TextEdit, ValidationResult,
     ValidationSeverity,

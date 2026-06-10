@@ -28,6 +28,7 @@ import { detectViewport, type ShellViewport } from "../viewport";
 import { ViewTabs } from "./ViewTabs";
 import { SuggestionStrip } from "./SuggestionStrip";
 import { Blocks } from "./ViewBlock";
+import { multimodalLabelForObjectType } from "./multimodal";
 
 // Public surface — `import { ObjectInspector, ViewBlock } from
 // "./components/ObjectInspector"` resolves here.
@@ -163,13 +164,34 @@ export function ObjectInspector() {
           className="flex items-center justify-between gap-2 px-4 py-2"
           style={{ borderBottom: "1px solid var(--color-border)" }}
         >
-          <h2
-            className="truncate text-sm font-semibold"
-            style={{ color: "var(--color-text-primary)" }}
-            title={display?.title ?? object?.label ?? ""}
-          >
-            {display?.title ?? object?.label ?? "(loading)"}
-          </h2>
+          <div className="flex min-w-0 items-center gap-2">
+            <h2
+              className="truncate text-sm font-semibold"
+              style={{ color: "var(--color-text-primary)" }}
+              title={display?.title ?? object?.label ?? ""}
+            >
+              {display?.title ?? object?.label ?? "(loading)"}
+            </h2>
+            {/*
+              T19 — surface a multimodal kind badge next to the title
+              when the focused object is a Decision / Doc / Issue /
+              Evidence node. The label is derived from the legacy
+              `InspectableObjectType` so the change is additive (no
+              new fields on the wire DTO, no schema change).
+            */}
+            {object && multimodalLabelForObjectType(object.object_type) && (
+              <span
+                data-testid="multimodal-kind-badge"
+                className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase"
+                style={{
+                  backgroundColor: "var(--color-surface-overlay)",
+                  color: "var(--color-text-muted)",
+                }}
+              >
+                {multimodalLabelForObjectType(object.object_type)}
+              </span>
+            )}
+          </div>
           <span
             className="rounded-full px-2 py-0.5 text-xs"
             style={{

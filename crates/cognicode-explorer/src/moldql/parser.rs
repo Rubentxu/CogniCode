@@ -284,17 +284,36 @@ fn parse_find_body(cursor: &mut Cursor<'_>) -> Result<MoldQLQuery, ParseError> {
 }
 
 fn parse_target(cursor: &mut Cursor<'_>) -> Result<TargetType, ParseError> {
-    let raw = parse_identifier(cursor, "target type (symbols|files|scopes|issues)")?;
+    // Build the keyword list at compile time so the error message
+    // (and the parse_identifier hint) include the multimodal
+    // targets when the feature is on. T20.
+    let valid_keywords: &[&str] = &[
+        TargetType::Symbols.keyword(),
+        TargetType::Files.keyword(),
+        TargetType::Scopes.keyword(),
+        TargetType::Issues.keyword(),
+        #[cfg(feature = "multimodal")]
+        TargetType::Decisions.keyword(),
+        #[cfg(feature = "multimodal")]
+        TargetType::Docs.keyword(),
+    ];
+    let what = format!("target type ({})", valid_keywords.join("|"));
+    let raw = parse_identifier(cursor, &what)?;
     match raw.to_ascii_lowercase().as_str() {
         "symbols" => Ok(TargetType::Symbols),
         "files" => Ok(TargetType::Files),
         "scopes" => Ok(TargetType::Scopes),
         "issues" => Ok(TargetType::Issues),
+        #[cfg(feature = "multimodal")]
+        "decisions" => Ok(TargetType::Decisions),
+        #[cfg(feature = "multimodal")]
+        "docs" => Ok(TargetType::Docs),
         other => {
             let (line, col) = cursor.position();
             Err(ParseError::at(
                 format!(
-                    "unknown target type `{other}` — expected symbols, files, scopes, or issues"
+                    "unknown target type `{other}` — expected {}",
+                    valid_keywords.join(", ")
                 ),
                 line,
                 col,

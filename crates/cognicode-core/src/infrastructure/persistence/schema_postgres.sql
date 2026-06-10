@@ -68,3 +68,13 @@ CREATE TABLE IF NOT EXISTS named_views (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pg_named_views_scope
     ON named_views (workspace_id, owner, name);
+
+-- ----------------------------------------------------------------------------
+-- Multimodal (Generic Graph Layer) tables — `graph_nodes` + `graph_edges`.
+-- The DDL is in `m0009_graph_nodes_edges.sql` and is applied only when
+-- the `multimodal` Cargo feature is enabled. See the file header for
+-- the full design notes. Listed here for documentation purposes
+-- only — this `include_str!` does NOT execute the multimodal DDL on
+-- its own; the repository's `run_migrations()` runs both blocks in
+-- sequence.
+-- ----------------------------------------------------------------------------

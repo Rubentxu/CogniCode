@@ -131,6 +131,19 @@ impl<'a> MoldQLExecutor<'a> {
             TargetType::Files => self.find_files(find)?,
             TargetType::Scopes => self.find_scopes(find)?,
             TargetType::Issues => self.find_issues(find)?,
+            // T20 — multimodal targets. The full dispatch (with
+            // the `GraphRepository::find_nodes_by_kind` path) is
+            // wired by T21. For now we surface a clean
+            // `FeatureDisabled` so callers see the right
+            // error code (no panic, no silent empty list).
+            #[cfg(feature = "multimodal")]
+            TargetType::Decisions | TargetType::Docs => {
+                return Err(ExplorerError::FeatureDisabled(
+                    "multimodal FIND targets (decisions/docs) require the \
+                     `GraphRepository` executor path — wired in T21"
+                        .to_string(),
+                ));
+            }
         };
         let total = items.len();
         Ok(MoldQLResult {

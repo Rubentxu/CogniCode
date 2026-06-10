@@ -36,6 +36,11 @@ sqlite = ["cognicode-core/sqlite", "cognicode-db/sqlite", "dep:rusqlite"]
 # so integration tests outside the crate can drive the
 # brain-session lifecycle.
 test-utils = []
+# `multimodal` is an opt-in feature that enables the Generic Graph
+# Layer (new `NodeKind`/`EdgeKind` targets), the docs-source adapter
+# (`SourceExtractor`, `DocsSourceAdapter`), and the multimodal MCP
+# tools (`docs_ingest`, `graph_search`). Off by default.
+multimodal = ["cognicode-core/multimodal"]
 
 [dependencies]
 cognicode-core.workspace = true

@@ -30,6 +30,15 @@ pub enum TargetType {
     Files,
     Scopes,
     Issues,
+    /// Multimodal (T20) — `FIND decisions` returns [`NodeKind::Decision`]
+    /// nodes from the generic graph. Requires the `multimodal` Cargo
+    /// feature at the executor layer; the parser accepts the keyword
+    /// regardless so users see a uniform surface.
+    #[cfg(feature = "multimodal")]
+    Decisions,
+    /// Multimodal (T20) — `FIND docs` returns [`NodeKind::Doc`] nodes.
+    #[cfg(feature = "multimodal")]
+    Docs,
 }
 
 impl TargetType {
@@ -40,6 +49,10 @@ impl TargetType {
             Self::Files => "files",
             Self::Scopes => "scopes",
             Self::Issues => "issues",
+            #[cfg(feature = "multimodal")]
+            Self::Decisions => "decisions",
+            #[cfg(feature = "multimodal")]
+            Self::Docs => "docs",
         }
     }
 }

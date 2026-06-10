@@ -78,6 +78,13 @@ export type {
   ParentSection,
   ChildrenSection,
   SameLevelSection,
+  // ---- multimodal (T17) ----
+  NodeKind,
+  EdgeKind,
+  MultimodalNode,
+  MultimodalEdge,
+  GraphSearchResult,
+  GraphSearchResponse,
 } from "./schemas";
 
 export {
@@ -123,4 +130,11 @@ export {
   parentSectionSchema,
   childrenSectionSchema,
   sameLevelSectionSchema,
+  // ---- multimodal (T17) ----
+  nodeKindSchema,
+  edgeKindSchema,
+  multimodalNodeSchema,
+  multimodalEdgeSchema,
+  graphSearchResultSchema,
+  graphSearchResponseSchema,
 } from "./schemas";

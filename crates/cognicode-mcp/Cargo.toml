@@ -20,6 +20,9 @@ default = []
 sqlite = ["cognicode-db/sqlite", "cognicode-core/sqlite"]
 # Forwarded to `cognicode-core` so MCP handlers can use PostgreSQL.
 postgres = ["cognicode-core/postgres"]
+# `multimodal` is an opt-in feature that enables the multimodal MCP
+# tools (`docs_ingest`, `graph_search`). Off by default.
+multimodal = ["cognicode-core/multimodal"]
 
 [dependencies]
 cognicode-core = { workspace = true }

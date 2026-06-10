@@ -13,6 +13,8 @@ pub mod call_graph_repository;
 pub mod fs_source_reader;
 #[cfg(feature = "sqlite")]
 pub mod fts5_search_adapter;
+#[cfg(feature = "multimodal")]
+pub mod in_memory_graph_repository;
 #[cfg(feature = "sqlite")]
 pub mod sqlite_quality_adapter;
 
@@ -20,5 +22,7 @@ pub use call_graph_repository::CallGraphRepository;
 pub use fs_source_reader::FsSourceReader;
 #[cfg(feature = "sqlite")]
 pub use fts5_search_adapter::Fts5SearchAdapter;
+#[cfg(feature = "multimodal")]
+pub use in_memory_graph_repository::InMemoryGraphRepository;
 #[cfg(feature = "sqlite")]
 pub use sqlite_quality_adapter::SqliteQualityAdapter;

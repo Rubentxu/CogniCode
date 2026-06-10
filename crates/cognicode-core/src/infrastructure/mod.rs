@@ -4,6 +4,8 @@
 //! such as tree-sitter for parsing and petgraph for dependency graphs.
 
 pub mod avc;
+#[cfg(feature = "multimodal")]
+pub mod extraction;
 pub mod git;
 pub mod graph;
 pub mod lsp;

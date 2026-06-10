@@ -1077,13 +1077,31 @@ fn mcp_tool_names_match_spec() {
         TOOL_VIEW_DELETE,
     ];
     let actual = cognicode_explorer::mcp::tool_names();
-    assert_eq!(actual.len(), 28);
+    // 28 with the default features, 29 with `multimodal`
+    // (docs_ingest is added by the multimodal feature).
+    let expected_count = if cfg!(feature = "multimodal") { 29 } else { 28 };
+    assert_eq!(actual.len(), expected_count);
     for name in expected {
         assert!(
             actual.contains(&name),
             "tool_names() missing `{}` — got: {:?}",
             name,
             actual
+        );
+    }
+    // When the multimodal feature is active, `docs_ingest` MUST
+    // be in the list — see the RED-gate test
+    // `tool_schemas_docs_ingest_hidden_without_feature` in
+    // `mcp.rs` for the cross-check. We resolve the constant
+    // through the same import path that the test would use at
+    // runtime; the constant is only present on a multimodal
+    // build, so the import is gated the same way as the call.
+    #[cfg(feature = "multimodal")]
+    {
+        use cognicode_explorer::mcp::TOOL_DOCS_INGEST;
+        assert!(
+            actual.contains(&TOOL_DOCS_INGEST),
+            "multimodal build must include docs_ingest in tool_names()"
         );
     }
 }

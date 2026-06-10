@@ -89,6 +89,13 @@ regex = "1"
 # Base64
 base64 = "0.22"
 
+# Markdown parser — pulled in by `cognicode-core` (under the
+# `multimodal` feature) to drive the `DocsExtractor`. Industry-standard
+# event-based parser with zero-copy iteration. Bump the version
+# consciously: the 0.10+ releases split off the `Options` builder, so
+# any consumer that touches the API must recompile.
+pulldown-cmark = { version = "0.10", default-features = false, features = ["html"] }
+
 # Parallelism
 rayon = "1.11.0"
 

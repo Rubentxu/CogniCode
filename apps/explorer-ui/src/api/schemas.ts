@@ -684,24 +684,144 @@ export type AskResponse = z.infer<typeof askResponseSchema>;
  * Node `style_class` taxonomy — strict mirror of the Rust
  * `style_class_for` helper. Unknown buckets fail parse so the
  * front-end can never silently mis-style a node.
+ *
+ * Multimodal (T17) — 4 new buckets appended for the Generic Graph
+ * Layer nodes (decision / doc / issue / evidence). Dashed form
+ * (`node-decision`, etc.) so the cytoscape stylesheet can match a
+ * single attribute selector and the kind label never collides
+ * with the code-only taxonomy (`function` / `module` / `external`).
  */
 export const graphNodeStyleClassSchema = z.enum([
   "function",
   "module",
   "external",
+  "node-decision",
+  "node-doc",
+  "node-issue",
+  "node-evidence",
 ]);
 export type GraphNodeStyleClass = z.infer<typeof graphNodeStyleClassSchema>;
 
 /**
  * Edge `style_class` taxonomy — strict mirror of the Rust
  * `edge_style_class_for` helper. Same rationale as the node variant.
+ *
+ * Multimodal (T17) — 4 new buckets for the Generic Graph Layer
+ * edges (cites / justifies / resolves / corroborated).
  */
 export const graphEdgeStyleClassSchema = z.enum([
   "edge.calls",
   "edge.implements",
   "edge.uses",
+  "edge-cites",
+  "edge-justifies",
+  "edge-resolves",
+  "edge-corroborated",
 ]);
 export type GraphEdgeStyleClass = z.infer<typeof graphEdgeStyleClassSchema>;
+
+// ============================================================================
+// T17 — multimodal node / edge kind enums (Generic Graph Layer).
+// ============================================================================
+//
+// These are the discriminator values from the Rust domain model:
+//   `cognicode_core::domain::value_objects::NodeKind`
+//   `cognicode_core::domain::value_objects::EdgeKind`
+//
+// `SymbolKind` is the 22-variant code-only enum that `NodeKind::Symbol`
+// wraps, but the `NodeKind` enum on the wire is either a multimodal
+// tag ("decision" / "doc" / "issue" / "evidence") or a bare "symbol"
+// for any code node. The `SymbolKind` payload is not surfaced on the
+// wire at this layer; if a future feature needs it, add a new wire
+// field rather than overloading `NodeKind`.
+
+/**
+ * `NodeKind` wire enum — multimodal (Generic Graph Layer).
+ * The Rust `NodeKind::Symbol(SymbolKind)` variant collapses to the
+ * `"symbol"` string at the wire boundary; the inner `SymbolKind`
+ * is not exposed here.
+ */
+export const nodeKindSchema = z.enum([
+  "symbol",
+  "decision",
+  "doc",
+  "issue",
+  "evidence",
+]);
+export type NodeKind = z.infer<typeof nodeKindSchema>;
+
+/**
+ * `EdgeKind` wire enum — multimodal (Generic Graph Layer). The Rust
+ * `EdgeKind::Dependency(DependencyType)` variant collapses to
+ * `"dependency"`; the inner `DependencyType` is not exposed here.
+ */
+export const edgeKindSchema = z.enum([
+  "dependency",
+  "cites",
+  "justifies",
+  "resolves",
+  "corroborated_by",
+]);
+export type EdgeKind = z.infer<typeof edgeKindSchema>;
+
+/**
+ * Multimodal node DTO — mirrors the `GraphNode` aggregate from the
+ * Rust side. The `id` is a `NodeId` (e.g. `decision:adrs/0007.md#adr-7`),
+ * `label` is the human display string, `kind` is the wire `NodeKind`
+ * (see [`nodeKindSchema`]), `source_path` is the file the node was
+ * extracted from (Markdown / ADR / issue tracker), and `metadata` is
+ * a free-form JSON blob (status, dates, body, etc.).
+ */
+export const multimodalNodeSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  kind: nodeKindSchema,
+  source_path: z.string().nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+});
+export type MultimodalNode = z.infer<typeof multimodalNodeSchema>;
+
+/**
+ * Multimodal edge DTO — mirrors the `GraphEdge` aggregate. `source`
+ * and `target` are `NodeId` strings; `kind` is the wire `EdgeKind`
+ * (see [`edgeKindSchema`]); `provenance` and `confidence` mirror
+ * the existing `TypedRelation` shape on the API.
+ */
+export const multimodalEdgeSchema = z.object({
+  source: z.string(),
+  target: z.string(),
+  kind: edgeKindSchema,
+  provenance: z.string().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+});
+export type MultimodalEdge = z.infer<typeof multimodalEdgeSchema>;
+
+/**
+ * A single `graph_search` hit — what the MCP `graph_search` tool
+ * (T22) returns. The normalised `score` is the
+ * `0.6 * FTS5-rank + 0.4 * kind-bonus` formula from the design
+ * (T22 IB check), and `raw_rank` is the raw FTS5 rank so callers
+ * can re-derive their own score if needed (lossy compression
+ * flagged in `design.md` §Information Bottleneck Check).
+ */
+export const graphSearchResultSchema = z.object({
+  node: multimodalNodeSchema,
+  score: z.number(),
+  raw_rank: z.number(),
+});
+export type GraphSearchResult = z.infer<typeof graphSearchResultSchema>;
+
+/**
+ * Top-level envelope for `graph_search`. `total_count` is the
+ * total number of matches in the index (NOT the size of the
+ * current page); `next_cursor` is `null` on the last page.
+ */
+export const graphSearchResponseSchema = z.object({
+  results: z.array(graphSearchResultSchema),
+  total_count: z.number().int().nonnegative(),
+  next_cursor: z.string().nullable(),
+});
+export type GraphSearchResponse = z.infer<typeof graphSearchResponseSchema>;
 
 /**
  * One node in a sub-graph response. `id` matches the canonical MVP

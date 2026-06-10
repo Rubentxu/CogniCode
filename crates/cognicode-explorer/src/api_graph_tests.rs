@@ -113,6 +113,118 @@ fn edge_style_class_for_unknown_falls_back_to_calls() {
 }
 
 // ============================================================================
+// T16 — multimodal `style_class_for` / `edge_style_class_for` extensions
+// ============================================================================
+//
+// RED gate: these tests assert the wire-level style class for the four
+// new multimodal node kinds (Decision, Doc, Issue, Evidence) and the
+// four new multimodal edge kinds (cites, justifies, resolves,
+// corroborated). The buckets are a strict mirror of the Zod enum in
+// `apps/explorer-ui/src/api/schemas.ts` and the cytoscape stylesheet
+// blocks in `apps/explorer-ui/src/components/InteractiveGraph/stylesheet.ts`.
+
+/// `decision` (an ADR / RFC node) maps to `"node-decision"`.
+#[test]
+fn style_class_decision() {
+    assert_eq!(crate::api::style_class_for("decision"), "node-decision");
+}
+
+/// `doc` (a Markdown documentation node) maps to `"node-doc"`.
+#[test]
+fn style_class_doc() {
+    assert_eq!(crate::api::style_class_for("doc"), "node-doc");
+}
+
+/// `issue` (a tracker issue) maps to `"node-issue"`.
+#[test]
+fn style_class_issue() {
+    assert_eq!(crate::api::style_class_for("issue"), "node-issue");
+}
+
+/// `evidence` (a benchmark / fuzzer result) maps to `"node-evidence"`.
+#[test]
+fn style_class_evidence() {
+    assert_eq!(crate::api::style_class_for("evidence"), "node-evidence");
+}
+
+/// `cites` (a doc → code reference) maps to `"edge-cites"`.
+#[test]
+fn edge_style_cites() {
+    assert_eq!(
+        crate::api::edge_style_class_for("cites"),
+        "edge-cites"
+    );
+}
+
+/// `justifies` (an ADR → architectural choice) maps to `"edge-justifies"`.
+#[test]
+fn edge_style_justifies() {
+    assert_eq!(
+        crate::api::edge_style_class_for("justifies"),
+        "edge-justifies"
+    );
+}
+
+/// `resolves` (a PR → issue) maps to `"edge-resolves"`.
+#[test]
+fn edge_style_resolves() {
+    assert_eq!(
+        crate::api::edge_style_class_for("resolves"),
+        "edge-resolves"
+    );
+}
+
+/// `corroborated_by` (a test result → design claim) maps to `"edge-corroborated"`.
+#[test]
+fn edge_style_corroborated() {
+    assert_eq!(
+        crate::api::edge_style_class_for("corroborated_by"),
+        "edge-corroborated"
+    );
+}
+
+// ============================================================================
+// T16 regression — the 3+3 pre-existing buckets must keep their classes.
+// ============================================================================
+
+/// `function` / `method` / `fn` keep the `"function"` bucket after the
+/// multimodal extension.
+#[test]
+fn style_class_for_function_regression() {
+    assert_eq!(crate::api::style_class_for("function"), "function");
+    assert_eq!(crate::api::style_class_for("method"), "function");
+    assert_eq!(crate::api::style_class_for("fn"), "function");
+}
+
+/// `module` / `crate` / `trait` keep the `"module"` bucket.
+#[test]
+fn style_class_for_module_regression() {
+    assert_eq!(crate::api::style_class_for("module"), "module");
+    assert_eq!(crate::api::style_class_for("crate"), "module");
+    assert_eq!(crate::api::style_class_for("trait"), "module");
+}
+
+/// `external` keeps the `"external"` bucket.
+#[test]
+fn style_class_for_external_regression() {
+    assert_eq!(crate::api::style_class_for("external"), "external");
+}
+
+/// `edge.calls` / `edge.implements` / `edge.uses` keep their buckets.
+#[test]
+fn edge_style_class_calls_regression() {
+    assert_eq!(
+        crate::api::edge_style_class_for("calls"),
+        "edge.calls"
+    );
+    assert_eq!(
+        crate::api::edge_style_class_for("implements"),
+        "edge.implements"
+    );
+    assert_eq!(crate::api::edge_style_class_for("uses"), "edge.uses");
+}
+
+// ============================================================================
 // query param validation
 // ============================================================================
 

@@ -25,6 +25,13 @@ postgres = ["dep:sqlx"]
 # gated `open_db` / `open_fts_db` / `record_tool_usage` / AVC
 # persistence paths become available. Off by default.
 sqlite = ["dep:rusqlite"]
+# `multimodal` is an opt-in feature that enables the Generic Graph
+# Layer (`NodeKind`, `EdgeKind`, `NodeId`, `GraphNode`, `GraphEdge`)
+# and the docs-source adapter (`SourceExtractor`, `DocsExtractor`,
+# `DocsConfidenceRules`). All new code is feature-gated via
+# `#[cfg(feature = "multimodal")]` so the default build is unchanged.
+# Off by default.
+multimodal = []
 
 [dependencies]
 # Parsing
@@ -101,6 +108,14 @@ clap.workspace = true
 # MCP
 rmcp.workspace = true
 process-wrap.workspace = true
+
+# Markdown parser — gated behind the `multimodal` feature so the
+# default build is pulldown-free. Pulled in by the `DocsExtractor`
+# (`infrastructure::extraction::docs_extractor`). The dep is declared
+# unconditionally (NOT under `optional = true`) so the call site
+# can `use pulldown_cmark::…` behind a `#[cfg(feature = "multimodal")]`
+# guard without needing the dep to be optional.
+pulldown-cmark.workspace = true
 
 # (REMOVED for `explorer-graph-repository-bridge` slice — `cognicode-store-traits`
 # is now deprecated and has zero Rust-level uses in this crate. The crate remains

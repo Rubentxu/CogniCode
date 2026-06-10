@@ -29,6 +29,10 @@ use crate::service::ExplorerService;
 /// - `function` / `function` / `method` / `fn` → `"function"`
 /// - `module` / `crate` / `trait` → `"module"`
 /// - `external` → `"external"`
+/// - `decision` (multimodal ADR/RFC) → `"node-decision"`
+/// - `doc` (multimodal Markdown) → `"node-doc"`
+/// - `issue` (multimodal tracker issue) → `"node-issue"`
+/// - `evidence` (multimodal benchmark / fuzzer) → `"node-evidence"`
 /// - anything else → `"function"` (default)
 #[inline]
 pub fn style_class_for(kind: &str) -> &'static str {
@@ -36,6 +40,15 @@ pub fn style_class_for(kind: &str) -> &'static str {
         "function" | "method" | "fn" => "function",
         "module" | "crate" | "trait" => "module",
         "external" => "external",
+        // ---- multimodal (T16) ----
+        // Dashed form (e.g. `node-decision`) so the cytoscape
+        // stylesheet can match a single attribute selector and the
+        // kind label never collides with the code-only taxonomy
+        // (which uses bare words like `function` / `module`).
+        "decision" => "node-decision",
+        "doc" => "node-doc",
+        "issue" => "node-issue",
+        "evidence" => "node-evidence",
         _ => "function",
     }
 }
@@ -46,6 +59,10 @@ pub fn style_class_for(kind: &str) -> &'static str {
 /// - `calls` / `call` → `"edge.calls"`
 /// - `implements` / `impl` → `"edge.implements"`
 /// - `uses` / `imports` → `"edge.uses"`
+/// - `cites` (multimodal) → `"edge-cites"`
+/// - `justifies` (multimodal) → `"edge-justifies"`
+/// - `resolves` (multimodal) → `"edge-resolves"`
+/// - `corroborated_by` (multimodal) → `"edge-corroborated"`
 /// - anything else → `"edge.calls"` (default)
 #[inline]
 pub fn edge_style_class_for(relation: &str) -> &'static str {
@@ -53,6 +70,13 @@ pub fn edge_style_class_for(relation: &str) -> &'static str {
         "calls" | "call" => "edge.calls",
         "implements" | "impl" => "edge.implements",
         "uses" | "imports" => "edge.uses",
+        // ---- multimodal (T16) ----
+        // Same dashed-form rule as nodes: a single hyphen
+        // separates the `edge` prefix from the kind.
+        "cites" => "edge-cites",
+        "justifies" => "edge-justifies",
+        "resolves" => "edge-resolves",
+        "corroborated_by" => "edge-corroborated",
         _ => "edge.calls",
     }
 }

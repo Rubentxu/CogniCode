@@ -562,16 +562,37 @@ fn parse_object_ref(cursor: &mut Cursor<'_>, what: &str) -> Result<String, Parse
 }
 
 fn parse_target(cursor: &mut Cursor<'_>) -> Result<TargetType, ParseError> {
-    let raw = parse_identifier(cursor, "target type (symbols|files|scopes|issues)")?;
+    // Build the list of valid keywords at compile time so the
+    // error message can list them all (T20) — `decisions` /
+    // `docs` only appear when the `multimodal` feature is on.
+    let valid_keywords: &[&str] = &[
+        TargetType::Symbols.keyword(),
+        TargetType::Files.keyword(),
+        TargetType::Scopes.keyword(),
+        TargetType::Issues.keyword(),
+        #[cfg(feature = "multimodal")]
+        TargetType::Decisions.keyword(),
+        #[cfg(feature = "multimodal")]
+        TargetType::Docs.keyword(),
+    ];
+    let what = format!("target type ({})", valid_keywords.join("|"));
+    let raw = parse_identifier(cursor, &what)?;
     match raw.to_ascii_lowercase().as_str() {
         "symbols" => Ok(TargetType::Symbols),
         "files" => Ok(TargetType::Files),
         "scopes" => Ok(TargetType::Scopes),
         "issues" => Ok(TargetType::Issues),
+        #[cfg(feature = "multimodal")]
+        "decisions" => Ok(TargetType::Decisions),
+        #[cfg(feature = "multimodal")]
+        "docs" => Ok(TargetType::Docs),
         other => {
             let (line, col) = cursor.position();
             Err(ParseError::at(
-                format!("unknown target type `{other}`"),
+                format!(
+                    "unknown target type `{other}` — expected {}",
+                    valid_keywords.join(", ")
+                ),
                 line,
                 col,
             ))
@@ -1208,6 +1229,91 @@ mod tests {
                 }
             }
             other => panic!("expected Boolean(And), got {other:?}"),
+        }
+    }
+
+    // -- T20: multimodal FIND targets (parser layer) ---------------------
+    //
+    // RED gate: `FIND decisions` and `FIND docs` must parse into a
+    // `MoldQLQuery::Find` with the new `TargetType` variants. The
+    // compile + execute layers are covered in T21; the parser only
+    // has to accept the keyword and produce a well-formed AST.
+    //
+    // These tests are gated behind the `multimodal` Cargo feature
+    // because the variants themselves are cfg-gated on
+    // `TargetType` in `ast.rs`.
+
+    #[cfg(feature = "multimodal")]
+    #[test]
+    fn parse_target_decisions() {
+        let q = p("FIND decisions");
+        let MoldQLQuery::Find(fq) = q else {
+            panic!("expected Find");
+        };
+        assert_eq!(fq.target, TargetType::Decisions);
+        assert_eq!(fq.target.keyword(), "decisions");
+    }
+
+    #[cfg(feature = "multimodal")]
+    #[test]
+    fn parse_target_docs() {
+        let q = p("FIND docs");
+        let MoldQLQuery::Find(fq) = q else {
+            panic!("expected Find");
+        };
+        assert_eq!(fq.target, TargetType::Docs);
+        assert_eq!(fq.target.keyword(), "docs");
+    }
+
+    #[cfg(feature = "multimodal")]
+    #[test]
+    fn parse_target_decisions_with_where() {
+        let q = p("FIND decisions WHERE status == accepted");
+        let MoldQLQuery::Find(fq) = q else {
+            panic!("expected Find");
+        };
+        assert_eq!(fq.target, TargetType::Decisions);
+        assert_eq!(fq.conditions.len(), 1);
+    }
+
+    #[cfg(feature = "multimodal")]
+    #[test]
+    fn parse_target_decisions_uppercase() {
+        let q = p("FIND DECISIONS");
+        let MoldQLQuery::Find(fq) = q else {
+            panic!("expected Find");
+        };
+        assert_eq!(fq.target, TargetType::Decisions);
+    }
+
+    #[cfg(feature = "multimodal")]
+    #[test]
+    fn parse_target_unknown_lists_all_six() {
+        // The error message must list all 6 valid targets (4
+        // code + 2 multimodal). The list keeps users from
+        // guessing — they see the full surface on a typo.
+        let err = parse("FIND widgets").unwrap_err();
+        let m = err.message;
+        for k in &["symbols", "files", "scopes", "issues", "decisions", "docs"] {
+            assert!(m.contains(k), "error message should mention {k}, got: {m}");
+        }
+    }
+
+    // -- T20 regression: the 4 legacy targets keep parsing identically.
+
+    #[test]
+    fn parse_target_legacy_targets_regression() {
+        for (q, expected) in [
+            ("FIND symbols", TargetType::Symbols),
+            ("FIND files", TargetType::Files),
+            ("FIND scopes", TargetType::Scopes),
+            ("FIND issues", TargetType::Issues),
+        ] {
+            let parsed = p(q);
+            let MoldQLQuery::Find(fq) = parsed else {
+                panic!("expected Find for `{q}`, got something else");
+            };
+            assert_eq!(fq.target, expected, "wrong target for `{q}`");
         }
     }
 }

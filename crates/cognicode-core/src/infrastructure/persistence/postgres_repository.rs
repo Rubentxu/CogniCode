@@ -41,6 +41,20 @@ use crate::domain::value_objects::{
 #[cfg(feature = "postgres")]
 const SCHEMA_SQL: &str = include_str!("schema_postgres.sql");
 
+/// Multimodal (Generic Graph Layer) DDL — embedded ONLY when BOTH
+/// the `postgres` and the `multimodal` Cargo features are enabled.
+/// The DDL creates the `graph_nodes` + `graph_edges` tables, the
+/// three btree indexes on `graph_edges` (`source_id`,
+/// `target_id`, `kind`), the natural-key UNIQUE index on
+/// `(source_id, target_id, kind)`, and the two btree indexes on
+/// `graph_nodes` (`kind`, `source_path`).
+///
+/// Splitting the DDL into its own file is the only way to gate an
+/// `include_str!` behind a Cargo feature. See
+/// `m0009_graph_nodes_edges.sql` for the design notes.
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
+const SCHEMA_SQL_MULTIMODAL: &str = include_str!("m0009_graph_nodes_edges.sql");
+
 /// PostgreSQL-backed implementation of the async [`Repository`]
 /// trait. Owns its [`PgPool`]; consumers that want shared
 /// ownership can wrap in `Arc<PostgresRepository>`.
@@ -87,11 +101,30 @@ impl PostgresRepository {
     /// calling this on a freshly-initialised database is a
     /// no-op that still succeeds. Existing rows are preserved
     /// (no DROP, no schema-altering DDL is performed).
+    ///
+    /// When the `multimodal` feature is enabled, the Generic Graph
+    /// Layer DDL (`m0009_graph_nodes_edges.sql`) is executed AFTER
+    /// the base schema, so the `graph_nodes` / `graph_edges`
+    /// tables are guaranteed to exist before the multimodal
+    /// write-paths are used.
     pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
         sqlx::query(SCHEMA_SQL)
             .execute(&self.pool)
             .await
             .map_err(|e| RepositoryError::Store(format!("migration: {e}")))?;
+        // Multimodal DDL is applied after the base schema so the
+        // order is deterministic. The `include_str!` constant
+        // only exists when the `multimodal` feature is on, so
+        // this block is compiled out in the default build.
+        #[cfg(feature = "multimodal")]
+        {
+            sqlx::query(SCHEMA_SQL_MULTIMODAL)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| {
+                    RepositoryError::Store(format!("multimodal migration: {e}"))
+                })?;
+        }
         Ok(())
     }
 
@@ -637,6 +670,474 @@ fn parse_qualified_name(qualified: &str) -> Result<(String, String, i32), Reposi
         .parse()
         .map_err(|_| RepositoryError::InvalidQuery(format!("non-numeric line: {line_str}")))?;
     Ok((file_path, name, line))
+}
+
+// ============================================================================
+// Multimodal (Generic Graph Layer) — graph_nodes + graph_edges.
+//
+// All methods, types, and impls in this section are gated behind
+// `#[cfg(all(feature = "postgres", feature = "multimodal"))]`. The
+// `multimodal` dep is required because the aggregate types live in
+// `cognicode_core::domain::aggregates::generic_graph`, which is itself
+// cfg-gated behind `multimodal`. Without the feature, none of the
+// types or methods below exist in the build graph.
+//
+// Upsert semantics:
+//   - `graph_nodes` PK = `id`. Conflict -> UPDATE the mutable columns
+//     (label, kind, source_path, properties) and refresh `updated_at`.
+//     `created_at` is preserved (set on the initial INSERT, never
+//     touched on UPDATE).
+//   - `graph_edges` UNIQUE = `(source_id, target_id, kind)`. Conflict
+//     -> UPDATE the mutable columns (kind, provenance, confidence,
+//     metadata). The surrogate `id` is preserved (so stable references
+//     to the edge in UI / caches stay valid across re-ingests).
+// ============================================================================
+
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
+use crate::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
+use crate::domain::value_objects::node_kind::NodeKind as VkNodeKind;
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
+use crate::domain::value_objects::edge_kind::EdgeKind as VkEdgeKind;
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
+use std::str::FromStr as _FromStr;
+
+/// Row-mapping struct for `find_graph_node` / `get_graph_node`.
+/// Mirrors the seven columns of the `graph_nodes` table.
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
+#[derive(Debug, sqlx::FromRow)]
+struct GraphNodeRow {
+    id: String,
+    kind: String,
+    label: String,
+    source_path: Option<String>,
+    /// JSONB column scanned as the raw `serde_json::Value` so the
+    /// caller decides how to project it (the `GraphNode` aggregate
+    /// does NOT carry the properties map directly — it carries
+    /// `HashMap<String, String>` and JSONB objects map cleanly to
+    /// that via a best-effort flatten).
+    properties: serde_json::Value,
+    /// PG `TIMESTAMPTZ` -> RFC 3339 string (matches the existing
+    /// `named_views.created_at` contract in
+    /// [`PostgresRepository::load_named_view`]).
+    created_at: String,
+    /// PG `TIMESTAMPTZ` -> RFC 3339 string.
+    updated_at: String,
+}
+
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
+impl GraphNodeRow {
+    /// Convert the raw row into the domain [`GraphNode`].
+    ///
+    /// `kind` is parsed through `NodeKind::from_str` (the inverse of
+    /// its `Display` impl, see `node_kind.rs`). Unparseable kinds
+    /// fall back to `NodeKind::Symbol(SymbolKind::Unknown)` — query
+    /// reads should never fail the whole call just because a row
+    /// carries a stale kind string.
+    ///
+    /// `properties` is projected as `HashMap<String, String>` by
+    /// flattening one level: top-level JSONB object keys with string
+    /// values are kept; non-object payloads produce an empty map.
+    fn into_graph_node(self) -> GraphNode {
+        use chrono::{DateTime, Utc};
+        let kind = VkNodeKind::from_str(&self.kind).unwrap_or_else(|_| {
+            // Unreachable: NodeKind's FromStr is total — it always
+            // succeeds. The `unwrap_or_else` is a forward-compatible
+            // fallback for the day someone adds a new variant that
+            // doesn't yet have a stable wire string.
+            VkNodeKind::Symbol(crate::domain::value_objects::symbol_kind::SymbolKind::Unknown)
+        });
+        let properties = match self.properties {
+            serde_json::Value::Object(map) => map
+                .into_iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_string())))
+                .collect(),
+            _ => std::collections::HashMap::new(),
+        };
+        // PG TIMESTAMPTZ -> RFC 3339 -> chrono::DateTime<Utc>.
+        // Malformed timestamps fall back to the Unix epoch so the
+        // read path is total (same defensive pattern as
+        // `provenance_to_extraction_context`).
+        let created_at = DateTime::parse_from_rfc3339(&self.created_at)
+            .map(|d| d.with_timezone(&Utc))
+            .unwrap_or_else(|_| DateTime::<Utc>::from_timestamp(0, 0).unwrap());
+        let updated_at = DateTime::parse_from_rfc3339(&self.updated_at)
+            .map(|d| d.with_timezone(&Utc))
+            .unwrap_or_else(|_| DateTime::<Utc>::from_timestamp(0, 0).unwrap());
+        let mut builder = GraphNode::builder(NodeId::new(self.id), kind).label(self.label);
+        if let Some(sp) = self.source_path {
+            builder = builder.source_path(sp);
+        }
+        builder
+            .properties(properties)
+            .created_at(created_at)
+            .updated_at(updated_at)
+            .build()
+    }
+}
+
+/// Row-mapping struct for `find_graph_edges`. Mirrors the eight
+/// columns of the `graph_edges` table.
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
+#[derive(Debug, sqlx::FromRow)]
+struct GraphEdgeRow {
+    /// Surrogate SERIAL primary key. NOT mapped to the domain
+    /// `GraphEdge` (which has no surrogate id) but kept on the row
+    /// struct so callers that need it (e.g. UI-side stable
+    /// references) can reach it via the SQL query directly.
+    #[allow(dead_code)]
+    id: i32,
+    source_id: String,
+    target_id: String,
+    kind: String,
+    provenance: String,
+    confidence: f64,
+    /// JSONB column — projected as `HashMap<String, String>` by
+    /// `into_graph_edge` for parity with the `GraphEdge.metadata`
+    /// shape. Non-object payloads collapse to an empty map.
+    metadata: serde_json::Value,
+}
+
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
+impl GraphEdgeRow {
+    /// Convert the raw row into the domain [`GraphEdge`].
+    ///
+    /// `kind` is parsed through `EdgeKind::from_str` (the inverse of
+    /// its `Display` impl). The `multimodal` variants (Cites,
+    /// Justifies, Resolves, CorroboratedBy) only parse when the
+    /// `multimodal` feature is enabled; an unparseable string
+    /// falls back to `EdgeKind::Dependency(DependencyType::Calls)`
+    /// (the safe default).
+    ///
+    /// `provenance` mirrors the same parsing as the existing
+    /// [`EdgeRow::into_edge`].
+    fn into_graph_edge(self) -> GraphEdge {
+        let kind = VkEdgeKind::from_str(&self.kind).unwrap_or_else(|_| {
+            VkEdgeKind::Dependency(crate::domain::value_objects::dependency_type::DependencyType::Calls)
+        });
+        let provenance =
+            Provenance::from_str(&self.provenance).unwrap_or(Provenance::Extracted);
+        let metadata = match self.metadata {
+            serde_json::Value::Object(map) => map
+                .into_iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_string())))
+                .collect(),
+            _ => std::collections::HashMap::new(),
+        };
+        // `GraphEdge::new` is the ONLY way to build a domain edge —
+        // it validates `confidence.is_finite()` and `∈ [0,1]` and
+        // rejects self-loops. An on-disk row that violates the
+        // invariants (e.g. a corrupted `confidence=NaN`) would
+        // surface here as an `Err`, which the caller (test code
+        // or the future explorer bridge) maps to a typed error.
+        let mut edge = GraphEdge::new(
+            NodeId::new(self.source_id),
+            NodeId::new(self.target_id),
+            kind,
+            provenance,
+            self.confidence,
+        )
+        .expect("DB-stored graph_edges row must satisfy GraphEdge invariants (finite, in-range, non-self-loop)");
+        for (k, v) in metadata {
+            edge = edge.with_metadata(k, v);
+        }
+        edge
+    }
+}
+
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
+impl PostgresRepository {
+    /// Upsert a batch of `graph_nodes` rows in a single transaction.
+    ///
+    /// Conflict policy: the row's `id` is the primary key; a
+    /// collision updates the mutable columns (`label`, `kind`,
+    /// `source_path`, `properties`) and refreshes `updated_at`.
+    /// `created_at` is preserved on the existing row.
+    ///
+    /// Empty input is a no-op that returns `Ok(())` (does NOT
+    /// open a transaction).
+    ///
+    /// The store is intended for ingestion pipelines that receive
+    /// batches from the [`DocsExtractor`](crate::infrastructure::extraction::docs_extractor::DocsExtractor).
+    /// Batching keeps the round-trip count low: 100 nodes = 1
+    /// transaction, not 100.
+    pub async fn store_graph_nodes(
+        &self,
+        nodes: Vec<GraphNode>,
+    ) -> Result<(), RepositoryError> {
+        if nodes.is_empty() {
+            return Ok(());
+        }
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| RepositoryError::Store(format!("store_graph_nodes begin: {e}")))?;
+        for node in &nodes {
+            let id = node.id.as_str();
+            let kind = node.kind.to_string();
+            let label = &node.label;
+            let source_path = node
+                .source_path
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned());
+            // The `properties` map is projected to a JSONB object:
+            // every key in `node.properties` becomes a top-level
+            // string-typed key. The shape is intentional — the
+            // spec'd `DocsExtractor` payload (e.g.
+            // `{"status": "accepted", "date": "2026-01-02"}`) is a
+            // flat string map and round-trips losslessly.
+            let properties_json = serde_json::Value::Object(
+                node.properties
+                    .iter()
+                    .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                    .collect::<serde_json::Map<_, _>>(),
+            );
+            // ON CONFLICT (id) DO UPDATE: refreshes the mutable
+            // columns. `created_at` is intentionally NOT in the
+            // SET clause so the first-insert timestamp is
+            // preserved across re-ingests.
+            sqlx::query(
+                "INSERT INTO graph_nodes \
+                    (id, kind, label, source_path, properties) \
+                 VALUES ($1, $2, $3, $4, $5) \
+                 ON CONFLICT (id) DO UPDATE SET \
+                    kind = EXCLUDED.kind, \
+                    label = EXCLUDED.label, \
+                    source_path = EXCLUDED.source_path, \
+                    properties = EXCLUDED.properties, \
+                    updated_at = now()",
+            )
+            .bind(id)
+            .bind(&kind)
+            .bind(label)
+            .bind(source_path)
+            .bind(properties_json)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                RepositoryError::Store(format!("store_graph_nodes insert `{id}`: {e}"))
+            })?;
+        }
+        tx.commit()
+            .await
+            .map_err(|e| RepositoryError::Store(format!("store_graph_nodes commit: {e}")))?;
+        Ok(())
+    }
+
+    /// Upsert a batch of `graph_edges` rows in a single
+    /// transaction.
+    ///
+    /// Conflict policy: the natural-key UNIQUE
+    /// `(source_id, target_id, kind)` is the conflict target; a
+    /// collision updates the mutable columns (`provenance`,
+    /// `confidence`, `metadata`). The surrogate `id` is preserved
+    /// (so stable references in UI / caches stay valid across
+    /// re-ingests).
+    ///
+    /// Empty input is a no-op.
+    ///
+    /// **FK enforcement:** `graph_edges` has
+    /// `REFERENCES graph_nodes(id)` on both `source_id` and
+    /// `target_id`. Inserting an edge whose endpoint has not yet
+    /// been inserted in the SAME transaction fails the FK and
+    /// surfaces as `RepositoryError::Store("… foreign key …")`.
+    /// Callers MUST call [`PostgresRepository::store_graph_nodes`]
+    /// FIRST in the pipeline (the docs-source adapter does this
+    /// in [`crate::infrastructure::extraction::docs_extractor`]).
+    pub async fn store_graph_edges(
+        &self,
+        edges: Vec<GraphEdge>,
+    ) -> Result<(), RepositoryError> {
+        if edges.is_empty() {
+            return Ok(());
+        }
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| RepositoryError::Store(format!("store_graph_edges begin: {e}")))?;
+        for edge in &edges {
+            let source_id = edge.source.as_str();
+            let target_id = edge.target.as_str();
+            let kind = edge.kind.to_string();
+            let provenance = edge.provenance.to_string();
+            let confidence = edge.confidence;
+            let metadata_json = serde_json::Value::Object(
+                edge.metadata
+                    .iter()
+                    .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                    .collect::<serde_json::Map<_, _>>(),
+            );
+            sqlx::query(
+                "INSERT INTO graph_edges \
+                    (source_id, target_id, kind, provenance, confidence, metadata) \
+                 VALUES ($1, $2, $3, $4, $5, $6) \
+                 ON CONFLICT (source_id, target_id, kind) DO UPDATE SET \
+                    provenance = EXCLUDED.provenance, \
+                    confidence = EXCLUDED.confidence, \
+                    metadata = EXCLUDED.metadata",
+            )
+            .bind(source_id)
+            .bind(target_id)
+            .bind(&kind)
+            .bind(&provenance)
+            .bind(confidence)
+            .bind(metadata_json)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                RepositoryError::Store(format!(
+                    "store_graph_edges insert `{source_id}`->`{target_id}` ({kind}): {e}"
+                ))
+            })?;
+        }
+        tx.commit()
+            .await
+            .map_err(|e| RepositoryError::Store(format!("store_graph_edges commit: {e}")))?;
+        Ok(())
+    }
+
+    /// Find graph nodes, optionally filtered by `kind`. Ordered by
+    /// `id` ASC for deterministic pagination. `limit` caps the
+    /// result count (the spec accepts `i64`; pass a non-positive
+    /// value to mean "unbounded" — i.e. no `LIMIT` clause).
+    pub async fn find_graph_nodes(
+        &self,
+        kind: Option<VkNodeKind>,
+        limit: i64,
+    ) -> Result<Vec<GraphNode>, RepositoryError> {
+        let rows: Vec<GraphNodeRow> = match (&kind, limit > 0) {
+            (Some(k), true) => sqlx::query_as(
+                "SELECT id, kind, label, source_path, properties, \
+                        created_at::text AS created_at, \
+                        updated_at::text AS updated_at \
+                 FROM graph_nodes \
+                 WHERE kind = $1 \
+                 ORDER BY id \
+                 LIMIT $2",
+            )
+            .bind(k.to_string())
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("find_graph_nodes: {e}")))?,
+            (Some(k), false) => sqlx::query_as(
+                "SELECT id, kind, label, source_path, properties, \
+                        created_at::text AS created_at, \
+                        updated_at::text AS updated_at \
+                 FROM graph_nodes \
+                 WHERE kind = $1 \
+                 ORDER BY id",
+            )
+            .bind(k.to_string())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("find_graph_nodes: {e}")))?,
+            (None, true) => sqlx::query_as(
+                "SELECT id, kind, label, source_path, properties, \
+                        created_at::text AS created_at, \
+                        updated_at::text AS updated_at \
+                 FROM graph_nodes \
+                 ORDER BY id \
+                 LIMIT $1",
+            )
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("find_graph_nodes: {e}")))?,
+            (None, false) => sqlx::query_as(
+                "SELECT id, kind, label, source_path, properties, \
+                        created_at::text AS created_at, \
+                        updated_at::text AS updated_at \
+                 FROM graph_nodes \
+                 ORDER BY id",
+            )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("find_graph_nodes: {e}")))?,
+        };
+        Ok(rows.into_iter().map(GraphNodeRow::into_graph_node).collect())
+    }
+
+    /// Find graph edges. At least one of `source` or `target` MUST
+    /// be supplied; passing both is allowed and the predicate is
+    /// an AND. The `source` / `target` indexed lookups stay
+    /// cheap.
+    pub async fn find_graph_edges(
+        &self,
+        source: Option<NodeId>,
+        target: Option<NodeId>,
+    ) -> Result<Vec<GraphEdge>, RepositoryError> {
+        if source.is_none() && target.is_none() {
+            return Err(RepositoryError::InvalidQuery(
+                "find_graph_edges requires at least one of `source` or `target`".to_string(),
+            ));
+        }
+        // Build the query dynamically: 4 possible (source, target)
+        // shapes. We keep the SQL explicit (no string concat) so
+        // sqlx's query planner can still recognise the indexed
+        // predicates.
+        let rows: Vec<GraphEdgeRow> = match (&source, &target) {
+            (Some(s), Some(t)) => sqlx::query_as(
+                "SELECT id, source_id, target_id, kind, provenance, confidence, metadata \
+                 FROM graph_edges \
+                 WHERE source_id = $1 AND target_id = $2 \
+                 ORDER BY id",
+            )
+            .bind(s.as_str())
+            .bind(t.as_str())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("find_graph_edges: {e}")))?,
+            (Some(s), None) => sqlx::query_as(
+                "SELECT id, source_id, target_id, kind, provenance, confidence, metadata \
+                 FROM graph_edges \
+                 WHERE source_id = $1 \
+                 ORDER BY id",
+            )
+            .bind(s.as_str())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("find_graph_edges: {e}")))?,
+            (None, Some(t)) => sqlx::query_as(
+                "SELECT id, source_id, target_id, kind, provenance, confidence, metadata \
+                 FROM graph_edges \
+                 WHERE target_id = $1 \
+                 ORDER BY id",
+            )
+            .bind(t.as_str())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("find_graph_edges: {e}")))?,
+            (None, None) => unreachable!("guarded above"),
+        };
+        Ok(rows
+            .into_iter()
+            .map(GraphEdgeRow::into_graph_edge)
+            .collect())
+    }
+
+    /// Look up a single graph node by `id`. Returns `Ok(None)` when
+    /// the id is missing.
+    pub async fn get_graph_node(
+        &self,
+        id: NodeId,
+    ) -> Result<Option<GraphNode>, RepositoryError> {
+        let row: Option<GraphNodeRow> = sqlx::query_as(
+            "SELECT id, kind, label, source_path, properties, \
+                    created_at::text AS created_at, \
+                    updated_at::text AS updated_at \
+             FROM graph_nodes \
+             WHERE id = $1 \
+             LIMIT 1",
+        )
+        .bind(id.as_str())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("get_graph_node: {e}")))?;
+        Ok(row.map(GraphNodeRow::into_graph_node))
+    }
 }
 
 #[cfg(feature = "postgres")]
@@ -2091,4 +2592,431 @@ mod tests {
     /// when the feature is enabled.
     #[cfg(not(feature = "postgres"))]
     const _: () = ();
+
+    // -----------------------------------------------------------------
+    // Multimodal (Generic Graph Layer) tests — T7, T8, T9, T10.
+    //
+    // Co-located with the rest of `mod tests` (NOT a submodule)
+    // so the inner `pg_test!` macro, `fresh_pool`, and the row
+    // mappers are in scope. Every test is gated behind
+    // `#[cfg(all(test, feature = "postgres", feature = "multimodal"))]`
+    // so the multimodal build is the only one that compiles the
+    // graph_nodes/graph_edges code paths. The `pg_test!` macro
+    // gracefully skips when `TEST_DATABASE_URL` is not set.
+    // -----------------------------------------------------------------
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    use crate::domain::aggregates::generic_graph::{
+        GraphEdge as MmGraphEdge, GraphNode as MmGraphNode, NodeId as MmNodeId,
+    };
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    use crate::domain::value_objects::edge_kind::EdgeKind as MmEdgeKind;
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    use crate::domain::value_objects::node_kind::NodeKind as MmNodeKind;
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    use chrono::Utc as MmUtc;
+
+    /// Build a small `Doc` graph node fixture (no DB I/O).
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    fn fixture_doc_node(id: &str, label: &str, status: &str) -> MmGraphNode {
+        MmGraphNode::builder(MmNodeId::new(id), MmNodeKind::Doc)
+            .label(label)
+            .source_path("/docs/adr/0007.md")
+            .property("status", status)
+            .created_at(MmUtc::now())
+            .updated_at(MmUtc::now())
+            .build()
+    }
+
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    fn fixture_decision_node(id: &str, label: &str) -> MmGraphNode {
+        MmGraphNode::builder(MmNodeId::new(id), MmNodeKind::Decision)
+            .label(label)
+            .source_path("/docs/adr/0007.md")
+            .created_at(MmUtc::now())
+            .updated_at(MmUtc::now())
+            .build()
+    }
+
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    fn fixture_edge(
+        source: &str,
+        target: &str,
+        kind: MmEdgeKind,
+        confidence: f64,
+    ) -> MmGraphEdge {
+        MmGraphEdge::new(
+            MmNodeId::new(source),
+            MmNodeId::new(target),
+            kind,
+            Provenance::Extracted,
+            confidence,
+        )
+        .expect("fixture edge must construct")
+    }
+
+    // ---- T7 RED gate ----
+
+    /// `run_migrations` must create the `graph_nodes` table with
+    /// the expected columns and the two btree indexes
+    /// (`idx_graph_nodes_kind`, `idx_graph_nodes_source_path`).
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    pg_test!(graph_nodes_table_exists, |pool: PgPool| {
+        let repo = PostgresRepository::from_pool(pool);
+        repo.run_migrations().await.expect("migrations");
+
+        let table_count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM information_schema.tables \
+             WHERE table_name = 'graph_nodes'",
+        )
+        .fetch_one(repo.pool())
+        .await
+        .expect("information_schema query");
+        assert_eq!(table_count.0, 1, "graph_nodes table must exist");
+
+        let cols: Vec<(String,)> = sqlx::query_as(
+            "SELECT column_name \
+             FROM information_schema.columns \
+             WHERE table_name = 'graph_nodes' \
+             ORDER BY ordinal_position",
+        )
+        .fetch_all(repo.pool())
+        .await
+        .expect("columns query");
+        let col_names: Vec<String> = cols.into_iter().map(|(c,)| c).collect();
+        for required in [
+            "id",
+            "kind",
+            "label",
+            "source_path",
+            "properties",
+            "created_at",
+            "updated_at",
+        ] {
+            assert!(
+                col_names.iter().any(|c| c == required),
+                "graph_nodes missing column `{required}` — got {col_names:?}"
+            );
+        }
+
+        for idx in ["idx_graph_nodes_kind", "idx_graph_nodes_source_path"] {
+            let found: (i64,) = sqlx::query_as(
+                "SELECT COUNT(*) FROM pg_indexes \
+                 WHERE tablename = 'graph_nodes' AND indexname = $1",
+            )
+            .bind(idx)
+            .fetch_one(repo.pool())
+            .await
+            .expect("pg_indexes query");
+            assert_eq!(found.0, 1, "index `{idx}` must exist");
+        }
+    });
+
+    // ---- T8 RED gate ----
+
+    /// `run_migrations` must create the `graph_edges` table with
+    /// the expected columns, the natural-key UNIQUE index, and
+    /// the three btree indexes.
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    pg_test!(graph_edges_table_exists, |pool: PgPool| {
+        let repo = PostgresRepository::from_pool(pool);
+        repo.run_migrations().await.expect("migrations");
+
+        let table_count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM information_schema.tables \
+             WHERE table_name = 'graph_edges'",
+        )
+        .fetch_one(repo.pool())
+        .await
+        .expect("information_schema query");
+        assert_eq!(table_count.0, 1, "graph_edges table must exist");
+
+        let cols: Vec<(String,)> = sqlx::query_as(
+            "SELECT column_name \
+             FROM information_schema.columns \
+             WHERE table_name = 'graph_edges' \
+             ORDER BY ordinal_position",
+        )
+        .fetch_all(repo.pool())
+        .await
+        .expect("columns query");
+        let col_names: Vec<String> = cols.into_iter().map(|(c,)| c).collect();
+        for required in [
+            "id",
+            "source_id",
+            "target_id",
+            "kind",
+            "provenance",
+            "confidence",
+            "metadata",
+            "created_at",
+        ] {
+            assert!(
+                col_names.iter().any(|c| c == required),
+                "graph_edges missing column `{required}` — got {col_names:?}"
+            );
+        }
+
+        for idx in [
+            "idx_graph_edges_source",
+            "idx_graph_edges_target",
+            "idx_graph_edges_kind",
+            "uniq_graph_edges_source_target_kind",
+        ] {
+            let found: (i64,) = sqlx::query_as(
+                "SELECT COUNT(*) FROM pg_indexes \
+                 WHERE tablename = 'graph_edges' AND indexname = $1",
+            )
+            .bind(idx)
+            .fetch_one(repo.pool())
+            .await
+            .expect("pg_indexes query");
+            assert_eq!(found.0, 1, "index `{idx}` must exist");
+        }
+    });
+
+    // ---- T9 RED gates (write path) ----
+
+    /// `store_graph_nodes` + `get_graph_node` must round-trip a
+    /// node losslessly.
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    pg_test!(store_and_retrieve_graph_node, |pool: PgPool| {
+        let repo = PostgresRepository::from_pool(pool);
+        repo.run_migrations().await.expect("migrations");
+
+        let node = fixture_doc_node("doc:adr/0007.md#decision", "ADR-0007", "accepted");
+        repo.store_graph_nodes(vec![node.clone()])
+            .await
+            .expect("store_graph_nodes");
+
+        let fetched = repo
+            .get_graph_node(MmNodeId::new("doc:adr/0007.md#decision"))
+            .await
+            .expect("get_graph_node")
+            .expect("expected Some(GraphNode)");
+        assert_eq!(fetched.id, node.id);
+        assert_eq!(fetched.kind, node.kind);
+        assert_eq!(fetched.label, node.label);
+        assert_eq!(fetched.source_path, node.source_path);
+        assert_eq!(
+            fetched.properties.get("status").map(String::as_str),
+            Some("accepted")
+        );
+    });
+
+    /// `store_graph_edges` must reject a row whose
+    /// `confidence` is outside `[0,1]` (the `CHECK` constraint
+    /// in the DDL is the source of truth). Round-trip a valid
+    /// edge and assert it survives.
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    pg_test!(
+        store_graph_edge_with_validation,
+        |pool: PgPool| {
+            let repo = PostgresRepository::from_pool(pool);
+            repo.run_migrations().await.expect("migrations");
+
+            repo.store_graph_nodes(vec![
+                fixture_doc_node("doc:src.md#intro", "Intro", "draft"),
+                fixture_decision_node("decision:adr/0001.md#context", "ADR-0001"),
+            ])
+            .await
+            .expect("seed nodes");
+
+            let edge = fixture_edge(
+                "doc:src.md#intro",
+                "decision:adr/0001.md#context",
+                MmEdgeKind::Cites,
+                0.9,
+            );
+            repo.store_graph_edges(vec![edge.clone()])
+                .await
+                .expect("store_graph_edges valid");
+            let fetched = repo
+                .find_graph_edges(
+                    Some(MmNodeId::new("doc:src.md#intro")),
+                    Some(MmNodeId::new("decision:adr/0001.md#context")),
+                )
+                .await
+                .expect("find_graph_edges");
+            assert_eq!(fetched.len(), 1);
+            assert_eq!(fetched[0].kind, MmEdgeKind::Cites);
+            assert!((fetched[0].confidence - 0.9).abs() < 1e-9);
+
+            // Bypassing `GraphEdge::new` to write a
+            // confidence=1.5 row directly: the CHECK constraint
+            // must reject it.
+            let bad = sqlx::query(
+                "INSERT INTO graph_edges \
+                    (source_id, target_id, kind, provenance, confidence) \
+                 VALUES ($1, $2, 'cites', 'extracted', 1.5)",
+            )
+            .bind("doc:src.md#intro")
+            .bind("decision:adr/0001.md#context")
+            .execute(repo.pool())
+            .await;
+            assert!(
+                bad.is_err(),
+                "CHECK constraint must reject confidence=1.5"
+            );
+        }
+    );
+
+    /// `store_graph_nodes` + `store_graph_edges` must be
+    /// idempotent: re-ingesting the same payload updates the
+    /// existing rows (no duplicates, no new surrogate ids on
+    /// edges, `created_at` preserved on nodes).
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    pg_test!(store_graph_upsert_idempotent, |pool: PgPool| {
+        let repo = PostgresRepository::from_pool(pool);
+        repo.run_migrations().await.expect("migrations");
+
+        let mut node = fixture_doc_node("doc:foo.md#a", "First Label", "draft");
+        repo.store_graph_nodes(vec![node.clone()])
+            .await
+            .expect("first insert");
+        let created_first = repo
+            .get_graph_node(MmNodeId::new("doc:foo.md#a"))
+            .await
+            .expect("read 1")
+            .expect("Some")
+            .created_at;
+
+        node.label = "Second Label".to_string();
+        node = node.with_property("status", "accepted");
+        repo.store_graph_nodes(vec![node.clone()])
+            .await
+            .expect("second insert");
+        let updated = repo
+            .get_graph_node(MmNodeId::new("doc:foo.md#a"))
+            .await
+            .expect("read 2")
+            .expect("Some");
+        assert_eq!(updated.label, "Second Label");
+        assert_eq!(
+            updated.properties.get("status").map(String::as_str),
+            Some("accepted")
+        );
+        assert_eq!(
+            updated.created_at, created_first,
+            "created_at must be preserved across re-ingest"
+        );
+
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM graph_nodes")
+            .fetch_one(repo.pool())
+            .await
+            .expect("count");
+        assert_eq!(count.0, 1, "duplicate id must collapse to 1 row");
+    });
+
+    // ---- T10 RED gates (read path) ----
+
+    /// `find_graph_nodes(Some(kind), _)` must return only
+    /// nodes of that kind.
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    pg_test!(find_nodes_by_kind, |pool: PgPool| {
+        let repo = PostgresRepository::from_pool(pool);
+        repo.run_migrations().await.expect("migrations");
+
+        repo.store_graph_nodes(vec![
+            fixture_doc_node("doc:a.md#x", "A", "draft"),
+            fixture_doc_node("doc:b.md#y", "B", "draft"),
+            fixture_decision_node("decision:adr/0001.md#c", "ADR-0001"),
+        ])
+        .await
+        .expect("seed");
+
+        let docs = repo
+            .find_graph_nodes(Some(MmNodeKind::Doc), 100)
+            .await
+            .expect("find_docs");
+        assert_eq!(docs.len(), 2);
+        assert!(docs.iter().all(|n| n.kind == MmNodeKind::Doc));
+
+        let decisions = repo
+            .find_graph_nodes(Some(MmNodeKind::Decision), 100)
+            .await
+            .expect("find_decisions");
+        assert_eq!(decisions.len(), 1);
+        assert_eq!(decisions[0].kind, MmNodeKind::Decision);
+
+        let all = repo
+            .find_graph_nodes(None, 100)
+            .await
+            .expect("find_all");
+        assert_eq!(all.len(), 3, "no kind filter returns every node");
+    });
+
+    /// `find_graph_edges(Some(source), _)` must return only
+    /// edges originating from `source`. `None, Some(target)`
+    /// must return only edges terminating at `target`.
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    pg_test!(find_edges_by_source, |pool: PgPool| {
+        let repo = PostgresRepository::from_pool(pool);
+        repo.run_migrations().await.expect("migrations");
+
+        repo.store_graph_nodes(vec![
+            fixture_doc_node("doc:src.md#a", "A", "draft"),
+            fixture_doc_node("doc:src.md#b", "B", "draft"),
+            fixture_decision_node("decision:adr/0001.md#c", "ADR-0001"),
+        ])
+        .await
+        .expect("seed nodes");
+
+        repo.store_graph_edges(vec![
+            fixture_edge("doc:src.md#a", "decision:adr/0001.md#c", MmEdgeKind::Cites, 0.9),
+            fixture_edge("doc:src.md#b", "decision:adr/0001.md#c", MmEdgeKind::Cites, 0.7),
+            fixture_edge(
+                "decision:adr/0001.md#c",
+                "doc:src.md#a",
+                MmEdgeKind::Justifies,
+                0.6,
+            ),
+        ])
+        .await
+        .expect("seed edges");
+
+        let by_source = repo
+            .find_graph_edges(Some(MmNodeId::new("doc:src.md#a")), None)
+            .await
+            .expect("by source");
+        assert_eq!(by_source.len(), 1);
+        assert_eq!(by_source[0].source.as_str(), "doc:src.md#a");
+        assert_eq!(by_source[0].target.as_str(), "decision:adr/0001.md#c");
+
+        let by_target = repo
+            .find_graph_edges(None, Some(MmNodeId::new("decision:adr/0001.md#c")))
+            .await
+            .expect("by target");
+        assert_eq!(by_target.len(), 2);
+
+        let both_none = repo
+            .find_graph_edges(None, None)
+            .await;
+        assert!(both_none.is_err(), "must reject (None, None)");
+    });
+
+    /// `get_graph_node(id)` must return `Ok(None)` for an
+    /// unknown id and `Ok(Some(node))` for a known id.
+    #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
+    pg_test!(get_node_by_id, |pool: PgPool| {
+        let repo = PostgresRepository::from_pool(pool);
+        repo.run_migrations().await.expect("migrations");
+
+        let node = fixture_doc_node("doc:known.md#a", "Known", "draft");
+        repo.store_graph_nodes(vec![node.clone()])
+            .await
+            .expect("seed");
+
+        let known = repo
+            .get_graph_node(MmNodeId::new("doc:known.md#a"))
+            .await
+            .expect("get_known");
+        assert!(known.is_some());
+        assert_eq!(known.unwrap().id, node.id);
+
+        let unknown = repo
+            .get_graph_node(MmNodeId::new("doc:unknown.md#a"))
+            .await
+            .expect("get_unknown");
+        assert!(unknown.is_none());
+    });
 }
