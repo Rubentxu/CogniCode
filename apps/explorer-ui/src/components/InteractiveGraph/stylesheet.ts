@@ -25,7 +25,7 @@
  *   resolves  → dotted orange
  *   corroborated → double violet
  */
-import type { StylesheetCSS, StylesheetStyle } from "cytoscape";
+import type { Core, StylesheetCSS, StylesheetStyle } from "cytoscape";
 
 export const KNOWN_NODE_CLASSES = new Set([
   "function",
@@ -297,4 +297,30 @@ export function resolveEdgeStyleClass(
     );
   }
   return "edge.calls";
+}
+
+/**
+ * Apply corroboration score-based styles to edges in a cytoscape
+ * instance. Iterates over `scores` entries where the key is
+ * `"source->target"` and the value is a score in [0, 1].
+ *
+ * - `width`  = 1.5 + score * 3   (range 1.5–4.5)
+ * - `opacity` = 0.5 + score * 0.5 (range 0.5–1.0)
+ *
+ * Edges that do not match any score entry are left unchanged.
+ */
+export function applyCorroborationStyles(
+  cy: Core,
+  scores: Record<string, number>,
+): void {
+  for (const [key, score] of Object.entries(scores)) {
+    const parts = key.split("->");
+    if (parts.length !== 2) continue;
+    const [source, target] = parts as [string, string];
+    // Use cytoscape's attribute selector to find matching edges.
+    const edges = cy.edges(`[source = "${source}"][target = "${target}"]`);
+    if (edges.length === 0) continue;
+    edges.style("width", `${1.5 + score * 3}`);
+    edges.style("opacity", `${0.5 + score * 0.5}`);
+  }
 }

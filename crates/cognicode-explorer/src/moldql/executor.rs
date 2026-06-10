@@ -138,11 +138,7 @@ impl<'a> MoldQLExecutor<'a> {
             // error code (no panic, no silent empty list).
             #[cfg(feature = "multimodal")]
             TargetType::Decisions | TargetType::Docs => {
-                return Err(ExplorerError::FeatureDisabled(
-                    "multimodal FIND targets (decisions/docs) require the \
-                     `GraphRepository` executor path — wired in T21"
-                        .to_string(),
-                ));
+                self.find_multimodal_nodes(find)?
             }
         };
         let total = items.len();
@@ -529,6 +525,47 @@ impl<'a> MoldQLExecutor<'a> {
             None => Vec::new(),
         }
     }
+
+    /// T21 — Multimodal FIND dispatch. Resolves `Decisions`/`Docs`
+    /// to `NodeKind` and queries the `GraphRepository`. Returns
+    /// `FeatureDisabled` when the graph repo is not wired.
+    #[cfg(feature = "multimodal")]
+    fn find_multimodal_nodes(
+        &self,
+        find: &crate::moldql::ast::FindQuery,
+    ) -> ExplorerResult<Vec<MoldQLItem>> {
+        use cognicode_core::domain::value_objects::node_kind::NodeKind;
+        let kind = match find.target {
+            TargetType::Decisions => NodeKind::Decision,
+            TargetType::Docs => NodeKind::Doc,
+            _ => unreachable!("find_multimodal_nodes only called for Decisions/Docs"),
+        };
+        let graph_repo = self.view.graph_repo.as_ref().ok_or_else(|| {
+            ExplorerError::FeatureDisabled(
+                "multimodal FIND targets require a GraphRepository".to_string(),
+            )
+        })?;
+        let nodes = graph_repo.find_nodes_by_kind(&kind)?;
+        let items: Vec<MoldQLItem> = nodes
+            .into_iter()
+            .filter(|n| {
+                matches_scope(
+                    find.scope.as_deref(),
+                    n.source_path
+                        .as_ref()
+                        .map(|p| p.to_str().unwrap_or(""))
+                        .unwrap_or(""),
+                )
+            })
+            .map(|n| MoldQLItem {
+                object_id: n.id.to_string(),
+                object_type: InspectableObjectType::DecisionArtifact,
+                label: n.label.clone(),
+                detail: None,
+            })
+            .collect();
+        Ok(items)
+    }
 }
 
 // ============================================================================
@@ -550,6 +587,10 @@ pub struct MoldQLView {
     /// `&dyn Fn`.
     #[allow(clippy::type_complexity)]
     pub apply_lens: Arc<dyn Fn(&str, &str) -> ExplorerResult<LensResult> + Send + Sync>,
+    /// Generic Graph Layer port. Populated when `multimodal` feature
+    /// is enabled; the executor uses this for `FIND decisions/docs`.
+    #[cfg(feature = "multimodal")]
+    pub graph_repo: Option<Arc<dyn crate::ports::GraphRepository>>,
 }
 
 impl MoldQLView {
@@ -940,6 +981,8 @@ mod tests {
             quality: None,
             reader,
             apply_lens: apply,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         }
     }
 
@@ -960,6 +1003,8 @@ mod tests {
             quality: Some(quality),
             reader,
             apply_lens: apply,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         }
     }
 

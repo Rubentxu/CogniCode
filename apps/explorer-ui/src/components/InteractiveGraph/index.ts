@@ -13,6 +13,7 @@ export {
   resolveNodeStyleClass,
   KNOWN_NODE_CLASSES,
   KNOWN_EDGE_CLASSES,
+  applyCorroborationStyles,
 } from "./stylesheet";
 export {
   createLayoutWorker,

@@ -28,6 +28,7 @@ import { SkipLink } from "./SkipLink";
 import { Spotter } from "./Spotter";
 import { detectViewport, type ShellViewport } from "./viewport";
 import { useSubgraph } from "../hooks/useSubgraph";
+import { useAppState } from "../state/context";
 import { ContextualPanel } from "./ContextualPanel";
 
 // `React.lazy` keeps the cytoscape + elkjs chunk out of the
@@ -37,8 +38,29 @@ const InteractiveGraph = lazy(() =>
   import("./InteractiveGraph").then((m) => ({ default: m.InteractiveGraph })),
 );
 
+const RationaleView = lazy(() =>
+  import("./RationaleView").then((m) => ({ default: m.RationaleView })),
+);
+
 function InteractiveGraphPanel({ rootId }: { rootId: string | null }) {
+  const { activeLensId } = useAppState();
   const { data } = useSubgraph(rootId);
+
+  // When the rationale lens is active, render RationaleView instead
+  // of the default InteractiveGraph. The RationaleView wraps the
+  // same InteractiveGraph but fetches from the rationale endpoint
+  // and applies corroboration styles dynamically.
+  if (activeLensId === "rationale" && rootId) {
+    return (
+      <RationaleView
+        focusId={rootId}
+        onSelectObject={() => {
+          // Selection is read-only in this column for now.
+        }}
+      />
+    );
+  }
+
   return (
     <InteractiveGraph
       root={rootId ?? "—"}

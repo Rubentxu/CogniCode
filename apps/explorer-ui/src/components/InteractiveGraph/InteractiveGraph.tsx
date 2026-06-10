@@ -35,6 +35,12 @@ export interface InteractiveGraphProps {
   onSelectObject: (id: string) => void;
   /** Optional CSS class passthrough. */
   className?: string;
+  /**
+   * Optional callback fired after the cytoscape instance is mounted
+   * and initialised. Receives the `Core` instance so callers can
+   * apply dynamic styles (e.g. corroboration scores).
+   */
+  onCyReady?: (cy: Core) => void;
 }
 
 export function InteractiveGraph({
@@ -42,6 +48,7 @@ export function InteractiveGraph({
   data,
   selectedId,
   onSelectObject,
+  onCyReady,
   className,
 }: InteractiveGraphProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -88,6 +95,11 @@ export function InteractiveGraph({
     // `selectedId` state and decides when to clear.
 
     cyRef.current = cy;
+    // Fire the optional onCyReady callback so callers (e.g. RationaleView)
+    // can apply dynamic styles to the freshly mounted instance.
+    if (onCyReady) {
+      onCyReady(cy);
+    }
     // The `setMounted` is used to gate the selection-state effect
     // until cytoscape has had a chance to bind its listeners. We
     // use a microtask to avoid the lint rule that flags synchronous

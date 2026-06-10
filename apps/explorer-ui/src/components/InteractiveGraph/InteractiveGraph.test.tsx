@@ -73,15 +73,15 @@ vi.mock("cytoscape", () => {
   }
   class Cy {
     nodes: CyNode[] = [];
-    edges: CyEdge[] = [];
+    edgeElements: CyEdge[] = [];
     private allListeners: Array<(e: unknown) => void> = [];
     constructor(opts: { elements?: { nodes?: NodeData[]; edges?: EdgeData[] } }) {
       this.nodes = (opts.elements?.nodes ?? []).map((d) => new CyNode(d));
-      this.edges = (opts.elements?.edges ?? []).map(
+      this.edgeElements = (opts.elements?.edges ?? []).map(
         (d) => new CyEdge(d as EdgeData),
       );
       // Wire connectedEdges: each edge touches its endpoints.
-      for (const e of this.edges) {
+      for (const e of this.edgeElements) {
         const src = this.nodes.find((n) => n.id === String(e.data.source));
         const tgt = this.nodes.find((n) => n.id === String(e.data.target));
         if (src) (src as unknown as { edgeListeners: Set<CyEdge> }).edgeListeners.add(e);
@@ -102,11 +102,14 @@ vi.mock("cytoscape", () => {
       for (const n of this.nodes) n.off("tap", fn);
     }
     elements(): CyCollection {
-      return new CyCollection([...this.nodes, ...this.edges]);
+      return new CyCollection([...this.nodes, ...this.edgeElements]);
     }
     getElementById(id: string): CyCollection {
-      const all = [...this.nodes, ...this.edges];
+      const all = [...this.nodes, ...this.edgeElements];
       return new CyCollection(all.filter((i) => i.id === String(id)));
+    }
+    edges(_selector?: string) {
+      return new CyCollection(this.edgeElements);
     }
     destroy() { /* no-op */ }
     clickNode(id: string) {

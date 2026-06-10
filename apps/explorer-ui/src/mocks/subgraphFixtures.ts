@@ -107,3 +107,60 @@ function buildSized(nodeCount: number, edgeCount: number): SubgraphResponse {
     truncated: false,
   };
 }
+
+// ============================================================================
+// Rationale fixture — 3 nodes, 2 edges with corroboration scores
+// ============================================================================
+
+const rationaleNodes: GraphNode[] = [
+  {
+    id: "sym:rat::focus",
+    label: "focus",
+    kind: "function",
+    file: "rat.rs",
+    line: 1,
+    style_class: "function",
+  },
+  {
+    id: "sym:rat::a",
+    label: "supporter_a",
+    kind: "function",
+    file: "rat.rs",
+    line: 5,
+    style_class: "function",
+  },
+  {
+    id: "sym:rat::b",
+    label: "supporter_b",
+    kind: "function",
+    file: "rat.rs",
+    line: 10,
+    style_class: "function",
+  },
+];
+
+const rationaleEdges: GraphEdge[] = [
+  {
+    source: "sym:rat::a",
+    target: "sym:rat::focus",
+    relation: "corroborated_by",
+    style_class: "edge-corroborated",
+  },
+  {
+    source: "sym:rat::b",
+    target: "sym:rat::focus",
+    relation: "corroborated_by",
+    style_class: "edge-corroborated",
+  },
+];
+
+export const rationaleSubgraphFixture: SubgraphResponse = {
+  root: "sym:rat::focus",
+  nodes: rationaleNodes,
+  edges: rationaleEdges,
+  truncated: false,
+  corroboration_scores: {
+    "sym:rat::a->sym:rat::focus": 0.85,
+    "sym:rat::b->sym:rat::focus": 0.42,
+  },
+};

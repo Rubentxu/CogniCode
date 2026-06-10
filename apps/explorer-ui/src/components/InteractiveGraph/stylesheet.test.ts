@@ -10,7 +10,7 @@
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
-import { buildStylesheet, KNOWN_NODE_CLASSES, KNOWN_EDGE_CLASSES } from "./stylesheet";
+import { buildStylesheet, applyCorroborationStyles, KNOWN_NODE_CLASSES, KNOWN_EDGE_CLASSES } from "./stylesheet";
 
 describe("buildStylesheet — T18 multimodal node blocks", () => {
   it("stylesheet_has_decision_style", () => {
@@ -141,5 +141,94 @@ describe("resolveNodeStyleClass — T18 console.warn regression", () => {
     expect(warnSpy).toHaveBeenCalled();
     const msg = warnSpy.mock.calls[0]?.[0] as string;
     expect(msg).toContain("node-bogus-test-1");
+  });
+});
+
+// ============================================================================
+// applyCorroborationStyles — corroboration-rationale-views
+// ============================================================================
+
+describe("applyCorroborationStyles", () => {
+  it("applyCorroborationStyles_sets_width", () => {
+    // Mock a cytoscape edge
+    const styleMock = vi.fn().mockReturnThis();
+    const edgesMock = vi.fn();
+
+    const mockCy = {
+      edges: edgesMock,
+    } as never;
+
+    // Single edge from a->b
+    edgesMock.mockReturnValueOnce({
+      length: 1,
+      style: styleMock,
+    } as never);
+
+    applyCorroborationStyles(mockCy, { "a->b": 0.5 });
+
+    // width = 1.5 + 0.5 * 3 = 3.0
+    expect(styleMock).toHaveBeenCalledWith("width", "3");
+    expect(styleMock).toHaveBeenCalledWith("opacity", "0.75");
+  });
+
+  it("applyCorroborationStyles_sets_opacity", () => {
+    const styleMock = vi.fn().mockReturnThis();
+    const edgesMock = vi.fn();
+    const mockCy = { edges: edgesMock } as never;
+
+    // Score 0 → opacity = 0.5, width = 1.5
+    edgesMock.mockReturnValueOnce({
+      length: 1,
+      style: styleMock,
+    } as never);
+
+    applyCorroborationStyles(mockCy, { "x->y": 0 });
+
+    expect(styleMock).toHaveBeenCalledWith("width", "1.5");
+    expect(styleMock).toHaveBeenCalledWith("opacity", "0.5");
+  });
+
+  it("applies max values for score 1.0", () => {
+    const styleMock = vi.fn().mockReturnThis();
+    const edgesMock = vi.fn();
+    const mockCy = { edges: edgesMock } as never;
+
+    edgesMock.mockReturnValueOnce({
+      length: 1,
+      style: styleMock,
+    } as never);
+
+    applyCorroborationStyles(mockCy, { "x->y": 1 });
+
+    // width = 1.5 + 1 * 3 = 4.5, opacity = 0.5 + 1 * 0.5 = 1 → "1"
+    expect(styleMock).toHaveBeenCalledWith("width", "4.5");
+    expect(styleMock).toHaveBeenCalledWith("opacity", "1");
+  });
+
+  it("does nothing when scores is empty", () => {
+    const edgesMock = vi.fn();
+    const mockCy = { edges: edgesMock } as never;
+
+    applyCorroborationStyles(mockCy, {});
+
+    expect(edgesMock).not.toHaveBeenCalled();
+  });
+
+  it("uses cytoscape attribute selector to find matching edges", () => {
+    const styleMock = vi.fn().mockReturnThis();
+    const edgesMock = vi.fn();
+    const mockCy = { edges: edgesMock } as never;
+
+    // No matching edge found — should not call style
+    edgesMock.mockReturnValueOnce({
+      length: 0,
+    } as never);
+
+    applyCorroborationStyles(mockCy, { "a->b": 0.5 });
+
+    expect(edgesMock).toHaveBeenCalledWith(
+      '[source = "a"][target = "b"]',
+    );
+    expect(styleMock).not.toHaveBeenCalled();
   });
 });

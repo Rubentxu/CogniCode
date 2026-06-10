@@ -64,6 +64,11 @@ pub struct ExplorerService {
     /// `"named_views_require_postgres_feature"` message.
     #[cfg(feature = "postgres")]
     postgres_repo: Option<Arc<PostgresRepository>>,
+    /// Optional Generic Graph Layer port for multimodal queries.
+    /// Populated when `multimodal` feature is enabled and a
+    /// GraphRepository has been wired in.
+    #[cfg(feature = "multimodal")]
+    graph_repo: Option<Arc<dyn crate::ports::GraphRepository>>,
 }
 
 impl ExplorerService {
@@ -118,7 +123,18 @@ impl ExplorerService {
             paths: Arc::new(Mutex::new(HashMap::new())),
             #[cfg(feature = "postgres")]
             postgres_repo: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         }
+    }
+
+    /// Wire an `Arc<dyn GraphRepository>` into the service so ExplorerQL
+    /// `FIND decisions/docs` and `graph_search` reach the Generic Graph
+    /// Layer. Only available behind the `multimodal` feature.
+    #[cfg(feature = "multimodal")]
+    pub fn with_graph_repo(mut self, gr: Arc<dyn crate::ports::GraphRepository>) -> Self {
+        self.graph_repo = Some(gr);
+        self
     }
 
     /// Wire an `Arc<PostgresRepository>` into the service so the
@@ -173,6 +189,8 @@ impl ExplorerService {
             quality: self.quality.clone(),
             reader: self.reader.clone(),
             apply_lens,
+            #[cfg(feature = "multimodal")]
+            graph_repo: self.graph_repo.clone(),
         };
         MoldQLExecutor::new(&view).execute(ast)
     }
@@ -198,6 +216,8 @@ impl ExplorerService {
             quality: self.quality.clone(),
             reader: self.reader.clone(),
             apply_lens,
+            #[cfg(feature = "multimodal")]
+            graph_repo: self.graph_repo.clone(),
         };
         MoldQLExecutor::new(&view).execute_with_target(ast, target)
     }
@@ -221,6 +241,8 @@ impl ExplorerService {
             paths: self.paths.clone(),
             #[cfg(feature = "postgres")]
             postgres_repo: self.postgres_repo.clone(),
+            #[cfg(feature = "multimodal")]
+            graph_repo: self.graph_repo.clone(),
         })
     }
 

@@ -24,6 +24,7 @@ import {
 import {
   largeSubgraphFixture,
   mediumSubgraphFixture,
+  rationaleSubgraphFixture,
   smallSubgraphFixture,
 } from "./subgraphFixtures";
 
@@ -192,6 +193,24 @@ export const handlers = [
         ? mediumSubgraphFixture
         : smallSubgraphFixture;
     return HttpResponse.json({ ...fixture, root: id });
+  }),
+
+  // -----------------------------------------------------------------------
+  // 14. Rationale Graph (corroboration-rationale-views)
+  // -----------------------------------------------------------------------
+  http.get("/api/graph/:id/rationale", async ({ params, request }) => {
+    await delay(LATENCY_MS);
+    const id = String(params["id"] ?? "");
+    if (id.startsWith("missing")) {
+      return HttpResponse.json(
+        { error: "symbol_not_found" },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json({
+      ...rationaleSubgraphFixture,
+      root: id,
+    });
   }),
 
   // -----------------------------------------------------------------------
