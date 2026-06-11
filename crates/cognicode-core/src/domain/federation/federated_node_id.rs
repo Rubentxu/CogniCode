@@ -18,8 +18,9 @@
 
 use std::fmt;
 
-use cognicode_core::domain::value_objects::SpaceId;
 use serde::{Deserialize, Serialize};
+
+use crate::domain::value_objects::SpaceId;
 
 /// Error type for [`FederatedNodeId::try_new`] failures.
 #[derive(Debug, thiserror::Error, PartialEq)]

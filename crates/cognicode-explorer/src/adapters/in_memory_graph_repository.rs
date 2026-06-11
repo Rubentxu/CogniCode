@@ -6,15 +6,19 @@
 //! not "use FTS5"; the PG adapter provides FTS5).
 //!
 //! T21 — backs the `graph_search` MCP tool's unit tests.
+//!
+//! Implements the canonical `cognicode_core::ports::GraphRepository`
+//! trait. Error returns are `GraphResult` (not the explorer's
+//! `ExplorerResult`) — the adapter wraps upstream failures in
+//! `GraphError::Storage`.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
+use cognicode_core::domain::ports::GraphRepository;
 use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
-
-use crate::error::ExplorerResult;
-use crate::ports::graph_repository::{GraphRepository, SearchPage};
+use cognicode_core::domain::{GraphError, GraphResult, SearchPage};
 
 /// In-memory store keyed by `NodeId`. Edges are stored as a flat
 /// list and filtered on `find_outgoing_edges`.
@@ -43,7 +47,7 @@ impl GraphRepository for InMemoryGraphRepository {
         node_kinds: &[NodeKind],
         limit: usize,
         cursor: Option<&str>,
-    ) -> ExplorerResult<SearchPage> {
+    ) -> GraphResult<SearchPage> {
         // Empty query → empty page (contract).
         if query.is_empty() {
             return Ok(SearchPage {
@@ -134,7 +138,7 @@ impl GraphRepository for InMemoryGraphRepository {
         })
     }
 
-    fn find_nodes_by_kind(&self, kind: &NodeKind) -> ExplorerResult<Vec<GraphNode>> {
+    fn find_nodes_by_kind(&self, kind: &NodeKind) -> GraphResult<Vec<GraphNode>> {
         Ok(self
             .nodes
             .iter()
@@ -143,11 +147,11 @@ impl GraphRepository for InMemoryGraphRepository {
             .collect())
     }
 
-    fn get_node(&self, id: &NodeId) -> ExplorerResult<Option<GraphNode>> {
+    fn get_node(&self, id: &NodeId) -> GraphResult<Option<GraphNode>> {
         Ok(self.nodes.iter().find(|n| &n.id == id).cloned())
     }
 
-    fn find_outgoing_edges(&self, id: &NodeId) -> ExplorerResult<Vec<GraphEdge>> {
+    fn find_outgoing_edges(&self, id: &NodeId) -> GraphResult<Vec<GraphEdge>> {
         Ok(self
             .edges
             .iter()
@@ -156,12 +160,7 @@ impl GraphRepository for InMemoryGraphRepository {
             .collect())
     }
 
-    #[cfg(feature = "multimodal")]
-    fn edges_by_kind(
-        &self,
-        node: &NodeId,
-        kinds: &[EdgeKind],
-    ) -> ExplorerResult<Vec<GraphEdge>> {
+    fn edges_by_kind(&self, node: &NodeId, kinds: &[EdgeKind]) -> GraphResult<Vec<GraphEdge>> {
         // Empty kinds short-circuit: no kind to match → no edges.
         if kinds.is_empty() {
             return Ok(Vec::new());
@@ -192,13 +191,12 @@ impl GraphRepository for InMemoryGraphRepository {
         Ok(results)
     }
 
-    #[cfg(feature = "multimodal")]
     fn rationale_subgraph(
         &self,
         focus: &NodeId,
         max_depth: u32,
         max_nodes: usize,
-    ) -> ExplorerResult<(Vec<GraphNode>, Vec<GraphEdge>, bool)> {
+    ) -> GraphResult<(Vec<GraphNode>, Vec<GraphEdge>, bool)> {
         // Multimodal edge kinds for rationale traversal.
         let rationale_kinds: HashSet<EdgeKind> = [
             EdgeKind::Justifies,
@@ -289,4 +287,13 @@ impl GraphRepository for InMemoryGraphRepository {
 
         Ok((nodes, edges, truncated))
     }
+}
+
+// Suppress the unused `GraphError` import warning when nothing in
+// the file actually instantiates the variant — the import is kept
+// for symmetry with the PG adapter and to make the adapter's
+// `GraphResult` return type self-documenting.
+#[allow(dead_code)]
+fn _graph_error_compiles(err: GraphError) -> String {
+    format!("{err}")
 }

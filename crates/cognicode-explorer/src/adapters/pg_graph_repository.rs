@@ -31,6 +31,11 @@
 //! The adapter owns a `sqlx::PgPool` (cloned from the parent
 //! service). Connection acquisition is the only `async` I/O; the
 //! upsert itself is a single `BEGIN; … COMMIT;` per call.
+//!
+//! Implements the canonical `cognicode_core::ports::GraphRepository`
+//! trait. Error returns are `GraphResult` (not the explorer's
+//! `ExplorerResult`) — the adapter wraps upstream failures in
+//! `GraphError::Storage` / `GraphError::InvalidInput`.
 
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 use std::collections::HashMap;
@@ -38,16 +43,15 @@ use std::collections::HashMap;
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
+use cognicode_core::domain::ports::GraphRepository;
+#[cfg(all(feature = "multimodal", feature = "postgres"))]
 use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
 use cognicode_core::domain::value_objects::provenance::Provenance;
-
 #[cfg(all(feature = "multimodal", feature = "postgres"))]
-use crate::error::{ExplorerError, ExplorerResult};
-#[cfg(all(feature = "multimodal", feature = "postgres"))]
-use crate::ports::graph_repository::{GraphRepository, SearchPage};
+use cognicode_core::domain::{GraphError, GraphResult, SearchPage};
 
 /// Adapter that backs the `GraphRepository` port with a
 /// PostgreSQL pool. Constructed via [`PgGraphRepository::new`]
@@ -82,7 +86,7 @@ impl GraphRepository for PgGraphRepository {
         _node_kinds: &[NodeKind],
         _limit: usize,
         _cursor: Option<&str>,
-    ) -> ExplorerResult<SearchPage> {
+    ) -> GraphResult<SearchPage> {
         // The full FTS5 search surface lives in the existing
         // `PostgresRepository` (see `find_graph_nodes`). Wiring
         // it through the new port is a follow-up that the
@@ -101,21 +105,21 @@ impl GraphRepository for PgGraphRepository {
         })
     }
 
-    fn find_nodes_by_kind(&self, _kind: &NodeKind) -> ExplorerResult<Vec<GraphNode>> {
+    fn find_nodes_by_kind(&self, _kind: &NodeKind) -> GraphResult<Vec<GraphNode>> {
         Ok(Vec::new())
     }
 
-    fn get_node(&self, _id: &NodeId) -> ExplorerResult<Option<GraphNode>> {
+    fn get_node(&self, _id: &NodeId) -> GraphResult<Option<GraphNode>> {
         Ok(None)
     }
 
-    fn find_outgoing_edges(&self, _id: &NodeId) -> ExplorerResult<Vec<GraphEdge>> {
+    fn find_outgoing_edges(&self, _id: &NodeId) -> GraphResult<Vec<GraphEdge>> {
         Ok(Vec::new())
     }
 
     // ---- T4 (graph-repository-write) surface ----
 
-    fn upsert_nodes(&self, nodes: Vec<GraphNode>) -> ExplorerResult<usize> {
+    fn upsert_nodes(&self, nodes: Vec<GraphNode>) -> GraphResult<usize> {
         // Empty input is a no-op (T4 contract).
         if nodes.is_empty() {
             return Ok(0);
@@ -125,7 +129,7 @@ impl GraphRepository for PgGraphRepository {
         // invariants for edges and our own checks for nodes).
         for n in &nodes {
             if n.id.as_str().is_empty() {
-                return Err(ExplorerError::InvalidInput(
+                return Err(GraphError::InvalidInput(
                     "graph_node id is empty".to_string(),
                 ));
             }
@@ -142,9 +146,7 @@ impl GraphRepository for PgGraphRepository {
         let nodes_for_task = nodes.clone();
         let new_rows = futures_executor_block_on(async move {
             let mut tx = pool.begin().await.map_err(|e| {
-                ExplorerError::Anyhow(anyhow::anyhow!(
-                    "pg_graph_repository: upsert_nodes begin: {e}"
-                ))
+                GraphError::Storage(format!("pg_graph_repository: upsert_nodes begin: {e}"))
             })?;
             let mut inserted: usize = 0;
             for node in &nodes_for_task {
@@ -179,9 +181,7 @@ impl GraphRepository for PgGraphRepository {
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| {
-                    ExplorerError::Anyhow(anyhow::anyhow!(
-                        "pg_graph_repository: upsert_nodes insert: {e}"
-                    ))
+                    GraphError::Storage(format!("pg_graph_repository: upsert_nodes insert: {e}"))
                 })?;
                 use sqlx::Row as _;
                 let was_inserted: bool = result.try_get("was_inserted").unwrap_or(false);
@@ -190,16 +190,14 @@ impl GraphRepository for PgGraphRepository {
                 }
             }
             tx.commit().await.map_err(|e| {
-                ExplorerError::Anyhow(anyhow::anyhow!(
-                    "pg_graph_repository: upsert_nodes commit: {e}"
-                ))
+                GraphError::Storage(format!("pg_graph_repository: upsert_nodes commit: {e}"))
             })?;
-            Ok::<usize, ExplorerError>(inserted)
+            Ok::<usize, GraphError>(inserted)
         });
         new_rows
     }
 
-    fn upsert_edges(&self, edges: Vec<GraphEdge>) -> ExplorerResult<usize> {
+    fn upsert_edges(&self, edges: Vec<GraphEdge>) -> GraphResult<usize> {
         if edges.is_empty() {
             return Ok(0);
         }
@@ -207,18 +205,18 @@ impl GraphRepository for PgGraphRepository {
         // mock's defensive checks).
         for e in &edges {
             if !e.confidence.is_finite() {
-                return Err(ExplorerError::InvalidInput(
+                return Err(GraphError::InvalidInput(
                     "graph_edge confidence must be finite".to_string(),
                 ));
             }
             if !(0.0..=1.0).contains(&e.confidence) {
-                return Err(ExplorerError::InvalidInput(format!(
+                return Err(GraphError::InvalidInput(format!(
                     "graph_edge confidence {} out of [0.0, 1.0]",
                     e.confidence
                 )));
             }
             if e.source == e.target {
-                return Err(ExplorerError::InvalidInput(
+                return Err(GraphError::InvalidInput(
                     "self-loops are not allowed".to_string(),
                 ));
             }
@@ -228,9 +226,7 @@ impl GraphRepository for PgGraphRepository {
         let edges_for_task = edges.clone();
         let new_rows = futures_executor_block_on(async move {
             let mut tx = pool.begin().await.map_err(|e| {
-                ExplorerError::Anyhow(anyhow::anyhow!(
-                    "pg_graph_repository: upsert_edges begin: {e}"
-                ))
+                GraphError::Storage(format!("pg_graph_repository: upsert_edges begin: {e}"))
             })?;
             let mut inserted: usize = 0;
             for edge in &edges_for_task {
@@ -263,9 +259,7 @@ impl GraphRepository for PgGraphRepository {
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| {
-                    ExplorerError::Anyhow(anyhow::anyhow!(
-                        "pg_graph_repository: upsert_edges insert: {e}"
-                    ))
+                    GraphError::Storage(format!("pg_graph_repository: upsert_edges insert: {e}"))
                 })?;
                 use sqlx::Row as _;
                 let was_inserted: bool = result.try_get("was_inserted").unwrap_or(false);
@@ -274,11 +268,9 @@ impl GraphRepository for PgGraphRepository {
                 }
             }
             tx.commit().await.map_err(|e| {
-                ExplorerError::Anyhow(anyhow::anyhow!(
-                    "pg_graph_repository: upsert_edges commit: {e}"
-                ))
+                GraphError::Storage(format!("pg_graph_repository: upsert_edges commit: {e}"))
             })?;
-            Ok::<usize, ExplorerError>(inserted)
+            Ok::<usize, GraphError>(inserted)
         });
         new_rows
     }

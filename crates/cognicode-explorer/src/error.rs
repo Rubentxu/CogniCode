@@ -61,3 +61,24 @@ pub enum ExplorerError {
     #[error(transparent)]
     Anyhow(#[from] anyhow::Error),
 }
+
+// Map the canonical `cognicode_core::domain::ports::GraphError`
+// onto `ExplorerError` so the `?` operator works on adapter
+// returns inside the explorer. Phase 1 of the Graph Intelligence
+// v2 roadmap moved `GraphRepository` to `cognicode-core`; this
+// `From` impl keeps the existing `ExplorerError`-shaped call
+// sites working without per-site conversion code.
+#[cfg(feature = "multimodal")]
+impl From<cognicode_core::domain::ports::GraphError> for ExplorerError {
+    fn from(err: cognicode_core::domain::ports::GraphError) -> Self {
+        use cognicode_core::domain::ports::GraphError as Core;
+        match err {
+            Core::NotFound(s) => ExplorerError::NotFound(s),
+            Core::InvalidInput(s) => ExplorerError::InvalidInput(s),
+            Core::Storage(s) => {
+                ExplorerError::Anyhow(anyhow::anyhow!("graph repository storage error: {s}"))
+            }
+            Core::InvalidQuery(s) => ExplorerError::InvalidQuery(s),
+        }
+    }
+}

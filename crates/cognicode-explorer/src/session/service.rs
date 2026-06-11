@@ -25,7 +25,7 @@ use crate::session::state::{
 #[cfg(feature = "multimodal")]
 use cognicode_core::domain::value_objects::{Space, SpaceError, SpaceId};
 #[cfg(feature = "multimodal")]
-use crate::federation::space_registry::SpaceRegistry;
+use crate::federation::SpaceRegistry;
 
 /// Per-session service. Cheap to clone (the inner state sits behind
 /// a `Mutex`).

@@ -16,8 +16,8 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use cognicode_core::domain::value_objects::SpaceError;
-use cognicode_core::domain::value_objects::{Space, SpaceId};
+use crate::domain::value_objects::SpaceError;
+use crate::domain::value_objects::{Space, SpaceId};
 
 /// In-memory space registry. Cheap to clone (the inner data sits
 /// behind `Arc<Mutex<_>>` is NOT what we do here — this is a
@@ -95,7 +95,7 @@ impl SpaceRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cognicode_core::domain::value_objects::SpaceKind;
+    use crate::domain::value_objects::SpaceKind;
 
     fn make_space(id: &str, name: &str) -> Space {
         Space::try_new(SpaceId::try_new(id).unwrap(), name.into(), SpaceKind::Repo).unwrap()

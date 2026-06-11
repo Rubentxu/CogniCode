@@ -19,14 +19,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
-use cognicode_core::domain::value_objects::node_kind::NodeKind;
-use cognicode_core::domain::value_objects::SpaceId;
-
-use crate::error::ExplorerResult;
-use crate::federation::federated_node::FederatedNode;
-use crate::federation::federated_node_id::FederatedNodeId;
-use crate::ports::graph_repository::{GraphRepository, SearchPage};
+use crate::domain::aggregates::generic_graph::{GraphEdge, NodeId};
+use crate::domain::federation::federated_node::FederatedNode;
+use crate::domain::federation::federated_node_id::FederatedNodeId;
+use crate::domain::ports::graph_error::GraphResult;
+use crate::domain::ports::graph_repository::{GraphRepository, SearchPage};
+use crate::domain::value_objects::node_kind::NodeKind;
+use crate::domain::value_objects::SpaceId;
 
 /// One page of a federated search. Same shape as
 /// [`SearchPage`] but each `GraphNode` is wrapped in a
@@ -131,7 +130,7 @@ impl FederatedGraphService {
         node_kinds: &[NodeKind],
         limit: usize,
         cursor: Option<&str>,
-    ) -> ExplorerResult<FederatedSearchPage> {
+    ) -> GraphResult<FederatedSearchPage> {
         if self.spaces.is_empty() {
             return Ok(FederatedSearchPage::empty());
         }
@@ -170,7 +169,8 @@ impl FederatedGraphService {
             };
             futures.push((space_id.clone(), per_offset, async move {
                 let per_cursor = per_offset.to_string();
-                let r: ExplorerResult<SearchPage> = repo.search(query, node_kinds, limit, Some(&per_cursor));
+                let r: GraphResult<SearchPage> =
+                    repo.search(query, node_kinds, limit, Some(&per_cursor));
                 r
             }));
             space_ids_in_order.push(space_id.clone());
@@ -231,13 +231,11 @@ impl FederatedGraphService {
         // order) that still has a next page, and emit
         // "<space_id>::<offset>". When every space is exhausted,
         // there is no next page → `None`.
-        let next_cursor = space_ids_in_order
-            .iter()
-            .find_map(|sid| {
-                per_space_next
-                    .get(sid)
-                    .map(|off| format!("{}{}{}", sid.as_str(), FederatedNodeId::SEPARATOR, off))
-            });
+        let next_cursor = space_ids_in_order.iter().find_map(|sid| {
+            per_space_next
+                .get(sid)
+                .map(|off| format!("{}{}{}", sid.as_str(), FederatedNodeId::SEPARATOR, off))
+        });
 
         Ok(FederatedSearchPage {
             items: merged_items,
@@ -250,10 +248,7 @@ impl FederatedGraphService {
     /// Look up a single federated node by `FederatedNodeId`. The
     /// id is parsed; if the space id is unknown OR the local id
     /// is not in that space's repo, returns `Ok(None)`.
-    pub async fn get_node(
-        &self,
-        id: FederatedNodeId,
-    ) -> ExplorerResult<Option<FederatedNode>> {
+    pub async fn get_node(&self, id: FederatedNodeId) -> GraphResult<Option<FederatedNode>> {
         let space_id = id.space_id();
         let local_id = NodeId::new(id.local_id_str().to_string());
         let repo = match self.spaces.get(&space_id) {
@@ -269,7 +264,7 @@ impl FederatedGraphService {
     pub async fn find_outgoing_edges(
         &self,
         id: FederatedNodeId,
-    ) -> ExplorerResult<Vec<GraphEdge>> {
+    ) -> GraphResult<Vec<GraphEdge>> {
         let space_id = id.space_id();
         let local_id = NodeId::new(id.local_id_str().to_string());
         let repo = match self.spaces.get(&space_id) {
@@ -306,9 +301,94 @@ fn parse_federated_cursor(cursor: Option<&str>) -> (Option<SpaceId>, usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::InMemoryGraphRepository;
-    use cognicode_core::domain::aggregates::generic_graph::GraphNode;
-    use cognicode_core::domain::value_objects::node_kind::NodeKind;
+    use crate::domain::aggregates::generic_graph::GraphNode;
+    use crate::domain::value_objects::node_kind::NodeKind;
+    use crate::domain::value_objects::SymbolKind;
+
+    use std::collections::HashMap;
+
+    /// In-memory mock for tests — implements `GraphRepository` so
+    /// the federated service can route through it. Mirrors the
+    /// production `InMemoryGraphRepository` adapter shape.
+    struct MockRepo {
+        nodes: Vec<GraphNode>,
+    }
+
+    impl MockRepo {
+        fn new(nodes: Vec<GraphNode>) -> Self {
+            Self { nodes }
+        }
+    }
+
+    impl GraphRepository for MockRepo {
+        fn search(
+            &self,
+            query: &str,
+            _node_kinds: &[NodeKind],
+            limit: usize,
+            _cursor: Option<&str>,
+        ) -> GraphResult<SearchPage> {
+            if query.is_empty() {
+                return Ok(SearchPage {
+                    items: Vec::new(),
+                    raw_total: 0,
+                    next_cursor: None,
+                    raw_rank: 0.0,
+                    item_ranks: Vec::new(),
+                });
+            }
+            let q = query.to_ascii_lowercase();
+            let mut items: Vec<GraphNode> = self
+                .nodes
+                .iter()
+                .filter(|n| n.label.to_ascii_lowercase().contains(&q))
+                .cloned()
+                .collect();
+            items.truncate(limit);
+            let item_ranks: Vec<f64> = items.iter().map(|_| 1.0).collect();
+            let raw_total = self
+                .nodes
+                .iter()
+                .filter(|n| n.label.to_ascii_lowercase().contains(&q))
+                .count() as u64;
+            Ok(SearchPage {
+                items,
+                raw_total,
+                next_cursor: None,
+                raw_rank: 1.0,
+                item_ranks,
+            })
+        }
+
+        fn find_nodes_by_kind(&self, _kind: &NodeKind) -> GraphResult<Vec<GraphNode>> {
+            Ok(Vec::new())
+        }
+
+        fn get_node(&self, id: &NodeId) -> GraphResult<Option<GraphNode>> {
+            Ok(self.nodes.iter().find(|n| &n.id == id).cloned())
+        }
+
+        fn find_outgoing_edges(&self, _id: &NodeId) -> GraphResult<Vec<GraphEdge>> {
+            Ok(Vec::new())
+        }
+
+        fn edges_by_kind(
+            &self,
+            _node: &NodeId,
+            _kinds: &[crate::domain::value_objects::edge_kind::EdgeKind],
+        ) -> GraphResult<Vec<GraphEdge>> {
+            Ok(Vec::new())
+        }
+
+        fn rationale_subgraph(
+            &self,
+            _focus: &NodeId,
+            _max_depth: u32,
+            _max_nodes: usize,
+        ) -> GraphResult<(Vec<GraphNode>, Vec<GraphEdge>, bool)> {
+            Ok((Vec::new(), Vec::new(), false))
+        }
+    }
 
     /// Build a fresh `FederatedGraphService` with two mock repos
     /// containing overlapping symbols.
@@ -318,22 +398,22 @@ mod tests {
         let mut svc = FederatedGraphService::new();
         // Space A: 2 nodes, label "User" matches "usr"
         let nodes_a = vec![
-            GraphNode::builder("file:a.rs:User:1", NodeKind::Symbol(cognicode_core::domain::value_objects::SymbolKind::Function))
+            GraphNode::builder("file:a.rs:User:1", NodeKind::Symbol(SymbolKind::Function))
                 .label("User")
                 .build(),
-            GraphNode::builder("file:a.rs:Other:1", NodeKind::Symbol(cognicode_core::domain::value_objects::SymbolKind::Function))
+            GraphNode::builder("file:a.rs:Other:1", NodeKind::Symbol(SymbolKind::Function))
                 .label("Other")
                 .build(),
         ];
-        let repo_a: Arc<dyn GraphRepository> = Arc::new(InMemoryGraphRepository::new(nodes_a, Vec::new()));
+        let repo_a: Arc<dyn GraphRepository> = Arc::new(MockRepo::new(nodes_a));
         svc.add_space(a.clone(), repo_a);
         // Space B: 1 node, label "User" matches "usr"
         let nodes_b = vec![
-            GraphNode::builder("file:b.rs:User:1", NodeKind::Symbol(cognicode_core::domain::value_objects::SymbolKind::Function))
+            GraphNode::builder("file:b.rs:User:1", NodeKind::Symbol(SymbolKind::Function))
                 .label("User")
                 .build(),
         ];
-        let repo_b: Arc<dyn GraphRepository> = Arc::new(InMemoryGraphRepository::new(nodes_b, Vec::new()));
+        let repo_b: Arc<dyn GraphRepository> = Arc::new(MockRepo::new(nodes_b));
         svc.add_space(b.clone(), repo_b);
         (svc, a, b)
     }
@@ -365,8 +445,7 @@ mod tests {
     async fn federated_graph_service_add_space_is_idempotent() {
         let (mut svc, a, _) = build_two_space_service();
         // Re-register auth with a fresh empty repo.
-        let empty: Arc<dyn GraphRepository> =
-            Arc::new(InMemoryGraphRepository::empty());
+        let empty: Arc<dyn GraphRepository> = Arc::new(MockRepo::new(Vec::new()));
         svc.add_space(a.clone(), empty);
         // Still 2 spaces (no duplicate).
         assert_eq!(svc.len(), 2);
@@ -414,7 +493,10 @@ mod tests {
     #[tokio::test]
     async fn federated_search_empty_service_returns_empty_page() {
         let svc = FederatedGraphService::new();
-        let page = svc.federated_search("anything", &[], 50, None).await.unwrap();
+        let page = svc
+            .federated_search("anything", &[], 50, None)
+            .await
+            .unwrap();
         assert!(page.items.is_empty());
         assert_eq!(page.raw_total, 0);
     }
@@ -439,7 +521,11 @@ mod tests {
     async fn federated_get_node_routes_to_correct_space() {
         let (svc, a, _) = build_two_space_service();
         let fid = FederatedNodeId::from_parts(&a, "file:a.rs:User:1").unwrap();
-        let node = svc.get_node(fid).await.expect("get_node ok").expect("Some");
+        let node = svc
+            .get_node(fid)
+            .await
+            .expect("get_node ok")
+            .expect("Some");
         assert_eq!(node.space_id, a);
         assert_eq!(node.node.id.as_str(), "file:a.rs:User:1");
     }
@@ -465,5 +551,13 @@ mod tests {
         let fid = FederatedNodeId::from_parts(&a, "file:a.rs:NoSuchNode:1").unwrap();
         let node = svc.get_node(fid).await.unwrap();
         assert!(node.is_none());
+    }
+
+    /// Suppress an unused-import warning for `HashMap` in the
+    /// `MockRepo` block above (the inner map is implicit in the
+    /// call site but the type itself is referenced).
+    #[allow(dead_code)]
+    fn _hashmap_compiles() -> HashMap<String, String> {
+        HashMap::new()
     }
 }

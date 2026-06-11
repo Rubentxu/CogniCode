@@ -1,21 +1,18 @@
-//! Federation primitives — `FederatedNodeId`, `FederatedNode`, the
-//! `FederatedGraphService`, the `SpaceRegistry`, the
-//! `MergeDetector`, and the `MergeCandidate` type.
+//! Federation primitives — re-exports from `cognicode-core`.
 //!
-//! Every type in this module is feature-gated behind the
-//! `multimodal` Cargo feature. On a default build the entire
-//! `federation` module is absent from the crate, so the byte-level
-//! shape of the public surface is unchanged.
+//! These types used to live in this crate. Phase 1 of the Graph
+//! Intelligence v2 roadmap moved them into `cognicode-core`
+//! (behind the `multimodal` feature gate) so future graph adapters
+//! in any consumer crate can compose against a canonical
+//! federation layer. The local files in `src/federation/` are
+//! kept as thin re-exports so the explorer's existing
+//! `crate::federation::*` import paths continue to work without
+//! breakage.
+//!
+//! Every re-export is feature-gated behind the `multimodal` Cargo
+//! feature. On a default build the entire `federation` module is
+//! absent from the crate, so the byte-level shape of the public
+//! surface is unchanged.
 
 #[cfg(feature = "multimodal")]
-pub mod federated_node_id;
-#[cfg(feature = "multimodal")]
-pub mod space_registry;
-#[cfg(feature = "multimodal")]
-pub mod federated_node;
-#[cfg(feature = "multimodal")]
-pub mod federated_graph_service;
-#[cfg(feature = "multimodal")]
-pub mod merge_candidate;
-#[cfg(feature = "multimodal")]
-pub mod merge_detector;
+pub use cognicode_core::domain::federation::*;

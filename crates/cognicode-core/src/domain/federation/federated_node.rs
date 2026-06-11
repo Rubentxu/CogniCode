@@ -11,11 +11,11 @@
 
 use std::fmt;
 
-use cognicode_core::domain::aggregates::generic_graph::GraphNode;
-use cognicode_core::domain::value_objects::SpaceId;
 use serde::{Deserialize, Serialize};
 
-use crate::federation::federated_node_id::FederatedNodeId;
+use crate::domain::aggregates::generic_graph::GraphNode;
+use crate::domain::federation::federated_node_id::FederatedNodeId;
+use crate::domain::value_objects::SpaceId;
 
 /// A `GraphNode` paired with the space it belongs to.
 ///
@@ -64,13 +64,16 @@ impl fmt::Display for FederatedNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cognicode_core::domain::aggregates::generic_graph::GraphNode;
-    use cognicode_core::domain::value_objects::node_kind::NodeKind;
+    use crate::domain::aggregates::generic_graph::GraphNode;
+    use crate::domain::value_objects::node_kind::NodeKind;
 
     fn make_node(id: &str) -> GraphNode {
-        GraphNode::builder(id, NodeKind::Symbol(cognicode_core::domain::value_objects::SymbolKind::Function))
-            .label("foo")
-            .build()
+        GraphNode::builder(
+            id,
+            NodeKind::Symbol(crate::domain::value_objects::SymbolKind::Function),
+        )
+        .label("foo")
+        .build()
     }
 
     /// `FederatedNode::new` stores the node and the space.

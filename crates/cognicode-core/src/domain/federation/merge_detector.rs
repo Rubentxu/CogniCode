@@ -24,11 +24,9 @@
 //! Gated behind the `multimodal` Cargo feature. Default builds
 //! do not include this module.
 
-use cognicode_core::domain::aggregates::generic_graph::GraphNode;
-use cognicode_core::domain::value_objects::node_kind::NodeKind;
-
-use crate::federation::federated_node::FederatedNode;
-use crate::federation::merge_candidate::{MergeCandidate, MergeReason};
+use crate::domain::aggregates::generic_graph::GraphNode;
+use crate::domain::federation::federated_node::FederatedNode;
+use crate::domain::federation::merge_candidate::{MergeCandidate, MergeReason};
 
 /// Threshold for the confidence filter. Pairs below this
 /// confidence are not surfaced. Locked by the spec.
@@ -147,15 +145,13 @@ fn property_overlap(a: &GraphNode, b: &GraphNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cognicode_core::domain::aggregates::generic_graph::GraphNode;
-    use cognicode_core::domain::value_objects::node_kind::NodeKind;
-    use cognicode_core::domain::value_objects::SpaceId;
-    use cognicode_core::domain::value_objects::SymbolKind;
+    use crate::domain::aggregates::generic_graph::GraphNode;
+    use crate::domain::value_objects::node_kind::NodeKind;
+    use crate::domain::value_objects::SpaceId;
+    use crate::domain::value_objects::SymbolKind;
 
     fn make_node(id: &str, label: &str, kind: NodeKind) -> GraphNode {
-        GraphNode::builder(id, kind)
-            .label(label)
-            .build()
+        GraphNode::builder(id, kind).label(label).build()
     }
 
     fn make_fnode(space: &str, id: &str, label: &str, kind: NodeKind) -> FederatedNode {

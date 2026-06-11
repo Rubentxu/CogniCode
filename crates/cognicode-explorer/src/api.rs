@@ -478,6 +478,7 @@ async fn rationale_handler(
     // 1) BFS rationale subgraph from the repository.
     let (nodes, edges, truncated) = graph_repo
         .rationale_subgraph(&focus, max_depth, max_nodes)
+        .map_err(ExplorerError::from)
         .map_err(ApiError)?;
 
     // 2) Compute corroboration scores.

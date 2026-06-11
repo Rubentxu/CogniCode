@@ -6,12 +6,12 @@
 //! contributing `MergeReason`s. Downstream tools and humans
 //! confirm.
 //!
-//! Gated behind the `multimodal` Cargo feature. Default builds
-//! do not include this module.
+//! Gated behind the `multimodal` Cargo feature. Default builds do
+//! not include this module.
 
 use serde::{Deserialize, Serialize};
 
-use crate::federation::federated_node::FederatedNode;
+use crate::domain::federation::federated_node::FederatedNode;
 
 /// A heuristic suggestion that two nodes might be the same
 /// real-world entity. Constructed by the [`MergeDetector`].
@@ -85,15 +85,18 @@ impl MergeCandidate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cognicode_core::domain::aggregates::generic_graph::GraphNode;
-    use cognicode_core::domain::value_objects::node_kind::NodeKind;
-    use cognicode_core::domain::value_objects::SpaceId;
+    use crate::domain::aggregates::generic_graph::GraphNode;
+    use crate::domain::value_objects::node_kind::NodeKind;
+    use crate::domain::value_objects::SpaceId;
 
     fn make_node(id: &str, label: &str) -> FederatedNode {
         FederatedNode::new(
-            GraphNode::builder(id, NodeKind::Symbol(cognicode_core::domain::value_objects::SymbolKind::Function))
-                .label(label)
-                .build(),
+            GraphNode::builder(
+                id,
+                NodeKind::Symbol(crate::domain::value_objects::SymbolKind::Function),
+            )
+            .label(label)
+            .build(),
             SpaceId::try_new("a").unwrap(),
         )
     }
