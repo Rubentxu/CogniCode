@@ -8,7 +8,7 @@ members = [
     "crates/cognicode-mcp",
     "crates/cognicode-cli",
     "crates/cognicode-sandbox",
-    "crates/rcode-debug",
+
     "crates/cognicode-macros",
     "crates/cognicode-axiom",
     "crates/cognicode-quality",

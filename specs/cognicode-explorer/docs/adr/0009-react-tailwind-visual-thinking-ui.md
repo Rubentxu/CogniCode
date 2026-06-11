@@ -1,3 +1,0 @@
-# React Tailwind Visual Thinking UI
-
-CogniCode Explorer will use React 19 and Tailwind CSS for its first real UI instead of reusing Leptos from `cognicode-dashboard`. Explorer is an independent product with a moldable Miller Columns workflow, so the frontend should prioritize a rich visual-thinking ecosystem while keeping the domain, API, MCP, evidence, lens, artifact, and graph contracts framework-agnostic. Visual libraries such as TanStack Query/Table/Virtual/Router, React Flow/xyflow, D3/visx, Cytoscape, ELK/Dagre, tldraw, Mermaid renderers, and similar tools may be selected per building block, but none of them becomes part of the domain model.

@@ -1,3 +1,0 @@
-# CogniCode Explorer Crate in CogniCode Workspace
-
-`cognicode-explorer` will start as a new crate inside `/home/rubentxu/Proyectos/rust/CogniCode/crates/cognicode-explorer` and will be registered as a workspace member. This keeps Explorer close to `cognicode-core`, `cognicode-db`, and the rest of the CogniCode family while preserving its independence from `cognicode-dashboard`. The initial crate provides shared DTOs, product-level service boundaries, an HTTP API binary, and an MCP binary scaffold; implementation behind the contracts can grow incrementally from the Symbol Inspector vertical slice.

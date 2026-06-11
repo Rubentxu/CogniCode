@@ -96,3 +96,5 @@ cognicode-*.tar.gz
 results/
 rust-clippy/
 .atl/
+specs/
+autoresearch/

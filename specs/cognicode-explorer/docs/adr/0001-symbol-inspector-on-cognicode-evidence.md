@@ -1,3 +1,0 @@
-# Symbol Inspector on CogniCode Evidence
-
-The MVP will start with a `Symbol Inspector` workflow backed by CogniCode code evidence, especially symbols, source locations, call graph relations, and persisted graph/cache data. Explorer owns the public API/MCP contracts; existing CogniCode core/db/tools are evidence providers behind ports/adapters, not the UI language. `cognicode-quality` remains available as a later quality lens, but it is not the product center because it is closer to SonarQube-style scanning than moldable exploration. Kuzu or another graph backend may be introduced later behind a portable graph abstraction, after the symbol-level Miller Columns workflow proves useful.

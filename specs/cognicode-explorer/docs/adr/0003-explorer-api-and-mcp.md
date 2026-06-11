@@ -1,3 +1,0 @@
-# Explorer API and Explorer MCP
-
-`cognicode-explorer` will expose both its own application API and its own MCP server because it is a separate product use of CogniCode evidence. The Explorer API is optimized for the visual app: Spotter search, Miller Columns state, contextual views, evidence retrieval, and decision artifact creation. The Explorer MCP is optimized for agents: guided exploration, inspectable object workflows, evidence-backed explanations, and artifact generation. Existing `cognicode-mcp` and `cognicode-quality` can feed Explorer, but they do not replace Explorer-owned contracts.

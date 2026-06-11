@@ -1,3 +1,0 @@
-# Module Candidate Before Module
-
-CogniCode Explorer will not treat folders or packages as modules automatically. In Phase 2, module-like groupings start as `ModuleCandidate` derived scopes: grouped files, grouped symbols, and dependency summaries inferred from repository structure or heuristics. A `ModuleCandidate` becomes a real `Module` inspectable object only when it has stable identity, an explicit boundary rule, member symbols, member files, typed incoming/outgoing relations, and evidence blocks for membership and relations. This preserves DDD discipline: folder is structure; module is a domain object with proof.

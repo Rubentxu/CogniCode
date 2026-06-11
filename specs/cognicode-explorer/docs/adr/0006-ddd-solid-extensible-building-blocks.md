@@ -1,3 +1,0 @@
-# DDD, SOLID, and Extensible Building Blocks
-
-CogniCode Explorer will be designed around DDD product language, SOLID boundaries, and explicit extension points. Core concepts such as workspace, scope, inspectable object, typed relation, evidence block, contextual view, lens, exploration path, and decision artifact are domain concepts, not UI widgets or database rows. Extractors, evidence sources, lenses, views, relation resolvers, renderers, artifact generators, agent workflows, and graph stores must be treated as building blocks behind small ports and replaceable adapters. This keeps the Symbol Inspector MVP small while allowing future implementations to extend the application's power without rewriting the core moldable exploration workflow.
