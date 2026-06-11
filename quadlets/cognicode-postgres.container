@@ -1,0 +1,28 @@
+[Unit]
+Description=CogniCode PostgreSQL 16
+After=local-fs.target
+
+[Container]
+ContainerName=cognicode-postgres
+Image=docker.io/library/postgres:16-alpine
+PublishPort=127.0.0.1:5432:5432
+
+Environment=POSTGRES_USER=cognicode
+Environment=POSTGRES_PASSWORD=cognicode
+Environment=POSTGRES_DB=cognicode
+Environment=POSTGRES_INITDB_ARGS=--encoding=UTF8
+
+Volume=cognicode-pgdata.volume:/var/lib/postgresql/data
+
+HealthCmd=pg_isready -U cognicode -d cognicode
+HealthInterval=5s
+HealthTimeout=3s
+HealthRetries=10
+HealthStartPeriod=5s
+
+[Service]
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

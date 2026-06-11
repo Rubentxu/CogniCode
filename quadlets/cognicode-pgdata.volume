@@ -1,0 +1,5 @@
+[Volume]
+VolumeName=cognicode-pgdata
+
+[Install]
+WantedBy=default.target
