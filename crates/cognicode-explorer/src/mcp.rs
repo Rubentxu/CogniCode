@@ -1240,7 +1240,6 @@ async fn dispatch(
                     "ttl must be in 0..=86400 (24h); 0 disables expiry",
                 );
             }
-            let ttl = args.ttl.unwrap_or(crate::session::DEFAULT_TTL_SECS);
             let session_id =
                 registry.open(workspace_id.clone(), ttl, service.clone(), graph.clone());
             // Multimodal (brain-federation): if the caller supplied
@@ -1903,6 +1902,11 @@ async fn dispatch_graph_search(
     } else if !page.item_ranks.is_empty() {
         // Length mismatch — defensive: truncate to the
         // shorter side so we never panic in release builds.
+        tracing::warn!(
+            "graph_search: item_ranks len {} != items len {}, truncating",
+            page.item_ranks.len(),
+            page.items.len()
+        );
         let n = page.item_ranks.len().min(page.items.len());
         page.item_ranks[..n].to_vec()
     } else {

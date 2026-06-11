@@ -1938,21 +1938,14 @@ fn uuid_v4_string() -> String {
     //   byte[6] = (b & 0x0F) | 0x40
     //   byte[8] = (b & 0x3F) | 0x80
     let mut chars: Vec<char> = hex.chars().collect();
-    let v4_idx = 14;
-    let c = chars[v4_idx];
-    let new_c = match c {
-        '0'..='9' => std::char::from_digit(c.to_digit(10).unwrap() + 4, 16).unwrap(),
-        other => other,
+    // Per RFC 4122 §4.4: version nibble at position 14 MUST be '4'.
+    chars[14] = '4';
+    // Variant bits at position 19 MUST be 10xx → '8', '9', 'a', or 'b'.
+    let v = chars[19];
+    chars[19] = match v {
+        '8' | '9' | 'a' | 'b' => v,
+        _ => '8',
     };
-    chars[v4_idx] = new_c;
-    let v_idx = 19;
-    let c = chars[v_idx];
-    let new_c = match c {
-        '0'..='7' => std::char::from_digit(c.to_digit(10).unwrap() + 8, 16).unwrap(),
-        '8'..='9' | 'a'..='f' => c,
-        other => other,
-    };
-    chars[v_idx] = new_c;
     chars.into_iter().collect()
 }
 
