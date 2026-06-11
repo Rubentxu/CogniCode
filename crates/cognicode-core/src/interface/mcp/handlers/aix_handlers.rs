@@ -95,33 +95,10 @@ pub async fn handle_smart_overview(
         },
     };
 
-    // B.1: Persist output for dashboard (agent-dashboard-improvements).
-    // Feature-gated behind `sqlite`: with the `sqlite` feature off,
-    // `open_db` returns `Err` and the body is skipped. DashMap /
-    // in-memory state still flows back to the caller.
-    #[cfg(feature = "sqlite")]
-    if let Ok(conn) = open_db(&ctx.working_dir) {
-        let json = serde_json::to_string(&result).unwrap_or_default();
-        let summary = format!(
-            "{} - {} files, {} hot paths",
-            result.project_type,
-            stats.file_count,
-            result.critical_hot_paths.len()
-        );
-        if let Err(e) = conn.execute(
-            "INSERT INTO agent_outputs (tool_name, session_id, output_json, summary_text, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![
-                "smart_overview",
-                None::<&str>,
-                json,
-                Some(summary),
-                chrono::Utc::now().to_rfc3339(),
-                None::<&str>,
-            ],
-        ) {
-            tracing::warn!("Failed to persist smart_overview output: {}", e);
-        }
-    }
+    // B.1: SQLite persistence of `agent_outputs` was removed in the
+    // Graph Intelligence v2 cleanup. The result is returned in-memory
+    // to the caller; downstream persistence happens via the
+    // `postgres` feature when configured.
 
     Ok(result)
 }
@@ -400,34 +377,8 @@ pub async fn handle_auto_diagnose(
         },
     };
 
-    // B.2: Persist output for dashboard (agent-dashboard-improvements).
-    // Feature-gated behind `sqlite`: with the feature off, persistence
-    // is skipped and the diagnosis result is still returned.
-    #[cfg(feature = "sqlite")]
-    if let Ok(conn) = open_db(&ctx.working_dir) {
-        let json = serde_json::to_string(&result).unwrap_or_default();
-        let summary = format!(
-            "Health score: {:.0}/100 - {} issues ({} critical, {} important, {} warning)",
-            result.health_score,
-            result.total_issues,
-            result.critical_count,
-            result.important_count,
-            result.warning_count
-        );
-        if let Err(e) = conn.execute(
-            "INSERT INTO agent_outputs (tool_name, session_id, output_json, summary_text, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![
-                "auto_diagnose",
-                None::<&str>,
-                json,
-                Some(summary),
-                chrono::Utc::now().to_rfc3339(),
-                None::<&str>,
-            ],
-        ) {
-            tracing::warn!("Failed to persist auto_diagnose output: {}", e);
-        }
-    }
+    // B.2: SQLite persistence of `agent_outputs` was removed in the
+    // Graph Intelligence v2 cleanup. The diagnosis is returned in-memory.
 
     Ok(result)
 }
@@ -1768,135 +1719,44 @@ fn build_review_plan(_ctx: &HandlerContext) -> HandlerResult<Vec<OnboardingStep>
 // AVC Tool Handlers
 // ============================================================================
 
-// `AvcValidator` is only used inside `handle_validate_contract`,
-// which is gated behind `sqlite`. With the feature off, the import
-// is dead.
-#[cfg_attr(not(feature = "sqlite"), allow(unused_imports))]
-use crate::infrastructure::avc::{AvcContract, AvcGenerator, AvcValidationResult, AvcValidator};
+// `AvcGenerator` is still used by S7000 (drift) inference and a few
+// other code paths. The `AvcContract` type remains in the public
+// surface so `handle_generate_contract` / `handle_validate_contract`
+// keep their declared signatures.
+use crate::infrastructure::avc::{AvcContract, AvcGenerator, AvcValidationResult};
 use crate::interface::mcp::schemas::{
     DetectDriftInput, DetectDriftOutput, DriftFinding, DriftSeverity, GenerateContractInput,
     ValidateContractInput,
 };
 
-/// Opens a SQLite connection to the cognicode database.
-/// Only compiled when the `sqlite` feature is enabled; with the
-/// feature off, a stub returns an error and the persistence calls
-/// become no-ops.
-#[cfg(feature = "sqlite")]
-fn open_db(working_dir: &std::path::Path) -> Result<rusqlite::Connection, String> {
-    let db_dir = working_dir.join(".cognicode");
-    std::fs::create_dir_all(&db_dir).map_err(|e| e.to_string())?;
-    let db_path = db_dir.join("cognicode.db");
-    let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-    Ok(conn)
-}
-
-/// No-`sqlite` stub: always reports the feature is disabled so callers
-/// can degrade gracefully (skip persistence, return empty lists, etc.).
-#[cfg(not(feature = "sqlite"))]
-#[allow(dead_code)]
-fn open_db(working_dir: &std::path::Path) -> Result<std::convert::Infallible, String> {
-    let _ = working_dir;
-    Err("sqlite feature disabled".to_string())
-}
-
 /// Handler for generate_contract tool (AVC-1)
-#[cfg(feature = "sqlite")]
-pub async fn handle_generate_contract(
-    ctx: &HandlerContext,
-    input: GenerateContractInput,
-) -> HandlerResult<AvcContract> {
-    // Validate file path
-    let resolved_path = ctx
-        .validator
-        .validate_file_path(&input.file_path)
-        .map_err(|e| HandlerError::InvalidInput(format!("Invalid file path: {}", e)))?;
-
-    // Read file content
-    let source = std::fs::read_to_string(&resolved_path)
-        .map_err(|e| HandlerError::NotFound(format!("File not found: {}", e)))?;
-
-    // Generate AVC contract
-    let contract =
-        AvcGenerator::generate_from_source(&source, &input.function_name, &input.file_path)
-            .ok_or_else(|| {
-                HandlerError::NotFound(format!(
-                    "Function '{}' not found in {}",
-                    input.function_name, input.file_path
-                ))
-            })?;
-
-    // Persist contract to database
-    if let Ok(conn) = open_db(&ctx.working_dir) {
-        let json = serde_json::to_string(&contract).unwrap_or_default();
-        if let Err(e) = conn.execute(
-            "INSERT OR REPLACE INTO avc_contracts (id, source_file, function_name, contract_json, generated_at, compliance_score) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![
-                contract.contract_id,
-                contract.source_of_truth,
-                "",
-                json,
-                chrono::Utc::now().to_rfc3339(),
-                1.0
-            ],
-        ) {
-            tracing::warn!("Failed to persist contract: {}", e);
-        }
-    }
-
-    Ok(contract)
-}
-
-/// No-`sqlite` stub: contract persistence is unavailable, so the
-/// generator cannot persist contracts. The function is still callable
-/// from the dispatch layer so that `--no-default-features` builds link.
-#[cfg(not(feature = "sqlite"))]
+///
+/// Contract persistence was tied to SQLite, which was removed in the
+/// Graph Intelligence v2 cleanup. The handler is kept as a stable
+/// dispatch surface so existing MCP tool wiring still links, but
+/// contract generation is no longer available until a PostgreSQL
+/// adapter lands.
 pub async fn handle_generate_contract(
     _ctx: &HandlerContext,
     _input: GenerateContractInput,
 ) -> HandlerResult<AvcContract> {
     Err(HandlerError::Internal(
-        "generate_contract requires the `sqlite` feature (cognicode-core/sqlite)".to_string(),
+        "generate_contract requires a persistence layer (PostgreSQL via the `postgres` feature)"
+            .to_string(),
     ))
 }
 
 /// Handler for validate_contract tool (AVC-2)
-#[cfg(feature = "sqlite")]
-pub async fn handle_validate_contract(
-    ctx: &HandlerContext,
-    input: ValidateContractInput,
-) -> HandlerResult<AvcValidationResult> {
-    // Load contract from database
-    let contract_json = open_db(&ctx.working_dir)
-        .map_err(|e| HandlerError::Internal(format!("DB error: {}", e)))?
-        .query_row(
-            "SELECT contract_json FROM avc_contracts WHERE id = ?1",
-            rusqlite::params![input.contract_id],
-            |row| {
-                let json: String = row.get(0)?;
-                Ok(json)
-            },
-        )
-        .map_err(|_| HandlerError::NotFound(format!("Contract {} not found", input.contract_id)))?;
-
-    let contract: AvcContract = serde_json::from_str(&contract_json)
-        .map_err(|e| HandlerError::Internal(format!("Invalid contract JSON: {}", e)))?;
-
-    let result = AvcValidator::validate(&contract, &input.generated_code);
-
-    Ok(result)
-}
-
-/// No-`sqlite` stub: contract persistence is unavailable, so the
-/// validator cannot load any contract. Returns an `Internal` error
-/// pointing the caller at the missing feature.
-#[cfg(not(feature = "sqlite"))]
+///
+/// See `handle_generate_contract` — validation is unavailable without
+/// a persistence layer to load the contract from.
 pub async fn handle_validate_contract(
     _ctx: &HandlerContext,
     _input: ValidateContractInput,
 ) -> HandlerResult<AvcValidationResult> {
     Err(HandlerError::Internal(
-        "validate_contract requires the `sqlite` feature (cognicode-core/sqlite)".to_string(),
+        "validate_contract requires a persistence layer (PostgreSQL via the `postgres` feature)"
+            .to_string(),
     ))
 }
 
@@ -2615,87 +2475,13 @@ fn check_node_for_forbidden_terms(
     }
 }
 
-/// Persist findings to database if connection is available.
-/// Feature-gated behind `sqlite`; with the feature off, the no-op
-/// stub below is compiled instead.
-#[cfg(feature = "sqlite")]
-async fn persist_findings(
-    ctx: &HandlerContext,
-    file_path: &std::path::Path,
-    findings: &[DriftFinding],
-) -> usize {
-    let Some(ref conn_arc) = ctx.db_conn else {
-        tracing::debug!("No db_conn configured, skipping drift event persistence");
-        return 0;
-    };
-
-    let conn_guard = match conn_arc.lock() {
-        Ok(guard) => guard,
-        Err(e) => {
-            tracing::warn!("Failed to lock db_conn for drift persistence: {}", e);
-            return 0;
-        }
-    };
-
-    let conn = match conn_guard.as_ref() {
-        Some(conn) => conn,
-        None => {
-            tracing::debug!("db_conn was None, skipping drift event persistence");
-            return 0;
-        }
-    };
-
-    // Use raw SQL to insert drift events (avoiding cognicode-db dep to prevent cycle)
-    // The drift_events table schema: id, timestamp, file_path, function_name, drift_score, intent, severity
-    let mut persisted = 0;
-
-    for finding in findings {
-        let timestamp = chrono::Utc::now().to_rfc3339();
-        let severity = finding.severity.as_str();
-
-        let result = conn.execute(
-            "INSERT INTO drift_events (timestamp, file_path, function_name, drift_score, intent, severity) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![
-                timestamp,
-                file_path.to_string_lossy(),
-                finding.function_name,
-                finding.drift_score as f64,
-                finding.message,
-                severity,
-            ],
-        );
-
-        match result {
-            Ok(_) => {
-                persisted += 1;
-                tracing::debug!(
-                    "Persisted drift event for {}:{} (score={:.2})",
-                    file_path.display(),
-                    finding.function_name,
-                    finding.drift_score
-                );
-            }
-            Err(e) => {
-                // Check for "no such table" error (drift_events table may not exist)
-                if matches!(e, rusqlite::Error::SqliteFailure(_, _)) {
-                    tracing::debug!(
-                        "drift_events table not available, skipping persistence: {}",
-                        e
-                    );
-                } else {
-                    tracing::warn!("Failed to persist drift event: {}", e);
-                }
-                // Continue with other findings
-            }
-        }
-    }
-
-    persisted
-}
-
-/// No-`sqlite` stub: drift event persistence is unavailable.
-#[cfg(not(feature = "sqlite"))]
-#[allow(clippy::unused_async)]
+/// Persist findings to database if a persistence layer is configured.
+///
+/// Drift event persistence was tied to SQLite, which was removed in
+/// the Graph Intelligence v2 cleanup. The hook remains so callers
+/// (e.g. `handle_detect_drift`) keep linking, but the persistence
+/// is a no-op until a PostgreSQL adapter lands.
+#[allow(clippy::unused_async, dead_code)]
 async fn persist_findings(
     _ctx: &HandlerContext,
     _file_path: &std::path::Path,
@@ -2721,121 +2507,20 @@ fn calculate_hotness_score(fan_in: usize, fan_out: usize) -> f32 {
 // Agent Task Tools (Batch D - Bidirectional Interaction)
 // ============================================================================
 
-// `AgentTaskDto` is only used by the sqlite `handle_poll_tasks`
-// implementation (it deserialises row data into the DTO). The
-// no-sqlite stub returns an empty list without touching the type.
-#[cfg_attr(not(feature = "sqlite"), allow(unused_imports))]
+// `CompleteTaskInput` and `PollTasksInput` are public schema types —
+// the dispatch layer wires them up. The DTOs are still used by the
+// empty-list stubs so consumers see a stable return shape.
 use crate::interface::mcp::schemas::{
-    AgentTaskDto, CompleteTaskInput, CompleteTaskOutput, PollTasksInput, PollTasksOutput,
+    CompleteTaskInput, CompleteTaskOutput, PollTasksInput, PollTasksOutput,
 };
 
 /// Handler for poll_tasks tool — claim pending tasks for execution
-#[cfg(feature = "sqlite")]
-pub async fn handle_poll_tasks(
-    ctx: &HandlerContext,
-    input: PollTasksInput,
-) -> HandlerResult<PollTasksOutput> {
-    let limit = input.limit.max(1).min(100) as i64; // Clamp between 1 and 100
-
-    // Gracefully handle case where DB is not available
-    let conn = match open_db(&ctx.working_dir) {
-        Ok(conn) => conn,
-        Err(_) => {
-            // Database not available - return empty list
-            return Ok(PollTasksOutput { tasks: vec![] });
-        }
-    };
-
-    let now = chrono::Utc::now().to_rfc3339();
-
-    // Get the IDs of tasks to claim (ordered by priority desc, created_at asc)
-    let mut select_stmt = match conn.prepare(
-        "SELECT id FROM agent_tasks WHERE status = 'pending' ORDER BY priority DESC, created_at ASC LIMIT ?1"
-    ) {
-        Ok(stmt) => stmt,
-        Err(_) => {
-            // Table might not exist - return empty list
-            return Ok(PollTasksOutput { tasks: vec![] });
-        }
-    };
-
-    let ids: Vec<i64> = match select_stmt.query_map(rusqlite::params![limit], |row| row.get(0)) {
-        Ok(rows) => rows.collect::<Result<Vec<_>, _>>().unwrap_or_default(),
-        Err(_) => return Ok(PollTasksOutput { tasks: vec![] }),
-    };
-
-    if ids.is_empty() {
-        return Ok(PollTasksOutput { tasks: vec![] });
-    }
-
-    // Build dynamic UPDATE with IN clause
-    let in_clause: String = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let update_sql = format!(
-        "UPDATE agent_tasks SET status = 'in_progress', assigned_at = ?1 WHERE id IN ({})",
-        in_clause
-    );
-
-    // Build params: now first, then all ids
-    let mut all_params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(now)];
-    for id in &ids {
-        all_params.push(Box::new(*id));
-    }
-    let params_refs: Vec<&dyn rusqlite::ToSql> = all_params.iter().map(|b| b.as_ref()).collect();
-
-    if let Err(e) = conn.execute(&update_sql, params_refs.as_slice()) {
-        tracing::warn!("Failed to claim tasks: {}", e);
-        return Ok(PollTasksOutput { tasks: vec![] });
-    }
-
-    // Fetch the claimed tasks
-    let case_order: String = ids
-        .iter()
-        .enumerate()
-        .map(|(i, id)| format!("WHEN {} THEN {}", id, i))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let fetch_sql = format!(
-        "SELECT id, task_type, priority, payload_json, status, created_by, created_at, assigned_at, completed_at, result_json, error_message FROM agent_tasks WHERE id IN ({}) ORDER BY CASE id {} END",
-        in_clause, case_order
-    );
-
-    let mut fetch_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-    for id in &ids {
-        fetch_params.push(Box::new(*id));
-    }
-    let fetch_params_refs: Vec<&dyn rusqlite::ToSql> =
-        fetch_params.iter().map(|b| b.as_ref()).collect();
-
-    let mut fetch_stmt = match conn.prepare(&fetch_sql) {
-        Ok(stmt) => stmt,
-        Err(_) => return Ok(PollTasksOutput { tasks: vec![] }),
-    };
-
-    let tasks: Vec<AgentTaskDto> = match fetch_stmt.query_map(fetch_params_refs.as_slice(), |row| {
-        Ok(AgentTaskDto {
-            id: row.get(0)?,
-            task_type: row.get(1)?,
-            priority: row.get(2)?,
-            payload_json: row.get(3)?,
-            status: row.get(4)?,
-            created_by: row.get(5)?,
-            created_at: row.get(6)?,
-            assigned_at: row.get(7)?,
-            completed_at: row.get(8)?,
-            result_json: row.get(9)?,
-            error_message: row.get(10)?,
-        })
-    }) {
-        Ok(rows) => rows.collect::<Result<Vec<_>, _>>().unwrap_or_default(),
-        Err(_) => return Ok(PollTasksOutput { tasks: vec![] }),
-    };
-
-    Ok(PollTasksOutput { tasks })
-}
-
-/// No-`sqlite` stub: agent task polling requires a SQLite store.
-/// Returns an empty task list so the dispatch layer still links.
-#[cfg(not(feature = "sqlite"))]
+///
+/// Polling requires a persistence layer to read pending tasks from.
+/// SQLite was removed in the Graph Intelligence v2 cleanup, so this
+/// returns an empty list. The dispatch layer keeps linking; the
+/// handler will gain real implementation when the PostgreSQL adapter
+/// lands.
 pub async fn handle_poll_tasks(
     _ctx: &HandlerContext,
     _input: PollTasksInput,
@@ -2844,60 +2529,17 @@ pub async fn handle_poll_tasks(
 }
 
 /// Handler for complete_task tool — mark a task as completed
-#[cfg(feature = "sqlite")]
-pub async fn handle_complete_task(
-    ctx: &HandlerContext,
-    input: CompleteTaskInput,
-) -> HandlerResult<CompleteTaskOutput> {
-    // Validate status
-    let status = match input.status.as_str() {
-        "completed" | "failed" => input.status.clone(),
-        _ => {
-            return Err(HandlerError::InvalidInput(
-                "status must be 'completed' or 'failed'".to_string(),
-            ));
-        }
-    };
-
-    let conn = open_db(&ctx.working_dir)
-        .map_err(|e| HandlerError::Internal(format!("DB error: {}", e)))?;
-
-    let now = chrono::Utc::now().to_rfc3339();
-
-    // Determine error message based on status
-    let error_message: Option<String> = if status == "failed" {
-        input.error_message.clone()
-    } else {
-        None
-    };
-
-    conn.execute(
-        "UPDATE agent_tasks SET status = ?1, completed_at = ?2, result_json = ?3, error_message = ?4 WHERE id = ?5",
-        rusqlite::params![
-            status,
-            now,
-            input.result_json,
-            error_message,
-            input.task_id,
-        ],
-    ).map_err(|e| HandlerError::Internal(format!("Failed to complete task: {}", e)))?;
-
-    Ok(CompleteTaskOutput {
-        success: true,
-        message: format!("Task {} marked as {}", input.task_id, status),
-    })
-}
-
-/// No-`sqlite` stub: complete_task without a SQLite store cannot
-/// persist completion. The status validation still runs and the
-/// function reports success:false with an explanatory message so
-/// the dispatch layer still links.
-#[cfg(not(feature = "sqlite"))]
+///
+/// Completion requires a persistence layer to write the status back.
+/// SQLite was removed in the Graph Intelligence v2 cleanup, so this
+/// validates the input but reports success:false. The dispatch layer
+/// keeps linking; the handler will gain real implementation when the
+/// PostgreSQL adapter lands.
 pub async fn handle_complete_task(
     _ctx: &HandlerContext,
     input: CompleteTaskInput,
 ) -> HandlerResult<CompleteTaskOutput> {
-    // Validate status (mirror the sqlite path's input validation)
+    // Validate status (mirror the previous sqlite path's input validation)
     let status = match input.status.as_str() {
         "completed" | "failed" => input.status.clone(),
         _ => {
@@ -2910,7 +2552,8 @@ pub async fn handle_complete_task(
     Ok(CompleteTaskOutput {
         success: false,
         message: format!(
-            "Task {} cannot be marked as {} — sqlite feature disabled",
+            "Task {} cannot be marked as {} — persistence layer is unavailable \
+             (enable the `postgres` feature for a working implementation)",
             input.task_id, status
         ),
     })
@@ -4904,143 +4547,6 @@ def process_data(data):
             output.tasks.is_empty(),
             "Should return empty when no pending tasks"
         );
-    }
-
-    #[tokio::test]
-    #[cfg(feature = "sqlite")]
-    async fn test_poll_tasks_claims_pending_tasks() {
-        let temp = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
-
-        // Create test database with agent_tasks table
-        let db_path = temp.path().join(".cognicode").join("cognicode.db");
-        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
-        let conn = rusqlite::Connection::open(&db_path).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS agent_tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_type TEXT NOT NULL,
-                priority INTEGER NOT NULL DEFAULT 5,
-                payload_json TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending',
-                created_by TEXT DEFAULT 'dashboard',
-                created_at TEXT NOT NULL,
-                assigned_at TEXT,
-                completed_at TEXT,
-                result_json TEXT,
-                error_message TEXT
-            );",
-        )
-        .unwrap();
-
-        // Insert a test task
-        conn.execute(
-            "INSERT INTO agent_tasks (task_type, priority, payload_json, status, created_by, created_at) VALUES ('test_task', 5, '{}', 'pending', 'tester', '2024-01-01T00:00:00Z')",
-            [],
-        ).unwrap();
-
-        let input = PollTasksInput { limit: 10 };
-        let result = handle_poll_tasks(&ctx, input).await;
-        assert!(result.is_ok());
-        let output = result.unwrap();
-        assert_eq!(output.tasks.len(), 1, "Should return the pending task");
-        assert_eq!(output.tasks[0].task_type, "test_task");
-        assert_eq!(
-            output.tasks[0].status, "in_progress",
-            "Task should be claimed"
-        );
-    }
-
-    #[tokio::test]
-    #[cfg(feature = "sqlite")]
-    async fn test_complete_task_marks_as_completed() {
-        let temp = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
-
-        // Create test database with agent_tasks table
-        let db_path = temp.path().join(".cognicode").join("cognicode.db");
-        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
-        let conn = rusqlite::Connection::open(&db_path).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS agent_tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_type TEXT NOT NULL,
-                priority INTEGER NOT NULL DEFAULT 5,
-                payload_json TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending',
-                created_by TEXT DEFAULT 'dashboard',
-                created_at TEXT NOT NULL,
-                assigned_at TEXT,
-                completed_at TEXT,
-                result_json TEXT,
-                error_message TEXT
-            );",
-        )
-        .unwrap();
-
-        // Insert a test task
-        conn.execute(
-            "INSERT INTO agent_tasks (task_type, priority, payload_json, status, created_by, created_at) VALUES ('test_task', 5, '{}', 'in_progress', 'tester', '2024-01-01T00:00:00Z')",
-            [],
-        ).unwrap();
-
-        let input = CompleteTaskInput {
-            task_id: 1,
-            status: "completed".to_string(),
-            result_json: Some(r#"{"result": "success"}"#.to_string()),
-            error_message: None,
-        };
-        let result = handle_complete_task(&ctx, input).await;
-        assert!(result.is_ok());
-        let output = result.unwrap();
-        assert!(output.success);
-        assert!(output.message.contains("completed"));
-    }
-
-    #[tokio::test]
-    #[cfg(feature = "sqlite")]
-    async fn test_complete_task_marks_as_failed() {
-        let temp = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
-
-        // Create test database with agent_tasks table
-        let db_path = temp.path().join(".cognicode").join("cognicode.db");
-        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
-        let conn = rusqlite::Connection::open(&db_path).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS agent_tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task_type TEXT NOT NULL,
-                priority INTEGER NOT NULL DEFAULT 5,
-                payload_json TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending',
-                created_by TEXT DEFAULT 'dashboard',
-                created_at TEXT NOT NULL,
-                assigned_at TEXT,
-                completed_at TEXT,
-                result_json TEXT,
-                error_message TEXT
-            );",
-        )
-        .unwrap();
-
-        // Insert a test task
-        conn.execute(
-            "INSERT INTO agent_tasks (task_type, priority, payload_json, status, created_by, created_at) VALUES ('test_task', 5, '{}', 'in_progress', 'tester', '2024-01-01T00:00:00Z')",
-            [],
-        ).unwrap();
-
-        let input = CompleteTaskInput {
-            task_id: 1,
-            status: "failed".to_string(),
-            result_json: None,
-            error_message: Some("Something went wrong".to_string()),
-        };
-        let result = handle_complete_task(&ctx, input).await;
-        assert!(result.is_ok());
-        let output = result.unwrap();
-        assert!(output.success);
-        assert!(output.message.contains("failed"));
     }
 
     #[tokio::test]

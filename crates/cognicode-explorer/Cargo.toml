@@ -18,20 +18,19 @@ name = "cognicode-explorer-mcp"
 path = "src/bin/mcp.rs"
 
 [features]
-# PR 2 (postgres-default-config): default flipped from `["sqlite"]` to
-# `["postgres"]`. The explorer now defaults to a PG-first build; the
-# CLI's `--sqlite` flag is honored only when the `sqlite` feature is
-# also enabled (e.g. for local development without a PG instance).
+# Default flipped from `["sqlite"]` to `["postgres"]` in PR 2
+# (`postgres-default-config`). The `sqlite` feature was then
+# removed in the Graph Intelligence v2 cleanup. The explorer's
+# `changed_only` flag and SQLite-backed graph store / adapters
+# (e.g. `SqliteGraphStore`, `sqlite_quality_adapter`,
+# `fts5_search_adapter`) were removed with it — the explorer
+# now uses the in-memory `GraphStore` only, with the
+# `postgres` feature adding an optional PG-bridged store.
 default = ["postgres"]
 # `postgres` is the default. When enabled, the explorer can load a
 # `CallGraph` from PostgreSQL at binary startup (see
 # `postgres_bridge.rs`). Adds `sqlx` + `async-trait`.
 postgres = ["cognicode-core/postgres", "dep:sqlx", "dep:async-trait"]
-# `sqlite` is an opt-in feature. When enabled, the workspace
-# `rusqlite` dep is pulled in through `cognicode-core/sqlite` and
-# `cognicode-db/sqlite` (the explorer always depends on
-# `cognicode-db`). Default build stays rusqlite-free.
-sqlite = ["cognicode-core/sqlite", "cognicode-db/sqlite", "dep:rusqlite"]
 # Exposes test-only accessors (e.g. `ExplorerMcpHandler::registry`)
 # so integration tests outside the crate can drive the
 # brain-session lifecycle.
@@ -44,8 +43,6 @@ multimodal = ["cognicode-core/multimodal"]
 
 [dependencies]
 cognicode-core.workspace = true
-cognicode-db.workspace = true
-rusqlite = { workspace = true, optional = true }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true

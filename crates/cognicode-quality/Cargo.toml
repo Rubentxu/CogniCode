@@ -14,15 +14,14 @@ name = "cognicode_quality"
 path = "src/lib.rs"
 
 [features]
-# Forward the `sqlite` feature to `cognicode-db` and `cognicode-core`.
-# Default is empty — rusqlite is opt-in via the `sqlite` feature.
+# Default is empty. The `sqlite` feature was removed in the
+# Graph Intelligence v2 cleanup. When a PostgreSQL-backed
+# `AnalysisState` lands, the default will flip to `["postgres"]`.
 default = []
-sqlite = ["cognicode-db/sqlite", "cognicode-core/sqlite"]
 
 [dependencies]
 cognicode-axiom.workspace = true
 cognicode-core.workspace = true
-cognicode-db.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -39,7 +38,6 @@ dirs-next = "2"
 serde_yaml = "0.9"
 blake3.workspace = true
 chrono.workspace = true
-rusqlite.workspace = true
 fs2 = "0.4"
 
 [dev-dependencies]

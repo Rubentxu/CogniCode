@@ -6,13 +6,11 @@ edition.workspace = true
 authors.workspace = true
 
 [features]
-# Default is now `["persistence", "postgres"]`. The deferred
-# `postgres-default-config` follow-up slice gated every
-# `rusqlite::` call site in `cognicode-core` (3 files: handlers
-# `mod.rs`, `aix_handlers.rs`, and `semantic_search.rs`), so the
-# crate builds cleanly without `sqlite`. SQLite remains opt-in via
-# the `sqlite` feature for callers that want the dashboard / agent
-# telemetry / FTS5 batch paths.
+# Default is `["persistence", "postgres"]`. The Graph Intelligence v2
+# cleanup removed the `sqlite` feature and its gated code paths
+# (`open_db`, `open_fts_db`, `record_tool_usage`, agent_outputs
+# persistence, dashboard telemetry) — the workspace default build is
+# rusqlite-free. PostgreSQL remains the canonical persistence layer.
 default = ["persistence", "postgres"]
 rig = ["dep:rig-core"]
 persistence = ["dep:blake3"]
@@ -20,11 +18,6 @@ persistence = ["dep:blake3"]
 # When enabled, the workspace `sqlx` dep is pulled in with its
 # `runtime-tokio` + `postgres` features.
 postgres = ["dep:sqlx"]
-# `sqlite` is an opt-in feature. When enabled, the workspace
-# `rusqlite` dep (with the `bundled` feature) is pulled in and the
-# gated `open_db` / `open_fts_db` / `record_tool_usage` / AVC
-# persistence paths become available. Off by default.
-sqlite = ["dep:rusqlite"]
 # `multimodal` is an opt-in feature that enables the Generic Graph
 # Layer (`NodeKind`, `EdgeKind`, `NodeId`, `GraphNode`, `GraphEdge`)
 # and the docs-source adapter (`SourceExtractor`, `DocsExtractor`,
@@ -121,8 +114,6 @@ pulldown-cmark.workspace = true
 # is now deprecated and has zero Rust-level uses in this crate. The crate remains
 # in the workspace for now; removal is scheduled for after the PostgreSQL adapter
 # lands. See crates/cognicode-store-traits/src/lib.rs for the migration map.)
-
-rusqlite = { workspace = true, optional = true }
 
 # PostgreSQL async driver — optional, gated behind the `postgres` feature.
 # When the feature is off, this dep is absent from the build graph.

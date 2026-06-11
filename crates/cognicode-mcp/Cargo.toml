@@ -14,10 +14,9 @@ name = "mcp-client"
 path = "src/mcp_client.rs"
 
 [features]
-# Forward the `sqlite` feature to `cognicode-db` and `cognicode-core`.
-# Default is empty — rusqlite is opt-in via the `sqlite` feature.
+# Default is empty — the workspace default (PG-only) is used when no
+# features are specified.
 default = []
-sqlite = ["cognicode-db/sqlite", "cognicode-core/sqlite"]
 # Forwarded to `cognicode-core` so MCP handlers can use PostgreSQL.
 postgres = ["cognicode-core/postgres"]
 # `multimodal` is an opt-in feature that enables the multimodal MCP
@@ -26,7 +25,6 @@ multimodal = ["cognicode-core/multimodal"]
 
 [dependencies]
 cognicode-core = { workspace = true }
-cognicode-diagram = { path = "../cognicode-diagram" }
 cognicode-db = { path = "../cognicode-db" }
 tokio.workspace = true
 serde.workspace = true

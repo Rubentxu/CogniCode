@@ -3,24 +3,19 @@ name = "cognicode-db"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-description = "Shared SQLite persistence layer for cognicode-mcp and cognicode-quality"
+description = "Shared persistence layer for CogniCode MCP servers (deprecated — SQLite removed in the Graph Intelligence v2 cleanup)"
 
 [features]
-# Default is empty — rusqlite is opt-in via the `sqlite` feature.
-# The workspace default is now PostgreSQL.
+# Default is empty — the `sqlite` feature was removed in the
+# Graph Intelligence v2 cleanup. The crate is kept in the workspace
+# as a placeholder for the upcoming PostgreSQL-backed reimplementation;
+# the source modules are temporarily all gated off (see lib.rs).
 default = []
-# `sqlite` is the canonical opt-in feature. When enabled, the workspace
-# `rusqlite` dep is pulled in. This crate is the canonical SQLite
-# persistence layer used by cognicode-mcp and cognicode-quality — when
-# the upstream workspace flips to PG default, this crate must be
-# reachable in rusqlite-free builds.
-sqlite = ["dep:rusqlite"]
 # Test-only accessors used by integration tests outside the crate
 # (mirrors the `test-utils` feature on cognicode-explorer).
 test-utils = []
 
 [dependencies]
-rusqlite = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true

@@ -1,7 +1,7 @@
 //! CogniCode MCP Server Binary
 
 use clap::Parser;
-use diagram_handler::DiagramAwareHandler;
+use cognicode_core::interface::mcp::CogniCodeHandler;
 use opentelemetry::global;
 use opentelemetry_otlp::MetricExporter;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
@@ -9,8 +9,6 @@ use rayon::ThreadPoolBuilder;
 use rmcp::transport::io::stdio;
 use std::path::PathBuf;
 use tracing::info;
-
-mod diagram_handler;
 
 #[derive(Parser)]
 #[command(name = "cognicode-mcp", version, about)]
@@ -78,23 +76,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting CogniCode MCP Server v{}", env!("CARGO_PKG_VERSION"));
 
-    // Use the diagram-aware handler that wraps CogniCodeHandler + diagram tools
-    // Try SQLite persistence first (opt-in), fall back to in-memory
-    let handler = {
-        #[cfg(feature = "sqlite")]
-        {
-            let db_path = args.cwd.join(".cognicode/cognicode.db");
-            if let Ok(store) = cognicode_db::graph::SqliteGraphStore::open(&db_path) {
-                DiagramAwareHandler::with_graph_store(args.cwd, Box::new(store))
-            } else {
-                DiagramAwareHandler::new(args.cwd)
-            }
-        }
-        #[cfg(not(feature = "sqlite"))]
-        {
-            DiagramAwareHandler::new(args.cwd)
-        }
-    };
+    // Build the MCP handler. SQLite persistence was removed in the
+    // Graph Intelligence v2 cleanup — the handler now relies on the
+    // in-memory GraphStore (callers that need durable state use the
+    // `postgres` feature).
+    let handler = CogniCodeHandler::new(args.cwd);
     let transport = stdio();
     let server = rmcp::serve_server(handler, transport).await?;
 

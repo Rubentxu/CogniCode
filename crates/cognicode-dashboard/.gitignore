@@ -1,8 +1,0 @@
-# WASM build output
-dist/
-pkg/
-
-# Build artifacts
-*.wasm
-*.rlib
-*.d

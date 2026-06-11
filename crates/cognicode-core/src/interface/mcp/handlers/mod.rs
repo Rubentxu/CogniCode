@@ -227,19 +227,6 @@ pub struct HandlerContext {
     pub graph_store: Option<Arc<dyn GraphStore>>,
     /// Optional CodeIntelligenceProvider for LSP operations. Falls back to creating CompositeProvider if None.
     pub code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
-    /// Optional database connection for agent telemetry (Phase 3A).
-    /// Wrapped in Mutex because `rusqlite::Connection` is not `Sync`.
-    ///
-    /// Feature-gated behind `sqlite` (see `postgres-default-config`):
-    /// when the `sqlite` feature is disabled, this field is `None`
-    /// and telemetry calls become no-ops.
-    #[cfg(feature = "sqlite")]
-    pub db_conn: Option<Arc<Mutex<Option<rusqlite::Connection>>>>,
-    /// Stub for the no-`sqlite` build. Always `None` and unused; the
-    /// type is the unit `()` so the field is a no-op when the feature
-    /// is off.
-    #[cfg(not(feature = "sqlite"))]
-    pub db_conn: Option<Arc<Mutex<Option<()>>>>,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -279,7 +266,6 @@ impl HandlerContext {
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
             code_intelligence_provider: None,
-            db_conn: None,
         }
     }
 
@@ -300,7 +286,6 @@ impl HandlerContext {
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
             code_intelligence_provider: None,
-            db_conn: None,
         }
     }
 
@@ -325,7 +310,6 @@ impl HandlerContext {
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
             code_intelligence_provider: None,
-            db_conn: None,
         }
     }
 
@@ -350,7 +334,6 @@ impl HandlerContext {
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
             code_intelligence_provider: None,
-            db_conn: None,
         }
     }
 
@@ -378,7 +361,6 @@ impl HandlerContext {
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
             code_intelligence_provider: Some(provider),
-            db_conn: None,
         }
     }
 
@@ -439,103 +421,14 @@ impl HandlerContext {
         }
     }
 
-    /// Create a HandlerContext with a pre-configured database connection for telemetry
-    #[cfg(feature = "sqlite")]
-    pub fn with_db_conn(working_dir: PathBuf, conn: rusqlite::Connection) -> Self {
-        let mut ctx = Self::new(working_dir);
-        ctx.db_conn = Some(Arc::new(Mutex::new(Some(conn))));
-        ctx
-    }
-
-    /// Stub for the no-`sqlite` build — telemetry is a no-op.
-    #[cfg(not(feature = "sqlite"))]
-    pub fn with_db_conn(working_dir: PathBuf, _conn: ()) -> Self {
-        Self::new(working_dir)
-    }
-
-    /// Records an MCP tool usage event to the database (best-effort).
+    /// Records an MCP tool usage event for telemetry.
     ///
-    /// This is a fire-and-forget operation: failures are logged but not propagated.
-    /// If no database connection is configured, this is a no-op.
-    ///
-    /// # Arguments
-    /// * `tool_name` - Name of the MCP tool
-    /// * `result_summary` - Truncated JSON summary of the result (max 256 chars)
-    /// * `duration_ms` - Tool execution duration in milliseconds
-    /// * `contract_id` - Optional contract ID for AVC tools
-    #[cfg(feature = "sqlite")]
-    pub fn record_tool_usage(
-        &self,
-        tool_name: &str,
-        result_summary: &str,
-        duration_ms: f64,
-        contract_id: Option<&str>,
-    ) {
-        let Some(ref conn_arc) = self.db_conn else {
-            // No database connection configured - graceful degradation
-            tracing::debug!(
-                "No db_conn configured, skipping tool telemetry for {}",
-                tool_name
-            );
-            return;
-        };
-
-        let conn_guard = match conn_arc.lock() {
-            Ok(guard) => guard,
-            Err(e) => {
-                tracing::warn!("Failed to lock db_conn for {}: {}", tool_name, e);
-                return;
-            }
-        };
-
-        let conn = match conn_guard.as_ref() {
-            Some(conn) => conn,
-            None => {
-                // Connection was dropped/taken
-                tracing::debug!(
-                    "db_conn was None, skipping tool telemetry for {}",
-                    tool_name
-                );
-                return;
-            }
-        };
-
-        // Truncate result_summary to max 256 chars
-        const MAX_SUMMARY_LEN: usize = 256;
-        let summary = if result_summary.len() > MAX_SUMMARY_LEN {
-            &result_summary[..MAX_SUMMARY_LEN]
-        } else {
-            result_summary
-        };
-
-        // Best-effort insert - errors logged but not propagated
-        let result = conn.execute(
-            "INSERT INTO agent_interactions (timestamp, tool_name, contract_id, result_summary, duration_ms) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![
-                chrono::Utc::now().to_rfc3339(),
-                tool_name,
-                contract_id,
-                summary,
-                duration_ms,
-            ],
-        );
-
-        if let Err(e) = result {
-            // Check for "no such table" error (pre-migration state)
-            if matches!(e, rusqlite::Error::SqliteFailure(_, _)) {
-                tracing::debug!(
-                    "agent_interactions table not available, skipping telemetry: {}",
-                    e
-                );
-                return;
-            }
-            tracing::warn!("Failed to record tool usage for {}: {}", tool_name, e);
-        }
-    }
-
-    /// No-op stub for the no-`sqlite` build — telemetry is unavailable
-    /// when the `sqlite` feature is disabled.
-    #[cfg(not(feature = "sqlite"))]
+    /// No-op stub after the Graph Intelligence v2 cleanup removed the
+    /// SQLite-backed telemetry path. The signature is preserved so the
+    /// dispatch layer (`rmcp_adapter.rs`) and existing call sites in
+    /// `aix_handlers.rs` keep linking. When the PostgreSQL adapter
+    /// lands, this hook will gain a real implementation.
+    #[allow(dead_code, unused_variables)]
     pub fn record_tool_usage(
         &self,
         _tool_name: &str,
@@ -543,7 +436,8 @@ impl HandlerContext {
         _duration_ms: f64,
         _contract_id: Option<&str>,
     ) {
-        // No-op: telemetry requires the `sqlite` feature.
+        // No-op: SQLite telemetry was removed; PostgreSQL adapter
+        // will land in a follow-up slice.
     }
 }
 
@@ -3075,14 +2969,12 @@ fn render_mermaid_to_svg(mermaid_code: &str, theme: &str) -> Option<String> {
 // LSP handlers module
 pub mod lsp_handlers;
 
-// AIX handlers module — gated behind the `sqlite` feature (see
-// `postgres-default-config`). The full file is the canonical
-// implementation; the `cognicode-core` default build (with `sqlite`
-// in its default feature list) uses it directly. When the default
-// flips in PR 2 to drop `sqlite`, this declaration becomes
-// `#[cfg(feature = "sqlite")]` and a stub mod provides the same
-// public surface (handler functions returning "sqlite feature
-// disabled" errors).
+// AIX handlers module — full module body, no `sqlite` feature gate.
+// The Graph Intelligence v2 cleanup removed the `sqlite` feature from
+// `cognicode-core`; the module now ships unconditionally and the
+// previously-gated `open_db` / SQLite persistence paths inside it
+// have been replaced with no-op stubs (see
+// `aix_handlers::persist_findings`, `handle_generate_contract`, etc.).
 pub mod aix_handlers;
 
 #[cfg(test)]

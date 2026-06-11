@@ -13,9 +13,7 @@ members = [
     "crates/cognicode-axiom",
     "crates/cognicode-quality",
     "crates/cognicode-rule-test-harness",
-    "crates/cognicode-dashboard",
     "crates/cognicode-explorer",
-    # "crates/cognicode-diagram",  # TEMPORARILY DISABLED — missing Cargo.toml
 ]
 
 [workspace.package]
@@ -30,7 +28,6 @@ cognicode-db = { path = "crates/cognicode-db" }
 cognicode-store-traits = { path = "crates/cognicode-store-traits" }
 cognicode-axiom = { path = "crates/cognicode-axiom" }
 cognicode-macros = { path = "crates/cognicode-macros" }
-# cognicode-diagram = { path = "crates/cognicode-diagram" }  # TEMPORARILY DISABLED
 
 # Parsing
 tree-sitter = "0.24"
@@ -57,7 +54,6 @@ serde_yaml = "0.9"
 sqlparser = "0.53"
 bincode = { version = "2.0", features = ["serde"] }
 blake3 = "1.5"
-rusqlite = { version = "0.31", features = ["bundled"] }
 
 # Error Handling
 anyhow = "1.0"
@@ -127,8 +123,8 @@ mockall = "0.11"
 # PostgreSQL async driver (gated behind the `postgres` feature in cognicode-core).
 # `macros` is required for `#[derive(sqlx::FromRow)]`. We intentionally do
 # NOT enable the `migrate` feature here because it pulls `sqlx-sqlite`,
-# which conflicts with `rusqlite` in the wider workspace. Integration
-# tests build their own per-test isolated database via a tiny manual
-# fixture instead of `#[sqlx::test]` — same isolation guarantee, no
-# extra features. Document this in the PR description.
+# which we no longer use in the workspace. Integration tests build their
+# own per-test isolated database via a tiny manual fixture instead of
+# `#[sqlx::test]` — same isolation guarantee, no extra features. Document
+# this in the PR description.
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros"] }
