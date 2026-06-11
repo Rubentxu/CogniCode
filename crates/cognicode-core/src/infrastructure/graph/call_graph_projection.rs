@@ -190,6 +190,25 @@ impl CallGraphProjection {
         self.symbol_lookup.get(id)
     }
 
+    /// Access the underlying `StableGraph` (read-only).
+    ///
+    /// Exposes the petgraph view for analytics services that need to run
+    /// native petgraph algorithms (page rank, simple paths, condensation,
+    /// feedback arc set, etc.) directly on the projection. Returning a
+    /// `&StableGraph` (rather than cloning) keeps these passes zero-copy
+    /// on the read side.
+    pub fn graph(&self) -> &StableGraph<SymbolId, ProjectionEdgeWeight> {
+        &self.graph
+    }
+
+    /// Access the `SymbolId` -> `NodeIndex` mapping (read-only).
+    ///
+    /// Used to translate algorithm results (which use `NodeIndex`) back
+    /// to the domain-level `SymbolId` for MCP/tool output.
+    pub fn id_to_index(&self) -> &HashMap<SymbolId, NodeIndex> {
+        &self.id_to_index
+    }
+
     /// Compute a topological ordering of the nodes.
     ///
     /// - Returns `Ok(vec![])` for an empty graph.

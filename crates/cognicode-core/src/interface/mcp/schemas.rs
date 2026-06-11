@@ -2135,3 +2135,66 @@ pub struct CompleteTaskOutput {
     /// Human-readable message
     pub message: String,
 }
+
+// ============================================================================
+// Phase 4b: Graph Analytics (PageRank, paths, condensation, god nodes, ...)
+// ============================================================================
+
+/// Default damping factor for the PageRank iteration.
+fn default_pagerank_alpha() -> f64 {
+    0.85
+}
+
+/// Default iteration budget for the PageRank fixed-point loop.
+fn default_pagerank_iterations() -> u32 {
+    100
+}
+
+/// Default hop budget for `graph_all_paths`.
+fn default_path_max_hops() -> u32 {
+    5
+}
+
+/// Default percentile threshold for `graph_god_nodes`.
+fn default_god_percentile() -> f64 {
+    0.95
+}
+
+/// Input for `graph_pagerank` — PageRank importance scores for every
+/// symbol in the call graph.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GraphPageRankInput {
+    /// Damping factor (default: 0.85). Must be in (0.0, 1.0].
+    #[serde(default = "default_pagerank_alpha")]
+    pub alpha: f64,
+
+    /// Maximum iterations for the fixed-point loop (default: 100).
+    #[serde(default = "default_pagerank_iterations")]
+    pub max_iterations: u32,
+}
+
+/// Input for `graph_all_paths` — every simple path between two symbols
+/// within a hop budget.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GraphAllPathsInput {
+    /// Source symbol name (substring match, case-insensitive).
+    pub from_symbol: String,
+
+    /// Target symbol name (substring match, case-insensitive).
+    pub to_symbol: String,
+
+    /// Maximum number of intermediate hops (default: 5).
+    #[serde(default = "default_path_max_hops")]
+    pub max_hops: u32,
+}
+
+/// Input for `graph_god_nodes` — symbols whose PageRank sits above
+/// the requested percentile.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GraphGodNodesInput {
+    /// Percentile threshold in [0.0, 1.0] (default: 0.95). Symbols
+    /// whose PageRank is at or above this percentile are returned.
+    #[serde(default = "default_god_percentile")]
+    pub percentile: f64,
+}
+

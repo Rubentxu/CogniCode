@@ -53,6 +53,29 @@ impl CogniCodeHandler {
         }
     }
 
+    /// Creates a new CogniCodeHandler with a `GraphRepository`
+    /// wired into the handler context. Used by the MCP binary
+    /// when the user passes `--database-url` — the binary
+    /// builds a `PgGraphRepository` from a `sqlx::PgPool` and
+    /// hands it in here so the `graph_search` / `docs_ingest`
+    /// tools can route to PG.
+    ///
+    /// Gated behind the `multimodal` Cargo feature: callers
+    /// that don't enable `multimodal` see no method.
+    #[cfg(feature = "multimodal")]
+    pub fn with_graph_repository(
+        project_root: PathBuf,
+        repo: std::sync::Arc<dyn crate::domain::GraphRepository>,
+    ) -> Self {
+        let cancellation_token = Arc::new(AtomicBool::new(false));
+        let mut ctx = HandlerContext::with_graph_repository(project_root, repo);
+        ctx.cancellation_token = cancellation_token.clone();
+        Self {
+            ctx: Arc::new(ctx),
+            cancellation_token,
+        }
+    }
+
     fn build_ctx(project_root: PathBuf) -> HandlerContext {
         let canonical_root =
             std::fs::canonicalize(&project_root).unwrap_or_else(|_| project_root.clone());
@@ -712,6 +735,69 @@ impl ServerHandler for CogniCodeHandler {
                         "required": ["contract_id", "generated_code"]
                     }).as_object().cloned().unwrap()),
                 ),
+                // Phase 4b: Graph Analytics (PageRank, paths, condensation, god nodes, reduction, FAS)
+                // These tools operate on the in-memory call graph that
+                // `build_graph` populates, so they all require a prior
+                // build. They are always available (not feature-gated)
+                // because the underlying petgraph algorithms are pure.
+                Tool::new(
+                    "graph_pagerank",
+                    "Compute PageRank importance scores for all symbols in the call graph. Returns a ranked list of symbols by dependency importance. High-scoring symbols are 'god nodes' (heavily depended-upon). Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "alpha": { "type": "number", "description": "Damping factor (default: 0.85). Must be in (0.0, 1.0]." },
+                            "max_iterations": { "type": "integer", "description": "Max fixed-point iterations (default: 100)" }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_all_paths",
+                    "Find all simple paths between two symbols in the call graph (no repeated nodes). Useful for enumerating every call chain that connects two functions. Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "from_symbol": { "type": "string", "description": "Source symbol name (substring match, case-insensitive)" },
+                            "to_symbol": { "type": "string", "description": "Target symbol name (substring match, case-insensitive)" },
+                            "max_hops": { "type": "integer", "description": "Maximum number of intermediate nodes (default: 5)" }
+                        },
+                        "required": ["from_symbol", "to_symbol"]
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_condensed",
+                    "Compute the SCC condensation of the call graph: every strongly connected component is collapsed into a single node, producing an acyclic condensation DAG. Use to spot circular dependency clusters. Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {}
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_god_nodes",
+                    "Find god nodes — symbols with unusually high PageRank (above the supplied percentile). These are symbols that too many things depend on and are prime refactoring candidates. Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "percentile": { "type": "number", "description": "Percentile threshold in [0.0, 1.0] (default: 0.95). Symbols at or above this PageRank percentile are returned." }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_reduced",
+                    "Compute the transitive reduction of the call graph — the minimal set of dependency edges that preserves reachability. Redundant edges (implied by longer paths) are dropped. Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {}
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_feedback_arcs",
+                    "Find a feedback arc set — edges whose removal would make the call graph acyclic. The greedy heuristic is not optimal but fast; use the result as a starting point when breaking circular dependencies. Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {}
+                    }).as_object().cloned().unwrap()),
+                ),
                 // Phase 3A: Proactive Tools
                 Tool::new(
                     "suggest_context",
@@ -1349,6 +1435,233 @@ async fn call_tool_handler(
                     .await?;
             Ok(serde_json::to_string(&output)?)
         }
+        // Phase 4b: Graph analytics tools
+        //
+        // Each handler:
+        //   1. Pulls the in-memory `CallGraph` from the context's
+        //      `GraphStore`. The store is populated by `build_graph`,
+        //      which is a hard prerequisite of every analytics tool.
+        //   2. Forwards the typed input to
+        //      `application::services::graph_analytics::GraphAnalyticsService`
+        //      and serialises the result as pretty JSON.
+        //
+        // Symbol lookup uses a private substring + case-insensitive
+        // match against the call graph's symbol set (mirroring the
+        // three-tier lookup used in `get_call_hierarchy`).
+        "graph_pagerank" => {
+            let input: crate::interface::mcp::schemas::GraphPageRankInput =
+                serde_json::from_value(arguments.into())?;
+            match ctx.get_graph_store().load_graph() {
+                Ok(Some(graph)) => {
+                    let mut scores = crate::application::services::graph_analytics::GraphAnalyticsService::page_rank(
+                        &graph,
+                        input.alpha,
+                        input.max_iterations as usize,
+                    );
+                    // Sort descending by score so the most important
+                    // symbols come first in the agent's view.
+                    let mut sorted: Vec<(String, f64)> = scores
+                        .drain()
+                        .map(|(id, score)| (id.as_str().to_string(), score))
+                        .collect();
+                    sorted.sort_by(|a, b| {
+                        b.1.partial_cmp(&a.1)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                    // Truncate to a reasonable cap (200) so the JSON
+                    // payload does not blow up for huge graphs.
+                    sorted.truncate(200);
+                    Ok(serde_json::to_string_pretty(&serde_json::json!({
+                        "algorithm": "page_rank",
+                        "alpha": input.alpha,
+                        "max_iterations": input.max_iterations,
+                        "symbol_count": sorted.len(),
+                        "scores": sorted,
+                    }))?)
+                }
+                Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "error": "No call graph available. Run build_graph first."
+                }))?),
+                Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "error": format!("Graph store error: {}", e)
+                }))?),
+            }
+        }
+        "graph_all_paths" => {
+            let input: crate::interface::mcp::schemas::GraphAllPathsInput =
+                serde_json::from_value(arguments.into())?;
+            match ctx.get_graph_store().load_graph() {
+                Ok(Some(graph)) => {
+                    // Substring, case-insensitive lookup. We pick the
+                    // first symbol whose name OR FQN contains the
+                    // query; if there are multiple matches we return
+                    // the first non-ambiguous one (Tier-1 exact name
+                    // > Tier-2 exact FQN > Tier-3 substring).
+                    let find_id = |needle: &str| -> Option<crate::domain::aggregates::SymbolId> {
+                        let needle_lower = needle.to_lowercase();
+                        // Tier 1: exact symbol name (case-insensitive).
+                        for (id, sym) in graph.symbol_ids() {
+                            if sym.name().to_lowercase() == needle_lower {
+                                return Some(id.clone());
+                            }
+                        }
+                        // Tier 2: exact FQN match.
+                        for (id, sym) in graph.symbol_ids() {
+                            if sym.fully_qualified_name().to_lowercase() == needle_lower {
+                                return Some(id.clone());
+                            }
+                        }
+                        // Tier 3: substring match against FQN.
+                        for (id, sym) in graph.symbol_ids() {
+                            if sym
+                                .fully_qualified_name()
+                                .to_lowercase()
+                                .contains(&needle_lower)
+                            {
+                                return Some(id.clone());
+                            }
+                        }
+                        None
+                    };
+
+                    match (find_id(&input.from_symbol), find_id(&input.to_symbol)) {
+                        (Some(from), Some(to)) => {
+                            let paths = crate::application::services::graph_analytics::GraphAnalyticsService::all_simple_paths(
+                                &graph,
+                                &from,
+                                &to,
+                                input.max_hops as usize,
+                            );
+                            // Render paths as lists of FQNs (strings) so
+                            // the output is human-readable; keep SymbolId
+                            // -> FQN mapping consistent with the source
+                            // order.
+                            let rendered: Vec<Vec<String>> = paths
+                                .into_iter()
+                                .map(|path| {
+                                    path.into_iter()
+                                        .map(|id| id.as_str().to_string())
+                                        .collect()
+                                })
+                                .collect();
+                            Ok(serde_json::to_string_pretty(&serde_json::json!({
+                                "from": from.as_str(),
+                                "to": to.as_str(),
+                                "max_hops": input.max_hops,
+                                "path_count": rendered.len(),
+                                "paths": rendered,
+                            }))?)
+                        }
+                        (None, _) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                            "error": format!("Source symbol not found: {}", input.from_symbol)
+                        }))?),
+                        (_, None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                            "error": format!("Target symbol not found: {}", input.to_symbol)
+                        }))?),
+                    }
+                }
+                Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "error": "No call graph available. Run build_graph first."
+                }))?),
+                Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "error": format!("Graph store error: {}", e)
+                }))?),
+            }
+        }
+        "graph_condensed" => match ctx.get_graph_store().load_graph() {
+            Ok(Some(graph)) => {
+                let comps = crate::application::services::graph_analytics::GraphAnalyticsService::condensation(&graph);
+                let rendered: Vec<Vec<String>> = comps
+                    .into_iter()
+                    .map(|c| c.into_iter().map(|id| id.as_str().to_string()).collect())
+                    .collect();
+                let multi: Vec<&Vec<String>> = rendered.iter().filter(|c| c.len() > 1).collect();
+                let singletons = rendered.iter().filter(|c| c.len() == 1).count();
+                Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "algorithm": "condensation",
+                    "component_count": rendered.len(),
+                    "nontrivial_components": multi.len(),
+                    "singleton_components": singletons,
+                    "components": rendered,
+                }))?)
+            }
+            Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                "error": "No call graph available. Run build_graph first."
+            }))?),
+            Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                "error": format!("Graph store error: {}", e)
+            }))?),
+        },
+        "graph_god_nodes" => {
+            let input: crate::interface::mcp::schemas::GraphGodNodesInput =
+                serde_json::from_value(arguments.into())?;
+            match ctx.get_graph_store().load_graph() {
+                Ok(Some(graph)) => {
+                    let mut god = crate::application::services::graph_analytics::GraphAnalyticsService::god_nodes(
+                        &graph,
+                        input.percentile,
+                    );
+                    let rendered: Vec<(String, f64)> = god
+                        .drain(..)
+                        .map(|(id, score)| (id.as_str().to_string(), score))
+                        .collect();
+                    Ok(serde_json::to_string_pretty(&serde_json::json!({
+                        "algorithm": "god_nodes",
+                        "percentile": input.percentile,
+                        "count": rendered.len(),
+                        "nodes": rendered,
+                    }))?)
+                }
+                Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "error": "No call graph available. Run build_graph first."
+                }))?),
+                Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "error": format!("Graph store error: {}", e)
+                }))?),
+            }
+        }
+        "graph_reduced" => match ctx.get_graph_store().load_graph() {
+            Ok(Some(graph)) => {
+                let reduced = crate::application::services::graph_analytics::GraphAnalyticsService::transitive_reduction(&graph);
+                let rendered: Vec<(String, String)> = reduced
+                    .into_iter()
+                    .map(|(s, d)| (s.as_str().to_string(), d.as_str().to_string()))
+                    .collect();
+                let total_edges = graph.edge_count();
+                Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "algorithm": "transitive_reduction",
+                    "original_edge_count": total_edges,
+                    "reduced_edge_count": rendered.len(),
+                    "edges": rendered,
+                }))?)
+            }
+            Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                "error": "No call graph available. Run build_graph first."
+            }))?),
+            Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                "error": format!("Graph store error: {}", e)
+            }))?),
+        },
+        "graph_feedback_arcs" => match ctx.get_graph_store().load_graph() {
+            Ok(Some(graph)) => {
+                let fas = crate::application::services::graph_analytics::GraphAnalyticsService::feedback_arc_set(&graph);
+                let rendered: Vec<(String, String)> = fas
+                    .into_iter()
+                    .map(|(s, d)| (s.as_str().to_string(), d.as_str().to_string()))
+                    .collect();
+                Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "algorithm": "feedback_arc_set",
+                    "count": rendered.len(),
+                    "edges": rendered,
+                }))?)
+            }
+            Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                "error": "No call graph available. Run build_graph first."
+            }))?),
+            Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                "error": format!("Graph store error: {}", e)
+            }))?),
+        },
         _ => anyhow::bail!("Unknown tool: {}", tool_name),
     }
 }
