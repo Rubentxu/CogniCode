@@ -5,7 +5,9 @@
 //! The `Symbol(SymbolKind)` wrapper preserves exhaustive matching of
 //! the legacy taxonomy; the unit variants `Decision`, `Doc`, `Issue`,
 //! `Evidence` are new multimodal kinds added by the
-//! `multimodal-docs-source` change.
+//! `multimodal-docs-source` change, and `Component`, `Container`,
+//! `System` are C4-model architectural node kinds added by the
+//! `c4-architecture-nodes` change.
 //!
 //! All non-`Symbol` variants are gated behind the `multimodal` Cargo
 //! feature so the default build is byte-for-byte unchanged.
@@ -16,6 +18,9 @@
 //!          | Doc          #[cfg(feature = "multimodal")]
 //!          | Issue        #[cfg(feature = "multimodal")]
 //!          | Evidence     #[cfg(feature = "multimodal")]
+//!          | Component    #[cfg(feature = "multimodal")]
+//!          | Container    #[cfg(feature = "multimodal")]
+//!          | System       #[cfg(feature = "multimodal")]
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -58,6 +63,15 @@ pub enum NodeKind {
     /// An evidence node (e.g. benchmark result, fuzzer finding). Multimodal.
     #[cfg(feature = "multimodal")]
     Evidence,
+    /// A C4-model component (grouping of related symbols). Multimodal.
+    #[cfg(feature = "multimodal")]
+    Component,
+    /// A C4-model container (deployable unit). Multimodal.
+    #[cfg(feature = "multimodal")]
+    Container,
+    /// A C4-model system (boundary of related containers). Multimodal.
+    #[cfg(feature = "multimodal")]
+    System,
 }
 
 impl FromStr for NodeKind {
@@ -82,6 +96,12 @@ impl FromStr for NodeKind {
             "issue" => Ok(NodeKind::Issue),
             #[cfg(feature = "multimodal")]
             "evidence" => Ok(NodeKind::Evidence),
+            #[cfg(feature = "multimodal")]
+            "component" => Ok(NodeKind::Component),
+            #[cfg(feature = "multimodal")]
+            "container" => Ok(NodeKind::Container),
+            #[cfg(feature = "multimodal")]
+            "system" => Ok(NodeKind::System),
             _ => Err(NodeKindParseError::Unknown(s.to_string())),
         }
     }
@@ -102,6 +122,12 @@ impl NodeKind {
             NodeKind::Issue => "issue",
             #[cfg(feature = "multimodal")]
             NodeKind::Evidence => "evidence",
+            #[cfg(feature = "multimodal")]
+            NodeKind::Component => "component",
+            #[cfg(feature = "multimodal")]
+            NodeKind::Container => "container",
+            #[cfg(feature = "multimodal")]
+            NodeKind::System => "system",
         }
     }
 
@@ -152,7 +178,9 @@ mod tests {
     }
 
     /// The four multimodal variants must exist and round-trip through
-    /// JSON when the `multimodal` feature is enabled.
+    /// JSON when the `multimodal` feature is enabled. Phase 1 of the
+    /// C4 architecture change adds three more (`Component`,
+    /// `Container`, `System`) for a total of 7.
     #[test]
     #[cfg(feature = "multimodal")]
     fn node_kind_multimodal_variants() {
@@ -161,6 +189,9 @@ mod tests {
             NodeKind::Doc,
             NodeKind::Issue,
             NodeKind::Evidence,
+            NodeKind::Component,
+            NodeKind::Container,
+            NodeKind::System,
         ] {
             assert!(kind.is_multimodal());
             let json = serde_json::to_string(&kind).expect("serialize");
@@ -193,6 +224,9 @@ mod tests {
             assert_eq!(format!("{}", NodeKind::Doc), "doc");
             assert_eq!(format!("{}", NodeKind::Issue), "issue");
             assert_eq!(format!("{}", NodeKind::Evidence), "evidence");
+            assert_eq!(format!("{}", NodeKind::Component), "component");
+            assert_eq!(format!("{}", NodeKind::Container), "container");
+            assert_eq!(format!("{}", NodeKind::System), "system");
         }
     }
 
@@ -231,11 +265,15 @@ mod tests {
             set.insert(NodeKind::Doc);
             set.insert(NodeKind::Issue);
             set.insert(NodeKind::Evidence);
+            set.insert(NodeKind::Component);
+            set.insert(NodeKind::Container);
+            set.insert(NodeKind::System);
         }
         // The Symbol is already present; inserting it again is a no-op.
         set.insert(NodeKind::Symbol(SymbolKind::Function));
+        // 1 Symbol + 7 multimodal = 8 total under the feature.
         #[cfg(feature = "multimodal")]
-        assert_eq!(set.len(), 5);
+        assert_eq!(set.len(), 8);
         #[cfg(not(feature = "multimodal"))]
         assert_eq!(set.len(), 1);
     }

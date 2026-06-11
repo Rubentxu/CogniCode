@@ -6,7 +6,9 @@
 //! exhaustive matching of the legacy taxonomy; the unit variants
 //! `Cites`, `Justifies`, `Resolves`, `CorroboratedBy` are new
 //! multimodal relationship kinds added by the `multimodal-docs-source`
-//! change.
+//! change, and `PartOf`, `DeployedAs`, `InSystem` are C4-model
+//! architectural relationship kinds added by the
+//! `c4-architecture-nodes` change.
 //!
 //! All non-`Dependency` variants are gated behind the `multimodal`
 //! Cargo feature so the default build is byte-for-byte unchanged.
@@ -17,6 +19,9 @@
 //!          | Justifies          #[cfg(feature = "multimodal")]
 //!          | Resolves           #[cfg(feature = "multimodal")]
 //!          | CorroboratedBy     #[cfg(feature = "multimodal")]
+//!          | PartOf             #[cfg(feature = "multimodal")]
+//!          | DeployedAs         #[cfg(feature = "multimodal")]
+//!          | InSystem           #[cfg(feature = "multimodal")]
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -62,6 +67,18 @@ pub enum EdgeKind {
     /// corroborates a claim in a design doc). Multimodal.
     #[cfg(feature = "multimodal")]
     CorroboratedBy,
+    /// `source` is part of `target` (e.g. a component is part of
+    /// a container). Multimodal.
+    #[cfg(feature = "multimodal")]
+    PartOf,
+    /// `source` is deployed as `target` (e.g. a container is
+    /// deployed as a service). Multimodal.
+    #[cfg(feature = "multimodal")]
+    DeployedAs,
+    /// `source` belongs to `target` system (e.g. a container
+    /// belongs to a system). Multimodal.
+    #[cfg(feature = "multimodal")]
+    InSystem,
 }
 
 impl FromStr for EdgeKind {
@@ -84,6 +101,12 @@ impl FromStr for EdgeKind {
             "justifies" => return Ok(EdgeKind::Justifies),
             "resolves" => return Ok(EdgeKind::Resolves),
             "corroborated_by" => return Ok(EdgeKind::CorroboratedBy),
+            // C4-model architecture relationships (Phase 1 — no
+            // extractor attached yet, but the strings are
+            // pre-registered for round-trip safety).
+            "part_of" => return Ok(EdgeKind::PartOf),
+            "deployed_as" => return Ok(EdgeKind::DeployedAs),
+            "in_system" => return Ok(EdgeKind::InSystem),
             _ => {}
         }
         if let Some(rest) = s.strip_prefix("dependency.") {
@@ -118,6 +141,12 @@ impl EdgeKind {
             EdgeKind::Resolves => "resolves".to_string(),
             #[cfg(feature = "multimodal")]
             EdgeKind::CorroboratedBy => "corroborated_by".to_string(),
+            #[cfg(feature = "multimodal")]
+            EdgeKind::PartOf => "part_of".to_string(),
+            #[cfg(feature = "multimodal")]
+            EdgeKind::DeployedAs => "deployed_as".to_string(),
+            #[cfg(feature = "multimodal")]
+            EdgeKind::InSystem => "in_system".to_string(),
         }
     }
 
@@ -168,7 +197,9 @@ mod tests {
     }
 
     /// The four multimodal variants must exist and round-trip through
-    /// JSON when the `multimodal` feature is enabled.
+    /// JSON when the `multimodal` feature is enabled. Phase 1 of the
+    /// C4 architecture change adds three more (`PartOf`, `DeployedAs`,
+    /// `InSystem`) for a total of 7.
     #[test]
     #[cfg(feature = "multimodal")]
     fn edge_kind_multimodal_variants() {
@@ -177,6 +208,9 @@ mod tests {
             EdgeKind::Justifies,
             EdgeKind::Resolves,
             EdgeKind::CorroboratedBy,
+            EdgeKind::PartOf,
+            EdgeKind::DeployedAs,
+            EdgeKind::InSystem,
         ] {
             assert!(kind.is_multimodal());
             let json = serde_json::to_string(&kind).expect("serialize");
@@ -217,6 +251,9 @@ mod tests {
             assert_eq!(format!("{}", EdgeKind::Justifies), "justifies");
             assert_eq!(format!("{}", EdgeKind::Resolves), "resolves");
             assert_eq!(format!("{}", EdgeKind::CorroboratedBy), "corroborated_by");
+            assert_eq!(format!("{}", EdgeKind::PartOf), "part_of");
+            assert_eq!(format!("{}", EdgeKind::DeployedAs), "deployed_as");
+            assert_eq!(format!("{}", EdgeKind::InSystem), "in_system");
         }
     }
 
@@ -257,10 +294,14 @@ mod tests {
             set.insert(EdgeKind::Justifies);
             set.insert(EdgeKind::Resolves);
             set.insert(EdgeKind::CorroboratedBy);
+            set.insert(EdgeKind::PartOf);
+            set.insert(EdgeKind::DeployedAs);
+            set.insert(EdgeKind::InSystem);
         }
         set.insert(EdgeKind::Dependency(DependencyType::Calls));
+        // 1 Dependency + 7 multimodal = 8 total under the feature.
         #[cfg(feature = "multimodal")]
-        assert_eq!(set.len(), 5);
+        assert_eq!(set.len(), 8);
         #[cfg(not(feature = "multimodal"))]
         assert_eq!(set.len(), 1);
     }

@@ -33,6 +33,9 @@ use crate::service::ExplorerService;
 /// - `doc` (multimodal Markdown) → `"node-doc"`
 /// - `issue` (multimodal tracker issue) → `"node-issue"`
 /// - `evidence` (multimodal benchmark / fuzzer) → `"node-evidence"`
+/// - `component` (C4 — grouping of related symbols) → `"node-component"`
+/// - `container` (C4 — deployable unit) → `"node-container"`
+/// - `system` (C4 — boundary of related containers) → `"node-system"`
 /// - anything else → `"function"` (default)
 #[inline]
 pub fn style_class_for(kind: &str) -> &'static str {
@@ -49,6 +52,14 @@ pub fn style_class_for(kind: &str) -> &'static str {
         "doc" => "node-doc",
         "issue" => "node-issue",
         "evidence" => "node-evidence",
+        // ---- multimodal (C4 architecture — Phase 1) ----
+        // C4 architectural node kinds. The C4 spec uses a
+        // distinct shape for each (Component / Container /
+        // System); the bucket names mirror the cytoscape
+        // stylesheet entries 1:1.
+        "component" => "node-component",
+        "container" => "node-container",
+        "system" => "node-system",
         _ => "function",
     }
 }
@@ -63,6 +74,9 @@ pub fn style_class_for(kind: &str) -> &'static str {
 /// - `justifies` (multimodal) → `"edge-justifies"`
 /// - `resolves` (multimodal) → `"edge-resolves"`
 /// - `corroborated_by` (multimodal) → `"edge-corroborated"`
+/// - `part_of` (C4 — `source` is part of `target`) → `"edge-part-of"`
+/// - `deployed_as` (C4 — `source` is deployed as `target`) → `"edge-deployed-as"`
+/// - `in_system` (C4 — `source` belongs to `target` system) → `"edge-in-system"`
 /// - anything else → `"edge.calls"` (default)
 #[inline]
 pub fn edge_style_class_for(relation: &str) -> &'static str {
@@ -77,6 +91,13 @@ pub fn edge_style_class_for(relation: &str) -> &'static str {
         "justifies" => "edge-justifies",
         "resolves" => "edge-resolves",
         "corroborated_by" => "edge-corroborated",
+        // ---- multimodal (C4 architecture — Phase 1) ----
+        // C4 architectural relationship kinds. Dashed form
+        // (e.g. `edge-part-of`) is consistent with the existing
+        // multimodal edge buckets above.
+        "part_of" => "edge-part-of",
+        "deployed_as" => "edge-deployed-as",
+        "in_system" => "edge-in-system",
         _ => "edge.calls",
     }
 }

@@ -136,3 +136,7 @@ tokio-test.workspace = true
 mockall.workspace = true
 tempfile.workspace = true
 criterion = "0.5"
+
+[[bench]]
+name = "graph_benchmarks"
+harness = false

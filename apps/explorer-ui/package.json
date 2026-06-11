@@ -19,9 +19,11 @@
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
+    "@types/d3": "^7.4.3",
     "cmdk": "^1.1.1",
     "comlink": "^4.4.2",
     "cytoscape": "^3.34.0",
+    "d3": "^7.9.0",
     "elkjs": "^0.11.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

@@ -147,6 +147,38 @@ fn style_class_evidence() {
     assert_eq!(crate::api::style_class_for("evidence"), "node-evidence");
 }
 
+// ============================================================================
+// T-Phase-1 — C4 architecture `style_class_for` / `edge_style_class_for`
+// extensions
+// ============================================================================
+//
+// RED gate: these tests assert the wire-level style class for the three
+// new C4-model node kinds (Component, Container, System) and the three
+// new C4-model edge kinds (part_of, deployed_as, in_system). The
+// buckets mirror the cytoscape stylesheet blocks in
+// `apps/explorer-ui/src/components/InteractiveGraph/stylesheet.ts`.
+
+/// `component` (a C4-model component — grouping of related symbols)
+/// maps to `"node-component"`.
+#[test]
+fn style_class_component() {
+    assert_eq!(crate::api::style_class_for("component"), "node-component");
+}
+
+/// `container` (a C4-model container — deployable unit) maps to
+/// `"node-container"`.
+#[test]
+fn style_class_container() {
+    assert_eq!(crate::api::style_class_for("container"), "node-container");
+}
+
+/// `system` (a C4-model system — boundary of related containers)
+/// maps to `"node-system"`.
+#[test]
+fn style_class_system() {
+    assert_eq!(crate::api::style_class_for("system"), "node-system");
+}
+
 /// `cites` (a doc → code reference) maps to `"edge-cites"`.
 #[test]
 fn edge_style_cites() {
@@ -180,6 +212,33 @@ fn edge_style_corroborated() {
     assert_eq!(
         crate::api::edge_style_class_for("corroborated_by"),
         "edge-corroborated"
+    );
+}
+
+/// `part_of` (a component → container) maps to `"edge-part-of"`.
+#[test]
+fn edge_style_part_of() {
+    assert_eq!(
+        crate::api::edge_style_class_for("part_of"),
+        "edge-part-of"
+    );
+}
+
+/// `deployed_as` (a container → service) maps to `"edge-deployed-as"`.
+#[test]
+fn edge_style_deployed_as() {
+    assert_eq!(
+        crate::api::edge_style_class_for("deployed_as"),
+        "edge-deployed-as"
+    );
+}
+
+/// `in_system` (a container → system) maps to `"edge-in-system"`.
+#[test]
+fn edge_style_in_system() {
+    assert_eq!(
+        crate::api::edge_style_class_for("in_system"),
+        "edge-in-system"
     );
 }
 

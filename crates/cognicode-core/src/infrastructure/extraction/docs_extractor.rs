@@ -535,6 +535,12 @@ fn kind_prefix(kind: &NodeKind) -> &'static str {
         NodeKind::Doc => "doc",
         NodeKind::Issue => "issue",
         NodeKind::Evidence => "evidence",
+        // C4-model architecture kinds (Phase 1 — no extractor
+        // produces them yet, but the kebab-case prefix is wired
+        // in so the taxonomy stays consistent).
+        NodeKind::Component => "component",
+        NodeKind::Container => "container",
+        NodeKind::System => "system",
         NodeKind::Symbol(_) => "symbol",
     }
 }
