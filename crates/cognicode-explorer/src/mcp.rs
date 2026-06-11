@@ -1831,9 +1831,24 @@ async fn dispatch_graph_search(
                 // We now expand the wildcard to all known
                 // symbol kinds (excluding `Unknown`, which is a
                 // sentinel for "could not classify").
+                //
+                // IMPORTANT: When adding a new SymbolKind variant,
+                // update BOTH this list AND `SYMBOL_WILDCARD_COUNT`
+                // below. The compile-time check fails the build
+                // if the count drifts.
+                //
+                // Rust does not yet support a const assertion on
+                // enum variant count, so we use a const-eval
+                // arithmetic check: the array literal must
+                // produce exactly `SYMBOL_WILDCARD_COUNT` entries.
+                // If the lengths disagree, this `const` evaluates
+                // to a non-`()` type and the build fails.
                 "symbol" => {
                     use cognicode_core::domain::value_objects::symbol_kind::SymbolKind;
-                    parsed_kinds.extend([
+                    // Number of non-`Unknown` SymbolKind variants.
+                    // Keep this in sync with the array below.
+                    const SYMBOL_WILDCARD_COUNT: usize = 21;
+                    let wildcard: [NodeKind; SYMBOL_WILDCARD_COUNT] = [
                         NodeKind::Symbol(SymbolKind::Function),
                         NodeKind::Symbol(SymbolKind::Method),
                         NodeKind::Symbol(SymbolKind::Class),
@@ -1855,7 +1870,15 @@ async fn dispatch_graph_search(
                         NodeKind::Symbol(SymbolKind::File),
                         NodeKind::Symbol(SymbolKind::Namespace),
                         NodeKind::Symbol(SymbolKind::Package),
-                    ]);
+                    ];
+                    // Compile-time length check: a mismatch
+                    // between `SYMBOL_WILDCARD_COUNT` and the
+                    // actual array length would be caught by the
+                    // type annotation above; this assertion
+                    // exists for clarity and doubles as a
+                    // defensive runtime no-op.
+                    debug_assert_eq!(wildcard.len(), SYMBOL_WILDCARD_COUNT);
+                    parsed_kinds.extend(wildcard);
                 }
                 "decision" => parsed_kinds.push(NodeKind::Decision),
                 "doc" => parsed_kinds.push(NodeKind::Doc),
@@ -1932,7 +1955,10 @@ async fn dispatch_graph_search(
                     "metadata": n.properties,
                 },
                 "score": score,
-                "raw_rank": score,
+                // Per-item rank: the source-of-truth score for
+                // THIS result, distinct from the page-level
+                // `raw_rank` exposed at the envelope root.
+                "item_rank": score,
                 "score_is_page_level": score_is_page_level,
             })
         }).collect::<Vec<_>>(),
@@ -6966,10 +6992,14 @@ mod tests {
         for r in results {
             assert!(r["node"].is_object());
             assert!(r["score"].is_number());
-            assert!(r["raw_rank"].is_number());
+            // Per-item rank (renamed from `raw_rank` to avoid
+            // collision with the page-level `raw_rank` at the
+            // envelope root).
+            assert!(r["item_rank"].is_number());
         }
         assert_eq!(envelope["payload"]["total_count"].as_u64().unwrap(), 2);
         assert!(envelope["payload"]["next_cursor"].is_null());
+        // Page-level `raw_rank` (kept as-is, distinct from per-item).
         assert!(envelope["payload"]["raw_rank"].is_number());
         assert!(envelope["payload"]["normalized_score"].is_number());
     }

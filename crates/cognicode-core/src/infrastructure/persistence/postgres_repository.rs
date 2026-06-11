@@ -654,7 +654,11 @@ pub struct NamedViewRow {
 ///
 /// `file` itself may legitimately contain `:` (Windows drive
 /// letters on the form `C:\path\...`), so we split from the
-/// RIGHT and only take the last two `:`s. Returns
+/// RIGHT and only take the last two `:`s. The `name` segment may
+/// itself contain `:` or `::` (e.g. Rust trait bounds like
+/// `Fn::call`); the algorithm walks past any `::` pair in the
+/// head so the separator between file and name is found, not a
+/// colon embedded in the name. Returns
 /// `RepositoryError::InvalidQuery` for malformed inputs.
 #[cfg(feature = "postgres")]
 fn parse_qualified_name(qualified: &str) -> Result<(String, String, i32), RepositoryError> {
@@ -665,9 +669,31 @@ fn parse_qualified_name(qualified: &str) -> Result<(String, String, i32), Reposi
     })?;
     let line_str = &qualified[first_colon + 1..];
     let head = &qualified[..first_colon];
-    let second_colon = head.rfind(':').ok_or_else(|| {
-        RepositoryError::InvalidQuery(format!("missing name segment: {qualified}"))
-    })?;
+    let head_bytes = head.as_bytes();
+    // In the head, the file/name separator is a single `:`
+    // that is neither preceded nor followed by another `:`.
+    // Skip past `::` pairs (which stay inside the name) from
+    // the right until we land on a single `:`.
+    let mut pos = head.len();
+    let second_colon = loop {
+        let next = head[..pos].rfind(':').ok_or_else(|| {
+            RepositoryError::InvalidQuery(format!("missing name segment: {qualified}"))
+        })?;
+        // If the `:` at `next` is the SECOND of a `::` pair
+        // (i.e. preceded by `:`), skip past both colons.
+        if next > 0 && head_bytes[next - 1] == b':' {
+            pos = next - 1;
+            continue;
+        }
+        // If the `:` at `next` is the FIRST of a `::` pair
+        // (i.e. followed by `:`), skip past it.
+        if next + 1 < head.len() && head_bytes[next + 1] == b':' {
+            pos = next;
+            continue;
+        }
+        // Single `:`. This is the file/name separator.
+        break next;
+    };
     let name = head[second_colon + 1..].to_string();
     let file_path = head[..second_colon].to_string();
     let line: i32 = line_str
@@ -1742,6 +1768,29 @@ mod tests {
         assert!(parse_qualified_name("no_colons").is_err());
         assert!(parse_qualified_name("missing:line").is_err());
         assert!(parse_qualified_name("a:b:notanumber").is_err());
+    }
+
+    /// Parser must preserve `::` sequences embedded in the
+    /// symbol name (e.g. Rust trait bounds like `Fn::call`).
+    /// Regression test: the previous `rfind` loop found the
+    /// rightmost `:` inside the name and split there, returning
+    /// garbage.
+    #[test]
+    fn parse_qualified_name_preserves_double_colon_in_name() {
+        // `module::Foo` is the file/module path,
+        // `Fn::call` is the symbol name, `5` is the line.
+        let (file, name, line) =
+            parse_qualified_name("module::Foo:Fn::call:5").unwrap();
+        assert_eq!(file, "module::Foo");
+        assert_eq!(name, "Fn::call");
+        assert_eq!(line, 5);
+
+        // The trailing `::` of the name must not be confused
+        // with a `::` separator.
+        let (file, name, line) = parse_qualified_name("path/to.rs:Trait::assoc:42").unwrap();
+        assert_eq!(file, "path/to.rs");
+        assert_eq!(name, "Trait::assoc");
+        assert_eq!(line, 42);
     }
 
     // -----------------------------------------------------------------
