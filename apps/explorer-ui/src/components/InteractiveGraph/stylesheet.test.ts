@@ -7,6 +7,10 @@
  * issue / evidence) and the 4 new edge styles (cites / justifies /
  * resolves / corroborated). The console-warn fallback for an
  * unknown bucket must still fire.
+ *
+ * T-Phase-1 (C4 architecture) — adds the 3 C4 node styles
+ * (component / container / system) and 3 C4 edge styles
+ * (part-of / deployed-as / in-system) on top of the multimodal set.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
@@ -88,6 +92,74 @@ describe("buildStylesheet — T18 multimodal edge blocks", () => {
   });
 });
 
+// ============================================================================
+// T-Phase-1 — C4-model architecture stylesheet blocks
+// ============================================================================
+//
+// RED gate: scan the rendered stylesheet for the 3 C4 node
+// styles (component / container / system) and the 3 C4 edge
+// styles (part-of / deployed-as / in-system). The C4 visual
+// convention is dashed-border + gray for the outermost (system)
+// layer, with colour matching the source node for edges.
+
+describe("buildStylesheet — Phase 1 C4 node blocks", () => {
+  it("stylesheet_has_component_node_style", () => {
+    const styles = buildStylesheet();
+    const has = styles.some(
+      (s) => typeof s === "object" && "selector" in s &&
+        s.selector === 'node[style_class = "node-component"]',
+    );
+    expect(has).toBe(true);
+  });
+
+  it("stylesheet_has_container_node_style", () => {
+    const styles = buildStylesheet();
+    const has = styles.some(
+      (s) => typeof s === "object" && "selector" in s &&
+        s.selector === 'node[style_class = "node-container"]',
+    );
+    expect(has).toBe(true);
+  });
+
+  it("stylesheet_has_system_node_style", () => {
+    const styles = buildStylesheet();
+    const has = styles.some(
+      (s) => typeof s === "object" && "selector" in s &&
+        s.selector === 'node[style_class = "node-system"]',
+    );
+    expect(has).toBe(true);
+  });
+});
+
+describe("buildStylesheet — Phase 1 C4 edge blocks", () => {
+  it("stylesheet_has_part_of_edge_style", () => {
+    const styles = buildStylesheet();
+    const has = styles.some(
+      (s) => typeof s === "object" && "selector" in s &&
+        s.selector === 'edge[style_class = "edge-part-of"]',
+    );
+    expect(has).toBe(true);
+  });
+
+  it("stylesheet_has_deployed_as_edge_style", () => {
+    const styles = buildStylesheet();
+    const has = styles.some(
+      (s) => typeof s === "object" && "selector" in s &&
+        s.selector === 'edge[style_class = "edge-deployed-as"]',
+    );
+    expect(has).toBe(true);
+  });
+
+  it("stylesheet_has_in_system_edge_style", () => {
+    const styles = buildStylesheet();
+    const has = styles.some(
+      (s) => typeof s === "object" && "selector" in s &&
+        s.selector === 'edge[style_class = "edge-in-system"]',
+    );
+    expect(has).toBe(true);
+  });
+});
+
 describe("KNOWN_*_CLASSES — T18 mirrors the 3+3 → 7+7 expansion", () => {
   it("includes the 4 multimodal node classes", () => {
     for (const c of ["node-decision", "node-doc", "node-issue", "node-evidence"]) {
@@ -116,6 +188,38 @@ describe("KNOWN_*_CLASSES — T18 mirrors the 3+3 → 7+7 expansion", () => {
     for (const c of ["edge.calls", "edge.implements", "edge.uses"]) {
       expect(KNOWN_EDGE_CLASSES.has(c)).toBe(true);
     }
+  });
+});
+
+// ============================================================================
+// T-Phase-1 — KNOWN_*_CLASSES grows to 10 node + 10 edge entries
+// ============================================================================
+
+describe("KNOWN_NODE_CLASSES — Phase 1 adds the 3 C4 node classes", () => {
+  it("includes the 3 C4 node classes (component / container / system)", () => {
+    for (const c of ["node-component", "node-container", "node-system"]) {
+      expect(KNOWN_NODE_CLASSES.has(c)).toBe(true);
+    }
+  });
+
+  it("total node class count is 10 (3 legacy + 4 multimodal + 3 C4)", () => {
+    expect(KNOWN_NODE_CLASSES.size).toBe(10);
+  });
+});
+
+describe("KNOWN_EDGE_CLASSES — Phase 1 adds the 3 C4 edge classes", () => {
+  it("includes the 3 C4 edge classes (part-of / deployed-as / in-system)", () => {
+    for (const c of [
+      "edge-part-of",
+      "edge-deployed-as",
+      "edge-in-system",
+    ]) {
+      expect(KNOWN_EDGE_CLASSES.has(c)).toBe(true);
+    }
+  });
+
+  it("total edge class count is 10 (3 legacy + 4 multimodal + 3 C4)", () => {
+    expect(KNOWN_EDGE_CLASSES.size).toBe(10);
   });
 });
 

@@ -382,3 +382,15 @@ test-pg:
 dev-pg-down:
     @echo "🛑 Stopping PostgreSQL..."
     docker compose down
+
+# ─── Performance budget ──────────────────────────────────────────────────────
+
+# Run the performance budget gate (bench + compare against perf-budget.toml)
+perf:
+    #!/usr/bin/env bash
+    ./scripts/perf-budget-check.sh
+
+# Run the raw Criterion benchmarks with bencher output (no budget check)
+perf-bench:
+    cargo bench -p cognicode-core --bench graph_benchmarks -- --output-format bencher
+

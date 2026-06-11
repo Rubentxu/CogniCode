@@ -7,9 +7,11 @@ use std::time::Instant;
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
+use cognicode_core::domain::aggregates::call_graph::CallGraph;
+use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
 use cognicode_core::infrastructure::graph::{
-    GraphCache, LightweightIndex, OnDemandGraphBuilder, PerFileGraphCache, SymbolIndex,
-    TraversalDirection,
+    CallGraphProjection, GraphCache, LightweightIndex, OnDemandGraphBuilder,
+    PerFileGraphCache, SubgraphDirection, SymbolIndex, TraversalDirection,
 };
 
 /// Generates a Python source file with approximately the given number of lines.
@@ -596,6 +598,236 @@ fn benchmark_per_file_graph_merge(c: &mut Criterion) {
 }
 
 // =============================================================================
+// Benchmark: Core Graph Operations (budget-tracked)
+// ----------------------------------------------------------------------------
+// These benchmarks back the entries in `perf-budget.toml` under
+// `[graph.operations]`. The benchmark names MUST match the keys in
+// that file exactly so the perf-budget-check script can find them.
+// =============================================================================
+
+/// Builds a `CallGraph` with `n` symbols in a small chain. Used as
+/// pre-populated state for the per-operation benchmarks below.
+fn build_graph(n: usize) -> CallGraph {
+    let mut g = CallGraph::new();
+    for i in 0..n {
+        let sym = cognicode_core::domain::aggregates::symbol::Symbol::new(
+            format!("sym_{}", i),
+            SymbolKind::Function,
+            Location::new("bench.rs", i as u32, 1),
+        );
+        g.add_symbol(sym);
+    }
+    // Wire them up in a chain so traversal has something to walk.
+    let ids: Vec<_> = (0..n)
+        .map(|i| {
+            let name = format!("sym_{}", i);
+            g.find_by_name(&name)
+                .first()
+                .map(|s| cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+                .unwrap()
+        })
+        .collect();
+    for i in 0..n.saturating_sub(1) {
+        let _ = g.add_dependency(&ids[i], &ids[i + 1], DependencyType::Calls);
+    }
+    g
+}
+
+fn benchmark_add_node(c: &mut Criterion) {
+    let mut g = build_graph(0);
+    let mut counter: usize = 0;
+
+    c.bench_function("add_node", |b| {
+        b.iter(|| {
+            let sym = cognicode_core::domain::aggregates::symbol::Symbol::new(
+                format!("dyn_sym_{}", counter),
+                SymbolKind::Function,
+                Location::new("bench.rs", 0, 1),
+            );
+            counter += 1;
+            let _ = g.add_symbol(black_box(sym));
+        });
+    });
+}
+
+fn benchmark_add_edge(c: &mut Criterion) {
+    // Pre-populate with disconnected nodes.
+    let mut g = CallGraph::new();
+    for i in 0..1000 {
+        let sym = cognicode_core::domain::aggregates::symbol::Symbol::new(
+            format!("node_{}", i),
+            SymbolKind::Function,
+            Location::new("bench.rs", i as u32, 1),
+        );
+        g.add_symbol(sym);
+    }
+
+    let ids: Vec<_> = (0..1000)
+        .map(|i| {
+            let name = format!("node_{}", i);
+            cognicode_core::domain::aggregates::call_graph::SymbolId::new(
+                g.find_by_name(&name)
+                    .first()
+                    .map(|s| s.fully_qualified_name().to_string())
+                    .unwrap_or_default(),
+            )
+        })
+        .collect();
+
+    let mut idx: usize = 0;
+
+    c.bench_function("add_edge", |b| {
+        b.iter(|| {
+            let src = &ids[idx % ids.len()];
+            let dst = &ids[(idx + 1) % ids.len()];
+            idx += 1;
+            let _ = g.add_dependency(black_box(src), black_box(dst), DependencyType::Calls);
+        });
+    });
+}
+
+fn benchmark_get_node(c: &mut Criterion) {
+    let g = build_graph(500);
+    let target = g
+        .find_by_name("sym_250")
+        .first()
+        .map(|s| cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+        .unwrap();
+
+    c.bench_function("get_node", |b| {
+        b.iter(|| {
+            let _ = g.get_symbol(black_box(&target));
+        });
+    });
+}
+
+fn benchmark_get_neighbors(c: &mut Criterion) {
+    // Build a small hub-and-spoke so each node has ~10 neighbors.
+    let mut g = CallGraph::new();
+    for i in 0..200 {
+        let sym = cognicode_core::domain::aggregates::symbol::Symbol::new(
+            format!("n_{}", i),
+            SymbolKind::Function,
+            Location::new("bench.rs", i as u32, 1),
+        );
+        g.add_symbol(sym);
+    }
+    let ids: Vec<_> = (0..200)
+        .map(|i| {
+            let name = format!("n_{}", i);
+            cognicode_core::domain::aggregates::call_graph::SymbolId::new(
+                g.find_by_name(&name)
+                    .first()
+                    .map(|s| s.fully_qualified_name().to_string())
+                    .unwrap_or_default(),
+            )
+        })
+        .collect();
+    for i in 1..200 {
+        let _ = g.add_dependency(&ids[0], &ids[i], DependencyType::Calls);
+    }
+    let hub = ids[0].clone();
+
+    c.bench_function("get_neighbors", |b| {
+        b.iter(|| {
+            let _ = g.callees(black_box(&hub));
+        });
+    });
+}
+
+fn benchmark_bfs_traversal_100_nodes(c: &mut Criterion) {
+    // 100-node chain: path from end to end is the worst case.
+    let g = build_graph(100);
+    let start_name = "sym_0";
+    let end_name = "sym_99";
+    let start = g
+        .find_by_name(start_name)
+        .first()
+        .map(|s| cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+        .unwrap();
+    let end = g
+        .find_by_name(end_name)
+        .first()
+        .map(|s| cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+        .unwrap();
+
+    c.bench_function("bfs_traversal_100_nodes", |b| {
+        b.iter(|| {
+            let _ = g.find_path(black_box(&start), black_box(&end));
+        });
+    });
+}
+
+fn benchmark_shortest_path(c: &mut Criterion) {
+    // Path query on a medium graph: 500-node chain.
+    let g = build_graph(500);
+    let start = g
+        .find_by_name("sym_0")
+        .first()
+        .map(|s| cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+        .unwrap();
+    let end = g
+        .find_by_name("sym_499")
+        .first()
+        .map(|s| cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+        .unwrap();
+
+    c.bench_function("shortest_path", |b| {
+        b.iter(|| {
+            let _ = g.find_path(black_box(&start), black_box(&end));
+        });
+    });
+}
+
+fn benchmark_subgraph_extraction_50_nodes(c: &mut Criterion) {
+    // Build a 200-node chain and extract a 50-node subgraph from one end.
+    let g = build_graph(200);
+    let projection = CallGraphProjection::from_call_graph(&g);
+    let root_name = "sym_0";
+    let root = g
+        .find_by_name(root_name)
+        .first()
+        .map(|s| cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+        .unwrap();
+
+    c.bench_function("subgraph_extraction_50_nodes", |b| {
+        b.iter(|| {
+            let _ = projection.extract_subgraph(
+                black_box(&root),
+                black_box(SubgraphDirection::Outgoing),
+                black_box(50),
+            );
+        });
+    });
+}
+
+/// Lightweight FTS-style search over 100 indexed files. Budget name: `search`.
+fn benchmark_search_100_files(c: &mut Criterion) {
+    let mut index = LightweightIndex::new();
+    for i in 0..100 {
+        let path = format!("src/file_{}.py", i);
+        let source = format!(
+            r#"
+def function_{}(x, y):
+    return x + y
+
+class Class_{}:
+    def method_{}(self):
+        return "value_{}"
+"#,
+            i, i, i, i
+        );
+        index.build_from_sources([(path.as_str(), source.as_str())]);
+    }
+
+    c.bench_function("search", |b| {
+        b.iter(|| {
+            let _ = index.find_symbol(black_box("function_50"));
+        });
+    });
+}
+
+// =============================================================================
 // Criterion Main
 // =============================================================================
 
@@ -624,5 +856,14 @@ criterion_group!(
     benchmark_lightweight_index_find,
     // Merge benchmarks
     benchmark_per_file_graph_merge,
+    // Budget-tracked core graph operations (names match perf-budget.toml)
+    benchmark_add_node,
+    benchmark_add_edge,
+    benchmark_get_node,
+    benchmark_get_neighbors,
+    benchmark_bfs_traversal_100_nodes,
+    benchmark_shortest_path,
+    benchmark_subgraph_extraction_50_nodes,
+    benchmark_search_100_files,
 );
 criterion_main!(benches);

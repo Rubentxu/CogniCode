@@ -364,6 +364,12 @@ export const lensDescriptorsFixture: LensDescriptor[] = [
     applicable_types: ["scope", "file"],
   },
   {
+    id: "lens.dead-code",
+    name: "Dead code",
+    description: "Highlight unreferenced modules and unreachable symbols.",
+    applicable_types: ["scope", "file"],
+  },
+  {
     id: "lens.quality",
     name: "Quality lens",
     description: "Bucket open quality issues by severity for a scope.",

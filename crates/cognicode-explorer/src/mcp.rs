@@ -1884,11 +1884,18 @@ async fn dispatch_graph_search(
                 "doc" => parsed_kinds.push(NodeKind::Doc),
                 "issue" => parsed_kinds.push(NodeKind::Issue),
                 "evidence" => parsed_kinds.push(NodeKind::Evidence),
+                // C4-model architecture kinds (Phase 1 — no
+                // extractor produces them yet, but the string
+                // round-trip is wired in to keep the taxonomy
+                // consistent).
+                "component" => parsed_kinds.push(NodeKind::Component),
+                "container" => parsed_kinds.push(NodeKind::Container),
+                "system" => parsed_kinds.push(NodeKind::System),
                 other => {
                     return envelope_named_err_for(
                         TOOL_GRAPH_SEARCH,
                         "invalid_input",
-                        &format!("{TOOL_GRAPH_SEARCH}: unknown `node_kinds` entry `{other}` (expected one of: symbol, decision, doc, issue, evidence)"),
+                        &format!("{TOOL_GRAPH_SEARCH}: unknown `node_kinds` entry `{other}` (expected one of: symbol, decision, doc, issue, evidence, component, container, system)"),
                     );
                 }
             }
@@ -3179,11 +3186,11 @@ fn build_tool_schemas() -> Vec<Tool> {
         #[cfg(feature = "multimodal")]
         Tool::new(
             TOOL_GRAPH_SEARCH,
-            "FTS5-backed search across the `graph_nodes` table. Returns multimodal nodes (Symbol / Decision / Doc / Issue / Evidence) whose label or metadata matches `query`. The `node_kinds` filter restricts the search to one or more kinds; omit to search every kind. `limit` defaults to 50, capped at 200. Pagination is opaque: the response carries `next_cursor` (a string) which the caller passes back as `cursor` to fetch the next page; `null` means the last page. The payload also exposes `raw_rank` (the FTS5 `ts_rank_cd` value) and `normalized_score` (`raw_rank` clamped to `[0.0, 1.0]`) per the design's Information Bottleneck check. Without the `multimodal` Cargo feature active, the tool is absent from `tools/list`.",
+            "FTS5-backed search across the `graph_nodes` table. Returns multimodal nodes (Symbol / Decision / Doc / Issue / Evidence / Component / Container / System) whose label or metadata matches `query`. The `node_kinds` filter restricts the search to one or more kinds; omit to search every kind. `limit` defaults to 50, capped at 200. Pagination is opaque: the response carries `next_cursor` (a string) which the caller passes back as `cursor` to fetch the next page; `null` means the last page. The payload also exposes `raw_rank` (the FTS5 `ts_rank_cd` value) and `normalized_score` (`raw_rank` clamped to `[0.0, 1.0]`) per the design's Information Bottleneck check. Without the `multimodal` Cargo feature active, the tool is absent from `tools/list`.",
             schema(
                 serde_json::json!({
                     "query":      { "type": "string", "description": "Search query (required, non-empty). The match is case-insensitive substring on the node's label and on the values of its `metadata` map." },
-                    "node_kinds": { "type": "array",  "items": { "type": "string" }, "description": "Optional filter — one or more of `symbol`, `decision`, `doc`, `issue`, `evidence`. Omit to search every kind." },
+                    "node_kinds": { "type": "array",  "items": { "type": "string" }, "description": "Optional filter — one or more of `symbol`, `decision`, `doc`, `issue`, `evidence`, `component`, `container`, `system`. Omit to search every kind." },
                     "cursor":     { "type": "string", "description": "Opaque cursor returned by the previous call's `next_cursor`. Omit (or pass `null`) for the first page." },
                     "limit":      { "type": "integer", "description": "Page size — defaults to 50, capped at 200. Values > 200 are silently capped; values <= 0 are rejected." }
                 }),

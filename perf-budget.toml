@@ -1,0 +1,29 @@
+# Performance budget for CogniCode operations.
+# These are MAXIMUM allowed times in microseconds.
+# CI fails if any operation exceeds its budget.
+# Budgets are generous for CI runners (which are slower than dev machines).
+
+[graph.operations]
+# Core graph operations
+add_node = 50
+add_edge = 50
+get_node = 100
+get_neighbors = 200
+bfs_traversal_100_nodes = 500
+shortest_path = 1000
+subgraph_extraction_50_nodes = 2000
+
+[mcp.tools]
+# MCP tool operations (includes repo round-trip)
+graph_nodes_100 = 5000
+graph_search = 10000
+graph_subgraph = 15000
+brain_open = 5000
+brain_ask = 30000
+
+[explorerql]
+# ExplorerQL parsing and execution
+parse_simple = 100
+parse_complex = 500
+execute_find = 5000
+execute_traverse = 10000

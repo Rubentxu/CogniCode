@@ -4,10 +4,12 @@
  * Buckets follow the wire `style_class` taxonomy from the backend:
  * - Nodes: `function` (default), `module`, `external`,
  *   `node-decision` (multimodal), `node-doc` (multimodal),
- *   `node-issue` (multimodal), `node-evidence` (multimodal)
+ *   `node-issue` (multimodal), `node-evidence` (multimodal),
+ *   `node-component` (C4), `node-container` (C4), `node-system` (C4)
  * - Edges: `edge.calls` (default), `edge.implements`, `edge.uses`,
  *   `edge-cites` (multimodal), `edge-justifies` (multimodal),
- *   `edge-resolves` (multimodal), `edge-corroborated` (multimodal)
+ *   `edge-resolves` (multimodal), `edge-corroborated` (multimodal),
+ *   `edge-part-of` (C4), `edge-deployed-as` (C4), `edge-in-system` (C4)
  * - Selection state: `selected`, `highlighted`, `dimmed`
  *
  * Unknown node `style_class` values fall back to the `function`
@@ -24,6 +26,15 @@
  *   justifies → solid green
  *   resolves  → dotted orange
  *   corroborated → double violet
+ *
+ * T-Phase-1 (C4 architecture) — adds 3 node blocks and 3 edge blocks.
+ * Shapes and palette follow the C4-model visual convention:
+ *   component  → blue rounded rectangle
+ *   container  → purple wider rectangle
+ *   system     → gray large rectangle with dashed border
+ *   part-of    → solid blue
+ *   deployed-as → solid purple
+ *   in-system  → solid gray
  */
 import type { Core, StylesheetCSS, StylesheetStyle } from "cytoscape";
 
@@ -36,6 +47,10 @@ export const KNOWN_NODE_CLASSES = new Set([
   "node-doc",
   "node-issue",
   "node-evidence",
+  // ---- C4 architecture (Phase 1) ----
+  "node-component",
+  "node-container",
+  "node-system",
 ]);
 export const KNOWN_EDGE_CLASSES = new Set([
   "edge.calls",
@@ -46,6 +61,10 @@ export const KNOWN_EDGE_CLASSES = new Set([
   "edge-justifies",
   "edge-resolves",
   "edge-corroborated",
+  // ---- C4 architecture (Phase 1) ----
+  "edge-part-of",
+  "edge-deployed-as",
+  "edge-in-system",
 ]);
 
 // Cytoscape's Css types are extremely strict (e.g. `text-max-width`
@@ -149,6 +168,52 @@ export function buildStylesheet(): (StylesheetStyle | StylesheetCSS)[] {
         shape: "ellipse",
       } as unknown as StylesheetStyle["style"],
     },
+    // ---- C4 architecture (Phase 1) — 3 new node blocks ----
+    //
+    // C4 model: Component < Container < System (zoom-out
+    // hierarchy). Visual encoding uses color + size to reflect
+    // granularity so a glance at the canvas reveals which
+    // architectural layer dominates.
+    {
+      selector: 'node[style_class = "node-component"]',
+      style: {
+        "background-color": "#60a5fa",
+        "border-color": "#1d4ed8",
+        shape: "round-rectangle",
+        // Smaller than containers; components are leaf-ish
+        // groupings of related symbols.
+        width: 96,
+        height: 40,
+      } as unknown as StylesheetStyle["style"],
+    },
+    {
+      selector: 'node[style_class = "node-container"]',
+      style: {
+        "background-color": "#a78bfa",
+        "border-color": "#6d28d9",
+        shape: "rectangle",
+        // Wider than components; containers are deployable
+        // units that hold multiple components.
+        width: 140,
+        height: 64,
+      } as unknown as StylesheetStyle["style"],
+    },
+    {
+      selector: 'node[style_class = "node-system"]',
+      style: {
+        "background-color": "#cbd5e1",
+        "border-color": "#475569",
+        // C4 convention: dashed border signals a system
+        // boundary (the "outermost" zoom level).
+        "border-style": "dashed",
+        "border-width": 2,
+        shape: "rectangle",
+        // Largest of the three; systems hold multiple
+        // containers.
+        width: 200,
+        height: 96,
+      } as unknown as StylesheetStyle["style"],
+    },
     {
       selector: "edge",
       style: EDGE_BASE as unknown as StylesheetStyle["style"],
@@ -212,6 +277,36 @@ export function buildStylesheet(): (StylesheetStyle | StylesheetCSS)[] {
         width: 2.5,
       } as unknown as StylesheetStyle["style"],
     },
+    // ---- C4 architecture (Phase 1) — 3 new edge blocks ----
+    //
+    // C4-model relationships are containment / deployment
+    // edges, not code-level dependencies. Encoded in solid lines
+    // with the colour of the SOURCE node so the hierarchy reads
+    // top-down (Component ⊂ Container ⊂ System).
+    {
+      selector: 'edge[style_class = "edge-part-of"]',
+      style: {
+        "line-color": "#60a5fa",
+        "target-arrow-color": "#60a5fa",
+        "line-style": "solid",
+      } as unknown as StylesheetStyle["style"],
+    },
+    {
+      selector: 'edge[style_class = "edge-deployed-as"]',
+      style: {
+        "line-color": "#a78bfa",
+        "target-arrow-color": "#a78bfa",
+        "line-style": "solid",
+      } as unknown as StylesheetStyle["style"],
+    },
+    {
+      selector: 'edge[style_class = "edge-in-system"]',
+      style: {
+        "line-color": "#94a3b8",
+        "target-arrow-color": "#94a3b8",
+        "line-style": "solid",
+      } as unknown as StylesheetStyle["style"],
+    },
     {
       selector: ".selected",
       style: {
@@ -246,6 +341,9 @@ export function buildStylesheet(): (StylesheetStyle | StylesheetCSS)[] {
  * new multimodal node classes in addition to the 3 legacy code
  * buckets. The 3 legacy buckets stay unchanged for backward
  * compatibility.
+ *
+ * T-Phase-1 (C4 architecture) — adds the 3 C4 node classes
+ * (`node-component`, `node-container`, `node-system`).
  */
 export type ResolvedNodeStyleClass =
   | "function"
@@ -254,7 +352,10 @@ export type ResolvedNodeStyleClass =
   | "node-decision"
   | "node-doc"
   | "node-issue"
-  | "node-evidence";
+  | "node-evidence"
+  | "node-component"
+  | "node-container"
+  | "node-system";
 
 const warnedBuckets = new Set<string>();
 export function resolveNodeStyleClass(raw: string | undefined): ResolvedNodeStyleClass {
@@ -275,11 +376,24 @@ export function resolveNodeStyleClass(raw: string | undefined): ResolvedNodeStyl
  * style by. Symmetric to [`resolveNodeStyleClass`] but for edges.
  * Unknown buckets fall back to `"edge.calls"` and emit a single
  * `console.warn` (deduped per bucket per session).
+ *
+ * T-Phase-1 (C4 architecture) — adds the 3 C4 edge classes
+ * (`edge-part-of`, `edge-deployed-as`, `edge-in-system`).
  */
 const warnedEdgeBuckets = new Set<string>();
 export function resolveEdgeStyleClass(
   raw: string | undefined,
-): "edge.calls" | "edge.implements" | "edge.uses" | "edge-cites" | "edge-justifies" | "edge-resolves" | "edge-corroborated" {
+):
+  | "edge.calls"
+  | "edge.implements"
+  | "edge.uses"
+  | "edge-cites"
+  | "edge-justifies"
+  | "edge-resolves"
+  | "edge-corroborated"
+  | "edge-part-of"
+  | "edge-deployed-as"
+  | "edge-in-system" {
   if (raw && KNOWN_EDGE_CLASSES.has(raw)) {
     return raw as
       | "edge.calls"
@@ -288,7 +402,10 @@ export function resolveEdgeStyleClass(
       | "edge-cites"
       | "edge-justifies"
       | "edge-resolves"
-      | "edge-corroborated";
+      | "edge-corroborated"
+      | "edge-part-of"
+      | "edge-deployed-as"
+      | "edge-in-system";
   }
   if (raw && !warnedEdgeBuckets.has(raw)) {
     warnedEdgeBuckets.add(raw);
