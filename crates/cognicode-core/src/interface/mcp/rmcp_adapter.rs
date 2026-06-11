@@ -798,6 +798,47 @@ impl ServerHandler for CogniCodeHandler {
                         "properties": {}
                     }).as_object().cloned().unwrap()),
                 ),
+                // Phase 5: Community Detection (Label Propagation).
+                //
+                // `graph_communities` runs Label Propagation over the
+                // in-memory call graph and returns deterministic
+                // community labels. `graph_community_detail` drills
+                // into a single community, and `graph_surprising_
+                // connections` highlights edges that cross community
+                // boundaries (often a sign of unwanted coupling).
+                Tool::new(
+                    "graph_communities",
+                    "Detect code communities using Label Propagation. Groups symbols that are tightly coupled into clusters. Returns communities with cohesion scores. Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "max_iterations": { "type": "integer", "description": "Max label propagation iterations (default: 100)" }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_community_detail",
+                    "Get details for a specific community detected by graph_communities (members, internal/external edge counts, cohesion score, and top god nodes within the community). Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "community_id": { "type": "integer", "description": "Sequential community id from graph_communities output" },
+                            "max_iterations": { "type": "integer", "description": "Max label propagation iterations used to re-detect communities (default: 100)" }
+                        },
+                        "required": ["community_id"]
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_surprising_connections",
+                    "Find surprising cross-community connections. These are edges between symbols in different communities, indicating unexpected coupling. Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "top_n": { "type": "integer", "description": "Max connections to return (default: 20)" },
+                            "max_iterations": { "type": "integer", "description": "Max label propagation iterations (default: 100)" }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
                 // Phase 3A: Proactive Tools
                 Tool::new(
                     "suggest_context",
@@ -1662,6 +1703,150 @@ async fn call_tool_handler(
                 "error": format!("Graph store error: {}", e)
             }))?),
         },
+        // Phase 5: Community Detection handlers.
+        //
+        // Each handler pulls the in-memory `CallGraph`, runs the
+        // pure `CommunityDetector` over it, and serialises the result
+        // (or a list of cross-community edges) as pretty JSON. The
+        // algorithm is deterministic: sorted node iteration, label
+        // normalisation by first-node index, and sorted output
+        // guarantee that two runs over the same graph produce the
+        // same JSON.
+        "graph_communities" => {
+            let input: crate::interface::mcp::schemas::GraphCommunitiesInput =
+                serde_json::from_value(arguments.into())?;
+            match ctx.get_graph_store().load_graph() {
+                Ok(Some(graph)) => {
+                    let result = crate::application::services::community_detector::CommunityDetector::detect(
+                        &graph,
+                        input.max_iterations as usize,
+                    );
+                    let payload = serde_json::json!({
+                        "algorithm": "label_propagation",
+                        "max_iterations": input.max_iterations,
+                        "iterations_used": result.iterations,
+                        "converged": result.converged,
+                        "community_count": result.communities.len(),
+                        "communities": result.communities.iter().map(|c| {
+                            serde_json::json!({
+                                "id": c.id,
+                                "label": c.label,
+                                "size": c.nodes.len(),
+                                "internal_edges": c.internal_edges,
+                                "external_edges": c.external_edges,
+                                "cohesion": c.cohesion,
+                            })
+                        }).collect::<Vec<_>>(),
+                    });
+                    Ok(serde_json::to_string_pretty(&payload)?)
+                }
+                Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "error": "No call graph available. Run build_graph first."
+                }))?),
+                Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "error": format!("Graph store error: {}", e)
+                }))?),
+            }
+        }
+        "graph_community_detail" => {
+            let input: crate::interface::mcp::schemas::GraphCommunityDetailInput =
+                serde_json::from_value(arguments.into())?;
+            match ctx.get_graph_store().load_graph() {
+                Ok(Some(graph)) => {
+                    let result = crate::application::services::community_detector::CommunityDetector::detect(
+                        &graph,
+                        input.max_iterations as usize,
+                    );
+                    match result.communities.iter().find(|c| c.id == input.community_id) {
+                        Some(c) => {
+                            // Top god nodes within this community.
+                            let god = crate::application::services::community_detector::CommunityDetector::community_god_nodes(
+                                &graph,
+                                std::slice::from_ref(c),
+                                5,
+                            );
+                            let god_list = god.into_iter().flat_map(|(_id, scored)| scored).collect::<Vec<_>>();
+                            let god_rendered: Vec<(String, f64)> = god_list
+                                .into_iter()
+                                .map(|(id, score)| (id.as_str().to_string(), score))
+                                .collect();
+                            let nodes_rendered: Vec<String> = c
+                                .nodes
+                                .iter()
+                                .map(|n| n.as_str().to_string())
+                                .collect();
+                            let payload = serde_json::json!({
+                                "community_id": c.id,
+                                "label": c.label,
+                                "size": c.nodes.len(),
+                                "internal_edges": c.internal_edges,
+                                "external_edges": c.external_edges,
+                                "cohesion": c.cohesion,
+                                "nodes": nodes_rendered,
+                                "god_nodes": god_rendered,
+                            });
+                            Ok(serde_json::to_string_pretty(&payload)?)
+                        }
+                        None => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                            "error": format!(
+                                "Community {} not found. Available ids: {:?}",
+                                input.community_id,
+                                result.communities.iter().map(|c| c.id).collect::<Vec<_>>()
+                            )
+                        }))?),
+                    }
+                }
+                Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "error": "No call graph available. Run build_graph first."
+                }))?),
+                Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "error": format!("Graph store error: {}", e)
+                }))?),
+            }
+        }
+        "graph_surprising_connections" => {
+            let input: crate::interface::mcp::schemas::GraphSurprisingConnectionsInput =
+                serde_json::from_value(arguments.into())?;
+            match ctx.get_graph_store().load_graph() {
+                Ok(Some(graph)) => {
+                    let result = crate::application::services::community_detector::CommunityDetector::detect(
+                        &graph,
+                        input.max_iterations as usize,
+                    );
+                    let top_n = if input.top_n == 0 { 20 } else { input.top_n as usize };
+                    let crosses = crate::application::services::community_detector::CommunityDetector::surprising_connections(
+                        &graph,
+                        &result,
+                        top_n,
+                    );
+                    let rendered: Vec<serde_json::Value> = crosses
+                        .into_iter()
+                        .map(|(s, d, sc, dc)| {
+                            serde_json::json!({
+                                "source": s.as_str(),
+                                "target": d.as_str(),
+                                "source_community": sc,
+                                "target_community": dc,
+                            })
+                        })
+                        .collect();
+                    let payload = serde_json::json!({
+                        "algorithm": "label_propagation_surprising",
+                        "max_iterations": input.max_iterations,
+                        "community_count": result.communities.len(),
+                        "cross_community_edge_count": rendered.len(),
+                        "edges": rendered,
+                    });
+                    Ok(serde_json::to_string_pretty(&payload)?)
+                }
+                Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "error": "No call graph available. Run build_graph first."
+                }))?),
+                Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "error": format!("Graph store error: {}", e)
+                }))?),
+            }
+        }
         _ => anyhow::bail!("Unknown tool: {}", tool_name),
     }
 }

@@ -2198,3 +2198,48 @@ pub struct GraphGodNodesInput {
     pub percentile: f64,
 }
 
+/// Default max iterations for Label Propagation community detection.
+fn default_communities_max_iterations() -> u32 {
+    100
+}
+
+/// Default cap for cross-community edge lookups.
+fn default_surprising_top_n() -> u32 {
+    20
+}
+
+/// Input for `graph_communities` — Label Propagation community detection
+/// over the call graph.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GraphCommunitiesInput {
+    /// Max label propagation iterations (default: 100).
+    #[serde(default = "default_communities_max_iterations")]
+    pub max_iterations: u32,
+}
+
+/// Input for `graph_community_detail` — fetch the details of a single
+/// community detected by `graph_communities`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GraphCommunityDetailInput {
+    /// Sequential community id (from `graph_communities` output).
+    pub community_id: u32,
+    /// Max iterations for the underlying Label Propagation run
+    /// (default: 100). Kept in the input so the caller can control
+    /// determinism on the same `CallGraph`.
+    #[serde(default = "default_communities_max_iterations")]
+    pub max_iterations: u32,
+}
+
+/// Input for `graph_surprising_connections` — find edges that cross
+/// community boundaries (indicating unexpected coupling).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GraphSurprisingConnectionsInput {
+    /// Maximum number of cross-community edges to return (default: 20).
+    #[serde(default = "default_surprising_top_n")]
+    pub top_n: u32,
+    /// Max iterations for the underlying Label Propagation run
+    /// (default: 100).
+    #[serde(default = "default_communities_max_iterations")]
+    pub max_iterations: u32,
+}
+
