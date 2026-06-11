@@ -97,6 +97,7 @@ impl GraphRepository for PgGraphRepository {
             raw_total: 0,
             next_cursor: None,
             raw_rank: 0.0,
+            item_ranks: Vec::new(),
         })
     }
 

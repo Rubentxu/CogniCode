@@ -455,7 +455,7 @@ async fn rationale_handler(
         .map_err(ApiError)?;
 
     // 1) BFS rationale subgraph from the repository.
-    let (nodes, edges) = graph_repo
+    let (nodes, edges, truncated) = graph_repo
         .rationale_subgraph(&focus, max_depth, max_nodes)
         .map_err(ApiError)?;
 
@@ -488,7 +488,6 @@ async fn rationale_handler(
         })
         .collect();
 
-    let truncated = false;
     let response = SubgraphResponse {
         root: id.to_string(),
         nodes: dto_nodes,

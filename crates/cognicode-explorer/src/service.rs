@@ -723,7 +723,7 @@ impl ExplorerService {
         // every lens-specific transformation (callgraph,
         // overview, ...) is applied.
         let mvp_id = view_focus_mvp_id(&row.level, &row.focus_node);
-        self.contextual_view(&mvp_id, &row.lens)
+        self.contextual_view(&mvp_id, lens_to_view_id(&row.lens))
     }
 
     /// List named views for a `(workspace_id, owner)` scope,
@@ -1891,6 +1891,24 @@ fn view_focus_mvp_id(level: &str, focus_node: &str) -> String {
         _ => "symbol",
     };
     format!("{prefix}:{focus_node}")
+}
+
+/// Translate a stored `lens` value (e.g. `"callgraph"`) into the
+/// matching `view_id` accepted by `contextual_view` (e.g.
+/// `"call-graph"`). The lens-vs-view distinction is a historical
+/// naming difference that pre-dates the v2 schema; the DB stores
+/// the user-facing `lens` form for display but the runtime
+/// dispatch expects the view builder name.
+#[cfg(feature = "postgres")]
+fn lens_to_view_id(lens: &str) -> &str {
+    match lens {
+        "callgraph" => "call-graph",
+        "overview" | "call-graph" | "source" | "evidence" | "quality" | "rationale" => lens,
+        // Pass through any other value (e.g. a future lens) and
+        // let `contextual_view` reject it with a precise
+        // `ViewNotAvailable` error.
+        other => other,
+    }
 }
 
 /// Generate a v4-ish UUID string (RFC 4122 form) using the

@@ -68,11 +68,23 @@ pub fn target_score(target: &NodeId, edges: &[GraphEdge]) -> f64 {
     buckets.values().sum::<f64>().clamp(0.0, 1.0)
 }
 
-/// Compute per-edge corroboration scores for the subgraph.
+/// Compute corroboration scores for the subgraph.
 ///
-/// Returns a `HashMap` keyed by `"source->target"` (the composite key
-/// the front-end adapter reconstructs from DTO `GraphEdge.source` and
-/// `GraphEdge.target`) with each edge's `edge_score` value.
+/// Returns a `HashMap` that contains BOTH per-edge and per-target
+/// scores so a single API call can serve both consumers:
+///
+/// * **Per-edge entries** are keyed by `"source->target"` (the
+///   composite key the front-end adapter reconstructs from DTO
+///   `GraphEdge.source` and `GraphEdge.target`) with each edge's
+///   `edge_score` value. These are kept for backward compatibility
+///   with existing front-end code that visualises edges.
+///
+/// * **Per-target entries** are keyed by `"any->target"` and
+///   contain the bucket-maxed [`target_score`] — i.e. the
+///   corroboration score of a node, computed by summing the
+///   per-provenance maxima of all incoming edges (clamped to
+///   `[0.0, 1.0]`). This is the metric the corroboration spec
+///   actually wants: "how well-attested is this target node?".
 ///
 /// The result is deterministic for identical inputs: edges are
 /// traversed in order and the score formula is pure.
@@ -80,10 +92,25 @@ pub fn score_subgraph(
     _nodes: &[GraphNode],
     edges: &[GraphEdge],
 ) -> HashMap<String, f64> {
-    edges
-        .iter()
-        .map(|e| (format!("{}->{}", e.source.0, e.target.0), edge_score(e)))
-        .collect()
+    let mut out: HashMap<String, f64> = HashMap::new();
+    // 1) Per-edge scores (backward-compat keys).
+    for e in edges {
+        out.insert(
+            format!("{}->{}", e.source.0, e.target.0),
+            edge_score(e),
+        );
+    }
+    // 2) Per-target scores (new): bucket-max by target.
+    // Collect distinct targets first so the map is deterministic
+    // regardless of HashMap iteration order.
+    let mut distinct_targets: Vec<&NodeId> =
+        edges.iter().map(|e| &e.target).collect();
+    distinct_targets.sort_by(|a, b| a.0.cmp(&b.0));
+    distinct_targets.dedup();
+    for target in distinct_targets {
+        out.insert(format!("any->{}", target.0), target_score(target, edges));
+    }
+    out
 }
 
 #[cfg(test)]
@@ -241,7 +268,8 @@ mod tests {
     // 1.7 — score_subgraph
     // ========================================================================
 
-    /// 4 edges with known scores → map has 4 entries with correct values
+    /// 4 edges with known scores → map has 4 per-edge + 3 per-target
+    /// = 7 entries, with correct values for both kinds.
     #[test]
     fn score_subgraph_four_edges() {
         let edges = vec![
@@ -252,7 +280,9 @@ mod tests {
         ];
         let nodes = vec![];
         let scores = score_subgraph(&nodes, &edges);
-        assert_eq!(scores.len(), 4);
+        // 4 per-edge + 3 per-target (B, C, D).
+        assert_eq!(scores.len(), 7);
+        // --- per-edge scores (backward-compat) ---
         // A->B: Manual 1.0 → 1.0 * 1.0 = 1.0
         assert!((scores["A->B"] - 1.0).abs() < f64::EPSILON);
         // A->C: Extracted 0.8 → 0.9 * 0.8 = 0.72
@@ -261,9 +291,18 @@ mod tests {
         assert!((scores["B->D"] - 0.765).abs() < f64::EPSILON);
         // C->D: Inferred 1.0 → 0.5 * 1.0 = 0.5
         assert!((scores["C->D"] - 0.5).abs() < f64::EPSILON);
+        // --- per-target scores (new) ---
+        // any->B: only one edge (Manual 1.0) → 1.0
+        assert!((scores["any->B"] - 1.0).abs() < f64::EPSILON);
+        // any->C: only one edge (Extracted 0.8) → 0.72
+        assert!((scores["any->C"] - 0.72).abs() < f64::EPSILON);
+        // any->D: two edges (Tested 0.9 → 0.765, Inferred 1.0 → 0.5).
+        // Bucket-max per provenance, then sum: 0.765 + 0.5 = 1.265
+        // clamped to 1.0.
+        assert!((scores["any->D"] - 1.0).abs() < f64::EPSILON);
     }
 
-    /// Empty edges → empty map
+    /// Empty edges → empty map (no per-edge, no per-target).
     #[test]
     fn score_subgraph_empty_edges() {
         let scores = score_subgraph(&[], &[]);
@@ -281,5 +320,30 @@ mod tests {
         let a = score_subgraph(&nodes, &edges);
         let b = score_subgraph(&nodes, &edges);
         assert_eq!(a, b);
+    }
+
+    /// Per-target bucket-max: when two edges share a target AND
+    /// the same provenance, only the max counts toward the
+    /// provenance bucket. (The per-edge key collides for parallel
+    /// edges — the LAST edge's score wins, mirroring the previous
+    /// `HashMap` behaviour. The per-target key is the new
+    /// bucket-maxed value.)
+    #[test]
+    fn score_subgraph_per_target_bucket_max() {
+        let edges = vec![
+            make_edge("e1", "A", "B", Provenance::Manual, 0.4),
+            make_edge("e2", "A", "B", Provenance::Manual, 0.9),
+            make_edge("e3", "A", "B", Provenance::Inferred, 0.6),
+        ];
+        let scores = score_subgraph(&[], &edges);
+        // 1 per-edge key (all three edges share "A->B"; last
+        // wins) + 1 per-target key (B) = 2 entries.
+        assert_eq!(scores.len(), 2);
+        // Per-edge "A->B": last edge (Inferred 0.6) wins =
+        // 0.5 * 0.6 = 0.3.
+        assert!((scores["A->B"] - 0.3).abs() < f64::EPSILON);
+        // Per-target any->B: bucket max Manual = 0.9, bucket max
+        // Inferred = 0.3 → 0.9 + 0.3 = 1.2 → clamped to 1.0.
+        assert!((scores["any->B"] - 1.0).abs() < f64::EPSILON);
     }
 }

@@ -40,9 +40,19 @@ pub struct SearchPage {
     /// (and on the only page of a small result set).
     pub next_cursor: Option<String>,
     /// The raw FTS5 rank (the `ts_rank_cd` value as a positive
-    /// float). The MCP tool surfaces this alongside the
-    /// normalised score per the IB check in `design.md`.
+    /// float) of the top item on the page. The MCP tool
+    /// surfaces this alongside the normalised score per the IB
+    /// check in `design.md`. Kept for backward compatibility —
+    /// the per-item scores live in `item_ranks` and are
+    /// preferred when present.
     pub raw_rank: f64,
+    /// Per-item raw ranks, parallel to `items` (so
+    /// `item_ranks.len() == items.len()`). The MCP tool uses
+    /// this to emit a distinct `score` per result. `Vec::new()`
+    /// when the underlying search backend does not surface
+    /// per-item ranks (e.g. an unimplemented PG stub); the
+    /// caller then falls back to `raw_rank` for every item.
+    pub item_ranks: Vec<f64>,
 }
 
 /// Read-only port for the Generic Graph Layer.
@@ -87,14 +97,16 @@ pub trait GraphRepository: Send + Sync {
     /// BFS traversal of the multimodal sub-graph from `focus`, following
     /// only multimodal edges (Justifies, Cites, Resolves, CorroboratedBy).
     ///
-    /// Returns `(nodes, edges)`. The traversal is bounded by `max_depth`
-    /// and `max_nodes`. When the reachable set exceeds `max_nodes`, the
-    /// traversal stops early and edges with missing endpoints are dropped.
+    /// Returns `(nodes, edges, truncated)` where `truncated` is `true`
+    /// when the traversal stopped early because the reachable set
+    /// exceeded `max_nodes`. The traversal is bounded by `max_depth`
+    /// and `max_nodes`. When truncation kicks in, edges with missing
+    /// endpoints are dropped.
     #[cfg(feature = "multimodal")]
     fn rationale_subgraph(
         &self,
         focus: &NodeId,
         max_depth: u32,
         max_nodes: usize,
-    ) -> ExplorerResult<(Vec<GraphNode>, Vec<GraphEdge>)>;
+    ) -> ExplorerResult<(Vec<GraphNode>, Vec<GraphEdge>, bool)>;
 }

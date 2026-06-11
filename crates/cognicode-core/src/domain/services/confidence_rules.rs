@@ -10,6 +10,8 @@
 //! | `DirectExtraction`               | `(Extracted, 1.0)`                |
 //! | `Heuristic { score: s }`         | `(Inferred, clamp(s, 0.5, 0.9))`  |
 //! | `Unresolved`                     | `(Ambiguous, 0.3)`                |
+//! | `Manual`                         | `(Manual, 1.0)`                   |
+//! | `Tested`                         | `(Tested, 1.0)`                   |
 //!
 //! ## Rejection rules
 //!
@@ -45,6 +47,16 @@ pub enum ExtractionContext {
     },
     /// Edge could not be resolved to a single concrete target.
     Unresolved,
+    /// Edge was curated by a human (added manually to the graph).
+    /// Preserved as a distinct provenance across the
+    /// store / load round-trip — used by the postgres
+    /// repository to faithfully restore `Provenance::Manual`
+    /// rows. Maps to `(Provenance::Manual, 1.0)`.
+    Manual,
+    /// Edge is backed by a passing test. Preserved as a distinct
+    /// provenance across the store / load round-trip. Maps to
+    /// `(Provenance::Tested, 1.0)`.
+    Tested,
 }
 
 /// Failure cases for [`ConfidenceRules::assign`].
@@ -86,7 +98,8 @@ impl ConfidenceRules {
     ///
     /// Returns [`ConfidenceError::NotANumber`] / [`ConfidenceError::Infinite`]
     /// / [`ConfidenceError::OutOfRange`] when the `Heuristic` score is
-    /// invalid. `DirectExtraction` and `Unresolved` never fail.
+    /// invalid. `DirectExtraction`, `Unresolved`, `Manual`, and
+    /// `Tested` never fail.
     pub fn assign(&self, ctx: ExtractionContext) -> Result<(Provenance, f64), ConfidenceError> {
         match ctx {
             ExtractionContext::DirectExtraction => Ok((Provenance::Extracted, 1.0)),
@@ -104,6 +117,13 @@ impl ConfidenceRules {
                 Ok((Provenance::Inferred, clamped))
             }
             ExtractionContext::Unresolved => Ok((Provenance::Ambiguous, 0.3)),
+            // Manual and Tested round-trip bit-exactly. The
+            // stored confidence is 1.0 (matching the previous
+            // lossy DirectExtraction round-trip) so older rows
+            // that already carry `(Manual, 1.0)` /
+            // `(Tested, 1.0)` survive the migration unchanged.
+            ExtractionContext::Manual => Ok((Provenance::Manual, 1.0)),
+            ExtractionContext::Tested => Ok((Provenance::Tested, 1.0)),
         }
     }
 }
@@ -124,6 +144,26 @@ mod tests {
             .assign(ExtractionContext::DirectExtraction)
             .expect("DirectExtraction never errors");
         assert_eq!(p, Provenance::Extracted);
+        assert_eq!(c, 1.0_f64);
+    }
+
+    #[test]
+    fn golden_manual() {
+        let rules = ConfidenceRules::new();
+        let (p, c) = rules
+            .assign(ExtractionContext::Manual)
+            .expect("Manual never errors");
+        assert_eq!(p, Provenance::Manual);
+        assert_eq!(c, 1.0_f64);
+    }
+
+    #[test]
+    fn golden_tested() {
+        let rules = ConfidenceRules::new();
+        let (p, c) = rules
+            .assign(ExtractionContext::Tested)
+            .expect("Tested never errors");
+        assert_eq!(p, Provenance::Tested);
         assert_eq!(c, 1.0_f64);
     }
 

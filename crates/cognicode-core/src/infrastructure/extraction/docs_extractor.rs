@@ -312,6 +312,29 @@ impl DocsExtractor {
     pub fn new() -> Self {
         Self
     }
+
+    /// Extract candidate nodes + edges from a directory, with
+    /// control over recursion. The trait-level
+    /// [`SourceExtractor::extract`] is hardcoded to recursive for
+    /// backward compatibility with callers that pre-date the
+    /// flag; this is the explicit form that the MCP `docs_ingest`
+    /// tool uses.
+    pub async fn extract_directory(
+        &self,
+        dir: &Path,
+        recursive: bool,
+    ) -> SourceExtractorResult<Vec<ExtractedNode>> {
+        extract_from_directory(dir, recursive).await
+    }
+
+    /// Extract candidate nodes + edges from a single file. The
+    /// single-file path is unaffected by the `recursive` flag.
+    pub async fn extract_file(
+        &self,
+        file: &Path,
+    ) -> SourceExtractorResult<Vec<ExtractedNode>> {
+        extract_from_file(file).await
+    }
 }
 
 #[cfg(feature = "multimodal")]

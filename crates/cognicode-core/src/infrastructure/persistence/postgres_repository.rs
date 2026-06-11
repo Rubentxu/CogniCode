@@ -175,6 +175,8 @@ impl PostgresRepository {
     /// | `Extracted`         | `1.0`               | `DirectExtraction`                |
     /// | `Inferred`          | `[0.5..=0.9]`       | `Heuristic { score: confidence }` |
     /// | `Ambiguous`         | `0.3`               | `Unresolved`                      |
+    /// | `Manual`            | `1.0`               | `Manual`                          |
+    /// | `Tested`            | `1.0`               | `Tested`                          |
     fn provenance_to_extraction_context(
         provenance: Provenance,
         confidence: f64,
@@ -183,8 +185,8 @@ impl PostgresRepository {
             Provenance::Extracted => ExtractionContext::DirectExtraction,
             Provenance::Inferred => ExtractionContext::Heuristic { score: confidence },
             Provenance::Ambiguous => ExtractionContext::Unresolved,
-            Provenance::Manual => ExtractionContext::DirectExtraction,
-            Provenance::Tested => ExtractionContext::DirectExtraction,
+            Provenance::Manual => ExtractionContext::Manual,
+            Provenance::Tested => ExtractionContext::Tested,
         }
     }
 

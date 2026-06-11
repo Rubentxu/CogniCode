@@ -51,6 +51,7 @@ impl GraphRepository for InMemoryGraphRepository {
                 raw_total: 0,
                 next_cursor: None,
                 raw_rank: 0.0,
+                item_ranks: Vec::new(),
             });
         }
         let q = query.to_ascii_lowercase();
@@ -102,21 +103,34 @@ impl GraphRepository for InMemoryGraphRepository {
                 raw_total,
                 next_cursor: None,
                 raw_rank: 0.0,
+                item_ranks: Vec::new(),
             });
         }
         let end = (offset + limit).min(scored.len());
-        let page_items: Vec<GraphNode> = scored[offset..end].iter().map(|(_, n)| (*n).clone()).collect();
+        // Keep the per-item scores so the MCP tool can emit
+        // distinct `score` values per result. `Vec::new()` (the
+        // fallback) would mean "page-level rank only" — see the
+        // MCP handler.
+        let page_items: Vec<GraphNode> = scored[offset..end]
+            .iter()
+            .map(|(_, n)| (*n).clone())
+            .collect();
+        let item_ranks: Vec<f64> = scored[offset..end].iter().map(|(s, _)| *s).collect();
         let next_cursor = if end < scored.len() {
             Some(end.to_string())
         } else {
             None
         };
-        let raw_rank = page_items.first().map(|_| 1.0).unwrap_or(0.0);
+        // `raw_rank` mirrors the top item's score (kept for
+        // backward compatibility — the federation layer
+        // and existing tests rely on it).
+        let raw_rank = item_ranks.first().copied().unwrap_or(0.0);
         Ok(SearchPage {
             items: page_items,
             raw_total,
             next_cursor,
             raw_rank,
+            item_ranks,
         })
     }
 
@@ -184,7 +198,7 @@ impl GraphRepository for InMemoryGraphRepository {
         focus: &NodeId,
         max_depth: u32,
         max_nodes: usize,
-    ) -> ExplorerResult<(Vec<GraphNode>, Vec<GraphEdge>)> {
+    ) -> ExplorerResult<(Vec<GraphNode>, Vec<GraphEdge>, bool)> {
         // Multimodal edge kinds for rationale traversal.
         let rationale_kinds: HashSet<EdgeKind> = [
             EdgeKind::Justifies,
@@ -209,6 +223,12 @@ impl GraphRepository for InMemoryGraphRepository {
         let mut edges: Vec<GraphEdge> = Vec::new();
         let mut visited: HashSet<NodeId> = HashSet::new();
         let mut queue: VecDeque<(NodeId, u32)> = VecDeque::new();
+        // Tracks whether the BFS was cut short by `max_nodes` (as
+        // opposed to draining the queue naturally). A natural
+        // drain — depth exhausted or queue empty — is NOT a
+        // truncation; only the explicit `break` at the size
+        // boundary counts.
+        let mut truncated = false;
 
         visited.insert(focus.clone());
         queue.push_back((focus.clone(), 0));
@@ -218,6 +238,7 @@ impl GraphRepository for InMemoryGraphRepository {
                 continue;
             }
             if nodes.len() >= max_nodes {
+                truncated = true;
                 break;
             }
 
@@ -229,6 +250,7 @@ impl GraphRepository for InMemoryGraphRepository {
                     continue;
                 }
                 if nodes.len() >= max_nodes {
+                    truncated = true;
                     break;
                 }
 
@@ -265,6 +287,6 @@ impl GraphRepository for InMemoryGraphRepository {
         let kept: HashSet<&NodeId> = nodes.iter().map(|n| &n.id).collect();
         edges.retain(|e| kept.contains(&e.source) && kept.contains(&e.target));
 
-        Ok((nodes, edges))
+        Ok((nodes, edges, truncated))
     }
 }

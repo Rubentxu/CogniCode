@@ -142,6 +142,9 @@ impl FederatedGraphService {
 
         // Build the per-space futures. We use `tokio::join!` for
         // a true fan-out (each future is polled concurrently).
+        // We also capture the input offset per space so the
+        // emitted `next_cursor` can compute the correct integer
+        // offset (consumed = input + items returned).
         let mut futures = Vec::new();
         let mut space_ids_in_order = Vec::new();
         for space_id in &self.order {
@@ -160,12 +163,13 @@ impl FederatedGraphService {
             };
             // The per-space cursor is either the offset (when the
             // target space matches) or "0" (start of this space).
-            let per_cursor: String = if target_space.is_some() {
-                offset.to_string()
+            let per_offset: usize = if target_space.is_some() {
+                offset
             } else {
-                "0".to_string()
+                0
             };
-            futures.push((space_id.clone(), async move {
+            futures.push((space_id.clone(), per_offset, async move {
+                let per_cursor = per_offset.to_string();
                 let r: ExplorerResult<SearchPage> = repo.search(query, node_kinds, limit, Some(&per_cursor));
                 r
             }));
@@ -185,12 +189,36 @@ impl FederatedGraphService {
         let mut merged_items: Vec<FederatedNode> = Vec::new();
         let mut total: u64 = 0;
         let mut best_rank: f64 = 0.0;
-        for (space_id, fut) in futures {
+        // Track the next offset per space. The cursor is
+        // "<space_id>::<offset>" — the offset is an integer (the
+        // per-space pagination position), NOT a node id. A space
+        // that still has more pages after the current call is the
+        // next fan-out target.
+        let mut per_space_next: HashMap<SpaceId, usize> = HashMap::new();
+        for (space_id, input_offset, fut) in futures {
             let page: SearchPage = fut.await?;
             total = total.saturating_add(page.raw_total);
             best_rank = best_rank.max(page.raw_rank);
+            let consumed = page.items.len();
             for node in page.items {
                 merged_items.push(FederatedNode::new(node, space_id.clone()));
+            }
+            // The repo's own `next_cursor` is the absolute offset
+            // into its index. We mirror it (re-encoded with the
+            // space id) so the caller can resume from this exact
+            // point. Only emit a next cursor if the underlying
+            // page actually has more results to deliver.
+            if page.next_cursor.is_some() {
+                // Prefer the repo's own cursor (it may have
+                // applied a filter / sort the federation layer is
+                // unaware of) — fall back to `input_offset +
+                // consumed` when the repo did not return one.
+                let parsed = page
+                    .next_cursor
+                    .as_deref()
+                    .and_then(|c| c.parse::<usize>().ok())
+                    .unwrap_or(input_offset + consumed);
+                per_space_next.insert(space_id, parsed);
             }
         }
         // Apply the global limit (defensive — the per-space
@@ -199,12 +227,17 @@ impl FederatedGraphService {
         if merged_items.len() > limit {
             merged_items.truncate(limit);
         }
-        // Compute the next cursor: encode the LAST item's space
-        // id (or `None` if no items).
-        let next_cursor = merged_items
-            .last()
-            .and_then(|last| FederatedNodeId::from_parts(&last.space_id, last.node.id.as_str()).ok())
-            .map(|id| id.to_string());
+        // Compute the next cursor: pick the space (in insertion
+        // order) that still has a next page, and emit
+        // "<space_id>::<offset>". When every space is exhausted,
+        // there is no next page → `None`.
+        let next_cursor = space_ids_in_order
+            .iter()
+            .find_map(|sid| {
+                per_space_next
+                    .get(sid)
+                    .map(|off| format!("{}{}{}", sid.as_str(), FederatedNodeId::SEPARATOR, off))
+            });
 
         Ok(FederatedSearchPage {
             items: merged_items,

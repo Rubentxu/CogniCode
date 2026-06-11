@@ -571,14 +571,15 @@ struct GraphSearchArgs {
 }
 
 // multimodal (T12) — arg shape for `issues_ingest`.
-// `owner` and `repo` are required; `include_git_log`
-// is optional and defaults to `true`.
+// `owner` and `repo` are required. The `include_git_log`
+// flag was a v0 prototype that is no longer wired into the
+// ingestion path; it has been removed from the schema until
+// the git-log parser is implemented.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct IssuesIngestArgs {
     owner: Option<String>,
     repo: Option<String>,
-    include_git_log: Option<bool>,
 }
 
 /// Response shape for `impact_has_path`. Always carries the original
@@ -1244,7 +1245,11 @@ async fn dispatch(
                 registry.open(workspace_id.clone(), ttl, service.clone(), graph.clone());
             // Multimodal (brain-federation): if the caller supplied
             // an optional `spaces` list, pre-register each space in
-            // the freshly opened session.
+            // the freshly opened session. Errors are collected so
+            // they can be surfaced in the response envelope instead
+            // of being silently swallowed.
+            #[cfg(feature = "multimodal")]
+            let mut space_errors: Vec<String> = Vec::new();
             #[cfg(feature = "multimodal")]
             if let Some(ref space_specs) = args.spaces {
                 if !space_specs.is_empty() {
@@ -1261,26 +1266,54 @@ async fn dispatch(
                                                 "repo" => SKind::Repo,
                                                 "docs" => SKind::Docs,
                                                 "issues" => SKind::Issues,
-                                                _ => continue,
-                                            };
-                                            if let Ok(sid) = SId::try_new(name.clone()) {
-                                                if let Ok(space) =
-                                                    Sp::try_new(sid, name.clone(), kind)
-                                                {
-                                                    let space = match spec.source_path {
-                                                        Some(ref p) if !p.is_empty() => {
-                                                            space.with_source_path(p.clone())
-                                                        }
-                                                        _ => space,
-                                                    };
-                                                    let _ = session.add_space(space);
+                                                other => {
+                                                    space_errors.push(format!(
+                                                        "unknown space_kind '{other}' for space '{name}'"
+                                                    ));
+                                                    continue;
                                                 }
+                                            };
+                                            let sid = match SId::try_new(name.clone()) {
+                                                Ok(s) => s,
+                                                Err(e) => {
+                                                    space_errors.push(format!(
+                                                        "invalid space id '{name}': {e}"
+                                                    ));
+                                                    continue;
+                                                }
+                                            };
+                                            let space = match Sp::try_new(sid, name.clone(), kind) {
+                                                Ok(s) => s,
+                                                Err(e) => {
+                                                    space_errors.push(format!(
+                                                        "could not build space '{name}': {e}"
+                                                    ));
+                                                    continue;
+                                                }
+                                            };
+                                            let space = match spec.source_path {
+                                                Some(ref p) if !p.is_empty() => {
+                                                    space.with_source_path(p.clone())
+                                                }
+                                                _ => space,
+                                            };
+                                            if let Err(e) = session.add_space(space) {
+                                                space_errors.push(format!(
+                                                    "add_space('{name}') failed: {e}"
+                                                ));
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+                    }
+                    if !space_errors.is_empty() {
+                        tracing::warn!(
+                            "brain_open: {} space(s) failed to attach: {:?}",
+                            space_errors.len(),
+                            space_errors
+                        );
                     }
                 }
             }
@@ -1290,6 +1323,14 @@ async fn dispatch(
                 .attach(&session_id)
                 .expect("freshly opened session must be present")
                 .snapshot();
+            // Surface any per-space attach errors collected during
+            // the multimodal pre-registration phase. The state
+            // itself is unchanged but the caller needs to know
+            // which spaces failed.
+            #[cfg(feature = "multimodal")]
+            let space_errors_json = serde_json::json!(space_errors);
+            #[cfg(not(feature = "multimodal"))]
+            let space_errors_json = serde_json::json!([]);
             envelope_ok_brain(
                 TOOL_BRAIN_OPEN,
                 serde_json::json!({
@@ -1297,6 +1338,7 @@ async fn dispatch(
                     "workspace_id": workspace_id,
                     "ttl_secs": ttl,
                     "state": snap,
+                    "space_errors": space_errors_json,
                 }),
             )
         }
@@ -1689,21 +1731,28 @@ async fn dispatch_docs_ingest(
         );
     }
     let recursive = args.recursive.unwrap_or(true);
-    let source = if path.is_dir() {
-        let _ = recursive;
-        SourcePath::Directory(path)
-    } else {
-        SourcePath::File(path)
-    };
     let extractor = DocsExtractor::new();
-    let result = match extractor.extract(source).await {
-        Ok(nodes) => nodes,
-        Err(e) => {
-            return envelope_named_err_for(
-                TOOL_DOCS_INGEST,
-                "extractor_error",
-                &format!("docs extractor failed: {e}"),
-            );
+    let result = if path.is_dir() {
+        match extractor.extract_directory(&path, recursive).await {
+            Ok(nodes) => nodes,
+            Err(e) => {
+                return envelope_named_err_for(
+                    TOOL_DOCS_INGEST,
+                    "extractor_error",
+                    &format!("docs extractor failed: {e}"),
+                );
+            }
+        }
+    } else {
+        match extractor.extract_file(&path).await {
+            Ok(nodes) => nodes,
+            Err(e) => {
+                return envelope_named_err_for(
+                    TOOL_DOCS_INGEST,
+                    "extractor_error",
+                    &format!("docs extractor failed: {e}"),
+                );
+            }
         }
     };
     let files_processed = result
@@ -1776,9 +1825,39 @@ async fn dispatch_graph_search(
     if let Some(raw) = args.node_kinds {
         for k in raw {
             match k.as_str() {
-                "symbol" => parsed_kinds.push(NodeKind::Symbol(
-                    cognicode_core::domain::value_objects::symbol_kind::SymbolKind::Function,
-                )),
+                // "symbol" is a CATEGORY over every concrete
+                // `SymbolKind` variant. The previous behaviour
+                // narrowed it to `Function` only, which silently
+                // hid classes, methods, structs, traits, etc.
+                // We now expand the wildcard to all known
+                // symbol kinds (excluding `Unknown`, which is a
+                // sentinel for "could not classify").
+                "symbol" => {
+                    use cognicode_core::domain::value_objects::symbol_kind::SymbolKind;
+                    parsed_kinds.extend([
+                        NodeKind::Symbol(SymbolKind::Function),
+                        NodeKind::Symbol(SymbolKind::Method),
+                        NodeKind::Symbol(SymbolKind::Class),
+                        NodeKind::Symbol(SymbolKind::Struct),
+                        NodeKind::Symbol(SymbolKind::Module),
+                        NodeKind::Symbol(SymbolKind::Variable),
+                        NodeKind::Symbol(SymbolKind::Parameter),
+                        NodeKind::Symbol(SymbolKind::Type),
+                        NodeKind::Symbol(SymbolKind::Property),
+                        NodeKind::Symbol(SymbolKind::Field),
+                        NodeKind::Symbol(SymbolKind::Import),
+                        NodeKind::Symbol(SymbolKind::EnumVariant),
+                        NodeKind::Symbol(SymbolKind::Trait),
+                        NodeKind::Symbol(SymbolKind::Generic),
+                        NodeKind::Symbol(SymbolKind::Constant),
+                        NodeKind::Symbol(SymbolKind::Constructor),
+                        NodeKind::Symbol(SymbolKind::Enum),
+                        NodeKind::Symbol(SymbolKind::Interface),
+                        NodeKind::Symbol(SymbolKind::File),
+                        NodeKind::Symbol(SymbolKind::Namespace),
+                        NodeKind::Symbol(SymbolKind::Package),
+                    ]);
+                }
                 "decision" => parsed_kinds.push(NodeKind::Decision),
                 "doc" => parsed_kinds.push(NodeKind::Doc),
                 "issue" => parsed_kinds.push(NodeKind::Issue),
@@ -1814,18 +1893,45 @@ async fn dispatch_graph_search(
         }
     };
     let normalized_score = page.raw_rank.clamp(0.0, 1.0);
+    // Per-item scores: prefer the per-item ranks returned by
+    // the underlying search backend; fall back to the
+    // page-level `raw_rank` when per-item data is missing (e.g.
+    // the unimplemented PG stub). The `Vec` is parallel to
+    // `page.items`, so zipping by index is safe.
+    let per_item_ranks: Vec<f64> = if page.item_ranks.len() == page.items.len() {
+        page.item_ranks.clone()
+    } else if !page.item_ranks.is_empty() {
+        // Length mismatch — defensive: truncate to the
+        // shorter side so we never panic in release builds.
+        let n = page.item_ranks.len().min(page.items.len());
+        page.item_ranks[..n].to_vec()
+    } else {
+        Vec::new()
+    };
+    let page_level_rank = page.raw_rank;
     let payload = serde_json::json!({
-        "results": page.items.iter().map(|n| serde_json::json!({
-            "node": {
-                "id": n.id.as_str(),
-                "label": n.label,
-                "kind": n.kind.as_str(),
-                "source_path": n.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
-                "metadata": n.properties,
-            },
-            "score": normalized_score,
-            "raw_rank": page.raw_rank,
-        })).collect::<Vec<_>>(),
+        "results": page.items.iter().enumerate().map(|(i, n)| {
+            // The per-item rank is the source of truth when
+            // present. The fallback to the page-level rank is
+            // annotated via `score_is_page_level: true` so the
+            // front-end can flag the result accordingly.
+            let (score, score_is_page_level) = match per_item_ranks.get(i) {
+                Some(r) => (*r, false),
+                None => (page_level_rank, true),
+            };
+            serde_json::json!({
+                "node": {
+                    "id": n.id.as_str(),
+                    "label": n.label,
+                    "kind": n.kind.as_str(),
+                    "source_path": n.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+                    "metadata": n.properties,
+                },
+                "score": score,
+                "raw_rank": score,
+                "score_is_page_level": score_is_page_level,
+            })
+        }).collect::<Vec<_>>(),
         "total_count": page.raw_total,
         "next_cursor": page.next_cursor,
         "raw_rank": page.raw_rank,
@@ -1887,7 +1993,9 @@ async fn dispatch_issues_ingest(
             );
         }
     };
-    let _include_git_log = args.include_git_log.unwrap_or(true);
+    // NOTE: `include_git_log` was a v0 prototype that never
+    // reached a working implementation. The flag is removed from
+    // the schema; the GitHub issue ingestion itself is unchanged.
 
     let extractor = match issues_extractor {
         Some(e) => e,
@@ -3056,12 +3164,11 @@ fn build_tool_schemas() -> Vec<Tool> {
         #[cfg(feature = "multimodal")]
         Tool::new(
             TOOL_ISSUES_INGEST,
-            "Ingest GitHub issues from the given `owner`/`repo` into the Generic Graph Layer. Fetches issues via `IssuesExtractor` (which calls the GitHub REST API) and upserts the resulting `Issue` nodes + edges into the `graph_nodes` / `graph_edges` PG tables. Returns a structured `McpResultEnvelope` whose payload is `{issues_processed, nodes_created, edges_created, errors}`. Idempotent: re-ingesting the same repo updates the existing rows. `include_git_log`, when true (default), also parses `git log` output from the workspace directory for commit-issue references.",
+            "Ingest GitHub issues from the given `owner`/`repo` into the Generic Graph Layer. Fetches issues via `IssuesExtractor` (which calls the GitHub REST API) and upserts the resulting `Issue` nodes + edges into the `graph_nodes` / `graph_edges` PG tables. Returns a structured `McpResultEnvelope` whose payload is `{issues_processed, nodes_created, edges_created, errors}`. Idempotent: re-ingesting the same repo updates the existing rows. The legacy `include_git_log` flag was removed from the schema; the git-log parser integration is not implemented yet.",
             schema(
                 serde_json::json!({
                     "owner":          { "type": "string", "description": "GitHub owner / organisation (required, non-empty)." },
-                    "repo":           { "type": "string", "description": "GitHub repository name (required, non-empty)." },
-                    "include_git_log": { "type": "boolean", "description": "When true (default), also parse git commit references to issues from the local git log." }
+                    "repo":           { "type": "string", "description": "GitHub repository name (required, non-empty)." }
                 }),
                 &["owner", "repo"],
             ),
@@ -7026,7 +7133,6 @@ mod tests {
             serde_json::json!({
                 "owner": "owner",
                 "repo": "repo",
-                "include_git_log": false,
             }),
         )
         .await;
