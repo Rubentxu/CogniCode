@@ -294,6 +294,93 @@ setup: install build
 # Explorer UI (React + TypeScript)
 # ============================================================================
 
+# One command to rule them all: PG + API + Frontend
+# Starts PostgreSQL, builds the API, installs npm deps, and
+# launches both the API server and the React dev server.
+# Frontend: http://localhost:{EXPLORER_PORT}  (default 5173)
+# API:      http://localhost:{EXPLORER_API_PORT} (default 3456)
+explorer-local:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "═══════════════════════════════════════════════════════"
+    echo "  CogniCode Explorer — Local Dev Environment"
+    echo "═══════════════════════════════════════════════════════"
+    echo ""
+
+    # 1. PostgreSQL
+    echo "🐘 [1/4] Starting PostgreSQL..."
+    if docker compose exec -T postgres pg_isready -U cognicode -d cognicode > /dev/null 2>&1; then
+        echo "   ✅ PostgreSQL already running"
+    else
+        docker compose up -d postgres
+        echo "   ⏳ Waiting for PostgreSQL..."
+        for i in $(seq 1 30); do
+            if docker compose exec -T postgres pg_isready -U cognicode -d cognicode > /dev/null 2>&1; then
+                echo "   ✅ PostgreSQL ready"
+                break
+            fi
+            sleep 1
+        done
+    fi
+
+    # 2. Build API binary
+    echo "🔨 [2/4] Building Explorer API..."
+    cargo build -p cognicode-explorer --bin cognicode-explorer-api --features multimodal
+    echo "   ✅ API binary ready"
+
+    # 3. Install frontend deps
+    echo "📦 [3/4] Installing frontend deps..."
+    cd {{EXPLORER_UI_DIR}} && npm ci --prefer-offline 2>/dev/null || npm install
+    echo "   ✅ Frontend deps ready"
+
+    # 4. Start both servers
+    echo "🚀 [4/4] Starting servers..."
+    echo ""
+    echo "═══════════════════════════════════════════════════════"
+    echo "  Frontend:  http://localhost:{{EXPLORER_PORT}}"
+    echo "  API:       http://localhost:{{EXPLORER_API_PORT}}"
+    echo "  PG:        localhost:5432/cognicode"
+    echo ""
+    echo "  Press Ctrl+C to stop everything"
+    echo "═══════════════════════════════════════════════════════"
+    echo ""
+
+    # Start API in background
+    DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
+        ./target/debug/cognicode-explorer-api &
+    API_PID=$!
+
+    # Start frontend dev server in background
+    cd {{EXPLORER_UI_DIR}} && VITE_API_URL=http://localhost:{{EXPLORER_API_PORT}} npx vite --host 127.0.0.1 --port {{EXPLORER_PORT}} &
+    UI_PID=$!
+
+    # Trap Ctrl+C to kill both
+    cleanup() {
+        echo ""
+        echo "🛑 Stopping servers..."
+        kill $API_PID 2>/dev/null || true
+        kill $UI_PID 2>/dev/null || true
+        wait $API_PID 2>/dev/null || true
+        wait $UI_PID 2>/dev/null || true
+        echo "✅ Servers stopped"
+    }
+    trap cleanup EXIT INT TERM
+
+    # Wait for either to exit
+    wait -n $API_PID $UI_PID 2>/dev/null || true
+
+# Quick start with mock data (no PG, no API needed)
+explorer-mock:
+    @echo "🚀 Starting Explorer UI with mock data (no backend)..."
+    cd {{EXPLORER_UI_DIR}} && npm run dev:mock
+
+# Stop all Explorer processes
+explorer-stop:
+    @echo "🛑 Stopping Explorer..."
+    @fuser -k {{EXPLORER_API_PORT}}/tcp 2>/dev/null || true
+    @fuser -k {{EXPLORER_PORT}}/tcp 2>/dev/null || true
+    @echo "✅ Explorer stopped"
+
 # Dev mode: frontend with MSW mocks (no backend needed)
 explorer-dev:
     @echo "🚀 Starting Explorer UI with mock data..."
