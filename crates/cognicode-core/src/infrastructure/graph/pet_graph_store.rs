@@ -6,8 +6,8 @@ use crate::domain::services::CycleDetectionResult;
 use crate::domain::traits::DependencyRepository;
 use crate::domain::traits::dependency_repository::DependencyError;
 use crate::domain::value_objects::DependencyType;
-use petgraph::graph::{DiGraph, NodeIndex};
-use petgraph::visit::EdgeRef;
+use petgraph::stable_graph::{NodeIndex, StableGraph};
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::collections::{HashMap, HashSet};
 
 struct NodeData {
@@ -22,7 +22,7 @@ impl NodeData {
 
 /// Graph store using petgraph implementing DependencyRepository
 pub struct PetGraphStore {
-    graph: DiGraph<NodeData, DependencyType>,
+    graph: StableGraph<NodeData, DependencyType>,
     symbol_to_index: HashMap<String, NodeIndex>,
     index_to_symbol: HashMap<NodeIndex, String>,
 }
@@ -31,7 +31,7 @@ impl PetGraphStore {
     /// Creates a new empty petgraph store
     pub fn new() -> Self {
         Self {
-            graph: DiGraph::new(),
+            graph: StableGraph::new(),
             symbol_to_index: HashMap::new(),
             index_to_symbol: HashMap::new(),
         }
@@ -74,7 +74,7 @@ impl PetGraphStore {
 
     /// Converts the petgraph representation to a rich domain CallGraph
     ///
-    /// This method iterates over all nodes and edges in the petgraph DiGraph
+    /// This method iterates over all nodes and edges in the petgraph StableGraph
     /// and creates a CallGraph aggregate with full BFS, path finding, roots/leaves support.
     pub fn to_call_graph(&self) -> CallGraph {
         let mut call_graph = CallGraph::new();
@@ -154,19 +154,19 @@ impl DependencyRepository for PetGraphStore {
 
     fn find_impact_scope(&self, id: &SymbolId) -> HashSet<SymbolId> {
         let mut result = HashSet::new();
-        if let Some(idx) = self.get_index(id) {
-            // BFS to find all reachable nodes
-            let mut queue = vec![idx];
-            while let Some(current) = queue.pop() {
-                for edge in self.graph.edges(current) {
-                    let target = edge.target();
-                    if let Some(target_name) = self.index_to_symbol.get(&target) {
-                        let target_id = SymbolId::new(target_name.clone());
-                        if result.insert(target_id) {
-                            queue.push(target);
-                        }
-                    }
-                }
+        let Some(start) = self.get_index(id) else {
+            return result;
+        };
+        // Use petgraph's BFS visitor; the start node is excluded from
+        // the result to preserve the original "impact scope" semantics
+        // (i.e. transitive dependents of `id`, not `id` itself).
+        let mut bfs = petgraph::visit::Bfs::new(&self.graph, start);
+        while let Some(ni) = bfs.next(&self.graph) {
+            if ni == start {
+                continue;
+            }
+            if let Some(name) = self.index_to_symbol.get(&ni) {
+                result.insert(SymbolId::new(name.clone()));
             }
         }
         result
@@ -228,31 +228,12 @@ impl DependencyRepository for PetGraphStore {
     }
 
     fn has_path(&self, source: &SymbolId, target: &SymbolId) -> bool {
-        let source_idx = match self.get_index(source) {
-            Some(idx) => idx,
-            None => return false,
+        let (Some(source_idx), Some(target_idx)) = (self.get_index(source), self.get_index(target)) else {
+            return false;
         };
-        let target_idx = match self.get_index(target) {
-            Some(idx) => idx,
-            None => return false,
-        };
-
-        // Use DFS to check if there's a path
-        let mut visited = std::collections::HashSet::new();
-        let mut stack = vec![source_idx];
-
-        while let Some(current) = stack.pop() {
-            if current == target_idx {
-                return true;
-            }
-            if visited.insert(current) {
-                for edge in self.graph.edges(current) {
-                    stack.push(edge.target());
-                }
-            }
-        }
-
-        false
+        // Delegate to petgraph's BFS-based path probe. This handles cycles
+        // correctly and avoids the manual visited-set bookkeeping.
+        petgraph::algo::has_path_connecting(&self.graph, source_idx, target_idx, None)
     }
 
     fn get_call_graph(&self) -> CallGraph {

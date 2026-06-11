@@ -285,6 +285,7 @@ impl CallGraph {
     /// Finds a path from source to target if one exists, limited by max_depth (BFS)
     ///
     /// If max_depth is 0, no depth limit is applied.
+    // TODO(Phase 4b): Delegate to petgraph::algo::astar when CallGraph migrates to StableGraph internally
     pub fn find_path_with_max_depth(
         &self,
         source: &SymbolId,

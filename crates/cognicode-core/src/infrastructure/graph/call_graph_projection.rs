@@ -57,7 +57,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use petgraph::algo::{astar, has_path_connecting, tarjan_scc, toposort};
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
-use petgraph::visit::EdgeRef;
+use petgraph::unionfind::UnionFind;
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use petgraph::Direction;
 
 use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
@@ -233,46 +234,44 @@ impl CallGraphProjection {
     pub fn connected_components(&self) -> Vec<Vec<SymbolId>> {
         // `StableGraph` does not implement `NodeCompactIndexable`, so
         // `petgraph::algo::connected_components` cannot be used here.
-        // Perform an undirected BFS over the node set directly.
+        // We delegate the heavy lifting to `petgraph::unionfind::UnionFind`
+        // and group nodes by their DSU root.
         self.undirected_connected_components()
     }
 
     fn undirected_connected_components(&self) -> Vec<Vec<SymbolId>> {
-        let mut visited: HashSet<NodeIndex> = HashSet::new();
-        let mut components: Vec<Vec<SymbolId>> = Vec::new();
+        // `UnionFind` is indexed by `0..n`; map every `NodeIndex` to a
+        // compact position. `StableGraph`'s `NodeIndex` values are not
+        // necessarily contiguous, so we cannot use them directly.
+        let mut index_map: HashMap<NodeIndex, usize> = HashMap::new();
+        for (pos, ni) in self.graph.node_indices().enumerate() {
+            index_map.insert(ni, pos);
+        }
+        let node_count = index_map.len();
 
-        for start in self.graph.node_indices() {
-            if visited.contains(&start) {
-                continue;
-            }
-            let mut component: Vec<SymbolId> = Vec::new();
-            let mut queue: VecDeque<NodeIndex> = VecDeque::new();
-            queue.push_back(start);
-            visited.insert(start);
+        let mut uf = UnionFind::new(node_count);
 
-            while let Some(ni) = queue.pop_front() {
-                component.push(self.graph[ni].clone());
-
-                // Outgoing neighbours
-                for edge in self.graph.edges_directed(ni, Direction::Outgoing) {
-                    let nb = edge.target();
-                    if visited.insert(nb) {
-                        queue.push_back(nb);
-                    }
-                }
-                // Incoming neighbours (treat as undirected)
-                for edge in self.graph.edges_directed(ni, Direction::Incoming) {
-                    let nb = edge.source();
-                    if visited.insert(nb) {
-                        queue.push_back(nb);
-                    }
-                }
-            }
-
-            components.push(component);
+        // Union every pair of endpoints of every edge (undirected
+        // interpretation: an edge connects its two endpoints regardless
+        // of direction).
+        for edge in self.graph.edge_references() {
+            let a = index_map[&edge.source()];
+            let b = index_map[&edge.target()];
+            uf.union(a, b);
         }
 
-        components
+        // Group nodes by their DSU root.
+        let mut groups: HashMap<usize, Vec<SymbolId>> = HashMap::new();
+        for ni in self.graph.node_indices() {
+            let pos = index_map[&ni];
+            let root = uf.find(pos);
+            groups
+                .entry(root)
+                .or_default()
+                .push(self.graph[ni].clone());
+        }
+
+        groups.into_values().collect()
     }
 
     /// Return `true` if there is a directed path from `from` to `to`.
