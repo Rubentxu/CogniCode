@@ -2243,3 +2243,47 @@ pub struct GraphSurprisingConnectionsInput {
     pub max_iterations: u32,
 }
 
+// ============================================================================
+// Phase 6: IDF-weighted Search & Unified Insights
+// ============================================================================
+
+/// Default cap on IDF search results.
+fn default_idf_max_results() -> u32 {
+    20
+}
+
+/// Input for `graph_search_idf` — IDF-weighted symbol search.
+///
+/// Each symbol name is tokenised (snake/camel/path boundaries) and
+/// scored against the query using the same formula as classic
+/// information retrieval: rare terms count more than common ones.
+/// The 95th-percentile-degree hub bypass demotes overly-connected
+/// "switchboard" nodes.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GraphSearchIdfInput {
+    /// Free-text search query (full or partial symbol name).
+    pub query: String,
+
+    /// Max number of results to return (default: 20).
+    #[serde(default = "default_idf_max_results")]
+    pub max_results: u32,
+}
+
+/// Input for `graph_insights` — unified architecture health report.
+///
+/// Combines: god nodes, cycles, communities, surprising connections,
+/// a 0-100 health score, and natural-language questions. The tool
+/// itself takes no arguments; everything is inferred from the
+/// current call graph.
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct GraphInsightsInput {}
+
+/// Input for `graph_suggest_questions` — natural-language prompts
+/// for an AI agent to drive a refactoring conversation.
+///
+/// Like `graph_insights` but only returns the `suggested_questions`
+/// array, so callers can ingest the questions without parsing the
+/// full report.
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct GraphSuggestQuestionsInput {}
+

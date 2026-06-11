@@ -839,6 +839,44 @@ impl ServerHandler for CogniCodeHandler {
                         }
                     }).as_object().cloned().unwrap()),
                 ),
+                // Phase 6: IDF-weighted Search & Unified Insights.
+                //
+                // `graph_search_idf` ranks symbols by an information-
+                // retrieval-style score (rare tokens count more) and
+                // includes a hub-bypass step that demotes the
+                // 95th-percentile-degree nodes. The remaining two
+                // tools, `graph_insights` and `graph_suggest_questions`,
+                // consolidate god-nodes + cycles + communities +
+                // cross-community edges + a 0-100 health score into a
+                // single payload.
+                Tool::new(
+                    "graph_search_idf",
+                    "Search symbols ranked by IDF (Inverse Document Frequency) importance. Rare terms score higher. Includes hub bypass for cleaner results. Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "query": { "type": "string", "description": "Search query (symbol name or partial)" },
+                            "max_results": { "type": "integer", "description": "Max results (default: 20)" }
+                        },
+                        "required": ["query"]
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_insights",
+                    "Get a complete architecture health report: god nodes, circular dependencies, community overview, surprising cross-module connections, and a health score (0-100). Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {}
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_suggest_questions",
+                    "Generate intelligent questions about the codebase architecture based on graph analysis. Helps identify areas that need attention. Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {}
+                    }).as_object().cloned().unwrap()),
+                ),
                 // Phase 3A: Proactive Tools
                 Tool::new(
                     "suggest_context",
@@ -1847,6 +1885,135 @@ async fn call_tool_handler(
                 }))?),
             }
         }
+        // Phase 6: IDF-weighted search handler.
+        //
+        // Pulls the in-memory `CallGraph`, runs `SearchRanker::search`
+        // (which tokenises names, computes IDF, applies hub bypass, and
+        // sorts by score), and serialises the top-N results. The
+        // payload includes the `idf_score` (raw) so callers can apply
+        // their own thresholds downstream.
+        "graph_search_idf" => {
+            let input: crate::interface::mcp::schemas::GraphSearchIdfInput =
+                serde_json::from_value(arguments.into())?;
+            match ctx.get_graph_store().load_graph() {
+                Ok(Some(graph)) => {
+                    let max_results = if input.max_results == 0 {
+                        20
+                    } else {
+                        input.max_results as usize
+                    };
+                    let results = crate::application::services::search_ranker::SearchRanker::search(
+                        &graph,
+                        &input.query,
+                        max_results,
+                    );
+                    let payload = serde_json::json!({
+                        "algorithm": "idf_search",
+                        "query": input.query,
+                        "max_results": max_results,
+                        "result_count": results.len(),
+                        "results": results.iter().map(|r| {
+                            serde_json::json!({
+                                "symbol_id": r.symbol_id.as_str(),
+                                "name": r.name,
+                                "file": r.file,
+                                "idf_score": r.idf_score,
+                                "degree": r.degree,
+                            })
+                        }).collect::<Vec<_>>(),
+                    });
+                    Ok(serde_json::to_string_pretty(&payload)?)
+                }
+                Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "error": "No call graph available. Run build_graph first."
+                }))?),
+                Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "error": format!("Graph store error: {}", e)
+                }))?),
+            }
+        }
+        // Phase 6: Unified graph insights handler.
+        //
+        // Runs `GraphInsightsService::analyze` and serialises the full
+        // report. The `suggested_questions` list is the most agent-
+        // facing field — it gives the LLM natural-language prompts
+        // that it can use to start a refactoring conversation.
+        "graph_insights" => match ctx.get_graph_store().load_graph() {
+            Ok(Some(graph)) => {
+                let report = crate::application::services::graph_insights::GraphInsightsService::analyze(&graph);
+                let payload = serde_json::json!({
+                    "summary": {
+                        "total_symbols": report.summary.total_symbols,
+                        "total_edges": report.summary.total_edges,
+                        "total_communities": report.summary.total_communities,
+                        "total_cycles": report.summary.total_cycles,
+                        "symbols_in_cycles": report.summary.symbols_in_cycles,
+                    },
+                    "god_nodes": report.god_nodes.iter().map(|(id, s)| {
+                        serde_json::json!({ "symbol_id": id.as_str(), "score": s })
+                    }).collect::<Vec<_>>(),
+                    "cycle_clusters": report.cycle_clusters.iter().map(|cluster| {
+                        cluster.iter().map(|id| id.as_str()).collect::<Vec<_>>()
+                    }).collect::<Vec<_>>(),
+                    "cycle_breakers": report.cycle_breakers.iter().map(|(s, d)| {
+                        serde_json::json!({ "source": s.as_str(), "target": d.as_str() })
+                    }).collect::<Vec<_>>(),
+                    "communities": {
+                        "count": report.communities.count,
+                        "largest_size": report.communities.largest_size,
+                        "smallest_size": report.communities.smallest_size,
+                        "avg_cohesion": report.communities.avg_cohesion,
+                        "top_communities": report.communities.top_communities.iter().map(|c| {
+                            serde_json::json!({
+                                "id": c.id,
+                                "label": c.label,
+                                "size": c.size,
+                                "cohesion": c.cohesion,
+                            })
+                        }).collect::<Vec<_>>(),
+                    },
+                    "surprising_connections": report.surprising_connections.iter().map(|c| {
+                        serde_json::json!({
+                            "source": c.source.as_str(),
+                            "target": c.target.as_str(),
+                            "source_community": c.source_community,
+                            "target_community": c.target_community,
+                        })
+                    }).collect::<Vec<_>>(),
+                    "health_score": report.health_score,
+                    "suggested_questions": report.suggested_questions,
+                });
+                Ok(serde_json::to_string_pretty(&payload)?)
+            }
+            Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                "error": "No call graph available. Run build_graph first."
+            }))?),
+            Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                "error": format!("Graph store error: {}", e)
+            }))?),
+        },
+        // Phase 6: Suggest-questions handler.
+        //
+        // Same engine as `graph_insights`, but only the
+        // `suggested_questions` array is returned. Useful for
+        // narrow-bandwidth callers (token-constrained prompts) that
+        // just want conversation starters.
+        "graph_suggest_questions" => match ctx.get_graph_store().load_graph() {
+            Ok(Some(graph)) => {
+                let report = crate::application::services::graph_insights::GraphInsightsService::analyze(&graph);
+                let payload = serde_json::json!({
+                    "question_count": report.suggested_questions.len(),
+                    "questions": report.suggested_questions,
+                });
+                Ok(serde_json::to_string_pretty(&payload)?)
+            }
+            Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                "error": "No call graph available. Run build_graph first."
+            }))?),
+            Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
+                "error": format!("Graph store error: {}", e)
+            }))?),
+        },
         _ => anyhow::bail!("Unknown tool: {}", tool_name),
     }
 }
