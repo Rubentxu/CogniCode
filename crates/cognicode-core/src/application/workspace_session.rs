@@ -9,25 +9,27 @@ use tokio::sync::{RwLock, broadcast};
 
 use crate::application::commands::MoveSymbolCommand;
 use crate::application::dto::{
-    AnalyzeImpactResult,
-    ComplexitySummaryDto, GetCallHierarchyResult, GraphStatsDto, HotPathDto,
-    ProjectDiagnosticsDto, RefactorResult, RiskLevel, SourceLocation, SymbolDto,
-    ValidationResult,
+    AnalyzeImpactResult, ComplexitySummaryDto, GetCallHierarchyResult, GraphStatsDto, HotPathDto,
+    ProjectDiagnosticsDto, RefactorResult, RiskLevel, SourceLocation, SymbolDto, ValidationResult,
 };
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::application::services::refactor_service::RefactorService;
 use crate::domain::aggregates::CallGraph;
-use crate::domain::value_objects::Location;
-use crate::infrastructure::graph::TraversalDirection;
-use crate::infrastructure::lsp::CompositeProvider;
-use crate::domain::traits::code_intelligence::{CodeIntelligenceProvider, CodeIntelligenceError, DocumentSymbol};
+use crate::domain::events::GraphEvent;
+use crate::domain::traits::code_intelligence::{
+    CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol,
+};
 #[cfg(feature = "persistence")]
 use crate::domain::traits::graph_store::GraphStore;
-use crate::infrastructure::parser::Language;
-use crate::infrastructure::semantic::{SearchQuery, SearchSymbolKind, SemanticSearchService, SymbolCodeService};
-use crate::domain::events::GraphEvent;
+use crate::domain::value_objects::Location;
 use crate::infrastructure::graph::GraphCache;
+use crate::infrastructure::graph::TraversalDirection;
+use crate::infrastructure::lsp::CompositeProvider;
+use crate::infrastructure::parser::Language;
+use crate::infrastructure::semantic::{
+    SearchQuery, SearchSymbolKind, SemanticSearchService, SymbolCodeService,
+};
 
 /// Error type for workspace operations
 #[derive(Debug, thiserror::Error)]
@@ -117,8 +119,9 @@ impl WorkspaceSession {
             return Err(WorkspaceError::FileNotFound(root.display().to_string()));
         }
 
-        let root = root.canonicalize()
-            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Failed to canonicalize path: {}", e)))?;
+        let root = root.canonicalize().map_err(|e| {
+            WorkspaceError::Internal(anyhow::anyhow!("Failed to canonicalize path: {}", e))
+        })?;
 
         // Create a shared GraphCache that both WorkspaceSession and AnalysisService use
         let graph_cache = Arc::new(GraphCache::new());
@@ -131,7 +134,8 @@ impl WorkspaceSession {
         let symbol_code = Arc::new(SymbolCodeService::new());
         let graph = Arc::new(RwLock::new(None));
         let lsp = Arc::new(RwLock::new(None));
-        let intelligence: Arc<dyn CodeIntelligenceProvider> = Arc::new(CompositeProvider::new(&root));
+        let intelligence: Arc<dyn CodeIntelligenceProvider> =
+            Arc::new(CompositeProvider::new(&root));
 
         #[cfg(feature = "persistence")]
         let graph_store = Arc::new(RwLock::new(None));
@@ -181,11 +185,12 @@ impl WorkspaceSession {
             let store_guard = self.graph_store.read().await;
             if let Some(store) = store_guard.as_ref()
                 && let Ok(Some(graph)) = store.load_graph()
-                    && graph.symbol_count() > 0 {
-                        let mut graph_guard = self.graph.write().await;
-                        *graph_guard = Some(Arc::new(graph));
-                        return Ok(());
-                    }
+                && graph.symbol_count() > 0
+            {
+                let mut graph_guard = self.graph.write().await;
+                *graph_guard = Some(Arc::new(graph));
+                return Ok(());
+            }
         }
 
         // Build fresh — build_project_graph is CPU-bound + blocking I/O; use spawn_blocking
@@ -227,9 +232,9 @@ impl WorkspaceSession {
     #[cfg(feature = "persistence")]
     pub async fn load_from_store(&self) -> WorkspaceResult<bool> {
         let store_guard = self.graph_store.read().await;
-        let store = store_guard
-            .as_ref()
-            .ok_or_else(|| WorkspaceError::Internal(anyhow::anyhow!("No graph store configured")))?;
+        let store = store_guard.as_ref().ok_or_else(|| {
+            WorkspaceError::Internal(anyhow::anyhow!("No graph store configured"))
+        })?;
 
         match store.load_graph() {
             Ok(Some(graph)) => {
@@ -242,7 +247,10 @@ impl WorkspaceSession {
                 }
             }
             Ok(None) => Ok(false),
-            Err(e) => Err(WorkspaceError::Internal(anyhow::anyhow!("Failed to load graph: {}", e))),
+            Err(e) => Err(WorkspaceError::Internal(anyhow::anyhow!(
+                "Failed to load graph: {}",
+                e
+            ))),
         }
     }
 
@@ -259,14 +267,14 @@ impl WorkspaceSession {
             .ok_or_else(|| WorkspaceError::GraphNotBuilt("No graph to save".to_string()))?;
 
         let store_guard = self.graph_store.read().await;
-        let store = store_guard
-            .as_ref()
-            .ok_or_else(|| WorkspaceError::Internal(anyhow::anyhow!("No graph store configured")))?;
+        let store = store_guard.as_ref().ok_or_else(|| {
+            WorkspaceError::Internal(anyhow::anyhow!("No graph store configured"))
+        })?;
 
         // Save the graph
-        store
-            .save_graph(graph)
-            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Failed to save graph: {}", e)))?;
+        store.save_graph(graph).map_err(|e| {
+            WorkspaceError::Internal(anyhow::anyhow!("Failed to save graph: {}", e))
+        })?;
 
         // Build and save a manifest for the current state
         const BLOCKED_DIRS: &[&str] = &["target", "node_modules", ".git", "dist", "build"];
@@ -319,9 +327,9 @@ impl WorkspaceSession {
         let mut manifest = FileManifest::new(self.workspace_root.clone());
         manifest.update_entries(&files);
 
-        store
-            .save_manifest(&manifest)
-            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Failed to save manifest: {}", e)))
+        store.save_manifest(&manifest).map_err(|e| {
+            WorkspaceError::Internal(anyhow::anyhow!("Failed to save manifest: {}", e))
+        })
     }
 
     /// Re-index only changed files based on FileManifest comparison.
@@ -339,14 +347,16 @@ impl WorkspaceSession {
         self.ensure_graph_built().await?;
 
         let store_guard = self.graph_store.read().await;
-        let store = store_guard
-            .as_ref()
-            .ok_or_else(|| WorkspaceError::Internal(anyhow::anyhow!("No graph store configured")))?;
+        let store = store_guard.as_ref().ok_or_else(|| {
+            WorkspaceError::Internal(anyhow::anyhow!("No graph store configured"))
+        })?;
 
         // Try to load existing manifest, or create a new one
         let existing_manifest = store
             .load_manifest()
-            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Failed to load manifest: {}", e)))?
+            .map_err(|e| {
+                WorkspaceError::Internal(anyhow::anyhow!("Failed to load manifest: {}", e))
+            })?
             .unwrap_or_else(|| FileManifest::new(self.workspace_root.clone()));
 
         // Scan current files and compute hashes
@@ -467,11 +477,7 @@ impl WorkspaceSession {
                 // Count symbols in this file from the NEW (rebuilt) graph
                 let symbol_count = new_graph
                     .symbols()
-                    .filter(|s| {
-                        s.location()
-                            .file()
-                            .ends_with(p.to_string_lossy().as_ref())
-                    })
+                    .filter(|s| s.location().file().ends_with(p.to_string_lossy().as_ref()))
                     .count();
                 (p.clone(), h.clone(), *t, symbol_count)
             })
@@ -483,9 +489,9 @@ impl WorkspaceSession {
         new_manifest.update_entries(&updated_entries);
 
         // Save updated manifest
-        store
-            .save_manifest(&new_manifest)
-            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Failed to save manifest: {}", e)))?;
+        store.save_manifest(&new_manifest).map_err(|e| {
+            WorkspaceError::Internal(anyhow::anyhow!("Failed to save manifest: {}", e))
+        })?;
 
         // FTS5 sync: ensure semantic search is initialized and index changed files
         // This ensures FTS5 tables stay in sync with the rebuilt call graph
@@ -505,7 +511,11 @@ impl WorkspaceSession {
                 for rel_path in &modified_files {
                     let full_path = self.workspace_root.join(rel_path);
                     if let Err(e) = semantic_search.index_file_from_path(&full_path) {
-                        tracing::warn!("Failed to index modified file {:?} to FTS5: {}", full_path, e);
+                        tracing::warn!(
+                            "Failed to index modified file {:?} to FTS5: {}",
+                            full_path,
+                            e
+                        );
                     }
                 }
             }
@@ -525,7 +535,9 @@ impl WorkspaceSession {
             let service = SemanticSearchService::new();
             service
                 .populate_from_directory(&self.workspace_root)
-                .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Semantic search init failed: {}", e)))?;
+                .map_err(|e| {
+                    WorkspaceError::Internal(anyhow::anyhow!("Semantic search init failed: {}", e))
+                })?;
             *search_guard = Some(service);
         }
         Ok(())
@@ -548,35 +560,50 @@ impl WorkspaceSession {
     /// Read a file with optional line range and mode
     ///
     /// Mode can be: "raw", "outline", "symbols", "compressed"
-    pub async fn read_file(&self, request: crate::application::dto::ReadFileRequest) -> WorkspaceResult<crate::application::dto::ReadFileResult> {
+    pub async fn read_file(
+        &self,
+        request: crate::application::dto::ReadFileRequest,
+    ) -> WorkspaceResult<crate::application::dto::ReadFileResult> {
         self.file_ops
             .read_file(request)
             .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("{}", e)))
     }
 
     /// Write content to a file atomically
-    pub async fn write_file(&self, request: crate::application::dto::WriteFileRequest) -> WorkspaceResult<crate::application::dto::WriteFileResult> {
+    pub async fn write_file(
+        &self,
+        request: crate::application::dto::WriteFileRequest,
+    ) -> WorkspaceResult<crate::application::dto::WriteFileResult> {
         self.file_ops
             .write_file(request)
             .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("{}", e)))
     }
 
     /// Apply string-replacement edits to a file
-    pub async fn edit_file(&self, request: crate::application::dto::EditFileRequest) -> WorkspaceResult<crate::application::dto::EditFileResult> {
+    pub async fn edit_file(
+        &self,
+        request: crate::application::dto::EditFileRequest,
+    ) -> WorkspaceResult<crate::application::dto::EditFileResult> {
         self.file_ops
             .edit_file(request)
             .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("{}", e)))
     }
 
     /// Search for content within files
-    pub async fn search_content(&self, request: crate::application::dto::SearchContentRequest) -> WorkspaceResult<crate::application::dto::SearchContentResult> {
+    pub async fn search_content(
+        &self,
+        request: crate::application::dto::SearchContentRequest,
+    ) -> WorkspaceResult<crate::application::dto::SearchContentResult> {
         self.file_ops
             .search_content(request)
             .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("{}", e)))
     }
 
     /// List files in a directory with optional filtering
-    pub async fn list_files(&self, request: crate::application::dto::ListFilesRequest) -> WorkspaceResult<crate::application::dto::ListFilesResult> {
+    pub async fn list_files(
+        &self,
+        request: crate::application::dto::ListFilesRequest,
+    ) -> WorkspaceResult<crate::application::dto::ListFilesResult> {
         self.file_ops
             .list_files(request)
             .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("{}", e)))
@@ -587,7 +614,10 @@ impl WorkspaceSession {
     // =========================================================================
 
     /// Get all symbols from a file
-    pub async fn get_file_symbols(&self, file_path: &str) -> WorkspaceResult<Vec<crate::application::dto::SymbolDto>> {
+    pub async fn get_file_symbols(
+        &self,
+        file_path: &str,
+    ) -> WorkspaceResult<Vec<crate::application::dto::SymbolDto>> {
         let path = self.resolve_path(file_path)?;
         self.analysis
             .get_file_symbols(&path)
@@ -595,12 +625,17 @@ impl WorkspaceSession {
     }
 
     /// Get an outline (hierarchical structure) of a file
-    pub async fn get_outline(&self, file_path: &str, include_private: bool) -> WorkspaceResult<String> {
+    pub async fn get_outline(
+        &self,
+        file_path: &str,
+        include_private: bool,
+    ) -> WorkspaceResult<String> {
         let path = self.resolve_path(file_path)?;
-        let symbols = self.analysis
+        let symbols = self
+            .analysis
             .get_file_symbols(&path)
             .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
-        
+
         let mut outline = String::new();
         for symbol in symbols {
             if !include_private && symbol.name.starts_with('_') {
@@ -609,41 +644,42 @@ impl WorkspaceSession {
             let kind_str = symbol.kind.to_lowercase();
             outline.push_str(&format!(
                 "{}:{}:{}:{}:{}\n",
-                symbol.line,
-                symbol.column,
-                kind_str,
-                symbol.name,
-                symbol.file_path
+                symbol.line, symbol.column, kind_str, symbol.name, symbol.file_path
             ));
         }
         Ok(outline)
     }
 
     /// Get complexity metrics for a file or function
-    pub async fn get_complexity(&self, file_path: &str, function_name: Option<&str>) -> WorkspaceResult<crate::application::dto::ComplexityResult> {
+    pub async fn get_complexity(
+        &self,
+        file_path: &str,
+        function_name: Option<&str>,
+    ) -> WorkspaceResult<crate::application::dto::ComplexityResult> {
         use crate::domain::services::ComplexityCalculator;
-        
+
         let path = self.resolve_path(file_path)?;
         let source = std::fs::read_to_string(&path)
             .map_err(|e| WorkspaceError::InvalidInput(format!("Failed to read file: {}", e)))?;
-        
+
         let language = Language::from_extension(path.extension())
             .ok_or_else(|| WorkspaceError::InvalidInput("Unsupported file type".to_string()))?;
-        
+
         let parser = crate::infrastructure::parser::TreeSitterParser::new(language)
             .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
-        
+
         let calculator = ComplexityCalculator::new();
-        let tree = parser.parse_tree(&source)
+        let tree = parser
+            .parse_tree(&source)
             .map_err(|e| WorkspaceError::AnalysisFailed(format!("Parse error: {}", e)))?;
-        
+
         let function_node_type = parser.language().function_node_type();
         let mut max_nesting = 0u32;
         let mut decision_points = Vec::new();
         let mut param_count = 0u32;
         let mut func_start_line = 0u32;
         let mut func_end_line = 0u32;
-        
+
         self.find_function_metrics(
             tree.root_node(),
             &source,
@@ -656,7 +692,7 @@ impl WorkspaceSession {
             &mut func_end_line,
             0,
         );
-        
+
         let cyclomatic = calculator.cyclomatic_complexity(&decision_points, 1);
         let cognitive = calculator.cognitive_complexity(max_nesting, &decision_points, 0);
         let lines_of_code = if func_end_line > func_start_line {
@@ -664,7 +700,7 @@ impl WorkspaceSession {
         } else {
             1
         };
-        
+
         Ok(crate::application::dto::ComplexityResult {
             cyclomatic,
             cognitive,
@@ -690,26 +726,40 @@ impl WorkspaceSession {
         current_nesting: u32,
     ) {
         if node.kind() == function_type
-            && let Some(name) = self.find_identifier_in_node(node, source) {
-                let should_process = match target_name {
-                    Some(target) => name == target,
-                    None => *func_start_line == 0,
-                };
+            && let Some(name) = self.find_identifier_in_node(node, source)
+        {
+            let should_process = match target_name {
+                Some(target) => name == target,
+                None => *func_start_line == 0,
+            };
 
-                if should_process {
-                    *func_start_line = node.start_position().row as u32;
-                    *func_end_line = node.end_position().row as u32;
-                    *param_count = self.count_parameters(node, source);
-                    self.process_decision_points(node, source, max_nesting, decision_points, current_nesting);
-                }
+            if should_process {
+                *func_start_line = node.start_position().row as u32;
+                *func_end_line = node.end_position().row as u32;
+                *param_count = self.count_parameters(node, source);
+                self.process_decision_points(
+                    node,
+                    source,
+                    max_nesting,
+                    decision_points,
+                    current_nesting,
+                );
             }
+        }
 
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
                 self.find_function_metrics(
-                    child, source, target_name, function_type,
-                    max_nesting, decision_points, param_count,
-                    func_start_line, func_end_line, current_nesting,
+                    child,
+                    source,
+                    target_name,
+                    function_type,
+                    max_nesting,
+                    decision_points,
+                    param_count,
+                    func_start_line,
+                    func_end_line,
+                    current_nesting,
                 );
             }
         }
@@ -736,9 +786,10 @@ impl WorkspaceSession {
                 if child.kind() == "parameters" {
                     for j in 0..child.child_count() {
                         if let Some(param) = child.child(j)
-                            && param.kind() == "identifier" {
-                                count += 1;
-                            }
+                            && param.kind() == "identifier"
+                        {
+                            count += 1;
+                        }
                     }
                 }
                 if child.kind() == "identifier" {
@@ -758,7 +809,7 @@ impl WorkspaceSession {
         current_nesting: u32,
     ) {
         let kind = node.kind();
-        
+
         match kind {
             "if_statement" | "if_expression" => {
                 decision_points.push(crate::domain::services::DecisionPoint::If);
@@ -781,14 +832,25 @@ impl WorkspaceSession {
 
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
-                self.process_decision_points(child, source, max_nesting, decision_points, current_nesting);
+                self.process_decision_points(
+                    child,
+                    source,
+                    max_nesting,
+                    decision_points,
+                    current_nesting,
+                );
             }
         }
     }
 
     /// Semantic search for symbols (backward compatible, no kind filter)
-    pub async fn semantic_search(&self, query: &str, max_results: usize) -> WorkspaceResult<Vec<crate::application::dto::SymbolDto>> {
-        self.semantic_search_with_kinds(query, max_results, None).await
+    pub async fn semantic_search(
+        &self,
+        query: &str,
+        max_results: usize,
+    ) -> WorkspaceResult<Vec<crate::application::dto::SymbolDto>> {
+        self.semantic_search_with_kinds(query, max_results, None)
+            .await
     }
 
     /// Semantic search for symbols with optional kind filter
@@ -807,8 +869,9 @@ impl WorkspaceSession {
         self.ensure_semantic_search().await?;
 
         let search_guard = self.semantic_search.read().await;
-        let service = search_guard.as_ref()
-            .ok_or_else(|| WorkspaceError::Internal(anyhow::anyhow!("Semantic search not initialized")))?;
+        let service = search_guard.as_ref().ok_or_else(|| {
+            WorkspaceError::Internal(anyhow::anyhow!("Semantic search not initialized"))
+        })?;
 
         let search_kinds = kinds.map(Self::map_kind_strings).unwrap_or_default();
 
@@ -851,13 +914,19 @@ impl WorkspaceSession {
     }
 
     /// Get the source code for a symbol at a specific location
-    pub async fn get_symbol_code(&self, file_path: &str, line: u32, column: u32) -> WorkspaceResult<String> {
+    pub async fn get_symbol_code(
+        &self,
+        file_path: &str,
+        line: u32,
+        column: u32,
+    ) -> WorkspaceResult<String> {
         let path = self.resolve_path(file_path)?;
-        
-        let result = self.symbol_code
+
+        let result = self
+            .symbol_code
             .get_symbol_code(&path.to_string_lossy(), line, column)
             .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Symbol code error: {}", e)))?;
-        
+
         Ok(result.code)
     }
 
@@ -909,46 +978,48 @@ impl WorkspaceSession {
         depth: usize,
     ) -> WorkspaceResult<GetCallHierarchyResult> {
         self.ensure_graph_built().await?;
-        
+
         let graph_guard = self.graph.read().await;
-        let graph = graph_guard.as_ref()
+        let graph = graph_guard
+            .as_ref()
             .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
-        
+
         let direction = match direction {
             "incoming" | "callers" => TraversalDirection::Callers,
             "outgoing" | "callees" => TraversalDirection::Callees,
             _ => TraversalDirection::Both,
         };
-        
+
         let index = self.build_symbol_name_index(graph);
         let search_name = symbol.to_lowercase();
-        
+
         let symbol_ids: Vec<_> = index
             .get(&search_name)
             .map(|entries| {
-                entries.iter()
-                    .map(|(_, s)| crate::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+                entries
+                    .iter()
+                    .map(|(_, s)| {
+                        crate::domain::aggregates::call_graph::SymbolId::new(
+                            s.fully_qualified_name(),
+                        )
+                    })
                     .collect()
             })
             .unwrap_or_default();
-        
+
         let mut all_calls = Vec::new();
-        
+
         for symbol_id in symbol_ids {
             let entries = match direction {
-                TraversalDirection::Callers => {
-                    graph.traverse_callers(&symbol_id, depth as u8)
-                }
-                TraversalDirection::Callees => {
-                    graph.traverse_callees(&symbol_id, depth as u8)
-                }
+                TraversalDirection::Callers => graph.traverse_callers(&symbol_id, depth as u8),
+                TraversalDirection::Callees => graph.traverse_callees(&symbol_id, depth as u8),
                 TraversalDirection::Both => {
                     let mut both = graph.traverse_callers(&symbol_id, depth as u8);
                     both.extend(graph.traverse_callees(&symbol_id, depth as u8));
                     both
                 }
             };
-            
+
             for entry in entries {
                 all_calls.push(crate::application::dto::CallHierarchyEntry {
                     symbol: entry.symbol_name,
@@ -959,7 +1030,7 @@ impl WorkspaceSession {
                 });
             }
         }
-        
+
         let total_calls = all_calls.len();
         Ok(crate::application::dto::GetCallHierarchyResult {
             symbol: symbol.to_string(),
@@ -971,11 +1042,17 @@ impl WorkspaceSession {
         })
     }
 
-    fn build_symbol_name_index(&self, graph: &CallGraph) -> std::collections::HashMap<String, Vec<(String, crate::domain::aggregates::Symbol)>> {
+    fn build_symbol_name_index(
+        &self,
+        graph: &CallGraph,
+    ) -> std::collections::HashMap<String, Vec<(String, crate::domain::aggregates::Symbol)>> {
         let mut index: std::collections::HashMap<String, Vec<_>> = std::collections::HashMap::new();
         for symbol in graph.symbols() {
             let name_lower = symbol.name().to_lowercase();
-            index.entry(name_lower).or_default().push((symbol.name().to_string(), symbol.clone()));
+            index
+                .entry(name_lower)
+                .or_default()
+                .push((symbol.name().to_string(), symbol.clone()));
         }
         index
     }
@@ -983,27 +1060,33 @@ impl WorkspaceSession {
     /// Analyze the impact of changing a symbol
     pub async fn analyze_impact(&self, symbol: &str) -> WorkspaceResult<AnalyzeImpactResult> {
         use std::collections::HashSet;
-        
+
         self.ensure_graph_built().await?;
-        
+
         let graph_guard = self.graph.read().await;
-        let graph = graph_guard.as_ref()
+        let graph = graph_guard
+            .as_ref()
             .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
-        
+
         let index = self.build_symbol_name_index(graph);
         let search_name = symbol.to_lowercase();
         let symbol_ids: Vec<_> = index
             .get(&search_name)
             .map(|entries| {
-                entries.iter()
-                    .map(|(_, s)| crate::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+                entries
+                    .iter()
+                    .map(|(_, s)| {
+                        crate::domain::aggregates::call_graph::SymbolId::new(
+                            s.fully_qualified_name(),
+                        )
+                    })
                     .collect()
             })
             .unwrap_or_default();
-        
+
         let mut impacted_symbols_set: HashSet<String> = HashSet::new();
         let mut impacted_files_set: HashSet<String> = HashSet::new();
-        
+
         for symbol_id in &symbol_ids {
             let dependents = graph.find_all_dependents(symbol_id);
             for dep_id in dependents {
@@ -1013,12 +1096,12 @@ impl WorkspaceSession {
                 }
             }
         }
-        
+
         let impacted_symbols: Vec<String> = impacted_symbols_set.into_iter().collect();
         let impacted_files: Vec<String> = impacted_files_set.into_iter().collect();
         let symbols_count = impacted_symbols.len();
         let files_count = impacted_files.len();
-        
+
         let risk_level = if symbols_count > 10 {
             RiskLevel::Critical
         } else if symbols_count > 5 {
@@ -1028,31 +1111,38 @@ impl WorkspaceSession {
         } else {
             RiskLevel::Low
         };
-        
+
         Ok(AnalyzeImpactResult {
             symbol: symbol.to_string(),
             impacted_files,
             impacted_symbols,
             risk_level,
-            summary: format!("{} symbols across {} files would be affected.", symbols_count, files_count),
+            summary: format!(
+                "{} symbols across {} files would be affected.",
+                symbols_count, files_count
+            ),
         })
     }
 
     /// Check architecture for cycles and violations
     ///
     /// Note: scope parameter is not yet supported by the underlying infrastructure.
-    pub async fn check_architecture(&self, _scope: Option<&str>) -> WorkspaceResult<crate::application::dto::ArchitectureResult> {
+    pub async fn check_architecture(
+        &self,
+        _scope: Option<&str>,
+    ) -> WorkspaceResult<crate::application::dto::ArchitectureResult> {
         use crate::domain::services::CycleDetector;
 
         self.ensure_graph_built().await?;
 
         let graph_guard = self.graph.read().await;
-        let graph = graph_guard.as_ref()
+        let graph = graph_guard
+            .as_ref()
             .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
-        
+
         let cycle_detector = CycleDetector::new();
         let cycle_result = cycle_detector.detect_cycles(graph);
-        
+
         let cycles: Vec<crate::application::dto::CycleInfo> = cycle_result
             .cycles
             .iter()
@@ -1061,10 +1151,10 @@ impl WorkspaceSession {
                 length: c.length(),
             })
             .collect();
-        
+
         let cycle_penalty = cycle_result.symbols_in_cycles() * 5;
         let score = (100.0 - cycle_penalty as f32).max(0.0);
-        
+
         let violations: Vec<crate::application::dto::ViolationInfo> = cycle_result
             .cycles
             .iter()
@@ -1080,20 +1170,30 @@ impl WorkspaceSession {
                 }
             })
             .collect();
-        
+
         Ok(crate::application::dto::ArchitectureResult {
             cycles,
             violations,
             score,
-            summary: format!("{} cycles detected, {} symbols involved", cycle_result.cycles.len(), cycle_result.symbols_in_cycles()),
+            summary: format!(
+                "{} cycles detected, {} symbols involved",
+                cycle_result.cycles.len(),
+                cycle_result.symbols_in_cycles()
+            ),
         })
     }
 
     /// Trace execution path between two symbols
-    pub async fn trace_path(&self, source: &str, target: &str, max_depth: usize) -> WorkspaceResult<Vec<String>> {
+    pub async fn trace_path(
+        &self,
+        source: &str,
+        target: &str,
+        max_depth: usize,
+    ) -> WorkspaceResult<Vec<String>> {
         self.ensure_graph_built().await?;
 
-        let path = self.analysis
+        let path = self
+            .analysis
             .trace_path(source, target, max_depth)
             .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
 
@@ -1104,23 +1204,34 @@ impl WorkspaceSession {
     }
 
     /// Get entry points (symbols with no incoming edges)
-    pub async fn get_entry_points(&self) -> WorkspaceResult<Vec<crate::application::dto::SymbolDto>> {
+    pub async fn get_entry_points(
+        &self,
+    ) -> WorkspaceResult<Vec<crate::application::dto::SymbolDto>> {
         self.ensure_graph_built().await?;
         Ok(self.analysis.get_entry_points())
     }
 
     /// Get leaf functions (symbols with no outgoing edges)
-    pub async fn get_leaf_functions(&self) -> WorkspaceResult<Vec<crate::application::dto::SymbolDto>> {
+    pub async fn get_leaf_functions(
+        &self,
+    ) -> WorkspaceResult<Vec<crate::application::dto::SymbolDto>> {
         self.ensure_graph_built().await?;
         Ok(self.analysis.get_leaf_functions())
     }
 
     /// Export the call graph as Mermaid diagram
-    pub async fn export_mermaid(&self, _format: &str, theme: Option<&str>, root: Option<&str>, _module_filter: Option<&str>) -> WorkspaceResult<String> {
+    pub async fn export_mermaid(
+        &self,
+        _format: &str,
+        theme: Option<&str>,
+        root: Option<&str>,
+        _module_filter: Option<&str>,
+    ) -> WorkspaceResult<String> {
         self.ensure_graph_built().await?;
 
         let graph_guard = self.graph.read().await;
-        let graph = graph_guard.as_ref()
+        let graph = graph_guard
+            .as_ref()
             .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
 
         let options = crate::domain::aggregates::call_graph::MermaidOptions {
@@ -1177,20 +1288,24 @@ impl WorkspaceSession {
     /// If the graph is already built, returns cached result immediately.
     /// Uses `spawn_blocking` because `build_project_graph` is CPU-bound + blocking I/O,
     /// and calling it directly in an async fn would starve the tokio thread pool.
-    pub async fn build_lightweight_index(&self, strategy: &str) -> WorkspaceResult<crate::application::dto::BuildIndexResult> {
+    pub async fn build_lightweight_index(
+        &self,
+        strategy: &str,
+    ) -> WorkspaceResult<crate::application::dto::BuildIndexResult> {
         // Check if graph is already built (idempotency guard)
         {
             let graph_guard = self.graph.read().await;
             if let Some(ref graph) = *graph_guard
-                && graph.symbol_count() > 0 {
-                    return Ok(crate::application::dto::BuildIndexResult {
-                        success: true,
-                        strategy: strategy.to_string(),
-                        symbols_indexed: graph.symbol_count(),
-                        locations_indexed: graph.symbol_count(),
-                        message: format!("Cached (already indexed {} symbols)", graph.symbol_count()),
-                    });
-                }
+                && graph.symbol_count() > 0
+            {
+                return Ok(crate::application::dto::BuildIndexResult {
+                    success: true,
+                    strategy: strategy.to_string(),
+                    symbols_indexed: graph.symbol_count(),
+                    locations_indexed: graph.symbol_count(),
+                    message: format!("Cached (already indexed {} symbols)", graph.symbol_count()),
+                });
+            }
         }
 
         // Not cached — build_project_graph is CPU-bound + blocking I/O; use spawn_blocking
@@ -1220,8 +1335,8 @@ impl WorkspaceSession {
 
     /// Get statistics about the call graph
     pub async fn get_graph_stats(&self) -> WorkspaceResult<Option<GraphStatsDto>> {
-        use std::collections::HashMap;
         use crate::infrastructure::parser::Language;
+        use std::collections::HashMap;
 
         let graph_guard = self.graph.read().await;
         let graph = match graph_guard.as_ref() {
@@ -1243,7 +1358,9 @@ impl WorkspaceSession {
             // Compute language from file extension
             let ext = Path::new(&file).extension();
             if let Some(lang) = Language::from_extension(ext) {
-                *language_breakdown.entry(lang.name().to_string()).or_insert(0) += 1;
+                *language_breakdown
+                    .entry(lang.name().to_string())
+                    .or_insert(0) += 1;
             } else {
                 // Files without recognized extensions count as "Unknown"
                 *language_breakdown.entry("Unknown".to_string()).or_insert(0) += 1;
@@ -1270,18 +1387,14 @@ impl WorkspaceSession {
         self.ensure_graph_built().await?;
 
         let graph_guard = self.graph.read().await;
-        let graph = graph_guard.as_ref()
+        let graph = graph_guard
+            .as_ref()
             .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
 
         // Collect all symbols and sort by (file_path, line)
-        let mut symbols: Vec<SymbolDto> = graph
-            .symbols()
-            .map(SymbolDto::from_symbol)
-            .collect();
+        let mut symbols: Vec<SymbolDto> = graph.symbols().map(SymbolDto::from_symbol).collect();
 
-        symbols.sort_by(|a, b| {
-            a.file_path.cmp(&b.file_path).then(a.line.cmp(&b.line))
-        });
+        symbols.sort_by(|a, b| a.file_path.cmp(&b.file_path).then(a.line.cmp(&b.line)));
 
         // Apply pagination
         let offset = offset.unwrap_or(0);
@@ -1300,7 +1413,10 @@ impl WorkspaceSession {
     /// Searches the already-built project graph for symbols whose name
     /// matches (case-insensitive prefix/exact). Reuses the cached graph from
     /// `self.analysis` — never rebuilds from scratch per call.
-    pub async fn query_symbol_index(&self, symbol: &str) -> WorkspaceResult<Vec<crate::application::dto::SymbolDto>> {
+    pub async fn query_symbol_index(
+        &self,
+        symbol: &str,
+    ) -> WorkspaceResult<Vec<crate::application::dto::SymbolDto>> {
         // Ensure the graph is built (cheap if already cached)
         self.ensure_graph_built().await?;
 
@@ -1343,7 +1459,8 @@ impl WorkspaceSession {
         self.ensure_graph_built().await?;
 
         let graph_guard = self.graph.read().await;
-        let graph = graph_guard.as_ref()
+        let graph = graph_guard
+            .as_ref()
             .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
 
         let analyzer = CallGraphAnalyzer::new();
@@ -1421,40 +1538,52 @@ impl WorkspaceSession {
     // =========================================================================
 
     /// Rename a symbol across the codebase
-    pub async fn rename_symbol(&self, symbol: &str, new_name: &str, file: &str) -> WorkspaceResult<crate::application::dto::RefactorResult> {
+    pub async fn rename_symbol(
+        &self,
+        symbol: &str,
+        new_name: &str,
+        file: &str,
+    ) -> WorkspaceResult<crate::application::dto::RefactorResult> {
         use crate::application::commands::RenameSymbolCommand;
-        
+
         let path = self.resolve_path(file)?;
         let path_str = path.to_string_lossy().into_owned();
         let command = RenameSymbolCommand::new(symbol, new_name, &path_str);
-        
+
         match self.refactor.rename_symbol(command) {
             Ok(preview) => {
-                let edits = self.refactor
+                let edits = self
+                    .refactor
                     .generate_rename_edits(&path_str, symbol, new_name)
                     .unwrap_or_default();
-                
-                let changes: Vec<crate::application::dto::ChangeEntry> = edits.iter().map(|edit| {
-                    let start_loc = edit.range.start();
-                    crate::application::dto::ChangeEntry {
-                        file: start_loc.file().to_string(),
-                        old_text: symbol.to_string(),
-                        new_text: new_name.to_string(),
-                        location: crate::application::dto::SourceLocation {
+
+                let changes: Vec<crate::application::dto::ChangeEntry> = edits
+                    .iter()
+                    .map(|edit| {
+                        let start_loc = edit.range.start();
+                        crate::application::dto::ChangeEntry {
                             file: start_loc.file().to_string(),
-                            line: start_loc.line(),
-                            column: start_loc.column(),
-                        },
-                    }
-                }).collect();
-                
+                            old_text: symbol.to_string(),
+                            new_text: new_name.to_string(),
+                            location: crate::application::dto::SourceLocation {
+                                file: start_loc.file().to_string(),
+                                line: start_loc.line(),
+                                column: start_loc.column(),
+                            },
+                        }
+                    })
+                    .collect();
+
                 Ok(crate::application::dto::RefactorResult {
                     action: crate::application::dto::RefactorAction::Rename,
                     success: true,
                     changes,
                     validation_result: crate::application::dto::ValidationResult {
                         is_valid: true,
-                        warnings: vec![format!("Impact: {} symbols affected", preview.symbols_affected.len())],
+                        warnings: vec![format!(
+                            "Impact: {} symbols affected",
+                            preview.symbols_affected.len()
+                        )],
                         errors: Vec::new(),
                     },
                     error_message: None,
@@ -1486,7 +1615,10 @@ impl WorkspaceSession {
                 changes: Vec::new(),
                 validation_result: ValidationResult {
                     is_valid: true,
-                    warnings: vec![format!("Inline: {} symbols affected", preview.symbols_affected.len())],
+                    warnings: vec![format!(
+                        "Inline: {} symbols affected",
+                        preview.symbols_affected.len()
+                    )],
                     errors: Vec::new(),
                 },
                 error_message: None,
@@ -1561,7 +1693,10 @@ impl WorkspaceSession {
 
         // Use the symbol name as both target and new name for now
         // A full implementation would use the selection range
-        match self.refactor.extract_symbol_with_target(&path_str, name, name) {
+        match self
+            .refactor
+            .extract_symbol_with_target(&path_str, name, name)
+        {
             Ok(preview) => Ok(RefactorResult {
                 action: crate::application::dto::RefactorAction::Extract,
                 success: true,
@@ -1591,10 +1726,13 @@ impl WorkspaceSession {
     }
 
     /// Validate syntax of a file
-    pub async fn validate_syntax(&self, file_path: &str) -> WorkspaceResult<crate::application::dto::ValidationResult> {
+    pub async fn validate_syntax(
+        &self,
+        file_path: &str,
+    ) -> WorkspaceResult<crate::application::dto::ValidationResult> {
         let path = self.resolve_path(file_path)?;
         let path_str = path.to_string_lossy().into_owned();
-        
+
         match self.refactor.validate_file_syntax(&path_str) {
             Ok(is_valid) => Ok(crate::application::dto::ValidationResult {
                 is_valid,
@@ -1624,7 +1762,12 @@ impl WorkspaceSession {
     }
 
     /// Go to definition
-    pub async fn go_to_definition(&self, file: &str, line: u32, column: u32) -> WorkspaceResult<Vec<SourceLocation>> {
+    pub async fn go_to_definition(
+        &self,
+        file: &str,
+        line: u32,
+        column: u32,
+    ) -> WorkspaceResult<Vec<SourceLocation>> {
         let provider = self.ensure_lsp().await?;
         let location = Location::new(
             self.resolve_path(file)?.to_string_lossy().to_string(),
@@ -1664,7 +1807,13 @@ impl WorkspaceSession {
     }
 
     /// Find references to a symbol
-    pub async fn find_references(&self, file: &str, line: u32, column: u32, include_decl: bool) -> WorkspaceResult<Vec<SourceLocation>> {
+    pub async fn find_references(
+        &self,
+        file: &str,
+        line: u32,
+        column: u32,
+        include_decl: bool,
+    ) -> WorkspaceResult<Vec<SourceLocation>> {
         let provider = self.ensure_lsp().await?;
         let location = Location::new(
             self.resolve_path(file)?.to_string_lossy().to_string(),
@@ -1678,7 +1827,10 @@ impl WorkspaceSession {
             .await
             .map_err(|e| WorkspaceError::LspNotAvailable(e.to_string()))?;
 
-        Ok(refs.into_iter().map(|r| SourceLocation::from(&r.location)).collect())
+        Ok(refs
+            .into_iter()
+            .map(|r| SourceLocation::from(&r.location))
+            .collect())
     }
 
     // =========================================================================
@@ -1709,18 +1861,26 @@ impl WorkspaceSession {
         let arch = self.check_architecture(None).await.ok();
         let coverage = self.analysis.get_coverage_metrics();
 
-        let eps: Vec<serde_json::Value> = entry_points.iter().take(5).map(|ep| {
-            serde_json::json!({
-                "name": ep.name, "file": ep.file_path, "line": ep.line, "kind": ep.kind
+        let eps: Vec<serde_json::Value> = entry_points
+            .iter()
+            .take(5)
+            .map(|ep| {
+                serde_json::json!({
+                    "name": ep.name, "file": ep.file_path, "line": ep.line, "kind": ep.kind
+                })
             })
-        }).collect();
+            .collect();
 
-        let hps: Vec<serde_json::Value> = hot_paths.iter().take(5).map(|hp| {
-            serde_json::json!({
-                "symbol": hp.symbol_name, "file": hp.file, "line": hp.line,
-                "fan_in": hp.fan_in, "fan_out": hp.fan_out
+        let hps: Vec<serde_json::Value> = hot_paths
+            .iter()
+            .take(5)
+            .map(|hp| {
+                serde_json::json!({
+                    "symbol": hp.symbol_name, "file": hp.file, "line": hp.line,
+                    "fan_in": hp.fan_in, "fan_out": hp.fan_out
+                })
             })
-        }).collect();
+            .collect();
 
         Ok(serde_json::json!({
             "total_symbols": stats.symbol_count,
@@ -1775,7 +1935,7 @@ impl WorkspaceSession {
                 "severity": "info",
                 "title": format!("{} high-traffic functions", hot_paths.len()),
                 "description": "Functions with highest fan-in (most callers)",
-                "hot_functions": hot_paths.iter().take(5).map(|hp| 
+                "hot_functions": hot_paths.iter().take(5).map(|hp|
                     format!("{} (fan-in: {})", hp.symbol_name, hp.fan_in)
                 ).collect::<Vec<_>>()
             }));
@@ -1808,7 +1968,7 @@ impl WorkspaceSession {
             "step": 1,
             "title": "Explore entry points",
             "description": format!("Start with {} main entry points", entry_points.len().min(5)),
-            "files": entry_points.iter().take(5).map(|ep| 
+            "files": entry_points.iter().take(5).map(|ep|
                 format!("{} ({}:{})", ep.name, ep.file_path, ep.line)
             ).collect::<Vec<_>>(),
             "estimated_tokens": 200
@@ -1872,7 +2032,8 @@ impl WorkspaceSession {
             "estimated_tokens": 400
         }));
 
-        let total_tokens: u64 = steps.iter()
+        let total_tokens: u64 = steps
+            .iter()
             .filter_map(|s| s["estimated_tokens"].as_u64())
             .sum();
 
@@ -1888,7 +2049,8 @@ impl WorkspaceSession {
     pub async fn ask_about_code(&self, question: &str) -> WorkspaceResult<serde_json::Value> {
         self.ensure_graph_built().await?;
         let _graph = self.graph.read().await;
-        let _ = _graph.as_ref()
+        let _ = _graph
+            .as_ref()
             .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
 
         let words: Vec<&str> = question.split_whitespace().collect();
@@ -1900,7 +2062,7 @@ impl WorkspaceSession {
             if !results.is_empty() {
                 answers.push(serde_json::json!({
                     "explanation": format!("Found {} symbols matching '{}'", results.len(), word),
-                    "matches": results.iter().take(5).map(|s| 
+                    "matches": results.iter().take(5).map(|s|
                         format!("{} {:?} ({}:{})", s.name, s.kind, s.file_path, s.line)
                     ).collect::<Vec<_>>(),
                     "confidence": 0.8
@@ -1915,14 +2077,15 @@ impl WorkspaceSession {
             let src = words.first().unwrap();
             let tgt = words.last().unwrap();
             if let Ok(path) = self.trace_path(src, tgt, 10).await
-                && !path.is_empty() {
-                    answers.push(serde_json::json!({
+                && !path.is_empty()
+            {
+                answers.push(serde_json::json!({
                         "explanation": format!("Path from '{}' to '{}': {}", src, tgt, path.join(" → ")),
                         "path": path,
                         "path_length": path.len(),
                         "confidence": 0.7
                     }));
-                }
+            }
         }
 
         if answers.is_empty() {
@@ -1939,29 +2102,41 @@ impl WorkspaceSession {
     }
 
     /// Get ranked symbols by hotness (fan-in priority) for AI agent consumption.
-    pub async fn ranked_symbols_ai(&self, query: &str, limit: usize) -> WorkspaceResult<serde_json::Value> {
+    pub async fn ranked_symbols_ai(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> WorkspaceResult<serde_json::Value> {
         self.ensure_graph_built().await?;
         let hot_paths = self.get_hot_paths(limit, 1).await.unwrap_or_default();
-        
+
         // If query provided, filter by name match
         let filtered: Vec<_> = if query.is_empty() {
             hot_paths
         } else {
-            hot_paths.into_iter()
-                .filter(|hp| hp.symbol_name.to_lowercase().contains(&query.to_lowercase()))
+            hot_paths
+                .into_iter()
+                .filter(|hp| {
+                    hp.symbol_name
+                        .to_lowercase()
+                        .contains(&query.to_lowercase())
+                })
                 .collect()
         };
 
-        let symbols: Vec<serde_json::Value> = filtered.iter().map(|hp| {
-            serde_json::json!({
-                "name": hp.symbol_name,
-                "file": hp.file,
-                "line": hp.line,
-                "fan_in": hp.fan_in,
-                "fan_out": hp.fan_out,
-                "relevance_score": hp.fan_in as f64,
+        let symbols: Vec<serde_json::Value> = filtered
+            .iter()
+            .map(|hp| {
+                serde_json::json!({
+                    "name": hp.symbol_name,
+                    "file": hp.file,
+                    "line": hp.line,
+                    "fan_in": hp.fan_in,
+                    "fan_out": hp.fan_out,
+                    "relevance_score": hp.fan_in as f64,
+                })
             })
-        }).collect();
+            .collect();
 
         Ok(serde_json::json!({
             "query": query,
@@ -1977,7 +2152,7 @@ mod tests {
     use crate::application::dto::GraphCoverageMetrics;
     use tempfile::TempDir;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_workspace_session_creation() {
         let temp_dir = TempDir::new().unwrap();
         let session = WorkspaceSession::new(temp_dir.path()).await;
@@ -1986,7 +2161,7 @@ mod tests {
         assert_eq!(session.workspace_root(), temp_dir.path());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_workspace_session_invalid_path() {
         let session = WorkspaceSession::new("/nonexistent/path").await;
         assert!(session.is_err());
@@ -1996,107 +2171,161 @@ mod tests {
     // Tests for T-1: Idempotent build_lightweight_index
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_lightweight_index_idempotent_first_call_builds() {
         let temp_dir = TempDir::new().unwrap();
         // Create a simple test file to ensure there are symbols
         let test_file = temp_dir.path().join("test.rs");
         std::fs::write(&test_file, "pub fn test_function() {}").unwrap();
-        
+
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        
-        let result = session.build_lightweight_index("lightweight").await.unwrap();
-        
+
+        let result = session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
+
         assert!(result.success);
         assert_eq!(result.strategy, "lightweight");
-        assert!(result.symbols_indexed > 0, "Should have indexed some symbols");
-        assert!(result.message.contains("Indexed"), "First call should say 'Indexed'");
+        assert!(
+            result.symbols_indexed > 0,
+            "Should have indexed some symbols"
+        );
+        assert!(
+            result.message.contains("Indexed"),
+            "First call should say 'Indexed'"
+        );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_lightweight_index_idempotent_second_call_returns_cached() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
         std::fs::write(&test_file, "pub fn test_function() {}").unwrap();
-        
+
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        
+
         // First call
-        let first_result = session.build_lightweight_index("lightweight").await.unwrap();
+        let first_result = session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
         let first_count = first_result.symbols_indexed;
-        
+
         // Second call should return cached
-        let second_result = session.build_lightweight_index("lightweight").await.unwrap();
-        
+        let second_result = session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
+
         assert!(second_result.success);
-        assert_eq!(second_result.symbols_indexed, first_count, "Should return same symbol count");
-        assert!(second_result.message.contains("Cached"), "Second call should mention 'Cached'");
+        assert_eq!(
+            second_result.symbols_indexed, first_count,
+            "Should return same symbol count"
+        );
+        assert!(
+            second_result.message.contains("Cached"),
+            "Second call should mention 'Cached'"
+        );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_lightweight_index_idempotent_third_call_still_cached() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
         std::fs::write(&test_file, "pub fn test_function() {}").unwrap();
-        
+
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        
+
         // Three calls in sequence
-        let first = session.build_lightweight_index("lightweight").await.unwrap();
-        let second = session.build_lightweight_index("lightweight").await.unwrap();
-        let third = session.build_lightweight_index("lightweight").await.unwrap();
-        
+        let first = session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
+        let second = session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
+        let third = session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
+
         assert_eq!(first.symbols_indexed, second.symbols_indexed);
         assert_eq!(second.symbols_indexed, third.symbols_indexed);
-        assert!(third.message.contains("Cached"), "Third call should also be cached");
+        assert!(
+            third.message.contains("Cached"),
+            "Third call should also be cached"
+        );
     }
 
     // =========================================================================
     // Tests for T-3: semantic_search with kinds filter
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_semantic_search_with_kinds_filter_only_functions() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
-        std::fs::write(&test_file, r#"
+        std::fs::write(
+            &test_file,
+            r#"
 pub fn test_function() {}
 pub struct TestStruct {}
 pub const TEST_CONST: i32 = 42;
-"#).unwrap();
-        
+"#,
+        )
+        .unwrap();
+
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        
+
         // Search with kinds filter for functions only
-        let results = session.semantic_search_with_kinds("test", 50, Some(vec!["function".to_string()])).await.unwrap();
-        
+        let results = session
+            .semantic_search_with_kinds("test", 50, Some(vec!["function".to_string()]))
+            .await
+            .unwrap();
+
         // All results should be functions
         for symbol in &results {
             let kind_lower = symbol.kind.to_lowercase();
-            assert!(kind_lower.contains("function"), "Expected function, got: {}", kind_lower);
+            assert!(
+                kind_lower.contains("function"),
+                "Expected function, got: {}",
+                kind_lower
+            );
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_semantic_search_without_kinds_returns_all() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
-        std::fs::write(&test_file, r#"
+        std::fs::write(
+            &test_file,
+            r#"
 pub fn test_function() {}
 pub struct TestStruct {}
 pub const TEST_CONST: i32 = 42;
-"#).unwrap();
-        
+"#,
+        )
+        .unwrap();
+
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        
+
         // Search without kinds filter (backward compatible)
-        let results_with_filter = session.semantic_search_with_kinds("test", 50, None).await.unwrap();
-        
+        let results_with_filter = session
+            .semantic_search_with_kinds("test", 50, None)
+            .await
+            .unwrap();
+
         // Should return matches (at least the function)
-        assert!(!results_with_filter.is_empty(), "Should find at least some matches");
+        assert!(
+            !results_with_filter.is_empty(),
+            "Should find at least some matches"
+        );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_semantic_search_invalid_kinds_ignored() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2105,11 +2334,14 @@ pub const TEST_CONST: i32 = 42;
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
 
         // Search with invalid kinds - should be silently ignored
-        let results = session.semantic_search_with_kinds(
-            "test",
-            50,
-            Some(vec!["invalid_kind".to_string(), "function".to_string()])
-        ).await.unwrap();
+        let results = session
+            .semantic_search_with_kinds(
+                "test",
+                50,
+                Some(vec!["invalid_kind".to_string(), "function".to_string()]),
+            )
+            .await
+            .unwrap();
 
         // Should still return function results
         assert!(!results.is_empty());
@@ -2119,7 +2351,7 @@ pub const TEST_CONST: i32 = 42;
     // Tests for T-5: get_graph_stats
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_graph_stats_before_build_returns_none() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2132,7 +2364,7 @@ pub const TEST_CONST: i32 = 42;
         assert!(stats.is_none(), "Expected None before graph is built");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_graph_stats_after_build_returns_stats() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2141,19 +2373,34 @@ pub const TEST_CONST: i32 = 42;
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
 
         // Build the graph first
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Now get_graph_stats should return Some
         let stats = session.get_graph_stats().await.unwrap();
         assert!(stats.is_some(), "Expected Some after graph is built");
 
         let stats = stats.unwrap();
-        assert!(stats.symbol_count > 0, "Expected symbol_count > 0, got {}", stats.symbol_count);
-        assert!(stats.edge_count >= 0, "Expected edge_count >= 0, got {}", stats.edge_count);
-        assert!(stats.file_count > 0, "Expected file_count > 0, got {}", stats.file_count);
+        assert!(
+            stats.symbol_count > 0,
+            "Expected symbol_count > 0, got {}",
+            stats.symbol_count
+        );
+        assert!(
+            stats.edge_count >= 0,
+            "Expected edge_count >= 0, got {}",
+            stats.edge_count
+        );
+        assert!(
+            stats.file_count > 0,
+            "Expected file_count > 0, got {}",
+            stats.file_count
+        );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_graph_stats_language_breakdown() {
         let temp_dir = TempDir::new().unwrap();
         let test_rs = temp_dir.path().join("test.rs");
@@ -2164,33 +2411,55 @@ pub const TEST_CONST: i32 = 42;
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
 
         // Build the graph
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         let stats = session.get_graph_stats().await.unwrap().unwrap();
 
         // Should have Rust and TypeScript symbols
-        assert!(stats.language_breakdown.contains_key("Rust"), "Expected Rust in breakdown");
-        assert!(stats.language_breakdown.contains_key("TypeScript"), "Expected TypeScript in breakdown");
-        assert!(stats.language_breakdown.get("Rust").unwrap() > &0, "Expected Rust count > 0");
-        assert!(stats.language_breakdown.get("TypeScript").unwrap() > &0, "Expected TypeScript count > 0");
+        assert!(
+            stats.language_breakdown.contains_key("Rust"),
+            "Expected Rust in breakdown"
+        );
+        assert!(
+            stats.language_breakdown.contains_key("TypeScript"),
+            "Expected TypeScript in breakdown"
+        );
+        assert!(
+            stats.language_breakdown.get("Rust").unwrap() > &0,
+            "Expected Rust count > 0"
+        );
+        assert!(
+            stats.language_breakdown.get("TypeScript").unwrap() > &0,
+            "Expected TypeScript count > 0"
+        );
     }
 
     // =========================================================================
     // Tests for T-7: get_all_symbols pagination
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_all_symbols_returns_all_sorted() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
-        std::fs::write(&test_file, r#"
+        std::fs::write(
+            &test_file,
+            r#"
 pub fn first_function() {}
 pub fn second_function() {}
 pub fn third_function() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Get all symbols with no pagination
         let symbols = session.get_all_symbols(None, None).await.unwrap();
@@ -2202,26 +2471,34 @@ pub fn third_function() {}
             let prev = &symbols[i - 1];
             let curr = &symbols[i];
             assert!(
-                prev.file_path < curr.file_path || (prev.file_path == curr.file_path && prev.line <= curr.line),
+                prev.file_path < curr.file_path
+                    || (prev.file_path == curr.file_path && prev.line <= curr.line),
                 "Symbols should be sorted by (file_path, line)"
             );
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_all_symbols_first_page() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
-        std::fs::write(&test_file, r#"
+        std::fs::write(
+            &test_file,
+            r#"
 pub fn func1() {}
 pub fn func2() {}
 pub fn func3() {}
 pub fn func4() {}
 pub fn func5() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Get first 2 symbols
         let symbols = session.get_all_symbols(Some(2), Some(0)).await.unwrap();
@@ -2229,20 +2506,27 @@ pub fn func5() {}
         assert_eq!(symbols.len(), 2, "Should return exactly 2 symbols");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_all_symbols_second_page_no_overlap() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
-        std::fs::write(&test_file, r#"
+        std::fs::write(
+            &test_file,
+            r#"
 pub fn func1() {}
 pub fn func2() {}
 pub fn func3() {}
 pub fn func4() {}
 pub fn func5() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Get first page
         let first_page = session.get_all_symbols(Some(2), Some(0)).await.unwrap();
@@ -2254,41 +2538,57 @@ pub fn func5() {}
         let second_ids: Vec<_> = second_page.iter().map(|s| s.id.clone()).collect();
 
         for id in &first_ids {
-            assert!(!second_ids.contains(id), "Second page should not overlap with first page");
+            assert!(
+                !second_ids.contains(id),
+                "Second page should not overlap with first page"
+            );
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_all_symbols_offset_beyond_count_returns_empty() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
         std::fs::write(&test_file, "pub fn test_function() {}").unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Offset way beyond count should return empty
         let symbols = session.get_all_symbols(Some(10), Some(1000)).await.unwrap();
-        assert!(symbols.is_empty(), "Should return empty vec when offset > count");
+        assert!(
+            symbols.is_empty(),
+            "Should return empty vec when offset > count"
+        );
     }
 
     // =========================================================================
     // Tests for T-9: get_hot_paths
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_hot_paths_returns_symbols_with_min_fan_in() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
-        std::fs::write(&test_file, r#"
+        std::fs::write(
+            &test_file,
+            r#"
 pub fn caller() {
     target();
 }
 pub fn target() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Get hot paths with min_fan_in of 1
         let hot_paths = session.get_hot_paths(10, 1).await.unwrap();
@@ -2299,45 +2599,62 @@ pub fn target() {}
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_hot_paths_respects_limit() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
-        std::fs::write(&test_file, r#"
+        std::fs::write(
+            &test_file,
+            r#"
 pub fn func1() {}
 pub fn func2() {}
 pub fn func3() {}
 pub fn func4() {}
 pub fn func5() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Get only 2 hot paths
         let hot_paths = session.get_hot_paths(2, 0).await.unwrap();
 
-        assert!(hot_paths.len() <= 2, "Should return at most 2 hot paths, got {}", hot_paths.len());
+        assert!(
+            hot_paths.len() <= 2,
+            "Should return at most 2 hot paths, got {}",
+            hot_paths.len()
+        );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_hot_paths_empty_graph_returns_empty() {
         let temp_dir = TempDir::new().unwrap();
         // Don't create any files - graph will be empty
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Empty graph should return empty vec (not error)
         let hot_paths = session.get_hot_paths(10, 1).await.unwrap();
-        assert!(hot_paths.is_empty(), "Empty graph should return empty hot paths");
+        assert!(
+            hot_paths.is_empty(),
+            "Empty graph should return empty hot paths"
+        );
     }
 
     // =========================================================================
     // Tests for T-11: Language breakdown edge cases in get_graph_stats
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_graph_stats_mixed_language_counts_correctly() {
         let temp_dir = TempDir::new().unwrap();
         let test_rs = temp_dir.path().join("lib.rs");
@@ -2348,14 +2665,26 @@ pub fn func5() {}
         std::fs::write(&test_py, "def py_func():\n    pass").unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         let stats = session.get_graph_stats().await.unwrap().unwrap();
 
         // Verify all three languages are represented
-        assert!(stats.language_breakdown.contains_key("Rust"), "Expected Rust in breakdown");
-        assert!(stats.language_breakdown.contains_key("TypeScript"), "Expected TypeScript in breakdown");
-        assert!(stats.language_breakdown.contains_key("Python"), "Expected Python in breakdown");
+        assert!(
+            stats.language_breakdown.contains_key("Rust"),
+            "Expected Rust in breakdown"
+        );
+        assert!(
+            stats.language_breakdown.contains_key("TypeScript"),
+            "Expected TypeScript in breakdown"
+        );
+        assert!(
+            stats.language_breakdown.contains_key("Python"),
+            "Expected Python in breakdown"
+        );
 
         // Each language should have at least 1 symbol
         assert!(*stats.language_breakdown.get("Rust").unwrap() > 0);
@@ -2363,7 +2692,7 @@ pub fn func5() {}
         assert!(*stats.language_breakdown.get("Python").unwrap() > 0);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_graph_stats_files_without_extension_count_as_unknown() {
         let temp_dir = TempDir::new().unwrap();
         // Create a Rust file and a file without extension
@@ -2375,18 +2704,24 @@ pub fn func5() {}
         std::fs::write(&test_no_ext, "all:\n\techo hello").unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         let stats = session.get_graph_stats().await.unwrap().unwrap();
 
         // Should have Rust symbols in the breakdown
-        assert!(stats.language_breakdown.contains_key("Rust"), "Expected Rust in breakdown");
+        assert!(
+            stats.language_breakdown.contains_key("Rust"),
+            "Expected Rust in breakdown"
+        );
         assert!(*stats.language_breakdown.get("Rust").unwrap() > 0);
         // Files without recognized extensions don't produce symbols, so no "Unknown" in breakdown
         // This is expected behavior since the parser only processes recognized file types
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_graph_stats_unsupported_extension_counts_as_unknown() {
         let temp_dir = TempDir::new().unwrap();
         let test_rs = temp_dir.path().join("main.rs");
@@ -2396,12 +2731,18 @@ pub fn func5() {}
         std::fs::write(&test_txt, "Some notes file with .txt extension").unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         let stats = session.get_graph_stats().await.unwrap().unwrap();
 
         // Should have Rust symbols in the breakdown
-        assert!(stats.language_breakdown.contains_key("Rust"), "Expected Rust in breakdown");
+        assert!(
+            stats.language_breakdown.contains_key("Rust"),
+            "Expected Rust in breakdown"
+        );
         // Unsupported extensions don't produce symbols in the graph
         // This is expected behavior since the parser only processes recognized file types
     }
@@ -2457,29 +2798,45 @@ pub fn func5() {}
     // Tests for T-12: get_project_diagnostics (TDD - write tests first)
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_project_diagnostics_after_build_has_all_components() {
         let temp_dir = TempDir::new().unwrap();
         let test_rs = temp_dir.path().join("lib.rs");
-        std::fs::write(&test_rs, r#"
+        std::fs::write(
+            &test_rs,
+            r#"
 pub fn public_func() {}
 pub struct PublicStruct {}
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         let diagnostics = session.get_project_diagnostics().await.unwrap();
 
         // After build, stats and complexity should be present
         // hot_paths may be empty if no function has fan_in >= 2
         // architecture check builds graph internally so it will be Some
-        assert!(diagnostics.stats.is_some(), "stats should be Some after build");
-        assert!(diagnostics.complexity.is_some(), "complexity should be Some after build");
-        assert!(diagnostics.architecture.is_some(), "architecture should be Some after build");
+        assert!(
+            diagnostics.stats.is_some(),
+            "stats should be Some after build"
+        );
+        assert!(
+            diagnostics.complexity.is_some(),
+            "complexity should be Some after build"
+        );
+        assert!(
+            diagnostics.architecture.is_some(),
+            "architecture should be Some after build"
+        );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_project_diagnostics_before_build_has_stats_none() {
         let temp_dir = TempDir::new().unwrap();
         let test_rs = temp_dir.path().join("lib.rs");
@@ -2498,12 +2855,21 @@ pub struct PublicStruct {}
         // - hot_paths may be empty or populated (depends on graph state after internal build)
         // - architecture will be Some (check_architecture builds internally)
         // - complexity will be Some (graph was built by get_hot_paths)
-        assert!(diagnostics.stats.is_none(), "stats should be None before explicit build via build_lightweight_index");
-        assert!(diagnostics.architecture.is_some(), "architecture should be Some (check_architecture builds internally)");
-        assert!(diagnostics.complexity.is_some(), "complexity should be Some (graph built by get_hot_paths internally)");
+        assert!(
+            diagnostics.stats.is_none(),
+            "stats should be None before explicit build via build_lightweight_index"
+        );
+        assert!(
+            diagnostics.architecture.is_some(),
+            "architecture should be Some (check_architecture builds internally)"
+        );
+        assert!(
+            diagnostics.complexity.is_some(),
+            "complexity should be Some (graph built by get_hot_paths internally)"
+        );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_project_diagnostics_partial_failure_keeps_other_fields() {
         let temp_dir = TempDir::new().unwrap();
         let test_rs = temp_dir.path().join("lib.rs");
@@ -2511,7 +2877,10 @@ pub struct PublicStruct {}
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
         // Build the graph first so stats/hot_paths/complexity work
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         let diagnostics = session.get_project_diagnostics().await.unwrap();
 
@@ -2521,14 +2890,17 @@ pub struct PublicStruct {}
         assert!(diagnostics.complexity.is_some());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_project_diagnostics_stats_have_correct_fields() {
         let temp_dir = TempDir::new().unwrap();
         let test_rs = temp_dir.path().join("lib.rs");
         std::fs::write(&test_rs, "pub fn test() {}").unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         let diagnostics = session.get_project_diagnostics().await.unwrap();
 
@@ -2537,14 +2909,17 @@ pub struct PublicStruct {}
         assert!(stats.file_count > 0, "Should have at least one file");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_get_project_diagnostics_complexity_has_expected_fields() {
         let temp_dir = TempDir::new().unwrap();
         let test_rs = temp_dir.path().join("lib.rs");
         std::fs::write(&test_rs, "pub fn test() {}").unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         let diagnostics = session.get_project_diagnostics().await.unwrap();
 
@@ -2559,12 +2934,12 @@ pub struct PublicStruct {}
     // =========================================================================
 
     #[cfg(feature = "persistence")]
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_load_from_store_with_valid_data_returns_true() {
-        use std::sync::Arc;
-        use crate::infrastructure::persistence::InMemoryGraphStore;
         use crate::domain::aggregates::symbol::Symbol;
         use crate::domain::value_objects::{Location, SymbolKind};
+        use crate::infrastructure::persistence::InMemoryGraphStore;
+        use std::sync::Arc;
 
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2573,7 +2948,10 @@ pub struct PublicStruct {}
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
 
         // Build the graph first
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Create an in-memory store and save the graph
         let store = Arc::new(InMemoryGraphStore::new());
@@ -2588,10 +2966,10 @@ pub struct PublicStruct {}
     }
 
     #[cfg(feature = "persistence")]
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_load_from_empty_store_returns_false() {
-        use std::sync::Arc;
         use crate::infrastructure::persistence::InMemoryGraphStore;
+        use std::sync::Arc;
 
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2609,10 +2987,10 @@ pub struct PublicStruct {}
     }
 
     #[cfg(feature = "persistence")]
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_save_to_store_persists_graph() {
-        use std::sync::Arc;
         use crate::infrastructure::persistence::InMemoryGraphStore;
+        use std::sync::Arc;
 
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2621,7 +2999,10 @@ pub struct PublicStruct {}
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
 
         // Build the graph
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Create and set an empty store
         let store = Arc::new(InMemoryGraphStore::new());
@@ -2640,12 +3021,12 @@ pub struct PublicStruct {}
     }
 
     #[cfg(feature = "persistence")]
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_ensure_graph_built_uses_cached_graph_when_persistence_enabled() {
-        use std::sync::Arc;
-        use crate::infrastructure::persistence::InMemoryGraphStore;
         use crate::domain::aggregates::symbol::Symbol;
         use crate::domain::value_objects::{Location, SymbolKind};
+        use crate::infrastructure::persistence::InMemoryGraphStore;
+        use std::sync::Arc;
 
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2666,7 +3047,10 @@ pub struct PublicStruct {}
         session.set_graph_store(store);
 
         // Call ensure_graph_built - it should load from store
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // The graph should contain the preloaded symbol
         let graph = session.analysis.get_project_graph();
@@ -2677,7 +3061,7 @@ pub struct PublicStruct {}
     // Tests for subscribe_graph_events
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_subscribe_graph_events_returns_receiver_that_receives_events() {
         use tokio::sync::broadcast;
 
@@ -2691,16 +3075,25 @@ pub struct PublicStruct {}
         let mut receiver = session.subscribe_graph_events();
 
         // Build the graph which should trigger events
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Receive should succeed (GraphReplaced event)
         let result = receiver.recv().await;
-        assert!(result.is_ok(), "Should receive an event after building graph");
+        assert!(
+            result.is_ok(),
+            "Should receive an event after building graph"
+        );
         // GraphReplaced is fired when the graph is built
-        assert!(matches!(result.unwrap(), crate::domain::events::GraphEvent::GraphReplaced));
+        assert!(matches!(
+            result.unwrap(),
+            crate::domain::events::GraphEvent::GraphReplaced
+        ));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_subscribe_graph_events_multiple_subscribers() {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2713,7 +3106,10 @@ pub struct PublicStruct {}
         let mut receiver2 = session.subscribe_graph_events();
 
         // Build the graph
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Both receivers should receive the event
         let result1 = receiver1.recv().await;
@@ -2728,7 +3124,7 @@ pub struct PublicStruct {}
     // =========================================================================
 
     #[cfg(feature = "persistence")]
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_persistence_disabled_falls_back_to_full_rebuild() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2737,7 +3133,10 @@ pub struct PublicStruct {}
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
 
         // No store is set - should fall back to full rebuild
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         let stats = session.get_graph_stats().await.unwrap();
         assert!(stats.is_some(), "Should have stats after full rebuild");
@@ -2747,7 +3146,7 @@ pub struct PublicStruct {}
     // Tests for P3.3: build_subgraph
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_subgraph_single_dir() {
         use tempfile::TempDir;
 
@@ -2789,7 +3188,7 @@ pub struct PublicStruct {}
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_subgraph_nonexistent_dir() {
         use tempfile::TempDir;
 
@@ -2812,7 +3211,7 @@ pub struct PublicStruct {}
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_subgraph_multiple_dirs() {
         use tempfile::TempDir;
 
@@ -2841,7 +3240,8 @@ pub struct PublicStruct {}
         // Build subgraph for module_a and module_b (exclude module_c)
         let subgraph = session
             .build_subgraph(&["module_a", "module_b"])
-            .await.unwrap();
+            .await
+            .unwrap();
 
         // The subgraph should have symbols from module_a and module_b
         let symbols: Vec<_> = subgraph.symbols().collect();
@@ -2867,10 +3267,10 @@ pub struct PublicStruct {}
     // =========================================================================
 
     #[cfg(feature = "persistence")]
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_incremental_reindex_no_changes_skips_all_files() {
-        use std::sync::Arc;
         use crate::infrastructure::persistence::InMemoryGraphStore;
+        use std::sync::Arc;
 
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2879,7 +3279,10 @@ pub struct PublicStruct {}
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
 
         // Build the graph first
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Create and set a store with current manifest
         let store = Arc::new(InMemoryGraphStore::new());
@@ -2897,10 +3300,10 @@ pub struct PublicStruct {}
     }
 
     #[cfg(feature = "persistence")]
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_incremental_reindex_new_file_parses_only_new() {
-        use std::sync::Arc;
         use crate::infrastructure::persistence::InMemoryGraphStore;
+        use std::sync::Arc;
 
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2909,7 +3312,10 @@ pub struct PublicStruct {}
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
 
         // Build the graph first
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Create and set a store
         let store = Arc::new(InMemoryGraphStore::new());
@@ -2930,10 +3336,10 @@ pub struct PublicStruct {}
     }
 
     #[cfg(feature = "persistence")]
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_incremental_reindex_deleted_file_removes_symbols() {
-        use std::sync::Arc;
         use crate::infrastructure::persistence::InMemoryGraphStore;
+        use std::sync::Arc;
 
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2942,7 +3348,10 @@ pub struct PublicStruct {}
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
 
         // Build the graph first
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Create and set a store
         let store = Arc::new(InMemoryGraphStore::new());
@@ -2962,10 +3371,10 @@ pub struct PublicStruct {}
     }
 
     #[cfg(feature = "persistence")]
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_incremental_reindex_modified_file_re_parses() {
-        use std::sync::Arc;
         use crate::infrastructure::persistence::InMemoryGraphStore;
+        use std::sync::Arc;
 
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2974,7 +3383,10 @@ pub struct PublicStruct {}
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
 
         // Build the graph first
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Create and set a store
         let store = Arc::new(InMemoryGraphStore::new());
@@ -3002,7 +3414,7 @@ pub struct PublicStruct {}
 
     /// Verifies that building via WorkspaceSession only triggers one graph build
     /// because AnalysisService and WorkspaceSession share the same GraphCache.
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_shared_cache_prevents_double_build() {
         use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -3013,11 +3425,17 @@ pub struct PublicStruct {}
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
 
         // Build the graph
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Build again - this should be instant (cached)
         let start = std::time::Instant::now();
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
         let duration = start.elapsed();
 
         // Should be very fast because it's cached
@@ -3031,7 +3449,7 @@ pub struct PublicStruct {}
 
     /// Verifies that when WorkspaceSession builds a graph,
     /// AnalysisService can read the same graph data (shared cache).
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_analysis_service_and_session_share_graph() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -3082,7 +3500,7 @@ pub struct SharedStruct {}
     // Tests for P6: document_symbols
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_document_symbols_returns_symbols_for_rust_file() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -3125,13 +3543,10 @@ pub const MY_CONST: i32 = 42;
             .iter()
             .filter(|s| s.symbol.name() == "MyStruct")
             .collect();
-        assert!(
-            !struct_symbols.is_empty(),
-            "Should find MyStruct symbol"
-        );
+        assert!(!struct_symbols.is_empty(), "Should find MyStruct symbol");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_document_symbols_empty_for_empty_file() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("empty.rs");
@@ -3150,7 +3565,7 @@ pub const MY_CONST: i32 = 42;
         assert!(symbols.is_empty() || !symbols.is_empty());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_document_symbols_relative_path() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("mod.rs");
@@ -3159,10 +3574,7 @@ pub const MY_CONST: i32 = 42;
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
 
         // Use relative path (relative to temp_dir, but we pass full path)
-        let symbols = session
-            .document_symbols("mod.rs")
-            .await
-            .unwrap();
+        let symbols = session.document_symbols("mod.rs").await.unwrap();
 
         // Should find at least the function
         assert!(
@@ -3175,7 +3587,7 @@ pub const MY_CONST: i32 = 42;
     // Tests for incremental_reindex
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_incremental_reindex_graph_updates_when_file_modified() {
         use crate::infrastructure::persistence::InMemoryGraphStore;
         use std::sync::Arc;
@@ -3204,7 +3616,11 @@ pub const MY_CONST: i32 = 42;
         let first_graph_updated = result.graph_updated;
 
         // Modify the file to add a new function
-        std::fs::write(&test_file, "fn original_function() {}\nfn new_function() {}").unwrap();
+        std::fs::write(
+            &test_file,
+            "fn original_function() {}\nfn new_function() {}",
+        )
+        .unwrap();
 
         // Wait a bit to ensure mtime changes
         std::thread::sleep(Duration::from_millis(100));
@@ -3234,7 +3650,7 @@ pub const MY_CONST: i32 = 42;
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_incremental_reindex_no_changes_does_not_rebuild_graph() {
         use crate::infrastructure::persistence::InMemoryGraphStore;
         use std::sync::Arc;
@@ -3272,7 +3688,7 @@ pub const MY_CONST: i32 = 42;
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_incremental_reindex_modifed_file_syncs_semantic_index() {
         // Test that incremental_reindex syncs the semantic search index (DashMap + FTS5)
         use crate::infrastructure::persistence::InMemoryGraphStore;
@@ -3299,7 +3715,11 @@ pub const MY_CONST: i32 = 42;
         let _result = session.incremental_reindex().await.unwrap();
 
         // Modify the file to add a new function
-        std::fs::write(&test_file, "fn original_function() {}\nfn new_semantic_function() {}").unwrap();
+        std::fs::write(
+            &test_file,
+            "fn original_function() {}\nfn new_semantic_function() {}",
+        )
+        .unwrap();
         std::thread::sleep(Duration::from_millis(100));
 
         // Second incremental reindex - should sync semantic index
@@ -3331,7 +3751,7 @@ pub const MY_CONST: i32 = 42;
     // Tests for build_lightweight_index (async safety + spawn_blocking)
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_lightweight_index_returns_symbol_count() {
         let temp_dir = TempDir::new().unwrap();
         std::fs::write(
@@ -3341,7 +3761,10 @@ pub const MY_CONST: i32 = 42;
         .unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        let result = session.build_lightweight_index("lightweight").await.unwrap();
+        let result = session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         assert!(result.success, "build_lightweight_index should succeed");
         assert!(
@@ -3352,14 +3775,20 @@ pub const MY_CONST: i32 = 42;
         assert_eq!(result.strategy, "lightweight");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_lightweight_index_is_idempotent() {
         let temp_dir = TempDir::new().unwrap();
         std::fs::write(temp_dir.path().join("lib.rs"), "fn foo() {}").unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
-        let first = session.build_lightweight_index("lightweight").await.unwrap();
-        let second = session.build_lightweight_index("lightweight").await.unwrap();
+        let first = session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
+        let second = session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
 
         // Second call returns the cached result
         assert_eq!(first.symbols_indexed, second.symbols_indexed);
@@ -3370,7 +3799,7 @@ pub const MY_CONST: i32 = 42;
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_lightweight_index_does_not_block_other_tasks() {
         // Verify that build_lightweight_index does not starve other tokio tasks.
         // We run it concurrently with a simple counter task; if it blocked, the
@@ -3408,7 +3837,7 @@ pub const MY_CONST: i32 = 42;
     // Tests for query_symbol_index (uses self.analysis, no rebuild per call)
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_query_symbol_index_finds_symbol_after_build() {
         let temp_dir = TempDir::new().unwrap();
         std::fs::write(
@@ -3429,7 +3858,7 @@ pub const MY_CONST: i32 = 42;
         assert_eq!(results[0].name, "my_special_fn");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_query_symbol_index_returns_empty_for_unknown_symbol() {
         let temp_dir = TempDir::new().unwrap();
         std::fs::write(temp_dir.path().join("lib.rs"), "fn known_fn() {}").unwrap();
@@ -3437,11 +3866,14 @@ pub const MY_CONST: i32 = 42;
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
         session.build_graph("full").await.unwrap();
 
-        let results = session.query_symbol_index("definitely_not_exists_xyz").await.unwrap();
+        let results = session
+            .query_symbol_index("definitely_not_exists_xyz")
+            .await
+            .unwrap();
         assert!(results.is_empty(), "Should return empty for unknown symbol");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_query_symbol_index_reuses_cached_graph() {
         // Verify query_symbol_index does NOT rebuild the graph on each call.
         // We build once, then call query twice — both should be fast and consistent.
@@ -3462,7 +3894,7 @@ pub const MY_CONST: i32 = 42;
         assert!(!r1.is_empty(), "Should find cached_fn");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_query_symbol_index_symbol_dto_fields_are_populated() {
         let temp_dir = TempDir::new().unwrap();
         std::fs::write(temp_dir.path().join("mymod.rs"), "fn well_named_fn() {}").unwrap();
@@ -3483,7 +3915,7 @@ pub const MY_CONST: i32 = 42;
     // Tests for build_graph strategy dispatch
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_graph_full_strategy_builds_symbols() {
         let temp_dir = TempDir::new().unwrap();
         std::fs::write(
@@ -3504,7 +3936,7 @@ pub const MY_CONST: i32 = 42;
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_graph_lightweight_strategy_builds_symbols() {
         let temp_dir = TempDir::new().unwrap();
         std::fs::write(
@@ -3525,19 +3957,11 @@ pub const MY_CONST: i32 = 42;
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_graph_per_file_strategy_builds_symbols() {
         let temp_dir = TempDir::new().unwrap();
-        std::fs::write(
-            temp_dir.path().join("a.rs"),
-            "fn per_file_a() {}",
-        )
-        .unwrap();
-        std::fs::write(
-            temp_dir.path().join("b.rs"),
-            "fn per_file_b() {}",
-        )
-        .unwrap();
+        std::fs::write(temp_dir.path().join("a.rs"), "fn per_file_a() {}").unwrap();
+        std::fs::write(temp_dir.path().join("b.rs"), "fn per_file_b() {}").unwrap();
 
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
         session.build_graph("per_file").await.unwrap();
@@ -3551,7 +3975,7 @@ pub const MY_CONST: i32 = 42;
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_graph_on_demand_strategy_builds_symbols() {
         let temp_dir = TempDir::new().unwrap();
         std::fs::write(temp_dir.path().join("lib.rs"), "fn on_demand_fn() {}").unwrap();
@@ -3560,11 +3984,16 @@ pub const MY_CONST: i32 = 42;
         session.build_graph("on_demand").await.unwrap();
 
         let graph_guard = session.graph.read().await;
-        let graph = graph_guard.as_ref().expect("Graph should be set after on_demand");
-        assert!(graph.symbol_count() > 0, "on_demand strategy should build symbols");
+        let graph = graph_guard
+            .as_ref()
+            .expect("Graph should be set after on_demand");
+        assert!(
+            graph.symbol_count() > 0,
+            "on_demand strategy should build symbols"
+        );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_graph_unknown_strategy_falls_back_to_full() {
         let temp_dir = TempDir::new().unwrap();
         std::fs::write(temp_dir.path().join("lib.rs"), "fn fallback_fn() {}").unwrap();
@@ -3574,11 +4003,16 @@ pub const MY_CONST: i32 = 42;
         session.build_graph("unknown_strategy_xyz").await.unwrap();
 
         let graph_guard = session.graph.read().await;
-        let graph = graph_guard.as_ref().expect("Graph should be set even for unknown strategy");
-        assert!(graph.symbol_count() > 0, "Unknown strategy should fall back to full build");
+        let graph = graph_guard
+            .as_ref()
+            .expect("Graph should be set even for unknown strategy");
+        assert!(
+            graph.symbol_count() > 0,
+            "Unknown strategy should fall back to full build"
+        );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_build_graph_lightweight_has_fewer_edges_than_full() {
         // The lightweight strategy produces symbols only (0 edges).
         // The full strategy produces call edges between functions.
@@ -3616,7 +4050,7 @@ pub const MY_CONST: i32 = 42;
     // Concurrent graph operation tests
     // =========================================================================
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_concurrent_graph_builds_multiple_threads() {
         // Test that multiple threads can build graphs simultaneously without panic or corruption
         let temp_dir = TempDir::new().unwrap();
@@ -3636,7 +4070,8 @@ pub const MY_CONST: i32 = 42;
             })
             .collect();
 
-        let mut results: Vec<Result<Result<usize, WorkspaceError>, tokio::task::JoinError>> = Vec::new();
+        let mut results: Vec<Result<Result<usize, WorkspaceError>, tokio::task::JoinError>> =
+            Vec::new();
         for handle in handles {
             results.push(handle.await);
         }
@@ -3657,7 +4092,7 @@ pub const MY_CONST: i32 = 42;
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_concurrent_build_and_query_during_build() {
         // Test that queries during an active build return valid data
         let temp_dir = TempDir::new().unwrap();
@@ -3696,7 +4131,7 @@ pub const MY_CONST: i32 = 42;
         // If we didn't find it, that's also OK - timing dependent
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_concurrent_build_lightweight_index_interleaved() {
         // Test interleaved lightweight index builds
         let temp_dir = TempDir::new().unwrap();
@@ -3730,7 +4165,7 @@ pub const MY_CONST: i32 = 42;
         assert!(graph.symbol_count() > 0, "Graph should have symbols");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_graph_cache_concurrent_reads_during_update() {
         // Test GraphCache concurrent read during update via WorkspaceSession
         let temp_dir = TempDir::new().unwrap();
@@ -3769,10 +4204,13 @@ pub const MY_CONST: i32 = 42;
 
         // Final state should be consistent
         let stats = session.get_graph_stats().await.unwrap();
-        assert!(stats.is_some(), "Stats should be available after concurrent access");
+        assert!(
+            stats.is_some(),
+            "Stats should be available after concurrent access"
+        );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_graph_cache_concurrent_invalidations() {
         // Test cache invalidation during active queries
         let temp_dir = TempDir::new().unwrap();
@@ -3781,7 +4219,10 @@ pub const MY_CONST: i32 = 42;
         let session = std::sync::Arc::new(WorkspaceSession::new(temp_dir.path()).await.unwrap());
 
         // First build
-        session.build_lightweight_index("lightweight").await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
         let initial_stats = session.get_graph_stats().await.unwrap().unwrap();
 
         let session_clone = std::sync::Arc::clone(&session);
@@ -3814,7 +4255,7 @@ pub const MY_CONST: i32 = 42;
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_graph_events_published_during_concurrent_builds() {
         // Test that graph events are correctly published during concurrent operations
         let temp_dir = TempDir::new().unwrap();
@@ -3841,11 +4282,8 @@ pub const MY_CONST: i32 = 42;
 
         // Collect events (may have multiple GraphReplaced events)
         let mut event_count = 0;
-        while let Ok(Ok(_)) = tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            receiver.recv(),
-        )
-        .await
+        while let Ok(Ok(_)) =
+            tokio::time::timeout(std::time::Duration::from_millis(100), receiver.recv()).await
         {
             event_count += 1;
             if event_count >= 10 {
@@ -3860,7 +4298,7 @@ pub const MY_CONST: i32 = 42;
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_graph_events_ordering_with_concurrent_updates() {
         // Test that events are published in a reasonable order during concurrent updates
         let temp_dir = TempDir::new().unwrap();
@@ -3898,7 +4336,10 @@ pub const MY_CONST: i32 = 42;
 
         // Check that stats reflect the new file
         let stats = session.get_graph_stats().await.unwrap().unwrap();
-        assert!(stats.file_count >= 2, "Should have at least 2 files after adding new.rs");
+        assert!(
+            stats.file_count >= 2,
+            "Should have at least 2 files after adding new.rs"
+        );
 
         // Final event collection - should have events from rebuild
         let mut has_event = false;
@@ -3914,7 +4355,7 @@ pub const MY_CONST: i32 = 42;
         assert!(has_event, "Should receive event after rebuild");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_concurrent_get_entry_points_and_leaf_functions() {
         // Test concurrent access to graph query methods
         let temp_dir = TempDir::new().unwrap();
@@ -3947,14 +4388,21 @@ pub const MY_CONST: i32 = 42;
             async move { s.get_graph_stats().await }
         });
 
-        let (entry_result, leaf_result, stats_result) = tokio::join!(entry_handle, leaf_handle, stats_handle);
+        let (entry_result, leaf_result, stats_result) =
+            tokio::join!(entry_handle, leaf_handle, stats_handle);
 
-        assert!(entry_result.unwrap().is_ok(), "Entry points query should succeed");
-        assert!(leaf_result.unwrap().is_ok(), "Leaf functions query should succeed");
+        assert!(
+            entry_result.unwrap().is_ok(),
+            "Entry points query should succeed"
+        );
+        assert!(
+            leaf_result.unwrap().is_ok(),
+            "Leaf functions query should succeed"
+        );
         assert!(stats_result.unwrap().is_ok(), "Stats query should succeed");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_concurrent_analyze_impact_during_rebuild() {
         // Test impact analysis during concurrent graph rebuild
         let temp_dir = TempDir::new().unwrap();
@@ -3985,7 +4433,10 @@ pub const MY_CONST: i32 = 42;
         let (rebuild_result, impact_result) = tokio::join!(rebuild_handle, impact_handle);
 
         assert!(rebuild_result.unwrap().is_ok(), "Rebuild should succeed");
-        assert!(impact_result.as_ref().unwrap().is_ok(), "Impact analysis should succeed");
+        assert!(
+            impact_result.as_ref().unwrap().is_ok(),
+            "Impact analysis should succeed"
+        );
 
         let impact = impact_result.unwrap().unwrap();
         // Should find the dependent function
@@ -3995,7 +4446,7 @@ pub const MY_CONST: i32 = 42;
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_concurrent_subscribe_and_build() {
         // Test subscribing to events while builds are in progress
         let temp_dir = TempDir::new().unwrap();
@@ -4014,15 +4465,12 @@ pub const MY_CONST: i32 = 42;
             async move { s.build_graph("full").await }
         });
 
-        let (build_result, _) = tokio::join!(
-            build_handle,
-            async {
-                // Subscribe mid-build
-                let mut rx = session_clone.subscribe_graph_events();
-                // Try to receive with timeout
-                let _ = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv()).await;
-            }
-        );
+        let (build_result, _) = tokio::join!(build_handle, async {
+            // Subscribe mid-build
+            let mut rx = session_clone.subscribe_graph_events();
+            // Try to receive with timeout
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv()).await;
+        });
 
         assert!(build_result.unwrap().is_ok(), "Build should succeed");
 
@@ -4030,7 +4478,7 @@ pub const MY_CONST: i32 = 42;
         drop(receiver); // Clean up
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "current_thread")]
     async fn test_multiple_sessions_concurrent_graph_operations() {
         // Test multiple WorkspaceSession instances operating concurrently on different dirs
         let temp_dir1 = TempDir::new().unwrap();
@@ -4042,10 +4490,7 @@ pub const MY_CONST: i32 = 42;
         let session1 = std::sync::Arc::new(WorkspaceSession::new(temp_dir1.path()).await.unwrap());
         let session2 = std::sync::Arc::new(WorkspaceSession::new(temp_dir2.path()).await.unwrap());
 
-        let (r1, r2) = tokio::join!(
-            session1.build_graph("full"),
-            session2.build_graph("full")
-        );
+        let (r1, r2) = tokio::join!(session1.build_graph("full"), session2.build_graph("full"));
 
         assert!(r1.is_ok(), "Session1 build should succeed");
         assert!(r2.is_ok(), "Session2 build should succeed");
@@ -4064,4 +4509,3 @@ pub const MY_CONST: i32 = 42;
         );
     }
 }
-

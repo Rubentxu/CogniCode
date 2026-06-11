@@ -242,20 +242,22 @@ impl OutlineBuilder {
         // First check direct children
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i)
-                && (child.kind() == target_kind || child.kind() == "property_identifier") {
-                    return child
-                        .utf8_text(self.source.as_bytes())
-                        .ok()
-                        .map(|s| s.to_string());
-                }
+                && (child.kind() == target_kind || child.kind() == "property_identifier")
+            {
+                return child
+                    .utf8_text(self.source.as_bytes())
+                    .ok()
+                    .map(|s| s.to_string());
+            }
         }
 
         // Recursively search
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i)
-                && let Some(name) = self.find_name_in_node(child, target_kind) {
-                    return Some(name);
-                }
+                && let Some(name) = self.find_name_in_node(child, target_kind)
+            {
+                return Some(name);
+            }
         }
 
         None
@@ -289,45 +291,50 @@ impl OutlineBuilder {
                 // Find parameters in Rust function
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i)
-                        && child.kind() == "parameters" {
-                            return Some(self.format_rust_params(child));
-                        }
+                        && child.kind() == "parameters"
+                    {
+                        return Some(self.format_rust_params(child));
+                    }
                 }
             }
             Language::Python => {
                 // Find parameters in Python function
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i)
-                        && child.kind() == "parameters" {
-                            return Some(self.format_python_params(child));
-                        }
+                        && child.kind() == "parameters"
+                    {
+                        return Some(self.format_python_params(child));
+                    }
                 }
             }
             Language::JavaScript | Language::TypeScript => {
                 // Find parameters in JS/TS function
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i)
-                        && child.kind() == "formal_parameters" {
-                            return Some(self.format_js_params(child));
-                        }
+                        && child.kind() == "formal_parameters"
+                    {
+                        return Some(self.format_js_params(child));
+                    }
                 }
             }
             Language::Go => {
                 // Find parameters in Go function
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i)
-                        && child.kind() == "parameters" {
-                            return Some(self.format_go_params(child));
-                        }
+                        && child.kind() == "parameters"
+                    {
+                        return Some(self.format_go_params(child));
+                    }
                 }
             }
             Language::Java => {
                 // Find parameters in Java method
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i)
-                        && child.kind() == "formal_parameters" {
-                            return Some(self.format_java_params(child));
-                        }
+                        && child.kind() == "formal_parameters"
+                    {
+                        return Some(self.format_java_params(child));
+                    }
                 }
             }
         }
@@ -339,9 +346,10 @@ impl OutlineBuilder {
         for i in 0..params_node.child_count() {
             if let Some(child) = params_node.child(i)
                 && child.kind() == "parameter"
-                    && let Some(identifier) = self.find_name_in_node(child, "identifier") {
-                        params.push(identifier);
-                    }
+                && let Some(identifier) = self.find_name_in_node(child, "identifier")
+            {
+                params.push(identifier);
+            }
         }
         format!("({})", params.join(", "))
     }
@@ -351,13 +359,15 @@ impl OutlineBuilder {
         for i in 0..params_node.child_count() {
             if let Some(child) = params_node.child(i) {
                 if child.kind() == "identifier"
-                    && let Ok(name) = child.utf8_text(self.source.as_bytes()) {
-                        params.push(name.to_string());
-                    }
+                    && let Ok(name) = child.utf8_text(self.source.as_bytes())
+                {
+                    params.push(name.to_string());
+                }
                 if child.kind() == "default_parameter"
-                    && let Some(identifier) = self.find_name_in_node(child, "identifier") {
-                        params.push(identifier);
-                    }
+                    && let Some(identifier) = self.find_name_in_node(child, "identifier")
+                {
+                    params.push(identifier);
+                }
             }
         }
         format!("({})", params.join(", "))
@@ -368,9 +378,10 @@ impl OutlineBuilder {
         for i in 0..params_node.child_count() {
             if let Some(child) = params_node.child(i)
                 && child.kind() == "identifier"
-                    && let Ok(name) = child.utf8_text(self.source.as_bytes()) {
-                        params.push(name.to_string());
-                    }
+                && let Ok(name) = child.utf8_text(self.source.as_bytes())
+            {
+                params.push(name.to_string());
+            }
         }
         format!("({})", params.join(", "))
     }
@@ -380,9 +391,10 @@ impl OutlineBuilder {
         for i in 0..params_node.child_count() {
             if let Some(child) = params_node.child(i)
                 && child.kind() == "parameter_declaration"
-                    && let Some(identifier) = self.find_name_in_node(child, "identifier") {
-                        params.push(identifier);
-                    }
+                && let Some(identifier) = self.find_name_in_node(child, "identifier")
+            {
+                params.push(identifier);
+            }
         }
         format!("({})", params.join(", "))
     }
@@ -392,9 +404,10 @@ impl OutlineBuilder {
         for i in 0..params_node.child_count() {
             if let Some(child) = params_node.child(i)
                 && child.kind() == "formal_parameter"
-                    && let Some(identifier) = self.find_name_in_node(child, "identifier") {
-                        params.push(identifier);
-                    }
+                && let Some(identifier) = self.find_name_in_node(child, "identifier")
+            {
+                params.push(identifier);
+            }
         }
         format!("({})", params.join(", "))
     }

@@ -6,14 +6,16 @@ use chrono::Utc;
 use serde_json::json;
 
 use crate::domain::evidence::build_evidence_blocks;
-use crate::domain::lens::{default_registry, LensContext, LensRegistry};
+use crate::domain::lens::{LensContext, LensRegistry, default_registry};
 use crate::domain::object_identity::ObjectIdentity;
 use crate::domain::views;
 use crate::dto::{
-    ContextualView, DecisionArtifactSummary, ExplorationPath, GenerateArtifactRequest,
-    GraphStatus, InspectableObjectSummary, InspectableObjectType, LensDescriptor, LensResult,
-    ObjectIdentityEntry, OpenWorkspaceRequest, Property, SaveExplorationRequest, SpotterResult,
-    ViewBlock, ViewDescriptor, WorkspaceSummary,
+    ChildrenSection, ContextualGraphResponse, ContextualView, DecisionArtifactSummary,
+    ExplorationPath, GenerateArtifactRequest, GraphEdge, GraphNode, GraphStatus,
+    InspectableObjectSummary, InspectableObjectType, LensDescriptor, LensResult, NamedView,
+    NamedViewDescriptor, ObjectIdentityEntry, OpenWorkspaceRequest, ParentSection, Property,
+    SameLevelSection, SaveExplorationRequest, SpotterResult, ViewBlock, ViewDescriptor,
+    WorkspaceSummary, truncate_description,
 };
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::moldql::{MoldQLExecutor, MoldQLResult, MoldQLView};
@@ -21,6 +23,11 @@ use crate::ports::quality_repository::QualityRepository;
 use crate::ports::search_repository::{SearchHit, SearchRepository};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
+
+use cognicode_core::domain::aggregates::SymbolId;
+
+#[cfg(feature = "postgres")]
+use cognicode_core::infrastructure::persistence::PostgresRepository;
 
 /// How many hotspots the scope view surfaces.
 const SCOPE_HOTSPOT_LIMIT: usize = 5;
@@ -47,6 +54,21 @@ pub struct ExplorerService {
     /// In-memory store of saved exploration paths, keyed by exploration id.
     /// Phase 1C: process-lifetime only — paths do not survive a restart.
     paths: Arc<Mutex<HashMap<String, ExplorationPath>>>,
+    /// Optional PostgreSQL repository for named views CRUD. Only
+    /// populated when the binary was started with the `postgres`
+    /// feature and a `PostgresRepository` was wired in via
+    /// [`ExplorerService::with_postgres_repo`]. When `None`, every
+    /// `*_view` method short-circuits with
+    /// `ExplorerError::FeatureDisabled` and the MCP dispatch
+    /// surfaces the canonical
+    /// `"named_views_require_postgres_feature"` message.
+    #[cfg(feature = "postgres")]
+    postgres_repo: Option<Arc<PostgresRepository>>,
+    /// Optional Generic Graph Layer port for multimodal queries.
+    /// Populated when `multimodal` feature is enabled and a
+    /// GraphRepository has been wired in.
+    #[cfg(feature = "multimodal")]
+    graph_repo: Option<Arc<dyn crate::ports::GraphRepository>>,
 }
 
 impl ExplorerService {
@@ -99,7 +121,31 @@ impl ExplorerService {
             quality,
             lens_registry: Arc::new(default_registry()),
             paths: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(feature = "postgres")]
+            postgres_repo: None,
+            #[cfg(feature = "multimodal")]
+            graph_repo: None,
         }
+    }
+
+    /// Wire an `Arc<dyn GraphRepository>` into the service so ExplorerQL
+    /// `FIND decisions/docs` and `graph_search` reach the Generic Graph
+    /// Layer. Only available behind the `multimodal` feature.
+    #[cfg(feature = "multimodal")]
+    pub fn with_graph_repo(mut self, gr: Arc<dyn crate::ports::GraphRepository>) -> Self {
+        self.graph_repo = Some(gr);
+        self
+    }
+
+    /// Wire an `Arc<PostgresRepository>` into the service so the
+    /// `*_view` MCP tools reach PG. Only available behind the
+    /// `postgres` feature; default builds keep `postgres_repo: None`
+    /// and every `*_view` call short-circuits to
+    /// `FeatureDisabled`.
+    #[cfg(feature = "postgres")]
+    pub fn with_postgres_repo(mut self, pg_repo: Arc<PostgresRepository>) -> Self {
+        self.postgres_repo = Some(pg_repo);
+        self
     }
 
     pub fn root_path(&self) -> &std::path::Path {
@@ -143,8 +189,37 @@ impl ExplorerService {
             quality: self.quality.clone(),
             reader: self.reader.clone(),
             apply_lens,
+            #[cfg(feature = "multimodal")]
+            graph_repo: self.graph_repo.clone(),
         };
         MoldQLExecutor::new(&view).execute(ast)
+    }
+
+    /// Compile + execute a query against a specific `CompileTarget`.
+    /// Used by `explorer_query_moldql` when the caller passes
+    /// `target: "pg" | "petgraph"`.
+    pub fn execute_query_with_target(
+        &self,
+        query: &str,
+        target: crate::moldql::compile::CompileTarget,
+    ) -> crate::ExplorerResult<MoldQLResult> {
+        let ast = crate::moldql::parser::parse(query)
+            .map_err(|e| ExplorerError::ResolutionFailed(e.to_string()))?;
+        let apply_lens: std::sync::Arc<
+            dyn Fn(&str, &str) -> crate::ExplorerResult<crate::dto::LensResult> + Send + Sync,
+        > = {
+            let svc = self.clone_service_handle();
+            std::sync::Arc::new(move |mvp, lens_id| svc.apply_lens(mvp, lens_id))
+        };
+        let view = MoldQLView {
+            repo: self.repo.clone(),
+            quality: self.quality.clone(),
+            reader: self.reader.clone(),
+            apply_lens,
+            #[cfg(feature = "multimodal")]
+            graph_repo: self.graph_repo.clone(),
+        };
+        MoldQLExecutor::new(&view).execute_with_target(ast, target)
     }
 
     /// Cheap clone of the service into a fresh `Arc<ExplorerService>`.
@@ -164,6 +239,10 @@ impl ExplorerService {
             quality: self.quality.clone(),
             lens_registry: self.lens_registry.clone(),
             paths: self.paths.clone(),
+            #[cfg(feature = "postgres")]
+            postgres_repo: self.postgres_repo.clone(),
+            #[cfg(feature = "multimodal")]
+            graph_repo: self.graph_repo.clone(),
         })
     }
 
@@ -341,7 +420,12 @@ impl ExplorerService {
             id: resolved_to_mvp(&resolved),
             object_type: InspectableObjectType::Symbol,
             label: resolved.name.clone(),
-            subtitle: format!("{} at {}:{}", resolved.kind.name(), resolved.file, resolved.line),
+            subtitle: format!(
+                "{} at {}:{}",
+                resolved.kind.name(),
+                resolved.file,
+                resolved.line
+            ),
             properties,
             available_views: symbol_descriptor_list(),
         })
@@ -480,10 +564,7 @@ impl ExplorerService {
     /// List the design lenses that apply to the given object. The list is
     /// filtered by each lens's `applicable_types` declaration, so an issue
     /// object will return `[]` (no lens is meaningful there).
-    pub fn available_lenses(
-        &self,
-        object_id: &str,
-    ) -> ExplorerResult<Vec<LensDescriptor>> {
+    pub fn available_lenses(&self, object_id: &str) -> ExplorerResult<Vec<LensDescriptor>> {
         // Parse to validate the shape (and to get the variant tag).
         let identity = ObjectIdentity::parse_mvp_id(object_id)?;
         let object_type = identity_to_type(&identity);
@@ -493,18 +574,12 @@ impl ExplorerService {
     /// Apply a registered lens to an inspectable object. The lens runs
     /// against the existing ports; when the quality backend is absent
     /// the lens degrades gracefully (lower confidence, fewer findings).
-    pub fn apply_lens(
-        &self,
-        object_id: &str,
-        lens_id: &str,
-    ) -> ExplorerResult<LensResult> {
+    pub fn apply_lens(&self, object_id: &str, lens_id: &str) -> ExplorerResult<LensResult> {
         let identity = ObjectIdentity::parse_mvp_id(object_id)?;
         let lens = self
             .lens_registry
             .get(lens_id)
-            .ok_or_else(|| ExplorerError::ResolutionFailed(
-                format!("lens not found: {lens_id}"),
-            ))?;
+            .ok_or_else(|| ExplorerError::ResolutionFailed(format!("lens not found: {lens_id}")))?;
         let ctx = LensContext::new(
             identity,
             self.repo.clone(),
@@ -522,6 +597,368 @@ impl ExplorerService {
         &self.lens_registry
     }
 
+    // ===========================================================
+    // Named Views CRUD delegation
+    // ===========================================================
+    //
+    // All four methods are reachable from MCP dispatch. The
+    // feature-gate is enforced at the service boundary: when
+    // `postgres_repo` is `None` (default build OR no PG wired),
+    // every call returns `ExplorerError::FeatureDisabled("...")`
+    // — the MCP layer maps that to the canonical
+    // `named_views_require_postgres_feature` envelope.
+
+    /// Save a named view. Generates a UUID string id server-side,
+    /// inserts the row, and returns the persisted
+    /// [`NamedView`].
+    ///
+    /// Validation:
+    /// - `workspace_id`, `owner`, `name`, `level`, `lens`,
+    ///   `focus_node` must be non-empty
+    /// - `name` ≤ 200 chars
+    /// - `description` ≤ 2000 chars (when present)
+    /// - `max_depth >= 0`
+    ///
+    /// Errors:
+    /// - `ExplorerError::InvalidInput` for any validation failure
+    /// - `ExplorerError::FeatureDisabled` when no PG is wired
+    /// - `ExplorerError::Conflict` on a unique-violation (PG 23505)
+    /// - `ExplorerError::Storage` for any other DB failure
+    #[cfg(feature = "postgres")]
+    pub async fn save_view(
+        &self,
+        workspace_id: &str,
+        owner: &str,
+        name: &str,
+        description: Option<&str>,
+        level: &str,
+        lens: &str,
+        focus_node: &str,
+        max_depth: i32,
+    ) -> ExplorerResult<NamedView> {
+        // Validate up-front so invalid input never touches PG.
+        Self::validate_view_inputs(
+            workspace_id,
+            owner,
+            name,
+            description,
+            level,
+            lens,
+            focus_node,
+            max_depth,
+        )?;
+        // Feature-gate after validation: validation errors surface
+        // even on a no-PG build (the spec contract for
+        // `view_save_rejects_empty_name` and
+        // `view_save_rejects_negative_max_depth`).
+        self.require_postgres_repo("save_view")?;
+        let id = uuid_v4_string();
+        let repo = self
+            .postgres_repo
+            .as_ref()
+            .expect("feature gate verified above");
+        repo.save_named_view(
+            &id,
+            workspace_id,
+            owner,
+            name,
+            description,
+            level,
+            lens,
+            focus_node,
+            max_depth,
+        )
+        .await
+        .map_err(|e| match e {
+            cognicode_core::domain::traits::RepositoryError::UniqueViolation(msg) => {
+                ExplorerError::Conflict(msg)
+            }
+            other => ExplorerError::Anyhow(anyhow::anyhow!("save_view: {other}")),
+        })?;
+        // Re-fetch the row so the caller gets a fully-populated
+        // `created_at` straight from PG (the DEFAULT now() value
+        // is server-assigned).
+        let row = repo
+            .load_named_view(&id, workspace_id, owner)
+            .await
+            .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("save_view reload: {e}")))?
+            .ok_or_else(|| {
+                ExplorerError::Anyhow(anyhow::anyhow!(
+                    "save_view: row vanished after insert (id={id})"
+                ))
+            })?;
+        Ok(named_view_from_row(row))
+    }
+
+    /// Load a named view by id, scoped to the caller-supplied
+    /// `(workspace_id, owner)`. Returns the rebuilt
+    /// [`ContextualView`] (re-invoking the existing
+    /// `contextual_view` pipeline) so the projection reflects the
+    /// current graph state — not a stale snapshot.
+    ///
+    /// Errors:
+    /// - `ExplorerError::NotFound` for unknown id OR scope mismatch
+    /// - `ExplorerError::FeatureDisabled` when no PG is wired
+    /// - `ExplorerError::Storage` for DB failures
+    #[cfg(feature = "postgres")]
+    pub async fn load_view(
+        &self,
+        id: &str,
+        workspace_id: &str,
+        owner: &str,
+    ) -> ExplorerResult<ContextualView> {
+        self.require_postgres_repo("load_view")?;
+        let repo = self
+            .postgres_repo
+            .as_ref()
+            .expect("feature gate verified above");
+        let row = repo
+            .load_named_view(id, workspace_id, owner)
+            .await
+            .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("load_view: {e}")))?
+            .ok_or_else(|| ExplorerError::NotFound(format!("named_view: {id}")))?;
+        // Rebuild the live ContextualView from the saved
+        // (level, lens, focus_node) tuple. The rebuild uses the
+        // existing `contextual_view(focus_node, lens)` path so
+        // every lens-specific transformation (callgraph,
+        // overview, ...) is applied.
+        let mvp_id = view_focus_mvp_id(&row.level, &row.focus_node);
+        self.contextual_view(&mvp_id, lens_to_view_id(&row.lens))
+    }
+
+    /// List named views for a `(workspace_id, owner)` scope,
+    /// newest-first. Returns descriptors with the `description`
+    /// field truncated to ≤ 201 chars (200 + `…`) when the
+    /// stored text is longer.
+    #[cfg(feature = "postgres")]
+    pub async fn list_views(
+        &self,
+        workspace_id: &str,
+        owner: &str,
+    ) -> ExplorerResult<Vec<NamedViewDescriptor>> {
+        self.require_postgres_repo("list_views")?;
+        if workspace_id.is_empty() {
+            return Err(ExplorerError::InvalidInput(
+                "workspace_id is required".into(),
+            ));
+        }
+        if owner.is_empty() {
+            return Err(ExplorerError::InvalidInput("owner is required".into()));
+        }
+        let repo = self
+            .postgres_repo
+            .as_ref()
+            .expect("feature gate verified above");
+        let rows = repo
+            .list_named_views(workspace_id, owner)
+            .await
+            .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("list_views: {e}")))?;
+        Ok(rows
+            .into_iter()
+            .map(|r| NamedViewDescriptor {
+                id: r.id,
+                workspace_id: r.workspace_id,
+                owner: r.owner,
+                name: r.name,
+                description: truncate_description(r.description, 200),
+                level: r.level,
+                lens: r.lens,
+                focus_node: r.focus_node,
+                max_depth: r.max_depth,
+                created_at: r.created_at,
+            })
+            .collect())
+    }
+
+    /// Delete a named view. Returns `true` iff a row was removed.
+    /// Unknown id and scope mismatch both return `Ok(false)` —
+    /// the dispatch layer surfaces that as a `not_found` error.
+    #[cfg(feature = "postgres")]
+    pub async fn delete_view(
+        &self,
+        id: &str,
+        workspace_id: &str,
+        owner: &str,
+    ) -> ExplorerResult<bool> {
+        self.require_postgres_repo("delete_view")?;
+        if id.is_empty() {
+            return Err(ExplorerError::InvalidInput("id is required".into()));
+        }
+        if workspace_id.is_empty() {
+            return Err(ExplorerError::InvalidInput(
+                "workspace_id is required".into(),
+            ));
+        }
+        if owner.is_empty() {
+            return Err(ExplorerError::InvalidInput("owner is required".into()));
+        }
+        let repo = self
+            .postgres_repo
+            .as_ref()
+            .expect("feature gate verified above");
+        let removed = repo
+            .delete_named_view(id, workspace_id, owner)
+            .await
+            .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("delete_view: {e}")))?;
+        Ok(removed)
+    }
+
+    /// Internal: feature-gate guard. Returns `Ok(())` when the
+    /// `postgres` feature is active AND a `PostgresRepository` was
+    /// wired at construction; `Err(FeatureDisabled)` otherwise.
+    /// Call sites convert the `()` to the concrete
+    /// `&Arc<PostgresRepository>` via the `#[cfg(feature =
+    /// "postgres")]` block at the call site.
+    #[cfg(feature = "postgres")]
+    fn require_postgres_repo(&self, op: &str) -> ExplorerResult<()> {
+        if self.postgres_repo.is_some() {
+            Ok(())
+        } else {
+            Err(ExplorerError::FeatureDisabled(format!(
+                "named_views require postgres feature (op={op})"
+            )))
+        }
+    }
+
+    /// Internal: always-returns-FeatureDisabled stub for default
+    /// (no `--features postgres`) builds. The `#[cfg]` mirror of
+    /// `require_postgres_repo` so the call sites compile in both
+    /// modes.
+    #[cfg(not(feature = "postgres"))]
+    #[allow(dead_code)]
+    fn require_postgres_repo(&self, _op: &str) -> ExplorerResult<()> {
+        Err(ExplorerError::FeatureDisabled(
+            "named_views require postgres feature".into(),
+        ))
+    }
+
+    // -- `not(feature = "postgres")` mirrors of the 4 PG-only methods ---
+    // The real implementations live above under `#[cfg(feature = "postgres")]`.
+    // These stubs keep the call sites in `mcp.rs` compiling on default builds.
+
+    #[cfg(not(feature = "postgres"))]
+    #[allow(dead_code)]
+    pub async fn save_view(
+        &self,
+        workspace_id: &str,
+        owner: &str,
+        name: &str,
+        description: Option<&str>,
+        level: &str,
+        lens: &str,
+        focus_node: &str,
+        max_depth: i32,
+    ) -> ExplorerResult<crate::dto::NamedView> {
+        // Validate BEFORE the feature-gate error so that
+        // `view_save_rejects_empty_name` /
+        // `view_save_rejects_negative_max_depth` can be asserted
+        // on a default build (the dispatch tests run without
+        // `--features postgres`).
+        Self::validate_view_inputs(
+            workspace_id,
+            owner,
+            name,
+            description,
+            level,
+            lens,
+            focus_node,
+            max_depth,
+        )?;
+        Err(ExplorerError::FeatureDisabled(
+            "named_views require postgres feature".into(),
+        ))
+    }
+
+    #[cfg(not(feature = "postgres"))]
+    #[allow(dead_code)]
+    pub async fn load_view(
+        &self,
+        _id: &str,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> ExplorerResult<crate::dto::ContextualView> {
+        Err(ExplorerError::FeatureDisabled(
+            "named_views require postgres feature".into(),
+        ))
+    }
+
+    #[cfg(not(feature = "postgres"))]
+    #[allow(dead_code)]
+    pub async fn list_views(
+        &self,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> ExplorerResult<Vec<crate::dto::NamedViewDescriptor>> {
+        Err(ExplorerError::FeatureDisabled(
+            "named_views require postgres feature".into(),
+        ))
+    }
+
+    #[cfg(not(feature = "postgres"))]
+    #[allow(dead_code)]
+    pub async fn delete_view(
+        &self,
+        _id: &str,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> ExplorerResult<bool> {
+        Err(ExplorerError::FeatureDisabled(
+            "named_views require postgres feature".into(),
+        ))
+    }
+
+    /// Internal: validate every input the spec demands be
+    /// non-empty / length-bounded / non-negative. All checks
+    /// happen BEFORE the PG call, so an invalid input never
+    /// produces a row.
+    fn validate_view_inputs(
+        workspace_id: &str,
+        owner: &str,
+        name: &str,
+        description: Option<&str>,
+        level: &str,
+        lens: &str,
+        focus_node: &str,
+        max_depth: i32,
+    ) -> ExplorerResult<()> {
+        if workspace_id.is_empty() {
+            return Err(ExplorerError::InvalidInput(
+                "workspace_id is required".into(),
+            ));
+        }
+        if owner.is_empty() {
+            return Err(ExplorerError::InvalidInput("owner is required".into()));
+        }
+        if name.is_empty() {
+            return Err(ExplorerError::InvalidInput("name is required".into()));
+        }
+        if name.chars().count() > 200 {
+            return Err(ExplorerError::InvalidInput(
+                "name must be at most 200 characters".into(),
+            ));
+        }
+        if level.is_empty() {
+            return Err(ExplorerError::InvalidInput("level is required".into()));
+        }
+        if lens.is_empty() {
+            return Err(ExplorerError::InvalidInput("lens is required".into()));
+        }
+        if focus_node.is_empty() {
+            return Err(ExplorerError::InvalidInput("focus_node is required".into()));
+        }
+        if max_depth < 0 {
+            return Err(ExplorerError::InvalidInput("max_depth must be >= 0".into()));
+        }
+        if let Some(d) = description {
+            if d.chars().count() > 2000 {
+                return Err(ExplorerError::InvalidInput(
+                    "description must be at most 2000 characters".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub fn contextual_view(
         &self,
         object_id: &str,
@@ -530,12 +967,8 @@ impl ExplorerService {
         let identity = ObjectIdentity::parse_mvp_id(object_id)?;
         match &identity {
             ObjectIdentity::Symbol { .. } => self.contextual_view_symbol(&identity, view_id),
-            ObjectIdentity::File { path } => {
-                self.contextual_view_file(&identity, path, view_id)
-            }
-            ObjectIdentity::Scope { path } => {
-                self.contextual_view_scope(&identity, path, view_id)
-            }
+            ObjectIdentity::File { path } => self.contextual_view_file(&identity, path, view_id),
+            ObjectIdentity::Scope { path } => self.contextual_view_scope(&identity, path, view_id),
             ObjectIdentity::QualityIssue { id } => {
                 self.contextual_view_issue(&identity, *id, view_id)
             }
@@ -612,7 +1045,8 @@ impl ExplorerService {
             )),
             "dependencies" => Ok(views::build_scope_dependencies(path, self.repo.as_ref())),
             "hotspots" => {
-                let hotspots = top_hotspots(&member_symbols, self.repo.as_ref(), SCOPE_HOTSPOT_LIMIT);
+                let hotspots =
+                    top_hotspots(&member_symbols, self.repo.as_ref(), SCOPE_HOTSPOT_LIMIT);
                 Ok(views::build_scope_hotspots(path, &hotspots))
             }
             "quality" => Ok(views::build_scope_quality_view(path, self.quality())),
@@ -621,6 +1055,151 @@ impl ExplorerService {
                 view_id: other.to_string(),
             }),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Contextual Graph — visualization-stack Phase 2 (Contextual Views)
+    // -----------------------------------------------------------------------
+    //
+    // Returns a `ContextualGraphResponse` composed of the focus node,
+    // the file-level parent + children, and a BFS of same-level call
+    // neighbours (callers + callees up to `depth` hops, bounded by
+    // `max_nodes`).
+    //
+    // Validation:
+    // - `level` MUST be "file" in Phase 1 (returns `InvalidQuery` otherwise)
+    // - `depth` MUST be in 1..=2 (returns `InvalidQuery` otherwise)
+    // - `max_nodes` MUST be in 50..=500 (returns `InvalidQuery` otherwise)
+    //
+    // Returns `SymbolNotFound` when the focus id is not in the repository.
+    pub fn build_contextual_graph(
+        &self,
+        focus_id: &SymbolId,
+        level: &str,
+        depth: u8,
+        max_nodes: usize,
+    ) -> ExplorerResult<ContextualGraphResponse> {
+        // 1) Validate the request.
+        if level != "file" {
+            return Err(ExplorerError::InvalidQuery(format!(
+                "level must be 'file' in Phase 1 (got: {level})"
+            )));
+        }
+        if !(1..=2).contains(&depth) {
+            return Err(ExplorerError::InvalidQuery(format!(
+                "depth must be in 1..=2 (got: {depth})"
+            )));
+        }
+        if !(50..=500).contains(&max_nodes) {
+            return Err(ExplorerError::InvalidQuery(format!(
+                "max_nodes must be in 50..=500 (got: {max_nodes})"
+            )));
+        }
+
+        // 2) Resolve the focus symbol.
+        let focus_resolved = self
+            .repo
+            .resolve(focus_id)?
+            .ok_or_else(|| ExplorerError::SymbolNotFound(focus_id.to_string()))?;
+        let focus_node = symbol_to_node(&focus_resolved);
+
+        // 3) Build the parent + children section (file-level projection).
+        let file_siblings = self.repo.find_symbols_by_file(&focus_resolved.file)?;
+        let (parent, children, children_clipped) = if file_siblings.is_empty() {
+            // Orphan: cannot derive a parent file. Both sections are null.
+            (None, None, false)
+        } else {
+            let parent_node = GraphNode {
+                id: format!("file:{}", focus_resolved.file),
+                label: focus_resolved.file.clone(),
+                kind: "file".to_string(),
+                file: Some(focus_resolved.file.clone()),
+                line: None,
+                style_class: "module".to_string(),
+            };
+            let parent_edge = GraphEdge {
+                source: focus_resolved.id.to_string(),
+                target: parent_node.id.clone(),
+                relation: "lives_in".to_string(),
+                style_class: "edge.calls".to_string(),
+            };
+            let parent_section = ParentSection {
+                node: parent_node,
+                edge: parent_edge,
+            };
+
+            // Children: every sibling EXCEPT the focus itself.
+            let mut child_nodes: Vec<GraphNode> = Vec::new();
+            let mut child_edges: Vec<GraphEdge> = Vec::new();
+            for sib in file_siblings.iter().filter(|s| s.id != focus_resolved.id) {
+                child_edges.push(GraphEdge {
+                    source: sib.id.to_string(),
+                    target: focus_resolved.id.to_string(),
+                    relation: "lives_in".to_string(),
+                    style_class: "edge.calls".to_string(),
+                });
+                child_nodes.push(symbol_to_node(sib));
+            }
+
+            // Children take priority in the cap budget. A file with
+            // more siblings than `max_nodes` is the canonical
+            // truncation case.
+            let clipped = child_nodes.len() > max_nodes;
+            if clipped {
+                child_nodes.truncate(max_nodes);
+                let kept: std::collections::HashSet<String> =
+                    child_nodes.iter().map(|n| n.id.clone()).collect();
+                child_edges.retain(|e| kept.contains(&e.source));
+            }
+            (
+                Some(parent_section),
+                Some(ChildrenSection {
+                    nodes: child_nodes,
+                    edges: child_edges,
+                }),
+                clipped,
+            )
+        };
+
+        // 4) Build the same-level BFS up to `depth` hops, capped at
+        //    the remaining budget (children take priority).
+        let remaining_cap = max_nodes.saturating_sub(
+            children
+                .as_ref()
+                .map(|c| c.nodes.len())
+                .unwrap_or(0),
+        );
+        let (same_nodes, same_edges) = if remaining_cap == 0 {
+            (Vec::new(), Vec::new())
+        } else {
+            bfs_same_level(self.repo.as_ref(), focus_id, depth, remaining_cap)
+        };
+
+        // 5) Truncation flag. We set `truncated=true` when:
+        //    - the children list was clipped to `max_nodes`, OR
+        //    - the BFS hit the remaining cap before exhausting
+        //      reachable nodes.
+        let bfs_clipped = !same_nodes.is_empty() && same_nodes.len() >= remaining_cap
+            && (self.repo.fan_in(focus_id) + self.repo.fan_out(focus_id)) > remaining_cap as usize;
+        let truncated = children_clipped || bfs_clipped;
+        let truncation_reason = if truncated {
+            Some("max_nodes_exceeded".to_string())
+        } else {
+            None
+        };
+
+        Ok(ContextualGraphResponse {
+            focus_node,
+            parent,
+            children,
+            same_level: SameLevelSection {
+                nodes: same_nodes,
+                edges: same_edges,
+            },
+            level: "file".to_string(),
+            truncated,
+            truncation_reason,
+        })
     }
 
     /// Inspect a single quality issue by id. When the quality backend
@@ -856,9 +1435,7 @@ impl ExplorerService {
         // Store the path so `generate_artifact` can look it up by id.
         self.paths
             .lock()
-            .map_err(|_| {
-                ExplorerError::Anyhow(anyhow::anyhow!("exploration path store poisoned"))
-            })?
+            .map_err(|_| ExplorerError::Anyhow(anyhow::anyhow!("exploration path store poisoned")))?
             .insert(path.id.clone(), path.clone());
 
         Ok(path)
@@ -986,42 +1563,87 @@ fn build_summary_properties(
 }
 
 fn resolved_to_mvp(resolved: &crate::ports::symbol_repository::ResolvedSymbol) -> String {
-    format!("symbol:{}:{}:{}", resolved.file, resolved.name, resolved.line)
+    format!(
+        "symbol:{}:{}:{}",
+        resolved.file, resolved.name, resolved.line
+    )
 }
 
 fn symbol_descriptor_list() -> Vec<ViewDescriptor> {
     vec![
-        ViewDescriptor { id: "overview".into(), title: "Overview".into() },
-        ViewDescriptor { id: "call-graph".into(), title: "Call Graph".into() },
-        ViewDescriptor { id: "source".into(), title: "Source".into() },
-        ViewDescriptor { id: "evidence".into(), title: "Evidence".into() },
-        ViewDescriptor { id: "quality".into(), title: "Quality".into() },
+        ViewDescriptor {
+            id: "overview".into(),
+            title: "Overview".into(),
+        },
+        ViewDescriptor {
+            id: "call-graph".into(),
+            title: "Call Graph".into(),
+        },
+        ViewDescriptor {
+            id: "source".into(),
+            title: "Source".into(),
+        },
+        ViewDescriptor {
+            id: "evidence".into(),
+            title: "Evidence".into(),
+        },
+        ViewDescriptor {
+            id: "quality".into(),
+            title: "Quality".into(),
+        },
     ]
 }
 
 fn file_descriptor_list() -> Vec<ViewDescriptor> {
     vec![
-        ViewDescriptor { id: "overview".into(), title: "Overview".into() },
-        ViewDescriptor { id: "symbols".into(), title: "Symbols".into() },
-        ViewDescriptor { id: "quality".into(), title: "Quality".into() },
+        ViewDescriptor {
+            id: "overview".into(),
+            title: "Overview".into(),
+        },
+        ViewDescriptor {
+            id: "symbols".into(),
+            title: "Symbols".into(),
+        },
+        ViewDescriptor {
+            id: "quality".into(),
+            title: "Quality".into(),
+        },
     ]
 }
 
 fn scope_descriptor_list() -> Vec<ViewDescriptor> {
     vec![
-        ViewDescriptor { id: "overview".into(), title: "Overview".into() },
-        ViewDescriptor { id: "dependencies".into(), title: "Dependencies".into() },
-        ViewDescriptor { id: "hotspots".into(), title: "Hotspots".into() },
-        ViewDescriptor { id: "quality".into(), title: "Quality".into() },
+        ViewDescriptor {
+            id: "overview".into(),
+            title: "Overview".into(),
+        },
+        ViewDescriptor {
+            id: "dependencies".into(),
+            title: "Dependencies".into(),
+        },
+        ViewDescriptor {
+            id: "hotspots".into(),
+            title: "Hotspots".into(),
+        },
+        ViewDescriptor {
+            id: "quality".into(),
+            title: "Quality".into(),
+        },
     ]
 }
 
 fn issue_descriptor_list() -> Vec<ViewDescriptor> {
-    vec![ViewDescriptor { id: "overview".into(), title: "Overview".into() }]
+    vec![ViewDescriptor {
+        id: "overview".into(),
+        title: "Overview".into(),
+    }]
 }
 
 fn rule_descriptor_list() -> Vec<ViewDescriptor> {
-    vec![ViewDescriptor { id: "overview".into(), title: "Overview".into() }]
+    vec![ViewDescriptor {
+        id: "overview".into(),
+        title: "Overview".into(),
+    }]
 }
 
 /// Collect the unique files and the resolved symbols that belong to `scope_path`.
@@ -1067,11 +1689,8 @@ fn top_hotspots(
 
 /// Count symbols per kind, returning a stable map (always `String` keys
 /// so JSON serialisation does not collapse it to `null`).
-fn count_kinds(
-    symbols: &[ResolvedSymbol],
-) -> std::collections::BTreeMap<String, usize> {
-    let mut kinds: std::collections::BTreeMap<String, usize> =
-        std::collections::BTreeMap::new();
+fn count_kinds(symbols: &[ResolvedSymbol]) -> std::collections::BTreeMap<String, usize> {
+    let mut kinds: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for s in symbols {
         *kinds.entry(s.kind.name().to_string()).or_insert(0) += 1;
     }
@@ -1118,6 +1737,100 @@ fn render_replay_markdown_unknown(exploration_id: &str) -> String {
     )
 }
 
+/// Convert a `ResolvedSymbol` to the wire-side `GraphNode`. Mirrors
+/// the helper in `api.rs` (which is a near-duplicate) — kept local to
+/// the service so the contextual graph logic does not depend on the
+/// `api` module's public surface.
+fn symbol_to_node(s: &ResolvedSymbol) -> GraphNode {
+    let kind_label = format!("{:?}", s.kind).to_lowercase();
+    GraphNode {
+        id: s.id.to_string(),
+        label: s.name.clone(),
+        kind: kind_label.clone(),
+        file: Some(s.file.clone()),
+        line: Some(s.line),
+        style_class: style_class_for_kind(&kind_label).to_string(),
+    }
+}
+
+/// Map a kind label to the cytoscape `style_class` bucket. Same
+/// taxonomy as the `api` module — kept inline to avoid a public
+/// dependency on the API layer from the service.
+fn style_class_for_kind(kind: &str) -> &'static str {
+    match kind {
+        "function" | "method" | "fn" => "function",
+        "module" | "crate" | "trait" => "module",
+        "external" => "external",
+        "file" => "module",
+        _ => "function",
+    }
+}
+
+/// BFS of same-level neighbours (callers + callees) of `start` up to
+/// `depth` hops, capped at `cap` collected nodes. The `visited` set
+/// prevents cycles in the call graph. The `cap` is inclusive — when
+/// adding the next node would exceed `cap`, we stop.
+///
+/// `start` itself is implicitly in `visited` (we never re-emit it).
+fn bfs_same_level(
+    repo: &dyn SymbolRepository,
+    start: &SymbolId,
+    depth: u8,
+    cap: usize,
+) -> (Vec<GraphNode>, Vec<GraphEdge>) {
+    let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+    visited.insert(start.to_string());
+    let mut frontier: Vec<SymbolId> = vec![start.clone()];
+    let mut nodes: Vec<GraphNode> = Vec::new();
+    let mut edges: Vec<GraphEdge> = Vec::new();
+
+    for _ in 0..depth {
+        if nodes.len() >= cap {
+            break;
+        }
+        let mut next: Vec<SymbolId> = Vec::new();
+        for n in &frontier {
+            // Combine callers and callees — same-level set is the
+            // union, with edges carrying the relation label.
+            for rel in repo.callers(n).into_iter().chain(repo.callees(n)) {
+                let nid = rel.id.to_string();
+                if !visited.insert(nid.clone()) {
+                    continue;
+                }
+                if nodes.len() >= cap {
+                    // Cap hit. Drop the edge too so the response
+                    // stays internally consistent (no dangling
+                    // references).
+                    break;
+                }
+                let relation = "calls".to_string();
+                edges.push(GraphEdge {
+                    source: n.to_string(),
+                    target: nid.clone(),
+                    relation: relation.clone(),
+                    style_class: "edge.calls".to_string(),
+                });
+                // Build the GraphNode by resolving the neighbour.
+                // If the repo cannot resolve the id (orphan target),
+                // we still record the edge but skip the node — the
+                // front-end can still draw the edge by its endpoints.
+                if let Ok(Some(resolved)) = repo.resolve(&rel.id) {
+                    nodes.push(symbol_to_node(&resolved));
+                }
+                next.push(rel.id);
+            }
+            if nodes.len() >= cap {
+                break;
+            }
+        }
+        if next.is_empty() {
+            break;
+        }
+        frontier = next;
+    }
+    (nodes, edges)
+}
+
 fn workspace_id(path: &std::path::Path) -> String {
     let label = path
         .file_name()
@@ -1137,6 +1850,114 @@ fn identity_to_type(identity: &ObjectIdentity) -> InspectableObjectType {
         ObjectIdentity::QualityIssue { .. } => InspectableObjectType::QualityIssue,
         ObjectIdentity::Rule { .. } => InspectableObjectType::Rule,
     }
+}
+
+// ============================================================================
+// Named-view helpers
+// ============================================================================
+
+/// Convert a `NamedViewRow` (PG layer) into the wire-side
+/// `NamedView` DTO. The two structs share every field; this
+/// is a single allocation-free rename.
+#[cfg(feature = "postgres")]
+fn named_view_from_row(
+    row: cognicode_core::infrastructure::persistence::NamedViewRow,
+) -> NamedView {
+    NamedView {
+        id: row.id,
+        workspace_id: row.workspace_id,
+        owner: row.owner,
+        name: row.name,
+        description: row.description,
+        level: row.level,
+        lens: row.lens,
+        focus_node: row.focus_node,
+        max_depth: row.max_depth,
+        created_at: row.created_at,
+    }
+}
+
+/// Build the MVP id used to re-invoke `contextual_view` from a
+/// stored `(level, focus_node)` tuple. The MVP id has the shape
+/// `"{kind}:{key}"`; for named-view v1 we treat every focus as
+/// either a symbol (default) or a file/scope/issue based on the
+/// `level` hint.
+#[cfg(feature = "postgres")]
+fn view_focus_mvp_id(level: &str, focus_node: &str) -> String {
+    let prefix = match level {
+        "file" => "file",
+        "scope" | "module" => "scope",
+        "issue" | "quality" => "issue",
+        _ => "symbol",
+    };
+    format!("{prefix}:{focus_node}")
+}
+
+/// Translate a stored `lens` value (e.g. `"callgraph"`) into the
+/// matching `view_id` accepted by `contextual_view` (e.g.
+/// `"call-graph"`). The lens-vs-view distinction is a historical
+/// naming difference that pre-dates the v2 schema; the DB stores
+/// the user-facing `lens` form for display but the runtime
+/// dispatch expects the view builder name.
+#[cfg(feature = "postgres")]
+fn lens_to_view_id(lens: &str) -> &str {
+    match lens {
+        "callgraph" => "call-graph",
+        "overview" | "call-graph" | "source" | "evidence" | "quality" | "rationale" => lens,
+        // Pass through any other value (e.g. a future lens) and
+        // let `contextual_view` reject it with a precise
+        // `ViewNotAvailable` error.
+        other => other,
+    }
+}
+
+/// Generate a v4-ish UUID string (RFC 4122 form) using the
+/// in-process clock + a static atomic counter. We do NOT add
+/// the `uuid` crate as a dependency just to mint ids — the
+/// spec needs only a stable unique string, not a cryptographic
+/// UUID. Format: `"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"`.
+#[cfg(feature = "postgres")]
+fn uuid_v4_string() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let mix = now.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(n);
+    let bytes: [u8; 16] = bytemuck_like_bytes(mix);
+    let mut hex = String::with_capacity(36);
+    for (i, b) in bytes.iter().enumerate() {
+        if i == 4 || i == 6 || i == 8 || i == 10 {
+            hex.push('-');
+        }
+        hex.push_str(&format!("{b:02x}"));
+    }
+    // Force the v4 nibble + variant nibble per RFC 4122:
+    //   byte[6] = (b & 0x0F) | 0x40
+    //   byte[8] = (b & 0x3F) | 0x80
+    let mut chars: Vec<char> = hex.chars().collect();
+    // Per RFC 4122 §4.4: version nibble at position 14 MUST be '4'.
+    chars[14] = '4';
+    // Variant bits at position 19 MUST be 10xx → '8', '9', 'a', or 'b'.
+    let v = chars[19];
+    chars[19] = match v {
+        '8' | '9' | 'a' | 'b' => v,
+        _ => '8',
+    };
+    chars.into_iter().collect()
+}
+
+/// Deterministic 16-byte expansion of a 64-bit seed.
+#[cfg(feature = "postgres")]
+fn bytemuck_like_bytes(seed: u64) -> [u8; 16] {
+    let lo = seed;
+    let hi = seed.wrapping_mul(0xFF51_AFD7_ED55_28CC);
+    let mut out = [0u8; 16];
+    out[0..8].copy_from_slice(&lo.to_le_bytes());
+    out[8..16].copy_from_slice(&hi.to_le_bytes());
+    out
 }
 
 #[cfg(test)]
@@ -1163,7 +1984,13 @@ mod tests {
                 by_id: StdHashMap::new(),
             }
         }
-        fn with_symbol(&mut self, name: &str, file: &str, line: u32, kind: SymbolKind) -> &mut Self {
+        fn with_symbol(
+            &mut self,
+            name: &str,
+            file: &str,
+            line: u32,
+            kind: SymbolKind,
+        ) -> &mut Self {
             let id = SymbolId::new(format!("{file}:{name}:{line}"));
             let sym = ResolvedSymbol {
                 id: id.clone(),
@@ -1189,8 +2016,12 @@ mod tests {
         fn callees(&self, _id: &SymbolId) -> Vec<crate::ports::RelationTarget> {
             Vec::new()
         }
-        fn fan_in(&self, _id: &SymbolId) -> usize { 0 }
-        fn fan_out(&self, _id: &SymbolId) -> usize { 0 }
+        fn fan_in(&self, _id: &SymbolId) -> usize {
+            0
+        }
+        fn fan_out(&self, _id: &SymbolId) -> usize {
+            0
+        }
         fn find_symbols_by_name(&self, name: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
             Ok(self.by_name.get(name).cloned().unwrap_or_default())
         }
@@ -1217,7 +2048,9 @@ mod tests {
         fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> {
             Ok(self.by_id.values().cloned().collect())
         }
-        fn graph_stats(&self) -> GraphStats { GraphStats::default() }
+        fn graph_stats(&self) -> GraphStats {
+            GraphStats::default()
+        }
     }
 
     /// Mock search backend that returns pre-canned hits. Filters by an
@@ -1231,7 +2064,10 @@ mod tests {
     }
     impl MockSearch {
         fn new(hits: Vec<SearchHit>) -> Self {
-            Self { hits, match_substring: None }
+            Self {
+                hits,
+                match_substring: None,
+            }
         }
         fn with_filter(hits: Vec<SearchHit>, match_substring: impl Into<String>) -> Self {
             Self {
@@ -1266,12 +2102,7 @@ mod tests {
             let arc: Arc<dyn SearchRepository> = Arc::new(s);
             arc
         });
-        let service = ExplorerService::with_search(
-            repo_dyn,
-            reader,
-            "/tmp",
-            search,
-        );
+        let service = ExplorerService::with_search(repo_dyn, reader, "/tmp", search);
         (service, repo_arc)
     }
 
@@ -1326,7 +2157,10 @@ mod tests {
         let (service, _) = build_service_with_search(repo, Some(fts5));
         // Repo has no "beta" — fts5 hit must be dropped.
         let results = service.spotter_search("beta", None).expect("ok");
-        assert!(results.is_empty(), "fts5 hit must drop when symbol is not in repo: {results:?}");
+        assert!(
+            results.is_empty(),
+            "fts5 hit must drop when symbol is not in repo: {results:?}"
+        );
     }
 
     #[test]
@@ -1341,9 +2175,9 @@ mod tests {
         let fts5 = MockSearch::new(vec![SearchHit {
             mvp_id: String::new(),
             name: "gamma".to_string(),
-            kind: "function".to_string(), // wrong kind on purpose
+            kind: "function".to_string(),      // wrong kind on purpose
             file: "wrong_file.rs".to_string(), // wrong file on purpose
-            line: 999,                    // wrong line on purpose
+            line: 999,                         // wrong line on purpose
             score: 0.80,
             match_type: "fts5".to_string(),
         }]);
@@ -1393,9 +2227,7 @@ mod tests {
         // but the FTS5 backend (mocked to return the hit unconditionally)
         // does surface it. The mock ignores the query string in this test
         // to simulate a fuzzy match.
-        let results = service
-            .spotter_search("gamma_ext", None)
-            .expect("ok");
+        let results = service.spotter_search("gamma_ext", None).expect("ok");
         assert_eq!(results.len(), 1, "FTS5-only hit should surface");
         assert_eq!(results[0].match_type, "fts5");
         assert!((results[0].score - 0.90).abs() < 0.01);
@@ -1448,7 +2280,13 @@ mod tests {
             .spotter_search("alpha", Some("function"))
             .expect("ok");
         assert_eq!(results.len(), 1);
-        assert!(results[0].object.subtitle.to_lowercase().contains("function"));
+        assert!(
+            results[0]
+                .object
+                .subtitle
+                .to_lowercase()
+                .contains("function")
+        );
     }
 
     #[test]
@@ -1479,7 +2317,11 @@ mod tests {
         let ids: Vec<&str> = path.objects.iter().map(|o| o.id.as_str()).collect();
         assert!(ids.contains(&"symbol:src/a.rs:alpha:1"));
         assert!(ids.contains(&"symbol:src/b.rs:beta:5"));
-        let alpha = path.objects.iter().find(|o| o.id.ends_with("alpha:1")).unwrap();
+        let alpha = path
+            .objects
+            .iter()
+            .find(|o| o.id.ends_with("alpha:1"))
+            .unwrap();
         assert_eq!(alpha.object_type, "symbol");
         assert_eq!(alpha.natural_key, "src/a.rs:alpha:1");
         assert_eq!(alpha.first_seen, path.created_at);
@@ -1560,7 +2402,11 @@ mod tests {
         assert_eq!(summary.object_type, InspectableObjectType::File);
         assert_eq!(summary.id, "file:src/main.rs");
         assert_eq!(summary.label, "src/main.rs");
-        let ids: Vec<&str> = summary.available_views.iter().map(|v| v.id.as_str()).collect();
+        let ids: Vec<&str> = summary
+            .available_views
+            .iter()
+            .map(|v| v.id.as_str())
+            .collect();
         assert_eq!(ids, vec!["overview", "symbols", "quality"]);
         let keys: std::collections::HashSet<&str> =
             summary.properties.iter().map(|p| p.key.as_str()).collect();
@@ -1595,11 +2441,21 @@ mod tests {
         let summary = service.inspect_object("scope:src/foo").expect("ok");
         assert_eq!(summary.object_type, InspectableObjectType::Scope);
         assert_eq!(summary.id, "scope:src/foo");
-        let ids: Vec<&str> = summary.available_views.iter().map(|v| v.id.as_str()).collect();
+        let ids: Vec<&str> = summary
+            .available_views
+            .iter()
+            .map(|v| v.id.as_str())
+            .collect();
         assert_eq!(ids, vec!["overview", "dependencies", "hotspots", "quality"]);
         let keys: std::collections::HashSet<&str> =
             summary.properties.iter().map(|p| p.key.as_str()).collect();
-        for required in ["path", "file_count", "symbol_count", "promotion_ready", "kinds"] {
+        for required in [
+            "path",
+            "file_count",
+            "symbol_count",
+            "promotion_ready",
+            "kinds",
+        ] {
             assert!(keys.contains(required), "missing property {required}");
         }
         let promotion = summary
@@ -1728,9 +2584,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, ExplorerError::ViewNotAvailable { .. }));
         // A file-only view id on a scope identity is rejected.
-        let err = service
-            .contextual_view("scope:src", "symbols")
-            .unwrap_err();
+        let err = service.contextual_view("scope:src", "symbols").unwrap_err();
         assert!(matches!(err, ExplorerError::ViewNotAvailable { .. }));
     }
 
@@ -1776,9 +2630,7 @@ mod tests {
             .expect("ok");
         let file_lenses = service.available_lenses("file:src/a.rs").expect("ok");
         let scope_lenses = service.available_lenses("scope:src").expect("ok");
-        let issue_lenses = service
-            .available_lenses("issue:42")
-            .expect("ok");
+        let issue_lenses = service.available_lenses("issue:42").expect("ok");
         // Symbol, File, Scope each have 3 lenses; Issue gets an empty list
         // (no lens applies to issues).
         assert_eq!(sym_lenses.len(), 3);
@@ -1832,6 +2684,109 @@ mod tests {
             .apply_lens("scope:src/empty", "architecture")
             .expect("ok");
         assert!(result.findings.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Named Views — feature-gate unit tests
+    // -----------------------------------------------------------------------
+    //
+    // The `with_all` constructor leaves `postgres_repo: None`,
+    // so every `*_view` call on the resulting service must
+    // return `Err(ExplorerError::FeatureDisabled(..))` — the
+    // canonical "postgres feature not active" soft error.
+    //
+    // The validation tests (`view_save_rejects_*`) are also
+    // feature-gated: validation runs BEFORE the PG call, so the
+    // invalid-input errors surface even on a no-PG build.
+
+    #[tokio::test]
+    async fn explorer_service_pg_disabled_save_returns_feature_disabled() {
+        let (service, _) = build_service_with_search(empty_repo(), None);
+        let err = service
+            .save_view(
+                "w1",
+                "u1",
+                "hotspots",
+                None,
+                "function",
+                "callgraph",
+                "crate::foo",
+                3,
+            )
+            .await
+            .expect_err("save_view must error when PG is not wired");
+        assert!(
+            matches!(err, ExplorerError::FeatureDisabled(_)),
+            "expected FeatureDisabled, got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn explorer_service_pg_disabled_load_returns_feature_disabled() {
+        let (service, _) = build_service_with_search(empty_repo(), None);
+        let err = service
+            .load_view("some-id", "w1", "u1")
+            .await
+            .expect_err("load_view must error when PG is not wired");
+        assert!(
+            matches!(err, ExplorerError::FeatureDisabled(_)),
+            "expected FeatureDisabled, got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn explorer_service_pg_disabled_list_returns_feature_disabled() {
+        let (service, _) = build_service_with_search(empty_repo(), None);
+        let err = service
+            .list_views("w1", "u1")
+            .await
+            .expect_err("list_views must error when PG is not wired");
+        assert!(
+            matches!(err, ExplorerError::FeatureDisabled(_)),
+            "expected FeatureDisabled, got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn explorer_service_pg_disabled_delete_returns_feature_disabled() {
+        let (service, _) = build_service_with_search(empty_repo(), None);
+        let err = service
+            .delete_view("some-id", "w1", "u1")
+            .await
+            .expect_err("delete_view must error when PG is not wired");
+        assert!(
+            matches!(err, ExplorerError::FeatureDisabled(_)),
+            "expected FeatureDisabled, got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn explorer_service_pg_disabled_returns_feature_disabled_for_all_four() {
+        // Aggregate assertion: every one of the four CRUD
+        // methods returns FeatureDisabled on a default build.
+        // Companion to the per-method tests above; the per-method
+        // tests pinpoint which method regressed, this test is
+        // the spec's contractual gate.
+        let (service, _) = build_service_with_search(empty_repo(), None);
+        assert!(matches!(
+            service
+                .save_view("w", "u", "n", None, "l", "ln", "f", 0)
+                .await
+                .unwrap_err(),
+            ExplorerError::FeatureDisabled(_)
+        ));
+        assert!(matches!(
+            service.load_view("i", "w", "u").await.unwrap_err(),
+            ExplorerError::FeatureDisabled(_)
+        ));
+        assert!(matches!(
+            service.list_views("w", "u").await.unwrap_err(),
+            ExplorerError::FeatureDisabled(_)
+        ));
+        assert!(matches!(
+            service.delete_view("i", "w", "u").await.unwrap_err(),
+            ExplorerError::FeatureDisabled(_)
+        ));
     }
 
     // -----------------------------------------------------------------------

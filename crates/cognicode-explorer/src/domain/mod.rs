@@ -10,5 +10,5 @@ pub mod lenses;
 pub mod object_identity;
 pub mod views;
 
-pub use lens::{default_registry, Lens, LensContext, LensRegistry};
+pub use lens::{Lens, LensContext, LensRegistry, default_registry};
 pub use object_identity::ObjectIdentity;

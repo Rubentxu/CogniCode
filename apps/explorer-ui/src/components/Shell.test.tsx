@@ -28,7 +28,7 @@ import {
  * useReducer (not a mock) so the panels see a consistent state
  * shape and dispatching works during the test.
  */
-function ShellHarness({ viewport }: { viewport?: "small" | "tablet" | "desktop" }) {
+function ShellHarness({ viewport }: { viewport?: "small" | "tablet" | "desktop" | "ultrawide" }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
   // Provide a tiny app context value. The dispatch type is the
   // `Action` union from the reducer.
@@ -119,6 +119,37 @@ describe("Shell", () => {
       "data-viewport",
       "small",
     );
+  });
+
+  it("ultrawide viewport (>=1440) renders the InteractiveGraph 4th column", async () => {
+    render(<ShellHarness viewport="ultrawide" />);
+    // The InteractiveGraph chunk is `React.lazy`-imported and wrapped
+    // in `<Suspense>`. We accept either the resolved graph, the empty
+    // state, or the Suspense fallback as proof the 4th column is wired.
+    await waitFor(() => {
+      const hasGraph =
+        document.querySelector('[data-testid="interactive-graph"]') !== null;
+      const hasEmpty =
+        document.querySelector('[data-testid="interactive-graph-empty"]') !== null;
+      const hasLoading =
+        document.querySelector('[data-testid="interactive-graph-loading"]') !== null;
+      expect(hasGraph || hasEmpty || hasLoading).toBe(true);
+    });
+  });
+
+  it("desktop viewport does NOT render the 4th column (3-column layout kept)", () => {
+    render(<ShellHarness viewport="desktop" />);
+    expect(screen.queryByTestId("interactive-graph")).not.toBeInTheDocument();
+  });
+
+  it("tablet viewport does NOT render the 4th column", () => {
+    render(<ShellHarness viewport="tablet" />);
+    expect(screen.queryByTestId("interactive-graph")).not.toBeInTheDocument();
+  });
+
+  it("small viewport does NOT render InteractiveGraph", () => {
+    render(<ShellHarness viewport="small" />);
+    expect(screen.queryByTestId("interactive-graph")).not.toBeInTheDocument();
   });
 });
 

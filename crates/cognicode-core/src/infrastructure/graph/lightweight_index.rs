@@ -162,9 +162,7 @@ impl LightweightIndex {
 
             let file_path = path.to_string_lossy().to_string();
 
-            self.file_index
-                .entry(file_path.clone())
-                .or_default();
+            self.file_index.entry(file_path.clone()).or_default();
 
             let ts_parser = parser_cache.entry(language).or_insert_with(|| {
                 match TreeSitterParser::new(language) {
@@ -176,18 +174,15 @@ impl LightweightIndex {
             if let Ok(symbols) = ts_parser.find_all_symbols_with_path(&source, &file_path) {
                 for symbol in symbols {
                     let name_lower = symbol.name().to_lowercase();
-                    let location =
-                        SymbolLocation::from_location(symbol.location(), *symbol.kind());
+                    let location = SymbolLocation::from_location(symbol.location(), *symbol.kind());
 
                     if let Some(file_names) = self.file_index.get_mut(&file_path)
-                        && file_name_set.insert(name_lower.clone()) {
-                            file_names.push(name_lower.clone());
-                        }
+                        && file_name_set.insert(name_lower.clone())
+                    {
+                        file_names.push(name_lower.clone());
+                    }
 
-                    self.index
-                        .entry(name_lower)
-                        .or_default()
-                        .push(location);
+                    self.index.entry(name_lower).or_default().push(location);
                 }
             }
         }
@@ -210,9 +205,7 @@ impl LightweightIndex {
                 None => continue,
             };
 
-            self.file_index
-                .entry(file_path.to_string())
-                .or_default();
+            self.file_index.entry(file_path.to_string()).or_default();
 
             let ts_parser = parser_cache.entry(language).or_insert_with(|| {
                 match TreeSitterParser::new(language) {
@@ -224,18 +217,15 @@ impl LightweightIndex {
             if let Ok(symbols) = ts_parser.find_all_symbols_with_path(source, file_path) {
                 for symbol in symbols {
                     let name_lower = symbol.name().to_lowercase();
-                    let location =
-                        SymbolLocation::from_location(symbol.location(), *symbol.kind());
+                    let location = SymbolLocation::from_location(symbol.location(), *symbol.kind());
 
                     if let Some(file_names) = self.file_index.get_mut(file_path)
-                        && !file_names.contains(&name_lower) {
-                            file_names.push(name_lower.clone());
-                        }
+                        && !file_names.contains(&name_lower)
+                    {
+                        file_names.push(name_lower.clone());
+                    }
 
-                    self.index
-                        .entry(name_lower)
-                        .or_default()
-                        .push(location);
+                    self.index.entry(name_lower).or_default().push(location);
                 }
             }
         }
@@ -316,10 +306,10 @@ impl LightweightIndex {
     pub fn insert(&mut self, name: impl Into<String>, location: SymbolLocation) {
         let name_lower = name.into().to_lowercase();
         let file_path = location.file.clone();
-                    self.index
-                        .entry(name_lower.clone())
-                        .or_default()
-                        .push(location);
+        self.index
+            .entry(name_lower.clone())
+            .or_default()
+            .push(location);
         self.file_index
             .entry(file_path)
             .or_default()

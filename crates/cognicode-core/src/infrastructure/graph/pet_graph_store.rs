@@ -3,8 +3,8 @@
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::services::CycleDetectionResult;
-use crate::domain::traits::dependency_repository::DependencyError;
 use crate::domain::traits::DependencyRepository;
+use crate::domain::traits::dependency_repository::DependencyError;
 use crate::domain::value_objects::DependencyType;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -81,11 +81,12 @@ impl PetGraphStore {
 
         for node_idx in self.graph.node_indices() {
             if let Some(node_data) = self.graph.node_weight(node_idx)
-                && let Some(symbol_id_str) = self.index_to_symbol.get(&node_idx) {
-                    let mut sym = node_data.symbol.clone();
-                    sym.set_fqn_override(symbol_id_str);
-                    call_graph.add_symbol(sym);
-                }
+                && let Some(symbol_id_str) = self.index_to_symbol.get(&node_idx)
+            {
+                let mut sym = node_data.symbol.clone();
+                sym.set_fqn_override(symbol_id_str);
+                call_graph.add_symbol(sym);
+            }
         }
 
         for edge in self.graph.edge_references() {

@@ -76,9 +76,10 @@ impl MoveStrategy {
         for node_type in &node_types {
             if node.kind() == *node_type
                 && let Some(name) = self.extract_definition_name(node, source_bytes)
-                    && name == symbol_name {
-                        return Some((node.start_position(), node.end_position()));
-                    }
+                && name == symbol_name
+            {
+                return Some((node.start_position(), node.end_position()));
+            }
         }
 
         // Recurse into children
@@ -86,9 +87,9 @@ impl MoveStrategy {
             if let Some(child) = node.child(i)
                 && let Some(result) =
                     self.find_symbol_definition_node(child, source_bytes, symbol_name)
-                {
-                    return Some(result);
-                }
+            {
+                return Some(result);
+            }
         }
 
         None
@@ -104,9 +105,10 @@ impl MoveStrategy {
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
                 if (child.kind() == "identifier" || child.kind() == "type_identifier")
-                    && let Ok(text) = child.utf8_text(source_bytes) {
-                        return Some(text.to_string());
-                    }
+                    && let Ok(text) = child.utf8_text(source_bytes)
+                {
+                    return Some(text.to_string());
+                }
             }
         }
         None
@@ -170,9 +172,10 @@ impl MoveStrategy {
     ) {
         // Check for import/use declarations
         if (node.kind() == "import_statement" || node.kind() == "use_declaration")
-            && let Some(import_info) = self.extract_import_info(node, lines) {
-                imports.push(import_info);
-            }
+            && let Some(import_info) = self.extract_import_info(node, lines)
+        {
+            imports.push(import_info);
+        }
 
         // Recurse into children
         for i in 0..node.child_count() {
@@ -214,12 +217,13 @@ impl MoveStrategy {
     pub fn validate_target_location(&self, target_path: &Path) -> Result<(), RefactorError> {
         // Check if target directory exists or can be created
         if let Some(parent) = target_path.parent()
-            && !parent.exists() {
-                return Err(RefactorError::PreparationFailed(format!(
-                    "Target directory does not exist and cannot be created: {}",
-                    parent.display()
-                )));
-            }
+            && !parent.exists()
+        {
+            return Err(RefactorError::PreparationFailed(format!(
+                "Target directory does not exist and cannot be created: {}",
+                parent.display()
+            )));
+        }
 
         // Check if target file already exists
         if target_path.exists() {

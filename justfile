@@ -346,3 +346,39 @@ explorer-screenshots:
     @echo "📸 Capturing Explorer screenshots..."
     @test -d docs/explorer-ui/screenshots || mkdir -p docs/explorer-ui/screenshots
     @echo "Run 'just explorer-dev' first, then use playwright-cli to capture."
+
+# ─── PostgreSQL local dev (PR 3 of postgres-default-config) ───────────────────
+
+# Bring up a local PostgreSQL 16 instance via docker-compose, wait
+# until it accepts connections, and print the URL the explorer
+# binaries should use. Subsequent runs reuse the named volume
+# `cognicode_pg_data`, so data is preserved across restarts.
+dev-pg:
+    @echo "🐘 Starting PostgreSQL 16 (docker compose)..."
+    docker compose up -d postgres
+    @echo "⏳ Waiting for pg_isready..."
+    @for i in $(seq 1 30); do \
+        if docker compose exec -T postgres pg_isready -U cognicode -d cognicode > /dev/null 2>&1; then \
+            echo "✅ PostgreSQL is ready."; \
+            echo "DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode"; \
+            exit 0; \
+        fi; \
+        sleep 1; \
+    done; \
+    echo "❌ PostgreSQL failed to become ready in 30s"; exit 1
+
+# Run the workspace test suite with TEST_DATABASE_URL pointing at
+# the local dev stack. SQLite-only tests are not compiled (they
+# require `--features sqlite` on the explorer crate).
+test-pg:
+    @echo "🧪 Running cargo test --workspace with TEST_DATABASE_URL..."
+    @if ! docker compose exec -T postgres pg_isready -U cognicode -d cognicode > /dev/null 2>&1; then \
+        echo "❌ PostgreSQL is not running. Start it with: just dev-pg"; exit 1; \
+    fi
+    TEST_DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
+        cargo test --workspace
+
+# Tear down the local PG stack (DESTRUCTIVE — drops the volume).
+dev-pg-down:
+    @echo "🛑 Stopping PostgreSQL..."
+    docker compose down

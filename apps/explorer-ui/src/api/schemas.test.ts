@@ -390,3 +390,106 @@ describe("inspectableObjectTypeSchema", () => {
     expect(() => inspectableObjectTypeSchema.parse("alien")).toThrow();
   });
 });
+
+// ============================================================================
+// T17 — multimodal node / edge style class enums (Zod).
+// ============================================================================
+//
+// RED gate: the new 4+4 multimodal buckets are appended to the
+// existing 3+3 buckets in `schemas.ts` and the Zod enums here
+// mirror them. The string values are the wire contract from
+// `cognicode-explorer::api::style_class_for` /
+// `cognicode-explorer::api::edge_style_class_for`.
+
+import {
+  graphNodeStyleClassSchema,
+  graphEdgeStyleClassSchema,
+  nodeKindSchema,
+  edgeKindSchema,
+} from "./schemas";
+
+describe("graphNodeStyleClassSchema — T17 multimodal", () => {
+  it("accepts all 7 known node classes (3 legacy + 4 multimodal)", () => {
+    const classes = [
+      "function",
+      "module",
+      "external",
+      "node-decision",
+      "node-doc",
+      "node-issue",
+      "node-evidence",
+    ] as const;
+    for (const c of classes) {
+      expect(graphNodeStyleClassSchema.parse(c)).toBe(c);
+    }
+  });
+
+  it("rejects an unknown node class", () => {
+    expect(() => graphNodeStyleClassSchema.parse("node-unknown")).toThrow();
+  });
+
+  it("the legacy 3 buckets still parse (regression)", () => {
+    for (const c of ["function", "module", "external"] as const) {
+      expect(graphNodeStyleClassSchema.parse(c)).toBe(c);
+    }
+  });
+});
+
+describe("graphEdgeStyleClassSchema — T17 multimodal", () => {
+  it("accepts all 7 known edge classes (3 legacy + 4 multimodal)", () => {
+    const classes = [
+      "edge.calls",
+      "edge.implements",
+      "edge.uses",
+      "edge-cites",
+      "edge-justifies",
+      "edge-resolves",
+      "edge-corroborated",
+    ] as const;
+    for (const c of classes) {
+      expect(graphEdgeStyleClassSchema.parse(c)).toBe(c);
+    }
+  });
+
+  it("rejects an unknown edge class", () => {
+    expect(() => graphEdgeStyleClassSchema.parse("edge-unknown")).toThrow();
+  });
+
+  it("the legacy 3 buckets still parse (regression)", () => {
+    for (const c of ["edge.calls", "edge.implements", "edge.uses"] as const) {
+      expect(graphEdgeStyleClassSchema.parse(c)).toBe(c);
+    }
+  });
+});
+
+describe("nodeKindSchema — T17 multimodal node kinds", () => {
+  it("accepts all 5 known node kinds", () => {
+    const kinds = ["symbol", "decision", "doc", "issue", "evidence"] as const;
+    for (const k of kinds) {
+      expect(nodeKindSchema.parse(k)).toBe(k);
+    }
+  });
+
+  it("rejects an unknown kind", () => {
+    expect(() => nodeKindSchema.parse("widget")).toThrow();
+  });
+});
+
+describe("edgeKindSchema — T17 multimodal edge kinds", () => {
+  it("accepts all 5 known edge kinds", () => {
+    const kinds = [
+      "dependency",
+      "cites",
+      "justifies",
+      "resolves",
+      "corroborated_by",
+    ] as const;
+    for (const k of kinds) {
+      expect(edgeKindSchema.parse(k)).toBe(k);
+    }
+  });
+
+  it("rejects an unknown kind", () => {
+    expect(() => edgeKindSchema.parse("links_to")).toThrow();
+  });
+});

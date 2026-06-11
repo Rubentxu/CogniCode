@@ -4,7 +4,11 @@
 //! such as tree-sitter for parsing and petgraph for dependency graphs.
 
 pub mod avc;
+#[cfg(feature = "multimodal")]
+pub mod extraction;
 pub mod git;
+#[cfg(feature = "multimodal")]
+pub mod github;
 pub mod graph;
 pub mod lsp;
 pub mod mermaid;

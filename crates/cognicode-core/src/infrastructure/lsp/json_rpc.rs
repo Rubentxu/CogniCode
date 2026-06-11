@@ -142,18 +142,14 @@ impl JsonRpcTransport {
                 if line == "\r\n" || line == "\n" {
                     headers_done = true;
                 } else if let Some(len_str) = line.strip_prefix("Content-Length: ") {
-                    content_length = Some(
-                        len_str
-                            .trim()
-                            .trim_end_matches('\r')
-                            .parse()
-                            .map_err(|e: std::num::ParseIntError| {
-                                JsonRpcTransportError::Protocol(format!(
-                                    "Invalid Content-Length: {}",
-                                    e
-                                ))
-                            })?,
-                    );
+                    content_length = Some(len_str.trim().trim_end_matches('\r').parse().map_err(
+                        |e: std::num::ParseIntError| {
+                            JsonRpcTransportError::Protocol(format!(
+                                "Invalid Content-Length: {}",
+                                e
+                            ))
+                        },
+                    )?);
                 }
             }
 
@@ -240,7 +236,8 @@ mod tests {
 
     #[test]
     fn test_json_rpc_error_response() {
-        let json = r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"Invalid Request"}}"#;
+        let json =
+            r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"Invalid Request"}}"#;
         let response: JsonRpcResponse = serde_json::from_str(json).unwrap();
         assert!(response.result.is_none());
         let error = response.error.unwrap();

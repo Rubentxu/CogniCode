@@ -20,6 +20,9 @@
   },
   "dependencies": {
     "cmdk": "^1.1.1",
+    "comlink": "^4.4.2",
+    "cytoscape": "^3.34.0",
+    "elkjs": "^0.11.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "swr": "^2.4.1",
@@ -33,6 +36,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
+    "@types/cytoscape": "^3.21.9",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

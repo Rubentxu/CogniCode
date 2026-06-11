@@ -6,9 +6,13 @@
 use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::{CallGraph, Symbol, SymbolId};
+use cognicode_core::domain::value_objects::{DependencyType, Provenance};
 
 use crate::error::{ExplorerError, ExplorerResult};
-use crate::ports::symbol_repository::{GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository};
+use crate::ports::symbol_repository::{
+    EdgeWithMetadata, GraphStats, MetadataAwareRepository, RelationTarget,
+    RelationTargetWithMetadata, ResolvedSymbol, SymbolRepository,
+};
 
 /// Adapter that exposes a `CallGraph` through the explorer port.
 pub struct CallGraphRepository {
@@ -24,8 +28,21 @@ impl CallGraphRepository {
     /// to seed a graph with `add_symbol` and `add_dependency`.
     #[allow(dead_code)]
     pub(crate) fn graph_mut(&mut self) -> &mut CallGraph {
-        Arc::get_mut(&mut self.graph)
-            .expect("CallGraphRepository holds the only Arc<CallGraph>")
+        Arc::get_mut(&mut self.graph).expect("CallGraphRepository holds the only Arc<CallGraph>")
+    }
+
+    /// Direct passthrough to [`CallGraph::callees_with_metadata`].
+    ///
+    /// Used by Phase 2+ explorer consumers that need to surface edge
+    /// trust information (provenance, confidence) in the API. The
+    /// existing [`SymbolRepository::callees`] returns plain
+    /// `RelationTarget` and intentionally omits metadata to keep that
+    /// trait surface stable.
+    pub fn callees_with_metadata(
+        &self,
+        id: &SymbolId,
+    ) -> Vec<(SymbolId, DependencyType, Provenance, f64)> {
+        self.graph.callees_with_metadata(id)
     }
 
     /// Wrap an existing graph (used by `graph_mut`-style construction flows).
@@ -38,7 +55,9 @@ impl CallGraphRepository {
 
 /// Convert a `Symbol` aggregate into a `ResolvedSymbol` DTO.
 fn resolve_symbol(id: &SymbolId, graph: &CallGraph) -> Option<ResolvedSymbol> {
-    graph.get_symbol(id).map(|sym| build_resolved(id.clone(), sym))
+    graph
+        .get_symbol(id)
+        .map(|sym| build_resolved(id.clone(), sym))
 }
 
 /// Build a `ResolvedSymbol` directly from a `&Symbol` reference.
@@ -142,13 +161,82 @@ impl SymbolRepository for CallGraphRepository {
             relation_count: self.graph.edge_count(),
         }
     }
+
+    /// Downcast override — exposes this adapter as a
+    /// [`MetadataAwareRepository`] so consumers holding a
+    /// `&dyn SymbolRepository` can reach the metadata surface without
+    /// an `Any`-based downcast. Replaces the former inherent helper
+    /// (which was unreachable from a `&dyn SymbolRepository`); the
+    /// default trait method returns `None` for every other adapter
+    /// and every mock, so the view builders get a clean seam.
+    fn as_metadata_aware(&self) -> Option<&dyn MetadataAwareRepository> {
+        Some(self as &dyn MetadataAwareRepository)
+    }
+}
+
+impl MetadataAwareRepository for CallGraphRepository {
+    fn callees_with_metadata(&self, id: &SymbolId) -> Vec<RelationTargetWithMetadata> {
+        self.graph
+            .callees_with_metadata(id)
+            .into_iter()
+            .filter_map(|(target_id, dependency_type, provenance, confidence)| {
+                relation_target(&target_id, &self.graph).map(|target| RelationTargetWithMetadata {
+                    target,
+                    dependency_type,
+                    provenance,
+                    confidence,
+                })
+            })
+            .collect()
+    }
+
+    fn dependencies_with_metadata(&self, id: &SymbolId) -> Vec<RelationTargetWithMetadata> {
+        // `CallGraph::dependencies_with_metadata` returns the same shape as
+        // `callees_with_metadata` for the outgoing-edge set; the distinction
+        // is preserved at the trait level for semantic clarity.
+        self.graph
+            .dependencies_with_metadata(id)
+            .map(|(target_id, dependency_type, provenance, confidence)| {
+                let target =
+                    relation_target(target_id, &self.graph).unwrap_or_else(|| RelationTarget {
+                        id: target_id.clone(),
+                        name: String::new(),
+                        kind: cognicode_core::domain::value_objects::SymbolKind::Function,
+                        file: String::new(),
+                        line: 0,
+                        signature: None,
+                    });
+                RelationTargetWithMetadata {
+                    target,
+                    dependency_type: *dependency_type,
+                    provenance,
+                    confidence,
+                }
+            })
+            .collect()
+    }
+
+    fn edges_with_metadata(&self) -> Vec<EdgeWithMetadata> {
+        self.graph
+            .edges_with_metadata()
+            .filter_map(
+                |(source, target_id, dependency_type, provenance, confidence)| {
+                    relation_target(&target_id, &self.graph).map(|target| EdgeWithMetadata {
+                        source,
+                        target,
+                        dependency_type,
+                        provenance,
+                        confidence,
+                    })
+                },
+            )
+            .collect()
+    }
 }
 
 /// Convenience constructor used by the binary that wants to fail loudly
 /// when the graph has not been indexed yet.
-pub fn repository_from_graph(
-    graph: Option<Arc<CallGraph>>,
-) -> ExplorerResult<CallGraphRepository> {
+pub fn repository_from_graph(graph: Option<Arc<CallGraph>>) -> ExplorerResult<CallGraphRepository> {
     match graph {
         Some(g) => Ok(CallGraphRepository::new(g)),
         None => Err(ExplorerError::GraphNotReady),
@@ -169,9 +257,73 @@ mod tests {
         let sym_b = Symbol::new("beta", SymbolKind::Function, loc_b);
         let id_a = g.add_symbol(sym_a);
         let id_b = g.add_symbol(sym_b);
-        g.add_dependency(&id_a, &id_b, cognicode_core::domain::value_objects::DependencyType::Calls)
-            .expect("add dep a -> b");
+        g.add_dependency(
+            &id_a,
+            &id_b,
+            cognicode_core::domain::value_objects::DependencyType::Calls,
+        )
+        .expect("add dep a -> b");
         g
+    }
+
+    #[test]
+    fn callees_with_metadata_passthrough_returns_metadata() {
+        use cognicode_core::domain::services::ExtractionContext;
+
+        // Build a graph with edges of mixed provenance/confidence.
+        let mut g = CallGraph::new();
+        let a = g.add_symbol(Symbol::new(
+            "alpha",
+            SymbolKind::Function,
+            Location::new("src/a.rs", 1, 0),
+        ));
+        let b = g.add_symbol(Symbol::new(
+            "beta",
+            SymbolKind::Function,
+            Location::new("src/b.rs", 5, 0),
+        ));
+        let c = g.add_symbol(Symbol::new(
+            "gamma",
+            SymbolKind::Function,
+            Location::new("src/c.rs", 9, 0),
+        ));
+        g.add_dependency_with_provenance(
+            &a,
+            &b,
+            DependencyType::Calls,
+            ExtractionContext::DirectExtraction,
+        )
+        .expect("add a→b");
+        g.add_dependency_with_provenance(
+            &a,
+            &c,
+            DependencyType::Imports,
+            ExtractionContext::Heuristic { score: 0.6 },
+        )
+        .expect("add a→c");
+
+        let repo = CallGraphRepository::from_graph(g);
+        let metas = repo.callees_with_metadata(&a);
+        assert_eq!(metas.len(), 2);
+        // Every entry must have a finite, in-range confidence.
+        for (_id, _dep, _prov, conf) in &metas {
+            assert!((0.0..=1.0).contains(conf));
+            assert!(conf.is_finite());
+            assert!(!conf.is_nan());
+        }
+        // Find the heuristic edge specifically.
+        let heuristic = metas
+            .iter()
+            .find(|(_, _, prov, _)| *prov == Provenance::Inferred)
+            .expect("heuristic edge");
+        assert_eq!(heuristic.3, 0.6_f64);
+    }
+
+    #[test]
+    fn callees_with_metadata_is_empty_for_unknown_symbol() {
+        let repo = CallGraphRepository::from_graph(build_graph());
+        let unknown = SymbolId::new("src/ghost.rs:ghost:1");
+        assert!(repo.callees_with_metadata(&unknown).is_empty());
     }
 
     #[test]
@@ -225,10 +377,26 @@ mod tests {
 
     fn build_diverse_graph() -> CallGraph {
         let mut g = CallGraph::new();
-        let sym_a = Symbol::new("alpha", SymbolKind::Function, Location::new("src/a.rs", 1, 0));
-        let sym_b = Symbol::new("beta", SymbolKind::Function, Location::new("src/b.rs", 5, 0));
-        let sym_c = Symbol::new("alpha", SymbolKind::Struct, Location::new("src/c.rs", 10, 0));
-        let sym_d = Symbol::new("gamma", SymbolKind::Struct, Location::new("src/d.rs", 20, 0));
+        let sym_a = Symbol::new(
+            "alpha",
+            SymbolKind::Function,
+            Location::new("src/a.rs", 1, 0),
+        );
+        let sym_b = Symbol::new(
+            "beta",
+            SymbolKind::Function,
+            Location::new("src/b.rs", 5, 0),
+        );
+        let sym_c = Symbol::new(
+            "alpha",
+            SymbolKind::Struct,
+            Location::new("src/c.rs", 10, 0),
+        );
+        let sym_d = Symbol::new(
+            "gamma",
+            SymbolKind::Struct,
+            Location::new("src/d.rs", 20, 0),
+        );
         g.add_symbol(sym_a);
         g.add_symbol(sym_b);
         g.add_symbol(sym_c);

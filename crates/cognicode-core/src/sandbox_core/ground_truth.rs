@@ -736,21 +736,13 @@ pub fn match_usages(returned: &[ReturnedUsage], expected: &[ExpectedUsage]) -> U
     let false_negatives = missing_usages.len() as u32;
 
     let precision = if returned.is_empty() {
-        if expected.is_empty() {
-            1.0
-        } else {
-            0.0
-        }
+        if expected.is_empty() { 1.0 } else { 0.0 }
     } else {
         true_positives as f64 / returned.len() as f64
     };
 
     let recall = if expected.is_empty() {
-        if returned.is_empty() {
-            1.0
-        } else {
-            0.0
-        }
+        if returned.is_empty() { 1.0 } else { 0.0 }
     } else {
         true_positives as f64 / expected.len() as f64
     };
@@ -881,11 +873,7 @@ pub fn match_search_results(
     let false_negatives = missing_results.len() as u32;
 
     let precision = if returned.is_empty() {
-        if expected.is_empty() {
-            1.0
-        } else {
-            0.0
-        }
+        if expected.is_empty() { 1.0 } else { 0.0 }
     } else {
         true_positives as f64 / returned.len() as f64
     };
@@ -1013,21 +1001,13 @@ pub fn match_symbols(
     let false_negatives = missing_symbols.len() as u32;
 
     let precision = if returned.is_empty() {
-        if expected.is_empty() {
-            1.0
-        } else {
-            0.0
-        }
+        if expected.is_empty() { 1.0 } else { 0.0 }
     } else {
         true_positives as f64 / returned.len() as f64
     };
 
     let recall = if expected.is_empty() {
-        if returned.is_empty() {
-            1.0
-        } else {
-            0.0
-        }
+        if returned.is_empty() { 1.0 } else { 0.0 }
     } else {
         true_positives as f64 / expected.len() as f64
     };
@@ -1103,9 +1083,7 @@ fn parse_outline_nodes(value: &Value) -> Vec<OutlineNodeParsed> {
     let nodes_value = value.get("nodes").unwrap_or(value);
 
     if let Some(arr) = nodes_value.as_array() {
-        arr.iter()
-            .filter_map(parse_single_outline_node)
-            .collect()
+        arr.iter().filter_map(parse_single_outline_node).collect()
     } else {
         Vec::new()
     }
@@ -1123,11 +1101,7 @@ fn parse_single_outline_node(value: &Value) -> Option<OutlineNodeParsed> {
     let children = value
         .get("children")
         .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-            .filter_map(parse_single_outline_node)
-                .collect()
-        })
+        .map(|arr| arr.iter().filter_map(parse_single_outline_node).collect())
         .unwrap_or_default();
 
     Some(OutlineNodeParsed {
@@ -1437,9 +1411,10 @@ pub fn unwrap_response(response: &Value) -> Value {
     if let Some(content_arr) = response.get("content").and_then(|v| v.as_array()) {
         for item in content_arr {
             if let Some(text) = item.get("text").and_then(|t| t.as_str())
-                && let Ok(parsed) = serde_json::from_str::<Value>(text) {
-                    return parsed;
-                }
+                && let Ok(parsed) = serde_json::from_str::<Value>(text)
+            {
+                return parsed;
+            }
         }
     }
     // Try result.content
@@ -1447,9 +1422,10 @@ pub fn unwrap_response(response: &Value) -> Value {
         if let Some(content_arr) = result.get("content").and_then(|v| v.as_array()) {
             for item in content_arr {
                 if let Some(text) = item.get("text").and_then(|t| t.as_str())
-                    && let Ok(parsed) = serde_json::from_str::<Value>(text) {
-                        return parsed;
-                    }
+                    && let Ok(parsed) = serde_json::from_str::<Value>(text)
+                {
+                    return parsed;
+                }
             }
         }
         // result itself might be the direct response
@@ -1700,21 +1676,13 @@ pub fn match_edges(returned: &[ReturnedEdge], expected: &[ExpectedEdge]) -> Edge
     let false_negatives = missing_edges.len() as u32;
 
     let precision = if returned.is_empty() {
-        if expected.is_empty() {
-            1.0
-        } else {
-            0.0
-        }
+        if expected.is_empty() { 1.0 } else { 0.0 }
     } else {
         true_positives as f64 / returned.len() as f64
     };
 
     let recall = if expected.is_empty() {
-        if returned.is_empty() {
-            1.0
-        } else {
-            0.0
-        }
+        if returned.is_empty() { 1.0 } else { 0.0 }
     } else {
         true_positives as f64 / expected.len() as f64
     };
@@ -1786,21 +1754,13 @@ pub fn match_entry_points(
         .collect();
 
     let precision = if returned.is_empty() {
-        if expected.is_empty() {
-            1.0
-        } else {
-            0.0
-        }
+        if expected.is_empty() { 1.0 } else { 0.0 }
     } else {
         true_positives as f64 / returned.len() as f64
     };
 
     let recall = if expected.is_empty() {
-        if returned.is_empty() {
-            1.0
-        } else {
-            0.0
-        }
+        if returned.is_empty() { 1.0 } else { 0.0 }
     } else {
         true_positives as f64 / expected.len() as f64
     };
@@ -1865,21 +1825,13 @@ pub fn match_leaf_functions(
         .collect();
 
     let precision = if returned.is_empty() {
-        if expected.is_empty() {
-            1.0
-        } else {
-            0.0
-        }
+        if expected.is_empty() { 1.0 } else { 0.0 }
     } else {
         true_positives as f64 / returned.len() as f64
     };
 
     let recall = if expected.is_empty() {
-        if returned.is_empty() {
-            1.0
-        } else {
-            0.0
-        }
+        if returned.is_empty() { 1.0 } else { 0.0 }
     } else {
         true_positives as f64 / expected.len() as f64
     };
@@ -1935,11 +1887,7 @@ pub fn match_hot_paths(
     }
 
     let recall = if expected.is_empty() {
-        if returned.is_empty() {
-            1.0
-        } else {
-            0.0
-        }
+        if returned.is_empty() { 1.0 } else { 0.0 }
     } else {
         functions_found as f64 / expected.len() as f64
     };

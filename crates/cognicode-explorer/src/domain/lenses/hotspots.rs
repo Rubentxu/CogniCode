@@ -15,7 +15,9 @@
 //! Confidence is higher when quality data is present (the lens has
 //! more signals to combine).
 
-use crate::domain::lens::{cap_and_order, clamp_confidence, finding_id, severity_weight, Lens, LensContext};
+use crate::domain::lens::{
+    Lens, LensContext, cap_and_order, clamp_confidence, finding_id, severity_weight,
+};
 use crate::dto::{
     DesignFinding, FindingSeverity, InspectableObjectType, LensDescriptor, LensResult,
 };
@@ -109,10 +111,7 @@ impl Lens for HotspotsLens {
     }
 }
 
-fn symbol_risk(
-    symbol: &ResolvedSymbol,
-    ctx: &LensContext,
-) -> (f32, f32) {
+fn symbol_risk(symbol: &ResolvedSymbol, ctx: &LensContext) -> (f32, f32) {
     let fan_in = ctx.symbol_repo.fan_in(&symbol.id) as f32;
     let weighted_issues: f32 = match &ctx.quality_repo {
         Some(q) => q
@@ -148,26 +147,29 @@ fn build_symbol_finding(
          quality finding(s) at this location. Worth a closer look.",
         risk, weighted as u32
     );
-    let object_id = format!(
-        "symbol:{}:{}:{}",
-        symbol.file, symbol.name, symbol.line
-    );
+    let object_id = format!("symbol:{}:{}:{}", symbol.file, symbol.name, symbol.line);
     DesignFinding {
-        id: finding_id(LENS_ID, &format!("{}:{}:{}", symbol.file, symbol.name, symbol.line)),
+        id: finding_id(
+            LENS_ID,
+            &format!("{}:{}:{}", symbol.file, symbol.name, symbol.line),
+        ),
         lens_id: LENS_ID.into(),
-        title: format!("Hotspot: {} at {}:{}", symbol.name, symbol.file, symbol.line),
+        title: format!(
+            "Hotspot: {} at {}:{}",
+            symbol.name, symbol.file, symbol.line
+        ),
         hypothesis,
         severity,
         confidence,
         object_ids: vec![object_id],
-        evidence_ids: vec!["evidence:symbol_callgraph".into(), "evidence:symbol_quality".into()],
+        evidence_ids: vec![
+            "evidence:symbol_callgraph".into(),
+            "evidence:symbol_quality".into(),
+        ],
     }
 }
 
-fn analyse_file(
-    path: &str,
-    ctx: &LensContext,
-) -> Vec<DesignFinding> {
+fn analyse_file(path: &str, ctx: &LensContext) -> Vec<DesignFinding> {
     let symbols = ctx
         .symbol_repo
         .find_symbols_by_file(path)
@@ -223,7 +225,10 @@ fn analyse_file(
         severity: file_severity,
         confidence,
         object_ids: vec![file_object_id.clone()],
-        evidence_ids: vec!["evidence:file_overview".into(), "evidence:file_quality".into()],
+        evidence_ids: vec![
+            "evidence:file_overview".into(),
+            "evidence:file_quality".into(),
+        ],
     });
 
     // Up to 5 individual symbol findings (capped by FINDING_CAP downstream).
@@ -311,7 +316,10 @@ fn analyse_scope(scope_path: &str, ctx: &LensContext) -> Vec<DesignFinding> {
         severity: scope_severity,
         confidence,
         object_ids: vec![scope_object_id],
-        evidence_ids: vec!["evidence:scope_overview".into(), "evidence:scope_quality".into()],
+        evidence_ids: vec![
+            "evidence:scope_overview".into(),
+            "evidence:scope_quality".into(),
+        ],
     }];
 
     // Top-5 hot files, summarised.
@@ -338,7 +346,10 @@ fn analyse_scope(scope_path: &str, ctx: &LensContext) -> Vec<DesignFinding> {
             severity: sev,
             confidence: conf,
             object_ids: vec![format!("file:{file}")],
-            evidence_ids: vec!["evidence:file_overview".into(), "evidence:file_quality".into()],
+            evidence_ids: vec![
+                "evidence:file_overview".into(),
+                "evidence:file_quality".into(),
+            ],
         });
     }
 
@@ -354,8 +365,12 @@ mod tests {
     use super::*;
     use crate::adapters::FsSourceReader;
     use crate::dto::InspectableObjectType;
-    use crate::ports::symbol_repository::{GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository};
-    use crate::ports::quality_repository::{QualityIssue, QualityRepository, RuleSummary, QualityGateSummary};
+    use crate::ports::quality_repository::{
+        QualityGateSummary, QualityIssue, QualityRepository, RuleSummary,
+    };
+    use crate::ports::symbol_repository::{
+        GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
+    };
     use cognicode_core::domain::aggregates::SymbolId;
     use cognicode_core::domain::value_objects::SymbolKind;
     use std::collections::HashMap as StdHashMap;
@@ -411,20 +426,30 @@ mod tests {
         fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
             self.callers.get(id.as_str()).cloned().unwrap_or_default()
         }
-        fn callees(&self, _id: &SymbolId) -> Vec<RelationTarget> { Vec::new() }
+        fn callees(&self, _id: &SymbolId) -> Vec<RelationTarget> {
+            Vec::new()
+        }
         fn fan_in(&self, id: &SymbolId) -> usize {
             self.callers.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
         }
-        fn fan_out(&self, _id: &SymbolId) -> usize { 0 }
+        fn fan_out(&self, _id: &SymbolId) -> usize {
+            0
+        }
         fn find_symbols_by_name(&self, _name: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
             Ok(Vec::new())
         }
         fn find_symbols_by_file(&self, file: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
             Ok(self.file_symbols.get(file).cloned().unwrap_or_default())
         }
-        fn module_list(&self) -> Vec<String> { Vec::new() }
-        fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> { Ok(self.all.clone()) }
-        fn graph_stats(&self) -> GraphStats { GraphStats::default() }
+        fn module_list(&self) -> Vec<String> {
+            Vec::new()
+        }
+        fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(self.all.clone())
+        }
+        fn graph_stats(&self) -> GraphStats {
+            GraphStats::default()
+        }
     }
 
     struct MockQuality {
@@ -449,16 +474,24 @@ mod tests {
             Ok(self.by_scope.get(s).cloned().unwrap_or_default())
         }
         fn issues_at_line(&self, f: &str, l: u32) -> ExplorerResult<Vec<QualityIssue>> {
-            Ok(self.by_line.get(&(f.to_string(), l)).cloned().unwrap_or_default())
+            Ok(self
+                .by_line
+                .get(&(f.to_string(), l))
+                .cloned()
+                .unwrap_or_default())
         }
-        fn issue_by_id(&self, _id: i64) -> ExplorerResult<Option<QualityIssue>> { Ok(None) }
+        fn issue_by_id(&self, _id: i64) -> ExplorerResult<Option<QualityIssue>> {
+            Ok(None)
+        }
         fn rule_summary(&self, _r: &str) -> ExplorerResult<RuleSummary> {
             unimplemented!()
         }
         fn quality_gate(&self) -> ExplorerResult<QualityGateSummary> {
             unimplemented!()
         }
-        fn open_issues_count(&self) -> ExplorerResult<usize> { Ok(0) }
+        fn open_issues_count(&self) -> ExplorerResult<usize> {
+            Ok(0)
+        }
     }
 
     fn make_issue(file: &str, line: u32, sev: &str) -> QualityIssue {
@@ -476,14 +509,12 @@ mod tests {
 
     fn ctx_for(object_id: crate::domain::ObjectIdentity, repo: Arc<MockQuality>) -> LensContext {
         let repo_sym: Arc<dyn SymbolRepository> = Arc::new(MockRepo::new());
-        let quality: Option<Arc<dyn QualityRepository>> = if repo.by_line.is_empty()
-            && repo.by_file.is_empty()
-            && repo.by_scope.is_empty()
-        {
-            None
-        } else {
-            Some(repo as Arc<dyn QualityRepository>)
-        };
+        let quality: Option<Arc<dyn QualityRepository>> =
+            if repo.by_line.is_empty() && repo.by_file.is_empty() && repo.by_scope.is_empty() {
+                None
+            } else {
+                Some(repo as Arc<dyn QualityRepository>)
+            };
         // Wrap quality as Arc<dyn QualityRepository> only if Some
         let quality_arc: Option<Arc<dyn QualityRepository>> = quality.map(|q| {
             let arc: Arc<dyn QualityRepository> = q;
@@ -567,7 +598,10 @@ mod tests {
         assert_eq!(f.lens_id, "hotspots");
         assert!(f.hypothesis.contains("May be a risk hotspot"));
         // 5.0 → Warning (>=4.0)
-        assert!(matches!(f.severity, FindingSeverity::Warning | FindingSeverity::Critical));
+        assert!(matches!(
+            f.severity,
+            FindingSeverity::Warning | FindingSeverity::Critical
+        ));
         assert!(f.confidence > 0.7, "quality present → higher confidence");
     }
 
@@ -623,10 +657,16 @@ mod tests {
             None,
             Arc::new(FsSourceReader::new("/tmp")),
         );
-        let result = HotspotsLens.apply(&ctx).expect("ok — no quality is not an error");
+        let result = HotspotsLens
+            .apply(&ctx)
+            .expect("ok — no quality is not an error");
         assert_eq!(result.findings.len(), 1);
         // Without quality, confidence should be < 0.7.
-        assert!(result.findings[0].confidence < 0.7, "confidence lowered: {}", result.findings[0].confidence);
+        assert!(
+            result.findings[0].confidence < 0.7,
+            "confidence lowered: {}",
+            result.findings[0].confidence
+        );
     }
 
     #[test]

@@ -35,12 +35,7 @@ impl SourceReader for FsSourceReader {
         })
     }
 
-    fn read_lines(
-        &self,
-        file: &str,
-        start: u32,
-        end: u32,
-    ) -> ExplorerResult<Vec<(u32, String)>> {
+    fn read_lines(&self, file: &str, start: u32, end: u32) -> ExplorerResult<Vec<(u32, String)>> {
         let content = self.read_source(file)?;
         let mut out = Vec::new();
         if start == 0 || end == 0 || end < start {
@@ -87,7 +82,15 @@ mod tests {
 
         let reader = FsSourceReader::new(dir.path().to_path_buf());
         let lines = reader.read_lines("foo.rs", 5, 8).expect("read");
-        assert_eq!(lines, vec![(5, "line 5".into()), (6, "line 6".into()), (7, "line 7".into()), (8, "line 8".into())]);
+        assert_eq!(
+            lines,
+            vec![
+                (5, "line 5".into()),
+                (6, "line 6".into()),
+                (7, "line 7".into()),
+                (8, "line 8".into())
+            ]
+        );
     }
 
     #[test]

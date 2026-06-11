@@ -4,8 +4,8 @@
 //! and are used to incrementally update the graph instead of
 //! rebuilding it from scratch.
 
-use serde::{Deserialize, Serialize};
 use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+use serde::{Deserialize, Serialize};
 
 /// Events that represent changes to symbols in the call graph
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

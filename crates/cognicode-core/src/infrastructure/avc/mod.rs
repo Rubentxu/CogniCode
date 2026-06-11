@@ -1,7 +1,7 @@
 //! Agent-Verifiable Context (AVC) Module
 //!
 //! Structured truth contracts for AI agents.
-//! 
+//!
 //! Usage:
 //! ```rust
 //! use cognicode_core::infrastructure::avc::{AvcContract, AvcGenerator, AvcValidator};

@@ -15,6 +15,8 @@ use std::fmt;
 use crate::moldql::ast::{
     Condition, Direction, ExploreQuery, Field, FindQuery, MoldQLQuery, Op, TargetType, Value,
 };
+use crate::moldql::cursor::Cursor;
+use crate::moldql::parser_explorerql;
 
 /// Diagnostic returned by [`parse`] when the input is malformed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +27,7 @@ pub struct ParseError {
 }
 
 impl ParseError {
-    fn at(message: impl Into<String>, line: u32, column: u32) -> Self {
+    pub(crate) fn at(message: impl Into<String>, line: u32, column: u32) -> Self {
         Self {
             message: message.into(),
             line,
@@ -66,10 +68,7 @@ pub fn parse(input: &str) -> Result<MoldQLQuery, ParseError> {
     if !cursor.is_eof() {
         let (line, col) = cursor.position();
         return Err(ParseError::at(
-            format!(
-                "unexpected trailing input: `{}`",
-                cursor.remaining()
-            ),
+            format!("unexpected trailing input: `{}`", cursor.remaining()),
             line,
             col,
         ));
@@ -78,6 +77,12 @@ pub fn parse(input: &str) -> Result<MoldQLQuery, ParseError> {
 }
 
 fn parse_query(cursor: &mut Cursor<'_>) -> Result<MoldQLQuery, ParseError> {
+    // If the input starts with `(` it opens a boolean group — delegate
+    // straight to the ExplorerQL module before we look for a keyword.
+    cursor.skip_ws();
+    if cursor.peek_char() == Some('(') {
+        return parser_explorerql::parse_query_or_chain(cursor);
+    }
     let kw = cursor.peek_keyword().ok_or_else(|| {
         let (line, col) = cursor.position();
         ParseError::at("expected FIND or EXPLORE", line, col)
@@ -85,30 +90,119 @@ fn parse_query(cursor: &mut Cursor<'_>) -> Result<MoldQLQuery, ParseError> {
     match kw.to_ascii_uppercase().as_str() {
         "FIND" => {
             cursor.consume_keyword("FIND");
-            let find = parse_find_after_keyword(cursor)?;
-            Ok(MoldQLQuery::Find(find))
+            // Find body parses to a `MoldQLQuery` (not `FindQuery`) so
+            // it can wrap itself in a `Boolean` when AND / OR / NOT
+            // follows. The result is fed back into the boolean
+            // composition machinery for the rest of the chain.
+            let find_q = parse_find_body(cursor)?;
+            maybe_continue_with_boolean(cursor, find_q)
         }
         "EXPLORE" => {
             cursor.consume_keyword("EXPLORE");
-            let explore = parse_explore_after_keyword(cursor)?;
-            Ok(MoldQLQuery::Explore(explore))
+            let explore_q = parse_explore_body(cursor)?;
+            maybe_continue_with_boolean(cursor, explore_q)
         }
-        other => {
-            let (line, col) = cursor.position();
-            Err(ParseError::at(
-                format!("expected FIND or EXPLORE, found `{other}`"),
-                line,
-                col,
-            ))
+        // ExplorerQL primitives + boolean composition are handled by
+        // the dedicated module. The error message there lists all 7
+        // leading keywords, per the spec.
+        "PATH" | "NEIGHBORS" | "SUBGRAPH" | "CLUSTER" | "EXPLAIN" | "NOT" => {
+            parser_explorerql::parse_query_or_chain(cursor)
+        }
+        // Unknown keyword: forward to the new module so the error
+        // message can list all 7 leading keywords (per spec §1).
+        _other => parser_explorerql::parse_query_or_chain(cursor),
+    }
+}
+
+/// If the next token is `AND` / `OR` / `NOT` / `(`, continue the boolean
+/// chain through the ExplorerQL module. Otherwise return the query as
+/// is. This is the bridge that lets `FIND symbols AND ...` or
+/// `EXPLORE ... OR ...` produce a `MoldQLQuery::Boolean`.
+fn maybe_continue_with_boolean(
+    cursor: &mut Cursor<'_>,
+    q: MoldQLQuery,
+) -> Result<MoldQLQuery, ParseError> {
+    cursor.skip_ws();
+    if cursor.is_eof() {
+        return Ok(q);
+    }
+    if let Some(kw) = cursor.peek_keyword() {
+        let kw = kw.to_ascii_uppercase();
+        if matches!(kw.as_str(), "AND" | "OR" | "NOT") {
+            // Re-enter the boolean machinery with the existing query
+            // as the left operand. Easiest path: wrap in a temporary
+            // call by reparsing. The cleanest path is to invoke the
+            // boolean parser, but it expects to start with an atom —
+            // so we instead handle the chain inline by appending.
+            return finish_boolean_from_left(cursor, q);
         }
     }
+    if cursor.peek_char() == Some('(') {
+        return finish_boolean_from_left(cursor, q);
+    }
+    Ok(q)
+}
+
+fn finish_boolean_from_left(
+    cursor: &mut Cursor<'_>,
+    left: MoldQLQuery,
+) -> Result<MoldQLQuery, ParseError> {
+    use crate::moldql::ast::{BooleanOp, BooleanQuery};
+    cursor.skip_ws();
+    if let Some(kw) = cursor.peek_keyword() {
+        let upper = kw.to_ascii_uppercase();
+        if upper == "AND" || upper == "OR" {
+            let op = if upper == "AND" {
+                BooleanOp::And
+            } else {
+                BooleanOp::Or
+            };
+            cursor.consume_keyword(&upper);
+            cursor.skip_ws();
+            // Recurse into the explorerql chain for the right operand.
+            let right = parser_explorerql::parse_query_or_chain(cursor)?;
+            return Ok(MoldQLQuery::Boolean(BooleanQuery {
+                op,
+                operands: vec![left, right],
+            }));
+        }
+        if upper == "NOT" {
+            cursor.consume_keyword("NOT");
+            cursor.skip_ws();
+            let right = parser_explorerql::parse_atom_public(cursor)?;
+            return Ok(MoldQLQuery::Boolean(BooleanQuery {
+                op: BooleanOp::Not,
+                operands: vec![right],
+            }));
+        }
+    }
+    if cursor.peek_char() == Some('(') {
+        cursor.advance();
+        cursor.skip_ws();
+        let inner = parser_explorerql::parse_query_or_chain(cursor)?;
+        cursor.skip_ws();
+        if cursor.peek_char() != Some(')') {
+            let (line, col) = cursor.position();
+            return Err(ParseError::at(
+                "expected `)` to close boolean group",
+                line,
+                col,
+            ));
+        }
+        cursor.advance();
+        return Ok(MoldQLQuery::Boolean(BooleanQuery {
+            op: BooleanOp::And,
+            operands: vec![left, inner],
+        }));
+    }
+    Ok(left)
 }
 
 // ----------------------------------------------------------------------------
 // FIND
 // ----------------------------------------------------------------------------
 
-fn parse_find_after_keyword(cursor: &mut Cursor<'_>) -> Result<FindQuery, ParseError> {
+fn parse_find_body(cursor: &mut Cursor<'_>) -> Result<MoldQLQuery, ParseError> {
     cursor.skip_ws();
     let target = parse_target(cursor)?;
     cursor.skip_ws();
@@ -122,6 +216,17 @@ fn parse_find_after_keyword(cursor: &mut Cursor<'_>) -> Result<FindQuery, ParseE
     // them in this order, so we follow it for predictability.
     loop {
         if cursor.is_eof() {
+            break;
+        }
+        // `AND` / `OR` / `NOT` / `(` mark the end of the FIND body —
+        // boolean composition is handled by the caller (`parse_query`).
+        if let Some(kw) = cursor.peek_keyword() {
+            let upper = kw.to_ascii_uppercase();
+            if matches!(upper.as_str(), "AND" | "OR" | "NOT") {
+                break;
+            }
+        }
+        if cursor.peek_char() == Some('(') {
             break;
         }
         let next = cursor
@@ -140,11 +245,7 @@ fn parse_find_after_keyword(cursor: &mut Cursor<'_>) -> Result<FindQuery, ParseE
             "IN" => {
                 if scope.is_some() {
                     let (line, col) = cursor.position();
-                    return Err(ParseError::at(
-                        "duplicate IN SCOPE clause",
-                        line,
-                        col,
-                    ));
+                    return Err(ParseError::at("duplicate IN SCOPE clause", line, col));
                 }
                 scope = Some(parse_scope_clause(cursor)?);
             }
@@ -155,11 +256,7 @@ fn parse_find_after_keyword(cursor: &mut Cursor<'_>) -> Result<FindQuery, ParseE
             "APPLY" => {
                 if apply_lens.is_some() {
                     let (line, col) = cursor.position();
-                    return Err(ParseError::at(
-                        "duplicate APPLY clause",
-                        line,
-                        col,
-                    ));
+                    return Err(ParseError::at("duplicate APPLY clause", line, col));
                 }
                 cursor.consume_keyword("APPLY");
                 cursor.skip_ws();
@@ -169,9 +266,7 @@ fn parse_find_after_keyword(cursor: &mut Cursor<'_>) -> Result<FindQuery, ParseE
             _ => {
                 let (line, col) = cursor.position();
                 return Err(ParseError::at(
-                    format!(
-                        "expected IN, WHERE, APPLY, or end of query, found `{next}`"
-                    ),
+                    format!("expected IN, WHERE, APPLY, or end of query, found `{next}`"),
                     line,
                     col,
                 ));
@@ -180,25 +275,46 @@ fn parse_find_after_keyword(cursor: &mut Cursor<'_>) -> Result<FindQuery, ParseE
         cursor.skip_ws();
     }
 
-    Ok(FindQuery {
+    Ok(MoldQLQuery::Find(FindQuery {
         target,
         scope,
         conditions,
         apply_lens,
-    })
+    }))
 }
 
 fn parse_target(cursor: &mut Cursor<'_>) -> Result<TargetType, ParseError> {
-    let raw = parse_identifier(cursor, "target type (symbols|files|scopes|issues)")?;
+    // Build the keyword list at compile time so the error message
+    // (and the parse_identifier hint) include the multimodal
+    // targets when the feature is on. T20.
+    let valid_keywords: &[&str] = &[
+        TargetType::Symbols.keyword(),
+        TargetType::Files.keyword(),
+        TargetType::Scopes.keyword(),
+        TargetType::Issues.keyword(),
+        #[cfg(feature = "multimodal")]
+        TargetType::Decisions.keyword(),
+        #[cfg(feature = "multimodal")]
+        TargetType::Docs.keyword(),
+    ];
+    let what = format!("target type ({})", valid_keywords.join("|"));
+    let raw = parse_identifier(cursor, &what)?;
     match raw.to_ascii_lowercase().as_str() {
         "symbols" => Ok(TargetType::Symbols),
         "files" => Ok(TargetType::Files),
         "scopes" => Ok(TargetType::Scopes),
         "issues" => Ok(TargetType::Issues),
+        #[cfg(feature = "multimodal")]
+        "decisions" => Ok(TargetType::Decisions),
+        #[cfg(feature = "multimodal")]
+        "docs" => Ok(TargetType::Docs),
         other => {
             let (line, col) = cursor.position();
             Err(ParseError::at(
-                format!("unknown target type `{other}` — expected symbols, files, scopes, or issues"),
+                format!(
+                    "unknown target type `{other}` — expected {}",
+                    valid_keywords.join(", ")
+                ),
                 line,
                 col,
             ))
@@ -343,15 +459,17 @@ fn parse_value(cursor: &mut Cursor<'_>) -> Option<Value> {
 ///
 /// Stops at whitespace, EOF, the operator characters, or `"`. Returns
 /// `None` for an empty token.
-fn parse_value_word(cursor: &mut Cursor<'_>) -> Option<Value> {
+pub(crate) fn parse_value_word(cursor: &mut Cursor<'_>) -> Option<Value> {
     let start = cursor.index;
     while let Some(c) = cursor.peek_char() {
         if c.is_whitespace() {
             break;
         }
         // Stop at operator start chars so `kind = "Function"` parses as
-        // `kind`, then `=`, then `"Function"`.
-        if matches!(c, '>' | '<' | '=' | '!' | '~' | '"') {
+        // `kind`, then `=`, then `"Function"`. Also stop at parens so
+        // a value never eats a `(` / `)` that's a boolean group
+        // boundary.
+        if matches!(c, '>' | '<' | '=' | '!' | '~' | '"' | '(' | ')') {
             break;
         }
         cursor.advance();
@@ -386,9 +504,7 @@ fn parse_identifier(cursor: &mut Cursor<'_>, what: &str) -> Result<String, Parse
 // EXPLORE
 // ----------------------------------------------------------------------------
 
-fn parse_explore_after_keyword(
-    cursor: &mut Cursor<'_>,
-) -> Result<ExploreQuery, ParseError> {
+fn parse_explore_body(cursor: &mut Cursor<'_>) -> Result<MoldQLQuery, ParseError> {
     cursor.skip_ws();
     let object_ref = parse_value_word(cursor)
         .map(|v| match v {
@@ -397,15 +513,19 @@ fn parse_explore_after_keyword(
         })
         .ok_or_else(|| {
             let (line, col) = cursor.position();
-            ParseError::at("expected object_ref (e.g. symbol:src/main.rs:main:1)", line, col)
+            ParseError::at(
+                "expected object_ref (e.g. symbol:src/main.rs:main:1)",
+                line,
+                col,
+            )
         })?;
     cursor.skip_ws();
     parse_through_clause(cursor)?;
-    Ok(ExploreQuery {
+    Ok(MoldQLQuery::Explore(ExploreQuery {
         object_ref,
         direction: parse_direction_after_through(cursor)?,
         depth: parse_depth_after_direction(cursor)?,
-    })
+    }))
 }
 
 fn parse_through_clause(cursor: &mut Cursor<'_>) -> Result<(), ParseError> {
@@ -495,126 +615,6 @@ fn parse_depth_after_direction(cursor: &mut Cursor<'_>) -> Result<u32, ParseErro
 }
 
 // ============================================================================
-// Cursor
-// ============================================================================
-
-/// Single-pass byte cursor. Tracks `index` into `input` and recomputes
-/// 1-based `line` / `column` on demand.
-struct Cursor<'a> {
-    input: &'a str,
-    index: usize,
-}
-
-impl<'a> Cursor<'a> {
-    fn new(input: &'a str) -> Self {
-        Self { input, index: 0 }
-    }
-
-    fn is_eof(&self) -> bool {
-        self.index >= self.input.len()
-    }
-
-    fn peek_char(&self) -> Option<char> {
-        self.input[self.index..].chars().next()
-    }
-
-    fn peek_char_at(&self, offset: usize) -> Option<char> {
-        self.input[self.index..].chars().nth(offset)
-    }
-
-    fn advance(&mut self) {
-        if let Some(c) = self.peek_char() {
-            self.index += c.len_utf8();
-        }
-    }
-
-    fn advance_by(&mut self, chars: usize) {
-        for _ in 0..chars {
-            self.advance();
-        }
-    }
-
-    fn skip_ws(&mut self) {
-        while let Some(c) = self.peek_char() {
-            if c.is_whitespace() {
-                self.advance();
-            } else {
-                break;
-            }
-        }
-    }
-
-    /// Read a keyword (whitespace-delimited, stops at operator chars
-    /// and dots) and rewind — only the peek is non-destructive. The
-    /// caller uses [`Self::consume_keyword`] to actually advance.
-    fn peek_keyword(&self) -> Option<String> {
-        let mut temp = Cursor {
-            input: self.input,
-            index: self.index,
-        };
-        temp.skip_ws();
-        let start = temp.index;
-        while let Some(c) = temp.peek_char() {
-            if c.is_whitespace() || matches!(c, '>' | '<' | '=' | '!' | '~' | '"' | '.') {
-                break;
-            }
-            temp.advance();
-        }
-        if temp.index == start {
-            return None;
-        }
-        Some(temp.input[start..temp.index].to_string())
-    }
-
-    /// Advance past `keyword` (case-insensitive) and the trailing
-    /// whitespace. Panics if the keyword does not match the current
-    /// token — callers must check with `peek_keyword` first.
-    fn consume_keyword(&mut self, keyword: &str) {
-        self.skip_ws();
-        let start = self.index;
-        while let Some(c) = self.peek_char() {
-            if c.is_whitespace() || matches!(c, '>' | '<' | '=' | '!' | '~' | '"' | '.') {
-                break;
-            }
-            self.advance();
-        }
-        let raw = &self.input[start..self.index];
-        debug_assert!(
-            raw.eq_ignore_ascii_case(keyword),
-            "consume_keyword({keyword}) on `{raw}`"
-        );
-        self.skip_ws();
-    }
-
-    /// (line, column) for the current index. 1-based.
-    fn position(&self) -> (u32, u32) {
-        let mut line: u32 = 1;
-        let mut col: u32 = 1;
-        for (i, c) in self.input.char_indices() {
-            if i >= self.index {
-                break;
-            }
-            if c == '\n' {
-                line += 1;
-                col = 1;
-            } else {
-                col += 1;
-            }
-        }
-        (line, col)
-    }
-
-    /// Remaining input for diagnostic messages. Clipped to 32 chars.
-    fn remaining(&self) -> String {
-        let s: String = self.input[self.index..]
-            .chars()
-            .take(32)
-            .collect();
-        s
-    }
-}
-
-// ============================================================================
 // Tests
 // ============================================================================
 
@@ -652,7 +652,9 @@ mod tests {
     #[test]
     fn find_with_where_numeric() {
         let q = parse_ok("FIND symbols WHERE fan_in > 5");
-        let MoldQLQuery::Find(f) = q else { panic!("expected Find") };
+        let MoldQLQuery::Find(f) = q else {
+            panic!("expected Find")
+        };
         assert_eq!(f.target, TargetType::Symbols);
         assert_eq!(f.conditions.len(), 1);
         let c = &f.conditions[0];
@@ -664,7 +666,9 @@ mod tests {
     #[test]
     fn find_with_in_scope() {
         let q = parse_ok("FIND files IN SCOPE src");
-        let MoldQLQuery::Find(f) = q else { panic!("expected Find") };
+        let MoldQLQuery::Find(f) = q else {
+            panic!("expected Find")
+        };
         assert_eq!(f.target, TargetType::Files);
         assert_eq!(f.scope.as_deref(), Some("src"));
         assert!(f.conditions.is_empty());
@@ -675,17 +679,16 @@ mod tests {
         let q = parse_ok(
             "FIND symbols IN SCOPE src WHERE kind = \"Function\" AND fan_out < 3 APPLY hotspots",
         );
-        let MoldQLQuery::Find(f) = q else { panic!("expected Find") };
+        let MoldQLQuery::Find(f) = q else {
+            panic!("expected Find")
+        };
         assert_eq!(f.target, TargetType::Symbols);
         assert_eq!(f.scope.as_deref(), Some("src"));
         assert_eq!(f.conditions.len(), 2);
         assert_eq!(f.apply_lens.as_deref(), Some("hotspots"));
         assert_eq!(f.conditions[0].field.parts, vec!["kind".to_string()]);
         assert_eq!(f.conditions[0].op, Op::Eq);
-        assert_eq!(
-            f.conditions[0].value,
-            Value::String("Function".to_string())
-        );
+        assert_eq!(f.conditions[0].value, Value::String("Function".to_string()));
         assert_eq!(f.conditions[1].field.parts, vec!["fan_out".to_string()]);
         assert_eq!(f.conditions[1].op, Op::Lt);
         assert_eq!(f.conditions[1].value, Value::Number(3.0));
@@ -694,9 +697,14 @@ mod tests {
     #[test]
     fn find_quality_dotted_field() {
         let q = parse_ok("FIND files WHERE quality.critical > 0");
-        let MoldQLQuery::Find(f) = q else { panic!("expected Find") };
+        let MoldQLQuery::Find(f) = q else {
+            panic!("expected Find")
+        };
         let c = &f.conditions[0];
-        assert_eq!(c.field.parts, vec!["quality".to_string(), "critical".to_string()]);
+        assert_eq!(
+            c.field.parts,
+            vec!["quality".to_string(), "critical".to_string()]
+        );
         assert_eq!(c.op, Op::Gt);
         assert_eq!(c.value, Value::Number(0.0));
     }
@@ -713,7 +721,9 @@ mod tests {
             ("FIND symbols WHERE name ~ \"main\"", Op::Contains),
         ] {
             let q = parse_ok(input);
-            let MoldQLQuery::Find(f) = q else { panic!("expected Find for `{input}`") };
+            let MoldQLQuery::Find(f) = q else {
+                panic!("expected Find for `{input}`")
+            };
             assert_eq!(f.conditions[0].op, expected, "operator for `{input}`");
         }
     }
@@ -721,18 +731,19 @@ mod tests {
     #[test]
     fn find_issues_target() {
         let q = parse_ok("FIND issues WHERE severity = \"Critical\"");
-        let MoldQLQuery::Find(f) = q else { panic!("expected Find") };
+        let MoldQLQuery::Find(f) = q else {
+            panic!("expected Find")
+        };
         assert_eq!(f.target, TargetType::Issues);
-        assert_eq!(
-            f.conditions[0].value,
-            Value::String("Critical".to_string())
-        );
+        assert_eq!(f.conditions[0].value, Value::String("Critical".to_string()));
     }
 
     #[test]
     fn find_unquoted_string_value() {
         let q = parse_ok("FIND symbols WHERE kind = Function");
-        let MoldQLQuery::Find(f) = q else { panic!("expected Find") };
+        let MoldQLQuery::Find(f) = q else {
+            panic!("expected Find")
+        };
         assert_eq!(f.conditions[0].value, Value::String("Function".to_string()));
     }
 
@@ -741,7 +752,9 @@ mod tests {
     #[test]
     fn explore_callers() {
         let q = parse_ok("EXPLORE symbol:src/main.rs:main:1 THROUGH callers DEPTH 3");
-        let MoldQLQuery::Explore(e) = q else { panic!("expected Explore") };
+        let MoldQLQuery::Explore(e) = q else {
+            panic!("expected Explore")
+        };
         assert_eq!(e.object_ref, "symbol:src/main.rs:main:1");
         assert_eq!(e.direction, Direction::Callers);
         assert_eq!(e.depth, 3);
@@ -750,7 +763,9 @@ mod tests {
     #[test]
     fn explore_callees() {
         let q = parse_ok("EXPLORE symbol:src/main.rs:main:1 THROUGH callees DEPTH 1");
-        let MoldQLQuery::Explore(e) = q else { panic!("expected Explore") };
+        let MoldQLQuery::Explore(e) = q else {
+            panic!("expected Explore")
+        };
         assert_eq!(e.direction, Direction::Callees);
         assert_eq!(e.depth, 1);
     }
@@ -758,7 +773,9 @@ mod tests {
     #[test]
     fn explore_depth_zero() {
         let q = parse_ok("EXPLORE symbol:src/main.rs:main:1 THROUGH callers DEPTH 0");
-        let MoldQLQuery::Explore(e) = q else { panic!("expected Explore") };
+        let MoldQLQuery::Explore(e) = q else {
+            panic!("expected Explore")
+        };
         assert_eq!(e.depth, 0);
     }
 
@@ -767,7 +784,9 @@ mod tests {
     #[test]
     fn case_insensitive_keywords() {
         let q = parse_ok("find SYMBOLS where fan_in > 5");
-        let MoldQLQuery::Find(f) = q else { panic!("expected Find") };
+        let MoldQLQuery::Find(f) = q else {
+            panic!("expected Find")
+        };
         assert_eq!(f.target, TargetType::Symbols);
         assert_eq!(f.conditions[0].op, Op::Gt);
     }
@@ -782,8 +801,14 @@ mod tests {
 
     #[test]
     fn unknown_leading_keyword_errors() {
+        // ExplorerQL: the error now lists all 7 leading keywords, per
+        // the spec. The legacy "FIND or EXPLORE" substring is still
+        // present, but the canonical assertion checks the full set.
         let e = parse_err("FOO symbols");
-        assert!(e.message.contains("FIND or EXPLORE"));
+        assert!(e.message.contains("FIND"), "got: {}", e.message);
+        assert!(e.message.contains("EXPLORE"), "got: {}", e.message);
+        assert!(e.message.contains("PATH"), "got: {}", e.message);
+        assert!(e.message.contains("NEIGHBORS"), "got: {}", e.message);
     }
 
     #[test]

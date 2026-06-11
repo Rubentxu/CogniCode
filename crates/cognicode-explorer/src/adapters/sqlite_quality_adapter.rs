@@ -91,9 +91,7 @@ impl QualityRepository for SqliteQualityAdapter {
         let rows = stmt
             .query_map([file], row_to_issue)
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!(e)))?;
-        let mut out: Vec<QualityIssue> = rows
-            .filter_map(|r| r.ok())
-            .collect();
+        let mut out: Vec<QualityIssue> = rows.filter_map(|r| r.ok()).collect();
         // Defensive stable sort — the DB already orders by (line, id)
         // but we re-sort here so the public contract is testable.
         out.sort_by(|a, b| a.line.cmp(&b.line).then_with(|| a.id.cmp(&b.id)));
@@ -262,11 +260,56 @@ mod tests {
 
         let issues: &[(i64, &str, &str, &str, &str, i64, &str, &str)] = &[
             // (run_id, rule_id, severity, category, file_path, line, message, status)
-            (run_id, "rust:S100", "Blocker", "Naming", "src/foo.rs", 10, "rename `Foo` to snake_case", "open"),
-            (run_id, "rust:S101", "Critical", "Complexity", "src/foo.rs", 20, "function too long", "open"),
-            (run_id, "rust:S102", "Minor", "Style", "src/foo.rs", 30, "missing docs", "fixed"),
-            (run_id, "rust:S100", "Blocker", "Naming", "src/bar/baz.rs", 5, "rename `Baz` to snake_case", "open"),
-            (run_id, "rust:S200", "Major", "Bug", "src/bar/baz.rs", 15, "off-by-one", "open"),
+            (
+                run_id,
+                "rust:S100",
+                "Blocker",
+                "Naming",
+                "src/foo.rs",
+                10,
+                "rename `Foo` to snake_case",
+                "open",
+            ),
+            (
+                run_id,
+                "rust:S101",
+                "Critical",
+                "Complexity",
+                "src/foo.rs",
+                20,
+                "function too long",
+                "open",
+            ),
+            (
+                run_id,
+                "rust:S102",
+                "Minor",
+                "Style",
+                "src/foo.rs",
+                30,
+                "missing docs",
+                "fixed",
+            ),
+            (
+                run_id,
+                "rust:S100",
+                "Blocker",
+                "Naming",
+                "src/bar/baz.rs",
+                5,
+                "rename `Baz` to snake_case",
+                "open",
+            ),
+            (
+                run_id,
+                "rust:S200",
+                "Major",
+                "Bug",
+                "src/bar/baz.rs",
+                15,
+                "off-by-one",
+                "open",
+            ),
         ];
         for (run_id, rule_id, severity, category, file_path, line, message, status) in issues {
             conn.execute(
@@ -308,8 +351,7 @@ mod tests {
 
     #[test]
     fn missing_db_returns_empty_for_all_methods() {
-        let adapter =
-            SqliteQualityAdapter::new("/tmp/__definitely_missing_quality__.db");
+        let adapter = SqliteQualityAdapter::new("/tmp/__definitely_missing_quality__.db");
         assert!(adapter.issues_for_file("src/foo.rs").unwrap().is_empty());
         assert!(adapter.issues_for_scope("src").unwrap().is_empty());
         assert!(adapter.issues_at_line("src/foo.rs", 10).unwrap().is_empty());
@@ -328,7 +370,11 @@ mod tests {
         let path = temp_db_path();
         let adapter = SqliteQualityAdapter::new(path);
         let issues = adapter.issues_for_file("src/foo.rs").expect("ok");
-        assert_eq!(issues.len(), 3, "expected 3 issues in src/foo.rs, got {issues:?}");
+        assert_eq!(
+            issues.len(),
+            3,
+            "expected 3 issues in src/foo.rs, got {issues:?}"
+        );
         for i in &issues {
             assert_eq!(i.file, "src/foo.rs");
         }
@@ -343,7 +389,11 @@ mod tests {
         let adapter = SqliteQualityAdapter::new(path);
         // "src" matches src/foo.rs (prefix), src/bar/baz.rs (prefix)
         let issues = adapter.issues_for_scope("src").expect("ok");
-        assert_eq!(issues.len(), 5, "all 5 issues live under src/, got {issues:?}");
+        assert_eq!(
+            issues.len(),
+            5,
+            "all 5 issues live under src/, got {issues:?}"
+        );
         let files: std::collections::BTreeSet<&str> =
             issues.iter().map(|i| i.file.as_str()).collect();
         assert!(files.contains("src/foo.rs"));

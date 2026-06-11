@@ -4,6 +4,13 @@
 //!
 //! To run: `cargo test -p cognicode-explorer --test integration`
 //! To skip: leave `.cognicode/cognicode.db` absent in the workspace.
+//!
+//! File-level feature gate (`postgres-default-config` PR 1): when the
+//! `sqlite` feature is disabled on `cognicode-explorer`, this entire
+//! test file is excluded from the build (the `SqliteGraphStore` it
+//! depends on does not exist). Use
+//! `cargo test -p cognicode-explorer --features sqlite` to opt in.
+#![cfg(feature = "sqlite")]
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -21,7 +28,11 @@ use cognicode_explorer::service::ExplorerService;
 /// skip in either case.
 fn build_service_from_workspace_db() -> Option<(ExplorerService, Arc<CallGraph>)> {
     let db_path = workspace_db()?;
-    let cwd = db_path.parent().and_then(|p| p.parent()).unwrap().to_path_buf();
+    let cwd = db_path
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap()
+        .to_path_buf();
 
     let store = SqliteGraphStore::open(&db_path).ok()?;
     let graph = store.load_graph().ok()?;
@@ -65,11 +76,19 @@ fn inspect_object_against_real_db_returns_summary() {
         .symbol_ids()
         .next()
         .expect("at least one symbol indexed");
-    let mvp_id = format!("symbol:{}:{}:{}", first.1.location().file(), first.1.name(), first.1.location().line());
+    let mvp_id = format!(
+        "symbol:{}:{}:{}",
+        first.1.location().file(),
+        first.1.name(),
+        first.1.location().line()
+    );
 
     let summary = service.inspect_object(&mvp_id).expect("inspect_object ok");
     assert_eq!(summary.id, mvp_id);
-    assert!(!summary.available_views.is_empty(), "should expose at least 1 view");
+    assert!(
+        !summary.available_views.is_empty(),
+        "should expose at least 1 view"
+    );
 }
 
 #[test]
@@ -83,7 +102,12 @@ fn contextual_view_evidence_returns_evidence_blocks() {
         .symbol_ids()
         .next()
         .expect("at least one symbol indexed");
-    let mvp_id = format!("symbol:{}:{}:{}", first.1.location().file(), first.1.name(), first.1.location().line());
+    let mvp_id = format!(
+        "symbol:{}:{}:{}",
+        first.1.location().file(),
+        first.1.name(),
+        first.1.location().line()
+    );
 
     let view = service
         .contextual_view(&mvp_id, "evidence")
@@ -241,7 +265,10 @@ fn spotter_search_kind_filter() {
     for r in &matched {
         let label = format!("{} ", kind_name);
         assert!(
-            r.object.subtitle.to_lowercase().contains(&kind_name.to_lowercase()),
+            r.object
+                .subtitle
+                .to_lowercase()
+                .contains(&kind_name.to_lowercase()),
             "result subtitle {:?} should mention kind {kind_name:?}",
             r.object.subtitle
         );
@@ -296,7 +323,9 @@ fn workspace_summary_has_stats() {
 // ---------------------------------------------------------------------------
 
 use cognicode_explorer::adapters::Fts5SearchAdapter;
-use cognicode_explorer::dto::{ArtifactFormat, ExplorationColumn, GenerateArtifactRequest, SaveExplorationRequest};
+use cognicode_explorer::dto::{
+    ArtifactFormat, ExplorationColumn, GenerateArtifactRequest, SaveExplorationRequest,
+};
 use cognicode_explorer::ports::search_repository::SearchRepository;
 
 #[test]
@@ -322,13 +351,18 @@ fn save_exploration_round_trips_via_generate_artifact() {
     let Some((mut service, graph_arc)) = (|| -> Option<(ExplorerService, Arc<CallGraph>)> {
         // Build with FTS5 wired in when the DB exists.
         let db_path = workspace_db()?;
-        let cwd = db_path.parent().and_then(|p| p.parent()).unwrap().to_path_buf();
+        let cwd = db_path
+            .parent()
+            .and_then(|p| p.parent())
+            .unwrap()
+            .to_path_buf();
         let store = SqliteGraphStore::open(&db_path).ok()?;
         let graph = store.load_graph().ok()??;
         let graph_arc = Arc::new(graph);
         let repo: Arc<dyn SymbolRepository> = Arc::new(CallGraphRepository::new(graph_arc.clone()));
         let reader = Arc::new(FsSourceReader::new(cwd.clone()));
-        let fts5: Option<Arc<dyn cognicode_explorer::ports::SearchRepository>> = Some(Arc::new(Fts5SearchAdapter::new(db_path)));
+        let fts5: Option<Arc<dyn cognicode_explorer::ports::SearchRepository>> =
+            Some(Arc::new(Fts5SearchAdapter::new(db_path)));
         let service = ExplorerService::with_search(repo, reader, cwd.clone(), fts5);
         Some((service, graph_arc))
     })() else {
@@ -385,7 +419,11 @@ fn save_exploration_round_trips_via_generate_artifact() {
         .expect("generate_artifact ok");
     let body: serde_json::Value = serde_json::from_str(&summary.content).expect("valid json");
     let objects = body["objects"].as_array().expect("objects array");
-    assert_eq!(objects.len(), 1, "JSON replay must include the resolved object");
+    assert_eq!(
+        objects.len(),
+        1,
+        "JSON replay must include the resolved object"
+    );
     assert_eq!(objects[0]["id"], mvp_id);
     assert_eq!(objects[0]["object_type"], "symbol");
 }
@@ -451,7 +489,11 @@ fn inspect_file_against_real_db_returns_file_summary() {
     let summary = service.inspect_object(&mvp_id).expect("file inspect ok");
     assert_eq!(summary.id, mvp_id);
     assert!(matches!(summary.object_type, InspectableObjectType::File));
-    let ids: Vec<&str> = summary.available_views.iter().map(|v| v.id.as_str()).collect();
+    let ids: Vec<&str> = summary
+        .available_views
+        .iter()
+        .map(|v| v.id.as_str())
+        .collect();
     assert_eq!(ids, vec!["overview", "symbols", "quality"]);
     // Must carry the path / counts in properties.
     let keys: std::collections::HashSet<&str> =
@@ -480,7 +522,11 @@ fn inspect_scope_against_real_db_returns_scope_summary() {
     let summary = service.inspect_object(&mvp_id).expect("scope inspect ok");
     assert_eq!(summary.id, mvp_id);
     assert!(matches!(summary.object_type, InspectableObjectType::Scope));
-    let ids: Vec<&str> = summary.available_views.iter().map(|v| v.id.as_str()).collect();
+    let ids: Vec<&str> = summary
+        .available_views
+        .iter()
+        .map(|v| v.id.as_str())
+        .collect();
     assert_eq!(ids, vec!["overview", "dependencies", "hotspots", "quality"]);
     // `promotion_ready` is always `false` in Phase 2.
     let promotion = summary
@@ -546,8 +592,10 @@ fn contextual_view_scope_hotspots_against_real_db() {
     // vec is non-empty when the scope has at least one member symbol.
     let member_count = graph_arc
         .symbol_ids()
-        .filter(|(_, s)| s.location().file().starts_with(&format!("{first_module}/"))
-            || s.location().file() == first_module)
+        .filter(|(_, s)| {
+            s.location().file().starts_with(&format!("{first_module}/"))
+                || s.location().file() == first_module
+        })
         .count();
     if member_count > 0 {
         assert!(!view.relations.is_empty());
@@ -570,7 +618,11 @@ fn inspect_issue_against_real_db_returns_summary() {
         return;
     };
     let db_path = _db;
-    let cwd = db_path.parent().and_then(|p| p.parent()).unwrap().to_path_buf();
+    let cwd = db_path
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap()
+        .to_path_buf();
 
     // Build a service that also has the quality backend wired. The
     // service does NOT need a graph blob for issue/rule inspection —
@@ -609,7 +661,11 @@ fn inspect_issue_against_real_db_returns_summary() {
         summary.object_type,
         cognicode_explorer::dto::InspectableObjectType::QualityIssue
     ));
-    let ids: Vec<&str> = summary.available_views.iter().map(|v| v.id.as_str()).collect();
+    let ids: Vec<&str> = summary
+        .available_views
+        .iter()
+        .map(|v| v.id.as_str())
+        .collect();
     assert_eq!(ids, vec!["overview"]);
 }
 
@@ -620,7 +676,11 @@ fn inspect_rule_against_real_db_returns_summary() {
         return;
     };
     let db_path = _db;
-    let cwd = db_path.parent().and_then(|p| p.parent()).unwrap().to_path_buf();
+    let cwd = db_path
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap()
+        .to_path_buf();
 
     let store = SqliteGraphStore::open(&db_path).expect("open db");
     let graph = store.load_graph().ok().flatten().unwrap_or_default();
@@ -650,7 +710,11 @@ fn inspect_rule_against_real_db_returns_summary() {
         summary.object_type,
         cognicode_explorer::dto::InspectableObjectType::Rule
     ));
-    let ids: Vec<&str> = summary.available_views.iter().map(|v| v.id.as_str()).collect();
+    let ids: Vec<&str> = summary
+        .available_views
+        .iter()
+        .map(|v| v.id.as_str())
+        .collect();
     assert_eq!(ids, vec!["overview"]);
 }
 
@@ -661,7 +725,11 @@ fn available_views_includes_quality_for_symbol_file_scope() {
         return;
     };
     let db_path = _db;
-    let cwd = db_path.parent().and_then(|p| p.parent()).unwrap().to_path_buf();
+    let cwd = db_path
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap()
+        .to_path_buf();
 
     let store = SqliteGraphStore::open(&db_path).expect("open db");
     let graph = match store.load_graph().ok().flatten() {
@@ -687,15 +755,17 @@ fn available_views_includes_quality_for_symbol_file_scope() {
         first_sym.1.name(),
         first_sym.1.location().line()
     );
-    let first_module = graph.modules().into_iter().next().expect("at least one module");
+    let first_module = graph
+        .modules()
+        .into_iter()
+        .next()
+        .expect("at least one module");
     let scope_mvp = format!("scope:{first_module}");
     let file_mvp = format!("file:{}", first_sym.1.location().file());
 
     // Each of the three must include "quality" in their descriptor list.
     for mvp in [&sym_mvp, &file_mvp, &scope_mvp] {
-        let views = service
-            .available_views(mvp)
-            .expect("available_views ok");
+        let views = service.available_views(mvp).expect("available_views ok");
         let ids: Vec<&str> = views.iter().map(|v| v.id.as_str()).collect();
         assert!(
             ids.contains(&"quality"),
@@ -711,7 +781,11 @@ fn contextual_view_quality_against_real_db_returns_view() {
         return;
     };
     let db_path = _db;
-    let cwd = db_path.parent().and_then(|p| p.parent()).unwrap().to_path_buf();
+    let cwd = db_path
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap()
+        .to_path_buf();
 
     let store = SqliteGraphStore::open(&db_path).expect("open db");
     let graph = match store.load_graph().ok().flatten() {
@@ -745,7 +819,10 @@ fn contextual_view_quality_against_real_db_returns_view() {
         .contextual_view(&mvp, "quality")
         .expect("quality view ok");
     assert_eq!(view.view_id, "quality");
-    assert!(!view.evidence.is_empty(), "quality view must carry evidence");
+    assert!(
+        !view.evidence.is_empty(),
+        "quality view must carry evidence"
+    );
     assert_eq!(view.evidence[0].kind, "quality_finding");
 }
 
@@ -817,7 +894,10 @@ fn apply_hotspots_lens_to_real_symbol_returns_lens_result() {
     assert_eq!(result.lens_id, "hotspots");
     // The result shape is correct even when zero findings — a real symbol
     // may not be a hotspot.
-    assert!(result.findings.len() <= 20, "must respect the 20-finding cap");
+    assert!(
+        result.findings.len() <= 20,
+        "must respect the 20-finding cap"
+    );
     // Every finding, if any, carries the lens id and a hypothesis string.
     for f in &result.findings {
         assert_eq!(f.lens_id, "hotspots");
@@ -919,8 +999,9 @@ fn apply_unknown_lens_returns_resolution_failed() {
 /// construct it through the public API.
 #[test]
 fn mcp_handler_re_exported_from_lib_root() {
-    let _constructor: fn(std::sync::Arc<cognicode_explorer::service::ExplorerService>) -> cognicode_explorer::ExplorerMcpHandler =
-        cognicode_explorer::ExplorerMcpHandler::new;
+    let _constructor: fn(
+        std::sync::Arc<cognicode_explorer::service::ExplorerService>,
+    ) -> cognicode_explorer::ExplorerMcpHandler = cognicode_explorer::ExplorerMcpHandler::new;
 }
 
 /// The MCP server's binary target must link successfully. Cargo's test
@@ -947,15 +1028,22 @@ fn mcp_binary_link_artifact_resolves() {
     );
 }
 
-/// The tool name constants must be exactly the eight names the spec
-/// promises. Regression guard: any rename in `src/mcp.rs` is flagged
-/// here so a downstream agent harness never silently breaks.
+/// The tool name constants must match the canonical list shipped in
+/// `src/mcp.rs::TOOL_NAMES` — the count includes the 4 named-views
+/// tools (`view_save` / `view_load` / `view_list` / `view_delete`)
+/// that landed after this test was first written. Regression guard:
+/// any rename in `src/mcp.rs` is flagged here so a downstream agent
+/// harness never silently breaks.
 #[test]
 fn mcp_tool_names_match_spec() {
     use cognicode_explorer::mcp::{
-        TOOL_APPLY_LENS, TOOL_GET_LENSES, TOOL_GET_VIEW, TOOL_GET_VIEWS,
-        TOOL_INSPECT_OBJECT, TOOL_OPEN_WORKSPACE, TOOL_QUERY_MOLDQL,
-        TOOL_SPOTTER_SEARCH,
+        TOOL_APPLY_LENS, TOOL_ASK, TOOL_BRAIN_ASK, TOOL_BRAIN_ATTACH, TOOL_BRAIN_CLOSE,
+        TOOL_BRAIN_FOCUS, TOOL_BRAIN_OPEN, TOOL_BRAIN_STATUS, TOOL_GET_LENSES, TOOL_GET_VIEW,
+        TOOL_GET_VIEWS, TOOL_GRAPH_CLUSTER, TOOL_GRAPH_EXPLAIN, TOOL_GRAPH_SUBGRAPH,
+        TOOL_IMPACT_COMPONENT, TOOL_IMPACT_DETECT_CYCLES, TOOL_IMPACT_FORWARD_RADIUS,
+        TOOL_IMPACT_HAS_PATH, TOOL_IMPACT_RADIUS, TOOL_IMPACT_SHORTEST_PATH, TOOL_INSPECT_OBJECT,
+        TOOL_OPEN_WORKSPACE, TOOL_QUERY_MOLDQL, TOOL_SPOTTER_SEARCH, TOOL_VIEW_DELETE,
+        TOOL_VIEW_LIST, TOOL_VIEW_LOAD, TOOL_VIEW_SAVE,
     };
 
     let expected = [
@@ -967,15 +1055,53 @@ fn mcp_tool_names_match_spec() {
         TOOL_GET_LENSES,
         TOOL_APPLY_LENS,
         TOOL_QUERY_MOLDQL,
+        TOOL_IMPACT_RADIUS,
+        TOOL_IMPACT_HAS_PATH,
+        TOOL_IMPACT_SHORTEST_PATH,
+        TOOL_IMPACT_DETECT_CYCLES,
+        TOOL_IMPACT_COMPONENT,
+        TOOL_IMPACT_FORWARD_RADIUS,
+        TOOL_GRAPH_SUBGRAPH,
+        TOOL_GRAPH_CLUSTER,
+        TOOL_GRAPH_EXPLAIN,
+        TOOL_ASK,
+        TOOL_BRAIN_OPEN,
+        TOOL_BRAIN_ATTACH,
+        TOOL_BRAIN_ASK,
+        TOOL_BRAIN_FOCUS,
+        TOOL_BRAIN_STATUS,
+        TOOL_BRAIN_CLOSE,
+        TOOL_VIEW_SAVE,
+        TOOL_VIEW_LOAD,
+        TOOL_VIEW_LIST,
+        TOOL_VIEW_DELETE,
     ];
     let actual = cognicode_explorer::mcp::tool_names();
-    assert_eq!(actual.len(), 8);
+    // 28 with the default features, 29 with `multimodal`
+    // (docs_ingest is added by the multimodal feature).
+    let expected_count = if cfg!(feature = "multimodal") { 29 } else { 28 };
+    assert_eq!(actual.len(), expected_count);
     for name in expected {
         assert!(
             actual.contains(&name),
             "tool_names() missing `{}` — got: {:?}",
             name,
             actual
+        );
+    }
+    // When the multimodal feature is active, `docs_ingest` MUST
+    // be in the list — see the RED-gate test
+    // `tool_schemas_docs_ingest_hidden_without_feature` in
+    // `mcp.rs` for the cross-check. We resolve the constant
+    // through the same import path that the test would use at
+    // runtime; the constant is only present on a multimodal
+    // build, so the import is gated the same way as the call.
+    #[cfg(feature = "multimodal")]
+    {
+        use cognicode_explorer::mcp::TOOL_DOCS_INGEST;
+        assert!(
+            actual.contains(&TOOL_DOCS_INGEST),
+            "multimodal build must include docs_ingest in tool_names()"
         );
     }
 }
@@ -1006,7 +1132,10 @@ fn moldql_find_symbols_against_real_db() {
         .execute_query("FIND symbols")
         .expect("FIND symbols ok");
     assert!(
-        result.items.iter().any(|i| i.label.starts_with(&expected_name)),
+        result
+            .items
+            .iter()
+            .any(|i| i.label.starts_with(&expected_name)),
         "FIND symbols must include `{}` in results, got: {:?}",
         expected_name,
         result.items
@@ -1070,9 +1199,7 @@ fn moldql_explore_zero_depth_against_real_db() {
     );
 
     let result = service
-        .execute_query(&format!(
-            "EXPLORE {mvp_id} THROUGH callees DEPTH 0"
-        ))
+        .execute_query(&format!("EXPLORE {mvp_id} THROUGH callees DEPTH 0"))
         .expect("EXPLORE ok");
     assert_eq!(result.total, 1);
     assert_eq!(result.items[0].object_id, mvp_id);
@@ -1089,6 +1216,8 @@ fn moldql_invalid_query_errors() {
     let err = service
         .execute_query("FOO bar")
         .expect_err("malformed query must error");
-    assert!(matches!(err, cognicode_explorer::ExplorerError::ResolutionFailed(_)));
+    assert!(matches!(
+        err,
+        cognicode_explorer::ExplorerError::ResolutionFailed(_)
+    ));
 }
-

@@ -52,8 +52,8 @@ impl SearchRepository for Fts5SearchAdapter {
 
         let conn = Connection::open(&self.db_path)
             .map_err(|e| crate::error::ExplorerError::Anyhow(anyhow::anyhow!(e)))?;
-        let raw = Fts5Index::search(&conn, query, limit)
-            .map_err(crate::error::ExplorerError::Anyhow)?;
+        let raw =
+            Fts5Index::search(&conn, query, limit).map_err(crate::error::ExplorerError::Anyhow)?;
         drop(conn); // close as early as possible — explorer is read-only
 
         // Fts5Index::search does not ORDER BY rank; assign a deterministic
@@ -106,7 +106,9 @@ mod tests {
     #[test]
     fn missing_db_returns_empty_vec_not_error() {
         let adapter = Fts5SearchAdapter::new(PathBuf::from("/tmp/__definitely_missing__.db"));
-        let hits = adapter.search("anything", 10).expect("missing db must not error");
+        let hits = adapter
+            .search("anything", 10)
+            .expect("missing db must not error");
         assert!(
             hits.is_empty(),
             "missing DB must degrade to empty result, got {hits:?}"
@@ -116,7 +118,9 @@ mod tests {
     #[test]
     fn zero_limit_returns_empty_vec() {
         let adapter = Fts5SearchAdapter::new(PathBuf::from("/tmp/__missing__.db"));
-        let hits = adapter.search("alpha", 0).expect("zero limit must not error");
+        let hits = adapter
+            .search("alpha", 0)
+            .expect("zero limit must not error");
         assert!(hits.is_empty());
     }
 }

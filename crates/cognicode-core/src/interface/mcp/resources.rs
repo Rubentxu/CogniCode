@@ -47,19 +47,20 @@ pub fn handle_resources_list(workspace: &str, cursor: Option<&str>) -> Value {
 
         if let Ok(entry) = entry
             && entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
-                && let Ok(path) = entry.path().strip_prefix(workspace_path) {
-                    let path_str = path.to_string_lossy();
-                    let uri = format!("file:///{}", path_str.replace('\\', "/"));
+            && let Ok(path) = entry.path().strip_prefix(workspace_path)
+        {
+            let path_str = path.to_string_lossy();
+            let uri = format!("file:///{}", path_str.replace('\\', "/"));
 
-                    let mime_type = detect_mime_type(&path_str);
+            let mime_type = detect_mime_type(&path_str);
 
-                    resources.push(serde_json::json!({
-                        "uri": uri,
-                        "name": path_str,
-                        "mimeType": mime_type,
-                        "size": entry.metadata().map(|m| m.len()).unwrap_or(0)
-                    }));
-                }
+            resources.push(serde_json::json!({
+                "uri": uri,
+                "name": path_str,
+                "mimeType": mime_type,
+                "size": entry.metadata().map(|m| m.len()).unwrap_or(0)
+            }));
+        }
         count += 1;
     }
 

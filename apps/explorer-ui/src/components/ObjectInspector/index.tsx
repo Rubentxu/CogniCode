@@ -3,6 +3,7 @@
  *
  * Composition:
  *   <ObjectInspector>
+ *     <SuggestionStrip />     ← "What can I do here?" (contextual-help)
  *     <ViewTabs />            ← top strip (tabs)
  *     <ViewPanel />           ← content area
  *       <Blocks view=… />     ← all 27 typed block renderers
@@ -15,14 +16,19 @@
  * `SET_ACTIVE_VIEW` so the reducer caches the latest view for
  * instant re-render after navigation.
  */
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { useApp, useAppDispatch } from "../../state/context";
 import { useObject } from "../../hooks/useObject";
 import { useAvailableViews, useViews } from "../../hooks/useViews";
+import { useAsk } from "../../hooks/useAsk";
+import { useWorkspaceList } from "../../hooks/useWorkspace";
 import { LoadingTier } from "../LoadingTier";
+import { detectViewport, type ShellViewport } from "../viewport";
 import { ViewTabs } from "./ViewTabs";
+import { SuggestionStrip } from "./SuggestionStrip";
 import { Blocks } from "./ViewBlock";
+import { multimodalLabelForObjectType } from "./multimodal";
 
 // Public surface — `import { ObjectInspector, ViewBlock } from
 // "./components/ObjectInspector"` resolves here.
@@ -30,6 +36,8 @@ export { ViewTabs } from "./ViewTabs";
 export type { ViewTabsProps } from "./ViewTabs";
 export { ViewBlock, Blocks } from "./ViewBlock";
 export type { ViewBlockProps, BlocksProps } from "./ViewBlock";
+export { SuggestionStrip } from "./SuggestionStrip";
+export type { SuggestionStripProps } from "./SuggestionStrip";
 
 export function ObjectInspector() {
   const { state } = useApp();
@@ -64,6 +72,35 @@ export function ObjectInspector() {
       dispatch({ type: "SET_ACTIVE_VIEW", payload: view });
     }
   }, [view, dispatch]);
+
+  // Contextual-help: surface "What can I do here?" prompts. The strip
+  // needs (a) the focused object's type/label, (b) the workspace's
+  // graph status, and (c) the current viewport. We read the graph
+  // status from the first workspace in the SWR cache (matches the
+  // existing pattern for the "no workspace open" empty state — the
+  // list is the source of truth).
+  const { data: workspaceList } = useWorkspaceList();
+  const graphStatus = workspaceList?.[0]?.graph_status ?? null;
+
+  const { dispatch: askDispatch } = useAsk({
+    objectId: activeObjectId,
+    objectLabel: object?.label ?? null,
+  });
+
+  // Viewport — local listener so we don't widen the Shell contract.
+  // The strip switches between pill row and popover at the 900px
+  // breakpoint.
+  const [viewport, setViewport] = useState<ShellViewport>(() =>
+    typeof window === "undefined"
+      ? "desktop"
+      : detectViewport(window.innerWidth),
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => setViewport(detectViewport(window.innerWidth));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // If the user navigates to a new object and the current
   // `activeViewId` is not in the new object's `available_views`,
@@ -127,13 +164,34 @@ export function ObjectInspector() {
           className="flex items-center justify-between gap-2 px-4 py-2"
           style={{ borderBottom: "1px solid var(--color-border)" }}
         >
-          <h2
-            className="truncate text-sm font-semibold"
-            style={{ color: "var(--color-text-primary)" }}
-            title={display?.title ?? object?.label ?? ""}
-          >
-            {display?.title ?? object?.label ?? "(loading)"}
-          </h2>
+          <div className="flex min-w-0 items-center gap-2">
+            <h2
+              className="truncate text-sm font-semibold"
+              style={{ color: "var(--color-text-primary)" }}
+              title={display?.title ?? object?.label ?? ""}
+            >
+              {display?.title ?? object?.label ?? "(loading)"}
+            </h2>
+            {/*
+              T19 — surface a multimodal kind badge next to the title
+              when the focused object is a Decision / Doc / Issue /
+              Evidence node. The label is derived from the legacy
+              `InspectableObjectType` so the change is additive (no
+              new fields on the wire DTO, no schema change).
+            */}
+            {object && multimodalLabelForObjectType(object.object_type) && (
+              <span
+                data-testid="multimodal-kind-badge"
+                className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase"
+                style={{
+                  backgroundColor: "var(--color-surface-overlay)",
+                  color: "var(--color-text-muted)",
+                }}
+              >
+                {multimodalLabelForObjectType(object.object_type)}
+              </span>
+            )}
+          </div>
           <span
             className="rounded-full px-2 py-0.5 text-xs"
             style={{
@@ -144,6 +202,16 @@ export function ObjectInspector() {
             {blockCount} {blockCount === 1 ? "block" : "blocks"}
           </span>
         </header>
+        {object && (
+          <SuggestionStrip
+            objectType={object.object_type}
+            objectId={object.id}
+            objectLabel={object.label}
+            graphStatus={graphStatus}
+            viewport={viewport}
+            onDispatch={askDispatch}
+          />
+        )}
         {views && views.length > 0 && (
           <ViewTabs
             views={views}

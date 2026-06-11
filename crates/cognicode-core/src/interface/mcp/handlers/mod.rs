@@ -1,74 +1,178 @@
 //! MCP Handlers - Implementation of MCP tool handlers
 
-use crate::application::commands::{ChangeSignatureCommand, MoveSymbolCommand, ParameterDefinition, RenameSymbolCommand};
+use crate::application::commands::{
+    ChangeSignatureCommand, MoveSymbolCommand, ParameterDefinition, RenameSymbolCommand,
+};
 use crate::application::dto::{
-    GetFileSymbolsResult, SymbolDto,
     // AIX DTOs from analysis.rs
-    ApiBreak, ApiBreaksResult, ArchitectureResult, AskAboutCodeResult, CodeAnswer, CodePathStep,
-    DiagnoseIssue, DiagnoseReportDto, EntryPointSummary, FindPatternResult, GodFunctionDto,
-    GodFunctionThresholds, GodFunctionsResult, GraphDiffDto, HotPathDto,
-    HotSymbolDto, HotSymbolsResult,
-    IntentMatch, LongParamFunctionDto, LongParamsResult,
-    NlSymbolMatch, NlToSymbolResult, OnboardingPlanDto, OnboardingStep,
-    OverviewDetail, OverviewMeta, ProjectType, RankedSymbolDto,
-    RankedSymbolsResult, RefactorActionStep, RefactorEvalDto, RefactorSuggestionDto, SmartOverviewDto,
+    ApiBreak,
+    ApiBreaksResult,
+    ArchitectureResult,
+    AskAboutCodeResult,
+    CodeAnswer,
+    CodePathStep,
+    DiagnoseIssue,
+    DiagnoseReportDto,
+    EntryPointSummary,
+    FindPatternResult,
+    GetFileSymbolsResult,
+    GodFunctionDto,
+    GodFunctionThresholds,
+    GodFunctionsResult,
+    GraphDiffDto,
+    HotPathDto,
+    HotSymbolDto,
+    HotSymbolsResult,
+    IntentMatch,
+    LongParamFunctionDto,
+    LongParamsResult,
+    NlSymbolMatch,
+    NlToSymbolResult,
+    OnboardingPlanDto,
+    OnboardingStep,
+    OverviewDetail,
+    OverviewMeta,
+    ProjectType,
+    RankedSymbolDto,
+    RankedSymbolsResult,
+    RefactorActionStep,
+    RefactorEvalDto,
+    RefactorSuggestionDto,
+    SmartOverviewDto,
+    SymbolDto,
     SystemPromptContext,
 };
+use crate::application::error::AppError;
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::context_compressor::ContextCompressorService;
 use crate::application::services::refactor_service::RefactorService;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::{CallGraph, Symbol};
 use crate::domain::services::CycleDetector;
-use crate::interface::mcp::schemas::{
-    // Existing schemas
-    AnalyzeImpactInput, AnalyzeImpactOutput, BuildIndexInput, BuildIndexOutput,
-    BuildSubgraphInput, BuildSubgraphOutput, ChangeEntry, CheckArchitectureInput,
-    CheckArchitectureOutput, ComplexityMetrics, ContextLines, DeadCodeEntry, DependencyInfo,
-    AnalysisMetadata, ExportMermaidInput, ExportMermaidOutput, FindDeadCodeInput, FindDeadCodeOutput,
-    FindReferencesInput, FindReferencesOutput,
-    FindUsagesInput, FindUsagesOutput,
-    GetAllSymbolsInput, GetAllSymbolsOutput, GetCallHierarchyInput, GetCallHierarchyOutput,
-    GetComplexityInput, GetComplexityOutput,
-    GetEntryPointsInput, GetEntryPointsOutput, GetFileSymbolsInput, GetFileSymbolsOutput,
-    GetHotPathsInput, GetHotPathsOutput, GetHotSymbolsInput, GetLeafFunctionsInput, GetLeafFunctionsOutput,
-    GetModuleDependenciesInput, GetModuleDependenciesOutput, GetPerFileGraphInput, GetPerFileGraphOutput,
-    GoToDefinitionInput, GoToDefinitionOutput,
-    HierarchyEntryInfo, HierarchySymbolInfo,
-    HotPathEntry, HoverInput, HoverOutput, MergeGraphsInput, MergeGraphsOutput,
-    OutlineInput, OutlineNodeDto, OutlineOutput,
-    PathEntry, QuerySymbolInput, QuerySymbolOutput, RefactorAction, ReferenceEntry, RiskLevel,
-    SafeRefactorInput, SafeRefactorOutput, SearchResultDto, SemanticSearchInput, SemanticSearchOutput,
-    SourceLocation, StructuralSearchInput, StructuralSearchOutput, SubgraphDirection, SymbolInfo,
-    SymbolKind as McpSymbolKind, SymbolCodeInput, SymbolCodeOutput, SymbolLocationEntry,
-    TracePathInput, TracePathOutput, UsageEntry, UsageWithContextEntry, ValidateSyntaxInput,
-    ValidateSyntaxOutput, ValidationResult, FindUsagesWithContextInput, FindUsagesWithContextOutput,
-    // Phase 3A proactive tool schemas
-    SuggestContextInput, SuggestContextOutput, SuggestContextItem,
-    ReparseOnEditInput, ReparseOnEditOutput,
-    // AIX Input schemas
-    AskAboutCodeInput, AutoDiagnoseInput, CompareCallGraphsInput,
-    ContextFormatDetail, DetectApiBreaksInput, DetectGodFunctionsInput, DetectLongParamsInput,
-    EvaluateRefactorQualityInput, FindPatternByIntentInput, NlToSymbolInput, OnboardingGoalDetail, OnboardingPlanInput,
-    RankedSymbolsInput, SmartOverviewInput, SuggestRefactorPlanInput, SystemPromptContextInput,
-};
-use crate::interface::mcp::security::{InputValidator, SecurityError};
-use crate::application::error::AppError;
 use crate::infrastructure::graph::{
-    FullGraphStrategy, GraphStrategy, LightweightStrategy, OnDemandStrategy,
-    PerFileStrategy, TraversalDirection,
+    FullGraphStrategy, GraphStrategy, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
+    TraversalDirection,
 };
 use crate::infrastructure::semantic::{
-    build_outline, SemanticSearchService, SearchSymbolKind, SymbolCodeService,
+    SearchSymbolKind, SemanticSearchService, SymbolCodeService, build_outline,
 };
+use crate::interface::mcp::schemas::{
+    AnalysisMetadata,
+    // Existing schemas
+    AnalyzeImpactInput,
+    AnalyzeImpactOutput,
+    // AIX Input schemas
+    AskAboutCodeInput,
+    AutoDiagnoseInput,
+    BuildIndexInput,
+    BuildIndexOutput,
+    BuildSubgraphInput,
+    BuildSubgraphOutput,
+    ChangeEntry,
+    CheckArchitectureInput,
+    CheckArchitectureOutput,
+    CompareCallGraphsInput,
+    ComplexityMetrics,
+    ContextFormatDetail,
+    ContextLines,
+    DeadCodeEntry,
+    DependencyInfo,
+    DetectApiBreaksInput,
+    DetectGodFunctionsInput,
+    DetectLongParamsInput,
+    EvaluateRefactorQualityInput,
+    ExportMermaidInput,
+    ExportMermaidOutput,
+    FindDeadCodeInput,
+    FindDeadCodeOutput,
+    FindPatternByIntentInput,
+    FindReferencesInput,
+    FindReferencesOutput,
+    FindUsagesInput,
+    FindUsagesOutput,
+    FindUsagesWithContextInput,
+    FindUsagesWithContextOutput,
+    GetAllSymbolsInput,
+    GetAllSymbolsOutput,
+    GetCallHierarchyInput,
+    GetCallHierarchyOutput,
+    GetComplexityInput,
+    GetComplexityOutput,
+    GetEntryPointsInput,
+    GetEntryPointsOutput,
+    GetFileSymbolsInput,
+    GetFileSymbolsOutput,
+    GetHotPathsInput,
+    GetHotPathsOutput,
+    GetHotSymbolsInput,
+    GetLeafFunctionsInput,
+    GetLeafFunctionsOutput,
+    GetModuleDependenciesInput,
+    GetModuleDependenciesOutput,
+    GetPerFileGraphInput,
+    GetPerFileGraphOutput,
+    GoToDefinitionInput,
+    GoToDefinitionOutput,
+    HierarchyEntryInfo,
+    HierarchySymbolInfo,
+    HotPathEntry,
+    HoverInput,
+    HoverOutput,
+    MergeGraphsInput,
+    MergeGraphsOutput,
+    NlToSymbolInput,
+    OnboardingGoalDetail,
+    OnboardingPlanInput,
+    OutlineInput,
+    OutlineNodeDto,
+    OutlineOutput,
+    PathEntry,
+    QuerySymbolInput,
+    QuerySymbolOutput,
+    RankedSymbolsInput,
+    RefactorAction,
+    ReferenceEntry,
+    ReparseOnEditInput,
+    ReparseOnEditOutput,
+    RiskLevel,
+    SafeRefactorInput,
+    SafeRefactorOutput,
+    SearchResultDto,
+    SemanticSearchInput,
+    SemanticSearchOutput,
+    SmartOverviewInput,
+    SourceLocation,
+    StructuralSearchInput,
+    StructuralSearchOutput,
+    SubgraphDirection,
+    // Phase 3A proactive tool schemas
+    SuggestContextInput,
+    SuggestContextItem,
+    SuggestContextOutput,
+    SuggestRefactorPlanInput,
+    SymbolCodeInput,
+    SymbolCodeOutput,
+    SymbolInfo,
+    SymbolKind as McpSymbolKind,
+    SymbolLocationEntry,
+    SystemPromptContextInput,
+    TracePathInput,
+    TracePathOutput,
+    UsageEntry,
+    UsageWithContextEntry,
+    ValidateSyntaxInput,
+    ValidateSyntaxOutput,
+    ValidationResult,
+};
+use crate::interface::mcp::security::{InputValidator, SecurityError};
 // Re-export file operations handlers
 pub use crate::interface::mcp::file_ops_handlers::*;
 
-use crate::infrastructure::persistence::InMemoryGraphStore;
 use crate::domain::traits::GraphStore;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
 use crate::domain::traits::graph_store::StoreError;
 use crate::domain::value_objects::file_manifest::FileManifest;
+use crate::infrastructure::persistence::InMemoryGraphStore;
 
 /// Wrapper that delegates GraphStore calls to an inner Arc<dyn GraphStore>
 struct ContextGraphStore {
@@ -76,12 +180,24 @@ struct ContextGraphStore {
 }
 
 impl GraphStore for ContextGraphStore {
-    fn save_graph(&self, graph: &CallGraph) -> Result<(), StoreError> { self.inner.save_graph(graph) }
-    fn load_graph(&self) -> Result<Option<CallGraph>, StoreError> { self.inner.load_graph() }
-    fn save_manifest(&self, m: &FileManifest) -> Result<(), StoreError> { self.inner.save_manifest(m) }
-    fn load_manifest(&self) -> Result<Option<FileManifest>, StoreError> { self.inner.load_manifest() }
-    fn clear(&self) -> Result<(), StoreError> { self.inner.clear() }
-    fn exists(&self) -> Result<bool, StoreError> { self.inner.exists() }
+    fn save_graph(&self, graph: &CallGraph) -> Result<(), StoreError> {
+        self.inner.save_graph(graph)
+    }
+    fn load_graph(&self) -> Result<Option<CallGraph>, StoreError> {
+        self.inner.load_graph()
+    }
+    fn save_manifest(&self, m: &FileManifest) -> Result<(), StoreError> {
+        self.inner.save_manifest(m)
+    }
+    fn load_manifest(&self) -> Result<Option<FileManifest>, StoreError> {
+        self.inner.load_manifest()
+    }
+    fn clear(&self) -> Result<(), StoreError> {
+        self.inner.clear()
+    }
+    fn exists(&self) -> Result<bool, StoreError> {
+        self.inner.exists()
+    }
 }
 
 use std::collections::{HashMap, HashSet};
@@ -111,9 +227,19 @@ pub struct HandlerContext {
     pub graph_store: Option<Arc<dyn GraphStore>>,
     /// Optional CodeIntelligenceProvider for LSP operations. Falls back to creating CompositeProvider if None.
     pub code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
-    /// Optional database connection for agent telemetry (Phase 3A)
-    /// Wrapped in Mutex because rusqlite::Connection is not Sync
+    /// Optional database connection for agent telemetry (Phase 3A).
+    /// Wrapped in Mutex because `rusqlite::Connection` is not `Sync`.
+    ///
+    /// Feature-gated behind `sqlite` (see `postgres-default-config`):
+    /// when the `sqlite` feature is disabled, this field is `None`
+    /// and telemetry calls become no-ops.
+    #[cfg(feature = "sqlite")]
     pub db_conn: Option<Arc<Mutex<Option<rusqlite::Connection>>>>,
+    /// Stub for the no-`sqlite` build. Always `None` and unused; the
+    /// type is the unit `()` so the field is a no-op when the feature
+    /// is off.
+    #[cfg(not(feature = "sqlite"))]
+    pub db_conn: Option<Arc<Mutex<Option<()>>>>,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -134,7 +260,8 @@ impl HandlerContext {
         // fail due to path representation mismatch (e.g., relative vs absolute).
         // By canonicalizing upfront, both working_dir and allowed_paths use the
         // same canonical representation.
-        let canonical_working_dir = std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
+        let canonical_working_dir =
+            std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
 
         Self {
             working_dir: canonical_working_dir.clone(),
@@ -179,7 +306,8 @@ impl HandlerContext {
 
     pub fn with_analysis_service(working_dir: PathBuf, analysis_service: AnalysisService) -> Self {
         // Canonicalize working_dir for consistent path handling (same reason as HandlerContext::new)
-        let canonical_working_dir = std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
+        let canonical_working_dir =
+            std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
 
         Self {
             working_dir: canonical_working_dir.clone(),
@@ -203,7 +331,8 @@ impl HandlerContext {
 
     pub fn with_refactor_service(working_dir: PathBuf, refactor_service: RefactorService) -> Self {
         // Canonicalize working_dir for consistent path handling (same reason as HandlerContext::new)
-        let canonical_working_dir = std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
+        let canonical_working_dir =
+            std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
 
         Self {
             working_dir: canonical_working_dir.clone(),
@@ -226,8 +355,12 @@ impl HandlerContext {
     }
 
     /// Create a HandlerContext with a pre-configured CodeIntelligenceProvider for testing
-    pub fn with_code_intelligence_provider(working_dir: PathBuf, provider: Arc<dyn CodeIntelligenceProvider>) -> Self {
-        let canonical_working_dir = std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
+    pub fn with_code_intelligence_provider(
+        working_dir: PathBuf,
+        provider: Arc<dyn CodeIntelligenceProvider>,
+    ) -> Self {
+        let canonical_working_dir =
+            std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
 
         Self {
             working_dir: canonical_working_dir.clone(),
@@ -260,7 +393,9 @@ impl HandlerContext {
     /// Get the GraphStore — persistent (SQLite) if configured, or InMemory fallback
     pub fn get_graph_store(&self) -> Box<dyn GraphStore> {
         if let Some(ref store) = self.graph_store {
-            Box::new(ContextGraphStore { inner: store.clone() })
+            Box::new(ContextGraphStore {
+                inner: store.clone(),
+            })
         } else {
             Box::new(InMemoryGraphStore::new())
         }
@@ -276,7 +411,9 @@ impl HandlerContext {
     pub fn should_log(&self, level: tracing::Level) -> bool {
         // Note: This is a simplified check. For exact tracing level filtering,
         // one would need to compare the numeric representation of levels.
-        let stored_level = self.log_level.try_read()
+        let stored_level = self
+            .log_level
+            .try_read()
             .map(|g| *g)
             .unwrap_or(tracing::Level::INFO);
         level >= stored_level
@@ -303,10 +440,17 @@ impl HandlerContext {
     }
 
     /// Create a HandlerContext with a pre-configured database connection for telemetry
+    #[cfg(feature = "sqlite")]
     pub fn with_db_conn(working_dir: PathBuf, conn: rusqlite::Connection) -> Self {
         let mut ctx = Self::new(working_dir);
         ctx.db_conn = Some(Arc::new(Mutex::new(Some(conn))));
         ctx
+    }
+
+    /// Stub for the no-`sqlite` build — telemetry is a no-op.
+    #[cfg(not(feature = "sqlite"))]
+    pub fn with_db_conn(working_dir: PathBuf, _conn: ()) -> Self {
+        Self::new(working_dir)
     }
 
     /// Records an MCP tool usage event to the database (best-effort).
@@ -319,6 +463,7 @@ impl HandlerContext {
     /// * `result_summary` - Truncated JSON summary of the result (max 256 chars)
     /// * `duration_ms` - Tool execution duration in milliseconds
     /// * `contract_id` - Optional contract ID for AVC tools
+    #[cfg(feature = "sqlite")]
     pub fn record_tool_usage(
         &self,
         tool_name: &str,
@@ -328,7 +473,10 @@ impl HandlerContext {
     ) {
         let Some(ref conn_arc) = self.db_conn else {
             // No database connection configured - graceful degradation
-            tracing::debug!("No db_conn configured, skipping tool telemetry for {}", tool_name);
+            tracing::debug!(
+                "No db_conn configured, skipping tool telemetry for {}",
+                tool_name
+            );
             return;
         };
 
@@ -344,7 +492,10 @@ impl HandlerContext {
             Some(conn) => conn,
             None => {
                 // Connection was dropped/taken
-                tracing::debug!("db_conn was None, skipping tool telemetry for {}", tool_name);
+                tracing::debug!(
+                    "db_conn was None, skipping tool telemetry for {}",
+                    tool_name
+                );
                 return;
             }
         };
@@ -381,6 +532,19 @@ impl HandlerContext {
             tracing::warn!("Failed to record tool usage for {}: {}", tool_name, e);
         }
     }
+
+    /// No-op stub for the no-`sqlite` build — telemetry is unavailable
+    /// when the `sqlite` feature is disabled.
+    #[cfg(not(feature = "sqlite"))]
+    pub fn record_tool_usage(
+        &self,
+        _tool_name: &str,
+        _result_summary: &str,
+        _duration_ms: f64,
+        _contract_id: Option<&str>,
+    ) {
+        // No-op: telemetry requires the `sqlite` feature.
+    }
 }
 
 /// Handler error type
@@ -405,11 +569,21 @@ pub enum HandlerError {
 impl From<HandlerError> for crate::interface::mcp::schemas::McpError {
     fn from(err: HandlerError) -> Self {
         match err {
-            HandlerError::Security(e) => crate::interface::mcp::schemas::McpError::new(-32000, e.to_string()),
-            HandlerError::App(e) => crate::interface::mcp::schemas::McpError::new(-32001, e.to_string()),
-            HandlerError::InvalidInput(e) => crate::interface::mcp::schemas::McpError::new(-32002, e.to_string()),
-            HandlerError::NotFound(e) => crate::interface::mcp::schemas::McpError::new(-32003, e.to_string()),
-            HandlerError::Internal(e) => crate::interface::mcp::schemas::McpError::new(-32004, e.to_string()),
+            HandlerError::Security(e) => {
+                crate::interface::mcp::schemas::McpError::new(-32000, e.to_string())
+            }
+            HandlerError::App(e) => {
+                crate::interface::mcp::schemas::McpError::new(-32001, e.to_string())
+            }
+            HandlerError::InvalidInput(e) => {
+                crate::interface::mcp::schemas::McpError::new(-32002, e.to_string())
+            }
+            HandlerError::NotFound(e) => {
+                crate::interface::mcp::schemas::McpError::new(-32003, e.to_string())
+            }
+            HandlerError::Internal(e) => {
+                crate::interface::mcp::schemas::McpError::new(-32004, e.to_string())
+            }
         }
     }
 }
@@ -425,7 +599,9 @@ pub type HandlerResult<T> = Result<T, HandlerError>;
 /// Generate a graph cache directory path based on the target directory.
 /// The .cognicode directory is placed inside the analyzed project directory.
 fn graph_db_path(directory: &Path) -> PathBuf {
-    let canonical_dir = directory.canonicalize().unwrap_or_else(|_| directory.to_path_buf());
+    let canonical_dir = directory
+        .canonicalize()
+        .unwrap_or_else(|_| directory.to_path_buf());
     canonical_dir.join(".cognicode").join("graph.cache")
 }
 
@@ -458,11 +634,30 @@ fn resolve_file_path(input_path: &str, working_dir: &Path) -> PathBuf {
 
 /// Checks whether any source file has changed since the manifest was saved.
 /// Uses mtime as a fast check (no hashing unless needed).
-fn is_manifest_stale(manifest: &crate::domain::value_objects::file_manifest::FileManifest, project_dir: &Path) -> bool {
+fn is_manifest_stale(
+    manifest: &crate::domain::value_objects::file_manifest::FileManifest,
+    project_dir: &Path,
+) -> bool {
     use walkdir::WalkDir;
-    const SKIP_DIRS: &[&str] = &["target", "node_modules", ".git", "dist", "build",
-        "vendor", "__pycache__", ".cache", ".next", ".nuxt", "coverage",
-        ".tox", "venv", ".venv", ".env", "env", ".cognicode"];
+    const SKIP_DIRS: &[&str] = &[
+        "target",
+        "node_modules",
+        ".git",
+        "dist",
+        "build",
+        "vendor",
+        "__pycache__",
+        ".cache",
+        ".next",
+        ".nuxt",
+        "coverage",
+        ".tox",
+        "venv",
+        ".venv",
+        ".env",
+        "env",
+        ".cognicode",
+    ];
 
     let mut checked = 0usize;
     for entry in WalkDir::new(project_dir)
@@ -480,7 +675,7 @@ fn is_manifest_stale(manifest: &crate::domain::value_objects::file_manifest::Fil
         let path = entry.path();
         // Only check supported source extensions
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if !["rs","py","js","ts","go","java","c","cpp","h"].contains(&ext) {
+        if !["rs", "py", "js", "ts", "go", "java", "c", "cpp", "h"].contains(&ext) {
             continue;
         }
         checked += 1;
@@ -492,8 +687,8 @@ fn is_manifest_stale(manifest: &crate::domain::value_objects::file_manifest::Fil
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         match manifest.entries.get(rel) {
-            Some(entry) if entry.mtime == mtime_ms => continue,  // unchanged
-            _ => return true,  // new, modified, or missing from manifest
+            Some(entry) if entry.mtime == mtime_ms => continue, // unchanged
+            _ => return true, // new, modified, or missing from manifest
         }
     }
     // If manifest has more entries than files checked, files were deleted → stale
@@ -502,12 +697,30 @@ fn is_manifest_stale(manifest: &crate::domain::value_objects::file_manifest::Fil
 }
 
 /// Builds a FileManifest for the given project directory.
-fn build_manifest(project_dir: &Path) -> std::io::Result<crate::domain::value_objects::file_manifest::FileManifest> {
-    use crate::domain::value_objects::file_manifest::{FileManifest, FileEntry};
+fn build_manifest(
+    project_dir: &Path,
+) -> std::io::Result<crate::domain::value_objects::file_manifest::FileManifest> {
+    use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
     use walkdir::WalkDir;
-    const SKIP_DIRS: &[&str] = &["target", "node_modules", ".git", "dist", "build",
-        "vendor", "__pycache__", ".cache", ".next", ".nuxt", "coverage",
-        ".tox", "venv", ".venv", ".env", "env", ".cognicode"];
+    const SKIP_DIRS: &[&str] = &[
+        "target",
+        "node_modules",
+        ".git",
+        "dist",
+        "build",
+        "vendor",
+        "__pycache__",
+        ".cache",
+        ".next",
+        ".nuxt",
+        "coverage",
+        ".tox",
+        "venv",
+        ".venv",
+        ".env",
+        "env",
+        ".cognicode",
+    ];
 
     let mut manifest = FileManifest::new(project_dir.to_path_buf());
 
@@ -525,12 +738,10 @@ fn build_manifest(project_dir: &Path) -> std::io::Result<crate::domain::value_ob
     {
         let path = entry.path();
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if !["rs","py","js","ts","go","java","c","cpp","h"].contains(&ext) {
+        if !["rs", "py", "js", "ts", "go", "java", "c", "cpp", "h"].contains(&ext) {
             continue;
         }
-        let rel = path.strip_prefix(project_dir)
-            .unwrap_or(path)
-            .to_path_buf();
+        let rel = path.strip_prefix(project_dir).unwrap_or(path).to_path_buf();
         let mtime = std::fs::metadata(path)
             .and_then(|m| m.modified())
             .ok()
@@ -583,9 +794,9 @@ pub async fn handle_build_graph(
     }
 
     let start = Instant::now();
-    
+
     let directory = resolve_directory(input.directory, &ctx.working_dir);
-    
+
     // Validate directory
     if !directory.exists() {
         return Err(HandlerError::InvalidInput(format!(
@@ -610,15 +821,14 @@ pub async fn handle_build_graph(
                 // Scan source files and compare hashes
                 is_manifest_stale(&manifest, &directory)
             }
-            Ok(None) => true,  // No manifest → stale
-            Err(_) => true,    // Error reading → rebuild
+            Ok(None) => true, // No manifest → stale
+            Err(_) => true,   // Error reading → rebuild
         };
 
-        if !is_stale
-            && let Ok(Some(graph)) = store.load_graph() {
-                ctx.analysis_service.graph_cache().set(graph);
-                loaded_from_cache = true;
-            }
+        if !is_stale && let Ok(Some(graph)) = store.load_graph() {
+            ctx.analysis_service.graph_cache().set(graph);
+            loaded_from_cache = true;
+        }
     }
 
     // Build from source if cache miss
@@ -660,8 +870,12 @@ pub async fn handle_build_graph(
             EdgeInfo { from, to }
         })
         .collect();
-    
-    let source = if loaded_from_cache { "cache (in-memory)" } else { "built" };
+
+    let source = if loaded_from_cache {
+        "cache (in-memory)"
+    } else {
+        "built"
+    };
     Ok(BuildGraphOutput {
         success: true,
         symbols_found: symbols,
@@ -695,7 +909,8 @@ pub async fn handle_get_call_hierarchy(
     let symbol_ids: Vec<SymbolId> = index
         .get(&search_name)
         .map(|entries| {
-            entries.iter()
+            entries
+                .iter()
                 .map(|(_, symbol)| SymbolId::new(symbol.fully_qualified_name()))
                 .collect()
         })
@@ -749,7 +964,9 @@ pub async fn handle_get_file_symbols(
     };
 
     // Call the analysis service to get symbols
-    let symbol_dtos = ctx.analysis_service.get_file_symbols(&file_path)
+    let symbol_dtos = ctx
+        .analysis_service
+        .get_file_symbols(&file_path)
         .map_err(HandlerError::App)?;
 
     // Convert SymbolDto to SymbolInfo
@@ -870,10 +1087,11 @@ fn find_symbol_usages(params: UsageSearchParams) -> Result<Vec<Usage>, String> {
             continue;
         }
 
-        let language = match crate::infrastructure::parser::Language::from_extension(path.extension()) {
-            Some(lang) => lang,
-            None => continue,
-        };
+        let language =
+            match crate::infrastructure::parser::Language::from_extension(path.extension()) {
+                Some(lang) => lang,
+                None => continue,
+            };
 
         let source = match std::fs::read_to_string(path) {
             Ok(s) => s,
@@ -885,7 +1103,9 @@ fn find_symbol_usages(params: UsageSearchParams) -> Result<Vec<Usage>, String> {
             Err(_) => continue,
         };
 
-        if let Ok(occurrences) = parser.find_all_occurrences_of_identifier(&source, &params.symbol_name) {
+        if let Ok(occurrences) =
+            parser.find_all_occurrences_of_identifier(&source, &params.symbol_name)
+        {
             for occ in occurrences {
                 let has_def_keyword = occ.context.contains("def ")
                     || occ.context.contains("class ")
@@ -909,9 +1129,9 @@ fn find_symbol_usages(params: UsageSearchParams) -> Result<Vec<Usage>, String> {
                     continue;
                 }
 
-                let context_lines = params.context_lines.map(|ctx| {
-                    get_context_lines(&source, occ.line as usize, ctx)
-                });
+                let context_lines = params
+                    .context_lines
+                    .map(|ctx| get_context_lines(&source, occ.line as usize, ctx));
 
                 usages.push(Usage {
                     file: path.to_string_lossy().into_owned(),
@@ -969,8 +1189,6 @@ pub async fn handle_structural_search(
     ctx: &HandlerContext,
     input: StructuralSearchInput,
 ) -> HandlerResult<StructuralSearchOutput> {
-    
-
     // Validate input
     ctx.validator.validate_query(&input.query)?;
     if let Some(path) = &input.path {
@@ -1008,7 +1226,8 @@ pub async fn handle_analyze_impact(
     let symbol_ids: Vec<SymbolId> = index
         .get(&search_name)
         .map(|entries| {
-            entries.iter()
+            entries
+                .iter()
                 .map(|(_, symbol)| SymbolId::new(symbol.fully_qualified_name()))
                 .collect()
         })
@@ -1045,7 +1264,11 @@ pub async fn handle_analyze_impact(
         RiskLevel::Low
     };
 
-    let auto_note = if ensure.auto_built { ensure.message.clone() } else { String::new() };
+    let auto_note = if ensure.auto_built {
+        ensure.message.clone()
+    } else {
+        String::new()
+    };
 
     Ok(AnalyzeImpactOutput {
         symbol: input.symbol_name,
@@ -1075,7 +1298,11 @@ pub struct EnsureResult {
 
 impl EnsureResult {
     fn already_present(count: usize) -> Self {
-        Self { auto_built: false, message: String::new(), count }
+        Self {
+            auto_built: false,
+            message: String::new(),
+            count,
+        }
     }
     fn auto_built(count: usize, elapsed_ms: u64) -> Self {
         Self {
@@ -1096,7 +1323,8 @@ fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
     }
     // Auto-build the graph
     let start = std::time::Instant::now();
-    ctx.analysis_service.build_project_graph(&ctx.working_dir)
+    ctx.analysis_service
+        .build_project_graph(&ctx.working_dir)
         .map_err(HandlerError::App)?;
     let graph = ctx.analysis_service.get_project_graph();
     let count = graph.symbols().count();
@@ -1107,13 +1335,19 @@ fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
 /// Ensures the semantic search index is populated, indexing the working directory on demand.
 fn ensure_semantic_indexed(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
     if !ctx.semantic_search.index().is_empty() {
-        return Ok(EnsureResult::already_present(ctx.semantic_search.index().len()));
+        return Ok(EnsureResult::already_present(
+            ctx.semantic_search.index().len(),
+        ));
     }
     let start = std::time::Instant::now();
-    ctx.semantic_search.populate_from_directory(&ctx.working_dir)
+    ctx.semantic_search
+        .populate_from_directory(&ctx.working_dir)
         .map_err(HandlerError::Internal)?;
     let elapsed = start.elapsed().as_millis() as u64;
-    Ok(EnsureResult::auto_built(ctx.semantic_search.index().len(), elapsed))
+    Ok(EnsureResult::auto_built(
+        ctx.semantic_search.index().len(),
+        elapsed,
+    ))
 }
 
 /// Handler for check_architecture tool
@@ -1215,7 +1449,11 @@ pub async fn handle_check_architecture(
         })
         .collect();
 
-    let auto_note = if ensure.auto_built { ensure.message.clone() } else { String::new() };
+    let auto_note = if ensure.auto_built {
+        ensure.message.clone()
+    } else {
+        String::new()
+    };
     let diagnostics_note = if !diagnostics.is_empty() {
         format!(" [{}]", diagnostics.join("; "))
     } else {
@@ -1229,7 +1467,11 @@ pub async fn handle_check_architecture(
         summary: format!(
             "{}{}Architecture check completed in {}ms - {} cycles detected, {} symbols involved, {} edges, score {:.1}{}",
             auto_note,
-            if auto_note.is_empty() && !diagnostics_note.is_empty() { "" } else { "" },
+            if auto_note.is_empty() && !diagnostics_note.is_empty() {
+                ""
+            } else {
+                ""
+            },
             start.elapsed().as_millis(),
             cycle_result.cycles.len(),
             cycle_result.symbols_in_cycles(),
@@ -1241,7 +1483,6 @@ pub async fn handle_check_architecture(
 }
 
 /// Handler for safe_refactor tool
-
 // Refactor handlers module
 pub mod refactor_handlers;
 pub async fn handle_get_complexity(
@@ -1252,25 +1493,28 @@ pub async fn handle_get_complexity(
     let file_path = resolve_file_path(&input.file_path, &ctx.working_dir);
 
     // Validate file path
-    ctx.validator.validate_file_path(&file_path.to_string_lossy())?;
+    ctx.validator
+        .validate_file_path(&file_path.to_string_lossy())?;
     if let Some(function_name) = &input.function_name {
         ctx.validator.validate_query(function_name)?;
     }
 
     // Calculate real complexity metrics
-    let source = std::fs::read_to_string(&file_path).map_err(|e| {
-        HandlerError::InvalidInput(format!("Failed to read file: {}", e))
+    let source = std::fs::read_to_string(&file_path)
+        .map_err(|e| HandlerError::InvalidInput(format!("Failed to read file: {}", e)))?;
+
+    let language =
+        crate::infrastructure::parser::Language::from_extension(file_path.extension())
+            .ok_or_else(|| HandlerError::InvalidInput("Unsupported file type".to_string()))?;
+
+    let parser = crate::infrastructure::parser::TreeSitterParser::new(language).map_err(|e| {
+        HandlerError::App(crate::application::error::AppError::AnalysisError(
+            e.to_string(),
+        ))
     })?;
 
-    let language = crate::infrastructure::parser::Language::from_extension(
-        file_path.extension()
-    ).ok_or_else(|| HandlerError::InvalidInput("Unsupported file type".to_string()))?;
-
-    let parser = crate::infrastructure::parser::TreeSitterParser::new(language)
-        .map_err(|e| HandlerError::App(crate::application::error::AppError::AnalysisError(e.to_string())))?;
-
     // Find the function and calculate complexity
-    let (cyclomatic, cognitive, nesting_depth, parameter_count, lines_of_code) = 
+    let (cyclomatic, cognitive, nesting_depth, parameter_count, lines_of_code) =
         calculate_function_complexity(&parser, &source, input.function_name.as_deref());
 
     Ok(GetComplexityOutput {
@@ -1323,10 +1567,10 @@ fn calculate_function_complexity(
 
     // Calculate cyclomatic complexity
     let cyclomatic = calculator.cyclomatic_complexity(&decision_points, 1);
-    
+
     // Calculate cognitive complexity
     let cognitive = calculator.cognitive_complexity(max_nesting, &decision_points, 0);
-    
+
     // Calculate lines of code
     let lines_of_code = if func_end_line > func_start_line {
         func_end_line - func_start_line
@@ -1334,7 +1578,13 @@ fn calculate_function_complexity(
         1
     };
 
-    (cyclomatic, cognitive, max_nesting, param_count, lines_of_code)
+    (
+        cyclomatic,
+        cognitive,
+        max_nesting,
+        param_count,
+        lines_of_code,
+    )
 }
 
 /// Recursively finds a function and its metrics
@@ -1370,7 +1620,13 @@ fn find_function_metrics(
                 *param_count = count_parameters(node, source);
 
                 // Process function body for decision points
-                process_decision_points(node, source, max_nesting, decision_points, current_nesting);
+                process_decision_points(
+                    node,
+                    source,
+                    max_nesting,
+                    decision_points,
+                    current_nesting,
+                );
             }
         }
     }
@@ -1419,9 +1675,10 @@ fn count_parameters(node: tree_sitter::Node, _source: &str) -> u32 {
             if child.kind() == "parameters" {
                 for j in 0..child.child_count() {
                     if let Some(param) = child.child(j)
-                        && param.kind() == "identifier" {
-                            count += 1;
-                        }
+                        && param.kind() == "identifier"
+                    {
+                        count += 1;
+                    }
                 }
             }
             // Handle Rust/JS parameters (identifier list)
@@ -1442,7 +1699,7 @@ fn process_decision_points(
     current_nesting: u32,
 ) {
     let kind = node.kind();
-    
+
     // Check for decision points
     match kind {
         "if_statement" | "if_expression" => {
@@ -1485,10 +1742,20 @@ fn process_decision_points(
     }
 
     // Recurse into children with updated nesting
-    let child_nesting = if matches!(kind, 
-        "if_statement" | "if_expression" | "elif_clause" | "else_if_clause" |
-        "while_statement" | "while_expression" | "for_statement" | "for_expression" |
-        "for_in_statement" | "match_expression" | "match_statement" | "switch_statement"
+    let child_nesting = if matches!(
+        kind,
+        "if_statement"
+            | "if_expression"
+            | "elif_clause"
+            | "else_if_clause"
+            | "while_statement"
+            | "while_expression"
+            | "for_statement"
+            | "for_expression"
+            | "for_in_statement"
+            | "match_expression"
+            | "match_statement"
+            | "switch_statement"
     ) {
         current_nesting + 1
     } else {
@@ -1518,7 +1785,7 @@ pub async fn handle_get_entry_points(
 
     // Check if graph is empty after build attempt
     let root_ids = graph.roots();
-    
+
     // If still empty, return a helpful message
     if root_ids.is_empty() && graph.symbol_count() == 0 {
         return Err(HandlerError::NotFound(
@@ -1580,7 +1847,7 @@ pub async fn handle_get_leaf_functions(
 
     // Check if graph is empty after build attempt
     let leaf_ids = graph.leaves();
-    
+
     // If still empty, return a helpful message
     if leaf_ids.is_empty() && graph.symbol_count() == 0 {
         return Err(HandlerError::NotFound(
@@ -1652,8 +1919,9 @@ pub async fn handle_trace_path(
         (Some(source), Some(target)) => {
             // Use BFS to find path
             let path = find_path_bfs(&graph, &source, &target, input.max_depth);
-            
-            let path_entries: Vec<PathEntry> = path.iter()
+
+            let path_entries: Vec<PathEntry> = path
+                .iter()
                 .filter_map(|sid| {
                     graph.get_symbol(sid).map(|s| PathEntry {
                         symbol: s.name().to_string(),
@@ -1680,8 +1948,14 @@ pub async fn handle_trace_path(
                 },
             })
         }
-        (None, _) => Err(HandlerError::NotFound(format!("Source symbol '{}' not found", input.source))),
-        (_, None) => Err(HandlerError::NotFound(format!("Target symbol '{}' not found", input.target))),
+        (None, _) => Err(HandlerError::NotFound(format!(
+            "Source symbol '{}' not found",
+            input.source
+        ))),
+        (_, None) => Err(HandlerError::NotFound(format!(
+            "Target symbol '{}' not found",
+            input.target
+        ))),
     }
 }
 
@@ -1704,15 +1978,23 @@ pub async fn handle_export_mermaid(
     let mut edge_count = 0;
 
     // If a root symbol is provided, export subgraph around it
-    let symbols_to_export: Box<dyn Iterator<Item = _>> = if let Some(ref root_name) = input.root_symbol {
-        if let Some(root_id) = find_symbol_in_graph(&graph, root_name) {
-            Box::new(std::iter::once(root_id))
+    let symbols_to_export: Box<dyn Iterator<Item = _>> =
+        if let Some(ref root_name) = input.root_symbol {
+            if let Some(root_id) = find_symbol_in_graph(&graph, root_name) {
+                Box::new(std::iter::once(root_id))
+            } else {
+                return Err(HandlerError::NotFound(format!(
+                    "Root symbol '{}' not found",
+                    root_name
+                )));
+            }
         } else {
-            return Err(HandlerError::NotFound(format!("Root symbol '{}' not found", root_name)));
-        }
-    } else {
-        Box::new(graph.symbols().map(|s| SymbolId::new(s.fully_qualified_name())))
-    };
+            Box::new(
+                graph
+                    .symbols()
+                    .map(|s| SymbolId::new(s.fully_qualified_name())),
+            )
+        };
 
     // Collect symbols to process
     let symbol_ids: Vec<SymbolId> = symbols_to_export.collect();
@@ -1725,9 +2007,10 @@ pub async fn handle_export_mermaid(
         if let Some(symbol) = graph.get_symbol(symbol_id) {
             // Apply module filter - skip symbols whose file path doesn't contain the filter string
             if let Some(filter_str) = module_filter
-                && !symbol.location().file().contains(filter_str) {
-                    continue;
-                }
+                && !symbol.location().file().contains(filter_str)
+            {
+                continue;
+            }
             let node_id = sanitize_mermaid_id(symbol.name());
             mermaid_lines.push(format!("    {}[{}]", node_id, symbol.name()));
             node_count += 1;
@@ -1739,7 +2022,15 @@ pub async fn handle_export_mermaid(
         // For subgraph, traverse up to max_depth
         let mut visited = std::collections::HashSet::new();
         for symbol_id in &symbol_ids {
-            collect_edges_recursive(&graph, symbol_id, &mut visited, input.max_depth, &mut mermaid_lines, &mut edge_count, module_filter);
+            collect_edges_recursive(
+                &graph,
+                symbol_id,
+                &mut visited,
+                input.max_depth,
+                &mut mermaid_lines,
+                &mut edge_count,
+                module_filter,
+            );
         }
     } else {
         // For full graph, add all edges (filtered by module_filter)
@@ -1747,16 +2038,18 @@ pub async fn handle_export_mermaid(
             if let Some(symbol) = graph.get_symbol(symbol_id) {
                 // Skip source symbol if it doesn't match filter
                 if let Some(filter_str) = module_filter
-                    && !symbol.location().file().contains(filter_str) {
-                        continue;
-                    }
+                    && !symbol.location().file().contains(filter_str)
+                {
+                    continue;
+                }
                 for (callee_id, _) in graph.callees(symbol_id) {
                     if let Some(callee) = graph.get_symbol(&callee_id) {
                         // Skip callee if it doesn't match module filter
                         if let Some(filter_str) = module_filter
-                            && !callee.location().file().contains(filter_str) {
-                                continue;
-                            }
+                            && !callee.location().file().contains(filter_str)
+                        {
+                            continue;
+                        }
                         let from_id = sanitize_mermaid_id(symbol.name());
                         let to_id = sanitize_mermaid_id(callee.name());
                         mermaid_lines.push(format!("    {} --> {}", from_id, to_id));
@@ -1769,7 +2062,9 @@ pub async fn handle_export_mermaid(
 
     let mermaid_code = mermaid_lines.join("\n");
 
-    let svg = if input.format.as_deref() == Some("svg") || (input.format.is_none() && input.theme.is_some()) {
+    let svg = if input.format.as_deref() == Some("svg")
+        || (input.format.is_none() && input.theme.is_some())
+    {
         let theme = input.theme.as_deref().unwrap_or("tokyo-night-light");
         render_mermaid_to_svg(&mermaid_code, theme)
     } else {
@@ -1853,9 +2148,10 @@ pub async fn handle_get_hot_symbols(
     let _start = Instant::now();
 
     // Get the hotness data from context
-    let hotness = ctx.symbol_hotness.lock().map_err(|_| {
-        HandlerError::Internal("Failed to acquire hotness lock".into())
-    })?;
+    let hotness = ctx
+        .symbol_hotness
+        .lock()
+        .map_err(|_| HandlerError::Internal("Failed to acquire hotness lock".into()))?;
 
     // Convert to sorted vector
     let mut symbols: Vec<HotSymbolDto> = hotness
@@ -1972,7 +2268,9 @@ pub async fn handle_get_all_symbols(
 ) -> HandlerResult<GetAllSymbolsOutput> {
     let _ensure = ensure_graph_built(ctx)?;
 
-    let all_symbols = ctx.analysis_service.get_all_symbols(input.limit, input.offset);
+    let all_symbols = ctx
+        .analysis_service
+        .get_all_symbols(input.limit, input.offset);
     let total = all_symbols.len();
 
     // Check if there are more symbols beyond this batch
@@ -2021,45 +2319,54 @@ fn build_symbol_name_index(graph: &CallGraph) -> HashMap<String, Vec<(&str, &Sym
     let mut index: HashMap<String, Vec<(&str, &Symbol)>> = HashMap::new();
     for (id, symbol) in graph.symbol_ids() {
         let name_lower = symbol.name().to_lowercase();
-        index.entry(name_lower).or_default().push((id.as_str(), symbol));
+        index
+            .entry(name_lower)
+            .or_default()
+            .push((id.as_str(), symbol));
     }
     index
 }
 
 fn find_symbol_in_graph(graph: &CallGraph, name: &str) -> Option<SymbolId> {
     let search_name = name.to_lowercase();
-    
+
     // Tier 1: Exact symbol name match
     for symbol in graph.symbols() {
         if symbol.name().to_lowercase() == search_name {
             return Some(SymbolId::new(symbol.fully_qualified_name()));
         }
     }
-    
+
     // Tier 2: Exact FQN match
     for symbol in graph.symbols() {
         if symbol.fully_qualified_name().to_lowercase() == search_name {
             return Some(SymbolId::new(symbol.fully_qualified_name()));
         }
     }
-    
+
     // Tier 3: Segment-exact match (split FQN by :: and . and check any segment equals search_name)
     for symbol in graph.symbols() {
         let fqn = symbol.fully_qualified_name().to_lowercase();
-        let segments = fqn.split("::")
+        let segments = fqn
+            .split("::")
             .flat_map(|s| s.split('.'))
             .any(|seg| seg == search_name);
         if segments {
             return Some(SymbolId::new(symbol.fully_qualified_name()));
         }
     }
-    
+
     None
 }
 
 // BFS path finding algorithm
 
-fn find_path_bfs(graph: &CallGraph, source: &SymbolId, target: &SymbolId, max_depth: u8) -> Vec<SymbolId> {
+fn find_path_bfs(
+    graph: &CallGraph,
+    source: &SymbolId,
+    target: &SymbolId,
+    max_depth: u8,
+) -> Vec<SymbolId> {
     use std::collections::VecDeque;
 
     let mut queue: VecDeque<(SymbolId, Vec<SymbolId>)> = VecDeque::new();
@@ -2109,24 +2416,35 @@ fn collect_edges_recursive(
     if let Some(symbol) = graph.get_symbol(symbol_id) {
         // Skip if symbol doesn't match module filter
         if let Some(filter_str) = module_filter
-            && !symbol.location().file().contains(filter_str) {
-                return;
-            }
+            && !symbol.location().file().contains(filter_str)
+        {
+            return;
+        }
 
         for (callee_id, _) in graph.callees(symbol_id) {
             if !visited.contains(&callee_id)
-                && let Some(callee) = graph.get_symbol(&callee_id) {
-                    // Skip callee if it doesn't match module filter
-                    if let Some(filter_str) = module_filter
-                        && !callee.location().file().contains(filter_str) {
-                            continue;
-                        }
-                    let from_id = sanitize_mermaid_id(symbol.name());
-                    let to_id = sanitize_mermaid_id(callee.name());
-                    lines.push(format!("    {} --> {}", from_id, to_id));
-                    *edge_count += 1;
-                    collect_edges_recursive(graph, &callee_id, visited, remaining_depth - 1, lines, edge_count, module_filter);
+                && let Some(callee) = graph.get_symbol(&callee_id)
+            {
+                // Skip callee if it doesn't match module filter
+                if let Some(filter_str) = module_filter
+                    && !callee.location().file().contains(filter_str)
+                {
+                    continue;
                 }
+                let from_id = sanitize_mermaid_id(symbol.name());
+                let to_id = sanitize_mermaid_id(callee.name());
+                lines.push(format!("    {} --> {}", from_id, to_id));
+                *edge_count += 1;
+                collect_edges_recursive(
+                    graph,
+                    &callee_id,
+                    visited,
+                    remaining_depth - 1,
+                    lines,
+                    edge_count,
+                    module_filter,
+                );
+            }
         }
     }
 }
@@ -2168,27 +2486,31 @@ pub async fn handle_build_lightweight_index(
     // For lightweight strategy, build directly as LightweightStrategy (concrete type)
     // so we can extract the index via into_index() without rebuilding.
     let strategy_name_input = input.strategy.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        match strategy_name_input.as_str() {
-            "lightweight" | "" => {
-                let mut s = LightweightStrategy::new();
-                let build_result = s.build_index(&directory);
-                let symbols = s.query_symbols("").len();
-                let index = Some(s.into_index());
-                (build_result, symbols, "LightweightStrategy".to_string(), index, directory)
-            }
-            _ => {
-                let mut strategy: Box<dyn GraphStrategy> = match strategy_name_input.as_str() {
-                    "on_demand" | "ondemand" => Box::new(OnDemandStrategy::new()),
-                    "per_file" | "perfile" => Box::new(PerFileStrategy::new()),
-                    "full" | "full_graph" => Box::new(FullGraphStrategy::new()),
-                    _ => Box::new(LightweightStrategy::new()),
-                };
-                let build_result = strategy.build_index(&directory);
-                let symbols = strategy.query_symbols("").len();
-                let name = strategy.name().to_string();
-                (build_result, symbols, name, None, directory)
-            }
+    let result = tokio::task::spawn_blocking(move || match strategy_name_input.as_str() {
+        "lightweight" | "" => {
+            let mut s = LightweightStrategy::new();
+            let build_result = s.build_index(&directory);
+            let symbols = s.query_symbols("").len();
+            let index = Some(s.into_index());
+            (
+                build_result,
+                symbols,
+                "LightweightStrategy".to_string(),
+                index,
+                directory,
+            )
+        }
+        _ => {
+            let mut strategy: Box<dyn GraphStrategy> = match strategy_name_input.as_str() {
+                "on_demand" | "ondemand" => Box::new(OnDemandStrategy::new()),
+                "per_file" | "perfile" => Box::new(PerFileStrategy::new()),
+                "full" | "full_graph" => Box::new(FullGraphStrategy::new()),
+                _ => Box::new(LightweightStrategy::new()),
+            };
+            let build_result = strategy.build_index(&directory);
+            let symbols = strategy.query_symbols("").len();
+            let name = strategy.name().to_string();
+            (build_result, symbols, name, None, directory)
         }
     })
     .await
@@ -2212,8 +2534,7 @@ pub async fn handle_build_lightweight_index(
                 locations_indexed: symbols,
                 message: format!(
                     "Index built successfully using {} strategy in {}ms",
-                    strategy_name,
-                    elapsed
+                    strategy_name, elapsed
                 ),
             })
         }
@@ -2226,8 +2547,6 @@ pub async fn handle_query_symbol_index(
     ctx: &HandlerContext,
     input: QuerySymbolInput,
 ) -> HandlerResult<QuerySymbolOutput> {
-    
-
     // Validate input
     ctx.validator.validate_query(&input.symbol_name)?;
 
@@ -2287,8 +2606,6 @@ pub async fn handle_build_call_subgraph(
     if ctx.is_cancelled() {
         return Err(HandlerError::Internal("Cancelled".into()));
     }
-
-    
 
     // Validate input
     ctx.validator.validate_query(&input.symbol_name)?;
@@ -2442,7 +2759,8 @@ pub async fn handle_merge_graphs(
 
     // Use per-file strategy with merge
     let strategy = PerFileStrategy::new();
-    let merged = strategy.build_full_graph(file_paths[0].parent().unwrap_or(&ctx.working_dir))
+    let merged = strategy
+        .build_full_graph(file_paths[0].parent().unwrap_or(&ctx.working_dir))
         .unwrap_or_else(|_| CallGraph::new());
 
     let symbols: Vec<SymbolLocationEntry> = merged
@@ -2504,9 +2822,9 @@ pub async fn handle_get_outline(
         .map_err(|e| HandlerError::InvalidInput(format!("Failed to read file: {}", e)))?;
 
     // Get language from extension
-    let language = crate::infrastructure::parser::Language::from_extension(
-        file_path.extension()
-    ).ok_or_else(|| HandlerError::InvalidInput("Unsupported file type".to_string()))?;
+    let language =
+        crate::infrastructure::parser::Language::from_extension(file_path.extension())
+            .ok_or_else(|| HandlerError::InvalidInput("Unsupported file type".to_string()))?;
 
     // Build the outline
     let nodes = build_outline(
@@ -2580,11 +2898,10 @@ pub async fn handle_get_symbol_code(
     }
 
     // Get symbol code
-    match ctx.symbol_code.get_symbol_code(
-        &file_path.to_string_lossy(),
-        input.line,
-        input.col,
-    ) {
+    match ctx
+        .symbol_code
+        .get_symbol_code(&file_path.to_string_lossy(), input.line, input.col)
+    {
         Ok(result) => Ok(SymbolCodeOutput {
             file: input.file,
             code: result.code,
@@ -2606,27 +2923,34 @@ pub async fn handle_semantic_search(
 
     // Validate query
     if input.query.is_empty() {
-        return Err(HandlerError::InvalidInput("Query cannot be empty".to_string()));
+        return Err(HandlerError::InvalidInput(
+            "Query cannot be empty".to_string(),
+        ));
     }
 
     // Ensure the search index is populated before querying
     let _ensure = ensure_semantic_indexed(ctx)?;
 
     // Convert kind filters
-    let kinds: Vec<SearchSymbolKind> = input.kinds.as_ref()
+    let kinds: Vec<SearchSymbolKind> = input
+        .kinds
+        .as_ref()
         .map(|kinds| {
-            kinds.iter().filter_map(|k| match k.to_lowercase().as_str() {
-                "function" => Some(SearchSymbolKind::Function),
-                "class" => Some(SearchSymbolKind::Class),
-                "method" => Some(SearchSymbolKind::Method),
-                "variable" => Some(SearchSymbolKind::Variable),
-                "trait" => Some(SearchSymbolKind::Trait),
-                "struct" => Some(SearchSymbolKind::Struct),
-                "enum" => Some(SearchSymbolKind::Enum),
-                "module" => Some(SearchSymbolKind::Module),
-                "constant" => Some(SearchSymbolKind::Constant),
-                _ => None,
-            }).collect()
+            kinds
+                .iter()
+                .filter_map(|k| match k.to_lowercase().as_str() {
+                    "function" => Some(SearchSymbolKind::Function),
+                    "class" => Some(SearchSymbolKind::Class),
+                    "method" => Some(SearchSymbolKind::Method),
+                    "variable" => Some(SearchSymbolKind::Variable),
+                    "trait" => Some(SearchSymbolKind::Trait),
+                    "struct" => Some(SearchSymbolKind::Struct),
+                    "enum" => Some(SearchSymbolKind::Enum),
+                    "module" => Some(SearchSymbolKind::Module),
+                    "constant" => Some(SearchSymbolKind::Constant),
+                    _ => None,
+                })
+                .collect()
         })
         .unwrap_or_default();
 
@@ -2642,17 +2966,20 @@ pub async fn handle_semantic_search(
     let results = ctx.semantic_search.search(query);
 
     // Convert to DTOs
-    let results_dto: Vec<SearchResultDto> = results.iter().map(|r| {
-        SearchResultDto {
-            name: r.symbol.name().to_string(),
-            kind: format!("{:?}", r.symbol.kind()).to_lowercase(),
-            file: r.symbol.location().file().to_string(),
-            line: r.symbol.location().line() + 1, // 1-indexed
-            column: r.symbol.location().column(),
-            score: r.score,
-            match_type: format!("{:?}", r.match_type).to_lowercase(),
-        }
-    }).collect();
+    let results_dto: Vec<SearchResultDto> = results
+        .iter()
+        .map(|r| {
+            SearchResultDto {
+                name: r.symbol.name().to_string(),
+                kind: format!("{:?}", r.symbol.kind()).to_lowercase(),
+                file: r.symbol.location().file().to_string(),
+                line: r.symbol.location().line() + 1, // 1-indexed
+                column: r.symbol.location().column(),
+                score: r.score,
+                match_type: format!("{:?}", r.match_type).to_lowercase(),
+            }
+        })
+        .collect();
 
     let elapsed = start.elapsed().as_millis() as u64;
 
@@ -2745,11 +3072,17 @@ fn render_mermaid_to_svg(mermaid_code: &str, theme: &str) -> Option<String> {
 // ============================================================================
 
 /// Handler for go_to_definition tool
-
 // LSP handlers module
 pub mod lsp_handlers;
 
-// AIX handlers module
+// AIX handlers module — gated behind the `sqlite` feature (see
+// `postgres-default-config`). The full file is the canonical
+// implementation; the `cognicode-core` default build (with `sqlite`
+// in its default feature list) uses it directly. When the default
+// flips in PR 2 to drop `sqlite`, this declaration becomes
+// `#[cfg(feature = "sqlite")]` and a stub mod provides the same
+// public surface (handler functions returning "sqlite feature
+// disabled" errors).
 pub mod aix_handlers;
 
 #[cfg(test)]
@@ -2763,7 +3096,7 @@ mod tests {
             directory: Some("/nonexistent/path".to_string()),
             strategy: "lightweight".to_string(),
         };
-        
+
         let result = handle_build_lightweight_index(&ctx, input).await;
         assert!(result.is_err());
     }
@@ -2775,7 +3108,7 @@ mod tests {
             symbol_name: "".to_string(),
             directory: None,
         };
-        
+
         let result = handle_query_symbol_index(&ctx, input).await;
         // Empty symbol name should still work but return empty results
         assert!(result.is_ok());
@@ -2792,7 +3125,7 @@ mod tests {
             direction: SubgraphDirection::Both,
             directory: None,
         };
-        
+
         let result = handle_build_call_subgraph(&ctx, input).await;
         // Should return a result even with empty symbol
         assert!(result.is_ok());
@@ -2804,7 +3137,7 @@ mod tests {
         let input = GetPerFileGraphInput {
             file_path: "/nonexistent/file.py".to_string(),
         };
-        
+
         let result = handle_get_per_file_graph(&ctx, input).await;
         assert!(result.is_err());
     }
@@ -2812,9 +3145,7 @@ mod tests {
     #[tokio::test]
     async fn test_handle_merge_graphs_empty_list() {
         let ctx = HandlerContext::new(PathBuf::from("."));
-        let input = MergeGraphsInput {
-            file_paths: vec![],
-        };
+        let input = MergeGraphsInput { file_paths: vec![] };
 
         let result = handle_merge_graphs(&ctx, input).await;
         assert!(result.is_ok());
@@ -2833,9 +3164,7 @@ mod tests {
         std::fs::write(&rust_file, "fn hello() {}\n").unwrap();
 
         let ctx = HandlerContext::new(tempdir_path.to_path_buf());
-        let input = BuildGraphInput {
-            directory: None,
-        };
+        let input = BuildGraphInput { directory: None };
 
         let result = handle_build_graph(&ctx, input).await;
         assert!(result.is_ok());
@@ -2856,9 +3185,7 @@ mod tests {
 
         // First context
         let ctx1 = HandlerContext::new(tempdir_path.to_path_buf());
-        let input1 = BuildGraphInput {
-            directory: None,
-        };
+        let input1 = BuildGraphInput { directory: None };
         let result1 = handle_build_graph(&ctx1, input1).await;
         assert!(result1.is_ok());
         let output1 = result1.unwrap();
@@ -2868,9 +3195,7 @@ mod tests {
 
         // Second call with DIFFERENT context (simulates restart)
         let ctx2 = HandlerContext::new(tempdir_path.to_path_buf());
-        let input2 = BuildGraphInput {
-            directory: None,
-        };
+        let input2 = BuildGraphInput { directory: None };
         let result2 = handle_build_graph(&ctx2, input2).await;
         assert!(result2.is_ok());
         let output2 = result2.unwrap();
@@ -2924,9 +3249,7 @@ mod tests {
         let ctx = HandlerContext::new(tempdir_path.to_path_buf());
 
         // First call - should build
-        let input1 = BuildGraphInput {
-            directory: None,
-        };
+        let input1 = BuildGraphInput { directory: None };
         let result1 = handle_build_graph(&ctx, input1).await;
         assert!(result1.is_ok());
         let output1 = result1.unwrap();
@@ -2937,16 +3260,17 @@ mod tests {
         std::fs::write(&rust_file, "fn hello() { let x = 1; }\n").unwrap();
 
         // Second call - should rebuild because file was modified
-        let input2 = BuildGraphInput {
-            directory: None,
-        };
+        let input2 = BuildGraphInput { directory: None };
         let result2 = handle_build_graph(&ctx, input2).await;
         assert!(result2.is_ok());
         let output2 = result2.unwrap();
         assert!(output2.success);
         // Should rebuild because file was modified
-        assert!(output2.message.contains("built"),
-            "Expected 'built' but got: {}", output2.message);
+        assert!(
+            output2.message.contains("built"),
+            "Expected 'built' but got: {}",
+            output2.message
+        );
     }
 
     // =============================================================================
@@ -2989,10 +3313,17 @@ mod tests {
 
         // The mermaid code should only contain symbols from handlers.rs
         // (node_count should be 1, from the handle_request function)
-        assert!(output.node_count >= 1, "Expected at least 1 node from handlers.rs, got {}", output.node_count);
+        assert!(
+            output.node_count >= 1,
+            "Expected at least 1 node from handlers.rs, got {}",
+            output.node_count
+        );
         // Verify the handlers function appears in the output
-        assert!(output.mermaid_code.contains("handle_request"),
-            "Expected 'handle_request' to appear in output, got: {}", output.mermaid_code);
+        assert!(
+            output.mermaid_code.contains("handle_request"),
+            "Expected 'handle_request' to appear in output, got: {}",
+            output.mermaid_code
+        );
         // main should NOT appear since it doesn't match the filter
         // (unless there's a reference to it)
     }
@@ -3026,9 +3357,16 @@ mod tests {
         let output = export_result.unwrap();
 
         // Should include the handlers function
-        assert!(output.mermaid_code.contains("handle_request"),
-            "Expected 'handle_request' in output, got: {}", output.mermaid_code);
-        assert!(output.node_count >= 1, "Expected at least 1 node, got {}", output.node_count);
+        assert!(
+            output.mermaid_code.contains("handle_request"),
+            "Expected 'handle_request' in output, got: {}",
+            output.mermaid_code
+        );
+        assert!(
+            output.node_count >= 1,
+            "Expected at least 1 node, got {}",
+            output.node_count
+        );
     }
 
     #[tokio::test]
@@ -3060,7 +3398,11 @@ mod tests {
         let output = export_result.unwrap();
 
         // Empty string should match everything, same as None
-        assert!(output.node_count >= 1, "Expected at least 1 node, got {}", output.node_count);
+        assert!(
+            output.node_count >= 1,
+            "Expected at least 1 node, got {}",
+            output.node_count
+        );
     }
 
     #[tokio::test]
@@ -3092,8 +3434,16 @@ mod tests {
         let output = export_result.unwrap();
 
         // Should return empty diagram, not an error
-        assert_eq!(output.node_count, 0, "Expected 0 nodes when no matches, got {}", output.node_count);
-        assert_eq!(output.edge_count, 0, "Expected 0 edges when no matches, got {}", output.edge_count);
+        assert_eq!(
+            output.node_count, 0,
+            "Expected 0 nodes when no matches, got {}",
+            output.node_count
+        );
+        assert_eq!(
+            output.edge_count, 0,
+            "Expected 0 edges when no matches, got {}",
+            output.edge_count
+        );
     }
 
     #[tokio::test]
@@ -3123,8 +3473,15 @@ mod tests {
         let output = export_result.unwrap();
 
         // SVG format should produce svg field
-        assert!(output.svg.is_some(), "Expected SVG output when format=svg, got None");
-        assert!(output.node_count >= 1, "Expected at least 1 node, got {}", output.node_count);
+        assert!(
+            output.svg.is_some(),
+            "Expected SVG output when format=svg, got None"
+        );
+        assert!(
+            output.node_count >= 1,
+            "Expected at least 1 node, got {}",
+            output.node_count
+        );
     }
 
     #[tokio::test]
@@ -3154,8 +3511,15 @@ mod tests {
         let output = export_result.unwrap();
 
         // Code format should NOT produce svg field
-        assert!(output.svg.is_none(), "Expected no SVG when format=code, got Some");
-        assert!(output.node_count >= 1, "Expected at least 1 node, got {}", output.node_count);
+        assert!(
+            output.svg.is_none(),
+            "Expected no SVG when format=code, got Some"
+        );
+        assert!(
+            output.node_count >= 1,
+            "Expected at least 1 node, got {}",
+            output.node_count
+        );
     }
 
     #[tokio::test]
@@ -3165,7 +3529,11 @@ mod tests {
 
         // Create two files
         let handlers_file = tempdir_path.join("handlers.rs");
-        std::fs::write(&handlers_file, "pub fn handle_request() {}\n pub fn internal_helper() {}\n").unwrap();
+        std::fs::write(
+            &handlers_file,
+            "pub fn handle_request() {}\n pub fn internal_helper() {}\n",
+        )
+        .unwrap();
 
         let main_file = tempdir_path.join("main.rs");
         std::fs::write(&main_file, "fn main() { handle_request(); }\n").unwrap();
@@ -3191,8 +3559,11 @@ mod tests {
         let output = export_result.unwrap();
 
         // Should have at least handle_request node
-        assert!(output.mermaid_code.contains("handle_request"),
-            "Expected 'handle_request' in output, got: {}", output.mermaid_code);
+        assert!(
+            output.mermaid_code.contains("handle_request"),
+            "Expected 'handle_request' in output, got: {}",
+            output.mermaid_code
+        );
     }
 
     #[tokio::test]
@@ -3231,9 +3602,16 @@ mod tests {
         let output = export_result.unwrap();
 
         // Should match symbols from interface/mcp/handlers.rs
-        assert!(output.mermaid_code.contains("handle_mcp_request"),
-            "Expected 'handle_mcp_request' in output, got: {}", output.mermaid_code);
-        assert!(output.node_count >= 1, "Expected at least 1 node, got {}", output.node_count);
+        assert!(
+            output.mermaid_code.contains("handle_mcp_request"),
+            "Expected 'handle_mcp_request' in output, got: {}",
+            output.mermaid_code
+        );
+        assert!(
+            output.node_count >= 1,
+            "Expected at least 1 node, got {}",
+            output.node_count
+        );
     }
 
     // =============================================================================
@@ -3267,7 +3645,9 @@ mod tests {
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
         // Build graph first
-        ctx.analysis_service.build_project_graph(temp.path()).unwrap();
+        ctx.analysis_service
+            .build_project_graph(temp.path())
+            .unwrap();
 
         // Now ensure should not auto-build
         let result = ensure_graph_built(&ctx).unwrap();
@@ -3279,12 +3659,19 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, "fn main() { calculate(); }\nfn calculate() -> i32 { 42 }").unwrap();
+        std::fs::write(
+            &file_path,
+            "fn main() { calculate(); }\nfn calculate() -> i32 { 42 }",
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
         // Call analyze_impact WITHOUT calling build_graph first
-        let input = AnalyzeImpactInput { symbol_name: "calculate".to_string(), compressed: false };
+        let input = AnalyzeImpactInput {
+            symbol_name: "calculate".to_string(),
+            compressed: false,
+        };
         let result = handle_analyze_impact(&ctx, input).await.unwrap();
 
         // Should succeed (auto-built graph) and include auto-built note
@@ -3376,11 +3763,26 @@ mod tests {
     fn test_handler_error_code_values_are_unique() {
         use std::collections::HashSet;
         let codes = vec![
-            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::Security(SecurityError::PathOutsideWorkspace)).code,
-            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::App(AppError::AnalysisError("t".into()))).code,
-            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::InvalidInput("t".into())).code,
-            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::NotFound("t".into())).code,
-            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::Internal("t".into())).code,
+            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::Security(
+                SecurityError::PathOutsideWorkspace,
+            ))
+            .code,
+            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::App(
+                AppError::AnalysisError("t".into()),
+            ))
+            .code,
+            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::InvalidInput(
+                "t".into(),
+            ))
+            .code,
+            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::NotFound(
+                "t".into(),
+            ))
+            .code,
+            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::Internal(
+                "t".into(),
+            ))
+            .code,
         ];
         // All codes should be unique
         let unique_codes: HashSet<i32> = codes.iter().copied().collect();
@@ -3398,7 +3800,8 @@ mod tests {
         assert!(json.contains("Symbol 'foo' not found"));
 
         // Deserialize back
-        let deserialized: crate::interface::mcp::schemas::McpError = serde_json::from_str(&json).unwrap();
+        let deserialized: crate::interface::mcp::schemas::McpError =
+            serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.code, -32003);
         assert!(deserialized.message.contains("foo"));
     }
@@ -3456,7 +3859,8 @@ mod tests {
         std::fs::write(&rust_file, "fn test() {}").unwrap();
 
         let ctx = HandlerContext::new(tempdir_path.to_path_buf());
-        ctx.cancellation_token.store(true, std::sync::atomic::Ordering::SeqCst);
+        ctx.cancellation_token
+            .store(true, std::sync::atomic::Ordering::SeqCst);
 
         let input = BuildGraphInput { directory: None };
         let result = handle_build_graph(&ctx, input).await;
@@ -3478,13 +3882,11 @@ mod tests {
     #[test]
     fn test_mcp_error_with_data() {
         // Test McpError with additional data
-        let mcp_err = crate::interface::mcp::schemas::McpError::new(
-            -32002,
-            "Invalid input",
-        ).with_data(serde_json::json!({
-            "field": "symbol_name",
-            "reason": "empty string"
-        }));
+        let mcp_err = crate::interface::mcp::schemas::McpError::new(-32002, "Invalid input")
+            .with_data(serde_json::json!({
+                "field": "symbol_name",
+                "reason": "empty string"
+            }));
 
         assert_eq!(mcp_err.code, -32002);
         assert!(mcp_err.data.is_some());

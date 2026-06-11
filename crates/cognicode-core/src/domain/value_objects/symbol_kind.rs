@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::str::FromStr;
 
 /// Represents the kind of a code symbol (function, class, variable, etc.).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -141,6 +142,49 @@ impl fmt::Display for SymbolKind {
     }
 }
 
+/// Error type for [`SymbolKind::from_str`] failures.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ParseSymbolKindError {
+    #[error("unknown symbol kind: {0}")]
+    Unknown(String),
+}
+
+/// Parses a [`SymbolKind`] from its [`Display`](fmt::Display) string
+/// (e.g. `"function"`, `"class"`, `"method"`). Inverse of [`Display`].
+/// Returns [`ParseSymbolKindError::Unknown`] when the string does not
+/// match any known kind.
+impl FromStr for SymbolKind {
+    type Err = ParseSymbolKindError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "function" => Ok(SymbolKind::Function),
+            "class" => Ok(SymbolKind::Class),
+            "module" => Ok(SymbolKind::Module),
+            "variable" => Ok(SymbolKind::Variable),
+            "parameter" => Ok(SymbolKind::Parameter),
+            "type" => Ok(SymbolKind::Type),
+            "method" => Ok(SymbolKind::Method),
+            "property" => Ok(SymbolKind::Property),
+            "field" => Ok(SymbolKind::Field),
+            "import" => Ok(SymbolKind::Import),
+            "enum variant" => Ok(SymbolKind::EnumVariant),
+            "trait" => Ok(SymbolKind::Trait),
+            "generic" => Ok(SymbolKind::Generic),
+            "constant" => Ok(SymbolKind::Constant),
+            "constructor" => Ok(SymbolKind::Constructor),
+            "struct" => Ok(SymbolKind::Struct),
+            "enum" => Ok(SymbolKind::Enum),
+            "interface" => Ok(SymbolKind::Interface),
+            "file" => Ok(SymbolKind::File),
+            "namespace" => Ok(SymbolKind::Namespace),
+            "package" => Ok(SymbolKind::Package),
+            "unknown" => Ok(SymbolKind::Unknown),
+            other => Err(ParseSymbolKindError::Unknown(other.to_string())),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,5 +238,45 @@ mod tests {
         // 0 and very large values → Unknown
         assert_eq!(SymbolKind::from_lsp_kind(0), SymbolKind::Unknown);
         assert_eq!(SymbolKind::from_lsp_kind(u64::MAX), SymbolKind::Unknown);
+    }
+
+    #[test]
+    fn test_from_str_round_trips_display() {
+        // Every Display-able kind must round-trip through FromStr.
+        let cases = [
+            (SymbolKind::Function, "function"),
+            (SymbolKind::Class, "class"),
+            (SymbolKind::Module, "module"),
+            (SymbolKind::Variable, "variable"),
+            (SymbolKind::Parameter, "parameter"),
+            (SymbolKind::Type, "type"),
+            (SymbolKind::Method, "method"),
+            (SymbolKind::Property, "property"),
+            (SymbolKind::Field, "field"),
+            (SymbolKind::Import, "import"),
+            (SymbolKind::EnumVariant, "enum variant"),
+            (SymbolKind::Trait, "trait"),
+            (SymbolKind::Generic, "generic"),
+            (SymbolKind::Constant, "constant"),
+            (SymbolKind::Constructor, "constructor"),
+            (SymbolKind::Struct, "struct"),
+            (SymbolKind::Enum, "enum"),
+            (SymbolKind::Interface, "interface"),
+            (SymbolKind::File, "file"),
+            (SymbolKind::Namespace, "namespace"),
+            (SymbolKind::Package, "package"),
+            (SymbolKind::Unknown, "unknown"),
+        ];
+        for (kind, label) in cases {
+            assert_eq!(format!("{}", kind), label, "display mismatch for {kind:?}");
+            let parsed: SymbolKind = label.parse().expect("must parse valid label");
+            assert_eq!(parsed, kind, "from_str round-trip failed for {label}");
+        }
+    }
+
+    #[test]
+    fn test_from_str_rejects_unknown() {
+        let err = "totally-not-a-kind".parse::<SymbolKind>().unwrap_err();
+        assert!(matches!(err, ParseSymbolKindError::Unknown(ref s) if s == "totally-not-a-kind"));
     }
 }

@@ -13,6 +13,9 @@ mod symbol_dto;
 pub use analysis::*;
 pub use common::*;
 pub use file_ops::*;
-pub use impact_dto::{CycleDto, ImpactDto};
+pub use impact_dto::{
+    ClusterDto, ClusterResultDto, CycleDto, ExplainHopDto, ExplainResultDto, ImpactDto,
+    PathResultDto, SccDto, SubgraphEdgeDto, SubgraphResultDto,
+};
 pub use refactor_dto::{RefactorPlanDto, RefactorPreviewDto, ValidationResultDto};
 pub use symbol_dto::{SymbolDto, SymbolLocationDto};

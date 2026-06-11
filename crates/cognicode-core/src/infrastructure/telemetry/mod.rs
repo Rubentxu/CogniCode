@@ -3,8 +3,8 @@
 //! This module provides metrics collection for all MCP tool operations using
 //! the OpenTelemetry SDK with OTLP export.
 
-use opentelemetry::metrics::{Counter, Histogram, Meter};
 use opentelemetry::KeyValue;
+use opentelemetry::metrics::{Counter, Histogram, Meter};
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Instant;
@@ -87,11 +87,10 @@ impl ToolMetrics {
     /// Records a successful tool call with duration
     #[allow(dead_code)]
     pub fn record_call(&self, tool_name: &str, duration_ms: f64) {
-        self.calls.add(1, &[KeyValue::new("tool", tool_name.to_string())]);
-        self.duration.record(
-            duration_ms,
-            &[KeyValue::new("tool", tool_name.to_string())],
-        );
+        self.calls
+            .add(1, &[KeyValue::new("tool", tool_name.to_string())]);
+        self.duration
+            .record(duration_ms, &[KeyValue::new("tool", tool_name.to_string())]);
     }
 
     /// Records an error during tool execution
@@ -109,12 +108,8 @@ impl ToolMetrics {
     /// Records bytes read from disk
     #[allow(dead_code)]
     pub fn record_bytes_read(&self, bytes: f64, mode: &str) {
-        self.bytes_read.record(
-            bytes,
-            &[
-                KeyValue::new("mode", mode.to_string()),
-            ],
-        );
+        self.bytes_read
+            .record(bytes, &[KeyValue::new("mode", mode.to_string())]);
     }
 
     /// Records bytes written to disk
@@ -126,10 +121,8 @@ impl ToolMetrics {
     /// Records search matches found
     #[allow(dead_code)]
     pub fn record_search_matches(&self, count: f64, file_type: &str) {
-        self.search_matches.record(
-            count,
-            &[KeyValue::new("file_type", file_type.to_string())],
-        );
+        self.search_matches
+            .record(count, &[KeyValue::new("file_type", file_type.to_string())]);
     }
 
     /// Records number of files scanned
@@ -147,10 +140,8 @@ impl ToolMetrics {
     /// Records an edit rejection
     #[allow(dead_code)]
     pub fn record_edit_rejected(&self, reason: &str) {
-        self.edit_rejected.add(
-            1,
-            &[KeyValue::new("reason", reason.to_string())],
-        );
+        self.edit_rejected
+            .add(1, &[KeyValue::new("reason", reason.to_string())]);
     }
 }
 
@@ -209,15 +200,16 @@ where
     F: Future<Output = Result<T, ToolError>>,
 {
     let start = Instant::now();
-    metrics.calls.add(1, &[KeyValue::new("tool", tool_name.to_string())]);
+    metrics
+        .calls
+        .add(1, &[KeyValue::new("tool", tool_name.to_string())]);
 
     match f.await {
         Ok(result) => {
             let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
-            metrics.duration.record(
-                duration_ms,
-                &[KeyValue::new("tool", tool_name.to_string())],
-            );
+            metrics
+                .duration
+                .record(duration_ms, &[KeyValue::new("tool", tool_name.to_string())]);
             Ok(result)
         }
         Err(e) => {
@@ -246,8 +238,7 @@ static TOOL_METRICS: std::sync::OnceLock<Arc<ToolMetrics>> = std::sync::OnceLock
 
 /// Initializes the global ToolMetrics from the global meter provider
 pub fn init_global_metrics() -> Result<(), Box<dyn std::error::Error>> {
-    let metrics = create_metrics_from_global()
-        .ok_or("Failed to get global meter")?;
+    let metrics = create_metrics_from_global().ok_or("Failed to get global meter")?;
     TOOL_METRICS
         .set(Arc::from(metrics))
         .map_err(|_| "Global metrics already initialized")?;

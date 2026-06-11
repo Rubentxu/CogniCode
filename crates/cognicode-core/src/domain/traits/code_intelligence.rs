@@ -10,7 +10,10 @@ use async_trait::async_trait;
 #[async_trait]
 pub trait CodeIntelligenceProvider: Send + Sync {
     /// Gets all symbols in a file or directory
-    async fn get_symbols(&self, path: &std::path::Path) -> Result<Vec<Symbol>, CodeIntelligenceError>;
+    async fn get_symbols(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<Vec<Symbol>, CodeIntelligenceError>;
 
     /// Finds all references to a symbol at the given location
     async fn find_references(
@@ -38,10 +41,7 @@ pub trait CodeIntelligenceProvider: Send + Sync {
     ) -> Result<Vec<DocumentSymbol>, CodeIntelligenceError>;
 
     /// Gets hover information (type + docs) for a symbol at the given location
-    async fn hover(
-        &self,
-        location: &Location,
-    ) -> Result<Option<HoverInfo>, CodeIntelligenceError>;
+    async fn hover(&self, location: &Location) -> Result<Option<HoverInfo>, CodeIntelligenceError>;
 }
 
 /// Represents a reference to a symbol
@@ -73,7 +73,10 @@ pub enum ReferenceKind {
 impl ReferenceKind {
     /// Returns true if this is a read-like reference
     pub fn is_read(&self) -> bool {
-        matches!(self, ReferenceKind::Read | ReferenceKind::Call | ReferenceKind::Type)
+        matches!(
+            self,
+            ReferenceKind::Read | ReferenceKind::Call | ReferenceKind::Type
+        )
     }
 
     /// Returns true if this is a write-like reference
@@ -238,7 +241,13 @@ mod tests {
             Symbol::new(name, kind, loc)
         }
 
-        fn create_test_source_range(file: &str, start_line: u32, start_col: u32, end_line: u32, end_col: u32) -> SourceRange {
+        fn create_test_source_range(
+            file: &str,
+            start_line: u32,
+            start_col: u32,
+            end_line: u32,
+            end_col: u32,
+        ) -> SourceRange {
             SourceRange::new(
                 Location::new(file, start_line, start_col),
                 Location::new(file, end_line, end_col),
@@ -248,7 +257,10 @@ mod tests {
 
     #[async_trait::async_trait]
     impl CodeIntelligenceProvider for MockCodeIntelligence {
-        async fn get_symbols(&self, path: &std::path::Path) -> Result<Vec<Symbol>, CodeIntelligenceError> {
+        async fn get_symbols(
+            &self,
+            path: &std::path::Path,
+        ) -> Result<Vec<Symbol>, CodeIntelligenceError> {
             let loc = Location::new(path.to_str().unwrap_or("test.rs"), 0, 0);
             Ok(vec![
                 Symbol::new("main", SymbolKind::Function, loc.clone()),
@@ -283,11 +295,19 @@ mod tests {
             Ok(TypeHierarchy {
                 symbol: symbol.clone(),
                 parents: vec![TypeHierarchyNode {
-                    symbol: Symbol::new("ParentClass", SymbolKind::Class, Location::new("parent.rs", 0, 0)),
+                    symbol: Symbol::new(
+                        "ParentClass",
+                        SymbolKind::Class,
+                        Location::new("parent.rs", 0, 0),
+                    ),
                     distance: 1,
                 }],
                 children: vec![TypeHierarchyNode {
-                    symbol: Symbol::new("ChildClass", SymbolKind::Class, Location::new("child.rs", 0, 0)),
+                    symbol: Symbol::new(
+                        "ChildClass",
+                        SymbolKind::Class,
+                        Location::new("child.rs", 0, 0),
+                    ),
                     distance: 1,
                 }],
             })
@@ -309,13 +329,19 @@ mod tests {
                 DocumentSymbol {
                     symbol: Symbol::new("MyFunction", SymbolKind::Function, loc.clone()),
                     document_kind: DocumentSymbolKind::Function,
-                    range: SourceRange::new(loc.clone(), Location::new(path.to_str().unwrap_or("test.rs"), 10, 0)),
+                    range: SourceRange::new(
+                        loc.clone(),
+                        Location::new(path.to_str().unwrap_or("test.rs"), 10, 0),
+                    ),
                     children: vec![],
                 },
                 DocumentSymbol {
                     symbol: Symbol::new("MyClass", SymbolKind::Class, loc),
                     document_kind: DocumentSymbolKind::Class,
-                    range: SourceRange::new(Location::new(path.to_str().unwrap_or("test.rs"), 15, 0), Location::new(path.to_str().unwrap_or("test.rs"), 25, 0)),
+                    range: SourceRange::new(
+                        Location::new(path.to_str().unwrap_or("test.rs"), 15, 0),
+                        Location::new(path.to_str().unwrap_or("test.rs"), 25, 0),
+                    ),
                     children: vec![],
                 },
             ])
@@ -406,23 +432,46 @@ mod tests {
         struct MockNoneResponses;
         #[async_trait::async_trait]
         impl CodeIntelligenceProvider for MockNoneResponses {
-            async fn get_symbols(&self, _path: &std::path::Path) -> Result<Vec<Symbol>, CodeIntelligenceError> {
+            async fn get_symbols(
+                &self,
+                _path: &std::path::Path,
+            ) -> Result<Vec<Symbol>, CodeIntelligenceError> {
                 Ok(vec![])
             }
-            async fn find_references(&self, _location: &Location, _include_declaration: bool) -> Result<Vec<Reference>, CodeIntelligenceError> {
+            async fn find_references(
+                &self,
+                _location: &Location,
+                _include_declaration: bool,
+            ) -> Result<Vec<Reference>, CodeIntelligenceError> {
                 Ok(vec![])
             }
-            async fn get_hierarchy(&self, _location: &Location) -> Result<TypeHierarchy, CodeIntelligenceError> {
+            async fn get_hierarchy(
+                &self,
+                _location: &Location,
+            ) -> Result<TypeHierarchy, CodeIntelligenceError> {
                 let loc = Location::new("empty.rs", 0, 0);
-                Ok(TypeHierarchy { symbol: Symbol::new("Empty", SymbolKind::Class, loc.clone()), parents: vec![], children: vec![] })
+                Ok(TypeHierarchy {
+                    symbol: Symbol::new("Empty", SymbolKind::Class, loc.clone()),
+                    parents: vec![],
+                    children: vec![],
+                })
             }
-            async fn get_definition(&self, _location: &Location) -> Result<Option<Location>, CodeIntelligenceError> {
+            async fn get_definition(
+                &self,
+                _location: &Location,
+            ) -> Result<Option<Location>, CodeIntelligenceError> {
                 Ok(None)
             }
-            async fn get_document_symbols(&self, _path: &std::path::Path) -> Result<Vec<DocumentSymbol>, CodeIntelligenceError> {
+            async fn get_document_symbols(
+                &self,
+                _path: &std::path::Path,
+            ) -> Result<Vec<DocumentSymbol>, CodeIntelligenceError> {
                 Ok(vec![])
             }
-            async fn hover(&self, _location: &Location) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
+            async fn hover(
+                &self,
+                _location: &Location,
+            ) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
                 Ok(None)
             }
         }

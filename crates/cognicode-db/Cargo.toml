@@ -5,14 +5,30 @@ edition.workspace = true
 authors.workspace = true
 description = "Shared SQLite persistence layer for cognicode-mcp and cognicode-quality"
 
+[features]
+# Default is empty — rusqlite is opt-in via the `sqlite` feature.
+# The workspace default is now PostgreSQL.
+default = []
+# `sqlite` is the canonical opt-in feature. When enabled, the workspace
+# `rusqlite` dep is pulled in. This crate is the canonical SQLite
+# persistence layer used by cognicode-mcp and cognicode-quality — when
+# the upstream workspace flips to PG default, this crate must be
+# reachable in rusqlite-free builds.
+sqlite = ["dep:rusqlite"]
+# Test-only accessors used by integration tests outside the crate
+# (mirrors the `test-utils` feature on cognicode-explorer).
+test-utils = []
+
 [dependencies]
-rusqlite.workspace = true
+rusqlite = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 blake3.workspace = true
 bincode.workspace = true
-cognicode-store-traits.workspace = true
+# (REMOVED for `explorer-graph-repository-bridge` slice — `cognicode-store-traits`
+# is deprecated; this crate implements the canonical `cognicode_core::GraphStore`
+# directly. See crates/cognicode-store-traits/src/lib.rs for the migration map.)
 cognicode-core.workspace = true
 regex.workspace = true
 anyhow.workspace = true

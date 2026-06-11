@@ -1,3 +1,9 @@
+//! DEPRECATED: this module is part of the deprecated `cognicode-store-traits` crate.
+//! Use `cognicode_core::domain::aggregates::CallGraph` instead — the canonical
+//! `CallGraph` now carries `Provenance` and `confidence` per edge (Phase 1 of the
+//! Explorer Graph roadmap). This copy is stale and will be removed after the
+//! PostgreSQL adapter lands.
+//!
 //! Aggregate for representing call graphs between symbols
 //!
 //! A call graph represents the dependencies and call relationships between symbols.

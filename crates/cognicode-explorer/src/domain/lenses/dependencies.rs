@@ -13,8 +13,10 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use crate::domain::lens::{cap_and_order, clamp_confidence, finding_id, Lens, LensContext};
-use crate::dto::{DesignFinding, FindingSeverity, InspectableObjectType, LensDescriptor, LensResult};
+use crate::domain::lens::{Lens, LensContext, cap_and_order, clamp_confidence, finding_id};
+use crate::dto::{
+    DesignFinding, FindingSeverity, InspectableObjectType, LensDescriptor, LensResult,
+};
 use crate::error::ExplorerResult;
 use crate::ports::symbol_repository::ResolvedSymbol;
 
@@ -60,7 +62,9 @@ impl Lens for DependenciesLens {
                     Vec::new()
                 }
             }
-            crate::domain::ObjectIdentity::File { path } => analyse_file(path, ctx, quality_present),
+            crate::domain::ObjectIdentity::File { path } => {
+                analyse_file(path, ctx, quality_present)
+            }
             crate::domain::ObjectIdentity::Scope { path } => {
                 analyse_scope(path, ctx, quality_present)
             }
@@ -102,7 +106,10 @@ fn analyse_symbol(
         };
         let confidence = clamp_confidence(if quality_present { 0.85 } else { 0.6 });
         findings.push(DesignFinding {
-            id: finding_id(LENS_ID, &format!("fanout:{}:{}:{}", symbol.file, symbol.name, symbol.line)),
+            id: finding_id(
+                LENS_ID,
+                &format!("fanout:{}:{}:{}", symbol.file, symbol.name, symbol.line),
+            ),
             lens_id: LENS_ID.into(),
             title: format!("High fan-out: {} ({} callees)", symbol.name, fan_out),
             hypothesis: format!(
@@ -119,7 +126,13 @@ fn analyse_symbol(
     } else if fan_out > 0 {
         let confidence = clamp_confidence(if quality_present { 0.7 } else { 0.5 });
         findings.push(DesignFinding {
-            id: finding_id(LENS_ID, &format!("fanout-info:{}:{}:{}", symbol.file, symbol.name, symbol.line)),
+            id: finding_id(
+                LENS_ID,
+                &format!(
+                    "fanout-info:{}:{}:{}",
+                    symbol.file, symbol.name, symbol.line
+                ),
+            ),
             lens_id: LENS_ID.into(),
             title: format!("Coupling: {} ({} callees)", symbol.name, fan_out),
             hypothesis: format!(
@@ -140,7 +153,10 @@ fn analyse_symbol(
         // moderate fan_out.
         let confidence = clamp_confidence(if quality_present { 0.65 } else { 0.45 });
         findings.push(DesignFinding {
-            id: finding_id(LENS_ID, &format!("fanin-info:{}:{}:{}", symbol.file, symbol.name, symbol.line)),
+            id: finding_id(
+                LENS_ID,
+                &format!("fanin-info:{}:{}:{}", symbol.file, symbol.name, symbol.line),
+            ),
             lens_id: LENS_ID.into(),
             title: format!("Callers: {} ({} incoming)", symbol.name, fan_in),
             hypothesis: format!(
@@ -158,11 +174,7 @@ fn analyse_symbol(
     findings
 }
 
-fn analyse_file(
-    file: &str,
-    ctx: &LensContext,
-    quality_present: bool,
-) -> Vec<DesignFinding> {
+fn analyse_file(file: &str, ctx: &LensContext, quality_present: bool) -> Vec<DesignFinding> {
     let mut findings = Vec::new();
     let symbols = ctx
         .symbol_repo
@@ -226,11 +238,7 @@ fn analyse_file(
     findings
 }
 
-fn analyse_scope(
-    scope: &str,
-    ctx: &LensContext,
-    quality_present: bool,
-) -> Vec<DesignFinding> {
+fn analyse_scope(scope: &str, ctx: &LensContext, quality_present: bool) -> Vec<DesignFinding> {
     // Build a scope→scope edge map by walking every member symbol's
     // callees/callers. We bucket by parent directory of the foreign
     // file, which is how the existing dependencies view also slices it.
@@ -243,10 +251,8 @@ fn analyse_scope(
     }
 
     // Scope → scope edge counts (outgoing from `scope`).
-    let mut outgoing: std::collections::BTreeMap<String, usize> =
-        std::collections::BTreeMap::new();
-    let mut incoming: std::collections::BTreeMap<String, usize> =
-        std::collections::BTreeMap::new();
+    let mut outgoing: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut incoming: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for sym in &members {
         for callee in ctx.symbol_repo.callees(&sym.id) {
             if crate::domain::views::scope_contains_file(scope, &callee.file) {
@@ -284,10 +290,7 @@ fn analyse_scope(
             ),
             severity: FindingSeverity::Critical,
             confidence,
-            object_ids: cycle
-                .iter()
-                .map(|s| format!("scope:{s}"))
-                .collect(),
+            object_ids: cycle.iter().map(|s| format!("scope:{s}")).collect(),
             evidence_ids: vec!["evidence:scope_dependencies".into()],
         });
     }
@@ -349,7 +352,10 @@ fn detect_scope_cycle(
             continue;
         }
         // Walk every symbol whose parent dir is `current`.
-        for sym in members.iter().chain(ctx.symbol_repo.all_symbols().unwrap_or_default().iter()) {
+        for sym in members
+            .iter()
+            .chain(ctx.symbol_repo.all_symbols().unwrap_or_default().iter())
+        {
             if parent_dir(&sym.file) != current {
                 continue;
             }
@@ -392,7 +398,9 @@ mod tests {
     use super::*;
     use crate::adapters::FsSourceReader;
     use crate::dto::InspectableObjectType;
-    use crate::ports::symbol_repository::{GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository};
+    use crate::ports::symbol_repository::{
+        GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
+    };
     use cognicode_core::domain::aggregates::SymbolId;
     use cognicode_core::domain::value_objects::SymbolKind;
     use std::collections::HashMap as StdHashMap;
@@ -453,11 +461,21 @@ mod tests {
         fn fan_out(&self, id: &SymbolId) -> usize {
             self.callees.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
         }
-        fn find_symbols_by_name(&self, _n: &str) -> ExplorerResult<Vec<ResolvedSymbol>> { Ok(Vec::new()) }
-        fn find_symbols_by_file(&self, _f: &str) -> ExplorerResult<Vec<ResolvedSymbol>> { Ok(Vec::new()) }
-        fn module_list(&self) -> Vec<String> { Vec::new() }
-        fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> { Ok(self.all.clone()) }
-        fn graph_stats(&self) -> GraphStats { GraphStats::default() }
+        fn find_symbols_by_name(&self, _n: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(Vec::new())
+        }
+        fn find_symbols_by_file(&self, _f: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(Vec::new())
+        }
+        fn module_list(&self) -> Vec<String> {
+            Vec::new()
+        }
+        fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(self.all.clone())
+        }
+        fn graph_stats(&self) -> GraphStats {
+            GraphStats::default()
+        }
     }
 
     #[test]
@@ -486,7 +504,10 @@ mod tests {
         );
         let result = DependenciesLens.apply(&ctx).expect("ok");
         assert_eq!(result.findings.len(), 1);
-        assert!(matches!(result.findings[0].severity, FindingSeverity::Warning));
+        assert!(matches!(
+            result.findings[0].severity,
+            FindingSeverity::Warning
+        ));
         assert!(result.findings[0].hypothesis.contains("over-reaching"));
     }
 

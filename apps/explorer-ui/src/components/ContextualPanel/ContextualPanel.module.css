@@ -1,0 +1,11 @@
+/* ContextualPanel scoped styles.
+ *
+ * The panel is rendered into a column of the Shell layout; the
+ * visual contract is the column background + a 1px border between
+ * regions. Module CSS keeps the rules isolated from the global
+ * stylesheet.
+ */
+.panel {
+  background-color: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+}

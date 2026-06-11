@@ -126,7 +126,6 @@ impl std::fmt::Display for FailureClass {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,11 +153,13 @@ mod tests {
     fn test_failure_class_is_ci_blocking() {
         assert!(!FailureClass::CapabilityMissing.is_ci_blocking());
         assert!(!FailureClass::ExpectedFail.is_ci_blocking());
-        assert!(!FailureClass::McpToolError {
-            tool_name: "read_file".into(),
-            error_message: "File not found".into(),
-        }
-        .is_ci_blocking());
+        assert!(
+            !FailureClass::McpToolError {
+                tool_name: "read_file".into(),
+                error_message: "File not found".into(),
+            }
+            .is_ci_blocking()
+        );
         assert!(FailureClass::BuildFailure.is_ci_blocking());
         assert!(FailureClass::TestFailure.is_ci_blocking());
     }
@@ -170,13 +171,15 @@ mod tests {
             format!("{}", FailureClass::CapabilityMissing),
             "capability_missing"
         );
-        assert!(format!(
-            "{}",
-            FailureClass::McpToolError {
-                tool_name: "read_file".into(),
-                error_message: "File not found".into(),
-            }
-        )
-        .contains("mcp_tool_error"));
+        assert!(
+            format!(
+                "{}",
+                FailureClass::McpToolError {
+                    tool_name: "read_file".into(),
+                    error_message: "File not found".into(),
+                }
+            )
+            .contains("mcp_tool_error")
+        );
     }
 }

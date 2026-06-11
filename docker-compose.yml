@@ -1,0 +1,45 @@
+version: "3.9"
+
+# CogniCode — local development stack (PR 3 of postgres-default-config).
+#
+# Starts a single PostgreSQL 16 instance for local dev. To bring up:
+#   docker compose up -d postgres
+# or use the justfile recipe:
+#   just dev-pg
+#
+# The container exposes 5432 on the host, persists data in a named
+# volume (`cognicode_pg_data`), and runs a pg_isready healthcheck so
+# the explorer binaries (or tests) can wait until the DB is ready.
+#
+# The credentials here are intentionally simple for local dev only.
+# Production setups must use secrets (e.g. via Docker secrets or a
+# secrets manager) — see docs/postgres-default-config.md.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cognicode-postgres
+    environment:
+      POSTGRES_USER: cognicode
+      POSTGRES_PASSWORD: cognicode
+      POSTGRES_DB: cognicode
+      # Performance / WAL tuning for local dev (small but snappy).
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - cognicode_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready is shipped in the postgres image. -U matches
+      # POSTGRES_USER; -d matches POSTGRES_DB. The interval is tight
+      # (5s) so `docker compose up` returns quickly when the DB is up.
+      test: ["CMD-SHELL", "pg_isready -U cognicode -d cognicode"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  cognicode_pg_data:
+    name: cognicode_pg_data

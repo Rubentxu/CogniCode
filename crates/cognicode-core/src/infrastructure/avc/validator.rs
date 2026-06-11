@@ -14,22 +14,26 @@ pub struct AvcValidator;
 impl AvcValidator {
     /// Validate generated code against a contract.
     /// Returns a detailed result with violations and fix suggestions.
-    pub fn validate(
-        contract: &AvcContract,
-        generated_code: &str,
-    ) -> AvcValidationResult {
+    pub fn validate(contract: &AvcContract, generated_code: &str) -> AvcValidationResult {
         let mut violations = Vec::new();
         let mut suggestions = Vec::new();
 
         // Layer 1: Syntax check
-        let syntax_result = Self::check_syntax(contract, generated_code, &mut violations, &mut suggestions);
+        let syntax_result =
+            Self::check_syntax(contract, generated_code, &mut violations, &mut suggestions);
 
         // Layer 2: Semantic check (BM25)
         let mut updated_contract = contract.clone();
-        let semantic_result = Self::check_semantic(&mut updated_contract, generated_code, &mut violations, &mut suggestions);
+        let semantic_result = Self::check_semantic(
+            &mut updated_contract,
+            generated_code,
+            &mut violations,
+            &mut suggestions,
+        );
 
         // Layer 3: Safety check
-        let safety_result = Self::check_safety(contract, generated_code, &mut violations, &mut suggestions);
+        let safety_result =
+            Self::check_safety(contract, generated_code, &mut violations, &mut suggestions);
 
         let passed = syntax_result.passed && semantic_result.passed && safety_result.passed;
 
@@ -78,10 +82,16 @@ impl AvcValidator {
                 violations.push(AvcViolation {
                     layer: "syntax".to_string(),
                     severity: ViolationSeverity::Warning,
-                    message: format!("Required type '{}' not found in generated code", req_type.name),
+                    message: format!(
+                        "Required type '{}' not found in generated code",
+                        req_type.name
+                    ),
                     location: Some(req_type.definition_file.clone()),
                 });
-                suggestions.push(format!("Import and use the required type '{}' from {}", req_type.name, req_type.definition_file));
+                suggestions.push(format!(
+                    "Import and use the required type '{}' from {}",
+                    req_type.name, req_type.definition_file
+                ));
                 passed_checks -= 1;
                 issues += 1;
             }
@@ -93,10 +103,16 @@ impl AvcValidator {
                 violations.push(AvcViolation {
                     layer: "syntax".to_string(),
                     severity: ViolationSeverity::Warning,
-                    message: format!("Required call '{}' not found: {}", call.function_name, call.reason),
+                    message: format!(
+                        "Required call '{}' not found: {}",
+                        call.function_name, call.reason
+                    ),
                     location: None,
                 });
-                suggestions.push(format!("Call '{}' as required by the contract", call.function_name));
+                suggestions.push(format!(
+                    "Call '{}' as required by the contract",
+                    call.function_name
+                ));
                 passed_checks -= 1;
                 issues += 1;
             }
@@ -104,7 +120,9 @@ impl AvcValidator {
 
         let score = if total_checks > 0 {
             passed_checks as f32 / total_checks as f32
-        } else { 1.0 };
+        } else {
+            1.0
+        };
 
         LayerResult {
             layer: "syntax".to_string(),
@@ -123,13 +141,19 @@ impl AvcValidator {
     ) -> LayerResult {
         // Tokenize generated code
         let code_tokens = AvcGenerator::tokenize(code);
-        let intent_tokens: std::collections::HashSet<String> = contract.semantic.domain_terms.iter().cloned().collect();
-        let forbidden_set: std::collections::HashSet<String> = contract.semantic.forbidden_terms.iter().cloned().collect();
+        let intent_tokens: std::collections::HashSet<String> =
+            contract.semantic.domain_terms.iter().cloned().collect();
+        let forbidden_set: std::collections::HashSet<String> =
+            contract.semantic.forbidden_terms.iter().cloned().collect();
 
         // Compute BM25-like score between intent and generated code
         let intersection = intent_tokens.intersection(&code_tokens).count() as f32;
         let union = intent_tokens.union(&code_tokens).count() as f32;
-        let score = if union > 0.0 { intersection / union } else { 0.0 };
+        let score = if union > 0.0 {
+            intersection / union
+        } else {
+            0.0
+        };
 
         contract.semantic.current_score = Some(score);
 
@@ -162,7 +186,10 @@ impl AvcValidator {
                     message: format!("Forbidden term '{}' found in generated code", term),
                     location: None,
                 });
-                suggestions.push(format!("Replace '{}' with a domain-appropriate alternative", term));
+                suggestions.push(format!(
+                    "Replace '{}' with a domain-appropriate alternative",
+                    term
+                ));
                 passed = false;
             }
         }
@@ -189,19 +216,22 @@ impl AvcValidator {
     ) -> LayerResult {
         let mut issues = 0;
         let total = contract.safety.invariants.len() + 1; // +1 for error handling check
-        
+
         // Check error handling if required
         if contract.safety.requires_error_handling
-            && !code.contains('?') && !code.contains("match") && !code.contains("if let Err") {
-                violations.push(AvcViolation {
-                    layer: "safety".to_string(),
-                    severity: ViolationSeverity::Blocker,
-                    message: "Function returns Result but no error handling found".to_string(),
-                    location: None,
-                });
-                suggestions.push("Add '?' operator or explicit match on Result".to_string());
-                issues += 1;
-            }
+            && !code.contains('?')
+            && !code.contains("match")
+            && !code.contains("if let Err")
+        {
+            violations.push(AvcViolation {
+                layer: "safety".to_string(),
+                severity: ViolationSeverity::Blocker,
+                message: "Function returns Result but no error handling found".to_string(),
+                location: None,
+            });
+            suggestions.push("Add '?' operator or explicit match on Result".to_string());
+            issues += 1;
+        }
 
         // Check invariants
         for invariant in &contract.safety.invariants {
@@ -213,7 +243,10 @@ impl AvcValidator {
                     message: "Invariant violated: .unwrap() should be replaced".to_string(),
                     location: None,
                 });
-                suggestions.push("Replace .unwrap() with proper error handling (? operator or match)".to_string());
+                suggestions.push(
+                    "Replace .unwrap() with proper error handling (? operator or match)"
+                        .to_string(),
+                );
                 issues += 1;
             }
             if invariant.contains("unsafe") && code.contains("unsafe") {
@@ -232,7 +265,11 @@ impl AvcValidator {
         LayerResult {
             layer: "safety".to_string(),
             passed,
-            score: if total > 0 { (total - issues) as f32 / total as f32 } else { 1.0 },
+            score: if total > 0 {
+                (total - issues) as f32 / total as f32
+            } else {
+                1.0
+            },
             details: format!("{} of {} safety checks passed", total - issues, total),
         }
     }
@@ -258,7 +295,11 @@ fn authenticate(user: &str) -> Result<bool, Error> {
 "#;
 
         let result = AvcValidator::validate(&contract, generated);
-        assert!(result.passed, "Compliant code should pass: {:?}", result.violations);
+        assert!(
+            result.passed,
+            "Compliant code should pass: {:?}",
+            result.violations
+        );
     }
 
     #[test]
@@ -274,7 +315,12 @@ fn do_stuff() {
 
         let result = AvcValidator::validate(&contract, generated);
         assert!(!result.passed);
-        assert!(result.violations.iter().any(|v| v.message.contains("unsafe")));
+        assert!(
+            result
+                .violations
+                .iter()
+                .any(|v| v.message.contains("unsafe"))
+        );
     }
 
     #[test]
@@ -292,12 +338,14 @@ fn process_data(data: &[u8]) -> Vec<u8> {
 
         let mut contract_copy = contract.clone();
         let result = AvcValidator::validate(&contract_copy, generated);
-        
+
         // Should detect drift because "encrypt/cipher/key" domain terms
         // don't match "base64/encode/data" in the generated code
-        let has_drift = result.violations.iter()
+        let has_drift = result
+            .violations
+            .iter()
             .any(|v| v.message.contains("drift") || v.message.contains("score"));
-        
+
         // If score is below threshold, drift is detected
         if let Some(score) = contract_copy.semantic.current_score {
             if score < contract.semantic.bm25_threshold {

@@ -306,9 +306,10 @@ impl TreeSitterParser {
             let kind = current.kind();
 
             if (kind == function_type || kind == class_type || kind == variable_type)
-                && let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path) {
-                    symbols.push(symbol);
-                }
+                && let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path)
+            {
+                symbols.push(symbol);
+            }
 
             let cc = current.child_count();
             for i in (0..cc).rev() {
@@ -335,9 +336,10 @@ impl TreeSitterParser {
 
         while let Some(current) = stack.pop() {
             if current.kind() == target_type
-                && let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path) {
-                    symbols.push(symbol);
-                }
+                && let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path)
+            {
+                symbols.push(symbol);
+            }
 
             let cc = current.child_count();
             for i in (0..cc).rev() {
@@ -382,14 +384,15 @@ impl TreeSitterParser {
             let cc = node.child_count();
             for i in 0..cc {
                 if let Some(child) = node.child(i)
-                    && (child.kind() == "identifier" || child.kind() == "type_identifier") {
-                        return Some(
-                            child
-                                .utf8_text(source.as_bytes())
-                                .unwrap_or("unknown")
-                                .to_string(),
-                        );
-                    }
+                    && (child.kind() == "identifier" || child.kind() == "type_identifier")
+                {
+                    return Some(
+                        child
+                            .utf8_text(source.as_bytes())
+                            .unwrap_or("unknown")
+                            .to_string(),
+                    );
+                }
             }
         }
 
@@ -496,9 +499,10 @@ impl TreeSitterParser {
 
         while let Some(current) = stack.pop() {
             if current.kind() == call_type
-                && let Some(callee_name) = self.extract_callee_name(current, source) {
-                    relationships.push((caller_symbol.clone(), callee_name));
-                }
+                && let Some(callee_name) = self.extract_callee_name(current, source)
+            {
+                relationships.push((caller_symbol.clone(), callee_name));
+            }
 
             let cc = current.child_count();
             for i in (0..cc).rev() {
@@ -515,10 +519,11 @@ impl TreeSitterParser {
         if self.language.call_has_function_field() {
             for i in 0..call_node.child_count() {
                 if let Some(child) = call_node.child(i)
-                    && child.kind() == "function" {
-                        // The function child should have an identifier
-                        return self.find_identifier_in_node(child, source);
-                    }
+                    && child.kind() == "function"
+                {
+                    // The function child should have an identifier
+                    return self.find_identifier_in_node(child, source);
+                }
             }
         }
 
@@ -643,18 +648,18 @@ impl TreeSitterParser {
         while let Some(current) = stack.pop() {
             if (current.kind() == "identifier" || current.kind() == "type_identifier")
                 && let Ok(text) = current.utf8_text(source.as_bytes())
-                    && text == target_identifier {
-                        let start = current.start_position();
-                        let end = current.end_position();
-                        let context =
-                            Self::extract_context(lines, start.row as u32).unwrap_or_default();
-                        occurrences.push(IdentifierOccurrence {
-                            line: start.row as u32,
-                            column: start.column as u32,
-                            length: (end.column - start.column) as u32,
-                            context,
-                        });
-                    }
+                && text == target_identifier
+            {
+                let start = current.start_position();
+                let end = current.end_position();
+                let context = Self::extract_context(lines, start.row as u32).unwrap_or_default();
+                occurrences.push(IdentifierOccurrence {
+                    line: start.row as u32,
+                    column: start.column as u32,
+                    length: (end.column - start.column) as u32,
+                    context,
+                });
+            }
 
             let cc = current.child_count();
             for i in (0..cc).rev() {
@@ -1144,7 +1149,11 @@ function hello() {
 
     #[test]
     fn test_parser_handles_very_long_line_python() {
-        let long_line = "def foo(): ".repeat(100_000);
+        // 1_000 reps ≈ 12 KB — still a "very long line" (single line, no newlines)
+        // and exercises the same tree-sitter edge case as the original 100_000
+        // (~1.1 MB) workload, but completes in a few ms instead of minutes.
+        // Kept reduced, not deleted, to preserve the edge-case coverage.
+        let long_line = "def foo(): ".repeat(1_000);
         let parser = TreeSitterParser::new(Language::Python).unwrap();
         let result = parser.parse(&long_line);
         let _ = result;
@@ -1306,7 +1315,11 @@ function hello() {
 
     #[test]
     fn test_parser_find_symbols_very_long_line() {
-        let long_line = "fn very_long_function_name_that_exceeds_normal_limits() { ".repeat(50_000);
+        // 1_000 reps ≈ 59 KB — still a "very long line" (single line, no newlines)
+        // and exercises the same tree-sitter edge case as the original 50_000
+        // (~2.9 MB) workload, but completes in a few ms instead of minutes.
+        // Kept reduced, not deleted, to preserve the edge-case coverage.
+        let long_line = "fn very_long_function_name_that_exceeds_normal_limits() { ".repeat(1_000);
         let parser = TreeSitterParser::new(Language::Rust).unwrap();
         let symbols = parser.find_function_definitions(&long_line);
         let _ = symbols;

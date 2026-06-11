@@ -129,14 +129,18 @@ impl ObjectIdentity {
         if rest.is_empty() {
             return Err(ExplorerError::ResolutionFailed(raw.to_string()));
         }
-        Ok(Self::File { path: rest.to_string() })
+        Ok(Self::File {
+            path: rest.to_string(),
+        })
     }
 
     fn parse_scope(rest: &str, raw: &str) -> ExplorerResult<Self> {
         if rest.is_empty() {
             return Err(ExplorerError::ResolutionFailed(raw.to_string()));
         }
-        Ok(Self::Scope { path: rest.to_string() })
+        Ok(Self::Scope {
+            path: rest.to_string(),
+        })
     }
 
     fn parse_issue(rest: &str, raw: &str) -> ExplorerResult<Self> {
@@ -286,7 +290,12 @@ mod tests {
     #[test]
     fn parses_valid_file_mvp_id() {
         let id = ObjectIdentity::parse_mvp_id("file:src/main.rs").unwrap();
-        assert_eq!(id, ObjectIdentity::File { path: "src/main.rs".into() });
+        assert_eq!(
+            id,
+            ObjectIdentity::File {
+                path: "src/main.rs".into()
+            }
+        );
         assert_eq!(id.object_type_str(), "file");
         assert!(id.is_file());
         assert_eq!(id.path(), Some("src/main.rs"));
@@ -298,7 +307,12 @@ mod tests {
     #[test]
     fn parses_valid_scope_mvp_id() {
         let id = ObjectIdentity::parse_mvp_id("scope:src/foo").unwrap();
-        assert_eq!(id, ObjectIdentity::Scope { path: "src/foo".into() });
+        assert_eq!(
+            id,
+            ObjectIdentity::Scope {
+                path: "src/foo".into()
+            }
+        );
         assert_eq!(id.object_type_str(), "scope");
         assert!(id.is_scope());
         assert_eq!(id.path(), Some("src/foo"));

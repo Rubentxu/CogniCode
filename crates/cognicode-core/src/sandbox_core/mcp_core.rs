@@ -210,9 +210,10 @@ impl McpServer {
                     }
 
                     if let Ok(msg) = serde_json::from_str::<Value>(trimmed)
-                        && msg.get("id").is_none() {
-                            notifications.push(msg);
-                        }
+                        && msg.get("id").is_none()
+                    {
+                        notifications.push(msg);
+                    }
                 }
                 Err(_) => break, // Error reading, stop draining
             }
@@ -238,9 +239,10 @@ impl McpServer {
             let mut buf = String::new();
             // Use read_to_string to drain the stderr pipe
             if let Ok(n) = stderr.read_to_string(&mut buf)
-                && n > 0 {
-                    return buf;
-                }
+                && n > 0
+            {
+                return buf;
+            }
         }
         String::new()
     }

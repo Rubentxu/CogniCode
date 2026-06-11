@@ -286,11 +286,11 @@ mod tests {
             .with_intent("secure_authentication")
             .with_threshold(0.85)
             .with_domain_terms(vec![
-                "bcrypt".into(), "session_store".into(), "expiry".into()
+                "bcrypt".into(),
+                "session_store".into(),
+                "expiry".into(),
             ])
-            .with_forbidden_terms(vec![
-                "password_plain".into(), "base64".into()
-            ])
+            .with_forbidden_terms(vec!["password_plain".into(), "base64".into()])
             .with_invariants(vec![
                 "No logs of raw passwords".into(),
                 "Function must return Result<Session, AuthError>".into(),
@@ -301,13 +301,17 @@ mod tests {
         assert_eq!(contract.semantic.bm25_threshold, 0.85);
         assert_eq!(contract.safety.invariants.len(), 2);
         assert!(contract.safety.requires_error_handling);
-        assert!(contract.syntax.forbidden_patterns.contains(&"unsafe".to_string()));
+        assert!(
+            contract
+                .syntax
+                .forbidden_patterns
+                .contains(&"unsafe".to_string())
+        );
     }
 
     #[test]
     fn test_contract_serialization() {
-        let contract = AvcContract::new("test-001", "test.rs")
-            .with_intent("data_processing");
+        let contract = AvcContract::new("test-001", "test.rs").with_intent("data_processing");
 
         let json = serde_json::to_string_pretty(&contract).unwrap();
         assert!(json.contains("test-001"));

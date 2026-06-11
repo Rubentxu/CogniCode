@@ -79,12 +79,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting CogniCode MCP Server v{}", env!("CARGO_PKG_VERSION"));
 
     // Use the diagram-aware handler that wraps CogniCodeHandler + diagram tools
-    // Try SQLite persistence first, fall back to in-memory
+    // Try SQLite persistence first (opt-in), fall back to in-memory
     let handler = {
-        let db_path = args.cwd.join(".cognicode/cognicode.db");
-        if let Ok(store) = cognicode_db::graph::SqliteGraphStore::open(&db_path) {
-            DiagramAwareHandler::with_graph_store(args.cwd, Box::new(store))
-        } else {
+        #[cfg(feature = "sqlite")]
+        {
+            let db_path = args.cwd.join(".cognicode/cognicode.db");
+            if let Ok(store) = cognicode_db::graph::SqliteGraphStore::open(&db_path) {
+                DiagramAwareHandler::with_graph_store(args.cwd, Box::new(store))
+            } else {
+                DiagramAwareHandler::new(args.cwd)
+            }
+        }
+        #[cfg(not(feature = "sqlite"))]
+        {
             DiagramAwareHandler::new(args.cwd)
         }
     };

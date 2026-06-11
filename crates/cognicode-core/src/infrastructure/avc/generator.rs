@@ -62,13 +62,15 @@ impl AvcGenerator {
         // Match Rust function_item/function_definition AND JavaScript function_declaration
         if node.kind() == "function_item"
             || node.kind() == "function_definition"
-            || node.kind() == "function_declaration" {
+            || node.kind() == "function_declaration"
+        {
             // Check if this is our target
             if let Some(child) = node.child_by_field_name("name")
                 && let Ok(n) = child.utf8_text(source.as_bytes())
-                    && n == name {
-                        return Some(*node);
-                    }
+                && n == name
+            {
+                return Some(*node);
+            }
         }
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
@@ -80,11 +82,7 @@ impl AvcGenerator {
     }
 
     /// Layer 1: Extract exact types, dependencies, and forbidden patterns
-    fn extract_syntax(
-        node: &tree_sitter::Node,
-        source: &str,
-        file_path: &str,
-    ) -> SyntaxContract {
+    fn extract_syntax(node: &tree_sitter::Node, source: &str, file_path: &str) -> SyntaxContract {
         let mut required_types = Vec::new();
         let forbidden_patterns = vec![
             "unsafe".to_string(),
@@ -102,15 +100,16 @@ impl AvcGenerator {
             match child.kind() {
                 "identifier" | "name" => {
                     if let Ok(text) = child.utf8_text(source.as_bytes())
-                        && target_function.is_none() {
-                            target_function = Some(FunctionSignature {
-                                name: text.to_string(),
-                                params: Vec::new(),
-                                return_type: String::new(),
-                                file: file_path.to_string(),
-                                line: child.start_position().row + 1,
-                            });
-                        }
+                        && target_function.is_none()
+                    {
+                        target_function = Some(FunctionSignature {
+                            name: text.to_string(),
+                            params: Vec::new(),
+                            return_type: String::new(),
+                            file: file_path.to_string(),
+                            line: child.start_position().row + 1,
+                        });
+                    }
                 }
                 "parameters" => {
                     // Extract parameter types
@@ -167,11 +166,13 @@ impl AvcGenerator {
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             if child.kind() == "parameter" || child.kind() == "self_parameter" {
-                let name = child.child_by_field_name("name")
+                let name = child
+                    .child_by_field_name("name")
                     .and_then(|n| n.utf8_text(source.as_bytes()).ok())
                     .unwrap_or("self")
                     .to_string();
-                let type_name = child.child_by_field_name("type")
+                let type_name = child
+                    .child_by_field_name("type")
                     .and_then(|n| n.utf8_text(source.as_bytes()).ok())
                     .unwrap_or("Self")
                     .to_string();
@@ -180,7 +181,12 @@ impl AvcGenerator {
                 let is_mutable = text.contains("mut ");
                 let is_reference = type_name.starts_with('&');
 
-                params.push(ParamInfo { name, type_name, is_mutable, is_reference });
+                params.push(ParamInfo {
+                    name,
+                    type_name,
+                    is_mutable,
+                    is_reference,
+                });
             }
         }
         params
@@ -195,13 +201,14 @@ impl AvcGenerator {
         let mut calls = Vec::new();
         if node.kind() == "call_expression"
             && let Some(func) = node.child_by_field_name("function")
-                && let Ok(name) = func.utf8_text(source.as_bytes()) {
-                    calls.push(RequiredCall {
-                        function_name: name.to_string(),
-                        file: file_path.to_string(),
-                        reason: "Called from function body".to_string(),
-                    });
-                }
+            && let Ok(name) = func.utf8_text(source.as_bytes())
+        {
+            calls.push(RequiredCall {
+                function_name: name.to_string(),
+                file: file_path.to_string(),
+                reason: "Called from function body".to_string(),
+            });
+        }
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             calls.extend(Self::extract_required_calls(&child, source, file_path));
@@ -222,16 +229,16 @@ impl AvcGenerator {
         let body_text = Self::extract_body_text(node, source);
 
         // Tokenize for BM25
-        let intent_tokens: HashSet<String> = Self::tokenize(&format!("{} {}", function_name, docstring));
+        let intent_tokens: HashSet<String> =
+            Self::tokenize(&format!("{} {}", function_name, docstring));
         let body_tokens: HashSet<String> = Self::tokenize(&body_text);
 
         // Compute domain terms (words that appear in BOTH intent and body)
-        let domain_terms: Vec<String> = intent_tokens.intersection(&body_tokens)
-            .cloned()
-            .collect();
+        let domain_terms: Vec<String> = intent_tokens.intersection(&body_tokens).cloned().collect();
 
         // Forbidden terms: words in body that are NOT in intent (potential drift)
-        let forbidden_terms: Vec<String> = body_tokens.difference(&intent_tokens)
+        let forbidden_terms: Vec<String> = body_tokens
+            .difference(&intent_tokens)
             .take(10)
             .cloned()
             .collect();
@@ -242,7 +249,11 @@ impl AvcGenerator {
         } else {
             let intersection = intent_tokens.intersection(&body_tokens).count() as f32;
             let union = intent_tokens.union(&body_tokens).count() as f32;
-            if union > 0.0 { intersection / union } else { 0.0 }
+            if union > 0.0 {
+                intersection / union
+            } else {
+                0.0
+            }
         };
 
         SemanticContract {
@@ -268,9 +279,12 @@ impl AvcGenerator {
             let text = node.utf8_text(source.as_bytes()).ok()?;
             let trimmed = text.trim();
             if (trimmed.starts_with("\"\"\"") && trimmed.ends_with("\"\"\""))
-                || (trimmed.starts_with("'''") && trimmed.ends_with("'''")) {
+                || (trimmed.starts_with("'''") && trimmed.ends_with("'''"))
+            {
                 let inner = if trimmed.starts_with("\"\"\"") {
-                    trimmed.trim_start_matches("\"\"\"").trim_end_matches("\"\"\"")
+                    trimmed
+                        .trim_start_matches("\"\"\"")
+                        .trim_end_matches("\"\"\"")
                 } else {
                     trimmed.trim_start_matches("'''").trim_end_matches("'''")
                 };
@@ -325,10 +339,13 @@ impl AvcGenerator {
                         if child.kind() == "expression_statement" {
                             let mut stmt_cursor = child.walk();
                             for stmt_child in child.children(&mut stmt_cursor) {
-                                if (stmt_child.kind() == "string" || stmt_child.kind() == "string_content")
-                                    && let Some(content) = extract_triple_quoted(&stmt_child, source) {
-                                        return content;
-                                    }
+                                if (stmt_child.kind() == "string"
+                                    || stmt_child.kind() == "string_content")
+                                    && let Some(content) =
+                                        extract_triple_quoted(&stmt_child, source)
+                                {
+                                    return content;
+                                }
                             }
                         } else if let Some(content) = extract_triple_quoted(&child, source) {
                             return content;
@@ -359,7 +376,9 @@ impl AvcGenerator {
 
         // Look backwards from the function for doc comments
         for i in (0..pos.row).rev() {
-            if i >= lines.len() { break; }
+            if i >= lines.len() {
+                break;
+            }
             let line = lines[i].trim();
 
             // Check for JSDoc block closing marker (when not already in block)
@@ -412,7 +431,11 @@ impl AvcGenerator {
 
             // Rust doc comments
             if line.starts_with("///") || line.starts_with("//!") {
-                doc_lines.push(line.trim_start_matches("///").trim_start_matches("//!").trim());
+                doc_lines.push(
+                    line.trim_start_matches("///")
+                        .trim_start_matches("//!")
+                        .trim(),
+                );
             } else if line.starts_with("//") {
                 doc_lines.push(line.trim_start_matches("//").trim());
             }
@@ -421,7 +444,11 @@ impl AvcGenerator {
                 doc_lines.push(line.trim_start_matches('#').trim());
             }
             // Skip empty lines and common non-doc patterns
-            else if line.is_empty() || line.starts_with("#[") || line.starts_with("pub") || line.starts_with("fn") {
+            else if line.is_empty()
+                || line.starts_with("#[")
+                || line.starts_with("pub")
+                || line.starts_with("fn")
+            {
                 continue;
             } else {
                 // Non-doc line, stop scanning
@@ -456,20 +483,19 @@ impl AvcGenerator {
     /// Simple tokenizer: lowercase, split on non-alphanumeric, filter stop words
     pub fn tokenize(text: &str) -> HashSet<String> {
         let stop_words: HashSet<&str> = [
-            "the", "a", "an", "is", "are", "was", "were", "be", "been",
-            "being", "have", "has", "had", "do", "does", "did", "will",
-            "would", "could", "should", "may", "might", "can", "shall",
-            "to", "of", "in", "for", "on", "with", "at", "by", "from",
-            "as", "into", "through", "during", "before", "after",
-            "and", "but", "or", "nor", "not", "so", "yet", "both",
-            "this", "that", "these", "those", "it", "its",
-            "fn", "let", "mut", "pub", "use", "mod", "impl", "self",
-            "true", "false", "if", "else", "match", "return", "while",
-            "loop", "for", "break", "continue", "where", "move", "ref",
-            "i32", "i64", "u32", "u64", "f32", "f64", "bool", "String",
-            "usize", "isize", "Vec", "Option", "Result", "Some", "None",
-            "Ok", "Err", "Box", "Arc", "Rc", "Cell", "RefCell",
-        ].iter().cloned().collect();
+            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has",
+            "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "can",
+            "shall", "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "into",
+            "through", "during", "before", "after", "and", "but", "or", "nor", "not", "so", "yet",
+            "both", "this", "that", "these", "those", "it", "its", "fn", "let", "mut", "pub",
+            "use", "mod", "impl", "self", "true", "false", "if", "else", "match", "return",
+            "while", "loop", "for", "break", "continue", "where", "move", "ref", "i32", "i64",
+            "u32", "u64", "f32", "f64", "bool", "String", "usize", "isize", "Vec", "Option",
+            "Result", "Some", "None", "Ok", "Err", "Box", "Arc", "Rc", "Cell", "RefCell",
+        ]
+        .iter()
+        .cloned()
+        .collect();
 
         text.split(|c: char| !c.is_alphanumeric() && c != '_')
             .filter(|w| w.len() > 2)
@@ -486,24 +512,30 @@ impl AvcGenerator {
         // Check return type for Result
         if let Some(ret) = node.child_by_field_name("return_type")
             && let Ok(text) = ret.utf8_text(source.as_bytes())
-                && text.contains("Result") {
-                    requires_error_handling = true;
-                    invariants.push(format!("Function returns {} — error handling is MANDATORY", text.trim()));
-                }
+            && text.contains("Result")
+        {
+            requires_error_handling = true;
+            invariants.push(format!(
+                "Function returns {} — error handling is MANDATORY",
+                text.trim()
+            ));
+        }
 
         // Check body for unsafe/unwrap patterns
         if let Some(body) = node.child_by_field_name("body")
-            && let Ok(text) = body.utf8_text(source.as_bytes()) {
-                if text.contains("unsafe") {
-                    invariants.push("Contains unsafe block — must be justified".to_string());
-                }
-                if text.contains(".unwrap()") {
-                    invariants.push("Contains .unwrap() — replace with proper error handling".to_string());
-                }
-                if text.contains("panic!") {
-                    invariants.push("Contains panic! — use Result instead".to_string());
-                }
+            && let Ok(text) = body.utf8_text(source.as_bytes())
+        {
+            if text.contains("unsafe") {
+                invariants.push("Contains unsafe block — must be justified".to_string());
             }
+            if text.contains(".unwrap()") {
+                invariants
+                    .push("Contains .unwrap() — replace with proper error handling".to_string());
+            }
+            if text.contains("panic!") {
+                invariants.push("Contains panic! — use Result instead".to_string());
+            }
+        }
 
         SafetyContract {
             invariants,
@@ -537,13 +569,17 @@ pub fn authenticate_user(
 }
 "#;
 
-        let contract = AvcGenerator::generate_from_source(
-            source, "authenticate_user", "src/auth.rs"
-        ).unwrap();
+        let contract =
+            AvcGenerator::generate_from_source(source, "authenticate_user", "src/auth.rs").unwrap();
 
         // Syntax checks
         assert_eq!(contract.syntax.language, "rust");
-        assert!(contract.syntax.forbidden_patterns.contains(&"unsafe".to_string()));
+        assert!(
+            contract
+                .syntax
+                .forbidden_patterns
+                .contains(&"unsafe".to_string())
+        );
 
         // Target function
         let sig = contract.syntax.target_function.as_ref().unwrap();
@@ -554,7 +590,10 @@ pub fn authenticate_user(
         // Semantic checks
         assert!(!contract.semantic.domain_terms.is_empty());
         // Should have bcrypt/auth-related terms
-        let has_auth_terms = contract.semantic.domain_terms.iter()
+        let has_auth_terms = contract
+            .semantic
+            .domain_terms
+            .iter()
             .any(|t| t == "authenticate" || t == "password" || t == "session");
         assert!(has_auth_terms, "Should contain auth domain terms");
 
@@ -573,13 +612,15 @@ pub fn encrypt_data(data: &[u8]) -> String {
 }
 "#;
 
-        let contract = AvcGenerator::generate_from_source(
-            source, "encrypt_data", "src/crypto.rs"
-        ).unwrap();
+        let contract =
+            AvcGenerator::generate_from_source(source, "encrypt_data", "src/crypto.rs").unwrap();
 
         // The domain terms should include terms from the body
-        assert!(!contract.semantic.domain_terms.is_empty(), "Should have domain terms");
-        
+        assert!(
+            !contract.semantic.domain_terms.is_empty(),
+            "Should have domain terms"
+        );
+
         // Score might be low if there's vocabulary mismatch between intent and body
         if let Some(score) = contract.semantic.current_score {
             // Just verify score exists and is reasonable
@@ -600,10 +641,12 @@ def encrypt_data(data):
     return base64.b64encode(data)
 "#;
         let parser = crate::infrastructure::parser::TreeSitterParser::new(
-            crate::infrastructure::parser::Language::Python
-        ).unwrap();
+            crate::infrastructure::parser::Language::Python,
+        )
+        .unwrap();
         let tree = parser.parse_tree(source).unwrap();
-        let func_node = AvcGenerator::find_function(&tree.root_node(), "encrypt_data", source).unwrap();
+        let func_node =
+            AvcGenerator::find_function(&tree.root_node(), "encrypt_data", source).unwrap();
         let doc = AvcGenerator::extract_docstring(&func_node, source);
         assert_eq!(doc, "Encrypts data with AES-256");
     }
@@ -617,10 +660,12 @@ def hash_password(password):
     return bcrypt.hashpw(password, bcrypt.gensalt())
 "#;
         let parser = crate::infrastructure::parser::TreeSitterParser::new(
-            crate::infrastructure::parser::Language::Python
-        ).unwrap();
+            crate::infrastructure::parser::Language::Python,
+        )
+        .unwrap();
         let tree = parser.parse_tree(source).unwrap();
-        let func_node = AvcGenerator::find_function(&tree.root_node(), "hash_password", source).unwrap();
+        let func_node =
+            AvcGenerator::find_function(&tree.root_node(), "hash_password", source).unwrap();
         let doc = AvcGenerator::extract_docstring(&func_node, source);
         assert_eq!(doc, "Hashes input using bcrypt");
     }
@@ -637,10 +682,12 @@ function processData(input) {
 }
 "#;
         let parser = crate::infrastructure::parser::TreeSitterParser::new(
-            crate::infrastructure::parser::Language::JavaScript
-        ).unwrap();
+            crate::infrastructure::parser::Language::JavaScript,
+        )
+        .unwrap();
         let tree = parser.parse_tree(source).unwrap();
-        let func_node = AvcGenerator::find_function(&tree.root_node(), "processData", source).unwrap();
+        let func_node =
+            AvcGenerator::find_function(&tree.root_node(), "processData", source).unwrap();
         let doc = AvcGenerator::extract_docstring(&func_node, source);
         assert_eq!(doc, "Encrypts data with AES-256");
     }
@@ -655,10 +702,12 @@ function processData(input) {
 }
 "#;
         let parser = crate::infrastructure::parser::TreeSitterParser::new(
-            crate::infrastructure::parser::Language::JavaScript
-        ).unwrap();
+            crate::infrastructure::parser::Language::JavaScript,
+        )
+        .unwrap();
         let tree = parser.parse_tree(source).unwrap();
-        let func_node = AvcGenerator::find_function(&tree.root_node(), "processData", source).unwrap();
+        let func_node =
+            AvcGenerator::find_function(&tree.root_node(), "processData", source).unwrap();
         let doc = AvcGenerator::extract_docstring(&func_node, source);
         assert_eq!(doc, "Encrypts data with AES-256");
     }
@@ -673,10 +722,12 @@ def hash_password(password):
     return bcrypt.hashpw(password, bcrypt.gensalt())
 "#;
         let parser = crate::infrastructure::parser::TreeSitterParser::new(
-            crate::infrastructure::parser::Language::Python
-        ).unwrap();
+            crate::infrastructure::parser::Language::Python,
+        )
+        .unwrap();
         let tree = parser.parse_tree(source).unwrap();
-        let func_node = AvcGenerator::find_function(&tree.root_node(), "hash_password", source).unwrap();
+        let func_node =
+            AvcGenerator::find_function(&tree.root_node(), "hash_password", source).unwrap();
         let doc = AvcGenerator::extract_docstring(&func_node, source);
         // Shebang should be skipped, only # comment should be captured
         assert_eq!(doc, "Hashes input using bcrypt");

@@ -2,12 +2,13 @@
 //!
 //! A call graph represents the dependencies and call relationships between symbols.
 
-use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 use super::symbol::Symbol;
 use crate::domain::events::GraphEvent;
-use crate::domain::value_objects::DependencyType;
+use crate::domain::services::{ConfidenceRules, ExtractionContext};
+use crate::domain::value_objects::{DependencyType, Provenance};
 
 /// Represents a call entry in traversal results
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,12 +41,16 @@ pub struct MermaidOptions {
 }
 
 /// A directed graph representing call dependencies between symbols
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CallGraph {
     /// Map from symbol identifier to symbol
     symbols: HashMap<SymbolId, Symbol>,
-    /// Map from symbol identifier to set of (target_id, dependency_type) edges
-    edges: HashMap<SymbolId, HashSet<(SymbolId, DependencyType)>>,
+    /// Map from source symbol to a map of `(target_id, dependency_type)` edge
+    /// identity to `(Provenance, confidence)`. Using a `HashMap` here (rather
+    /// than a `HashSet`) keeps the identity tuple (which is `Hash + Eq`) as
+    /// the key and stores the per-edge metadata as the value. `f64` has no
+    /// `Hash` impl, so it can never be part of the key.
+    edges: HashMap<SymbolId, HashMap<(SymbolId, DependencyType), (Provenance, f64)>>,
     /// Reverse index: which symbols call this symbol (incoming edges)
     reverse_edges: HashMap<SymbolId, HashSet<SymbolId>>,
     /// Auxiliary index: base_name (lowercase) -> list of SymbolIds
@@ -68,9 +73,7 @@ impl CallGraph {
         let id = SymbolId::new(symbol.fully_qualified_name());
         self.symbols.entry(id.clone()).or_insert_with(|| {
             self.edges.entry(id.clone()).or_default();
-            self.reverse_edges
-                .entry(id.clone())
-                .or_default();
+            self.reverse_edges.entry(id.clone()).or_default();
             self.name_index
                 .entry(symbol.name().to_lowercase())
                 .or_default()
@@ -80,12 +83,47 @@ impl CallGraph {
         id
     }
 
-    /// Adds a dependency edge between two symbols
+    /// Adds a dependency edge between two symbols.
+    ///
+    /// The default extraction context is [`ExtractionContext::DirectExtraction`],
+    /// which routes through [`ConfidenceRules`] and assigns
+    /// `(Extracted, 1.0)`. Use [`Self::add_dependency_with_provenance`] for
+    /// edges that come from a heuristic resolver or are unresolved.
+    ///
+    /// The public signature is preserved from the pre-metadata version: this
+    /// method is the backward-compatible path used by every existing caller
+    /// in the workspace.
     pub fn add_dependency(
         &mut self,
         source_id: &SymbolId,
         target_id: &SymbolId,
         dependency_type: DependencyType,
+    ) -> Result<(), CallGraphError> {
+        self.add_dependency_with_provenance(
+            source_id,
+            target_id,
+            dependency_type,
+            ExtractionContext::DirectExtraction,
+        )
+    }
+
+    /// Adds a dependency edge with an explicit extraction context.
+    ///
+    /// The `(Provenance, confidence)` metadata is assigned by
+    /// [`ConfidenceRules::assign`]. This is the **sole sanctioned path** for
+    /// edge metadata assignment.
+    ///
+    /// # Errors
+    ///
+    /// * [`CallGraphError::SymbolNotFound`] if either symbol is unknown.
+    /// * [`CallGraphError::InvalidConfidence`] if the rules service rejects
+    ///   the `Heuristic` score (NaN, infinite, or out of `[0.0, 1.0]`).
+    pub fn add_dependency_with_provenance(
+        &mut self,
+        source_id: &SymbolId,
+        target_id: &SymbolId,
+        dependency_type: DependencyType,
+        ctx: ExtractionContext,
     ) -> Result<(), CallGraphError> {
         // Ensure both symbols exist
         if !self.symbols.contains_key(source_id) {
@@ -95,11 +133,18 @@ impl CallGraph {
             return Err(CallGraphError::SymbolNotFound(target_id.clone()));
         }
 
-        // Add edge
-        self.edges
-            .entry(source_id.clone())
-            .or_default()
-            .insert((target_id.clone(), dependency_type));
+        // Route through the rules service. The only failure case is a bad
+        // Heuristic score; the resulting (Provenance, f64) is guaranteed
+        // to be in [0.0, 1.0] and finite.
+        let (provenance, confidence) = ConfidenceRules::new()
+            .assign(ctx)
+            .map_err(CallGraphError::InvalidConfidence)?;
+
+        // Add edge (overwrites any previous metadata for the same key).
+        self.edges.entry(source_id.clone()).or_default().insert(
+            (target_id.clone(), dependency_type),
+            (provenance, confidence),
+        );
 
         // Add reverse edge
         self.reverse_edges
@@ -156,7 +201,7 @@ impl CallGraph {
         self.edges.iter().flat_map(|(source, targets)| {
             targets
                 .iter()
-                .map(move |(target, dep_type)| (source, target, dep_type))
+                .map(move |((target, dep_type), _)| (source, target, dep_type))
         })
     }
 
@@ -170,7 +215,52 @@ impl CallGraph {
             .map(|e| e.iter())
             .into_iter()
             .flatten()
-            .map(|(target, dep_type)| (target, dep_type))
+            .map(|((target, dep_type), _)| (target, dep_type))
+    }
+
+    /// Returns the outgoing edges for a symbol along with their metadata.
+    ///
+    /// This is the additive metadata-aware counterpart of [`Self::dependencies`]
+    /// and is the new API used by consumers that need to differentiate
+    /// AST-extracted from heuristic edges.
+    pub fn dependencies_with_metadata(
+        &self,
+        id: &SymbolId,
+    ) -> impl Iterator<Item = (&SymbolId, &DependencyType, Provenance, f64)> {
+        self.edges
+            .get(id)
+            .map(|e| e.iter())
+            .into_iter()
+            .flatten()
+            .map(|((target, dep_type), (provenance, confidence))| {
+                (target, dep_type, *provenance, *confidence)
+            })
+    }
+
+    /// Returns an iterator over every edge in the graph with full metadata.
+    ///
+    /// Used by the persistence layer (cognicode-db) and the explorer
+    /// adapter. The order is unspecified.
+    pub fn edges_with_metadata(
+        &self,
+    ) -> impl Iterator<Item = (SymbolId, SymbolId, DependencyType, Provenance, f64)> {
+        self.edges
+            .iter()
+            .flat_map(|(source, targets)| {
+                targets
+                    .iter()
+                    .map(move |((target, dep_type), (provenance, confidence))| {
+                        (
+                            source.clone(),
+                            target.clone(),
+                            *dep_type,
+                            *provenance,
+                            *confidence,
+                        )
+                    })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 
     /// Returns all dependents (incoming edges) for a symbol
@@ -214,7 +304,7 @@ impl CallGraph {
                 continue;
             }
             if let Some(dependencies) = self.edges.get(&current) {
-                for (next, _) in dependencies {
+                for ((next, _), _) in dependencies {
                     if next == target {
                         let mut path = vec![target.clone()];
                         let mut step = &current;
@@ -254,10 +344,12 @@ impl CallGraph {
             let base_name_lower = base_name.to_lowercase();
             if let Some(symbol_ids) = self.name_index.get(&base_name_lower) {
                 for symbol_id in symbol_ids {
-                    if !result.contains(symbol_id) && symbol_id != &current
-                        && result.insert(symbol_id.clone()) {
-                            to_visit.push(symbol_id.clone());
-                        }
+                    if !result.contains(symbol_id)
+                        && symbol_id != &current
+                        && result.insert(symbol_id.clone())
+                    {
+                        to_visit.push(symbol_id.clone());
+                    }
                 }
             }
         }
@@ -293,7 +385,28 @@ impl CallGraph {
     pub fn callees(&self, id: &SymbolId) -> Vec<(SymbolId, DependencyType)> {
         self.edges
             .get(id)
-            .map(|e| e.iter().map(|(id, dep)| (id.clone(), *dep)).collect())
+            .map(|e| e.iter().map(|((id, dep), _)| (id.clone(), *dep)).collect())
+            .unwrap_or_default()
+    }
+
+    /// Returns the direct callees of a symbol along with their metadata.
+    ///
+    /// Mirrors [`Self::callees`] but also returns `Provenance` and
+    /// `confidence` for every edge. Used by the explorer adapter when it
+    /// needs to surface edge trust information to downstream consumers.
+    pub fn callees_with_metadata(
+        &self,
+        id: &SymbolId,
+    ) -> Vec<(SymbolId, DependencyType, Provenance, f64)> {
+        self.edges
+            .get(id)
+            .map(|e| {
+                e.iter()
+                    .map(|((target, dep), (provenance, confidence))| {
+                        (target.clone(), *dep, *provenance, *confidence)
+                    })
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -316,7 +429,7 @@ impl CallGraph {
             return result;
         }
         if let Some(edges) = self.edges.get(id) {
-            for (callee_id, _) in edges.iter() {
+            for ((callee_id, _), _) in edges.iter() {
                 if let Some(symbol) = self.get_symbol(callee_id) {
                     let location = symbol.location();
                     result.push(CallEntry {
@@ -412,7 +525,7 @@ impl CallGraph {
             let safe_source = source_id
                 .as_str()
                 .replace([':', '(', ')', '<', '>', '{', '}'], "_");
-            for (target_id, dep_type) in edges {
+            for ((target_id, dep_type), _) in edges {
                 let safe_target = target_id
                     .as_str()
                     .replace([':', '(', ')', '<', '>', '{', '}'], "_");
@@ -513,7 +626,7 @@ impl CallGraph {
                 let safe_source = source_id
                     .as_str()
                     .replace([':', '(', ')', '<', '>', '{', '}'], "_");
-                for (target_id, dep_type) in edges {
+                for ((target_id, dep_type), _) in edges {
                     if !symbol_ids.contains(target_id) {
                         continue;
                     }
@@ -560,7 +673,7 @@ impl CallGraph {
             let safe_source = symbol_id
                 .as_str()
                 .replace([':', '(', ')', '<', '>', '{', '}'], "_");
-            for (target_id, dep_type) in dependencies {
+            for ((target_id, dep_type), _) in dependencies {
                 if !allowed_symbols.contains(target_id) {
                     continue;
                 }
@@ -672,39 +785,61 @@ impl CallGraph {
     /// - modules: Vec of (module, depends_on, depended_by, coupling_score)
     /// - cycles: Vec of cycles (each cycle is a Vec of module names)
     /// - coupling_matrix: Map of (from, to) -> edge count
-    pub fn find_module_dependencies(&self) -> (Vec<(String, Vec<String>, Vec<String>, usize)>, Vec<Vec<String>>, HashMap<(String, String), usize>) {
+    pub fn find_module_dependencies(
+        &self,
+    ) -> (
+        Vec<(String, Vec<String>, Vec<String>, usize)>,
+        Vec<Vec<String>>,
+        HashMap<(String, String), usize>,
+    ) {
         // Step 1: Build module-level edges from symbol edges
         let mut module_edges: HashMap<(String, String), usize> = HashMap::new();
         let mut module_outgoing: HashMap<String, HashSet<String>> = HashMap::new();
         let mut module_incoming: HashMap<String, HashSet<String>> = HashMap::new();
 
         for (source_id, targets) in &self.edges {
-            let source_module = self.get_symbol(source_id)
+            let source_module = self
+                .get_symbol(source_id)
                 .map(|s| Self::module_from_file(s.location().file()))
                 .unwrap_or_default();
 
-            for (target_id, _) in targets {
-                let target_module = self.get_symbol(target_id)
+            for ((target_id, _), _) in targets {
+                let target_module = self
+                    .get_symbol(target_id)
                     .map(|s| Self::module_from_file(s.location().file()))
                     .unwrap_or_default();
 
-                if source_module != target_module && !source_module.is_empty() && !target_module.is_empty() {
-                    *module_edges.entry((source_module.clone(), target_module.clone())).or_insert(0) += 1;
-                    module_outgoing.entry(source_module.clone()).or_default().insert(target_module.clone());
-                    module_incoming.entry(target_module.clone()).or_default().insert(source_module.clone());
+                if source_module != target_module
+                    && !source_module.is_empty()
+                    && !target_module.is_empty()
+                {
+                    *module_edges
+                        .entry((source_module.clone(), target_module.clone()))
+                        .or_insert(0) += 1;
+                    module_outgoing
+                        .entry(source_module.clone())
+                        .or_default()
+                        .insert(target_module.clone());
+                    module_incoming
+                        .entry(target_module.clone())
+                        .or_default()
+                        .insert(source_module.clone());
                 }
             }
         }
 
         // Step 2: Get all modules
-        let all_modules: HashSet<String> = module_outgoing.keys().cloned()
+        let all_modules: HashSet<String> = module_outgoing
+            .keys()
+            .cloned()
             .chain(module_incoming.keys().cloned())
             .collect();
 
         // Step 3: Build module graph for Tarjan SCC
         // Map module name to index for petgraph
         let module_list: Vec<String> = all_modules.into_iter().collect();
-        let module_index: HashMap<&String, usize> = module_list.iter()
+        let module_index: HashMap<&String, usize> = module_list
+            .iter()
             .enumerate()
             .map(|(i, m)| (m, i))
             .collect();
@@ -728,26 +863,38 @@ impl CallGraph {
         let cycles: Vec<Vec<String>> = sccs
             .into_iter()
             .filter(|scc| scc.len() > 1)
-            .map(|scc| scc.iter().map(|&idx| module_list[idx.index()].clone()).collect())
+            .map(|scc| {
+                scc.iter()
+                    .map(|&idx| module_list[idx.index()].clone())
+                    .collect()
+            })
             .collect();
 
         // Step 5: Build result
         let modules: Vec<(String, Vec<String>, Vec<String>, usize)> = module_list
             .into_iter()
             .map(|module| {
-                let depends_on: Vec<String> = module_outgoing.get(&module)
+                let depends_on: Vec<String> = module_outgoing
+                    .get(&module)
                     .cloned()
                     .unwrap_or_default()
                     .into_iter()
                     .collect();
-                let depended_by: Vec<String> = module_incoming.get(&module)
+                let depended_by: Vec<String> = module_incoming
+                    .get(&module)
                     .cloned()
                     .unwrap_or_default()
                     .into_iter()
                     .collect();
-                let coupling_score: usize = depends_on.iter().map(|m| {
-                    module_edges.get(&(module.clone(), m.clone())).copied().unwrap_or(0)
-                }).sum();
+                let coupling_score: usize = depends_on
+                    .iter()
+                    .map(|m| {
+                        module_edges
+                            .get(&(module.clone(), m.clone()))
+                            .copied()
+                            .unwrap_or(0)
+                    })
+                    .sum();
                 (module, depends_on, depended_by, coupling_score)
             })
             .collect();
@@ -760,7 +907,7 @@ impl CallGraph {
         if let Some(symbol) = self.symbols.remove(id) {
             // Remove all outgoing edges
             if let Some(deps) = self.edges.remove(id) {
-                for (target, _) in deps {
+                for ((target, _), _) in deps {
                     if let Some(rev) = self.reverse_edges.get_mut(&target) {
                         rev.remove(id);
                     }
@@ -770,7 +917,7 @@ impl CallGraph {
             if let Some(callers) = self.reverse_edges.remove(id) {
                 for caller in callers {
                     if let Some(edges) = self.edges.get_mut(&caller) {
-                        edges.retain(|(t, _)| t != id);
+                        edges.retain(|(t, _), _| t != id);
                     }
                 }
             }
@@ -808,11 +955,8 @@ impl CallGraph {
                     let old_id = SymbolId::new(e.old_location.fully_qualified_name());
                     if let Some(symbol) = self.symbols.remove(&old_id) {
                         // Create updated symbol
-                        let new_symbol = Symbol::new(
-                            e.name.clone(),
-                            *symbol.kind(),
-                            e.new_location.clone(),
-                        );
+                        let new_symbol =
+                            Symbol::new(e.name.clone(), *symbol.kind(), e.new_location.clone());
                         let new_id = SymbolId::new(e.new_location.fully_qualified_name());
 
                         // Re-add with new ID, preserving edges if possible
@@ -833,8 +977,10 @@ impl CallGraph {
                             if let Some(edges) = self.edges.get_mut(&caller_id) {
                                 let old_target = (old_id.clone(), DependencyType::Calls);
                                 let new_target = (new_id.clone(), DependencyType::Calls);
-                                if let Some(_entry) = edges.take(&old_target) {
-                                    edges.insert(new_target);
+                                // Preserve the metadata (Provenance, confidence)
+                                // when remapping the key from old to new id.
+                                if let Some(meta) = edges.remove(&old_target) {
+                                    edges.insert(new_target, meta);
                                 }
                             }
                         }
@@ -849,14 +995,16 @@ impl CallGraph {
                     let source_id = SymbolId::new(format!("{}:0:0", e.source_name));
                     let target_id = SymbolId::new(format!("{}:0:0", e.target_name));
                     if let Some(edges) = self.edges.get_mut(&source_id) {
-                        edges.retain(|(t, dt)| t != &target_id || dt != &e.dependency_type);
+                        edges.retain(|(t, dt), _| t != &target_id || dt != &e.dependency_type);
                     }
                     if let Some(callers) = self.reverse_edges.get_mut(&target_id) {
                         callers.remove(&source_id);
                     }
                 }
                 // Graph-level events are not applicable to symbol-level apply_events
-                GraphEvent::GraphReplaced | GraphEvent::GraphCleared | GraphEvent::GraphModified => {
+                GraphEvent::GraphReplaced
+                | GraphEvent::GraphCleared
+                | GraphEvent::GraphModified => {
                     // No-op: these events are handled at the GraphCache level
                 }
             }
@@ -901,6 +1049,114 @@ pub enum CallGraphError {
 
     #[error("Symbol already exists: {0}")]
     SymbolAlreadyExists(SymbolId),
+
+    /// The extraction context (typically a `Heuristic` score) was rejected
+    /// by [`crate::domain::services::ConfidenceRules`].
+    #[error("invalid confidence: {0}")]
+    InvalidConfidence(#[source] crate::domain::services::ConfidenceError),
+}
+
+// ---------------------------------------------------------------------------
+// CallGraphV1 — legacy bincode shadow type.
+//
+// The pre-metadata `CallGraph` stored edges as a `HashSet<(SymbolId, DependencyType)>`
+// without any provenance or confidence. The bincode wire-format of the old
+// `CallGraph` is therefore *not* the same as the new one (HashSet vs
+// HashMap, missing metadata tuple). To keep existing on-disk blobs loadable
+// across the upgrade, this shadow struct mirrors the **old** shape so that
+// `bincode` can decode legacy blobs into it. [`CallGraphV1::into_v2`] then
+// lifts the data into a v2 `CallGraph` with `(Extracted, 1.0)` defaults
+// applied to every edge.
+//
+// This type is `#[deprecated]` and only exists to support the one-time
+// migration from v1 to v2 blobs. It will be removed after one release
+// cycle.
+// ---------------------------------------------------------------------------
+/// Pre-metadata shape of `CallGraph` used by the v1 bincode blob format.
+///
+/// **Deprecated** — only used to decode legacy v1 blobs. Use [`CallGraph`]
+/// for all new code.
+#[allow(deprecated)] // allow the deprecated attribute below to apply cleanly
+#[deprecated(
+    since = "0.0.0",
+    note = "CallGraphV1 is a one-time migration shim; remove after one release cycle"
+)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CallGraphV1 {
+    // `pub` because the only consumer is migration code (e.g.
+    // `cognicode-db::VersionedBlob::decode`) plus integration tests
+    // that need to hand-craft v1 blobs. Keeping the fields public lets
+    // those tests build a v1 graph directly without exposing a builder
+    // API that will be deleted in one release cycle anyway.
+    pub symbols: HashMap<SymbolId, Symbol>,
+    pub edges: HashMap<SymbolId, HashSet<(SymbolId, DependencyType)>>,
+    pub reverse_edges: HashMap<SymbolId, HashSet<SymbolId>>,
+    pub name_index: HashMap<String, Vec<SymbolId>>,
+}
+
+#[allow(deprecated)]
+impl CallGraphV1 {
+    /// Construct an empty `CallGraphV1`. Visible so migration tests
+    /// (in `cognicode-db` and `cognicode-core`) can hand-craft a v1
+    /// graph and roundtrip it through the v2 read path.
+    pub fn new() -> Self {
+        Self {
+            symbols: HashMap::new(),
+            edges: HashMap::new(),
+            reverse_edges: HashMap::new(),
+            name_index: HashMap::new(),
+        }
+    }
+}
+
+#[allow(deprecated)]
+impl Default for CallGraphV1 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[allow(deprecated)]
+impl CallGraphV1 {
+    /// Lift a legacy v1 graph into the current v2 shape, assigning
+    /// `(Provenance::Extracted, 1.0)` to every edge. The metadata is
+    /// always `Extracted` because pre-metadata v1 graphs had no notion
+    /// of confidence — they were all produced by direct AST extraction.
+    pub fn into_v2(self) -> CallGraph {
+        let mut out = CallGraph::new();
+        // Copy symbols verbatim.
+        for (id, sym) in self.symbols.into_iter() {
+            // We have to bypass `add_symbol` (which derives an id from
+            // the symbol's fully-qualified name) to preserve the
+            // original id exactly.
+            out.symbols.insert(id.clone(), sym);
+            out.edges.entry(id.clone()).or_default();
+            out.reverse_edges.entry(id).or_default();
+        }
+        // Copy name_index. We do best-effort: if a name was already
+        // added by `out.symbols.insert` we would have lost it, so we
+        // re-derive it by walking the symbols map.
+        for (id, sym) in out.symbols.iter() {
+            out.name_index
+                .entry(sym.name().to_lowercase())
+                .or_default()
+                .push(id.clone());
+        }
+        // Copy edges, attaching (Extracted, 1.0) to each.
+        for (source, deps) in self.edges.into_iter() {
+            for (target, dep) in deps.into_iter() {
+                out.edges
+                    .entry(source.clone())
+                    .or_default()
+                    .insert((target.clone(), dep), (Provenance::Extracted, 1.0));
+                out.reverse_edges
+                    .entry(target)
+                    .or_default()
+                    .insert(source.clone());
+            }
+        }
+        out
+    }
 }
 
 use std::fmt;
@@ -1070,12 +1326,20 @@ mod tests {
     #[cfg(feature = "persistence")]
     #[test]
     fn test_call_graph_bincode_roundtrip() {
-        use bincode::serde::{decode_from_slice, encode_to_vec};
         use bincode::config::standard;
+        use bincode::serde::{decode_from_slice, encode_to_vec};
 
         let mut graph = CallGraph::new();
-        let symbol1 = Symbol::new("func_a", SymbolKind::Function, Location::new("test.rs", 10, 1));
-        let symbol2 = Symbol::new("func_b", SymbolKind::Function, Location::new("test.rs", 20, 1));
+        let symbol1 = Symbol::new(
+            "func_a",
+            SymbolKind::Function,
+            Location::new("test.rs", 10, 1),
+        );
+        let symbol2 = Symbol::new(
+            "func_b",
+            SymbolKind::Function,
+            Location::new("test.rs", 20, 1),
+        );
 
         let id1 = graph.add_symbol(symbol1);
         let id2 = graph.add_symbol(symbol2);
@@ -1094,5 +1358,313 @@ mod tests {
         // Assert equality
         assert_eq!(graph.symbol_count(), deserialized_graph.symbol_count());
         assert_eq!(graph.edge_count(), deserialized_graph.edge_count());
+    }
+
+    // -------------------------------------------------------------------------
+    // New metadata-aware tests (Phase 2 of the explorer-graph-foundation slice)
+    // -------------------------------------------------------------------------
+
+    use crate::domain::services::ExtractionContext;
+    use crate::domain::value_objects::Provenance;
+
+    fn build_three_node_graph() -> (CallGraph, SymbolId, SymbolId, SymbolId) {
+        let mut graph = CallGraph::new();
+        let a = graph.add_symbol(Symbol::new(
+            "a",
+            SymbolKind::Function,
+            Location::new("a.rs", 1, 0),
+        ));
+        let b = graph.add_symbol(Symbol::new(
+            "b",
+            SymbolKind::Function,
+            Location::new("b.rs", 1, 0),
+        ));
+        let c = graph.add_symbol(Symbol::new(
+            "c",
+            SymbolKind::Function,
+            Location::new("c.rs", 1, 0),
+        ));
+        (graph, a, b, c)
+    }
+
+    #[test]
+    fn add_dependency_defaults_to_extracted_one() {
+        let (mut graph, a, b, _) = build_three_node_graph();
+        graph
+            .add_dependency(&a, &b, DependencyType::Calls)
+            .expect("direct call");
+
+        let metas = graph.callees_with_metadata(&a);
+        assert_eq!(metas.len(), 1);
+        let (_target, dep, prov, conf) = &metas[0];
+        assert_eq!(*dep, DependencyType::Calls);
+        assert_eq!(*prov, Provenance::Extracted);
+        assert_eq!(*conf, 1.0_f64);
+    }
+
+    #[test]
+    fn add_dependency_with_provenance_direct_extraction() {
+        let (mut graph, a, b, _) = build_three_node_graph();
+        graph
+            .add_dependency_with_provenance(
+                &a,
+                &b,
+                DependencyType::Calls,
+                ExtractionContext::DirectExtraction,
+            )
+            .expect("direct extraction");
+
+        let metas = graph.callees_with_metadata(&a);
+        assert_eq!(metas.len(), 1);
+        let (_, _, prov, conf) = &metas[0];
+        assert_eq!(*prov, Provenance::Extracted);
+        assert_eq!(*conf, 1.0_f64);
+    }
+
+    #[test]
+    fn add_dependency_with_provenance_heuristic_clamps_into_band() {
+        let (mut graph, a, _, c) = build_three_node_graph();
+        // Score above the band (0.5, 0.9) must clamp to 0.9.
+        graph
+            .add_dependency_with_provenance(
+                &a,
+                &c,
+                DependencyType::Calls,
+                ExtractionContext::Heuristic { score: 0.99 },
+            )
+            .expect("in-range heuristic");
+        let metas = graph.callees_with_metadata(&a);
+        assert_eq!(metas[0].2, Provenance::Inferred);
+        assert_eq!(metas[0].3, 0.9_f64);
+    }
+
+    #[test]
+    fn add_dependency_with_provenance_heuristic_clamps_below_band() {
+        let (mut graph, a, b, _) = build_three_node_graph();
+        // Score inside the band must pass through unchanged.
+        graph
+            .add_dependency_with_provenance(
+                &a,
+                &b,
+                DependencyType::Imports,
+                ExtractionContext::Heuristic { score: 0.7 },
+            )
+            .expect("in-range heuristic");
+        let metas = graph.callees_with_metadata(&a);
+        assert_eq!(metas[0].2, Provenance::Inferred);
+        assert_eq!(metas[0].3, 0.7_f64);
+    }
+
+    #[test]
+    fn add_dependency_with_provenance_unresolved() {
+        let (mut graph, a, b, _) = build_three_node_graph();
+        graph
+            .add_dependency_with_provenance(
+                &a,
+                &b,
+                DependencyType::References,
+                ExtractionContext::Unresolved,
+            )
+            .expect("unresolved");
+        let metas = graph.callees_with_metadata(&a);
+        assert_eq!(metas[0].2, Provenance::Ambiguous);
+        assert_eq!(metas[0].3, 0.3_f64);
+    }
+
+    #[test]
+    fn add_dependency_with_provenance_rejects_nan() {
+        let (mut graph, a, b, _) = build_three_node_graph();
+        let result = graph.add_dependency_with_provenance(
+            &a,
+            &b,
+            DependencyType::Calls,
+            ExtractionContext::Heuristic { score: f64::NAN },
+        );
+        assert!(matches!(
+            result,
+            Err(CallGraphError::InvalidConfidence(
+                crate::domain::services::ConfidenceError::NotANumber
+            ))
+        ));
+        // The edge must not be inserted.
+        assert!(graph.callees(&a).is_empty());
+    }
+
+    #[test]
+    fn add_dependency_with_provenance_rejects_out_of_range() {
+        let (mut graph, a, b, _) = build_three_node_graph();
+        let result = graph.add_dependency_with_provenance(
+            &a,
+            &b,
+            DependencyType::Calls,
+            ExtractionContext::Heuristic { score: 1.5 },
+        );
+        assert!(matches!(
+            result,
+            Err(CallGraphError::InvalidConfidence(
+                crate::domain::services::ConfidenceError::OutOfRange(_)
+            ))
+        ));
+        assert!(graph.callees(&a).is_empty());
+    }
+
+    #[test]
+    fn callees_with_metadata_returns_empty_for_unknown_symbol() {
+        let (graph, _, _, _) = build_three_node_graph();
+        let unknown = SymbolId::new("ghost.rs:ghost:1");
+        assert!(graph.callees_with_metadata(&unknown).is_empty());
+    }
+
+    #[test]
+    fn edges_with_metadata_yields_one_per_edge() {
+        let (mut graph, a, b, c) = build_three_node_graph();
+        graph
+            .add_dependency_with_provenance(
+                &a,
+                &b,
+                DependencyType::Calls,
+                ExtractionContext::DirectExtraction,
+            )
+            .unwrap();
+        graph
+            .add_dependency_with_provenance(
+                &a,
+                &c,
+                DependencyType::Imports,
+                ExtractionContext::Heuristic { score: 0.6 },
+            )
+            .unwrap();
+
+        let all: Vec<_> = graph.edges_with_metadata().collect();
+        assert_eq!(all.len(), 2);
+        // Every entry must have a finite confidence in [0.0, 1.0].
+        for (src, tgt, _dep, prov, conf) in &all {
+            assert!(!src.as_str().is_empty());
+            assert!(!tgt.as_str().is_empty());
+            assert!(!prov.to_string().is_empty());
+            assert!(
+                (0.0..=1.0).contains(conf),
+                "conf {conf} out of range for {src}->{tgt}"
+            );
+            assert!(!conf.is_nan());
+            assert!(conf.is_finite());
+        }
+    }
+
+    /// Spec post-condition: every edge in the graph must satisfy
+    /// `confidence ∈ [0.0, 1.0] && !is_nan() && is_finite()`.
+    /// This is the invariant test from spec requirement "Testability".
+    #[test]
+    fn invariant_every_edge_has_finite_in_range_confidence() {
+        let (mut graph, a, b, c) = build_three_node_graph();
+
+        // Add a mix of edges covering all three contexts.
+        graph
+            .add_dependency_with_provenance(
+                &a,
+                &b,
+                DependencyType::Calls,
+                ExtractionContext::DirectExtraction,
+            )
+            .unwrap();
+        graph
+            .add_dependency_with_provenance(
+                &a,
+                &c,
+                DependencyType::Imports,
+                ExtractionContext::Heuristic { score: 0.55 },
+            )
+            .unwrap();
+        graph
+            .add_dependency_with_provenance(
+                &b,
+                &c,
+                DependencyType::References,
+                ExtractionContext::Unresolved,
+            )
+            .unwrap();
+
+        for (_src, _tgt, _dep, _prov, conf) in graph.edges_with_metadata() {
+            assert!(
+                (0.0..=1.0).contains(&conf),
+                "confidence {conf} out of [0.0, 1.0]"
+            );
+            assert!(!conf.is_nan(), "NaN confidence leaked into edge");
+            assert!(conf.is_finite(), "non-finite confidence leaked into edge");
+        }
+    }
+
+    #[test]
+    fn pre_existing_api_dependencies_still_works() {
+        // Backward-compat: dependencies()/callees()/callers() must work as
+        // before, without exposing metadata. The signature is unchanged.
+        let (mut graph, a, b, _) = build_three_node_graph();
+        graph.add_dependency(&a, &b, DependencyType::Calls).unwrap();
+        let deps: Vec<_> = graph
+            .dependencies(&a)
+            .map(|(t, d)| (t.clone(), *d))
+            .collect();
+        assert_eq!(deps, vec![(b.clone(), DependencyType::Calls)]);
+        assert_eq!(graph.callees(&a), vec![(b.clone(), DependencyType::Calls)]);
+        assert!(graph.callers(&b).contains(&a));
+    }
+
+    // -------------------------------------------------------------------------
+    // CallGraphV1 → CallGraph migration tests (Phase 3 of the foundation slice)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    #[allow(deprecated)]
+    fn callgraph_v1_into_v2_assigns_extracted_one_to_every_edge() {
+        // Build a v1 graph (legacy shape) and lift it.
+        let mut v1 = CallGraphV1::new();
+        let sa = Symbol::new("alpha", SymbolKind::Function, Location::new("a.rs", 1, 0));
+        let sb = Symbol::new("beta", SymbolKind::Function, Location::new("b.rs", 1, 0));
+        let id_a = SymbolId::new(sa.fully_qualified_name());
+        let id_b = SymbolId::new(sb.fully_qualified_name());
+        v1.symbols.insert(id_a.clone(), sa);
+        v1.symbols.insert(id_b.clone(), sb);
+        v1.edges.insert(
+            id_a.clone(),
+            std::iter::once((id_b.clone(), DependencyType::Calls)).collect(),
+        );
+
+        let v2 = v1.into_v2();
+
+        assert_eq!(v2.symbol_count(), 2);
+        assert_eq!(v2.edge_count(), 1);
+
+        // Every edge must carry (Extracted, 1.0).
+        for (_src, _tgt, _dep, prov, conf) in v2.edges_with_metadata() {
+            assert_eq!(prov, Provenance::Extracted);
+            assert_eq!(conf, 1.0_f64);
+        }
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn callgraph_v1_into_v2_bincode_roundtrip() {
+        // A v1 graph encoded with bincode must decode into a v2 graph
+        // with all edges tagged (Extracted, 1.0).
+        let mut v1 = CallGraphV1::new();
+        let sa = Symbol::new("alpha", SymbolKind::Function, Location::new("a.rs", 1, 0));
+        let sb = Symbol::new("beta", SymbolKind::Function, Location::new("b.rs", 1, 0));
+        let id_a = SymbolId::new(sa.fully_qualified_name());
+        let id_b = SymbolId::new(sb.fully_qualified_name());
+        v1.symbols.insert(id_a.clone(), sa);
+        v1.symbols.insert(id_b.clone(), sb);
+        v1.edges.insert(
+            id_a.clone(),
+            std::iter::once((id_b.clone(), DependencyType::Calls)).collect(),
+        );
+
+        let bytes =
+            bincode::serde::encode_to_vec(&v1, bincode::config::standard()).expect("encode v1");
+        let (decoded, _): (CallGraphV1, usize) =
+            bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
+                .expect("decode v1");
+        let v2 = decoded.into_v2();
+        assert_eq!(v2.symbol_count(), 2);
+        assert_eq!(v2.edge_count(), 1);
     }
 }

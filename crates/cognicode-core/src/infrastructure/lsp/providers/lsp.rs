@@ -1,7 +1,7 @@
 use crate::domain::aggregates::Symbol;
 use crate::domain::traits::code_intelligence::{
-    CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, DocumentSymbolKind,
-    HoverInfo, HoverKind, Reference, ReferenceKind, TypeHierarchy,
+    CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, DocumentSymbolKind, HoverInfo,
+    HoverKind, Reference, ReferenceKind, TypeHierarchy,
 };
 use crate::domain::value_objects::Location;
 use crate::infrastructure::lsp::process_manager::LspProcessManager;
@@ -40,11 +40,7 @@ impl LspIntelligenceProvider {
             .ok_or_else(|| CodeIntelligenceError::LanguageNotSupported(file_path.to_string()))
     }
 
-    async fn text_document_position_params(
-        file_path: &str,
-        line: u32,
-        column: u32,
-    ) -> Value {
+    async fn text_document_position_params(file_path: &str, line: u32, column: u32) -> Value {
         serde_json::json!({
             "textDocument": { "uri": format!("file://{}", file_path) },
             "position": {
@@ -53,7 +49,6 @@ impl LspIntelligenceProvider {
             }
         })
     }
-
 }
 
 #[async_trait::async_trait]
@@ -101,9 +96,14 @@ impl CodeIntelligenceProvider for LspIntelligenceProvider {
         include_declaration: bool,
     ) -> Result<Vec<Reference>, CodeIntelligenceError> {
         self.ensure_document_open(location.file()).await?;
-        
+
         let language = Self::language_from_file(location.file())?;
-        let mut params = Self::text_document_position_params(location.file(), location.line(), location.column()).await;
+        let mut params = Self::text_document_position_params(
+            location.file(),
+            location.line(),
+            location.column(),
+        )
+        .await;
         params["context"] = serde_json::json!({ "includeDeclaration": include_declaration });
 
         let result = self
@@ -151,9 +151,14 @@ impl CodeIntelligenceProvider for LspIntelligenceProvider {
         location: &Location,
     ) -> Result<Option<Location>, CodeIntelligenceError> {
         self.ensure_document_open(location.file()).await?;
-        
+
         let language = Self::language_from_file(location.file())?;
-        let params = Self::text_document_position_params(location.file(), location.line(), location.column()).await;
+        let params = Self::text_document_position_params(
+            location.file(),
+            location.line(),
+            location.column(),
+        )
+        .await;
 
         let result = self
             .process_manager
@@ -172,9 +177,15 @@ impl CodeIntelligenceProvider for LspIntelligenceProvider {
         };
 
         if let Some(first) = items.first() {
-            let uri = first.get("uri").and_then(|v| v.as_str()).ok_or_else(|| {
-                CodeIntelligenceError::Internal("Missing uri in definition response".to_string())
-            })?.to_string();
+            let uri = first
+                .get("uri")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    CodeIntelligenceError::Internal(
+                        "Missing uri in definition response".to_string(),
+                    )
+                })?
+                .to_string();
             let range = first.get("range").ok_or_else(|| {
                 CodeIntelligenceError::Internal("Missing range in definition response".to_string())
             })?;
@@ -183,10 +194,15 @@ impl CodeIntelligenceProvider for LspIntelligenceProvider {
             })?;
             let line = start.get("line").and_then(|v| v.as_u64()).ok_or_else(|| {
                 CodeIntelligenceError::Internal("Missing line in start".to_string())
-            })? as u32 + 1;
-            let character = start.get("character").and_then(|v| v.as_u64()).ok_or_else(|| {
-                CodeIntelligenceError::Internal("Missing character in start".to_string())
-            })? as u32 + 1;
+            })? as u32
+                + 1;
+            let character = start
+                .get("character")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| {
+                    CodeIntelligenceError::Internal("Missing character in start".to_string())
+                })? as u32
+                + 1;
             return Ok(Some(Location::new(uri, line, character)));
         }
 
@@ -212,17 +228,19 @@ impl CodeIntelligenceProvider for LspIntelligenceProvider {
             .collect())
     }
 
-    async fn hover(
-        &self,
-        location: &Location,
-    ) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
+    async fn hover(&self, location: &Location) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
         self.ensure_document_open(location.file()).await?;
-        
+
         let language = Self::language_from_file(location.file())?;
-        let params = Self::text_document_position_params(location.file(), location.line(), location.column()).await;
+        let params = Self::text_document_position_params(
+            location.file(),
+            location.line(),
+            location.column(),
+        )
+        .await;
 
         let delays_ms = [1000, 2000, 3000];
-        
+
         for (attempt, delay_ms) in delays_ms.iter().enumerate() {
             let result = self
                 .process_manager
@@ -265,12 +283,12 @@ impl CodeIntelligenceProvider for LspIntelligenceProvider {
                     }));
                 }
             }
-            
+
             if attempt < delays_ms.len() - 1 {
                 tokio::time::sleep(std::time::Duration::from_millis(*delay_ms)).await;
             }
         }
-        
+
         Ok(None)
     }
 }

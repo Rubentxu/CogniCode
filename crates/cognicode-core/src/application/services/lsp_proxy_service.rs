@@ -379,7 +379,9 @@ mod tests {
     async fn test_route_operation_when_disabled() {
         let service = LspProxyService::new_without_workspace(Arc::new(AnalysisService::new()));
 
-        let result = service.route_operation("hover", &serde_json::json!({})).await;
+        let result = service
+            .route_operation("hover", &serde_json::json!({}))
+            .await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
     }
@@ -390,7 +392,9 @@ mod tests {
         service.enable_proxy_mode();
 
         // Even with proxy enabled, if no LSP is running, it returns None
-        let result = service.route_operation("hover", &serde_json::json!({})).await;
+        let result = service
+            .route_operation("hover", &serde_json::json!({}))
+            .await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
     }

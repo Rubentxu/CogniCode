@@ -2,6 +2,7 @@
 //!
 //! This module provides various graph construction strategies:
 //! - `PetGraphStore`: Full petgraph-based graph store
+//! - `CallGraphProjection`: Read-side petgraph projection for graph algorithms
 //! - `GraphCache`: Thread-safe cache for call graphs
 //! - `LightweightIndex`: Fast symbol index without edges
 //! - `SymbolIndex`: Symbol index with cache management
@@ -9,6 +10,7 @@
 //! - `PerFileGraphCache`: Per-file graph caching
 //! - `GraphStrategy`: Unified interface for different strategies
 
+mod call_graph_projection;
 mod graph_cache;
 mod lightweight_index;
 mod on_demand_graph;
@@ -17,6 +19,10 @@ mod pet_graph_store;
 mod strategy;
 mod symbol_index;
 
+pub use call_graph_projection::{
+    CallGraphProjection, ExplanationHop, ExplanationView, ProjectionError, SubgraphDirection,
+    SubgraphEdge, SubgraphView,
+};
 pub use graph_cache::GraphCache;
 pub use lightweight_index::{LightweightIndex, SymbolLocation};
 pub use on_demand_graph::{

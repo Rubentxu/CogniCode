@@ -338,12 +338,16 @@ mod tests {
         );
         let report = analyzer.calculate_impact(&helper_symbol, &graph);
 
-        assert!(report
-            .affected_files
-            .contains(&std::path::PathBuf::from("helper.rs")));
-        assert!(report
-            .affected_files
-            .contains(&std::path::PathBuf::from("main.rs")));
+        assert!(
+            report
+                .affected_files
+                .contains(&std::path::PathBuf::from("helper.rs"))
+        );
+        assert!(
+            report
+                .affected_files
+                .contains(&std::path::PathBuf::from("main.rs"))
+        );
     }
 
     #[test]

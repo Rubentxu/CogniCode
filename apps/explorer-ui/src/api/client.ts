@@ -177,8 +177,176 @@ async function handleResponse<T extends z.ZodTypeAny>(
 }
 
 // ============================================================================
-// SWR-compatible fetcher factory
+// Subgraph (visualization-stack Phase 1)
 // ============================================================================
+
+/**
+ * Subgraph query parameters. Matches `crates/cognicode-explorer/src/api.rs::SubgraphQuery`.
+ *
+ * All fields are optional on the wire; the backend applies defaults
+ * (depth=3, direction=both, max_nodes=500) when a key is missing.
+ */
+export type SubgraphQuery = {
+  depth?: number;
+  direction?: "incoming" | "outgoing" | "both";
+  max_nodes?: number;
+};
+
+/**
+ * Fetch a sub-graph for the given root id. Returns the typed
+ * `SubgraphResponse` (zod-validated at the boundary) or throws
+ * `ApiError` on non-2xx.
+ */
+export async function fetchSubgraph(
+  id: string,
+  params: SubgraphQuery,
+): Promise<import("./types").SubgraphResponse> {
+  const query: Record<string, string | number> = {};
+  if (params.depth !== undefined) query["depth"] = params.depth;
+  if (params.direction !== undefined) query["direction"] = params.direction;
+  if (params.max_nodes !== undefined) query["max_nodes"] = params.max_nodes;
+  // Re-use the existing `apiGet` so the path benefits from the same
+  // error + zod validation pipeline as every other DTO endpoint.
+  const { subgraphResponseSchema } = await import("./types");
+  return apiGet(`/graph/${encodeURIComponent(id)}/subgraph`, subgraphResponseSchema, query);
+}
+
+// ============================================================================
+// Contextual Graph — Contextual Views (Phase 1 of visualization-stack)
+// ============================================================================
+
+/**
+ * Options for `fetchContextual`. All fields are optional; the
+ * backend applies defaults (`level=file`, `depth=1`, `max_nodes=200`).
+ *
+ * Mirrors `crates/cognicode-explorer/src/api::ContextualQuery`.
+ */
+export type ContextualOptions = {
+  level?: "file";
+  depth?: 1 | 2;
+  maxNodes?: number;
+};
+
+/**
+ * Fetch a `ContextualGraphResponse` for the given focus id. The
+ * response is zod-validated at the boundary; non-2xx responses
+ * surface as `ApiError` (with `status: 404` for unknown symbols,
+ * `status: 400` for out-of-bounds params).
+ */
+export async function fetchContextual(
+  id: string,
+  opts: ContextualOptions = {},
+): Promise<import("./types").ContextualGraphResponse> {
+  const query: Record<string, string | number> = {};
+  if (opts.level !== undefined) query["level"] = opts.level;
+  if (opts.depth !== undefined) query["depth"] = opts.depth;
+  if (opts.maxNodes !== undefined) query["max_nodes"] = opts.maxNodes;
+  const { contextualGraphResponseSchema } = await import("./types");
+  return apiGet(
+    `/graph/${encodeURIComponent(id)}/contextual`,
+    contextualGraphResponseSchema,
+    query,
+  );
+}
+
+// ============================================================================
+// graph_search (T22) — multimodal Generic Graph Layer search
+// ============================================================================
+//
+// Frontend-side wrapper for the MCP `graph_search` tool. The
+// tool is exposed via the explorer's MCP server; the HTTP layer
+// here is a thin shim that calls the same backend. The wire
+// shape mirrors the Rust `dispatch_graph_search` envelope:
+//
+//   POST /api/mcp/tools/call { name: "graph_search", args: {...} }
+//   → { payload: { results, total_count, next_cursor, ... } }
+//
+// For T22 we expose a typed `graphSearch` helper that:
+//   - takes the user's search params (query, kinds, limit, cursor)
+//   - posts to the MCP endpoint
+//   - validates the response with the `graphSearchResponseSchema`
+//   - returns the typed `GraphSearchResponse`
+//
+// The function is intentionally a thin wrapper — all the
+// real work (FTS5 ranking, score normalization, cursor
+// pagination) is on the Rust side. The frontend just glues
+// the SWR hook to the wire.
+
+/**
+ * Parameters for the multimodal `graph_search` call.
+ * Mirrors the Rust `GraphSearchArgs` struct in
+ * `crates/cognicode-explorer/src/mcp.rs`.
+ */
+export type GraphSearchParams = {
+  /** Required, non-empty search query. */
+  query: string;
+  /** Optional kind filter (one or more of `symbol`, `decision`, `doc`, `issue`, `evidence`). */
+  node_kinds?: string[];
+  /** Opaque cursor from a previous response's `next_cursor`. */
+  cursor?: string;
+  /** Page size; defaults to 50, capped at 200. */
+  limit?: number;
+};
+
+/**
+ * Run a multimodal `graph_search` and return the typed
+ * `GraphSearchResponse`. Throws `ApiError` on non-2xx and
+ * `ZodError` on a malformed payload.
+ *
+ * The MCP `tools/call` endpoint returns a `McpResultEnvelope`
+ * whose `payload` is the `GraphSearchResponse` shape. We unwrap
+ * the envelope in-flight and validate the inner payload.
+ */
+export async function graphSearch(
+  params: GraphSearchParams,
+): Promise<import("./types").GraphSearchResponse> {
+  const { graphSearchResponseSchema } = await import("./types");
+  // Use a generic schema that accepts the envelope, then unwrap.
+  const envelopeSchema = await import("zod").then((z) =>
+    z.z.object({
+      tool_name: z.z.string(),
+      payload: graphSearchResponseSchema,
+    }),
+  );
+  const envelope = await apiPost(
+    "/mcp/tools/call",
+    { name: "graph_search", args: params },
+    envelopeSchema,
+  );
+  return envelope.payload;
+}
+
+// ============================================================================
+// Rationale — `GET /api/graph/:id/rationale`
+// ============================================================================
+
+/**
+ * Options for `fetchRationale`. All fields are optional; the
+ * backend applies defaults (`max_depth=3`, `max_nodes=50`).
+ */
+export type RationaleOptions = {
+  maxDepth?: number;
+  maxNodes?: number;
+};
+
+/**
+ * Fetch a rationale sub-graph for the given focus id. Returns the
+ * typed `SubgraphResponse` with `corroboration_scores` populated.
+ */
+export async function fetchRationale(
+  id: string,
+  opts: RationaleOptions = {},
+): Promise<import("./types").SubgraphResponse> {
+  const query: Record<string, string | number> = {};
+  if (opts.maxDepth !== undefined) query["max_depth"] = opts.maxDepth;
+  if (opts.maxNodes !== undefined) query["max_nodes"] = opts.maxNodes;
+  const { subgraphResponseSchema } = await import("./types");
+  return apiGet(
+    `/graph/${encodeURIComponent(id)}/rationale`,
+    subgraphResponseSchema,
+    query,
+  );
+}
 
 /**
  * Build a SWR fetcher that performs a GET + schema validation. The

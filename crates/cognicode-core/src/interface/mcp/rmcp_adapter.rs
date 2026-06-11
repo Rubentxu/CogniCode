@@ -6,13 +6,13 @@
 use crate::interface::mcp::handlers::HandlerContext;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, Content,
-    ListToolsResult, ServerCapabilities, ServerInfo, Tool,
+    CallToolRequestParams, CallToolResult, Content, ListToolsResult, ServerCapabilities,
+    ServerInfo, Tool,
 };
 use rmcp::service::RoleServer;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// CogniCodeHandler implements the rmcp ServerHandler trait
 ///
@@ -33,26 +33,38 @@ impl CogniCodeHandler {
         let cancellation_token = Arc::new(AtomicBool::new(false));
         let mut ctx = Self::build_ctx(project_root);
         ctx.cancellation_token = cancellation_token.clone();
-        Self { ctx: Arc::new(ctx), cancellation_token }
+        Self {
+            ctx: Arc::new(ctx),
+            cancellation_token,
+        }
     }
 
     /// Creates a new CogniCodeHandler with a custom GraphStore (SQLite for persistence)
-    pub fn with_graph_store(project_root: PathBuf, store: Box<dyn crate::domain::traits::GraphStore>) -> Self {
+    pub fn with_graph_store(
+        project_root: PathBuf,
+        store: Box<dyn crate::domain::traits::GraphStore>,
+    ) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
         let mut ctx = HandlerContext::with_graph_store(project_root, store);
         ctx.cancellation_token = cancellation_token.clone();
-        Self { ctx: Arc::new(ctx), cancellation_token }
+        Self {
+            ctx: Arc::new(ctx),
+            cancellation_token,
+        }
     }
 
     fn build_ctx(project_root: PathBuf) -> HandlerContext {
-        let canonical_root = std::fs::canonicalize(&project_root)
-            .unwrap_or_else(|_| project_root.clone());
+        let canonical_root =
+            std::fs::canonicalize(&project_root).unwrap_or_else(|_| project_root.clone());
         HandlerContext::new(canonical_root)
     }
 
     /// Get the current CallGraph from the store
-    pub fn get_call_graph(&self) -> anyhow::Result<crate::domain::aggregates::call_graph::CallGraph> {
-        self.ctx.get_graph_store()
+    pub fn get_call_graph(
+        &self,
+    ) -> anyhow::Result<crate::domain::aggregates::call_graph::CallGraph> {
+        self.ctx
+            .get_graph_store()
             .load_graph()
             .map_err(|e| anyhow::anyhow!("Graph store error: {}", e))?
             .ok_or_else(|| anyhow::anyhow!("No call graph available. Run build_graph first."))
@@ -67,7 +79,10 @@ impl ServerHandler for CogniCodeHandler {
                 .enable_resources()
                 .build(),
         )
-        .with_server_info(rmcp::model::Implementation::new("cognicode", env!("CARGO_PKG_VERSION")))
+        .with_server_info(rmcp::model::Implementation::new(
+            "cognicode",
+            env!("CARGO_PKG_VERSION"),
+        ))
         .with_protocol_version(rmcp::model::ProtocolVersion::V_2025_03_26)
     }
 
@@ -75,7 +90,8 @@ impl ServerHandler for CogniCodeHandler {
         &self,
         request: Option<rmcp::model::PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<RoleServer>,
-    ) -> impl std::future::Future<Output = Result<ListToolsResult, rmcp::ErrorData>> + Send + '_ {
+    ) -> impl std::future::Future<Output = Result<ListToolsResult, rmcp::ErrorData>> + Send + '_
+    {
         async move {
             use base64::Engine;
 
@@ -810,9 +826,10 @@ impl ServerHandler for CogniCodeHandler {
                 .collect();
 
             let next_cursor = if cursor_offset + PAGE_SIZE < total {
-                Some(base64::engine::general_purpose::STANDARD.encode(
-                    (cursor_offset + PAGE_SIZE).to_string(),
-                ))
+                Some(
+                    base64::engine::general_purpose::STANDARD
+                        .encode((cursor_offset + PAGE_SIZE).to_string()),
+                )
             } else {
                 None
             };
@@ -829,7 +846,8 @@ impl ServerHandler for CogniCodeHandler {
         &self,
         request: CallToolRequestParams,
         _context: rmcp::service::RequestContext<RoleServer>,
-    ) -> impl std::future::Future<Output = Result<CallToolResult, rmcp::ErrorData>> + Send + '_ {
+    ) -> impl std::future::Future<Output = Result<CallToolResult, rmcp::ErrorData>> + Send + '_
+    {
         let ctx = self.ctx.clone();
         async move {
             let result = call_tool_handler(&ctx, request).await;
@@ -863,7 +881,8 @@ async fn call_tool_handler(
         "get_file_symbols" => {
             let input: crate::interface::mcp::schemas::GetFileSymbolsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_get_file_symbols(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::handle_get_file_symbols(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "build_graph" => {
@@ -895,7 +914,10 @@ async fn call_tool_handler(
         "safe_refactor" => {
             let input: crate::interface::mcp::schemas::SafeRefactorInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::refactor_handlers::handle_safe_refactor(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::refactor_handlers::handle_safe_refactor(
+                ctx, input,
+            )
+            .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "find_usages" => {
@@ -945,7 +967,8 @@ async fn call_tool_handler(
         "get_all_symbols" => {
             let input: crate::interface::mcp::schemas::GetAllSymbolsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_get_all_symbols(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::handle_get_all_symbols(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "find_dead_code" => {
@@ -957,7 +980,8 @@ async fn call_tool_handler(
         "get_module_dependencies" => {
             let input: crate::interface::mcp::schemas::GetModuleDependenciesInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_get_module_dependencies(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::handle_get_module_dependencies(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "build_lightweight_index" => {
@@ -1003,7 +1027,8 @@ async fn call_tool_handler(
         "get_symbol_code" => {
             let input: crate::interface::mcp::schemas::SymbolCodeInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_get_symbol_code(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::handle_get_symbol_code(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "semantic_search" => {
@@ -1025,20 +1050,23 @@ async fn call_tool_handler(
             let input: crate::interface::mcp::schemas::GoToDefinitionInput =
                 serde_json::from_value(arguments.into())?;
             let output =
-                crate::interface::mcp::handlers::lsp_handlers::handle_go_to_definition(ctx, input).await?;
+                crate::interface::mcp::handlers::lsp_handlers::handle_go_to_definition(ctx, input)
+                    .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "hover" => {
             let input: crate::interface::mcp::schemas::HoverInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::lsp_handlers::handle_hover(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::lsp_handlers::handle_hover(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "find_references" => {
             let input: crate::interface::mcp::schemas::FindReferencesInput =
                 serde_json::from_value(arguments.into())?;
             let output =
-                crate::interface::mcp::handlers::lsp_handlers::handle_find_references(ctx, input).await?;
+                crate::interface::mcp::handlers::lsp_handlers::handle_find_references(ctx, input)
+                    .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "read_file" => {
@@ -1062,8 +1090,7 @@ async fn call_tool_handler(
         "search_content" => {
             let input: crate::interface::mcp::schemas::SearchContentInput =
                 serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_search_content(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::handle_search_content(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         "list_files" => {
@@ -1075,77 +1102,109 @@ async fn call_tool_handler(
         "retrieve_and_verify" => {
             let input: crate::interface::mcp::schemas::RetrieveAndVerifyInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_retrieve_and_verify(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::handle_retrieve_and_verify(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         // AIX-1: Smart Overview & Ranked Symbols
         "smart_overview" => {
             let input: crate::interface::mcp::schemas::SmartOverviewInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_smart_overview(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_smart_overview(ctx, input)
+                    .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "ranked_symbols" => {
             let input: crate::interface::mcp::schemas::RankedSymbolsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_ranked_symbols(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_ranked_symbols(ctx, input)
+                    .await?;
             Ok(serde_json::to_string(&output)?)
         }
         // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
         "suggest_onboarding_plan" => {
             let input: crate::interface::mcp::schemas::OnboardingPlanInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_suggest_onboarding_plan(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_suggest_onboarding_plan(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "auto_diagnose" => {
             let input: crate::interface::mcp::schemas::AutoDiagnoseInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_auto_diagnose(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_auto_diagnose(ctx, input)
+                    .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "suggest_refactor_plan" => {
             let input: crate::interface::mcp::schemas::SuggestRefactorPlanInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_suggest_refactor_plan(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_suggest_refactor_plan(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string(&output)?)
         }
         // AIX-3: NL to Symbol & Ask About Code & Find Pattern
         "nl_to_symbol" => {
             let input: crate::interface::mcp::schemas::NlToSymbolInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_nl_to_symbol(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_nl_to_symbol(ctx, input)
+                    .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "ask_about_code" => {
             let input: crate::interface::mcp::schemas::AskAboutCodeInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_ask_about_code(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_ask_about_code(ctx, input)
+                    .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "find_pattern_by_intent" => {
             let input: crate::interface::mcp::schemas::FindPatternByIntentInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_find_pattern_by_intent(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_find_pattern_by_intent(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string(&output)?)
         }
         // AIX-4: Compare Call Graphs & Detect API Breaks
         "compare_call_graphs" => {
             let input: crate::interface::mcp::schemas::CompareCallGraphsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_compare_call_graphs(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_compare_call_graphs(
+                ctx, input,
+            )
+            .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "detect_api_breaks" => {
             let input: crate::interface::mcp::schemas::DetectApiBreaksInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_detect_api_breaks(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_detect_api_breaks(ctx, input)
+                    .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "evaluate_refactor_quality" => {
             let input: crate::interface::mcp::schemas::EvaluateRefactorQualityInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_evaluate_refactor_quality(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_evaluate_refactor_quality(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string(&output)?)
         }
         // AIX-5: System Prompt Context & God Functions & Long Params
@@ -1158,20 +1217,29 @@ async fn call_tool_handler(
         "detect_god_functions" => {
             let input: crate::interface::mcp::schemas::DetectGodFunctionsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_detect_god_functions(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_detect_god_functions(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "detect_long_parameter_lists" => {
             let input: crate::interface::mcp::schemas::DetectLongParamsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_detect_long_parameter_lists(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_detect_long_parameter_lists(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string(&output)?)
         }
         // PL3: Symbol Hotness Tracking
         "get_hot_symbols" => {
             let input: crate::interface::mcp::schemas::GetHotSymbolsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_get_hot_symbols(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::handle_get_hot_symbols(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
         // AVC: Agent-Verifiable Context tools
@@ -1179,7 +1247,9 @@ async fn call_tool_handler(
             let input: crate::interface::mcp::schemas::GenerateContractInput =
                 serde_json::from_value(arguments.into())?;
             let start = std::time::Instant::now();
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_generate_contract(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_generate_contract(ctx, input)
+                    .await?;
             let duration_ms = start.elapsed().as_millis() as f64;
             // Best-effort telemetry recording
             ctx.record_tool_usage(
@@ -1195,7 +1265,9 @@ async fn call_tool_handler(
                 serde_json::from_value(arguments.into())?;
             let contract_id = input.contract_id.clone();
             let start = std::time::Instant::now();
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_validate_contract(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_validate_contract(ctx, input)
+                    .await?;
             let duration_ms = start.elapsed().as_millis() as f64;
             // Best-effort telemetry recording
             ctx.record_tool_usage(
@@ -1211,7 +1283,9 @@ async fn call_tool_handler(
             let input: crate::interface::mcp::schemas::SuggestContextInput =
                 serde_json::from_value(arguments.into())?;
             let start = std::time::Instant::now();
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_suggest_context(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_suggest_context(ctx, input)
+                    .await?;
             let duration_ms = start.elapsed().as_millis() as f64;
             // Best-effort telemetry recording
             ctx.record_tool_usage(
@@ -1227,7 +1301,9 @@ async fn call_tool_handler(
             let input: crate::interface::mcp::schemas::ReparseOnEditInput =
                 serde_json::from_value(arguments.into())?;
             let start = std::time::Instant::now();
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_reparse_on_edit(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_reparse_on_edit(ctx, input)
+                    .await?;
             let duration_ms = start.elapsed().as_millis() as f64;
             // Best-effort telemetry recording
             ctx.record_tool_usage(
@@ -1243,7 +1319,9 @@ async fn call_tool_handler(
             let input: crate::interface::mcp::schemas::DetectDriftInput =
                 serde_json::from_value(arguments.into())?;
             let start = std::time::Instant::now();
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_detect_drift(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_detect_drift(ctx, input)
+                    .await?;
             let duration_ms = start.elapsed().as_millis() as f64;
             // Best-effort telemetry recording
             ctx.record_tool_usage(
@@ -1258,13 +1336,17 @@ async fn call_tool_handler(
         "poll_tasks" => {
             let input: crate::interface::mcp::schemas::PollTasksInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_poll_tasks(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_poll_tasks(ctx, input)
+                    .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "complete_task" => {
             let input: crate::interface::mcp::schemas::CompleteTaskInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_complete_task(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::aix_handlers::handle_complete_task(ctx, input)
+                    .await?;
             Ok(serde_json::to_string(&output)?)
         }
         _ => anyhow::bail!("Unknown tool: {}", tool_name),
@@ -1275,8 +1357,8 @@ async fn call_tool_handler(
 mod tests {
     use super::*;
     use rmcp::model::PaginatedRequestParams;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tokio::sync::RwLock;
 
     // ============================================================================
@@ -1316,9 +1398,7 @@ mod tests {
         let mut handles = vec![];
         for _ in 0..100 {
             let handler = handler.clone();
-            handles.push(tokio::spawn(async move {
-                handler.get_info()
-            }));
+            handles.push(tokio::spawn(async move { handler.get_info() }));
         }
 
         let results = futures_util::future::join_all(handles).await;

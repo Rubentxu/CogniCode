@@ -8,17 +8,17 @@
 //! - list_files: Directory listing with .gitignore filtering
 
 use crate::application::dto::{
-    ContentMatch, EditFileRequest, EditFileResult, EditValidation, FileEntry,
-    FileMetadata, ListFilesRequest, ListFilesResult, ReadFileRequest, ReadFileResult,
-    RetrieveAndVerifyRequest, RetrieveAndVerifyResult, SearchContentRequest, SearchContentResult,
-    VerificationStatus, VerifiedMatchDto, WriteFileRequest, WriteFileResult,
+    ContentMatch, EditFileRequest, EditFileResult, EditValidation, FileEntry, FileMetadata,
+    ListFilesRequest, ListFilesResult, ReadFileRequest, ReadFileResult, RetrieveAndVerifyRequest,
+    RetrieveAndVerifyResult, SearchContentRequest, SearchContentResult, VerificationStatus,
+    VerifiedMatchDto, WriteFileRequest, WriteFileResult,
 };
 use crate::application::error::{AppError, AppResult};
 use crate::domain::traits::Parser;
 use crate::domain::value_objects::SymbolKind;
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use crate::infrastructure::vfs::VirtualFileSystem;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ignore::WalkBuilder;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -438,107 +438,107 @@ impl FileOperationsService {
         });
 
         if let Some(language) = lang
-            && let Ok(parser) = TreeSitterParser::new(language) {
-                // Use tree-sitter to extract symbols and compress
-                if let Ok(symbols) = parser.find_all_symbols(&lines_slice.join("\n")) {
-                    let mut compressed = String::new();
-                    let total_symbols = symbols.len();
+            && let Ok(parser) = TreeSitterParser::new(language)
+        {
+            // Use tree-sitter to extract symbols and compress
+            if let Ok(symbols) = parser.find_all_symbols(&lines_slice.join("\n")) {
+                let mut compressed = String::new();
+                let total_symbols = symbols.len();
 
-                    // Limit symbols shown to first 10 and last 5
-                    const MAX_SHOW_FIRST: usize = 10;
-                    const MAX_SHOW_LAST: usize = 5;
+                // Limit symbols shown to first 10 and last 5
+                const MAX_SHOW_FIRST: usize = 10;
+                const MAX_SHOW_LAST: usize = 5;
 
-                    compressed.push_str(&format!(
-                        "// File: {} ({} lines, {} symbols)\n",
-                        path,
-                        lines_slice.len(),
-                        total_symbols
-                    ));
-                    compressed.push_str("// SIGNATURES:\n");
+                compressed.push_str(&format!(
+                    "// File: {} ({} lines, {} symbols)\n",
+                    path,
+                    lines_slice.len(),
+                    total_symbols
+                ));
+                compressed.push_str("// SIGNATURES:\n");
 
-                    if total_symbols > MAX_SHOW_FIRST + MAX_SHOW_LAST {
-                        // Show first N symbols
-                        for symbol in symbols.iter().take(MAX_SHOW_FIRST) {
-                            let kind_str = match symbol.kind() {
-                                SymbolKind::Function => "fn",
-                                SymbolKind::Class => "class",
-                                SymbolKind::Struct => "struct",
-                                SymbolKind::Enum => "enum",
-                                SymbolKind::Trait => "trait",
-                                SymbolKind::Method => "method",
-                                SymbolKind::Module => "mod",
-                                _ => "item",
-                            };
-                            let location = symbol.location();
-                            compressed.push_str(&format!(
-                                "// {:5} @ {}:{} - {}\n",
-                                kind_str,
-                                location.line(),
-                                location.column(),
-                                symbol.name()
-                            ));
-                        }
-
-                        // Ellipsis for omitted symbols
+                if total_symbols > MAX_SHOW_FIRST + MAX_SHOW_LAST {
+                    // Show first N symbols
+                    for symbol in symbols.iter().take(MAX_SHOW_FIRST) {
+                        let kind_str = match symbol.kind() {
+                            SymbolKind::Function => "fn",
+                            SymbolKind::Class => "class",
+                            SymbolKind::Struct => "struct",
+                            SymbolKind::Enum => "enum",
+                            SymbolKind::Trait => "trait",
+                            SymbolKind::Method => "method",
+                            SymbolKind::Module => "mod",
+                            _ => "item",
+                        };
+                        let location = symbol.location();
                         compressed.push_str(&format!(
-                            "// ... {} symbols omitted ...\n",
-                            total_symbols - MAX_SHOW_FIRST - MAX_SHOW_LAST
+                            "// {:5} @ {}:{} - {}\n",
+                            kind_str,
+                            location.line(),
+                            location.column(),
+                            symbol.name()
                         ));
-
-                        // Show last N symbols
-                        for symbol in symbols.iter().skip(total_symbols - MAX_SHOW_LAST) {
-                            let kind_str = match symbol.kind() {
-                                SymbolKind::Function => "fn",
-                                SymbolKind::Class => "class",
-                                SymbolKind::Struct => "struct",
-                                SymbolKind::Enum => "enum",
-                                SymbolKind::Trait => "trait",
-                                SymbolKind::Method => "method",
-                                SymbolKind::Module => "mod",
-                                _ => "item",
-                            };
-                            let location = symbol.location();
-                            compressed.push_str(&format!(
-                                "// {:5} @ {}:{} - {}\n",
-                                kind_str,
-                                location.line(),
-                                location.column(),
-                                symbol.name()
-                            ));
-                        }
-                    } else {
-                        // Show all symbols if few enough
-                        for symbol in symbols {
-                            let kind_str = match symbol.kind() {
-                                SymbolKind::Function => "fn",
-                                SymbolKind::Class => "class",
-                                SymbolKind::Struct => "struct",
-                                SymbolKind::Enum => "enum",
-                                SymbolKind::Trait => "trait",
-                                SymbolKind::Method => "method",
-                                SymbolKind::Module => "mod",
-                                _ => "item",
-                            };
-                            let location = symbol.location();
-                            compressed.push_str(&format!(
-                                "// {:5} @ {}:{} - {}\n",
-                                kind_str,
-                                location.line(),
-                                location.column(),
-                                symbol.name()
-                            ));
-                        }
                     }
 
-                    // Add body summary with compression info
-                    compressed.push_str("// BODY SUMMARY:\n");
-                    let lang_str = format!("{:?}", language);
-                    let body_summary =
-                        Self::compress_content_basic(&lines_slice.join("\n"), &lang_str);
-                    compressed.push_str(&body_summary);
-                    return Ok(compressed);
+                    // Ellipsis for omitted symbols
+                    compressed.push_str(&format!(
+                        "// ... {} symbols omitted ...\n",
+                        total_symbols - MAX_SHOW_FIRST - MAX_SHOW_LAST
+                    ));
+
+                    // Show last N symbols
+                    for symbol in symbols.iter().skip(total_symbols - MAX_SHOW_LAST) {
+                        let kind_str = match symbol.kind() {
+                            SymbolKind::Function => "fn",
+                            SymbolKind::Class => "class",
+                            SymbolKind::Struct => "struct",
+                            SymbolKind::Enum => "enum",
+                            SymbolKind::Trait => "trait",
+                            SymbolKind::Method => "method",
+                            SymbolKind::Module => "mod",
+                            _ => "item",
+                        };
+                        let location = symbol.location();
+                        compressed.push_str(&format!(
+                            "// {:5} @ {}:{} - {}\n",
+                            kind_str,
+                            location.line(),
+                            location.column(),
+                            symbol.name()
+                        ));
+                    }
+                } else {
+                    // Show all symbols if few enough
+                    for symbol in symbols {
+                        let kind_str = match symbol.kind() {
+                            SymbolKind::Function => "fn",
+                            SymbolKind::Class => "class",
+                            SymbolKind::Struct => "struct",
+                            SymbolKind::Enum => "enum",
+                            SymbolKind::Trait => "trait",
+                            SymbolKind::Method => "method",
+                            SymbolKind::Module => "mod",
+                            _ => "item",
+                        };
+                        let location = symbol.location();
+                        compressed.push_str(&format!(
+                            "// {:5} @ {}:{} - {}\n",
+                            kind_str,
+                            location.line(),
+                            location.column(),
+                            symbol.name()
+                        ));
+                    }
                 }
+
+                // Add body summary with compression info
+                compressed.push_str("// BODY SUMMARY:\n");
+                let lang_str = format!("{:?}", language);
+                let body_summary = Self::compress_content_basic(&lines_slice.join("\n"), &lang_str);
+                compressed.push_str(&body_summary);
+                return Ok(compressed);
             }
+        }
 
         // Fallback: basic compression without tree-sitter
         let lang_str = lang.map(|l| format!("{:?}", l)).unwrap_or_default();
@@ -796,11 +796,12 @@ impl FileOperationsService {
             };
 
             if let Some(parent) = absolute_path.parent()
-                && !parent.exists() {
-                    fs::create_dir_all(parent).map_err(|e| {
-                        AppError::InvalidParameter(format!("Failed to create directories: {}", e))
-                    })?;
-                }
+                && !parent.exists()
+            {
+                fs::create_dir_all(parent).map_err(|e| {
+                    AppError::InvalidParameter(format!("Failed to create directories: {}", e))
+                })?;
+            }
             input.path.clone()
         } else {
             input.path.clone()
@@ -1037,13 +1038,12 @@ impl FileOperationsService {
         let is_regex = input.regex.unwrap_or(true);
 
         // Validate regex pattern if regex mode is enabled
-        if is_regex
-            && let Err(msg) = Self::validate_regex_pattern(&input.pattern) {
-                return Err(AppError::InvalidParameter(format!(
-                    "Invalid regex pattern: {}",
-                    msg
-                )));
-            }
+        if is_regex && let Err(msg) = Self::validate_regex_pattern(&input.pattern) {
+            return Err(AppError::InvalidParameter(format!(
+                "Invalid regex pattern: {}",
+                msg
+            )));
+        }
 
         // Build walker with gitignore awareness
         let mut walker = WalkBuilder::new(&search_path);
@@ -1073,9 +1073,10 @@ impl FileOperationsService {
 
             // Apply glob filter if provided
             if let Some(glob) = &input.file_glob
-                && !Self::path_matches_glob(path, glob) {
-                    continue;
-                }
+                && !Self::path_matches_glob(path, glob)
+            {
+                continue;
+            }
 
             files_scanned += 1;
 
@@ -1269,19 +1270,22 @@ impl FileOperationsService {
 
         // Handle prefix*suffix pattern (e.g., test*.py) - asterisk in middle
         // This is: starts with prefix, ends with suffix, * matches anything in between
-        if pattern.contains('*') && !pattern.starts_with('*') && !pattern.ends_with('*')
-            && let Some(star_pos) = pattern.find('*') {
-                let prefix = &pattern[..star_pos];
-                let suffix = &pattern[star_pos + 1..];
-                // text must start with prefix and end with suffix
-                // and be at least as long as prefix + suffix
-                if text.starts_with(prefix)
-                    && text.ends_with(suffix)
-                    && prefix.len() + suffix.len() <= text.len()
-                {
-                    return true;
-                }
+        if pattern.contains('*')
+            && !pattern.starts_with('*')
+            && !pattern.ends_with('*')
+            && let Some(star_pos) = pattern.find('*')
+        {
+            let prefix = &pattern[..star_pos];
+            let suffix = &pattern[star_pos + 1..];
+            // text must start with prefix and end with suffix
+            // and be at least as long as prefix + suffix
+            if text.starts_with(prefix)
+                && text.ends_with(suffix)
+                && prefix.len() + suffix.len() <= text.len()
+            {
+                return true;
             }
+        }
 
         // Handle *suffix pattern (e.g., *test.py)
         if let Some(stripped) = pattern.strip_prefix('*') {
@@ -1390,9 +1394,10 @@ impl FileOperationsService {
 
             // Apply glob filter if provided
             if let Some(glob) = &input.glob
-                && !Self::path_matches_glob(path, glob) {
-                    continue;
-                }
+                && !Self::path_matches_glob(path, glob)
+            {
+                continue;
+            }
 
             let metadata = match fs::metadata(path) {
                 Ok(m) => m,
@@ -1458,9 +1463,7 @@ impl FileOperationsService {
 
     /// Runs rustc asynchronously with kill_on_drop(true).
     /// When the returned future is dropped (e.g., on timeout), the child process is killed.
-    async fn run_rustc_async(
-        temp_file: std::path::PathBuf,
-    ) -> AppResult<std::process::Output> {
+    async fn run_rustc_async(temp_file: std::path::PathBuf) -> AppResult<std::process::Output> {
         let mut cmd = tokio::process::Command::new("rustc");
         cmd.args(["--edition", "2021", "--crate-type", "lib"])
             .arg(&temp_file)
@@ -1482,7 +1485,12 @@ impl FileOperationsService {
         &self,
         file_path: &str,
         _timeout_secs: u64,
-    ) -> AppResult<(VerificationStatus, Option<String>, Option<String>, Option<String>)> {
+    ) -> AppResult<(
+        VerificationStatus,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> {
         use crate::application::dto::VerificationStatus as Vs;
 
         // Check if file extension is .rs
@@ -1531,7 +1539,10 @@ impl FileOperationsService {
                 if e.kind() == std::io::ErrorKind::NotFound {
                     Err(AppError::InvalidParameter("rustc not found".to_string()))
                 } else {
-                    Err(AppError::InternalError(format!("rustc execution failed: {}", e)))
+                    Err(AppError::InternalError(format!(
+                        "rustc execution failed: {}",
+                        e
+                    )))
                 }
             }
         }
@@ -1545,7 +1556,12 @@ impl FileOperationsService {
         &self,
         file_path: &str,
         timeout_secs: u64,
-    ) -> AppResult<(VerificationStatus, Option<String>, Option<String>, Option<String>)> {
+    ) -> AppResult<(
+        VerificationStatus,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> {
         use crate::application::dto::VerificationStatus as Vs;
 
         let path = std::path::Path::new(file_path);
@@ -1561,14 +1577,12 @@ impl FileOperationsService {
             .unwrap_or("lib.rs")
             .to_string();
 
-        let content = tokio::task::spawn_blocking(move || {
-            fs::read_to_string(&file_path_owned)
-        })
-        .await
-        .map_err(|e| AppError::InternalError(format!("spawn_blocking failed: {}", e)))?
-        .map_err(|e| {
-            AppError::InvalidParameter(format!("Failed to read file for verification: {}", e))
-        })?;
+        let content = tokio::task::spawn_blocking(move || fs::read_to_string(&file_path_owned))
+            .await
+            .map_err(|e| AppError::InternalError(format!("spawn_blocking failed: {}", e)))?
+            .map_err(|e| {
+                AppError::InvalidParameter(format!("Failed to read file for verification: {}", e))
+            })?;
 
         // Set up temp file (file I/O)
         let (_temp_dir, temp_file_path) =
@@ -1582,8 +1596,8 @@ impl FileOperationsService {
         let timeout = std::time::Duration::from_secs(timeout_secs);
 
         // Run rustc with timeout — kill_on_drop ensures process dies on timeout
-        let output_result = tokio::time::timeout(timeout, Self::run_rustc_async(temp_file_path))
-            .await;
+        let output_result =
+            tokio::time::timeout(timeout, Self::run_rustc_async(temp_file_path)).await;
 
         // Map output to verification status
         match output_result {
@@ -1601,7 +1615,9 @@ impl FileOperationsService {
                 Ok((Vs::Rejected, None, Some(error_snippet), None))
             }
             Ok(Err(e)) => Err(e),
-            Err(_) => Err(AppError::InvalidParameter("Verification timed out".to_string())),
+            Err(_) => Err(AppError::InvalidParameter(
+                "Verification timed out".to_string(),
+            )),
         }
     }
 
@@ -1629,9 +1645,7 @@ impl FileOperationsService {
                 .arg("--version")
                 .output();
             if rustc_check.is_err() {
-                return Err(AppError::InvalidParameter(
-                    "rustc not found".to_string(),
-                ));
+                return Err(AppError::InvalidParameter("rustc not found".to_string()));
             }
         }
 
@@ -2021,11 +2035,13 @@ mod tests {
 
         let output = result.unwrap();
         assert!(!output.applied);
-        assert!(output
-            .preview
-            .as_ref()
-            .unwrap()
-            .contains("Multiple matches"));
+        assert!(
+            output
+                .preview
+                .as_ref()
+                .unwrap()
+                .contains("Multiple matches")
+        );
     }
 
     #[test]
@@ -2745,7 +2761,11 @@ mod tests {
 
         assert!(result.is_ok(), "Verification should succeed");
         let (status, check_output, error_snippet, reason) = result.unwrap();
-        assert_eq!(status, VerificationStatus::Verified, "Status should be Verified");
+        assert_eq!(
+            status,
+            VerificationStatus::Verified,
+            "Status should be Verified"
+        );
         assert!(check_output.is_some(), "check_output should be present");
         assert!(error_snippet.is_none(), "error_snippet should be None");
         assert!(reason.is_none(), "reason should be None");
@@ -2763,11 +2783,18 @@ mod tests {
 
         assert!(result.is_ok(), "Verification should return result");
         let (status, check_output, error_snippet, reason) = result.unwrap();
-        assert_eq!(status, VerificationStatus::Rejected, "Status should be Rejected");
+        assert_eq!(
+            status,
+            VerificationStatus::Rejected,
+            "Status should be Rejected"
+        );
         assert!(check_output.is_none(), "check_output should be None");
         assert!(error_snippet.is_some(), "error_snippet should be present");
         // Error snippet should be truncated to 200 chars
-        assert!(error_snippet.unwrap().len() <= 200, "error_snippet should be <= 200 chars");
+        assert!(
+            error_snippet.unwrap().len() <= 200,
+            "error_snippet should be <= 200 chars"
+        );
         assert!(reason.is_none(), "reason should be None");
     }
 
@@ -2782,10 +2809,18 @@ mod tests {
 
         assert!(result.is_ok(), "Verification should return result");
         let (status, check_output, error_snippet, reason) = result.unwrap();
-        assert_eq!(status, VerificationStatus::Skipped, "Status should be Skipped");
+        assert_eq!(
+            status,
+            VerificationStatus::Skipped,
+            "Status should be Skipped"
+        );
         assert!(check_output.is_none(), "check_output should be None");
         assert!(error_snippet.is_none(), "error_snippet should be None");
-        assert_eq!(reason, Some("not-rust".to_string()), "reason should be 'not-rust'");
+        assert_eq!(
+            reason,
+            Some("not-rust".to_string()),
+            "reason should be 'not-rust'"
+        );
     }
 
     #[tokio::test]
@@ -2850,8 +2885,16 @@ mod tests {
         assert_eq!(output.verified_count, 0, "Verified count should be 0");
         assert_eq!(output.rejected_count, 0, "Rejected count should be 0");
         assert_eq!(output.skipped_count, 1, "Skipped count should be 1");
-        assert_eq!(output.results[0].status, VerificationStatus::Skipped, "Status should be Skipped");
-        assert_eq!(output.results[0].reason, Some("verify-disabled".to_string()), "Reason should be 'verify-disabled'");
+        assert_eq!(
+            output.results[0].status,
+            VerificationStatus::Skipped,
+            "Status should be Skipped"
+        );
+        assert_eq!(
+            output.results[0].reason,
+            Some("verify-disabled".to_string()),
+            "Reason should be 'verify-disabled'"
+        );
     }
 
     #[tokio::test]
@@ -2886,8 +2929,15 @@ mod tests {
 
         // Results should be identical across calls (deterministic)
         assert_eq!(output1.total, output2.total, "Total should be same");
-        assert_eq!(output1.verified_count, output2.verified_count, "Verified count should be same");
-        assert_eq!(output1.results.len(), output2.results.len(), "Results count should be same");
+        assert_eq!(
+            output1.verified_count, output2.verified_count,
+            "Verified count should be same"
+        );
+        assert_eq!(
+            output1.results.len(),
+            output2.results.len(),
+            "Results count should be same"
+        );
 
         // All individual results should match in order
         for (r1, r2) in output1.results.iter().zip(output2.results.iter()) {
@@ -2908,7 +2958,11 @@ mod tests {
         // Write to file and sync to ensure it's visible to search
         let mut file = std::fs::File::create(&rs_file).unwrap();
         use std::io::Write;
-        writeln!(file, "pub fn greet() -> String {{ String::from(\"hello\") }}").unwrap();
+        writeln!(
+            file,
+            "pub fn greet() -> String {{ String::from(\"hello\") }}"
+        )
+        .unwrap();
         file.sync_all().unwrap();
         drop(file);
 
@@ -2925,12 +2979,23 @@ mod tests {
         assert!(result.is_ok(), "Should return ok result: {:?}", result);
         let output = result.unwrap();
 
-        assert_eq!(output.total, 1, "Should have 1 result, got total={}", output.total);
+        assert_eq!(
+            output.total, 1,
+            "Should have 1 result, got total={}",
+            output.total
+        );
         assert_eq!(output.verified_count, 1, "Should be verified");
         assert_eq!(output.rejected_count, 0, "Should have no rejected");
         assert_eq!(output.skipped_count, 0, "Should have no skipped");
-        assert_eq!(output.results[0].status, VerificationStatus::Verified, "Status should be Verified");
-        assert!(output.results[0].check_output.is_some(), "Should have check_output");
+        assert_eq!(
+            output.results[0].status,
+            VerificationStatus::Verified,
+            "Status should be Verified"
+        );
+        assert!(
+            output.results[0].check_output.is_some(),
+            "Should have check_output"
+        );
     }
 
     #[tokio::test]
@@ -2938,7 +3003,11 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let rs_file = temp_dir.path().join("broken.rs");
         // Missing closing brace - syntax error
-        fs::write(&rs_file, "pub fn greet() -> String { String::from(\"hello\")").unwrap();
+        fs::write(
+            &rs_file,
+            "pub fn greet() -> String { String::from(\"hello\")",
+        )
+        .unwrap();
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
 
@@ -2957,8 +3026,15 @@ mod tests {
         assert_eq!(output.verified_count, 0, "Should have no verified");
         assert_eq!(output.rejected_count, 1, "Should be rejected");
         assert_eq!(output.skipped_count, 0, "Should have no skipped");
-        assert_eq!(output.results[0].status, VerificationStatus::Rejected, "Status should be Rejected");
-        assert!(output.results[0].error_snippet.is_some(), "Should have error_snippet");
+        assert_eq!(
+            output.results[0].status,
+            VerificationStatus::Rejected,
+            "Status should be Rejected"
+        );
+        assert!(
+            output.results[0].error_snippet.is_some(),
+            "Should have error_snippet"
+        );
     }
 
     /// Test that a compilation that takes longer than the timeout is rejected with reason "timeout".
@@ -2971,12 +3047,18 @@ mod tests {
     async fn test_verify_rust_file_timeout_rejected() {
         let temp_dir = TempDir::new().unwrap();
         let rs_file = temp_dir.path().join("slow.rs");
-        fs::write(&rs_file, "pub fn greet() -> String { String::from(\"hello\") }").unwrap();
+        fs::write(
+            &rs_file,
+            "pub fn greet() -> String { String::from(\"hello\") }",
+        )
+        .unwrap();
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
 
         // Use 0 second timeout - should always trigger timeout for any actual work
-        let result = service.verify_rust_file_with_timeout(rs_file.to_str().unwrap(), 0).await;
+        let result = service
+            .verify_rust_file_with_timeout(rs_file.to_str().unwrap(), 0)
+            .await;
 
         assert!(result.is_err(), "Timeout should cause error");
         let err = result.unwrap_err();
@@ -2995,7 +3077,11 @@ mod tests {
     async fn test_retrieve_and_verify_rustc_not_found() {
         let temp_dir = TempDir::new().unwrap();
         let rs_file = temp_dir.path().join("test.rs");
-        fs::write(&rs_file, "pub fn greet() -> String { String::from(\"hello\") }").unwrap();
+        fs::write(
+            &rs_file,
+            "pub fn greet() -> String { String::from(\"hello\") }",
+        )
+        .unwrap();
 
         // Save original PATH and remove rustc from it
         let original_path = std::env::var("PATH").unwrap_or_default();
@@ -3006,10 +3092,15 @@ mod tests {
             })
             .map(|p| p.to_string_lossy().to_string())
             .collect();
-        let new_path_str = std::env::join_paths(new_path).unwrap().to_string_lossy().to_string();
+        let new_path_str = std::env::join_paths(new_path)
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
 
         // Set modified PATH (unsafe in multi-threaded context but OK for tests)
-        unsafe { std::env::set_var("PATH", &new_path_str); }
+        unsafe {
+            std::env::set_var("PATH", &new_path_str);
+        }
 
         let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
 
@@ -3023,13 +3114,16 @@ mod tests {
         let result = service.retrieve_and_verify(input).await;
 
         // Restore PATH
-        unsafe { std::env::set_var("PATH", &original_path); }
+        unsafe {
+            std::env::set_var("PATH", &original_path);
+        }
 
         // Should get an error about rustc not found
         assert!(result.is_err(), "Should error when rustc not found");
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
-            err_msg.to_lowercase().contains("rustc") && err_msg.to_lowercase().contains("not found"),
+            err_msg.to_lowercase().contains("rustc")
+                && err_msg.to_lowercase().contains("not found"),
             "Error should mention 'rustc not found', got: {}",
             err_msg
         );
@@ -3063,11 +3157,7 @@ mod tests {
             Command::new("pgrep")
                 .args(["rustc"])
                 .output()
-                .map(|o| {
-                    String::from_utf8_lossy(&o.stdout)
-                        .lines()
-                        .count()
-                })
+                .map(|o| String::from_utf8_lossy(&o.stdout).lines().count())
                 .unwrap_or(0)
         };
 
@@ -3089,8 +3179,14 @@ mod tests {
 
         for i in 0..iterations {
             // Use 0 timeout to trigger immediate timeout
-            let result = service.verify_rust_file_with_timeout(rs_file.to_str().unwrap(), 0).await;
-            assert!(result.is_err(), "Iteration {}: Timeout should cause error", i);
+            let result = service
+                .verify_rust_file_with_timeout(rs_file.to_str().unwrap(), 0)
+                .await;
+            assert!(
+                result.is_err(),
+                "Iteration {}: Timeout should cause error",
+                i
+            );
 
             // Small delay to allow OS to reap any killed processes
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;

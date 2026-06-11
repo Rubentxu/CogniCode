@@ -6,7 +6,7 @@ use crate::domain::traits::refactor_strategy::{
     ValidationErrorCode,
 };
 use crate::domain::value_objects::{Location, SourceRange};
-use crate::infrastructure::parser::{TreeSitterParser};
+use crate::infrastructure::parser::TreeSitterParser;
 use crate::infrastructure::safety::{OperationType, SafetyGate, SafetyOperation};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -63,18 +63,19 @@ impl RenameStrategy {
         // Check if this node is an identifier matching our target
         if (node.kind() == "identifier" || node.kind() == "type_identifier")
             && let Ok(text) = node.utf8_text(source_bytes)
-                && text == target_name {
-                    let start = node.start_position();
-                    let end = node.end_position();
-                    occurrences.push(Occurrence {
-                        location: Location::new("source", start.row as u32, start.column as u32),
-                        range: SourceRange::new(
-                            Location::new("source", start.row as u32, start.column as u32),
-                            Location::new("source", end.row as u32, end.column as u32),
-                        ),
-                        context: self.extract_context(lines, start.row as u32),
-                    });
-                }
+            && text == target_name
+        {
+            let start = node.start_position();
+            let end = node.end_position();
+            occurrences.push(Occurrence {
+                location: Location::new("source", start.row as u32, start.column as u32),
+                range: SourceRange::new(
+                    Location::new("source", start.row as u32, start.column as u32),
+                    Location::new("source", end.row as u32, end.column as u32),
+                ),
+                context: self.extract_context(lines, start.row as u32),
+            });
+        }
 
         // Recurse into children
         for i in 0..node.child_count() {

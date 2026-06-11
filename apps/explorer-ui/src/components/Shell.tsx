@@ -1,9 +1,13 @@
 /**
- * `Shell` — the 3-panel responsive layout for the Explorer.
+ * `Shell` — the responsive layout for the Explorer.
  *
  * Breakpoint strategy (from the design):
- * - Desktop (≥ 1200px): Miller Columns | Object Inspector | Lens Panel
- *   in a 3-column CSS grid.
+ * - Ultrawide (≥ 1440px): Miller Columns | Object Inspector | Lens
+ *   Panel | InteractiveGraph — 4-column grid. The 4th column is
+ *   `React.lazy` to keep cytoscape + elkjs out of the initial
+ *   bundle.
+ * - Desktop (1200 – 1439px): Miller Columns | Object Inspector |
+ *   Lens Panel — 3-column grid.
  * - Tablet (900 – 1199px): Miller Columns | Object Inspector; Lens
  *   Panel becomes a toggleable overlay.
  * - Small (< 900px): a single drill-down column (ObjectInspector takes
@@ -12,9 +16,9 @@
  * The Shell owns the responsive decision and renders the panels
  * accordingly. Panels themselves do not know about breakpoints.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 
-import { useAppDispatch } from "../state/context";
+import { useAppDispatch, useAppState } from "../state/context";
 import { MillerColumns } from "./MillerColumns/MillerColumns";
 import { ObjectInspector } from "./ObjectInspector";
 import { LensPanel } from "./LensPanel";
@@ -23,6 +27,54 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { SkipLink } from "./SkipLink";
 import { Spotter } from "./Spotter";
 import { detectViewport, type ShellViewport } from "./viewport";
+import { useSubgraph } from "../hooks/useSubgraph";
+import { useAppState } from "../state/context";
+import { ContextualPanel } from "./ContextualPanel";
+
+// `React.lazy` keeps the cytoscape + elkjs chunk out of the
+// initial bundle — important for the 3-column desktop and tablet
+// layouts that never render this column.
+const InteractiveGraph = lazy(() =>
+  import("./InteractiveGraph").then((m) => ({ default: m.InteractiveGraph })),
+);
+
+const RationaleView = lazy(() =>
+  import("./RationaleView").then((m) => ({ default: m.RationaleView })),
+);
+
+function InteractiveGraphPanel({ rootId }: { rootId: string | null }) {
+  const { activeLensId } = useAppState();
+  const { data } = useSubgraph(rootId);
+
+  // When the rationale lens is active, render RationaleView instead
+  // of the default InteractiveGraph. The RationaleView wraps the
+  // same InteractiveGraph but fetches from the rationale endpoint
+  // and applies corroboration styles dynamically.
+  if (activeLensId === "rationale" && rootId) {
+    return (
+      <RationaleView
+        focusId={rootId}
+        onSelectObject={() => {
+          // Selection is read-only in this column for now.
+        }}
+      />
+    );
+  }
+
+  return (
+    <InteractiveGraph
+      root={rootId ?? "—"}
+      data={data}
+      selectedId={rootId}
+      onSelectObject={() => {
+        // Selection is read-only in this column for now — selecting
+        // a node just highlights it; navigation still happens via
+        // Miller Columns / Spotter. The wiring is intentionally
+        // open for the next iteration.
+      }}
+    />
+  );
+}
 
 export interface ShellProps {
   /**
@@ -40,6 +92,7 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
   // Lens overlay toggle (tablet mode only).
   const [lensOpen, setLensOpen] = useState(false);
   const dispatch = useAppDispatch();
+  const appState = useAppState();
 
   // Sync the viewport state to the actual window size and re-evaluate
   // on resize. SSR-safe — `window` is undefined on the server and we
@@ -141,7 +194,12 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
         className="flex-1 overflow-hidden"
         aria-label="Explorer panels"
       >
-        {renderPanels(activeViewport, lensOpen, () => setLensOpen(false))}
+        {renderPanels(
+          activeViewport,
+          lensOpen,
+          () => setLensOpen(false),
+          appState.activeObjectId,
+        )}
       </main>
       <Spotter />
     </div>
@@ -151,6 +209,9 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
 /**
  * Render the panel layout for the current viewport.
  *
+ * - Ultrawide: 4-column CSS grid (MillerColumns | ObjectInspector |
+ *   LensPanel | InteractiveGraph). The 4th column is wrapped in
+ *   `<Suspense>` so the cytoscape chunk loads asynchronously.
  * - Desktop: 3-column CSS grid, no overlay.
  * - Tablet: 2-column grid, lens panel as a positioned overlay.
  * - Small: single column, ObjectInspector takes the full width.
@@ -159,6 +220,7 @@ function renderPanels(
   viewport: ShellViewport,
   lensOpen: boolean,
   onLensClose: () => void,
+  activeObjectId: string | null,
 ): ReactNode {
   if (viewport === "small") {
     return (
@@ -219,6 +281,52 @@ function renderPanels(
             </button>
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (viewport === "ultrawide") {
+    return (
+      <div
+        className="grid h-full"
+        style={{
+          gridTemplateColumns:
+            "minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1.4fr)",
+        }}
+      >
+        <ErrorBoundary label="MillerColumns">
+          <MillerColumns />
+        </ErrorBoundary>
+        <ErrorBoundary label="ObjectInspector">
+          <ObjectInspector />
+        </ErrorBoundary>
+        <ErrorBoundary label="LensPanel">
+          <LensPanel />
+        </ErrorBoundary>
+        <ErrorBoundary label="InteractiveGraph">
+          <Suspense
+            fallback={
+              <div
+                data-testid="interactive-graph-loading"
+                style={{
+                  height: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--color-text-muted)",
+                  fontSize: 12,
+                }}
+              >
+                Loading graph…
+              </div>
+            }
+          >
+            <InteractiveGraphPanel rootId={activeObjectId} />
+          </Suspense>
+        </ErrorBoundary>
+        <ErrorBoundary label="ContextualPanel">
+          <ContextualPanel focusId={activeObjectId} />
+        </ErrorBoundary>
       </div>
     );
   }

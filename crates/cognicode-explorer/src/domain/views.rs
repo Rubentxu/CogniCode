@@ -12,6 +12,9 @@ use crate::ports::quality_repository::{QualityIssue, QualityRepository, RuleSumm
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
 
+use cognicode_core::domain::aggregates::SymbolId;
+use cognicode_core::domain::value_objects::Provenance;
+
 /// Build the Overview view: identity + call graph metrics + signature for callables.
 pub fn build_overview(symbol: &ResolvedSymbol, repo: &dyn SymbolRepository) -> ContextualView {
     let mut blocks: Vec<ViewBlock> = Vec::new();
@@ -59,12 +62,47 @@ pub fn build_overview(symbol: &ResolvedSymbol, repo: &dyn SymbolRepository) -> C
 }
 
 /// Build the Call Graph view: incoming + outgoing relations and their counts.
-pub fn build_callgraph(
-    symbol: &ResolvedSymbol,
-    repo: &dyn SymbolRepository,
-) -> ContextualView {
+pub fn build_callgraph(symbol: &ResolvedSymbol, repo: &dyn SymbolRepository) -> ContextualView {
     let callers = repo.callers(&symbol.id);
     let callees = repo.callees(&symbol.id);
+
+    // Attempt the metadata-aware downcast once per view build. The base
+    // `SymbolRepository` trait is metadata-free by design; the override on
+    // `CallGraphRepository` (and any future metadata-aware adapter) is the
+    // single seam that lets us enrich the relations and the evidence block
+    // with per-edge `(Provenance, f64)`. When the downcast fails — mocks,
+    // future adapters without edge metadata — we log once and emit
+    // `provenance: None`, `confidence: None` everywhere.
+    let aware = repo.as_metadata_aware();
+    let edge_meta: std::collections::HashMap<SymbolId, (Provenance, f64)> = match aware {
+        Some(a) => a
+            .callees_with_metadata(&symbol.id)
+            .into_iter()
+            .map(|m| (m.target.id, (m.provenance, m.confidence)))
+            .collect(),
+        None => {
+            tracing::warn!(
+                symbol = %symbol.id,
+                "metadata-aware repository not available; emitting null provenance/confidence"
+            );
+            std::collections::HashMap::new()
+        }
+    };
+
+    // The evidence block mirrors the per-edge confidence when at least one
+    // edge has metadata. With multiple distinct confidences we fall back to
+    // `None` (the field is per-block, not per-edge — picking one would be
+    // misleading). Mock / metadata-less paths stay at `None`.
+    let (cg_confidence, cg_provenance): (Option<f32>, Option<String>) = if edge_meta.is_empty() {
+        (None, None)
+    } else if edge_meta.len() == 1 {
+        let (p, c) = edge_meta.values().next().expect("single entry");
+        (Some(*c as f32), Some(p.to_string()))
+    } else {
+        // Multiple distinct edges with potentially different confidences.
+        // Surface the count instead of picking a representative value.
+        (None, None)
+    };
 
     let cg_evidence_id = "evidence:call_graph".to_string();
     let cg_evidence = EvidenceBlock {
@@ -77,18 +115,36 @@ pub fn build_callgraph(
             end: symbol.line,
         }),
         source_tool_or_query: "CallGraph::callers/callees".into(),
-        confidence: Some(1.0),
+        confidence: cg_confidence,
         // Graph build time is not exposed through the explorer port.
         freshness: Some("unknown".into()),
+        provenance: cg_provenance,
     };
 
     let mut relations: Vec<TypedRelation> = Vec::new();
 
+    // For incoming (callers) we don't have direct edge metadata in the
+    // current `MetadataAwareRepository` shape (it exposes outgoing
+    // `callees_with_metadata` / `dependencies_with_metadata`). Incoming
+    // edges fall back to `None` — same contract as the mock path.
     for c in &callers {
-        relations.push(relation_for("CALLED_BY", RelationDirection::Incoming, c, &cg_evidence_id));
+        relations.push(relation_for(
+            "CALLED_BY",
+            RelationDirection::Incoming,
+            c,
+            &cg_evidence_id,
+            None,
+        ));
     }
     for c in &callees {
-        relations.push(relation_for("CALLS", RelationDirection::Outgoing, c, &cg_evidence_id));
+        let meta = edge_meta.get(&c.id).copied();
+        relations.push(relation_for(
+            "CALLS",
+            RelationDirection::Outgoing,
+            c,
+            &cg_evidence_id,
+            meta,
+        ));
     }
 
     let blocks = vec![
@@ -122,10 +178,7 @@ pub fn build_callgraph(
 }
 
 /// Build the Source view: a numbered slice of the file around the symbol's line.
-pub fn build_source(
-    symbol: &ResolvedSymbol,
-    reader: &dyn SourceReader,
-) -> ContextualView {
+pub fn build_source(symbol: &ResolvedSymbol, reader: &dyn SourceReader) -> ContextualView {
     let start = symbol.line.saturating_sub(7).max(1);
     let end = symbol.line + 8;
     let slice = reader
@@ -159,7 +212,12 @@ pub fn build_source(
         // `read_lines` already proved the file is reachable; use the same
         // file-exists heuristic as `evidence::fs_index_evidence` so callers
         // see a consistent freshness signal.
-        freshness: Some(if slice.is_empty() { "stale".into() } else { "fresh".into() }),
+        freshness: Some(if slice.is_empty() {
+            "stale".into()
+        } else {
+            "fresh".into()
+        }),
+        provenance: None,
     }];
 
     ContextualView {
@@ -192,13 +250,20 @@ fn relation_for(
     direction: RelationDirection,
     target: &RelationTarget,
     evidence_id: &str,
+    metadata: Option<(Provenance, f64)>,
 ) -> TypedRelation {
+    let (provenance, confidence) = match metadata {
+        Some((p, c)) => (Some(p.to_string()), Some(c)),
+        None => (None, None),
+    };
     TypedRelation {
         relation_type: relation_type.to_string(),
         direction,
         target_object_id: mvp_id_from_target(target),
         target_label: format!("{} ({})", target.name, target.kind.name()),
         evidence_ids: vec![evidence_id.to_string()],
+        provenance,
+        confidence,
     }
 }
 
@@ -220,6 +285,7 @@ fn symbol_metadata_evidence(symbol: &ResolvedSymbol) -> EvidenceBlock {
         confidence: Some(1.0),
         // Graph build time is not exposed through the explorer port yet.
         freshness: Some("unknown".into()),
+        provenance: None,
     }
 }
 
@@ -239,7 +305,10 @@ pub fn build_symbol_quality_view(
     let evidence_id = "evidence:symbol_quality".to_string();
     let mvp = mvp_id(symbol);
     let issues: Vec<QualityIssue> = quality
-        .map(|q| q.issues_at_line(&symbol.file, symbol.line).unwrap_or_default())
+        .map(|q| {
+            q.issues_at_line(&symbol.file, symbol.line)
+                .unwrap_or_default()
+        })
         .unwrap_or_default();
 
     let relations: Vec<TypedRelation> = issues
@@ -250,6 +319,8 @@ pub fn build_symbol_quality_view(
             target_object_id: format!("issue:{}", i.id),
             target_label: format!("{}: {} ({} L{})", i.severity, i.rule_id, i.file, i.line),
             evidence_ids: vec![evidence_id.clone()],
+            provenance: None,
+            confidence: None,
         })
         .collect();
 
@@ -286,7 +357,12 @@ pub fn build_symbol_quality_view(
         confidence: Some(1.0),
         // Quality data is point-in-time; freshness mirrors the file
         // heuristic used by source_file evidence so callers can compare.
-        freshness: Some(if issues.is_empty() { "stale".into() } else { "fresh".into() }),
+        freshness: Some(if issues.is_empty() {
+            "stale".into()
+        } else {
+            "fresh".into()
+        }),
+        provenance: None,
     }];
 
     ContextualView {
@@ -322,11 +398,10 @@ pub fn build_file_quality_view(
             relation_type: "FOUND_IN".to_string(),
             direction: RelationDirection::Outgoing,
             target_object_id: format!("issue:{}", i.id),
-            target_label: format!(
-                "{}: {} (L{})",
-                i.severity, i.rule_id, i.line
-            ),
+            target_label: format!("{}: {} (L{})", i.severity, i.rule_id, i.line),
             evidence_ids: vec![evidence_id.clone()],
+            provenance: None,
+            confidence: None,
         })
         .collect();
 
@@ -369,7 +444,12 @@ pub fn build_file_quality_view(
         line_range: None,
         source_tool_or_query: "QualityRepository::issues_for_file + quality_gate".into(),
         confidence: Some(1.0),
-        freshness: Some(if issues.is_empty() { "stale".into() } else { "fresh".into() }),
+        freshness: Some(if issues.is_empty() {
+            "stale".into()
+        } else {
+            "fresh".into()
+        }),
+        provenance: None,
     }];
 
     ContextualView {
@@ -405,11 +485,10 @@ pub fn build_scope_quality_view(
             relation_type: "FOUND_IN".to_string(),
             direction: RelationDirection::Outgoing,
             target_object_id: format!("issue:{}", i.id),
-            target_label: format!(
-                "{}: {} ({} L{})",
-                i.severity, i.rule_id, i.file, i.line
-            ),
+            target_label: format!("{}: {} ({} L{})", i.severity, i.rule_id, i.file, i.line),
             evidence_ids: vec![evidence_id.clone()],
+            provenance: None,
+            confidence: None,
         })
         .collect();
 
@@ -462,7 +541,12 @@ pub fn build_scope_quality_view(
         line_range: None,
         source_tool_or_query: "QualityRepository::issues_for_scope + quality_gate".into(),
         confidence: Some(1.0),
-        freshness: Some(if issues.is_empty() { "stale".into() } else { "fresh".into() }),
+        freshness: Some(if issues.is_empty() {
+            "stale".into()
+        } else {
+            "fresh".into()
+        }),
+        provenance: None,
     }];
 
     ContextualView {
@@ -490,6 +574,8 @@ pub fn build_issue_detail(issue: &QualityIssue) -> ContextualView {
             target_object_id: format!("file:{}", issue.file),
             target_label: format!("{} (L{})", issue.file, issue.line),
             evidence_ids: vec![evidence_id.clone()],
+            provenance: None,
+            confidence: None,
         },
         TypedRelation {
             relation_type: "APPLIES_TO".to_string(),
@@ -497,6 +583,8 @@ pub fn build_issue_detail(issue: &QualityIssue) -> ContextualView {
             target_object_id: format!("rule:{}", issue.rule_id),
             target_label: issue.rule_id.clone(),
             evidence_ids: vec![evidence_id.clone()],
+            provenance: None,
+            confidence: None,
         },
     ];
 
@@ -544,6 +632,7 @@ pub fn build_issue_detail(issue: &QualityIssue) -> ContextualView {
             "fixed" | "false_positive" => "stale".into(),
             _ => "fresh".into(),
         }),
+        provenance: None,
     }];
 
     ContextualView {
@@ -561,19 +650,18 @@ pub fn build_issue_detail(issue: &QualityIssue) -> ContextualView {
 /// summary from the repo (open count + description) and surfaces the
 /// first 20 matching issues as `APPLIES_TO` relations. Degrades to a
 /// `None` repo by treating the count as 0.
-pub fn build_rule_detail(
-    rule_id: &str,
-    quality: Option<&dyn QualityRepository>,
-) -> ContextualView {
+pub fn build_rule_detail(rule_id: &str, quality: Option<&dyn QualityRepository>) -> ContextualView {
     let evidence_id = "evidence:rule_detail".to_string();
     let mvp = format!("rule:{rule_id}");
 
     let summary: RuleSummary = quality
-        .map(|q| q.rule_summary(rule_id).unwrap_or(RuleSummary {
-            rule_id: rule_id.to_string(),
-            description: rule_id.to_string(),
-            open_count: 0,
-        }))
+        .map(|q| {
+            q.rule_summary(rule_id).unwrap_or(RuleSummary {
+                rule_id: rule_id.to_string(),
+                description: rule_id.to_string(),
+                open_count: 0,
+            })
+        })
         .unwrap_or_else(|| RuleSummary {
             rule_id: rule_id.to_string(),
             description: rule_id.to_string(),
@@ -599,6 +687,8 @@ pub fn build_rule_detail(
             target_object_id: format!("issue:{}", i.id),
             target_label: format!("{}: {} ({} L{})", i.severity, i.rule_id, i.file, i.line),
             evidence_ids: vec![evidence_id.clone()],
+            provenance: None,
+            confidence: None,
         })
         .collect();
 
@@ -635,6 +725,7 @@ pub fn build_rule_detail(
         } else {
             "fresh".into()
         }),
+        provenance: None,
     }];
 
     ContextualView {
@@ -702,8 +793,8 @@ pub fn build_file_overview(
     }
     let kinds_string: std::collections::BTreeMap<String, usize> =
         kinds.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-    let kinds_json: serde_json::Value = serde_json::to_value(&kinds_string)
-        .unwrap_or_else(|_| serde_json::json!({}));
+    let kinds_json: serde_json::Value =
+        serde_json::to_value(&kinds_string).unwrap_or_else(|_| serde_json::json!({}));
 
     let evidence_id = "evidence:file_overview".to_string();
     let evidence = vec![EvidenceBlock {
@@ -711,12 +802,20 @@ pub fn build_file_overview(
         kind: "file_overview".into(),
         title: format!("File overview: {}", file_path),
         file: Some(file_path.to_string()),
-        line_range: Some(LineRange { start: 1, end: line_count as u32 }),
+        line_range: Some(LineRange {
+            start: 1,
+            end: line_count as u32,
+        }),
         source_tool_or_query: "FsSourceReader::read_lines + CallGraph::find_by_file".into(),
         confidence: Some(1.0),
         // A non-empty result means the file is reachable; the freshness
         // signal mirrors the `source_file` evidence block to stay consistent.
-        freshness: Some(if line_count > 0 { "fresh".into() } else { "stale".into() }),
+        freshness: Some(if line_count > 0 {
+            "fresh".into()
+        } else {
+            "stale".into()
+        }),
+        provenance: None,
     }];
 
     let blocks = vec![
@@ -750,10 +849,7 @@ pub fn build_file_overview(
 }
 
 /// File symbols view: every symbol in the file as a clickable `CONTAINS` relation.
-pub fn build_file_symbols(
-    symbols: &[ResolvedSymbol],
-    file_path: &str,
-) -> ContextualView {
+pub fn build_file_symbols(symbols: &[ResolvedSymbol], file_path: &str) -> ContextualView {
     let evidence_id = "evidence:file_symbols".to_string();
     let relations: Vec<TypedRelation> = symbols
         .iter()
@@ -763,6 +859,8 @@ pub fn build_file_symbols(
             target_object_id: format!("symbol:{}:{}:{}", s.file, s.name, s.line),
             target_label: format!("{} ({}) at {}:{}", s.name, s.kind.name(), s.file, s.line),
             evidence_ids: vec![evidence_id.clone()],
+            provenance: None,
+            confidence: None,
         })
         .collect();
 
@@ -790,6 +888,7 @@ pub fn build_file_symbols(
         confidence: Some(1.0),
         // Graph build time is not exposed through the explorer port yet.
         freshness: Some("unknown".into()),
+        provenance: None,
     }];
 
     ContextualView {
@@ -816,8 +915,8 @@ pub fn build_scope_overview(
     }
     let kinds_string: std::collections::BTreeMap<String, usize> =
         kinds.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-    let kinds_json: serde_json::Value = serde_json::to_value(&kinds_string)
-        .unwrap_or_else(|_| serde_json::json!({}));
+    let kinds_json: serde_json::Value =
+        serde_json::to_value(&kinds_string).unwrap_or_else(|_| serde_json::json!({}));
 
     let evidence_id = "evidence:scope_overview".to_string();
     let evidence = vec![EvidenceBlock {
@@ -826,9 +925,11 @@ pub fn build_scope_overview(
         title: format!("Scope overview: {}", scope_path),
         file: None,
         line_range: None,
-        source_tool_or_query: "CallGraph::modules + CallGraphRepository::find_symbols_by_file".into(),
+        source_tool_or_query: "CallGraph::modules + CallGraphRepository::find_symbols_by_file"
+            .into(),
         confidence: Some(1.0),
         freshness: Some("unknown".into()),
+        provenance: None,
     }];
 
     let blocks = vec![
@@ -872,17 +973,12 @@ pub fn build_scope_overview(
 /// Scope dependencies: cross-scope CALLS/CALLED_BY relations, grouped by
 /// target scope. Same-scope relations are filtered out — they are noise
 /// for a module-candidate view.
-pub fn build_scope_dependencies(
-    scope_path: &str,
-    repo: &dyn SymbolRepository,
-) -> ContextualView {
+pub fn build_scope_dependencies(scope_path: &str, repo: &dyn SymbolRepository) -> ContextualView {
     // 1. Collect the scope's member symbols via `all_symbols` and the
     //    boundary-aware membership test.
     let all = repo.all_symbols().unwrap_or_default();
-    let mut member_files: std::collections::BTreeSet<String> =
-        std::collections::BTreeSet::new();
-    let mut member_ids: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut member_files: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut member_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut member_symbols: Vec<ResolvedSymbol> = Vec::new();
     for sym in all {
         if scope_contains_file(scope_path, &sym.file) {
@@ -890,6 +986,54 @@ pub fn build_scope_dependencies(
             member_ids.insert(sym.id.to_string());
             member_symbols.push(sym);
         }
+    }
+
+    // Metadata-aware downcast — same seam as `build_callgraph`. When
+    // available, per-edge `(Provenance, f64)` is folded into the
+    // outgoing-counted cross-scope buckets; the evidence block
+    // summarises the worst-confidence edge (or `None` when ambiguous).
+    // Mock / metadata-less adapters get the same null treatment.
+    let aware = repo.as_metadata_aware();
+    let evidence_confidence: Option<f32>;
+    let evidence_provenance: Option<String>;
+    if let Some(a) = aware {
+        // Collect every outgoing cross-scope edge's metadata for this scope.
+        let mut per_edge: Vec<(Provenance, f64)> = Vec::new();
+        for sym in &member_symbols {
+            for m in a.dependencies_with_metadata(&sym.id) {
+                // Match the same-scope filter used below.
+                if member_ids.contains(m.target.id.as_str()) {
+                    continue;
+                }
+                per_edge.push((m.provenance, m.confidence));
+            }
+        }
+        if per_edge.is_empty() {
+            evidence_confidence = None;
+            evidence_provenance = None;
+        } else if per_edge.len() == 1 {
+            let (p, c) = per_edge[0];
+            evidence_confidence = Some(c as f32);
+            evidence_provenance = Some(p.to_string());
+        } else {
+            // Multiple distinct edges with possibly different confidence /
+            // provenance — `EvidenceBlock.confidence` is a scalar, so we
+            // surface the most conservative value (lowest confidence) as
+            // a faithful "this bucket is at least this trustworthy" hint.
+            let (min_p, min_c) = per_edge
+                .into_iter()
+                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .expect("non-empty");
+            evidence_confidence = Some(min_c as f32);
+            evidence_provenance = Some(min_p.to_string());
+        }
+    } else {
+        tracing::warn!(
+            scope = %scope_path,
+            "metadata-aware repository not available; emitting null provenance/confidence"
+        );
+        evidence_confidence = None;
+        evidence_provenance = None;
     }
 
     // 2. For each member symbol, walk its callers + callees; keep only
@@ -900,8 +1044,7 @@ pub fn build_scope_dependencies(
         outgoing_count: usize,
         incoming_count: usize,
     }
-    let mut buckets: std::collections::BTreeMap<String, Bucket> =
-        std::collections::BTreeMap::new();
+    let mut buckets: std::collections::BTreeMap<String, Bucket> = std::collections::BTreeMap::new();
 
     for sym in &member_symbols {
         for target in repo.callees(&sym.id) {
@@ -951,8 +1094,9 @@ pub fn build_scope_dependencies(
         file: None,
         line_range: None,
         source_tool_or_query: "CallGraph::callers + CallGraph::callees (cross-scope filter)".into(),
-        confidence: Some(1.0),
+        confidence: evidence_confidence,
         freshness: Some("unknown".into()),
+        provenance: evidence_provenance,
     }];
 
     ContextualView {
@@ -969,10 +1113,7 @@ pub fn build_scope_dependencies(
 /// Scope hotspots: top N (default 5) symbols in the scope by `fan_in`.
 /// `symbols` is expected to be pre-sorted by the service — the view
 /// builder just shapes the data.
-pub fn build_scope_hotspots(
-    scope_path: &str,
-    symbols: &[ResolvedSymbol],
-) -> ContextualView {
+pub fn build_scope_hotspots(scope_path: &str, symbols: &[ResolvedSymbol]) -> ContextualView {
     let evidence_id = "evidence:scope_hotspots".to_string();
     let relations: Vec<TypedRelation> = symbols
         .iter()
@@ -982,6 +1123,8 @@ pub fn build_scope_hotspots(
             target_object_id: format!("symbol:{}:{}:{}", s.file, s.name, s.line),
             target_label: format!("{} ({} at {}:{})", s.name, s.kind.name(), s.file, s.line),
             evidence_ids: vec![evidence_id.clone()],
+            provenance: None,
+            confidence: None,
         })
         .collect();
 
@@ -1010,6 +1153,7 @@ pub fn build_scope_hotspots(
         source_tool_or_query: "CallGraph::fan_in (top-N filter)".into(),
         confidence: Some(1.0),
         freshness: Some("unknown".into()),
+        provenance: None,
     }];
 
     ContextualView {
@@ -1274,7 +1418,10 @@ mod tests {
         let mut content = HashMap::new();
         content.insert(
             "src/foo.rs".to_string(),
-            (1..=50).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n"),
+            (1..=50)
+                .map(|i| format!("line {i}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
         );
         let reader = MockReader::new(content);
 
@@ -1429,7 +1576,7 @@ mod tests {
         repo.with(a.clone())
             .with(b.clone())
             .with(c.clone())
-            .with_callee(&a.id.to_string(), b.clone())  // same-scope, ignored
+            .with_callee(&a.id.to_string(), b.clone()) // same-scope, ignored
             .with_callee(&a.id.to_string(), c.clone()); // cross-scope, kept
 
         let view = build_scope_dependencies("src/foo", &repo);
@@ -1521,12 +1668,7 @@ mod tests {
             self.by_file.insert(file.to_string(), issues);
             self
         }
-        fn with_line(
-            &mut self,
-            file: &str,
-            line: u32,
-            issues: Vec<QualityIssue>,
-        ) -> &mut Self {
+        fn with_line(&mut self, file: &str, line: u32, issues: Vec<QualityIssue>) -> &mut Self {
             self.by_line.insert((file.to_string(), line), issues);
             self
         }
@@ -1621,7 +1763,10 @@ mod tests {
         assert!(ids.contains(&"issue:2"));
         assert_eq!(view.evidence.len(), 1);
         assert_eq!(view.evidence[0].kind, "quality_finding");
-        assert_eq!(view.evidence[0].source_tool_or_query, "QualityRepository::issues_at_line");
+        assert_eq!(
+            view.evidence[0].source_tool_or_query,
+            "QualityRepository::issues_at_line"
+        );
     }
 
     #[test]
@@ -1702,8 +1847,11 @@ mod tests {
         let view = build_issue_detail(&issue);
         assert_eq!(view.view_id, "overview");
         assert_eq!(view.relations.len(), 2);
-        let rel_types: Vec<&str> =
-            view.relations.iter().map(|r| r.relation_type.as_str()).collect();
+        let rel_types: Vec<&str> = view
+            .relations
+            .iter()
+            .map(|r| r.relation_type.as_str())
+            .collect();
         assert!(rel_types.contains(&"FOUND_IN"));
         assert!(rel_types.contains(&"APPLIES_TO"));
         let found_in = view
@@ -1744,7 +1892,10 @@ mod tests {
             .find(|b| b.id == "rule_identity")
             .expect("identity block");
         assert_eq!(identity.body["open_count"], 7);
-        assert_eq!(identity.body["description"], "Method names should comply with naming conventions");
+        assert_eq!(
+            identity.body["description"],
+            "Method names should comply with naming conventions"
+        );
         assert_eq!(view.evidence[0].freshness.as_deref(), Some("fresh"));
     }
 
@@ -1758,5 +1909,255 @@ mod tests {
             .expect("identity block");
         assert_eq!(identity.body["open_count"], 0);
         assert_eq!(view.evidence[0].freshness.as_deref(), Some("stale"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 4 — MCP edge metadata (downcast + provenance/confidence)
+    // -----------------------------------------------------------------------
+    //
+    // These tests cover the spec scenarios for
+    // `mcp-postgres-envelope`:
+    //
+    // * REQ1: TypedRelation carries provenance + confidence.
+    // * REQ2: EvidenceBlock carries provenance; confidence is the per-edge
+    //         value (not a hardcoded 1.0).
+    // * REQ3: View builders downcast to MetadataAwareRepository; on failure
+    //         they leave fields as None and SHOULD log a warning.
+    // * REQ4: Serde backward compatibility for both pre-change and
+    //         post-change payloads.
+
+    use crate::adapters::CallGraphRepository;
+    use crate::ports::MetadataAwareRepository;
+    use cognicode_core::domain::aggregates::{CallGraph, Symbol, SymbolId as AggSymbolId};
+    use cognicode_core::domain::services::ExtractionContext;
+    use cognicode_core::domain::value_objects::{
+        DependencyType, Location, Provenance, SymbolKind as CoreSymbolKind,
+    };
+    use std::sync::Arc;
+
+    /// Test fixture: a tiny call graph with a single typed edge.
+    /// Used by tests 4.4, 4.5, 4.7 to seed metadata-aware repositories
+    /// with controlled `(Provenance, f64)` tuples.
+    fn build_metadata_aware_graph_with_edge(
+        source: (&str, &str, u32),
+        target: (&str, &str, u32),
+        extraction: ExtractionContext,
+    ) -> (Arc<CallGraph>, AggSymbolId, AggSymbolId) {
+        let mut g = CallGraph::new();
+        let s = g.add_symbol(Symbol::new(
+            source.1,
+            CoreSymbolKind::Function,
+            Location::new(source.0, source.2, 0),
+        ));
+        let t = g.add_symbol(Symbol::new(
+            target.1,
+            CoreSymbolKind::Function,
+            Location::new(target.0, target.2, 0),
+        ));
+        g.add_dependency_with_provenance(&s, &t, DependencyType::Calls, extraction)
+            .expect("add dep");
+        (Arc::new(g), s, t)
+    }
+
+    #[test]
+    fn legacy_payload_deserializes_into_updated_dto() {
+        // Pre-change payload — no `provenance` / `confidence` fields. The
+        // `#[serde(default)]` annotations on the new fields must let this
+        // deserialize cleanly with both fields resolving to `None`.
+        let legacy = r#"{
+            "relation_type": "CALLS",
+            "direction": "outgoing",
+            "target_object_id": "symbol:src/a.rs:a:1",
+            "target_label": "a (function)",
+            "evidence_ids": []
+        }"#;
+        let parsed: crate::dto::TypedRelation =
+            serde_json::from_str(legacy).expect("legacy payload must deserialize");
+        assert_eq!(parsed.relation_type, "CALLS");
+        assert!(parsed.provenance.is_none());
+        assert!(parsed.confidence.is_none());
+    }
+
+    #[test]
+    fn enriched_payload_round_trips() {
+        // New payload — both fields populated. Round-trip through
+        // serde_json without losing values.
+        let original = crate::dto::TypedRelation {
+            relation_type: "CALLS".to_string(),
+            direction: crate::dto::RelationDirection::Outgoing,
+            target_object_id: "symbol:src/a.rs:a:1".to_string(),
+            target_label: "a (function)".to_string(),
+            evidence_ids: vec!["evidence:test".to_string()],
+            provenance: Some("Extracted".to_string()),
+            confidence: Some(0.9),
+        };
+        let json = serde_json::to_string(&original).expect("serialize");
+        let parsed: crate::dto::TypedRelation =
+            serde_json::from_str(&json).expect("round-trip parse");
+        assert_eq!(parsed.provenance.as_deref(), Some("Extracted"));
+        assert_eq!(parsed.confidence, Some(0.9));
+        // Full structural equality — no fields lost.
+        assert_eq!(parsed.relation_type, original.relation_type);
+        assert_eq!(parsed.target_object_id, original.target_object_id);
+    }
+
+    #[test]
+    fn downcast_fails_on_mock_repo() {
+        // MockRepo is hand-rolled; it does not override the new
+        // `as_metadata_aware` default, so the downcast must return
+        // `None`. This is the contract that lets view builders
+        // gracefully fall back to null metadata for non-PG adapters.
+        let mock = MockRepo::new();
+        let downcast: Option<&dyn MetadataAwareRepository> = mock.as_metadata_aware();
+        assert!(
+            downcast.is_none(),
+            "MockRepo must inherit the `None` default; got Some"
+        );
+    }
+
+    #[test]
+    fn downcast_succeeds_on_call_graph_repo() {
+        // Build a real CallGraphRepository backed by an Arc<CallGraph>
+        // with a heuristic edge (`Inferred`, 0.85). The trait override
+        // must return `Some(self)`, and the metadata surface must
+        // expose the seeded tuple.
+        let (graph, source, target) = build_metadata_aware_graph_with_edge(
+            ("src/a.rs", "alpha", 1),
+            ("src/b.rs", "beta", 5),
+            ExtractionContext::Heuristic { score: 0.85 },
+        );
+        let repo = CallGraphRepository::new(graph);
+        let downcast: Option<&dyn MetadataAwareRepository> =
+            (&repo as &dyn SymbolRepository).as_metadata_aware();
+        let aware = downcast.expect("CallGraphRepository must downcast to Some");
+        let metas = aware.callees_with_metadata(&source);
+        assert_eq!(metas.len(), 1);
+        let entry = &metas[0];
+        assert_eq!(entry.target.id, target);
+        assert_eq!(entry.provenance, Provenance::Inferred);
+        assert!((entry.confidence - 0.85).abs() < 1e-9);
+    }
+
+    #[test]
+    fn typed_relation_metadata_populated_from_aware_repo() {
+        // Real, metadata-aware repository. The call-graph view
+        // builder's outgoing `CALLS` relations must carry
+        // non-null provenance + confidence. Incoming `CALLED_BY`
+        // relations fall back to `None` (current trait surface has
+        // no callers_with_metadata).
+        let (graph, source, _) = build_metadata_aware_graph_with_edge(
+            ("src/a.rs", "alpha", 1),
+            ("src/b.rs", "beta", 5),
+            ExtractionContext::Heuristic { score: 0.85 },
+        );
+        let repo = CallGraphRepository::new(graph);
+        let resolved = ResolvedSymbol {
+            id: source,
+            name: "alpha".to_string(),
+            kind: SymbolKind::Function,
+            file: "src/a.rs".to_string(),
+            line: 1,
+            signature: Some("fn alpha()".to_string()),
+        };
+        let view = build_callgraph(&resolved, &repo);
+        // Exactly one outgoing CALLS — the seeded edge.
+        let outgoing: Vec<_> = view
+            .relations
+            .iter()
+            .filter(|r| r.relation_type == "CALLS")
+            .collect();
+        assert_eq!(outgoing.len(), 1);
+        let rel = outgoing[0];
+        assert_eq!(rel.provenance.as_deref(), Some("Inferred"));
+        assert_eq!(rel.confidence, Some(0.85));
+    }
+
+    #[test]
+    fn typed_relation_metadata_null_for_mock_repo() {
+        // Mirror the existing `callgraph_populates_relations` setup
+        // and assert every emitted TypedRelation carries null
+        // metadata — no panic, no error. The mock path is the
+        // graceful-degradation contract.
+        let sym = make_resolved("src/foo.rs", "bar", 42, SymbolKind::Function);
+        let caller = make_resolved("src/main.rs", "main", 1, SymbolKind::Function);
+        let callee_a = make_resolved("src/baz.rs", "baz", 10, SymbolKind::Function);
+        let mut repo = MockRepo::new();
+        repo.with(sym.clone())
+            .with_caller(&sym.id.to_string(), caller.clone())
+            .with_callee(&sym.id.to_string(), callee_a.clone());
+
+        let view = build_callgraph(&sym, &repo);
+        assert!(!view.relations.is_empty());
+        for rel in &view.relations {
+            assert!(
+                rel.provenance.is_none(),
+                "mock path must emit null provenance, got {:?}",
+                rel.provenance
+            );
+            assert!(
+                rel.confidence.is_none(),
+                "mock path must emit null confidence, got {:?}",
+                rel.confidence
+            );
+        }
+        // The `cg_evidence` block must also be null.
+        assert_eq!(view.evidence.len(), 1);
+        assert!(view.evidence[0].provenance.is_none());
+        assert!(view.evidence[0].confidence.is_none());
+    }
+
+    #[test]
+    fn evidence_block_reports_per_evidence_confidence() {
+        // Seed a single edge at confidence 0.72 (Heuristic). The
+        // `cg_evidence` block in the call-graph view must report
+        // 0.72_f32 (after the f64→f32 cast) — NOT a hardcoded 1.0.
+        let (graph, source, _) = build_metadata_aware_graph_with_edge(
+            ("src/a.rs", "alpha", 1),
+            ("src/b.rs", "beta", 5),
+            ExtractionContext::Heuristic { score: 0.72 },
+        );
+        let repo = CallGraphRepository::new(graph);
+        let resolved = ResolvedSymbol {
+            id: source,
+            name: "alpha".to_string(),
+            kind: SymbolKind::Function,
+            file: "src/a.rs".to_string(),
+            line: 1,
+            signature: Some("fn alpha()".to_string()),
+        };
+        let view = build_callgraph(&resolved, &repo);
+        let evidence = &view.evidence[0];
+        assert_eq!(evidence.provenance.as_deref(), Some("Inferred"));
+        let confidence = evidence
+            .confidence
+            .expect("per-edge confidence must be set when downcast succeeds");
+        assert!(
+            (confidence - 0.72_f32).abs() < 1e-5,
+            "expected 0.72 (cast f64→f32), got {confidence}"
+        );
+    }
+
+    #[test]
+    fn evidence_block_degrades_gracefully() {
+        // `build_scope_dependencies` against a mock — the per-edge
+        // evidence block must report `provenance: None` and
+        // `confidence: None` with no panic.
+        let mut repo = MockRepo::new();
+        let a = make_resolved("src/foo/a.rs", "alpha", 1, SymbolKind::Function);
+        let c = make_resolved("src/bar/c.rs", "gamma", 3, SymbolKind::Function);
+        repo.with(a.clone())
+            .with(c.clone())
+            .with_callee(&a.id.to_string(), c.clone());
+
+        let view = build_scope_dependencies("src/foo", &repo);
+        assert_eq!(view.evidence.len(), 1);
+        assert!(
+            view.evidence[0].provenance.is_none(),
+            "mock scope-deps must emit null provenance"
+        );
+        assert!(
+            view.evidence[0].confidence.is_none(),
+            "mock scope-deps must emit null confidence, not a hardcoded 1.0"
+        );
     }
 }

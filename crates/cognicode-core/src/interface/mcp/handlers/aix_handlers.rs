@@ -42,26 +42,30 @@ pub async fn handle_smart_overview(
     let project_type = detect_project_type(&graph);
 
     // Build entry point summaries
-    let top_eps: Vec<EntryPointSummary> = entry_points.iter().take(5).map(|ep| {
-        EntryPointSummary {
+    let top_eps: Vec<EntryPointSummary> = entry_points
+        .iter()
+        .take(5)
+        .map(|ep| EntryPointSummary {
             name: ep.name.clone(),
             file: ep.file_path.clone(),
             line: ep.line,
             kind: ep.kind.clone(),
             summary: format!("Entry point: {}", ep.name),
-        }
-    }).collect();
+        })
+        .collect();
 
     // Build hot path DTOs
-    let critical_hot_paths: Vec<HotPathDto> = hot_paths.iter().take(5).map(|hp| {
-        HotPathDto {
+    let critical_hot_paths: Vec<HotPathDto> = hot_paths
+        .iter()
+        .take(5)
+        .map(|hp| HotPathDto {
             symbol_name: hp.symbol_name.clone(),
             file: hp.file.clone(),
             line: hp.line,
             fan_in: hp.fan_in,
             fan_out: hp.fan_out,
-        }
-    }).collect();
+        })
+        .collect();
 
     // Estimate tokens
     let estimated_tokens = match detail {
@@ -79,7 +83,11 @@ pub async fn handle_smart_overview(
         critical_hot_paths,
         architecture_score: arch_result.as_ref().map(|r| r.score),
         cycle_count: arch_result.as_ref().map(|r| r.cycles.len()),
-        recommended_first_reads: if detail == OverviewDetail::Detailed { first_reads } else { vec![] },
+        recommended_first_reads: if detail == OverviewDetail::Detailed {
+            first_reads
+        } else {
+            vec![]
+        },
         coverage_percent,
         _meta: OverviewMeta {
             estimated_tokens,
@@ -87,11 +95,19 @@ pub async fn handle_smart_overview(
         },
     };
 
-    // B.1: Persist output for dashboard (agent-dashboard-improvements)
+    // B.1: Persist output for dashboard (agent-dashboard-improvements).
+    // Feature-gated behind `sqlite`: with the `sqlite` feature off,
+    // `open_db` returns `Err` and the body is skipped. DashMap /
+    // in-memory state still flows back to the caller.
+    #[cfg(feature = "sqlite")]
     if let Ok(conn) = open_db(&ctx.working_dir) {
         let json = serde_json::to_string(&result).unwrap_or_default();
-        let summary = format!("{} - {} files, {} hot paths",
-            result.project_type, stats.file_count, result.critical_hot_paths.len());
+        let summary = format!(
+            "{} - {} files, {} hot paths",
+            result.project_type,
+            stats.file_count,
+            result.critical_hot_paths.len()
+        );
         if let Err(e) = conn.execute(
             "INSERT INTO agent_outputs (tool_name, session_id, output_json, summary_text, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![
@@ -122,16 +138,17 @@ pub async fn handle_ranked_symbols(
     let graph = ctx.analysis_service.get_project_graph();
 
     // Search using semantic search
-    let results = ctx.semantic_search.search(
-        crate::infrastructure::semantic::SearchQuery {
+    let results = ctx
+        .semantic_search
+        .search(crate::infrastructure::semantic::SearchQuery {
             query: input.query.clone(),
             kinds: vec![],
             max_results: input.limit,
-        }
-    );
+        });
 
     // Calculate max fan_in for normalization
-    let max_fan_in = results.iter()
+    let max_fan_in = results
+        .iter()
         .map(|r| {
             let symbol_id = SymbolId::new(r.symbol.fully_qualified_name());
             graph.callers(&symbol_id).len()
@@ -270,7 +287,8 @@ pub async fn handle_auto_diagnose(
                 severity: "critical".to_string(),
                 title: format!("Cyclic dependency: {} symbols", cycle.symbols.len()),
                 description: format!("Cycle detected involving: {}", cycle.symbols.join(" -> ")),
-                recommendation: "Introduce a trait or use a shared module to break the cycle".to_string(),
+                recommendation: "Introduce a trait or use a shared module to break the cycle"
+                    .to_string(),
                 location: None,
                 metric: Some(cycle.symbols.len().to_string()),
             });
@@ -283,7 +301,10 @@ pub async fn handle_auto_diagnose(
             category: "dead_code".to_string(),
             severity: "important".to_string(),
             title: format!("{} dead code entries found", dead_code_result.total_dead),
-            description: format!("{:.1}% of symbols are never called", dead_code_result.dead_code_percent),
+            description: format!(
+                "{:.1}% of symbols are never called",
+                dead_code_result.dead_code_percent
+            ),
             recommendation: "Remove or document why these symbols exist".to_string(),
             location: None,
             metric: Some(dead_code_result.total_dead.to_string()),
@@ -338,10 +359,14 @@ pub async fn handle_auto_diagnose(
     // Calculate health score
     let cycles = arch_result.as_ref().map(|r| r.cycles.len()).unwrap_or(0);
     let coupling = coupling_issues;
-    let health_score = (100.0 - (cycles as f64 * 10.0) - (coupling as f64 * 5.0)).max(0.0).min(100.0);
+    let health_score = (100.0 - (cycles as f64 * 10.0) - (coupling as f64 * 5.0))
+        .max(0.0)
+        .min(100.0);
 
     // Get complexity info
-    let max_complexity = hot_paths.first().map(|hp| (hp.symbol_name.clone(), hp.fan_in as u32));
+    let max_complexity = hot_paths
+        .first()
+        .map(|hp| (hp.symbol_name.clone(), hp.fan_in as u32));
     let avg_complexity = if !hot_paths.is_empty() {
         Some(hot_paths.iter().map(|hp| hp.fan_in as f64).sum::<f64>() / hot_paths.len() as f64)
     } else {
@@ -359,7 +384,10 @@ pub async fn handle_auto_diagnose(
         symbol_count: stats.symbol_count,
         edge_count: stats.edge_count,
         file_count: stats.file_count,
-        cycles: arch_result.as_ref().map(|r| r.cycles.iter().map(|c| c.symbols.join("->")).collect()).unwrap_or_default(),
+        cycles: arch_result
+            .as_ref()
+            .map(|r| r.cycles.iter().map(|c| c.symbols.join("->")).collect())
+            .unwrap_or_default(),
         architecture_score: arch_result.map(|r| r.score),
         avg_complexity,
         max_complexity,
@@ -372,11 +400,20 @@ pub async fn handle_auto_diagnose(
         },
     };
 
-    // B.2: Persist output for dashboard (agent-dashboard-improvements)
+    // B.2: Persist output for dashboard (agent-dashboard-improvements).
+    // Feature-gated behind `sqlite`: with the feature off, persistence
+    // is skipped and the diagnosis result is still returned.
+    #[cfg(feature = "sqlite")]
     if let Ok(conn) = open_db(&ctx.working_dir) {
         let json = serde_json::to_string(&result).unwrap_or_default();
-        let summary = format!("Health score: {:.0}/100 - {} issues ({} critical, {} important, {} warning)",
-            result.health_score, result.total_issues, result.critical_count, result.important_count, result.warning_count);
+        let summary = format!(
+            "Health score: {:.0}/100 - {} issues ({} critical, {} important, {} warning)",
+            result.health_score,
+            result.total_issues,
+            result.critical_count,
+            result.important_count,
+            result.warning_count
+        );
         if let Err(e) = conn.execute(
             "INSERT INTO agent_outputs (tool_name, session_id, output_json, summary_text, created_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![
@@ -407,7 +444,10 @@ pub async fn handle_suggest_refactor_plan(
     let symbol_id = find_symbol_in_graph(&graph, &input.symbol);
 
     if symbol_id.is_none() {
-        return Err(HandlerError::NotFound(format!("Symbol '{}' not found", input.symbol)));
+        return Err(HandlerError::NotFound(format!(
+            "Symbol '{}' not found",
+            input.symbol
+        )));
     }
 
     let symbol_id = symbol_id.unwrap();
@@ -508,13 +548,13 @@ pub async fn handle_nl_to_symbol(
     let keywords = extract_keywords(&input.query);
 
     // Search using semantic search
-    let results = ctx.semantic_search.search(
-        crate::infrastructure::semantic::SearchQuery {
+    let results = ctx
+        .semantic_search
+        .search(crate::infrastructure::semantic::SearchQuery {
             query: input.query.clone(),
             kinds: vec![],
             max_results: input.limit * 2,
-        }
-    );
+        });
 
     // Re-rank with keyword matching
     let mut matches: Vec<NlSymbolMatch> = Vec::new();
@@ -524,7 +564,8 @@ pub async fn handle_nl_to_symbol(
 
         // Calculate keyword match score
         let name_lower = r.symbol.name().to_lowercase();
-        let keyword_matches = keywords.iter()
+        let keyword_matches = keywords
+            .iter()
             .filter(|kw| name_lower.contains(&kw.to_lowercase()))
             .count();
         let keyword_score = keyword_matches as f64 / keywords.len().max(1) as f64;
@@ -539,7 +580,10 @@ pub async fn handle_nl_to_symbol(
                 line: r.symbol.location().line() + 1,
                 kind: format!("{:?}", r.symbol.kind()).to_lowercase(),
                 confidence,
-                match_reason: format!("Semantic match ({:.0}%) + keyword overlap", confidence * 100.0),
+                match_reason: format!(
+                    "Semantic match ({:.0}%) + keyword overlap",
+                    confidence * 100.0
+                ),
                 snippet: None,
                 fan_in,
             });
@@ -547,7 +591,11 @@ pub async fn handle_nl_to_symbol(
     }
 
     // Sort by confidence
-    matches.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    matches.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let total = matches.len();
     matches.truncate(input.limit);
@@ -605,16 +653,19 @@ pub async fn handle_ask_about_code(
             let path = find_path_bfs(&graph, &sid, &tid, 10);
 
             if !path.is_empty() {
-                let path_steps: Vec<CodePathStep> = path.iter().filter_map(|sp| {
-                    graph.get_symbol(sp).map(|s| CodePathStep {
-                        symbol: s.name().to_string(),
-                        file: s.location().file().to_string(),
-                        line: s.location().line() + 1,
-                        kind: format!("{:?}", s.kind()).to_lowercase(),
-                        role: "intermediate".to_string(),
-                        snippet: None,
+                let path_steps: Vec<CodePathStep> = path
+                    .iter()
+                    .filter_map(|sp| {
+                        graph.get_symbol(sp).map(|s| CodePathStep {
+                            symbol: s.name().to_string(),
+                            file: s.location().file().to_string(),
+                            line: s.location().line() + 1,
+                            kind: format!("{:?}", s.kind()).to_lowercase(),
+                            role: "intermediate".to_string(),
+                            snippet: None,
+                        })
                     })
-                }).collect();
+                    .collect();
 
                 answers.push(CodeAnswer {
                     explanation: format!("Path from {} to {} found", src, tgt),
@@ -657,21 +708,96 @@ pub async fn handle_find_pattern_by_intent(
     let start = Instant::now();
     // Pattern catalog
     let patterns = vec![
-        ("singleton", "Singleton pattern", "look for single instance with global state", "Find objects created once and accessed globally"),
-        ("factory", "Factory method", "creation through factory function", "Object creation delegated to factory method"),
-        ("observer", "Observer pattern", "event subscription and notification", "One-to-many dependency for state changes"),
-        ("builder", "Builder pattern", "step-by-step object construction", "Construct complex objects step by step"),
-        ("strategy", "Strategy pattern", "interchangeable algorithms", "Select algorithm at runtime"),
-        ("adapter", "Adapter pattern", "convert interface to expected", "Make incompatible interfaces work together"),
-        ("decorator", "Decorator pattern", "wrap with additional behavior", "Add responsibilities dynamically"),
-        ("facade", "Facade pattern", "simplified interface to subsystem", "Provide unified interface to complex subsystem"),
-        ("template", "Template method", "algorithm skeleton with hooks", "Define algorithm skeleton with customizable steps"),
-        ("command", "Command pattern", "encapsulate operation as object", "Parameterize objects with operations"),
-        ("iterator", "Iterator pattern", "sequential access without exposure", "Traverse collection without exposing internals"),
-        ("composite", "Composite pattern", "tree structure with uniform interface", "Compose objects into tree structures"),
-        ("proxy", "Proxy pattern", "placeholder for another object", "Control access to another object"),
-        ("flyweight", "Flyweight pattern", "share common state", "Use sharing to support large numbers of objects"),
-        ("mvc", "MVC pattern", "separate model view controller", "Separate data, UI, and logic concerns"),
+        (
+            "singleton",
+            "Singleton pattern",
+            "look for single instance with global state",
+            "Find objects created once and accessed globally",
+        ),
+        (
+            "factory",
+            "Factory method",
+            "creation through factory function",
+            "Object creation delegated to factory method",
+        ),
+        (
+            "observer",
+            "Observer pattern",
+            "event subscription and notification",
+            "One-to-many dependency for state changes",
+        ),
+        (
+            "builder",
+            "Builder pattern",
+            "step-by-step object construction",
+            "Construct complex objects step by step",
+        ),
+        (
+            "strategy",
+            "Strategy pattern",
+            "interchangeable algorithms",
+            "Select algorithm at runtime",
+        ),
+        (
+            "adapter",
+            "Adapter pattern",
+            "convert interface to expected",
+            "Make incompatible interfaces work together",
+        ),
+        (
+            "decorator",
+            "Decorator pattern",
+            "wrap with additional behavior",
+            "Add responsibilities dynamically",
+        ),
+        (
+            "facade",
+            "Facade pattern",
+            "simplified interface to subsystem",
+            "Provide unified interface to complex subsystem",
+        ),
+        (
+            "template",
+            "Template method",
+            "algorithm skeleton with hooks",
+            "Define algorithm skeleton with customizable steps",
+        ),
+        (
+            "command",
+            "Command pattern",
+            "encapsulate operation as object",
+            "Parameterize objects with operations",
+        ),
+        (
+            "iterator",
+            "Iterator pattern",
+            "sequential access without exposure",
+            "Traverse collection without exposing internals",
+        ),
+        (
+            "composite",
+            "Composite pattern",
+            "tree structure with uniform interface",
+            "Compose objects into tree structures",
+        ),
+        (
+            "proxy",
+            "Proxy pattern",
+            "placeholder for another object",
+            "Control access to another object",
+        ),
+        (
+            "flyweight",
+            "Flyweight pattern",
+            "share common state",
+            "Use sharing to support large numbers of objects",
+        ),
+        (
+            "mvc",
+            "MVC pattern",
+            "separate model view controller",
+            "Separate data, UI, and logic concerns",
+        ),
     ];
 
     let intent_lower = input.intent.to_lowercase();
@@ -692,11 +818,14 @@ pub async fn handle_find_pattern_by_intent(
     }
 
     if input.list_patterns.unwrap_or(false) {
-        matched = patterns.iter().map(|(n, d, h, _)| IntentMatch {
-            intent_name: n.to_string(),
-            description: d.to_string(),
-            query_hint: h.to_string(),
-        }).collect();
+        matched = patterns
+            .iter()
+            .map(|(n, d, h, _)| IntentMatch {
+                intent_name: n.to_string(),
+                description: d.to_string(),
+                query_hint: h.to_string(),
+            })
+            .collect();
     }
 
     let result = FindPatternResult {
@@ -730,54 +859,79 @@ pub async fn handle_compare_call_graphs(
     let _ensure = ensure_graph_built(ctx)?;
 
     let current_graph = ctx.analysis_service.get_project_graph();
-    let current_symbols: HashSet<String> = current_graph.symbols()
+    let current_symbols: HashSet<String> = current_graph
+        .symbols()
         .map(|s| s.name().to_string())
         .collect();
-    let current_edges: HashSet<(String, String)> = current_graph.all_dependencies()
+    let current_edges: HashSet<(String, String)> = current_graph
+        .all_dependencies()
         .filter_map(|(src, tgt, _)| {
-            let src_name = current_graph.get_symbol(src).map(|s| s.name().to_string())?;
-            let tgt_name = current_graph.get_symbol(tgt).map(|s| s.name().to_string())?;
+            let src_name = current_graph
+                .get_symbol(src)
+                .map(|s| s.name().to_string())?;
+            let tgt_name = current_graph
+                .get_symbol(tgt)
+                .map(|s| s.name().to_string())?;
             Some((src_name, tgt_name))
         })
         .collect();
 
     // Try to load baseline if provided
-    let (has_baseline, baseline_symbols, baseline_edges, arch_score_before) = if let Some(baseline_dir) = input.baseline_dir {
-        let baseline_path = ctx.working_dir.join(baseline_dir);
-        let _store_path = graph_db_path(&baseline_path);
-        let store = InMemoryGraphStore::new();
-        match store.load_graph() {
-            Ok(Some(baseline_graph)) => {
-                let symbols: HashSet<String> = baseline_graph.symbols()
-                    .map(|s| s.name().to_string())
-                    .collect();
-                let edges: HashSet<(String, String)> = baseline_graph.all_dependencies()
-                    .filter_map(|(src, tgt, _)| {
-                        let src_name = baseline_graph.get_symbol(src).map(|s| s.name().to_string())?;
-                        let tgt_name = baseline_graph.get_symbol(tgt).map(|s| s.name().to_string())?;
-                        Some((src_name, tgt_name))
-                    })
-                    .collect();
-                (true, symbols, edges, None)
+    let (has_baseline, baseline_symbols, baseline_edges, arch_score_before) =
+        if let Some(baseline_dir) = input.baseline_dir {
+            let baseline_path = ctx.working_dir.join(baseline_dir);
+            let _store_path = graph_db_path(&baseline_path);
+            let store = InMemoryGraphStore::new();
+            match store.load_graph() {
+                Ok(Some(baseline_graph)) => {
+                    let symbols: HashSet<String> = baseline_graph
+                        .symbols()
+                        .map(|s| s.name().to_string())
+                        .collect();
+                    let edges: HashSet<(String, String)> = baseline_graph
+                        .all_dependencies()
+                        .filter_map(|(src, tgt, _)| {
+                            let src_name = baseline_graph
+                                .get_symbol(src)
+                                .map(|s| s.name().to_string())?;
+                            let tgt_name = baseline_graph
+                                .get_symbol(tgt)
+                                .map(|s| s.name().to_string())?;
+                            Some((src_name, tgt_name))
+                        })
+                        .collect();
+                    (true, symbols, edges, None)
+                }
+                _ => (false, HashSet::new(), HashSet::new(), None),
             }
-            _ => (false, HashSet::new(), HashSet::new(), None),
-        }
-    } else {
-        (false, HashSet::new(), HashSet::new(), None)
-    };
+        } else {
+            (false, HashSet::new(), HashSet::new(), None)
+        };
 
     // Calculate diff
-    let symbols_added: Vec<String> = current_symbols.difference(&baseline_symbols).cloned().collect();
-    let symbols_removed: Vec<String> = baseline_symbols.difference(&current_symbols).cloned().collect();
-    let edges_added: Vec<(String, String)> = current_edges.difference(&baseline_edges).cloned().collect();
-    let edges_removed: Vec<(String, String)> = baseline_edges.difference(&current_edges).cloned().collect();
+    let symbols_added: Vec<String> = current_symbols
+        .difference(&baseline_symbols)
+        .cloned()
+        .collect();
+    let symbols_removed: Vec<String> = baseline_symbols
+        .difference(&current_symbols)
+        .cloned()
+        .collect();
+    let edges_added: Vec<(String, String)> =
+        current_edges.difference(&baseline_edges).cloned().collect();
+    let edges_removed: Vec<(String, String)> =
+        baseline_edges.difference(&current_edges).cloned().collect();
 
     let arch_result = check_architecture_internal(ctx)?;
     let arch_score_after = arch_result.as_ref().map(|r| r.score);
 
     let summary = if has_baseline {
-        format!("{} added, {} removed, {} edge changes",
-            symbols_added.len(), symbols_removed.len(), edges_added.len() + edges_removed.len())
+        format!(
+            "{} added, {} removed, {} edge changes",
+            symbols_added.len(),
+            symbols_removed.len(),
+            edges_added.len() + edges_removed.len()
+        )
     } else {
         "No baseline provided - showing current graph state".to_string()
     };
@@ -824,7 +978,8 @@ pub async fn handle_detect_api_breaks(
     let _ensure = ensure_graph_built(ctx)?;
 
     let current_graph = ctx.analysis_service.get_project_graph();
-    let current_entries: HashSet<String> = current_graph.roots()
+    let current_entries: HashSet<String> = current_graph
+        .roots()
         .iter()
         .filter_map(|id| current_graph.get_symbol(id).map(|s| s.name().to_string()))
         .collect();
@@ -835,13 +990,15 @@ pub async fn handle_detect_api_breaks(
         let store = InMemoryGraphStore::new();
         match store.load_graph() {
             Ok(Some(baseline_graph)) => {
-                let entries: HashSet<String> = baseline_graph.roots()
+                let entries: HashSet<String> = baseline_graph
+                    .roots()
                     .iter()
                     .filter_map(|id| baseline_graph.get_symbol(id).map(|s| s.name().to_string()))
                     .collect();
 
                 // Find removed entry points
-                let removed: Vec<ApiBreak> = entries.difference(&current_entries)
+                let removed: Vec<ApiBreak> = entries
+                    .difference(&current_entries)
                     .map(|name| ApiBreak {
                         symbol: name.clone(),
                         file: String::new(),
@@ -900,7 +1057,10 @@ pub async fn handle_generate_system_prompt_context(
 
     let stats = ctx.analysis_service.get_graph_stats();
     let hot_paths = if input.include_hot_paths.unwrap_or(false) {
-        Some(get_hot_paths_from_graph(&ctx.analysis_service.get_project_graph(), 5))
+        Some(get_hot_paths_from_graph(
+            &ctx.analysis_service.get_project_graph(),
+            5,
+        ))
     } else {
         None
     };
@@ -913,13 +1073,25 @@ pub async fn handle_generate_system_prompt_context(
     let content = match input.format {
         ContextFormatDetail::Xml => {
             let hot_paths_xml = if let Some(ref hp) = hot_paths {
-                hp.iter().map(|h| format!("  <hot_path symbol=\"{}\" fan_in=\"{}\" />", h.symbol_name, h.fan_in)).collect::<Vec<_>>().join("\n")
+                hp.iter()
+                    .map(|h| {
+                        format!(
+                            "  <hot_path symbol=\"{}\" fan_in=\"{}\" />",
+                            h.symbol_name, h.fan_in
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
             } else {
                 String::new()
             };
 
             let arch_xml = if let Some(ref a) = arch_result {
-                format!("<architecture score=\"{}\" cycles=\"{}\" />", a.score, a.cycles.len())
+                format!(
+                    "<architecture score=\"{}\" cycles=\"{}\" />",
+                    a.score,
+                    a.cycles.len()
+                )
             } else {
                 String::new()
             };
@@ -945,7 +1117,10 @@ pub async fn handle_generate_system_prompt_context(
             serde_json::to_string_pretty(&obj).unwrap_or_default()
         }
         ContextFormatDetail::Markdown => {
-            let mut md = format!("## Project Stats\n- Symbols: {}\n- Edges: {}\n", stats.symbol_count, stats.edge_count);
+            let mut md = format!(
+                "## Project Stats\n- Symbols: {}\n- Edges: {}\n",
+                stats.symbol_count, stats.edge_count
+            );
 
             if let Some(ref hp) = hot_paths {
                 md += "\n## Hot Paths\n";
@@ -955,7 +1130,11 @@ pub async fn handle_generate_system_prompt_context(
             }
 
             if let Some(ref a) = arch_result {
-                md += &format!("\n## Architecture\n- Score: {:.1}\n- Cycles: {}\n", a.score, a.cycles.len());
+                md += &format!(
+                    "\n## Architecture\n- Score: {:.1}\n- Cycles: {}\n",
+                    a.score,
+                    a.cycles.len()
+                );
             }
 
             md
@@ -1002,12 +1181,16 @@ pub async fn handle_detect_god_functions(
         let fan_out = graph.callees(&symbol_id).len();
 
         // Check thresholds
-        if lines >= input.min_lines && complexity >= input.min_complexity && fan_in >= input.min_fan_in {
+        if lines >= input.min_lines
+            && complexity >= input.min_complexity
+            && fan_in >= input.min_fan_in
+        {
             // Calculate god score
             let god_score = ((lines as f64 / input.min_lines as f64 * 25.0)
                 + (complexity as f64 / input.min_complexity as f64 * 25.0)
                 + (fan_in as f64 / input.min_fan_in as f64 * 25.0)
-                + (fan_out as f64 / 10.0 * 25.0)).min(100.0);
+                + (fan_out as f64 / 10.0 * 25.0))
+                .min(100.0);
 
             god_functions.push(GodFunctionDto {
                 symbol: symbol.name().to_string(),
@@ -1024,7 +1207,11 @@ pub async fn handle_detect_god_functions(
     }
 
     // Sort by god score descending
-    god_functions.sort_by(|a, b| b.god_score.partial_cmp(&a.god_score).unwrap_or(std::cmp::Ordering::Equal));
+    god_functions.sort_by(|a, b| {
+        b.god_score
+            .partial_cmp(&a.god_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let total_analyzed = graph.symbol_count();
     let god_count = god_functions.len();
@@ -1068,11 +1255,16 @@ pub async fn handle_detect_long_parameter_lists(
 
     for symbol in graph.symbols() {
         // Only check functions
-        if !matches!(symbol.kind(), crate::domain::value_objects::SymbolKind::Function) {
+        if !matches!(
+            symbol.kind(),
+            crate::domain::value_objects::SymbolKind::Function
+        ) {
             continue;
         }
 
-        let param_count = graph.callees(&SymbolId::new(symbol.fully_qualified_name())).len();
+        let param_count = graph
+            .callees(&SymbolId::new(symbol.fully_qualified_name()))
+            .len();
 
         if param_count > input.max_params {
             long_param_functions.push(LongParamFunctionDto {
@@ -1159,7 +1351,13 @@ pub async fn handle_evaluate_refactor_quality(
 
                 // Baseline dead code would need a separate analysis, use 0 as placeholder
                 // since we can't retroactively analyze baseline dead code without the service
-                (true, baseline_complex, baseline_edge_count, baseline_cycle_count, 0isize)
+                (
+                    true,
+                    baseline_complex,
+                    baseline_edge_count,
+                    baseline_cycle_count,
+                    0isize,
+                )
             }
             _ => (false, 0.0, 0usize, 0, 0isize),
         };
@@ -1202,8 +1400,10 @@ pub async fn handle_evaluate_refactor_quality(
     let dead_code_bonus = (-dead_code_delta as f64 * 2.0).max(0.0).min(20.0);
 
     // Calculate quality score
-    let quality_score = (100.0 - complexity_penalty - coupling_penalty - cycle_penalty + dead_code_bonus)
-        .max(0.0).min(100.0);
+    let quality_score = (100.0 - complexity_penalty - coupling_penalty - cycle_penalty
+        + dead_code_bonus)
+        .max(0.0)
+        .min(100.0);
 
     // Determine verdict
     let verdict = if quality_score >= 80.0 {
@@ -1212,24 +1412,31 @@ pub async fn handle_evaluate_refactor_quality(
         "neutral"
     } else {
         "regression"
-    }.to_string();
+    }
+    .to_string();
 
     // Generate recommendations
     let mut recommendations = Vec::new();
     if complexity_delta > 0.0 {
-        recommendations.push("Complexity increased. Consider extracting complex functions.".to_string());
+        recommendations
+            .push("Complexity increased. Consider extracting complex functions.".to_string());
     }
     if coupling_delta > 0 {
-        recommendations.push("Coupling increased. Look for opportunities to reduce dependencies.".to_string());
+        recommendations
+            .push("Coupling increased. Look for opportunities to reduce dependencies.".to_string());
     }
     if cycle_delta > 0 {
-        recommendations.push("New cycles detected. Break cyclic dependencies with traits or shared modules.".to_string());
+        recommendations.push(
+            "New cycles detected. Break cyclic dependencies with traits or shared modules."
+                .to_string(),
+        );
     }
     if dead_code_delta > 0 {
         recommendations.push("More dead code detected. Remove unused symbols.".to_string());
     }
     if recommendations.is_empty() && quality_score >= 80.0 {
-        recommendations.push("Refactoring appears successful. Consider running tests to verify.".to_string());
+        recommendations
+            .push("Refactoring appears successful. Consider running tests to verify.".to_string());
     }
 
     let result = RefactorEvalDto {
@@ -1264,7 +1471,8 @@ pub async fn handle_evaluate_refactor_quality(
 
 /// Get hot paths from graph
 fn get_hot_paths_from_graph(graph: &CallGraph, limit: usize) -> Vec<HotPathDto> {
-    let mut hot_paths: Vec<HotPathDto> = graph.symbols()
+    let mut hot_paths: Vec<HotPathDto> = graph
+        .symbols()
         .map(|s| {
             let id = SymbolId::new(s.fully_qualified_name());
             let fan_in = graph.callers(&id).len();
@@ -1296,12 +1504,14 @@ fn check_architecture_internal(ctx: &HandlerContext) -> HandlerResult<Option<Arc
     let cycle_detector = CycleDetector::new();
     let cycle_result = cycle_detector.detect_cycles(&graph);
 
-    let cycles = cycle_result.cycles.iter().map(|c| {
-        crate::application::dto::CycleInfo {
+    let cycles = cycle_result
+        .cycles
+        .iter()
+        .map(|c| crate::application::dto::CycleInfo {
             symbols: c.symbols().iter().map(|s| s.as_str().to_string()).collect(),
             length: c.length(),
-        }
-    }).collect();
+        })
+        .collect();
 
     let cycle_penalty = cycle_result.symbols_in_cycles() * 5;
     let score = (100.0 - cycle_penalty as f32).max(0.0);
@@ -1317,7 +1527,8 @@ fn check_architecture_internal(ctx: &HandlerContext) -> HandlerResult<Option<Arc
 /// Recommend first files to read based on graph analysis
 fn recommend_first_reads_from_graph(graph: &CallGraph) -> Vec<String> {
     // Get entry points and their files
-    let entry_files: Vec<String> = graph.roots()
+    let entry_files: Vec<String> = graph
+        .roots()
         .iter()
         .filter_map(|id| graph.get_symbol(id))
         .map(|s| s.location().file().to_string())
@@ -1348,26 +1559,28 @@ fn detect_project_type(graph: &CallGraph) -> ProjectType {
     }
 
     // Check for web API indicators
-    let has_web_handlers = graph.symbols()
-        .any(|s| {
-            let name = s.name().to_lowercase();
-            name.contains("handler") || name.contains("route") || name.contains("endpoint") || name.contains("api")
-        });
+    let has_web_handlers = graph.symbols().any(|s| {
+        let name = s.name().to_lowercase();
+        name.contains("handler")
+            || name.contains("route")
+            || name.contains("endpoint")
+            || name.contains("api")
+    });
 
     if has_web_handlers && entry_count > 1 {
         return ProjectType::WebApi;
     }
 
     // Check for CLI indicators
-    let has_main = graph.symbols()
-        .any(|s| s.name().to_lowercase() == "main");
+    let has_main = graph.symbols().any(|s| s.name().to_lowercase() == "main");
 
     if has_main {
         return ProjectType::Cli;
     }
 
     // Check for library indicators (many traits/interfaces, few entry points)
-    let trait_count = graph.symbols()
+    let trait_count = graph
+        .symbols()
         .filter(|s| matches!(s.kind(), crate::domain::value_objects::SymbolKind::Trait))
         .count();
 
@@ -1380,16 +1593,18 @@ fn detect_project_type(graph: &CallGraph) -> ProjectType {
 
 /// Extract keywords from natural language query
 fn extract_keywords(query: &str) -> Vec<String> {
-    let stop_words = ["the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did", "will", "would", "could", "should",
-        "may", "might", "must", "shall", "can", "need", "dare", "ought", "used",
-        "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "into",
-        "through", "during", "before", "after", "above", "below", "between", "under",
-        "again", "further", "then", "once", "here", "there", "when", "where", "why",
-        "how", "all", "each", "few", "more", "most", "other", "some", "such", "no",
-        "nor", "not", "only", "own", "same", "so", "than", "too", "very", "just"];
+    let stop_words = [
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+        "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "shall",
+        "can", "need", "dare", "ought", "used", "to", "of", "in", "for", "on", "with", "at", "by",
+        "from", "as", "into", "through", "during", "before", "after", "above", "below", "between",
+        "under", "again", "further", "then", "once", "here", "there", "when", "where", "why",
+        "how", "all", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not",
+        "only", "own", "same", "so", "than", "too", "very", "just",
+    ];
 
-    query.split_whitespace()
+    query
+        .split_whitespace()
         .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
         .filter(|w| w.len() > 2 && !stop_words.contains(&w.to_lowercase().as_str()))
         .collect()
@@ -1553,13 +1768,21 @@ fn build_review_plan(_ctx: &HandlerContext) -> HandlerResult<Vec<OnboardingStep>
 // AVC Tool Handlers
 // ============================================================================
 
-use crate::infrastructure::avc::{AvcGenerator, AvcValidator, AvcContract, AvcValidationResult};
+// `AvcValidator` is only used inside `handle_validate_contract`,
+// which is gated behind `sqlite`. With the feature off, the import
+// is dead.
+#[cfg_attr(not(feature = "sqlite"), allow(unused_imports))]
+use crate::infrastructure::avc::{AvcContract, AvcGenerator, AvcValidationResult, AvcValidator};
 use crate::interface::mcp::schemas::{
-    DetectDriftInput, DetectDriftOutput, DriftFinding, DriftSeverity,
-    GenerateContractInput, ValidateContractInput,
+    DetectDriftInput, DetectDriftOutput, DriftFinding, DriftSeverity, GenerateContractInput,
+    ValidateContractInput,
 };
 
-/// Opens a SQLite connection to the cognicode database
+/// Opens a SQLite connection to the cognicode database.
+/// Only compiled when the `sqlite` feature is enabled; with the
+/// feature off, a stub returns an error and the persistence calls
+/// become no-ops.
+#[cfg(feature = "sqlite")]
 fn open_db(working_dir: &std::path::Path) -> Result<rusqlite::Connection, String> {
     let db_dir = working_dir.join(".cognicode");
     std::fs::create_dir_all(&db_dir).map_err(|e| e.to_string())?;
@@ -1568,13 +1791,25 @@ fn open_db(working_dir: &std::path::Path) -> Result<rusqlite::Connection, String
     Ok(conn)
 }
 
+/// No-`sqlite` stub: always reports the feature is disabled so callers
+/// can degrade gracefully (skip persistence, return empty lists, etc.).
+#[cfg(not(feature = "sqlite"))]
+#[allow(dead_code)]
+fn open_db(working_dir: &std::path::Path) -> Result<std::convert::Infallible, String> {
+    let _ = working_dir;
+    Err("sqlite feature disabled".to_string())
+}
+
 /// Handler for generate_contract tool (AVC-1)
+#[cfg(feature = "sqlite")]
 pub async fn handle_generate_contract(
     ctx: &HandlerContext,
     input: GenerateContractInput,
 ) -> HandlerResult<AvcContract> {
     // Validate file path
-    let resolved_path = ctx.validator.validate_file_path(&input.file_path)
+    let resolved_path = ctx
+        .validator
+        .validate_file_path(&input.file_path)
         .map_err(|e| HandlerError::InvalidInput(format!("Invalid file path: {}", e)))?;
 
     // Read file content
@@ -1582,11 +1817,14 @@ pub async fn handle_generate_contract(
         .map_err(|e| HandlerError::NotFound(format!("File not found: {}", e)))?;
 
     // Generate AVC contract
-    let contract = AvcGenerator::generate_from_source(&source, &input.function_name, &input.file_path)
-        .ok_or_else(|| HandlerError::NotFound(format!(
-            "Function '{}' not found in {}",
-            input.function_name, input.file_path
-        )))?;
+    let contract =
+        AvcGenerator::generate_from_source(&source, &input.function_name, &input.file_path)
+            .ok_or_else(|| {
+                HandlerError::NotFound(format!(
+                    "Function '{}' not found in {}",
+                    input.function_name, input.file_path
+                ))
+            })?;
 
     // Persist contract to database
     if let Ok(conn) = open_db(&ctx.working_dir) {
@@ -1609,7 +1847,21 @@ pub async fn handle_generate_contract(
     Ok(contract)
 }
 
+/// No-`sqlite` stub: contract persistence is unavailable, so the
+/// generator cannot persist contracts. The function is still callable
+/// from the dispatch layer so that `--no-default-features` builds link.
+#[cfg(not(feature = "sqlite"))]
+pub async fn handle_generate_contract(
+    _ctx: &HandlerContext,
+    _input: GenerateContractInput,
+) -> HandlerResult<AvcContract> {
+    Err(HandlerError::Internal(
+        "generate_contract requires the `sqlite` feature (cognicode-core/sqlite)".to_string(),
+    ))
+}
+
 /// Handler for validate_contract tool (AVC-2)
+#[cfg(feature = "sqlite")]
 pub async fn handle_validate_contract(
     ctx: &HandlerContext,
     input: ValidateContractInput,
@@ -1633,6 +1885,19 @@ pub async fn handle_validate_contract(
     let result = AvcValidator::validate(&contract, &input.generated_code);
 
     Ok(result)
+}
+
+/// No-`sqlite` stub: contract persistence is unavailable, so the
+/// validator cannot load any contract. Returns an `Internal` error
+/// pointing the caller at the missing feature.
+#[cfg(not(feature = "sqlite"))]
+pub async fn handle_validate_contract(
+    _ctx: &HandlerContext,
+    _input: ValidateContractInput,
+) -> HandlerResult<AvcValidationResult> {
+    Err(HandlerError::Internal(
+        "validate_contract requires the `sqlite` feature (cognicode-core/sqlite)".to_string(),
+    ))
 }
 
 // Phase 3A: Proactive Tools
@@ -1674,13 +1939,13 @@ pub async fn handle_suggest_context(
             .join(" OR ");
 
         // Query semantic search (FTS5-backed)
-        let search_results = ctx.semantic_search.search(
-            crate::infrastructure::semantic::SearchQuery {
-                query: fts5_query,
-                kinds: vec![],
-                max_results: limit,
-            }
-        );
+        let search_results =
+            ctx.semantic_search
+                .search(crate::infrastructure::semantic::SearchQuery {
+                    query: fts5_query,
+                    kinds: vec![],
+                    max_results: limit,
+                });
 
         if search_results.is_empty() {
             // No FTS5 results - use hot paths directly
@@ -1765,7 +2030,9 @@ pub async fn handle_reparse_on_edit(
     let existing_manifest = store
         .load_manifest()
         .map_err(|e| HandlerError::Internal(format!("Failed to load manifest: {}", e)))?
-        .unwrap_or_else(|| crate::domain::value_objects::file_manifest::FileManifest::new(ctx.working_dir.clone()));
+        .unwrap_or_else(|| {
+            crate::domain::value_objects::file_manifest::FileManifest::new(ctx.working_dir.clone())
+        });
 
     // Check which files have actually changed using mtime comparison
     let mut files_parsed = 0;
@@ -1786,13 +2053,12 @@ pub async fn handle_reparse_on_edit(
 
         // Check if file exists and get its mtime
         let file_mtime = match std::fs::metadata(&full_path) {
-            Ok(meta) => {
-                meta.modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_millis() as u64)
-                    .unwrap_or(0)
-            }
+            Ok(meta) => meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
             Err(_) => 0, // File doesn't exist
         };
 
@@ -1807,7 +2073,9 @@ pub async fn handle_reparse_on_edit(
         if file_mtime == 0 && was_in_manifest {
             // File was deleted
             files_removed += 1;
-            symbols_removed += existing_manifest.entries.get(&rel_path)
+            symbols_removed += existing_manifest
+                .entries
+                .get(&rel_path)
                 .map(|e| e.symbol_count)
                 .unwrap_or(0);
             graph_updated = true;
@@ -1869,7 +2137,8 @@ pub async fn handle_reparse_on_edit(
         );
 
         // Invalidate file cache so changed files are re-parsed
-        ctx.analysis_service.invalidate_file_cache_for(&changed_abs_paths);
+        ctx.analysis_service
+            .invalidate_file_cache_for(&changed_abs_paths);
 
         // Rebuild the project graph to reflect the changes
         if let Err(e) = ctx
@@ -1913,7 +2182,8 @@ pub async fn handle_detect_drift(
     use std::path::Path;
 
     // Validate file path (security check only - does NOT return resolved path)
-    ctx.validator.validate_file_path(&input.file_path)
+    ctx.validator
+        .validate_file_path(&input.file_path)
         .map_err(|e| HandlerError::InvalidInput(format!("Invalid file path: {}", e)))?;
 
     // Resolve the file path against working directory (like other handlers do)
@@ -1936,7 +2206,8 @@ pub async fn handle_detect_drift(
         .map_err(|e| HandlerError::Internal(format!("Parser error: {}", e)))?;
 
     // Parse the source
-    let tree = parser.parse_tree(&source)
+    let tree = parser
+        .parse_tree(&source)
         .map_err(|e| HandlerError::Internal(format!("Parse error: {}", e)))?;
 
     // Collect all findings
@@ -1992,15 +2263,16 @@ fn walk_function_nodes(
         if let Some(name) = get_function_name(node, source) {
             // If function_name filter is specified, skip non-matching functions
             if let Some(ref target_fn) = input.function_name
-                && name != *target_fn {
-                    // Visit children anyway to find nested functions
-                    for i in 0..node.child_count() {
-                        if let Some(child) = node.child(i) {
-                            walk_function_nodes(child, source, function_type, input, findings);
-                        }
+                && name != *target_fn
+            {
+                // Visit children anyway to find nested functions
+                for i in 0..node.child_count() {
+                    if let Some(child) = node.child(i) {
+                        walk_function_nodes(child, source, function_type, input, findings);
                     }
-                    return;
                 }
+                return;
+            }
 
             let line = (node.start_position().row + 1) as u32; // 1-indexed
 
@@ -2048,7 +2320,9 @@ fn find_previous_sibling(node: tree_sitter::Node, source: &str) -> Option<(Strin
     // This is complex with tree-sitter's API, so we'll use a different approach:
     // For Rust, doc comments are siblings, so we look at the parent and find prev
     let parent = node.parent()?;
-    let node_index = parent.children(&mut node.walk()).position(|c| c.id() == node.id())?;
+    let node_index = parent
+        .children(&mut node.walk())
+        .position(|c| c.id() == node.id())?;
     if node_index == 0 {
         return None;
     }
@@ -2137,7 +2411,11 @@ fn compute_s7000_drift(node: tree_sitter::Node, source: &str) -> Option<f32> {
     // Plain HashSet Jaccard (no stemming)
     let intersection = doc_tokens.intersection(&body_tokens).count() as f32;
     let union = doc_tokens.union(&body_tokens).count() as f32;
-    let similarity = if union > 0.0 { intersection / union } else { 0.0 };
+    let similarity = if union > 0.0 {
+        intersection / union
+    } else {
+        0.0
+    };
     let drift_score = 1.0 - similarity;
 
     if drift_score < 0.3 {
@@ -2208,7 +2486,8 @@ fn detect_s7002_patterns(
             rule_id: "S7002".to_string(),
             severity: DriftSeverity::Warning,
             line,
-            message: "S7002: try! macro detected. Use ? operator instead for modern Rust.".to_string(),
+            message: "S7002: try! macro detected. Use ? operator instead for modern Rust."
+                .to_string(),
         });
     }
 
@@ -2278,7 +2557,11 @@ fn check_node_for_forbidden_terms(
 
     // For identifier and comment nodes, check for forbidden terms
     // Note: Rust uses "line_comment" and "block_comment", Python uses "comment"
-    if kind == "identifier" || kind == "line_comment" || kind == "block_comment" || kind == "comment" {
+    if kind == "identifier"
+        || kind == "line_comment"
+        || kind == "block_comment"
+        || kind == "comment"
+    {
         let text = source[node.byte_range()].to_lowercase();
 
         // Check general forbidden terms
@@ -2332,7 +2615,10 @@ fn check_node_for_forbidden_terms(
     }
 }
 
-/// Persist findings to database if connection is available
+/// Persist findings to database if connection is available.
+/// Feature-gated behind `sqlite`; with the feature off, the no-op
+/// stub below is compiled instead.
+#[cfg(feature = "sqlite")]
 async fn persist_findings(
     ctx: &HandlerContext,
     file_path: &std::path::Path,
@@ -2392,7 +2678,10 @@ async fn persist_findings(
             Err(e) => {
                 // Check for "no such table" error (drift_events table may not exist)
                 if matches!(e, rusqlite::Error::SqliteFailure(_, _)) {
-                    tracing::debug!("drift_events table not available, skipping persistence: {}", e);
+                    tracing::debug!(
+                        "drift_events table not available, skipping persistence: {}",
+                        e
+                    );
                 } else {
                     tracing::warn!("Failed to persist drift event: {}", e);
                 }
@@ -2402,6 +2691,17 @@ async fn persist_findings(
     }
 
     persisted
+}
+
+/// No-`sqlite` stub: drift event persistence is unavailable.
+#[cfg(not(feature = "sqlite"))]
+#[allow(clippy::unused_async)]
+async fn persist_findings(
+    _ctx: &HandlerContext,
+    _file_path: &std::path::Path,
+    _findings: &[DriftFinding],
+) -> usize {
+    0
 }
 
 /// Calculate a hotness score from fan-in and fan-out
@@ -2421,11 +2721,16 @@ fn calculate_hotness_score(fan_in: usize, fan_out: usize) -> f32 {
 // Agent Task Tools (Batch D - Bidirectional Interaction)
 // ============================================================================
 
+// `AgentTaskDto` is only used by the sqlite `handle_poll_tasks`
+// implementation (it deserialises row data into the DTO). The
+// no-sqlite stub returns an empty list without touching the type.
+#[cfg_attr(not(feature = "sqlite"), allow(unused_imports))]
 use crate::interface::mcp::schemas::{
     AgentTaskDto, CompleteTaskInput, CompleteTaskOutput, PollTasksInput, PollTasksOutput,
 };
 
 /// Handler for poll_tasks tool — claim pending tasks for execution
+#[cfg(feature = "sqlite")]
 pub async fn handle_poll_tasks(
     ctx: &HandlerContext,
     input: PollTasksInput,
@@ -2483,7 +2788,8 @@ pub async fn handle_poll_tasks(
     }
 
     // Fetch the claimed tasks
-    let case_order: String = ids.iter()
+    let case_order: String = ids
+        .iter()
         .enumerate()
         .map(|(i, id)| format!("WHEN {} THEN {}", id, i))
         .collect::<Vec<_>>()
@@ -2497,7 +2803,8 @@ pub async fn handle_poll_tasks(
     for id in &ids {
         fetch_params.push(Box::new(*id));
     }
-    let fetch_params_refs: Vec<&dyn rusqlite::ToSql> = fetch_params.iter().map(|b| b.as_ref()).collect();
+    let fetch_params_refs: Vec<&dyn rusqlite::ToSql> =
+        fetch_params.iter().map(|b| b.as_ref()).collect();
 
     let mut fetch_stmt = match conn.prepare(&fetch_sql) {
         Ok(stmt) => stmt,
@@ -2526,7 +2833,18 @@ pub async fn handle_poll_tasks(
     Ok(PollTasksOutput { tasks })
 }
 
+/// No-`sqlite` stub: agent task polling requires a SQLite store.
+/// Returns an empty task list so the dispatch layer still links.
+#[cfg(not(feature = "sqlite"))]
+pub async fn handle_poll_tasks(
+    _ctx: &HandlerContext,
+    _input: PollTasksInput,
+) -> HandlerResult<PollTasksOutput> {
+    Ok(PollTasksOutput { tasks: vec![] })
+}
+
 /// Handler for complete_task tool — mark a task as completed
+#[cfg(feature = "sqlite")]
 pub async fn handle_complete_task(
     ctx: &HandlerContext,
     input: CompleteTaskInput,
@@ -2570,6 +2888,34 @@ pub async fn handle_complete_task(
     })
 }
 
+/// No-`sqlite` stub: complete_task without a SQLite store cannot
+/// persist completion. The status validation still runs and the
+/// function reports success:false with an explanatory message so
+/// the dispatch layer still links.
+#[cfg(not(feature = "sqlite"))]
+pub async fn handle_complete_task(
+    _ctx: &HandlerContext,
+    input: CompleteTaskInput,
+) -> HandlerResult<CompleteTaskOutput> {
+    // Validate status (mirror the sqlite path's input validation)
+    let status = match input.status.as_str() {
+        "completed" | "failed" => input.status.clone(),
+        _ => {
+            return Err(HandlerError::InvalidInput(
+                "status must be 'completed' or 'failed'".to_string(),
+            ));
+        }
+    };
+
+    Ok(CompleteTaskOutput {
+        success: false,
+        message: format!(
+            "Task {} cannot be marked as {} — sqlite feature disabled",
+            input.task_id, status
+        ),
+    })
+}
+
 #[cfg(test)]
 mod aix_tests {
     use super::*;
@@ -2582,7 +2928,11 @@ mod aix_tests {
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, "fn process_data() { helper(); }\nfn helper() {}").unwrap();
+        std::fs::write(
+            &file_path,
+            "fn process_data() { helper(); }\nfn helper() {}",
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -2626,7 +2976,11 @@ mod aix_tests {
             let result = handle_suggest_onboarding_plan(&ctx, input).await;
             assert!(result.is_ok(), "Failed for goal: {:?}", goal);
             let output = result.unwrap();
-            assert!(output.steps.len() > 0, "Should have steps for goal: {:?}", goal);
+            assert!(
+                output.steps.len() > 0,
+                "Should have steps for goal: {:?}",
+                goal
+            );
         }
     }
 
@@ -2654,7 +3008,13 @@ mod aix_tests {
         // Health score should be 0-100
         assert!(output.health_score >= 0.0 && output.health_score <= 100.0);
         // Should have counts
-        assert_eq!(output.critical_count + output.important_count + output.warning_count + output.info_count, output.total_issues);
+        assert_eq!(
+            output.critical_count
+                + output.important_count
+                + output.warning_count
+                + output.info_count,
+            output.total_issues
+        );
     }
 
     #[tokio::test]
@@ -2662,7 +3022,11 @@ mod aix_tests {
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, "fn process_user_data() {}\nfn calculate_total() {}").unwrap();
+        std::fs::write(
+            &file_path,
+            "fn process_user_data() {}\nfn calculate_total() {}",
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -2682,7 +3046,12 @@ mod aix_tests {
         assert!(!output.extracted_keywords.is_empty());
         // Keywords should include "process" or "user" or "data"
         let kw_str = output.extracted_keywords.join(" ").to_lowercase();
-        assert!(kw_str.contains("process") || kw_str.contains("user") || kw_str.contains("data") || output.extracted_keywords.is_empty());
+        assert!(
+            kw_str.contains("process")
+                || kw_str.contains("user")
+                || kw_str.contains("data")
+                || output.extracted_keywords.is_empty()
+        );
     }
 
     #[tokio::test]
@@ -2752,7 +3121,11 @@ fn main() { f15(); }
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, "fn many_params(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) {}").unwrap();
+        std::fs::write(
+            &file_path,
+            "fn many_params(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) {}",
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -2782,7 +3155,9 @@ fn main() { f15(); }
         let build_input = BuildGraphInput { directory: None };
         let _ = handle_build_graph(&ctx, build_input).await;
 
-        let input = SmartOverviewInput { detail: Some(OverviewDetail::Medium) };
+        let input = SmartOverviewInput {
+            detail: Some(OverviewDetail::Medium),
+        };
 
         let result = handle_smart_overview(&ctx, input).await;
         assert!(result.is_ok());
@@ -2888,7 +3263,12 @@ fn main() { f15(); }
         // No graph built means no baseline - should be neutral with a note
         assert_eq!(output.verdict, "neutral");
         assert!(output.quality_score >= 0.0);
-        assert!(output.recommendations.iter().any(|r| r.contains("No baseline")));
+        assert!(
+            output
+                .recommendations
+                .iter()
+                .any(|r| r.contains("No baseline"))
+        );
     }
 
     #[tokio::test]
@@ -2907,9 +3287,18 @@ fn main() { f15(); }
         let score_c = ctx.get_symbol_hotness("symbol_nonexistent");
 
         // symbol_a has 7 accesses, symbol_b has 3, max is 7
-        assert!((score_a - 1.0).abs() < 0.001, "symbol_a should have hotness 1.0 (hottest)");
-        assert!((score_b - 3.0 / 7.0).abs() < 0.001, "symbol_b should have hotness 3/7");
-        assert!((score_c - 0.0).abs() < 0.001, "nonexistent symbol should have hotness 0.0");
+        assert!(
+            (score_a - 1.0).abs() < 0.001,
+            "symbol_a should have hotness 1.0 (hottest)"
+        );
+        assert!(
+            (score_b - 3.0 / 7.0).abs() < 0.001,
+            "symbol_b should have hotness 3/7"
+        );
+        assert!(
+            (score_c - 0.0).abs() < 0.001,
+            "nonexistent symbol should have hotness 0.0"
+        );
     }
 
     #[tokio::test]
@@ -2917,7 +3306,11 @@ fn main() { f15(); }
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, "fn process_data() { helper(); }\nfn helper() {}").unwrap();
+        std::fs::write(
+            &file_path,
+            "fn process_data() { helper(); }\nfn helper() {}",
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -2938,7 +3331,10 @@ fn main() { f15(); }
 
         // Now check hotness is tracked
         let hotness = ctx.get_symbol_hotness("process_data");
-        assert!(hotness > 0.0, "process_data should have some hotness after being ranked");
+        assert!(
+            hotness > 0.0,
+            "process_data should have some hotness after being ranked"
+        );
     }
 
     // ============================================================================
@@ -2951,14 +3347,18 @@ fn main() { f15(); }
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn helper1() {}
 fn helper2() {}
 fn main() {
     helper1();
     helper2();
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -2977,7 +3377,11 @@ fn main() {
         assert!(result.is_ok());
         let output = result.unwrap();
         // Should find no god functions
-        assert_eq!(output.god_functions.len(), 0, "Simple functions should not be detected as god functions");
+        assert_eq!(
+            output.god_functions.len(),
+            0,
+            "Simple functions should not be detected as god functions"
+        );
         assert!(output.total_analyzed >= 3);
     }
 
@@ -2988,14 +3392,18 @@ fn main() {
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         // Create a moderately complex function chain
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn f1() {}
 fn f2() { f1(); }
 fn f3() { f2(); f1(); }
 fn f4() { f3(); f2(); f1(); }
 fn f5() { f4(); f3(); f2(); f1(); f1(); }
 fn main() { f5(); }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3038,14 +3446,18 @@ fn main() { f5(); }
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn simple_add(a: i32, b: i32) -> i32 { a + b }
 fn process(name: String) {}
 fn main() {
     simple_add(1, 2);
     process("test".to_string());
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3060,7 +3472,11 @@ fn main() {
         assert!(result.is_ok());
         let output = result.unwrap();
         // Should find no functions with too many parameters
-        assert_eq!(output.functions.len(), 0, "Simple functions should not be flagged");
+        assert_eq!(
+            output.functions.len(),
+            0,
+            "Simple functions should not be flagged"
+        );
         assert_eq!(output.threshold, 2);
     }
 
@@ -3070,11 +3486,15 @@ fn main() {
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn many_params(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) {}
 fn some_params(a: i32, b: i32, c: i32) {}
 fn main() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3122,7 +3542,10 @@ fn main() {}
         assert!(!output_no_baseline.has_baseline);
         // When no baseline, shows current symbols as "added" relative to empty
         assert!(output_no_baseline.symbols_added.len() >= 0);
-        assert!(output_no_baseline.summary.contains("No baseline") || !output_no_baseline.summary.is_empty());
+        assert!(
+            output_no_baseline.summary.contains("No baseline")
+                || !output_no_baseline.summary.is_empty()
+        );
     }
 
     #[tokio::test]
@@ -3161,11 +3584,15 @@ fn main() {}
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn main() { helper1(); helper1(); helper1(); }
 fn helper1() { helper2(); }
 fn helper2() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3212,7 +3639,12 @@ fn helper2() {}
         // Without baseline, should return neutral verdict
         assert_eq!(output.verdict, "neutral");
         assert!(output.quality_score >= 0.0 && output.quality_score <= 100.0);
-        assert!(output.recommendations.iter().any(|r| r.contains("baseline") || r.contains("Baseline")));
+        assert!(
+            output
+                .recommendations
+                .iter()
+                .any(|r| r.contains("baseline") || r.contains("Baseline"))
+        );
     }
 
     #[tokio::test]
@@ -3221,14 +3653,18 @@ fn helper2() {}
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn main() { a(); b(); c(); }
 fn a() {}
 fn b() { x(); y(); }
 fn c() {}
 fn x() {}
 fn y() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3259,11 +3695,15 @@ fn y() {}
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn main() { helper(); }
 fn helper() { another(); }
 fn another() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3283,7 +3723,10 @@ fn another() {}
         // Verify output structure
         assert!(output._meta.is_some(), "Should have _meta field");
         let meta = output._meta.unwrap();
-        assert!(meta.estimated_tokens >= 0, "estimated_tokens should be non-negative");
+        assert!(
+            meta.estimated_tokens >= 0,
+            "estimated_tokens should be non-negative"
+        );
         assert_eq!(meta.detail_level, "suggest_context");
         assert!(output.total >= 0);
         assert!(!output.source.is_empty());
@@ -3294,10 +3737,14 @@ fn another() {}
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn main() { helper(); }
 fn helper() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3316,7 +3763,11 @@ fn helper() {}
         let output = result.unwrap();
 
         // The actual items returned should be at most 50 due to the cap
-        assert!(output.total <= 50, "Total should be capped at 50, got {}", output.total);
+        assert!(
+            output.total <= 50,
+            "Total should be capped at 50, got {}",
+            output.total
+        );
     }
 
     #[tokio::test]
@@ -3324,10 +3775,14 @@ fn helper() {}
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn main() { helper(); }
 fn helper() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3335,7 +3790,11 @@ fn helper() {}
 
         // Verify graph is empty before
         let graph_before = ctx.analysis_service.get_project_graph();
-        assert_eq!(graph_before.symbol_count(), 0, "Graph should be empty before auto-build");
+        assert_eq!(
+            graph_before.symbol_count(),
+            0,
+            "Graph should be empty before auto-build"
+        );
 
         let input = SuggestContextInput {
             limit: Some(10),
@@ -3347,7 +3806,10 @@ fn helper() {}
 
         // Graph should now be built
         let graph_after = ctx.analysis_service.get_project_graph();
-        assert!(graph_after.symbol_count() > 0, "Graph should be auto-built after suggest_context");
+        assert!(
+            graph_after.symbol_count() > 0,
+            "Graph should be auto-built after suggest_context"
+        );
     }
 
     #[tokio::test]
@@ -3355,11 +3817,15 @@ fn helper() {}
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn main() { called_func(); }
 fn called_func() {}
 fn uncalled_func() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3378,7 +3844,10 @@ fn uncalled_func() {}
 
         // If we have results, they should have scores
         for item in &output.items {
-            assert!(item.score >= 0.0 && item.score <= 1.0, "Score should be between 0 and 1");
+            assert!(
+                item.score >= 0.0 && item.score <= 1.0,
+                "Score should be between 0 and 1"
+            );
             assert!(!item.name.is_empty());
             assert!(!item.file.is_empty());
         }
@@ -3390,9 +3859,13 @@ fn uncalled_func() {}
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn main() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3411,10 +3884,16 @@ fn main() {}
 
         // Verify output structure and metadata are present (behavioral correctness)
         // File is parsed as new since manifest from build is not accessible to reparse
-        assert_eq!(output.files_parsed, 1, "File should be parsed as new (manifest not shared between build and reparse)");
+        assert_eq!(
+            output.files_parsed, 1,
+            "File should be parsed as new (manifest not shared between build and reparse)"
+        );
         assert_eq!(output.files_skipped, 0, "File should not be skipped");
         assert_eq!(output.files_removed, 0, "No files should be removed");
-        assert!(output.graph_updated, "Graph should be updated after parsing new file");
+        assert!(
+            output.graph_updated,
+            "Graph should be updated after parsing new file"
+        );
         assert!(output._meta.is_some());
         let meta = output._meta.unwrap();
         assert_eq!(meta.detail_level, "reparse_on_edit");
@@ -3428,9 +3907,13 @@ fn main() {}
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn main() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3440,10 +3923,14 @@ fn main() {}
 
         // Modify the file to trigger a change
         tokio::time::sleep(Duration::from_millis(10)).await;
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn main() { modified(); }
 fn modified() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let input = ReparseOnEditInput {
             file_paths: vec!["src/main.rs".to_string()],
@@ -3455,9 +3942,12 @@ fn modified() {}
         let output = result.unwrap();
 
         // File was modified, so files_parsed should be > 0 or graph_updated should be true
-        assert!(output.files_parsed > 0 || output.graph_updated,
+        assert!(
+            output.files_parsed > 0 || output.graph_updated,
             "Should detect file change: files_parsed={}, graph_updated={}",
-            output.files_parsed, output.graph_updated);
+            output.files_parsed,
+            output.graph_updated
+        );
     }
 
     #[cfg(feature = "persistence")]
@@ -3466,9 +3956,13 @@ fn modified() {}
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn main() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3488,7 +3982,10 @@ fn main() {}
 
         // File not in manifest after build (separate stores), so treated as new
         assert_eq!(output.files_skipped, 0, "File not in manifest after build");
-        assert_eq!(output.files_parsed, 1, "File treated as new since manifest not shared");
+        assert_eq!(
+            output.files_parsed, 1,
+            "File treated as new since manifest not shared"
+        );
     }
 
     #[cfg(feature = "persistence")]
@@ -3500,10 +3997,14 @@ fn main() {}
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn original_function() {}
 fn main() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3513,11 +4014,15 @@ fn main() {}
 
         // Modify the file
         tokio::time::sleep(Duration::from_millis(10)).await;
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn original_function() {}
 fn new_function() {}
 fn main() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let input = ReparseOnEditInput {
             file_paths: vec!["src/main.rs".to_string()],
@@ -3529,12 +4034,23 @@ fn main() {}
         let output = result.unwrap();
 
         // File was modified, so files_parsed should be incremented and graph_updated should be true
-        assert!(output.files_parsed >= 1, "Should have parsed at least 1 file, got {}", output.files_parsed);
-        assert!(output.graph_updated, "graph_updated should be true after modification");
+        assert!(
+            output.files_parsed >= 1,
+            "Should have parsed at least 1 file, got {}",
+            output.files_parsed
+        );
+        assert!(
+            output.graph_updated,
+            "graph_updated should be true after modification"
+        );
 
         // Verify the search service actually indexed something by checking index is non-empty
         let index_len = ctx.semantic_search.index().len();
-        assert!(index_len >= 2, "Should have at least 2 symbols indexed (new_function + main), got {}", index_len);
+        assert!(
+            index_len >= 2,
+            "Should have at least 2 symbols indexed (new_function + main), got {}",
+            index_len
+        );
     }
 
     #[cfg(feature = "persistence")]
@@ -3546,9 +4062,13 @@ fn main() {}
         // Create main.rs first and build graph
         let main_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(main_path.parent().unwrap()).unwrap();
-        std::fs::write(&main_path, r#"
+        std::fs::write(
+            &main_path,
+            r#"
 fn main() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3557,10 +4077,14 @@ fn main() {}
 
         // Now add a new file
         let lib_path = temp.path().join("src/lib.rs");
-        std::fs::write(&lib_path, r#"
+        std::fs::write(
+            &lib_path,
+            r#"
 pub fn library_function() {}
 pub struct LibraryStruct {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let input = ReparseOnEditInput {
             file_paths: vec!["src/lib.rs".to_string()],
@@ -3573,8 +4097,14 @@ pub struct LibraryStruct {}
 
         // New file should be parsed and indexed
         assert!(output.files_parsed >= 1, "Should have parsed the new file");
-        assert!(output.symbols_added >= 1, "Should have added at least 1 symbol");
-        assert!(output.graph_updated, "graph_updated should be true for new file");
+        assert!(
+            output.symbols_added >= 1,
+            "Should have added at least 1 symbol"
+        );
+        assert!(
+            output.graph_updated,
+            "graph_updated should be true for new file"
+        );
     }
 
     #[cfg(feature = "persistence")]
@@ -3586,9 +4116,13 @@ pub struct LibraryStruct {}
         // Create a valid main.rs first
         let main_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(main_path.parent().unwrap()).unwrap();
-        std::fs::write(&main_path, r#"
+        std::fs::write(
+            &main_path,
+            r#"
 fn main() {}
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3614,8 +4148,10 @@ fn main() {}
         // (It will be skipped because the Language::from_extension returns None for .txt)
         // OR if it has a language extension, the parse failure would be logged
         // Either way, files_parsed should not increment for this file
-        assert!(output.files_parsed == 0 || output.files_skipped >= 1,
-            "Invalid file should either fail to parse or be skipped");
+        assert!(
+            output.files_parsed == 0 || output.files_skipped >= 1,
+            "Invalid file should either fail to parse or be skipped"
+        );
     }
 
     // =========================================================================
@@ -3630,12 +4166,16 @@ fn main() {}
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
         // Docstring says "validates input" but body just prints
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 /// Validates input
 fn validate(data: &str) {
     println!("hello");
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3650,10 +4190,15 @@ fn validate(data: &str) {
         let output = result.unwrap();
 
         // Should have a S7000 finding since docstring-body similarity is low
-        let s7000_findings: Vec<_> = output.findings.iter()
+        let s7000_findings: Vec<_> = output
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "S7000")
             .collect();
-        assert!(!s7000_findings.is_empty(), "Low similarity should trigger S7000");
+        assert!(
+            !s7000_findings.is_empty(),
+            "Low similarity should trigger S7000"
+        );
         assert!(s7000_findings[0].drift_score >= 0.3);
     }
 
@@ -3669,11 +4214,15 @@ fn validate(data: &str) {
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
         // No docstring case - S7000 should not trigger
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn add(a: i32, b: i32) -> i32 {
     a + b
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3688,10 +4237,15 @@ fn add(a: i32, b: i32) -> i32 {
         let output = result.unwrap();
 
         // Should have no S7000 finding since there's no docstring
-        let s7000_findings: Vec<_> = output.findings.iter()
+        let s7000_findings: Vec<_> = output
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "S7000")
             .collect();
-        assert!(s7000_findings.is_empty(), "No docstring should not trigger S7000");
+        assert!(
+            s7000_findings.is_empty(),
+            "No docstring should not trigger S7000"
+        );
     }
 
     #[tokio::test]
@@ -3704,10 +4258,14 @@ fn add(a: i32, b: i32) -> i32 {
 
         // Single-line body: { base64::encode(token.as_bytes()) }
         // This should NOT trigger S7000 because body has only 1 line (< MIN_LINES = 3)
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 /// Hash token using bcrypt
 fn hash_token(token: &str) -> String { base64::encode(token.as_bytes()) }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3722,10 +4280,15 @@ fn hash_token(token: &str) -> String { base64::encode(token.as_bytes()) }
         let output = result.unwrap();
 
         // Should have NO S7000 finding because function body is only 1 line (< MIN_LINES = 3)
-        let s7000_findings: Vec<_> = output.findings.iter()
+        let s7000_findings: Vec<_> = output
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "S7000")
             .collect();
-        assert!(s7000_findings.is_empty(), "Short function (< 3 lines) should be skipped by S7000");
+        assert!(
+            s7000_findings.is_empty(),
+            "Short function (< 3 lines) should be skipped by S7000"
+        );
     }
 
     #[tokio::test]
@@ -3735,12 +4298,16 @@ fn hash_token(token: &str) -> String { base64::encode(token.as_bytes()) }
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 /// Process pointer
 fn process_ptr(ptr: *const i32) -> i32 {
     unsafe { *ptr }
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3754,7 +4321,9 @@ fn process_ptr(ptr: *const i32) -> i32 {
         assert!(result.is_ok());
         let output = result.unwrap();
 
-        let s7001_findings: Vec<_> = output.findings.iter()
+        let s7001_findings: Vec<_> = output
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "S7001")
             .collect();
         assert!(!s7001_findings.is_empty(), "unsafe should trigger S7001");
@@ -3768,12 +4337,16 @@ fn process_ptr(ptr: *const i32) -> i32 {
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 /// Must succeed
 fn critical_op() {
     panic!("this must never fail");
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3787,7 +4360,9 @@ fn critical_op() {
         assert!(result.is_ok());
         let output = result.unwrap();
 
-        let s7001_findings: Vec<_> = output.findings.iter()
+        let s7001_findings: Vec<_> = output
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "S7001")
             .collect();
         assert!(!s7001_findings.is_empty(), "panic! should trigger S7001");
@@ -3801,12 +4376,16 @@ fn critical_op() {
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 /// Get config
 fn get_config() -> String {
     std::env::var("CONFIG").unwrap()
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3820,7 +4399,9 @@ fn get_config() -> String {
         assert!(result.is_ok());
         let output = result.unwrap();
 
-        let s7001_findings: Vec<_> = output.findings.iter()
+        let s7001_findings: Vec<_> = output
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "S7001")
             .collect();
         assert!(!s7001_findings.is_empty(), ".unwrap() should trigger S7001");
@@ -3834,12 +4415,16 @@ fn get_config() -> String {
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 /// Safe addition
 fn safe_add(a: i32, b: i32) -> i32 {
     a + b
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3853,10 +4438,15 @@ fn safe_add(a: i32, b: i32) -> i32 {
         assert!(result.is_ok());
         let output = result.unwrap();
 
-        let s7001_findings: Vec<_> = output.findings.iter()
+        let s7001_findings: Vec<_> = output
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "S7001")
             .collect();
-        assert!(s7001_findings.is_empty(), "Clean source should not trigger S7001");
+        assert!(
+            s7001_findings.is_empty(),
+            "Clean source should not trigger S7001"
+        );
     }
 
     #[tokio::test]
@@ -3867,7 +4457,9 @@ fn safe_add(a: i32, b: i32) -> i32 {
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
         // .unwrap() appears only in comments, not in actual code
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 /// Safe config reader
 fn get_config() -> String {
     // The following line would use .unwrap() if uncommented:
@@ -3876,7 +4468,9 @@ fn get_config() -> String {
     let x = 42;
     x.to_string()
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3891,10 +4485,15 @@ fn get_config() -> String {
         let output = result.unwrap();
 
         // Should have NO S7001 finding because .unwrap() only appears in comments
-        let s7001_findings: Vec<_> = output.findings.iter()
+        let s7001_findings: Vec<_> = output
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "S7001")
             .collect();
-        assert!(s7001_findings.is_empty(), ".unwrap() in comments only should not trigger S7001");
+        assert!(
+            s7001_findings.is_empty(),
+            ".unwrap() in comments only should not trigger S7001"
+        );
     }
 
     #[tokio::test]
@@ -3904,13 +4503,17 @@ fn get_config() -> String {
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 /// Legacy function
 fn legacy_read() -> String {
     try!(std::fs::read_to_string("file.txt"));
     String::new()
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3924,10 +4527,15 @@ fn legacy_read() -> String {
         assert!(result.is_ok());
         let output = result.unwrap();
 
-        let s7002_findings: Vec<_> = output.findings.iter()
+        let s7002_findings: Vec<_> = output
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "S7002")
             .collect();
-        assert!(!s7002_findings.is_empty(), "try! macro should trigger S7002");
+        assert!(
+            !s7002_findings.is_empty(),
+            "try! macro should trigger S7002"
+        );
         assert_eq!(s7002_findings[0].severity, DriftSeverity::Warning);
     }
 
@@ -3938,12 +4546,16 @@ fn legacy_read() -> String {
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 /// Modern read
 fn modern_read() -> Result<String, std::io::Error> {
     Ok(std::fs::read_to_string("file.txt")?)
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3957,10 +4569,15 @@ fn modern_read() -> Result<String, std::io::Error> {
         assert!(result.is_ok());
         let output = result.unwrap();
 
-        let s7002_findings: Vec<_> = output.findings.iter()
+        let s7002_findings: Vec<_> = output
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "S7002")
             .collect();
-        assert!(s7002_findings.is_empty(), "Modern Rust with ? should not trigger S7002");
+        assert!(
+            s7002_findings.is_empty(),
+            "Modern Rust with ? should not trigger S7002"
+        );
     }
 
     #[tokio::test]
@@ -3970,12 +4587,16 @@ fn modern_read() -> Result<String, std::io::Error> {
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 /// Temp workaround
 fn temp_workaround() {
     // TODO: fix this later
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -3989,10 +4610,15 @@ fn temp_workaround() {
         assert!(result.is_ok());
         let output = result.unwrap();
 
-        let s7003_findings: Vec<_> = output.findings.iter()
+        let s7003_findings: Vec<_> = output
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "S7003")
             .collect();
-        assert!(!s7003_findings.is_empty(), "Forbidden term should trigger S7003");
+        assert!(
+            !s7003_findings.is_empty(),
+            "Forbidden term should trigger S7003"
+        );
         assert_eq!(s7003_findings[0].severity, DriftSeverity::Warning);
     }
 
@@ -4003,13 +4629,17 @@ fn temp_workaround() {
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 /// Check password
 fn check_password() {
     // password in identifier
     let user_password = "secret";
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -4023,10 +4653,15 @@ fn check_password() {
         assert!(result.is_ok());
         let output = result.unwrap();
 
-        let s7003_findings: Vec<_> = output.findings.iter()
+        let s7003_findings: Vec<_> = output
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "S7003")
             .collect();
-        assert!(!s7003_findings.is_empty(), "Security term should trigger S7003");
+        assert!(
+            !s7003_findings.is_empty(),
+            "Security term should trigger S7003"
+        );
         assert_eq!(s7003_findings[0].severity, DriftSeverity::Critical);
     }
 
@@ -4038,12 +4673,16 @@ fn check_password() {
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
         // Term "deprecated" only in string literal (comment), not in identifier
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 /// Process item
 fn process(item: &str) {
     println!("This is not deprecated");
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -4058,10 +4697,15 @@ fn process(item: &str) {
         let output = result.unwrap();
 
         // Should not have S7003 finding since "deprecated" only in string literal
-        let s7003_findings: Vec<_> = output.findings.iter()
+        let s7003_findings: Vec<_> = output
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "S7003")
             .collect();
-        assert!(s7003_findings.is_empty(), "Term only in string literal should not trigger S7003");
+        assert!(
+            s7003_findings.is_empty(),
+            "Term only in string literal should not trigger S7003"
+        );
     }
 
     #[tokio::test]
@@ -4072,13 +4716,17 @@ fn process(item: &str) {
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
         // Has S7001 (score 0.85) and S7002 (score 0.5), no docstring to avoid S7000
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 fn process(data: &str) -> Result<(), ()> {
     try!(Ok(())); // try! macro
     unsafe { std::ptr::read_volatile(data.as_ptr()) };
     Ok(())
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -4090,7 +4738,10 @@ fn process(data: &str) -> Result<(), ()> {
         };
         let result_high = handle_detect_drift(&ctx, input_high).await.unwrap();
         // S7001 (0.85) and S7002 (0.5) are both < 0.9, so should be empty
-        assert!(result_high.findings.is_empty(), "Threshold 0.9 should filter out all findings");
+        assert!(
+            result_high.findings.is_empty(),
+            "Threshold 0.9 should filter out all findings"
+        );
 
         // With threshold 0.8, S7001 (0.85) should pass, S7002 (0.5) should be filtered
         let input_med = DetectDriftInput {
@@ -4099,7 +4750,11 @@ fn process(data: &str) -> Result<(), ()> {
             function_name: Some("process".to_string()),
         };
         let result_med = handle_detect_drift(&ctx, input_med).await.unwrap();
-        assert_eq!(result_med.findings.len(), 1, "Should have exactly 1 finding at threshold 0.8");
+        assert_eq!(
+            result_med.findings.len(),
+            1,
+            "Should have exactly 1 finding at threshold 0.8"
+        );
         assert_eq!(result_med.findings[0].rule_id, "S7001");
     }
 
@@ -4110,12 +4765,16 @@ fn process(data: &str) -> Result<(), ()> {
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 /// Test function
 fn test_fn() {
     unsafe { std::ptr::read_volatile(std::ptr::null()) };
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
         // ctx.db_conn is None by default in HandlerContext::new
@@ -4131,9 +4790,15 @@ fn test_fn() {
         let output = result.unwrap();
 
         // Should still have findings
-        assert!(!output.findings.is_empty(), "Should have findings without DB");
+        assert!(
+            !output.findings.is_empty(),
+            "Should have findings without DB"
+        );
         // But persisted_count should be 0
-        assert_eq!(output.persisted_count, 0, "persisted_count should be 0 when no db_conn");
+        assert_eq!(
+            output.persisted_count, 0,
+            "persisted_count should be 0 when no db_conn"
+        );
     }
 
     #[tokio::test]
@@ -4188,12 +4853,16 @@ fn test_fn() {
         let file_path = temp.path().join("script.py");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
 
-        std::fs::write(&file_path, r#"
+        std::fs::write(
+            &file_path,
+            r#"
 def process_data(data):
     '''Process input data'''
     # TODO: implement properly
     print(data)
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let ctx = HandlerContext::new(temp.path().to_path_buf());
 
@@ -4208,10 +4877,15 @@ def process_data(data):
         let output = result.unwrap();
 
         // Should have S7003 finding for "TODO"
-        let s7003_findings: Vec<_> = output.findings.iter()
+        let s7003_findings: Vec<_> = output
+            .findings
+            .iter()
             .filter(|f| f.rule_id == "S7003")
             .collect();
-        assert!(!s7003_findings.is_empty(), "Python TODO should trigger S7003");
+        assert!(
+            !s7003_findings.is_empty(),
+            "Python TODO should trigger S7003"
+        );
     }
 
     // Batch D: Agent Task Tool Tests
@@ -4226,10 +4900,14 @@ def process_data(data):
         let result = handle_poll_tasks(&ctx, input).await;
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(output.tasks.is_empty(), "Should return empty when no pending tasks");
+        assert!(
+            output.tasks.is_empty(),
+            "Should return empty when no pending tasks"
+        );
     }
 
     #[tokio::test]
+    #[cfg(feature = "sqlite")]
     async fn test_poll_tasks_claims_pending_tasks() {
         let temp = tempfile::tempdir().unwrap();
         let ctx = HandlerContext::new(temp.path().to_path_buf());
@@ -4251,8 +4929,9 @@ def process_data(data):
                 completed_at TEXT,
                 result_json TEXT,
                 error_message TEXT
-            );"
-        ).unwrap();
+            );",
+        )
+        .unwrap();
 
         // Insert a test task
         conn.execute(
@@ -4266,10 +4945,14 @@ def process_data(data):
         let output = result.unwrap();
         assert_eq!(output.tasks.len(), 1, "Should return the pending task");
         assert_eq!(output.tasks[0].task_type, "test_task");
-        assert_eq!(output.tasks[0].status, "in_progress", "Task should be claimed");
+        assert_eq!(
+            output.tasks[0].status, "in_progress",
+            "Task should be claimed"
+        );
     }
 
     #[tokio::test]
+    #[cfg(feature = "sqlite")]
     async fn test_complete_task_marks_as_completed() {
         let temp = tempfile::tempdir().unwrap();
         let ctx = HandlerContext::new(temp.path().to_path_buf());
@@ -4291,8 +4974,9 @@ def process_data(data):
                 completed_at TEXT,
                 result_json TEXT,
                 error_message TEXT
-            );"
-        ).unwrap();
+            );",
+        )
+        .unwrap();
 
         // Insert a test task
         conn.execute(
@@ -4314,6 +4998,7 @@ def process_data(data):
     }
 
     #[tokio::test]
+    #[cfg(feature = "sqlite")]
     async fn test_complete_task_marks_as_failed() {
         let temp = tempfile::tempdir().unwrap();
         let ctx = HandlerContext::new(temp.path().to_path_buf());
@@ -4335,8 +5020,9 @@ def process_data(data):
                 completed_at TEXT,
                 result_json TEXT,
                 error_message TEXT
-            );"
-        ).unwrap();
+            );",
+        )
+        .unwrap();
 
         // Insert a test task
         conn.execute(

@@ -21,6 +21,12 @@ import {
   spotterResultsFixture,
   workspaceSummaryFixture,
 } from "./fixtures";
+import {
+  largeSubgraphFixture,
+  mediumSubgraphFixture,
+  rationaleSubgraphFixture,
+  smallSubgraphFixture,
+} from "./subgraphFixtures";
 
 const LATENCY_MS = 8;
 
@@ -163,6 +169,136 @@ export const handlers = [
     return HttpResponse.json({
       ...decisionArtifactFixture,
       format: body.format,
+    });
+  }),
+
+  // -----------------------------------------------------------------------
+  // 12. Subgraph (visualization-stack Phase 1)
+  // -----------------------------------------------------------------------
+  // The id prefix picks the fixture: `small*`, `medium*`, `large*`.
+  // Anything else returns the small fixture so the rest of the UI
+  // has something to render.
+  http.get("/api/graph/:id/subgraph", async ({ params }) => {
+    await delay(LATENCY_MS);
+    const id = String(params["id"] ?? "");
+    if (id.startsWith("missing")) {
+      return HttpResponse.json(
+        { error: "symbol_not_found" },
+        { status: 404 },
+      );
+    }
+    const fixture = id.startsWith("large")
+      ? largeSubgraphFixture
+      : id.startsWith("medium")
+        ? mediumSubgraphFixture
+        : smallSubgraphFixture;
+    return HttpResponse.json({ ...fixture, root: id });
+  }),
+
+  // -----------------------------------------------------------------------
+  // 14. Rationale Graph (corroboration-rationale-views)
+  // -----------------------------------------------------------------------
+  http.get("/api/graph/:id/rationale", async ({ params, request }) => {
+    await delay(LATENCY_MS);
+    const id = String(params["id"] ?? "");
+    if (id.startsWith("missing")) {
+      return HttpResponse.json(
+        { error: "symbol_not_found" },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json({
+      ...rationaleSubgraphFixture,
+      root: id,
+    });
+  }),
+
+  // -----------------------------------------------------------------------
+  // 13. Contextual Graph (Contextual Views — visualization-stack Phase 2)
+  // -----------------------------------------------------------------------
+  // Returns a hand-rolled `ContextualGraphResponse` fixture for any
+  // non-`missing*` id. `missing*` returns 404 (used by the
+  // useContextualGraph error-path test).
+  http.get("/api/graph/:id/contextual", async ({ params, request }) => {
+    await delay(LATENCY_MS);
+    const id = String(params["id"] ?? "");
+    if (id.startsWith("missing")) {
+      return HttpResponse.json(
+        { error: "symbol_not_found" },
+        { status: 404 },
+      );
+    }
+    const url = new URL(request.url);
+    const maxNodes = Number(url.searchParams.get("max_nodes") ?? "200");
+    const truncated = id.startsWith("large") || id.startsWith("truncated");
+    const childCount = truncated ? Math.min(250, maxNodes) : 3;
+    return HttpResponse.json({
+      focusNode: {
+        id,
+        label: "alpha",
+        kind: "function",
+        file: "src/alpha.rs",
+        line: 1,
+        style_class: "function",
+      },
+      parent: {
+        node: {
+          id: "file:src/alpha.rs",
+          label: "src/alpha.rs",
+          kind: "file",
+          file: "src/alpha.rs",
+          // `line` is omitted on the wire (Rust `Option<u32>` with
+          // `skip_serializing_if`); the zod schema treats it as
+          // optional. Keeping the key absent keeps the response
+          // shape consistent with the rest of the explorer.
+          style_class: "module",
+        },
+        edge: {
+          source: id,
+          target: "file:src/alpha.rs",
+          relation: "lives_in",
+          style_class: "edge.calls",
+        },
+      },
+      children: {
+        nodes: Array.from({ length: childCount }, (_, i) => ({
+          id: `${id}:sib${i}`,
+          label: `sib${i}`,
+          kind: "function",
+          file: "src/alpha.rs",
+          line: 10 + i,
+          style_class: "function",
+        })),
+        edges: Array.from({ length: childCount }, (_, i) => ({
+          source: `${id}:sib${i}`,
+          target: id,
+          relation: "lives_in",
+          style_class: "edge.calls",
+        })),
+      },
+      sameLevel: {
+        nodes: [
+          {
+            id: `${id}:neighbor1`,
+            label: "neighbor1",
+            kind: "function",
+            file: "src/alpha.rs",
+            line: 50,
+            style_class: "function",
+          },
+        ],
+        edges: [
+          {
+            source: id,
+            target: `${id}:neighbor1`,
+            relation: "calls",
+            style_class: "edge.calls",
+          },
+        ],
+      },
+      level: "file",
+      truncated,
+      truncationReason: truncated ? "max_nodes_exceeded" : null,
     });
   }),
 ];

@@ -175,10 +175,7 @@ mod tests {
 
         // Find my_function and check its documentation
         let my_func = symbols.iter().find(|s| s.name == "my_function");
-        assert!(
-            my_func.is_some(),
-            "Should find my_function symbol"
-        );
+        assert!(my_func.is_some(), "Should find my_function symbol");
         let dto = my_func.unwrap();
 
         // The documentation field should be populated (note: current implementation returns None - RED test)

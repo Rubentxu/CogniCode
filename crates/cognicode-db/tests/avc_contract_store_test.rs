@@ -1,3 +1,4 @@
+#![cfg(feature = "sqlite")]
 //! Tests for AVC Contract persistence
 
 use rusqlite::Connection;

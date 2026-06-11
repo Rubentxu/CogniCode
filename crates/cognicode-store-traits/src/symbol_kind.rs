@@ -1,3 +1,6 @@
+//! DEPRECATED: this module is part of the deprecated `cognicode-store-traits` crate.
+//! Use `cognicode_core::domain::value_objects::SymbolKind` instead.
+//!
 //! SymbolKind - Value object representing the kind of a code symbol
 
 use serde::{Deserialize, Serialize};

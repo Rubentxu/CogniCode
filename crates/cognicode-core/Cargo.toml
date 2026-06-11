@@ -6,9 +6,32 @@ edition.workspace = true
 authors.workspace = true
 
 [features]
-default = ["persistence"]
+# Default is now `["persistence", "postgres"]`. The deferred
+# `postgres-default-config` follow-up slice gated every
+# `rusqlite::` call site in `cognicode-core` (3 files: handlers
+# `mod.rs`, `aix_handlers.rs`, and `semantic_search.rs`), so the
+# crate builds cleanly without `sqlite`. SQLite remains opt-in via
+# the `sqlite` feature for callers that want the dashboard / agent
+# telemetry / FTS5 batch paths.
+default = ["persistence", "postgres"]
 rig = ["dep:rig-core"]
 persistence = ["dep:blake3"]
+# `postgres` is additive to `persistence` — both can be active simultaneously.
+# When enabled, the workspace `sqlx` dep is pulled in with its
+# `runtime-tokio` + `postgres` features.
+postgres = ["dep:sqlx"]
+# `sqlite` is an opt-in feature. When enabled, the workspace
+# `rusqlite` dep (with the `bundled` feature) is pulled in and the
+# gated `open_db` / `open_fts_db` / `record_tool_usage` / AVC
+# persistence paths become available. Off by default.
+sqlite = ["dep:rusqlite"]
+# `multimodal` is an opt-in feature that enables the Generic Graph
+# Layer (`NodeKind`, `EdgeKind`, `NodeId`, `GraphNode`, `GraphEdge`)
+# and the docs-source adapter (`SourceExtractor`, `DocsExtractor`,
+# `DocsConfidenceRules`). All new code is feature-gated via
+# `#[cfg(feature = "multimodal")]` so the default build is unchanged.
+# Off by default.
+multimodal = []
 
 [dependencies]
 # Parsing
@@ -86,9 +109,24 @@ clap.workspace = true
 rmcp.workspace = true
 process-wrap.workspace = true
 
-# Store traits (extracted to break circular deps)
-cognicode-store-traits = { workspace = true }
-rusqlite.workspace = true
+# Markdown parser — gated behind the `multimodal` feature so the
+# default build is pulldown-free. Pulled in by the `DocsExtractor`
+# (`infrastructure::extraction::docs_extractor`). The dep is declared
+# unconditionally (NOT under `optional = true`) so the call site
+# can `use pulldown_cmark::…` behind a `#[cfg(feature = "multimodal")]`
+# guard without needing the dep to be optional.
+pulldown-cmark.workspace = true
+
+# (REMOVED for `explorer-graph-repository-bridge` slice — `cognicode-store-traits`
+# is now deprecated and has zero Rust-level uses in this crate. The crate remains
+# in the workspace for now; removal is scheduled for after the PostgreSQL adapter
+# lands. See crates/cognicode-store-traits/src/lib.rs for the migration map.)
+
+rusqlite = { workspace = true, optional = true }
+
+# PostgreSQL async driver — optional, gated behind the `postgres` feature.
+# When the feature is off, this dep is absent from the build graph.
+sqlx = { workspace = true, optional = true }
 
 # Rig-core (optional)
 rig-core = { workspace = true, optional = true }

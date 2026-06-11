@@ -11,4 +11,4 @@ pub mod workspace_session;
 
 // Re-export error types for convenience
 pub use error::{AppError, AppResult};
-pub use workspace_session::{WorkspaceSession, WorkspaceError, WorkspaceResult};
+pub use workspace_session::{WorkspaceError, WorkspaceResult, WorkspaceSession};

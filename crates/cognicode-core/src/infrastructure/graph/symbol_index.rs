@@ -174,9 +174,10 @@ impl SymbolIndex {
                 self.evict_expired_entries(&mut cache);
 
                 if cache.len() >= self.config.max_entries
-                    && let Some(oldest_key) = cache.keys().next().cloned() {
-                        cache.shift_remove(&oldest_key);
-                    }
+                    && let Some(oldest_key) = cache.keys().next().cloned()
+                {
+                    cache.shift_remove(&oldest_key);
+                }
             }
 
             cache.insert(

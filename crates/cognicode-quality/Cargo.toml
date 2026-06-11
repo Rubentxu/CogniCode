@@ -13,6 +13,12 @@ path = "src/main.rs"
 name = "cognicode_quality"
 path = "src/lib.rs"
 
+[features]
+# Forward the `sqlite` feature to `cognicode-db` and `cognicode-core`.
+# Default is empty — rusqlite is opt-in via the `sqlite` feature.
+default = []
+sqlite = ["cognicode-db/sqlite", "cognicode-core/sqlite"]
+
 [dependencies]
 cognicode-axiom.workspace = true
 cognicode-core.workspace = true

@@ -6,6 +6,10 @@
 use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::traits::Parser;
 use crate::domain::value_objects::{Location, SymbolKind};
+// `get_file_mtime` is only used inside the FTS5 transaction-batched
+// `populate_from_directory_with_batch` and `index_file` paths.
+// Both are gated behind `sqlite`, so the import is gated too.
+#[cfg_attr(not(feature = "sqlite"), allow(unused_imports))]
 use crate::infrastructure::git::git_history::get_file_mtime;
 use crate::infrastructure::parser::Language;
 use dashmap::DashMap;
@@ -13,6 +17,10 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+// `SystemTime` is only used inside `search_fts5` to derive the
+// temporal boost baseline. With the `sqlite` feature off that
+// function is compiled out, so the import is gated as well.
+#[cfg_attr(not(feature = "sqlite"), allow(unused_imports))]
 use std::time::SystemTime;
 
 /// Temporal search configuration
@@ -78,34 +86,57 @@ mod temporal_tests {
     #[test]
     fn test_temporal_config_default_disabled() {
         let config = TemporalConfig::default();
-        assert_eq!(config.alpha, 0.0, "Default alpha should be 0.0 for backward compat");
+        assert_eq!(
+            config.alpha, 0.0,
+            "Default alpha should be 0.0 for backward compat"
+        );
         assert_eq!(config.beta, 0.01, "Default beta should be 0.01");
     }
 
     #[test]
     fn test_compute_boost_disabled() {
-        let config = TemporalConfig { alpha: 0.0, beta: 0.01 };
-        assert_eq!(config.compute_boost(0.0), 1.0, "Disabled config returns no boost");
-        assert_eq!(config.compute_boost(100.0), 1.0, "Disabled config returns no boost");
+        let config = TemporalConfig {
+            alpha: 0.0,
+            beta: 0.01,
+        };
+        assert_eq!(
+            config.compute_boost(0.0),
+            1.0,
+            "Disabled config returns no boost"
+        );
+        assert_eq!(
+            config.compute_boost(100.0),
+            1.0,
+            "Disabled config returns no boost"
+        );
     }
 
     #[test]
     fn test_compute_boost_fresh_symbol() {
-        let config = TemporalConfig { alpha: 0.5, beta: 0.01 };
+        let config = TemporalConfig {
+            alpha: 0.5,
+            beta: 0.01,
+        };
         // Fresh symbol (days_since_modified = 0)
         // boost = 1 + 0.5 * exp(0) = 1 + 0.5 * 1 = 1.5
         let boost = config.compute_boost(0.0);
-        assert!((boost - 1.5).abs() < 0.001, "Fresh symbol should get max boost");
+        assert!(
+            (boost - 1.5).abs() < 0.001,
+            "Fresh symbol should get max boost"
+        );
     }
 
     #[test]
     fn test_compute_boost_decays_with_age() {
-        let config = TemporalConfig { alpha: 0.5, beta: 0.01 };
+        let config = TemporalConfig {
+            alpha: 0.5,
+            beta: 0.01,
+        };
         // After ~69 days (half-life), boost should be ~1 + 0.5 * 0.5 = 1.25
         let boost_0 = config.compute_boost(0.0);
         let boost_69 = config.compute_boost(69.0);
         let boost_138 = config.compute_boost(138.0);
-        
+
         assert!(boost_0 > boost_69, "Boost should decay over time");
         assert!(boost_69 > boost_138, "Boost should continue to decay");
         assert!(boost_0 > 1.0 && boost_138 < boost_0);
@@ -113,20 +144,33 @@ mod temporal_tests {
 
     #[test]
     fn test_compute_boost_very_old_symbol() {
-        let config = TemporalConfig { alpha: 0.5, beta: 0.01 };
+        let config = TemporalConfig {
+            alpha: 0.5,
+            beta: 0.01,
+        };
         // Very old symbol (1000 days) - boost should approach 1.0
         let boost = config.compute_boost(1000.0);
-        assert!((boost - 1.0).abs() < 0.01, "Very old symbol should have minimal boost");
+        assert!(
+            (boost - 1.0).abs() < 0.01,
+            "Very old symbol should have minimal boost"
+        );
     }
 
     #[test]
     fn test_boost_in_range() {
-        let config = TemporalConfig { alpha: 0.5, beta: 0.01 };
+        let config = TemporalConfig {
+            alpha: 0.5,
+            beta: 0.01,
+        };
         // Boost should always be in range [1, 1+alpha]
         for days in [0.0, 10.0, 50.0, 100.0, 500.0, 1000.0] {
             let boost = config.compute_boost(days);
-            assert!(boost >= 1.0 && boost <= 1.5, 
-                "Boost {} for days {} should be in [1, 1.5]", boost, days);
+            assert!(
+                boost >= 1.0 && boost <= 1.5,
+                "Boost {} for days {} should be in [1, 1.5]",
+                boost,
+                days
+            );
         }
     }
 }
@@ -357,19 +401,12 @@ impl SearchIndex {
             };
 
             if heap.len() < query.max_results {
-                let symbol = Symbol::new(
-                    indexed.name.clone(),
-                    indexed.kind,
-                    indexed.location.clone(),
-                );
+                let symbol =
+                    Symbol::new(indexed.name.clone(), indexed.kind, indexed.location.clone());
                 heap.push(Reverse(SearchResult::new(symbol, score, match_type)));
             } else if let Some(min) = heap.peek() {
                 let temp_result = SearchResult::new(
-                    Symbol::new(
-                        indexed.name.clone(),
-                        indexed.kind,
-                        indexed.location.clone(),
-                    ),
+                    Symbol::new(indexed.name.clone(), indexed.kind, indexed.location.clone()),
                     score,
                     match_type,
                 );
@@ -444,6 +481,9 @@ fn fuzzy_score(query: &str, target: &str) -> f32 {
 pub struct SemanticSearchService {
     index: Arc<SearchIndex>,
     db_path: Option<PathBuf>,
+    /// Only used by the FTS5 path (gated behind `sqlite`); the field
+    /// is present in both builds so the struct layout is stable.
+    #[cfg_attr(not(feature = "sqlite"), allow(dead_code))]
     temporal_config: TemporalConfig,
 }
 
@@ -473,7 +513,12 @@ impl SemanticSearchService {
         &self.index
     }
 
-    /// Opens a FTS5 database connection if configured
+    /// Opens a FTS5 database connection if configured.
+    ///
+    /// Feature-gated behind `sqlite`: when the `sqlite` feature is
+    /// disabled, this always returns `None` and FTS5 indexing is
+    /// skipped (the DashMap index remains the only source of truth).
+    #[cfg(feature = "sqlite")]
     fn open_fts_db(&self) -> Option<rusqlite::Connection> {
         let db_path = self.db_path.as_ref()?;
         let db_dir = db_path.join(".cognicode");
@@ -483,9 +528,20 @@ impl SemanticSearchService {
         Some(conn)
     }
 
+    /// No-`sqlite` stub: always returns `None` so FTS5 indexing is
+    /// silently skipped. Callers (`index_file`, `populate_from_directory`,
+    /// `search`) treat `None` as "no DB configured" and fall back to
+    /// the DashMap index.
+    #[cfg(not(feature = "sqlite"))]
+    #[allow(dead_code)]
+    fn open_fts_db(&self) -> Option<std::convert::Infallible> {
+        None
+    }
+
     /// Writes symbols to FTS5 index within an active transaction.
     /// Shared by index_file (standalone) and populate_from_directory (batch).
     /// Caller is responsible for BEGIN/COMMIT lifecycle.
+    #[cfg(feature = "sqlite")]
     fn write_symbols_to_fts(
         conn: &rusqlite::Connection,
         symbols: &[Symbol],
@@ -515,6 +571,25 @@ impl SemanticSearchService {
         Ok(())
     }
 
+    /// No-`sqlite` stub: FTS5 indexing is unavailable when the
+    /// `sqlite` feature is disabled. With the stub `open_fts_db()`
+    /// returning `None`, the call sites inside
+    /// `index_file` / `populate_from_directory_with_batch` are
+    /// unreachable, so the parameter types are erased to `()` to
+    /// avoid pulling in `rusqlite` here.
+    #[cfg(not(feature = "sqlite"))]
+    #[allow(dead_code, clippy::too_many_arguments)]
+    fn write_symbols_to_fts(
+        _conn: &(),
+        _symbols: &[Symbol],
+        _docstrings: &[String],
+        _file_path: &str,
+        _mtime: i64,
+        _mtime_source: &str,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Indexes a file's symbols (dual-write to DashMap and FTS5)
     pub fn index_file(
         &self,
@@ -527,44 +602,58 @@ impl SemanticSearchService {
 
         let symbols = parser.find_all_symbols(source).map_err(|e| e.to_string())?;
 
-        // Extract docstrings for each symbol using the existing line-based extractor
-        // Location::line() is zero-indexed; extract_docstring expects 1-indexed
-        let docstrings: Vec<String> = symbols
-            .iter()
-            .map(|s| {
-                crate::infrastructure::semantic::symbol_code::extract_docstring(
-                    source,
-                    s.location().line() + 1,
-                )
-                .unwrap_or_default()
-            })
-            .collect();
-
         // Write to DashMap (existing behavior)
         self.index.index_file(file_path, symbols.clone());
 
-        // Capture file modification time (git or mtime fallback)
-        let path = Path::new(file_path);
-        let (file_mtime, mtime_source) = get_file_mtime(path);
-        let mtime = file_mtime.unwrap_or(0);
-
         // Dual-write to FTS5 and timestamps if db_path is configured
-        // Wrap in transaction for atomic per-file commit (R1)
-        if let Some(conn) = self.open_fts_db() {
-            if let Err(e) = conn.execute("BEGIN", []) {
-                tracing::warn!("Failed to begin FTS5 transaction: {}", e);
-                return Ok(());
-            }
-            let result = Self::write_symbols_to_fts(&conn, &symbols, &docstrings, file_path, mtime, &mtime_source);
-            if let Err(e) = result {
-                if let Err(rollback_err) = conn.execute("ROLLBACK", []) {
-                    tracing::warn!("Failed to rollback FTS5 transaction: {}", rollback_err);
+        // Wrap in transaction for atomic per-file commit (R1).
+        // FTS5 indexing is feature-gated behind `sqlite`; the no-sqlite
+        // build skips this block entirely and relies on the DashMap.
+        // The docstrings + mtime locals are only used by the FTS5
+        // block, so they are pulled inside the cfg gate.
+        #[cfg(feature = "sqlite")]
+        {
+            // Extract docstrings for each symbol using the existing line-based extractor
+            // Location::line() is zero-indexed; extract_docstring expects 1-indexed
+            let docstrings: Vec<String> = symbols
+                .iter()
+                .map(|s| {
+                    crate::infrastructure::semantic::symbol_code::extract_docstring(
+                        source,
+                        s.location().line() + 1,
+                    )
+                    .unwrap_or_default()
+                })
+                .collect();
+
+            // Capture file modification time (git or mtime fallback)
+            let path = Path::new(file_path);
+            let (file_mtime, mtime_source) = get_file_mtime(path);
+            let mtime = file_mtime.unwrap_or(0);
+
+            if let Some(conn) = self.open_fts_db() {
+                if let Err(e) = conn.execute("BEGIN", []) {
+                    tracing::warn!("Failed to begin FTS5 transaction: {}", e);
+                    return Ok(());
                 }
-                return Err(e);
-            }
-            if let Err(e) = conn.execute("COMMIT", []) {
-                tracing::warn!("Failed to commit FTS5 transaction: {}", e);
-                return Ok(());
+                let result = Self::write_symbols_to_fts(
+                    &conn,
+                    &symbols,
+                    &docstrings,
+                    file_path,
+                    mtime,
+                    &mtime_source,
+                );
+                if let Err(e) = result {
+                    if let Err(rollback_err) = conn.execute("ROLLBACK", []) {
+                        tracing::warn!("Failed to rollback FTS5 transaction: {}", rollback_err);
+                    }
+                    return Err(e);
+                }
+                if let Err(e) = conn.execute("COMMIT", []) {
+                    tracing::warn!("Failed to commit FTS5 transaction: {}", e);
+                    return Ok(());
+                }
             }
         }
 
@@ -575,9 +664,8 @@ impl SemanticSearchService {
     pub fn index_file_from_path(&self, file_path: &Path) -> Result<(), String> {
         let extension = file_path.extension().and_then(|e| e.to_str());
 
-        let language =
-            Language::from_extension(extension.as_ref().map(std::ffi::OsStr::new))
-                .ok_or_else(|| "Unsupported file type".to_string())?;
+        let language = Language::from_extension(extension.as_ref().map(std::ffi::OsStr::new))
+            .ok_or_else(|| "Unsupported file type".to_string())?;
 
         let source = std::fs::read_to_string(file_path)
             .map_err(|e| format!("Failed to read file: {}", e))?;
@@ -587,20 +675,27 @@ impl SemanticSearchService {
 
     /// Searches for symbols (FTS5 with DashMap fallback)
     pub fn search(&self, query: SearchQuery) -> Vec<SearchResult> {
-        // Try FTS5 first if db_path is configured
-        if let Some(conn) = self.open_fts_db() {
-            let fts_results = self.search_fts5(&conn, &query);
-            if !fts_results.is_empty() {
-                return fts_results;
+        // Try FTS5 first if db_path is configured.
+        // FTS5 lookup is feature-gated behind `sqlite`; the no-sqlite
+        // build skips FTS5 and falls through directly to DashMap.
+        #[cfg(feature = "sqlite")]
+        {
+            if let Some(conn) = self.open_fts_db() {
+                let fts_results = self.search_fts5(&conn, &query);
+                if !fts_results.is_empty() {
+                    return fts_results;
+                }
+                tracing::debug!("FTS5 returned no results, falling back to DashMap");
             }
-            tracing::debug!("FTS5 returned no results, falling back to DashMap");
         }
 
         // Fall back to DashMap search
         self.index.search(&query)
     }
 
-    /// Search using FTS5 with BM25 ranking and optional temporal boost
+    /// Search using FTS5 with BM25 ranking and optional temporal boost.
+    /// Only compiled when the `sqlite` feature is enabled.
+    #[cfg(feature = "sqlite")]
     fn search_fts5(&self, conn: &rusqlite::Connection, query: &SearchQuery) -> Vec<SearchResult> {
         let search_pattern = format!("{}*", query.query.to_lowercase());
         let limit = query.max_results as i64;
@@ -661,10 +756,10 @@ impl SemanticSearchService {
                     };
                     let location = Location::new(&file, 1, 1);
                     let symbol = Symbol::new(name.clone(), kind, location);
-                    
+
                     // Convert BM25 rank to score (lower rank = higher score)
                     let base_score = (1.0 / (1.0 + rank.abs()));
-                    
+
                     // Apply temporal boost if available and alpha > 0
                     let boosted_score = if alpha > 0.0 {
                         if let Some(ts) = last_modified {
@@ -678,7 +773,11 @@ impl SemanticSearchService {
                         base_score
                     };
 
-                    search_results.push(SearchResult::new(symbol, boosted_score as f32, MatchType::Fuzzy));
+                    search_results.push(SearchResult::new(
+                        symbol,
+                        boosted_score as f32,
+                        MatchType::Fuzzy,
+                    ));
                 }
                 search_results
             }
@@ -705,7 +804,15 @@ impl SemanticSearchService {
     }
 
     /// Internal implementation with configurable batch size.
-    fn populate_from_directory_with_batch(&self, dir: &Path, batch_size: usize) -> Result<(), String> {
+    /// `batch_size` is only used by the FTS5 transaction-batched path,
+    /// which is gated behind `sqlite`. The signature is preserved
+    /// across feature flags so the public API stays stable.
+    #[cfg_attr(not(feature = "sqlite"), allow(unused_variables))]
+    fn populate_from_directory_with_batch(
+        &self,
+        dir: &Path,
+        batch_size: usize,
+    ) -> Result<(), String> {
         if !dir.exists() {
             return Err(format!("Directory does not exist: {}", dir.display()));
         }
@@ -728,7 +835,11 @@ impl SemanticSearchService {
             "env",
         ];
 
-        // Open single connection for entire walk (R2)
+        // Open single connection for entire walk (R2).
+        // FTS5 transaction-batched indexing is feature-gated behind
+        // `sqlite`. With the feature off we fall through to a simple
+        // DashMap walk that mirrors the original `None` branch.
+        #[cfg(feature = "sqlite")]
         let conn = match self.open_fts_db() {
             Some(c) => c,
             None => {
@@ -752,20 +863,55 @@ impl SemanticSearchService {
                     let extension = path.extension().and_then(|e| e.to_str());
                     if let Some(_lang) = crate::infrastructure::parser::Language::from_extension(
                         extension.as_ref().map(std::ffi::OsStr::new),
-                    )
-                        && let Err(_e) = self.index_file_from_path(path) {
-                            continue;
-                        }
+                    ) && let Err(_e) = self.index_file_from_path(path)
+                    {
+                        continue;
+                    }
                 }
                 return Ok(());
             }
         };
 
+        // No-`sqlite` build: skip the entire FTS5 batch transaction
+        // machinery and run a plain DashMap walk. The semantic_search
+        // service still works, just without FTS5 indexing.
+        #[cfg(not(feature = "sqlite"))]
+        {
+            for entry in walkdir::WalkDir::new(dir)
+                .follow_links(true)
+                .into_iter()
+                .filter_entry(|e| {
+                    if let Some(name) = e.file_name().to_str() {
+                        !SKIP_DIRS.contains(&name)
+                    } else {
+                        true
+                    }
+                })
+                .filter_map(|e| e.ok())
+            {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let extension = path.extension().and_then(|e| e.to_str());
+                if let Some(_lang) = crate::infrastructure::parser::Language::from_extension(
+                    extension.as_ref().map(std::ffi::OsStr::new),
+                ) && let Err(_e) = self.index_file_from_path(path)
+                {
+                    continue;
+                }
+            }
+            return Ok(());
+        }
+
         // Begin outer transaction for entire walk
+        #[cfg(feature = "sqlite")]
         if let Err(e) = conn.execute("BEGIN", []) {
             return Err(format!("Failed to begin batch transaction: {}", e));
         }
 
+        #[cfg(feature = "sqlite")]
+        {
         let mut file_count = 0;
         let mut savepoint_id = 0;
 
@@ -832,7 +978,8 @@ impl SemanticSearchService {
                         .collect();
 
                     // Write to DashMap index (always, regardless of FTS5)
-                    self.index.index_file(&path.to_string_lossy(), symbols.clone());
+                    self.index
+                        .index_file(&path.to_string_lossy(), symbols.clone());
 
                     // Get mtime for FTS5 timestamps
                     let (file_mtime, mtime_source) = get_file_mtime(path);
@@ -847,24 +994,46 @@ impl SemanticSearchService {
                             tracing::warn!("Failed to create savepoint {}: {}", sp_name, e);
                             // Fall back to continuing without savepoint
                         } else {
-                            let sp_result = Self::write_symbols_to_fts(&conn, &symbols, &docstrings, &path.to_string_lossy(), mtime, &mtime_source);
+                            let sp_result = Self::write_symbols_to_fts(
+                                &conn,
+                                &symbols,
+                                &docstrings,
+                                &path.to_string_lossy(),
+                                mtime,
+                                &mtime_source,
+                            );
                             if let Err(e) = sp_result {
                                 tracing::warn!("Failed to write symbols for {:?}: {}", path, e);
-                                if let Err(rb_err) = conn.execute(&format!("ROLLBACK TO {}", sp_name), []) {
-                                    tracing::warn!("Failed to rollback to savepoint {}: {}", sp_name, rb_err);
+                                if let Err(rb_err) =
+                                    conn.execute(&format!("ROLLBACK TO {}", sp_name), [])
+                                {
+                                    tracing::warn!(
+                                        "Failed to rollback to savepoint {}: {}",
+                                        sp_name,
+                                        rb_err
+                                    );
                                 }
                                 // Continue to next file — prior committed batches are preserved
                                 continue;
                             }
                             // Release savepoint on success
-                            if let Err(e) = conn.execute(&format!("RELEASE SAVEPOINT {}", sp_name), []) {
+                            if let Err(e) =
+                                conn.execute(&format!("RELEASE SAVEPOINT {}", sp_name), [])
+                            {
                                 tracing::warn!("Failed to release savepoint {}: {}", sp_name, e);
                             }
                             file_count += 1;
                         }
                     } else {
                         // ≤1 symbol: write directly without savepoint overhead
-                        if let Err(e) = Self::write_symbols_to_fts(&conn, &symbols, &docstrings, &path.to_string_lossy(), mtime, &mtime_source) {
+                        if let Err(e) = Self::write_symbols_to_fts(
+                            &conn,
+                            &symbols,
+                            &docstrings,
+                            &path.to_string_lossy(),
+                            mtime,
+                            &mtime_source,
+                        ) {
                             tracing::warn!("Failed to write symbols for {:?}: {}", path, e);
                             continue;
                         }
@@ -874,7 +1043,10 @@ impl SemanticSearchService {
                     // Sub-commit every batch_size files (R2, R6)
                     if file_count > 0 && file_count % batch_size == 0 {
                         if let Err(e) = conn.execute("COMMIT", []) {
-                            return Err(format!("Failed to commit batch at file {}: {}", file_count, e));
+                            return Err(format!(
+                                "Failed to commit batch at file {}: {}",
+                                file_count, e
+                            ));
                         }
                         if let Err(e) = conn.execute("BEGIN", []) {
                             return Err(format!("Failed to begin new batch: {}", e));
@@ -901,6 +1073,7 @@ impl SemanticSearchService {
                 Err(e)
             }
         }
+        } // end #[cfg(feature = "sqlite")] block
     }
 }
 
@@ -1122,8 +1295,10 @@ mod tests {
     }
 }
 
-/// Tests for FTS5 transaction batching functionality
-#[cfg(test)]
+/// Tests for FTS5 transaction batching functionality.
+/// Feature-gated behind `sqlite` because they require a live
+/// `rusqlite::Connection` to drive the FTS5 schema and transactions.
+#[cfg(all(test, feature = "sqlite"))]
 mod fts5_batching_tests {
     use super::*;
 
@@ -1153,9 +1328,21 @@ mod fts5_batching_tests {
         let conn = create_test_db();
 
         let symbols = vec![
-            Symbol::new("fn_a", SymbolKind::Function, Location::new("src/lib.rs", 1, 0)),
-            Symbol::new("fn_b", SymbolKind::Function, Location::new("src/lib.rs", 5, 0)),
-            Symbol::new("MyStruct", SymbolKind::Struct, Location::new("src/lib.rs", 10, 0)),
+            Symbol::new(
+                "fn_a",
+                SymbolKind::Function,
+                Location::new("src/lib.rs", 1, 0),
+            ),
+            Symbol::new(
+                "fn_b",
+                SymbolKind::Function,
+                Location::new("src/lib.rs", 5, 0),
+            ),
+            Symbol::new(
+                "MyStruct",
+                SymbolKind::Struct,
+                Location::new("src/lib.rs", 10, 0),
+            ),
         ];
 
         let result = SemanticSearchService::write_symbols_to_fts(
@@ -1177,7 +1364,9 @@ mod fts5_batching_tests {
 
         // Verify rows in symbol_timestamps
         let ts_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM symbol_timestamps", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM symbol_timestamps", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(ts_count, 3, "Should have 3 timestamp entries");
     }
@@ -1197,7 +1386,15 @@ mod fts5_batching_tests {
             SymbolKind::Function,
             Location::new("src/a.rs", 1, 0),
         )];
-        SemanticSearchService::write_symbols_to_fts(&conn, &symbols1, &vec![String::new(); symbols1.len()], "src/a.rs", 1000, "git").unwrap();
+        SemanticSearchService::write_symbols_to_fts(
+            &conn,
+            &symbols1,
+            &vec![String::new(); symbols1.len()],
+            "src/a.rs",
+            1000,
+            "git",
+        )
+        .unwrap();
         conn.execute("RELEASE SAVEPOINT sp1", []).unwrap();
 
         // Second savepoint with more data
@@ -1207,7 +1404,15 @@ mod fts5_batching_tests {
             SymbolKind::Function,
             Location::new("src/b.rs", 1, 0),
         )];
-        SemanticSearchService::write_symbols_to_fts(&conn, &symbols2, &vec![String::new(); symbols2.len()], "src/b.rs", 1000, "git").unwrap();
+        SemanticSearchService::write_symbols_to_fts(
+            &conn,
+            &symbols2,
+            &vec![String::new(); symbols2.len()],
+            "src/b.rs",
+            1000,
+            "git",
+        )
+        .unwrap();
 
         // Rollback second savepoint
         conn.execute("ROLLBACK TO sp2", []).unwrap();
@@ -1220,10 +1425,12 @@ mod fts5_batching_tests {
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM symbol_index", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 1, "Should have 1 committed symbol (rollback_func should not exist)");
         assert_eq!(
-            count,
-            1,
+            count, 1,
+            "Should have 1 committed symbol (rollback_func should not exist)"
+        );
+        assert_eq!(
+            count, 1,
             "Rollback of second savepoint should not affect first savepoint's data"
         );
 
@@ -1235,7 +1442,10 @@ mod fts5_batching_tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(rollback_count, 0, "rollback_func should not exist after ROLLBACK TO sp2");
+        assert_eq!(
+            rollback_count, 0,
+            "rollback_func should not exist after ROLLBACK TO sp2"
+        );
     }
 
     #[test]
@@ -1245,13 +1455,29 @@ mod fts5_batching_tests {
         let conn = create_test_db();
 
         let symbols = vec![
-            Symbol::new("fn_a", SymbolKind::Function, Location::new("src/lib.rs", 1, 0)),
-            Symbol::new("fn_b", SymbolKind::Function, Location::new("src/lib.rs", 5, 0)),
+            Symbol::new(
+                "fn_a",
+                SymbolKind::Function,
+                Location::new("src/lib.rs", 1, 0),
+            ),
+            Symbol::new(
+                "fn_b",
+                SymbolKind::Function,
+                Location::new("src/lib.rs", 5, 0),
+            ),
         ];
 
         // Write with transaction wrapping (simulating what index_file does)
         conn.execute("BEGIN", []).unwrap();
-        SemanticSearchService::write_symbols_to_fts(&conn, &symbols, &vec![String::new(); symbols.len()], "src/lib.rs", 1000, "git").unwrap();
+        SemanticSearchService::write_symbols_to_fts(
+            &conn,
+            &symbols,
+            &vec![String::new(); symbols.len()],
+            "src/lib.rs",
+            1000,
+            "git",
+        )
+        .unwrap();
         conn.execute("COMMIT", []).unwrap();
 
         // Verify rows in symbol_index
@@ -1263,11 +1489,31 @@ mod fts5_batching_tests {
         // Index a different file
         conn.execute("BEGIN", []).unwrap();
         let symbols2 = vec![
-            Symbol::new("fn_c", SymbolKind::Function, Location::new("src/other.rs", 1, 0)),
-            Symbol::new("fn_d", SymbolKind::Function, Location::new("src/other.rs", 5, 0)),
-            Symbol::new("fn_e", SymbolKind::Function, Location::new("src/other.rs", 10, 0)),
+            Symbol::new(
+                "fn_c",
+                SymbolKind::Function,
+                Location::new("src/other.rs", 1, 0),
+            ),
+            Symbol::new(
+                "fn_d",
+                SymbolKind::Function,
+                Location::new("src/other.rs", 5, 0),
+            ),
+            Symbol::new(
+                "fn_e",
+                SymbolKind::Function,
+                Location::new("src/other.rs", 10, 0),
+            ),
         ];
-        SemanticSearchService::write_symbols_to_fts(&conn, &symbols2, &vec![String::new(); symbols2.len()], "src/other.rs", 1000, "git").unwrap();
+        SemanticSearchService::write_symbols_to_fts(
+            &conn,
+            &symbols2,
+            &vec![String::new(); symbols2.len()],
+            "src/other.rs",
+            1000,
+            "git",
+        )
+        .unwrap();
         conn.execute("COMMIT", []).unwrap();
 
         // Should have 5 total symbols across 2 files
@@ -1306,9 +1552,18 @@ mod fts5_batching_tests {
         // Simulate what populate_from_directory does internally
         // Write symbols for 3 files with 5 symbols each
         let file_symbols = vec![
-            ("src/a.rs", vec!["fn_a1", "fn_a2", "fn_a3", "Struct_a", "Enum_a"]),
-            ("src/b.rs", vec!["fn_b1", "fn_b2", "fn_b3", "Struct_b", "Enum_b"]),
-            ("src/c.rs", vec!["fn_c1", "fn_c2", "fn_c3", "Struct_c", "Enum_c"]),
+            (
+                "src/a.rs",
+                vec!["fn_a1", "fn_a2", "fn_a3", "Struct_a", "Enum_a"],
+            ),
+            (
+                "src/b.rs",
+                vec!["fn_b1", "fn_b2", "fn_b3", "Struct_b", "Enum_b"],
+            ),
+            (
+                "src/c.rs",
+                vec!["fn_c1", "fn_c2", "fn_c3", "Struct_c", "Enum_c"],
+            ),
         ];
 
         conn.execute("BEGIN", []).unwrap();
@@ -1330,7 +1585,15 @@ mod fts5_batching_tests {
                     )
                 })
                 .collect();
-            SemanticSearchService::write_symbols_to_fts(&conn, &symbols, &vec![String::new(); symbols.len()], file_path, 1000, "git").unwrap();
+            SemanticSearchService::write_symbols_to_fts(
+                &conn,
+                &symbols,
+                &vec![String::new(); symbols.len()],
+                file_path,
+                1000,
+                "git",
+            )
+            .unwrap();
         }
         conn.execute("COMMIT", []).unwrap();
 
@@ -1440,7 +1703,11 @@ mod fts5_batching_tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(docstring, "", "docstring should be empty for undocumented symbol, got: '{}'", docstring);
+        assert_eq!(
+            docstring, "",
+            "docstring should be empty for undocumented symbol, got: '{}'",
+            docstring
+        );
     }
 
     #[test]
@@ -1482,10 +1749,18 @@ mod fts5_batching_tests {
         std::fs::write(&file_a, "/// Adds two numbers\nfn add(a: i32, b: i32) -> i32 { a + b }\n/// Subtracts two numbers\nfn sub(a: i32, b: i32) -> i32 { a - b }\n/// Multiplies two numbers\nfn mul(a: i32, b: i32) -> i32 { a * b }").unwrap();
 
         let file_b = temp_dir.path().join("raw.rs");
-        std::fs::write(&file_b, "fn raw_no_doc(a: i32) -> i32 { a }\nfn another_raw(a: i32) -> i32 { a }").unwrap();
+        std::fs::write(
+            &file_b,
+            "fn raw_no_doc(a: i32) -> i32 { a }\nfn another_raw(a: i32) -> i32 { a }",
+        )
+        .unwrap();
 
         let file_c = temp_dir.path().join("string.rs");
-        std::fs::write(&file_c, "/// Reverses a string\nfn reverse(s: &str) -> String { s.chars().rev().collect() }").unwrap();
+        std::fs::write(
+            &file_c,
+            "/// Reverses a string\nfn reverse(s: &str) -> String { s.chars().rev().collect() }",
+        )
+        .unwrap();
 
         let result = service.populate_from_directory(temp_dir.path());
         assert!(result.is_ok(), "populate_from_directory should succeed");
@@ -1501,7 +1776,10 @@ mod fts5_batching_tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(non_empty_count, 4, "Should have 4 symbols with non-empty docstrings");
+        assert_eq!(
+            non_empty_count, 4,
+            "Should have 4 symbols with non-empty docstrings"
+        );
 
         // Count rows with empty docstring
         let empty_count: i64 = conn
@@ -1511,6 +1789,9 @@ mod fts5_batching_tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(empty_count, 2, "Should have 2 symbols with empty docstrings");
+        assert_eq!(
+            empty_count, 2,
+            "Should have 2 symbols with empty docstrings"
+        );
     }
 }

@@ -17,10 +17,35 @@ path = "src/bin/api.rs"
 name = "cognicode-explorer-mcp"
 path = "src/bin/mcp.rs"
 
+[features]
+# PR 2 (postgres-default-config): default flipped from `["sqlite"]` to
+# `["postgres"]`. The explorer now defaults to a PG-first build; the
+# CLI's `--sqlite` flag is honored only when the `sqlite` feature is
+# also enabled (e.g. for local development without a PG instance).
+default = ["postgres"]
+# `postgres` is the default. When enabled, the explorer can load a
+# `CallGraph` from PostgreSQL at binary startup (see
+# `postgres_bridge.rs`). Adds `sqlx` + `async-trait`.
+postgres = ["cognicode-core/postgres", "dep:sqlx", "dep:async-trait"]
+# `sqlite` is an opt-in feature. When enabled, the workspace
+# `rusqlite` dep is pulled in through `cognicode-core/sqlite` and
+# `cognicode-db/sqlite` (the explorer always depends on
+# `cognicode-db`). Default build stays rusqlite-free.
+sqlite = ["cognicode-core/sqlite", "cognicode-db/sqlite", "dep:rusqlite"]
+# Exposes test-only accessors (e.g. `ExplorerMcpHandler::registry`)
+# so integration tests outside the crate can drive the
+# brain-session lifecycle.
+test-utils = []
+# `multimodal` is an opt-in feature that enables the Generic Graph
+# Layer (new `NodeKind`/`EdgeKind` targets), the docs-source adapter
+# (`SourceExtractor`, `DocsSourceAdapter`), and the multimodal MCP
+# tools (`docs_ingest`, `graph_search`). Off by default.
+multimodal = ["cognicode-core/multimodal"]
+
 [dependencies]
 cognicode-core.workspace = true
 cognicode-db.workspace = true
-rusqlite.workspace = true
+rusqlite = { workspace = true, optional = true }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -31,9 +56,18 @@ tracing-subscriber.workspace = true
 clap.workspace = true
 rmcp.workspace = true
 chrono.workspace = true
+regex.workspace = true
 axum = "0.7"
+tower = { workspace = true }
 tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Optional dependencies — only pulled in when the `postgres` feature
+# is enabled. Keeps the default build sqlx-free.
+sqlx = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio-test.workspace = true
+async-trait.workspace = true
 tempfile = "3.27"
+tower.workspace = true

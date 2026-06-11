@@ -147,9 +147,8 @@ impl SymbolCodeService {
         let path = Path::new(file_path);
         let extension = path.extension().and_then(|e| e.to_str());
 
-        let language =
-            Language::from_extension(extension.as_ref().map(std::ffi::OsStr::new))
-                .ok_or_else(|| "Unsupported file type".to_string())?;
+        let language = Language::from_extension(extension.as_ref().map(std::ffi::OsStr::new))
+            .ok_or_else(|| "Unsupported file type".to_string())?;
 
         let parser = {
             let mut parsers = self.parsers.lock().unwrap();
@@ -234,10 +233,12 @@ fn find_node_at_position(
         // Check if this node contains the position
         if start.row <= line as usize && line as usize <= end.row {
             // For single-line nodes, also check column
-            if start.row == line as usize && end.row == line as usize
-                && (column < start.column as u32 || column > end.column as u32) {
-                    return;
-                }
+            if start.row == line as usize
+                && end.row == line as usize
+                && (column < start.column as u32 || column > end.column as u32)
+            {
+                return;
+            }
 
             // This node contains the position, but we want the most specific node
             // So continue searching children

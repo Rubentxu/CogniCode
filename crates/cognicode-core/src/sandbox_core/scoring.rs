@@ -7,16 +7,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::ground_truth::{
-    match_code, match_complexity, match_edges, match_entry_points, match_hot_paths,
-    match_leaf_functions, match_outline, match_search_results, match_symbols, match_usages,
-    parse_returned_edges, parse_returned_entry_points, parse_returned_hot_paths,
-    parse_returned_leaf_functions, parse_returned_search_results, parse_returned_usages,
     BehavioralPreservationResult, CodeMatchResult, ComplexityMatchResult, EdgeMatchResult,
-    EntryPointMatchResult,
-    GroundTruth, HotPathMatchResult, IndexCompletenessResult,
+    EntryPointMatchResult, GroundTruth, HotPathMatchResult, IndexCompletenessResult,
     LeafFunctionMatchResult, MergeAccuracyResult, OutlineMatchResult, PerFileEdgeMatchResult,
-    QueryAccuracyResult, ReturnedSymbol,
-    SearchResultMatchResult, SymbolMatchResult, UsageMatchResult,
+    QueryAccuracyResult, ReturnedSymbol, SearchResultMatchResult, SymbolMatchResult,
+    UsageMatchResult, match_code, match_complexity, match_edges, match_entry_points,
+    match_hot_paths, match_leaf_functions, match_outline, match_search_results, match_symbols,
+    match_usages, parse_returned_edges, parse_returned_entry_points, parse_returned_hot_paths,
+    parse_returned_leaf_functions, parse_returned_search_results, parse_returned_usages,
 };
 
 /// Dimension scores for a single tool evaluation (0-100 each).
@@ -257,15 +255,17 @@ fn parse_returned_symbols(response: &Value) -> Vec<ReturnedSymbol> {
 
     // Try nested in "result"
     if let Some(result_obj) = response.get("result")
-        && let Some(arr) = result_obj.get("symbols").and_then(|v| v.as_array()) {
-            return parse_symbols_from_array(arr);
-        }
+        && let Some(arr) = result_obj.get("symbols").and_then(|v| v.as_array())
+    {
+        return parse_symbols_from_array(arr);
+    }
 
     // Try nested in "content"
     if let Some(content_obj) = response.get("content")
-        && let Some(arr) = content_obj.get("symbols").and_then(|v| v.as_array()) {
-            return parse_symbols_from_array(arr);
-        }
+        && let Some(arr) = content_obj.get("symbols").and_then(|v| v.as_array())
+    {
+        return parse_symbols_from_array(arr);
+    }
 
     // 5. Try MCP content format: {"content": [{"text": "<JSON string>"}]}
     if let Some(content_arr) = response.get("content").and_then(|v| v.as_array()) {
@@ -292,21 +292,24 @@ fn unwrap_mcp_content(response: &Value) -> Value {
     if let Some(content_arr) = response.get("content").and_then(|v| v.as_array()) {
         for item in content_arr {
             if let Some(text) = item.get("text").and_then(|t| t.as_str())
-                && let Ok(parsed) = serde_json::from_str::<Value>(text) {
-                    return parsed;
-                }
+                && let Ok(parsed) = serde_json::from_str::<Value>(text)
+            {
+                return parsed;
+            }
         }
     }
     // Check for direct result nesting: {"result": {"content": [...]}}
     if let Some(result) = response.get("result")
-        && let Some(content_arr) = result.get("content").and_then(|v| v.as_array()) {
-            for item in content_arr {
-                if let Some(text) = item.get("text").and_then(|t| t.as_str())
-                    && let Ok(parsed) = serde_json::from_str::<Value>(text) {
-                        return parsed;
-                    }
+        && let Some(content_arr) = result.get("content").and_then(|v| v.as_array())
+    {
+        for item in content_arr {
+            if let Some(text) = item.get("text").and_then(|t| t.as_str())
+                && let Ok(parsed) = serde_json::from_str::<Value>(text)
+            {
+                return parsed;
             }
         }
+    }
     response.clone()
 }
 
@@ -547,11 +550,7 @@ pub fn score_mermaid(tool_response: &Value, ground_truth: &GroundTruth) -> f64 {
         }
     }
 
-    if checks == 0 {
-        f64::NAN
-    } else {
-        score
-    }
+    if checks == 0 { f64::NAN } else { score }
 }
 
 /// Score search_content output against ground truth matches.
@@ -672,15 +671,16 @@ fn unwrap_response_text(response: &Value) -> String {
     }
     // Try result.content
     if let Some(result) = response.get("result")
-        && let Some(content_arr) = result.get("content").and_then(|v| v.as_array()) {
-            let texts: Vec<String> = content_arr
-                .iter()
-                .filter_map(|item| item.get("text").and_then(|t| t.as_str()).map(String::from))
-                .collect();
-            if !texts.is_empty() {
-                return texts.join(" ");
-            }
+        && let Some(content_arr) = result.get("content").and_then(|v| v.as_array())
+    {
+        let texts: Vec<String> = content_arr
+            .iter()
+            .filter_map(|item| item.get("text").and_then(|t| t.as_str()).map(String::from))
+            .collect();
+        if !texts.is_empty() {
+            return texts.join(" ");
         }
+    }
     // Fallback: serialize the whole response
     response.to_string()
 }
@@ -1117,11 +1117,12 @@ pub fn compute_scalability_score(
     // If we have a single measurement, use the expected classification from metrics
     if let Some(m) = metrics
         && let Some(s) = &m.scalability
-            && let Some(class_str) = &s.classification
-                && let Some(class) = ScalabilityClass::from_str(class_str) {
-                    // Single point - use expected classification
-                    return class.base_score();
-                }
+        && let Some(class_str) = &s.classification
+        && let Some(class) = ScalabilityClass::from_str(class_str)
+    {
+        // Single point - use expected classification
+        return class.base_score();
+    }
 
     // Single point without metrics - return neutral score
     if workspace_size_kb == 0 {
@@ -1159,39 +1160,40 @@ pub fn compute_scalability_score_from_measurements(
 
     // If an expected classification was provided, adjust the score
     if let Some(class_str) = expected_classification
-        && let Some(expected) = ScalabilityClass::from_str(class_str) {
-            if result.classification == expected {
-                // Perfect match - full score
-                return result;
-            }
-
-            // Score based on how far off the classification is
-            let class_order = |c: &ScalabilityClass| -> i32 {
-                match c {
-                    ScalabilityClass::Constant => 0,
-                    ScalabilityClass::SubLinear => 1,
-                    ScalabilityClass::Linear => 2,
-                    ScalabilityClass::Quadratic => 3,
-                    ScalabilityClass::Exponential => 4,
-                }
-            };
-
-            let diff = (class_order(&result.classification) - class_order(&expected)).abs();
-            let penalty = match diff {
-                0 => 1.0,
-                1 => 0.8,
-                2 => 0.5,
-                _ => 0.3,
-            };
-
-            let adjusted_result = ScalabilityResult {
-                classification: result.classification,
-                latency_at_sizes: result.latency_at_sizes,
-                r_squared: result.r_squared,
-                score: result.score * penalty,
-            };
-            return adjusted_result;
+        && let Some(expected) = ScalabilityClass::from_str(class_str)
+    {
+        if result.classification == expected {
+            // Perfect match - full score
+            return result;
         }
+
+        // Score based on how far off the classification is
+        let class_order = |c: &ScalabilityClass| -> i32 {
+            match c {
+                ScalabilityClass::Constant => 0,
+                ScalabilityClass::SubLinear => 1,
+                ScalabilityClass::Linear => 2,
+                ScalabilityClass::Quadratic => 3,
+                ScalabilityClass::Exponential => 4,
+            }
+        };
+
+        let diff = (class_order(&result.classification) - class_order(&expected)).abs();
+        let penalty = match diff {
+            0 => 1.0,
+            1 => 0.8,
+            2 => 0.5,
+            _ => 0.3,
+        };
+
+        let adjusted_result = ScalabilityResult {
+            classification: result.classification,
+            latency_at_sizes: result.latency_at_sizes,
+            r_squared: result.r_squared,
+            score: result.score * penalty,
+        };
+        return adjusted_result;
+    }
 
     result
 }
@@ -1944,11 +1946,7 @@ pub fn compute_query_accuracy(
         .unwrap_or(0);
 
     let accuracy_score = if expected_locations == 0 {
-        if found_locations == 0 {
-            100.0
-        } else {
-            50.0
-        }
+        if found_locations == 0 { 100.0 } else { 50.0 }
     } else {
         (found_locations as f64 / expected_locations as f64) * 100.0
     };
@@ -2115,7 +2113,7 @@ mod tests {
     #[test]
     fn test_compute_correctness_with_symbols() {
         use super::super::ground_truth::{
-            match_symbols, ExpectedSymbol, ReturnedSymbol, SymbolKind,
+            ExpectedSymbol, ReturnedSymbol, SymbolKind, match_symbols,
         };
 
         let expected = vec![
@@ -2362,18 +2360,25 @@ mod tests {
 
         // 0ms latency should be max score
         let fast = score_scenario(
-            "get_file_symbols", "rust", "fast",
+            "get_file_symbols",
+            "rust",
+            "fast",
             &serde_json::json!({"symbols": []}),
-            &Some(gt.clone()), &Some(metrics.clone()),
-            0, ExecutionMetadata::default(),
+            &Some(gt.clone()),
+            &Some(metrics.clone()),
+            0,
+            ExecutionMetadata::default(),
         );
         assert_eq!(fast.latencia, 100.0);
 
         // Very high latency should get low score
         let slow = score_scenario(
-            "get_file_symbols", "rust", "slow",
+            "get_file_symbols",
+            "rust",
+            "slow",
             &serde_json::json!({"symbols": []}),
-            &Some(gt), &Some(metrics),
+            &Some(gt),
+            &Some(metrics),
             5000, // 5 seconds — way over 100ms target
             ExecutionMetadata::default(),
         );
@@ -2412,7 +2417,8 @@ mod tests {
             assert!(
                 (0.0..=100.0).contains(&value) || value.is_nan(),
                 "{} score {} out of range [0,100] or NaN",
-                name, value
+                name,
+                value
             );
         }
     }

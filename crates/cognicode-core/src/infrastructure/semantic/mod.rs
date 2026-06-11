@@ -9,7 +9,7 @@ pub mod outline;
 pub mod semantic_search;
 pub mod symbol_code;
 
-pub use outline::{build_outline, OutlineBuilder, OutlineNode};
+pub use outline::{OutlineBuilder, OutlineNode, build_outline};
 pub use semantic_search::{
     MatchType, SearchIndex, SearchQuery, SearchResult, SearchSymbolKind, SemanticSearchService,
 };
