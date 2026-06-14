@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use cognicode_core::domain::aggregates::CallGraph;
 
-use crate::service::ExplorerService;
+use crate::facades::{SearchService, ViewService, WorkspaceService};
 use crate::session::service::BrainSessionService;
 
 /// Errors raised by [`SessionRegistry`] lookups.
@@ -49,7 +49,7 @@ impl SessionRegistry {
     }
 
     /// Open a new session. Generates a session id, builds a
-    /// [`BrainSessionService`] with the supplied service + graph, and
+    /// [`BrainSessionService`] with the supplied facades + graph, and
     /// inserts it into the map. Returns the freshly minted id.
     ///
     /// `ttl_secs` is the per-session time-to-live in seconds. `0`
@@ -59,7 +59,9 @@ impl SessionRegistry {
         &self,
         workspace_id: String,
         ttl_secs: u64,
-        service: Arc<ExplorerService>,
+        search: Arc<dyn SearchService>,
+        view: Arc<dyn ViewService>,
+        workspace: Arc<dyn WorkspaceService>,
         graph: Option<Arc<CallGraph>>,
     ) -> String {
         let session_id = generate_session_id();
@@ -67,7 +69,9 @@ impl SessionRegistry {
             session_id.clone(),
             workspace_id,
             ttl_secs,
-            service,
+            search,
+            view,
+            workspace,
             graph,
         ));
         let mut map = self.sessions.lock().expect("session map poisoned");
@@ -200,65 +204,82 @@ fn generate_session_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::FsSourceReader;
-    use crate::ports::symbol_repository::{
-        GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
-    };
+    use crate::dto::{InspectableObjectSummary, LensResult, SpotterResult, ViewDescriptor, WorkspaceSummary, OpenWorkspaceRequest};
     use crate::session::state::DEFAULT_TTL_SECS;
-    use cognicode_core::domain::aggregates::SymbolId;
-    use cognicode_core::domain::value_objects::SymbolKind;
+    use async_trait::async_trait;
     use std::collections::HashMap;
-    use tempfile::TempDir;
 
-    fn build_service() -> (Arc<ExplorerService>, TempDir) {
-        let dir = tempfile::tempdir().expect("tempdir");
-        struct NoopRepo;
-        impl SymbolRepository for NoopRepo {
-            fn resolve(&self, _: &SymbolId) -> crate::ExplorerResult<Option<ResolvedSymbol>> {
-                Ok(None)
-            }
-            fn callers(&self, _: &SymbolId) -> Vec<RelationTarget> {
-                Vec::new()
-            }
-            fn callees(&self, _: &SymbolId) -> Vec<RelationTarget> {
-                Vec::new()
-            }
-            fn fan_in(&self, _: &SymbolId) -> usize {
-                0
-            }
-            fn fan_out(&self, _: &SymbolId) -> usize {
-                0
-            }
-            fn find_symbols_by_name(&self, _: &str) -> crate::ExplorerResult<Vec<ResolvedSymbol>> {
-                Ok(Vec::new())
-            }
-            fn find_symbols_by_file(&self, _: &str) -> crate::ExplorerResult<Vec<ResolvedSymbol>> {
-                Ok(Vec::new())
-            }
-            fn module_list(&self) -> Vec<String> {
-                Vec::new()
-            }
-            fn all_symbols(&self) -> crate::ExplorerResult<Vec<ResolvedSymbol>> {
-                Ok(Vec::new())
-            }
-            fn graph_stats(&self) -> GraphStats {
-                GraphStats {
-                    symbol_count: 0,
-                    relation_count: 0,
-                }
-            }
+    // --- Mock facades -------------------------------------------------------
+
+    #[derive(Clone)]
+    struct MockSearchService;
+    #[async_trait]
+    impl SearchService for MockSearchService {
+        async fn spotter_search(
+            &self,
+            _query: &str,
+            _kind: Option<&str>,
+        ) -> crate::ExplorerResult<Vec<SpotterResult>> {
+            Ok(vec![])
         }
-        let repo: Arc<dyn SymbolRepository> = Arc::new(NoopRepo);
-        let reader = Arc::new(FsSourceReader::new(dir.path().to_path_buf()));
-        let service = Arc::new(ExplorerService::new(repo, reader, dir.path().to_path_buf()));
-        (service, dir)
+        async fn spotter_search_with_viewspecs(
+            &self,
+            _query: &str,
+            _kind: Option<&str>,
+            _workspace_id: Option<&str>,
+        ) -> crate::ExplorerResult<Vec<crate::dto::SpotterSearchResult>> {
+            Ok(vec![])
+        }
+        async fn inspect_object(&self, _object_id: &str) -> crate::ExplorerResult<InspectableObjectSummary> {
+            Err(crate::error::ExplorerError::ObjectNotFound("mock".into()))
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockViewService;
+    #[async_trait]
+    impl ViewService for MockViewService {
+        async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<ViewDescriptor>> {
+            Ok(vec![])
+        }
+        async fn contextual_view(&self, _object_id: &str, _view_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        }
+        async fn build_contextual_graph(&self, _focus_id: &str, _level: &str, _depth: u8, _max_nodes: usize) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
+            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        }
+        async fn available_lenses(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
+            Ok(vec![])
+        }
+        async fn apply_lens(&self, _object_id: &str, _lens_id: &str) -> crate::ExplorerResult<LensResult> {
+            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        }
+        async fn execute_view_spec(&self, _spec: &crate::dto::ViewSpec, _object_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockWorkspaceService;
+    #[async_trait]
+    impl WorkspaceService for MockWorkspaceService {
+        async fn open_workspace(&self, _request: OpenWorkspaceRequest) -> crate::ExplorerResult<WorkspaceSummary> {
+            Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        }
+        fn current_workspace(&self) -> crate::ExplorerResult<WorkspaceSummary> {
+            Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        }
+    }
+
+    fn build_facades() -> (Arc<dyn SearchService>, Arc<dyn ViewService>, Arc<dyn WorkspaceService>) {
+        (Arc::new(MockSearchService), Arc::new(MockViewService), Arc::new(MockWorkspaceService))
     }
 
     #[test]
     fn registry_open_returns_uuid_and_workspace_id() {
-        let (svc, _dir) = build_service();
+        let (search, view, workspace) = build_facades();
         let reg = SessionRegistry::new();
-        let id = reg.open("ws-alpha".into(), DEFAULT_TTL_SECS, svc.clone(), None);
+        let id = reg.open("ws-alpha".into(), DEFAULT_TTL_SECS, search, view, workspace, None);
         // UUIDv4 shape: 8-4-4-4-12 hex.
         assert_eq!(id.len(), 36, "session id must be 36 chars, got `{id}`");
         assert_eq!(id.chars().filter(|c| *c == '-').count(), 4);
@@ -273,19 +294,20 @@ mod tests {
 
     #[test]
     fn registry_attach_unknown_id_returns_session_not_found() {
-        let (svc, _dir) = build_service();
+        let (search, view, workspace) = build_facades();
         let reg = SessionRegistry::new();
-        // Touch the service so the unused warning stays quiet.
-        let _ = svc;
+        // Touch the facades so the unused warning stays quiet.
+        let _ = (&search, &view, &workspace);
+        let _ = search.clone();
         let result = reg.attach("00000000-0000-4000-8000-000000000000");
         assert!(matches!(result, Err(SessionError::NotFound)));
     }
 
     #[test]
     fn registry_close_unknown_id_returns_false_idempotent() {
-        let (svc, _dir) = build_service();
+        let (search, view, workspace) = build_facades();
         let reg = SessionRegistry::new();
-        let _ = svc;
+        let _ = (search, view, workspace);
         // First close of an unknown id is false. A second close is
         // still false (idempotent), NOT an error.
         assert!(!reg.close("deadbeef-0000-4000-8000-000000000000"));
@@ -294,9 +316,9 @@ mod tests {
 
     #[test]
     fn registry_close_known_id_returns_true_and_removes_session() {
-        let (svc, _dir) = build_service();
+        let (search, view, workspace) = build_facades();
         let reg = SessionRegistry::new();
-        let id = reg.open("ws-1".into(), DEFAULT_TTL_SECS, svc.clone(), None);
+        let id = reg.open("ws-1".into(), DEFAULT_TTL_SECS, search, view, workspace, None);
         assert_eq!(reg.len(), 1);
         assert!(reg.close(&id));
         assert_eq!(reg.len(), 0);
@@ -313,9 +335,9 @@ mod tests {
     /// test timing out.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn registry_lock_not_held_across_await() {
-        let (svc, _dir) = build_service();
+        let (search, view, workspace) = build_facades();
         let reg = Arc::new(SessionRegistry::new());
-        let id = reg.open("ws-x".into(), DEFAULT_TTL_SECS, svc, None);
+        let id = reg.open("ws-x".into(), DEFAULT_TTL_SECS, search, view, workspace, None);
 
         let mut handles = Vec::new();
         for _ in 0..4 {
@@ -336,12 +358,12 @@ mod tests {
     /// open/attach cycles. The `0` value disables expiry entirely.
     #[test]
     fn registry_ttl_zero_disables_expiry() {
-        let (svc, _dir) = build_service();
+        let (search, view, workspace) = build_facades();
         let reg = SessionRegistry::new();
-        let id = reg.open("ws-forever".into(), 0, svc.clone(), None);
+        let id = reg.open("ws-forever".into(), 0, search.clone(), view.clone(), workspace.clone(), None);
         // Open a second session to force eviction to run; the first
         // one must remain.
-        let _id2 = reg.open("ws-other".into(), DEFAULT_TTL_SECS, svc, None);
+        let _id2 = reg.open("ws-other".into(), DEFAULT_TTL_SECS, search, view, workspace, None);
         assert!(
             reg.attach(&id).is_ok(),
             "ttl=0 session must survive eviction"
@@ -354,13 +376,13 @@ mod tests {
     /// should be dropped.
     #[tokio::test]
     async fn registry_lazy_eviction_drops_expired_sessions() {
-        let (svc, _dir) = build_service();
+        let (search, view, workspace) = build_facades();
         let reg = SessionRegistry::new();
-        let stale = reg.open("ws-stale".into(), 1, svc.clone(), None);
+        let stale = reg.open("ws-stale".into(), 1, search.clone(), view.clone(), workspace.clone(), None);
         // Sleep 1.1s to push the first session past its 1s TTL.
         tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
         // A new open triggers eviction.
-        let _fresh = reg.open("ws-fresh".into(), DEFAULT_TTL_SECS, svc, None);
+        let _fresh = reg.open("ws-fresh".into(), DEFAULT_TTL_SECS, search, view, workspace, None);
         // Stale must be gone.
         assert!(matches!(reg.attach(&stale), Err(SessionError::NotFound)));
     }
@@ -371,14 +393,14 @@ mod tests {
     /// intervening `get` (because `get` did not extend the TTL).
     #[tokio::test]
     async fn registry_get_does_not_refresh_last_activity() {
-        let (svc, _dir) = build_service();
+        let (search, view, workspace) = build_facades();
         let reg = SessionRegistry::new();
-        let id = reg.open("ws-get".into(), 1, svc.clone(), None);
+        let id = reg.open("ws-get".into(), 1, search.clone(), view.clone(), workspace.clone(), None);
         tokio::time::sleep(std::time::Duration::from_millis(600)).await;
         let _ = reg.get(&id).expect("get within TTL");
         // Sleep another 600ms so total > 1s, then trigger eviction.
         tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-        let _trigger = reg.open("ws-trigger".into(), DEFAULT_TTL_SECS, svc, None);
+        let _trigger = reg.open("ws-trigger".into(), DEFAULT_TTL_SECS, search, view, workspace, None);
         assert!(matches!(reg.get(&id), Err(SessionError::NotFound)));
     }
 

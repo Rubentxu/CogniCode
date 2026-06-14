@@ -9,14 +9,6 @@ authors.workspace = true
 name = "cognicode_explorer"
 path = "src/lib.rs"
 
-[[bin]]
-name = "cognicode-explorer-api"
-path = "src/bin/api.rs"
-
-[[bin]]
-name = "cognicode-explorer-mcp"
-path = "src/bin/mcp.rs"
-
 [features]
 # Default flipped from `["sqlite"]` to `["postgres"]` in PR 2
 # (`postgres-default-config`). The `sqlite` feature was then
@@ -30,7 +22,7 @@ default = ["postgres"]
 # `postgres` is the default. When enabled, the explorer can load a
 # `CallGraph` from PostgreSQL at binary startup (see
 # `postgres_bridge.rs`). Adds `sqlx` + `async-trait`.
-postgres = ["cognicode-core/postgres", "dep:sqlx", "dep:async-trait"]
+postgres = ["cognicode-core/postgres", "dep:sqlx"]
 # Exposes test-only accessors (e.g. `ExplorerMcpHandler::registry`)
 # so integration tests outside the crate can drive the
 # brain-session lifecycle.
@@ -54,6 +46,7 @@ clap.workspace = true
 rmcp.workspace = true
 chrono.workspace = true
 regex.workspace = true
+inventory = "0.1"
 axum = "0.7"
 tower = { workspace = true }
 tower-http = { version = "0.5", features = ["cors", "trace"] }
@@ -61,7 +54,9 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 # Optional dependencies — only pulled in when the `postgres` feature
 # is enabled. Keeps the default build sqlx-free.
 sqlx = { workspace = true, optional = true }
-async-trait = { workspace = true, optional = true }
+# `async-trait` is always needed — the facade traits use `#[async_trait]`.
+# It is NOT optional because the proc macro must always be available.
+async-trait.workspace = true
 
 [dev-dependencies]
 tokio-test.workspace = true

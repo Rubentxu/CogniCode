@@ -18,7 +18,9 @@ use crate::dto::{
     DesignFinding, FindingSeverity, InspectableObjectType, LensDescriptor, LensResult,
 };
 use crate::error::ExplorerResult;
-use crate::ports::symbol_repository::ResolvedSymbol;
+use crate::ports::symbol_repository::{ResolvedSymbol, RelationTarget};
+use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
+use cognicode_core::domain::aggregates::SymbolId;
 
 pub const LENS_ID: &str = "dependencies";
 const FINDING_CAP: usize = 20;
@@ -94,8 +96,8 @@ fn analyse_symbol(
     quality_present: bool,
 ) -> Vec<DesignFinding> {
     let mut findings = Vec::new();
-    let fan_in = ctx.symbol_repo.fan_in(&symbol.id);
-    let fan_out = ctx.symbol_repo.fan_out(&symbol.id);
+    let fan_in = ctx.graph_query.as_ref().map(|gq| gq.fan_in(&symbol.id)).unwrap_or(0);
+    let fan_out = ctx.graph_query.as_ref().map(|gq| gq.fan_out(&symbol.id)).unwrap_or(0);
     let symbol_object_id = format!("symbol:{}:{}:{}", symbol.file, symbol.name, symbol.line);
 
     if fan_out > HIGH_FAN_OUT_THRESHOLD {
@@ -182,12 +184,12 @@ fn analyse_file(file: &str, ctx: &LensContext, quality_present: bool) -> Vec<Des
         .unwrap_or_default();
     let mut cross_files: HashSet<String> = HashSet::new();
     for sym in &symbols {
-        for callee in ctx.symbol_repo.callees(&sym.id) {
+        for callee in ctx.graph_query.as_ref().map(|gq| gq.callees(&sym.id)).unwrap_or_default() {
             if callee.file != file {
                 cross_files.insert(callee.file.clone());
             }
         }
-        for caller in ctx.symbol_repo.callers(&sym.id) {
+        for caller in ctx.graph_query.as_ref().map(|gq| gq.callers(&sym.id)).unwrap_or_default() {
             if caller.file != file {
                 cross_files.insert(caller.file.clone());
             }
@@ -254,14 +256,14 @@ fn analyse_scope(scope: &str, ctx: &LensContext, quality_present: bool) -> Vec<D
     let mut outgoing: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     let mut incoming: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for sym in &members {
-        for callee in ctx.symbol_repo.callees(&sym.id) {
+        for callee in ctx.graph_query.as_ref().map(|gq| gq.callees(&sym.id)).unwrap_or_default() {
             if crate::domain::views::scope_contains_file(scope, &callee.file) {
                 continue;
             }
             let other = parent_dir(&callee.file);
             *outgoing.entry(other).or_insert(0) += 1;
         }
-        for caller in ctx.symbol_repo.callers(&sym.id) {
+        for caller in ctx.graph_query.as_ref().map(|gq| gq.callers(&sym.id)).unwrap_or_default() {
             if crate::domain::views::scope_contains_file(scope, &caller.file) {
                 continue;
             }
@@ -359,7 +361,7 @@ fn detect_scope_cycle(
             if parent_dir(&sym.file) != current {
                 continue;
             }
-            for callee in ctx.symbol_repo.callees(&sym.id) {
+            for callee in ctx.graph_query.as_ref().map(|gq| gq.callees(&sym.id)).unwrap_or_default() {
                 let other = parent_dir(&callee.file);
                 if other == current {
                     continue;
@@ -449,18 +451,6 @@ mod tests {
         fn resolve(&self, id: &SymbolId) -> ExplorerResult<Option<ResolvedSymbol>> {
             Ok(self.by_id.get(id.as_str()).cloned())
         }
-        fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
-            self.callers.get(id.as_str()).cloned().unwrap_or_default()
-        }
-        fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
-            self.callees.get(id.as_str()).cloned().unwrap_or_default()
-        }
-        fn fan_in(&self, id: &SymbolId) -> usize {
-            self.callers.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
-        }
-        fn fan_out(&self, id: &SymbolId) -> usize {
-            self.callees.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
-        }
         fn find_symbols_by_name(&self, _n: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
             Ok(Vec::new())
         }
@@ -475,6 +465,36 @@ mod tests {
         }
         fn graph_stats(&self) -> GraphStats {
             GraphStats::default()
+        }
+    }
+
+    impl GraphQueryPort for MockRepo {
+        fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
+            self.callers.get(id.as_str()).cloned().unwrap_or_default()
+        }
+        fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
+            self.callees.get(id.as_str()).cloned().unwrap_or_default()
+        }
+        fn fan_in(&self, id: &SymbolId) -> usize {
+            self.callers.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
+        }
+        fn fan_out(&self, id: &SymbolId) -> usize {
+            self.callees.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
+        }
+        fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
+            Vec::new()
+        }
+        fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
+            Vec::new()
+        }
+        fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata> {
+            Vec::new()
+        }
+        fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
+            Vec::new()
+        }
+        fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
+            Vec::new()
         }
     }
 
@@ -496,11 +516,15 @@ mod tests {
             let callee = make_resolved(&format!("src/c{i}.rs"), "c", 1);
             repo.with_callee(&owner, callee);
         }
+        let repo_arc: Arc<MockRepo> = Arc::new(repo);
+        let repo_sym: Arc<dyn SymbolRepository> = repo_arc.clone() as Arc<dyn SymbolRepository>;
+        let repo_graph: Arc<dyn GraphQueryPort> = repo_arc.clone() as Arc<dyn GraphQueryPort>;
         let ctx = LensContext::new(
             crate::domain::ObjectIdentity::new_symbol("src/a.rs", "alpha", 1),
-            Arc::new(repo),
+            repo_sym,
             None,
             Arc::new(FsSourceReader::new("/tmp")),
+            Some(repo_graph),
         );
         let result = DependenciesLens.apply(&ctx).expect("ok");
         assert_eq!(result.findings.len(), 1);
@@ -522,11 +546,15 @@ mod tests {
             let callee = make_resolved(&format!("src/c{i}.rs"), "c", 1);
             repo.with_callee(&owner, callee);
         }
+        let repo_arc: Arc<MockRepo> = Arc::new(repo);
+        let repo_sym: Arc<dyn SymbolRepository> = repo_arc.clone() as Arc<dyn SymbolRepository>;
+        let repo_graph: Arc<dyn GraphQueryPort> = repo_arc.clone() as Arc<dyn GraphQueryPort>;
         let ctx = LensContext::new(
             crate::domain::ObjectIdentity::new_symbol("src/a.rs", "alpha", 1),
-            Arc::new(repo),
+            repo_sym,
             None,
             Arc::new(FsSourceReader::new("/tmp")),
+            Some(repo_graph),
         );
         let result = DependenciesLens.apply(&ctx).expect("ok");
         assert_eq!(result.findings.len(), 1);
@@ -543,6 +571,7 @@ mod tests {
             Arc::new(repo),
             None,
             Arc::new(FsSourceReader::new("/tmp")),
+            None,
         );
         let result = DependenciesLens.apply(&ctx).expect("ok");
         assert!(result.findings.is_empty());
@@ -555,6 +584,7 @@ mod tests {
             Arc::new(MockRepo::new()),
             None,
             Arc::new(FsSourceReader::new("/tmp")),
+            None,
         );
         let result = DependenciesLens.apply(&ctx).expect("ok");
         assert!(result.findings.is_empty());
@@ -569,6 +599,7 @@ mod tests {
             Arc::new(repo),
             None,
             Arc::new(FsSourceReader::new("/tmp")),
+            None,
         );
         let result = DependenciesLens.apply(&ctx).expect("ok");
         assert!(result.findings.is_empty());

@@ -16,19 +16,400 @@
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
-use cognicode_core::domain::aggregates::SymbolId;
+use cognicode_core::domain::aggregates::{CallEntry, SymbolId};
+use cognicode_core::domain::traits::graph_query_port::{
+    CalleeWithMetadata, CallerWithMetadata, GraphQueryPort, RelationTarget,
+    RelationTargetWithMetadata,
+};
 use cognicode_core::domain::value_objects::SymbolKind;
 use tower::ServiceExt;
 
 use crate::api::router;
+use crate::api::ApiState;
 use crate::error::ExplorerError;
+use crate::facades::graph::GraphServiceImpl;
+use crate::facades::{
+    GraphService, MoldQLService, PersistenceService, SearchService,
+    ViewService, WorkspaceService,
+};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{
-    GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
+    GraphStats, ResolvedSymbol, SymbolRepository,
 };
-use crate::service::ExplorerService;
+
+// ============================================================================
+// Mock service implementations for ApiState
+// ============================================================================
+
+#[derive(Clone)]
+struct MockWorkspaceService;
+#[async_trait]
+impl WorkspaceService for MockWorkspaceService {
+    async fn open_workspace(
+        &self,
+        _request: crate::dto::OpenWorkspaceRequest,
+    ) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
+        Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+    }
+    fn current_workspace(&self) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
+        Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+    }
+}
+
+#[derive(Clone)]
+struct MockSearchService;
+#[async_trait]
+impl SearchService for MockSearchService {
+    async fn spotter_search(
+        &self,
+        _query: &str,
+        _kind: Option<&str>,
+    ) -> crate::ExplorerResult<Vec<crate::dto::SpotterResult>> {
+        Ok(vec![])
+    }
+    async fn spotter_search_with_viewspecs(
+        &self,
+        _query: &str,
+        _kind: Option<&str>,
+        _workspace_id: Option<&str>,
+    ) -> crate::ExplorerResult<Vec<crate::dto::SpotterSearchResult>> {
+        Ok(vec![])
+    }
+    async fn inspect_object(
+        &self,
+        _object_id: &str,
+    ) -> crate::ExplorerResult<crate::dto::InspectableObjectSummary> {
+        Err(crate::error::ExplorerError::ObjectNotFound("mock".into()))
+    }
+}
+
+#[derive(Clone)]
+struct MockViewService;
+#[async_trait]
+impl ViewService for MockViewService {
+    async fn available_views(
+        &self,
+        _object_id: &str,
+    ) -> crate::ExplorerResult<Vec<crate::dto::ViewDescriptor>> {
+        Ok(vec![])
+    }
+    async fn contextual_view(
+        &self,
+        _object_id: &str,
+        _view_id: &str,
+    ) -> crate::ExplorerResult<crate::dto::ContextualView> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn build_contextual_graph(
+        &self,
+        _focus_id: &str,
+        _level: &str,
+        _depth: u8,
+        _max_nodes: usize,
+    ) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn available_lenses(
+        &self,
+        _object_id: &str,
+    ) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
+        Ok(vec![])
+    }
+    async fn apply_lens(
+        &self,
+        _object_id: &str,
+        _lens_id: &str,
+    ) -> crate::ExplorerResult<crate::dto::LensResult> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn execute_view_spec(
+        &self,
+        _spec: &crate::dto::ViewSpec,
+        _object_id: &str,
+    ) -> crate::ExplorerResult<crate::dto::ContextualView> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+}
+
+#[derive(Clone)]
+struct MockPersistenceService;
+#[async_trait]
+impl PersistenceService for MockPersistenceService {
+    async fn save_exploration(
+        &self,
+        _request: crate::dto::SaveExplorationRequest,
+    ) -> crate::ExplorerResult<crate::dto::ExplorationPath> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn generate_artifact(
+        &self,
+        _exploration_id: &str,
+        _request: crate::dto::GenerateArtifactRequest,
+    ) -> crate::ExplorerResult<crate::dto::DecisionArtifactSummary> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn save_view_spec(
+        &self,
+        _spec: &crate::dto::ViewSpec,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> crate::ExplorerResult<()> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn load_view_spec(
+        &self,
+        _id: &str,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> crate::ExplorerResult<Option<crate::dto::ViewSpec>> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn list_view_specs(
+        &self,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> crate::ExplorerResult<Vec<crate::dto::ViewSpec>> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn delete_view_spec(
+        &self,
+        _id: &str,
+        _workspace_id: &str,
+        _owner: &str,
+    ) -> crate::ExplorerResult<bool> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+}
+
+#[derive(Clone)]
+struct MockMoldQLService;
+#[async_trait]
+impl MoldQLService for MockMoldQLService {
+    async fn execute_query(&self, _query: &str) -> crate::ExplorerResult<crate::moldql::MoldQLResult> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn execute_query_with_target(
+        &self,
+        _query: &str,
+        _target: crate::moldql::compile::CompileTarget,
+    ) -> crate::ExplorerResult<crate::moldql::MoldQLResult> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+}
+
+/// A ViewService that only implements build_contextual_graph properly for tests.
+/// All other methods return FeatureDisabled.
+struct TestContextualViewService {
+    symbol_repo: Arc<dyn SymbolRepository>,
+    graph_query: Option<Arc<dyn GraphQueryPort>>,
+}
+
+impl TestContextualViewService {
+    fn build_contextual_graph_sync(
+        &self,
+        focus_id: &str,
+        level: &str,
+        _depth: u8,
+        max_nodes: usize,
+    ) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
+        use crate::dto::{ChildrenSection, ContextualGraphResponse, GraphEdge, GraphNode, ParentSection, SameLevelSection};
+        use cognicode_core::domain::aggregates::SymbolId;
+
+        let symbol_id = SymbolId::new(focus_id);
+
+        // Resolve focus symbol
+        let focus_resolved = self.symbol_repo.resolve(&symbol_id)?
+            .ok_or_else(|| ExplorerError::SymbolNotFound(focus_id.to_string()))?;
+
+        let focus_node = GraphNode {
+            id: focus_resolved.id.to_string(),
+            label: focus_resolved.name.clone(),
+            kind: format!("{:?}", focus_resolved.kind).to_lowercase(),
+            file: Some(focus_resolved.file.clone()),
+            line: Some(focus_resolved.line),
+            style_class: crate::api::style_class_for(&format!("{:?}", focus_resolved.kind).to_lowercase()).to_string(),
+        };
+
+        // Find siblings in same file (parent section)
+        let file_siblings = self.symbol_repo.find_symbols_by_file(&focus_resolved.file)?;
+        let (parent, children, children_clipped) = if file_siblings.is_empty() || level != "file" {
+            (None, None, false)
+        } else {
+            let parent_node = GraphNode {
+                id: format!("file:{}", focus_resolved.file),
+                label: focus_resolved.file.clone(),
+                kind: "file".to_string(),
+                file: Some(focus_resolved.file.clone()),
+                line: None,
+                style_class: "module".to_string(),
+            };
+            let parent_edge = GraphEdge {
+                source: focus_resolved.id.to_string(),
+                target: parent_node.id.clone(),
+                relation: "lives_in".to_string(),
+                style_class: "edge.calls".to_string(),
+            };
+            let parent_section = ParentSection {
+                node: parent_node,
+                edge: parent_edge,
+            };
+
+            let mut child_nodes: Vec<GraphNode> = Vec::new();
+            let mut child_edges: Vec<GraphEdge> = Vec::new();
+            for sib in file_siblings.iter().filter(|s| s.id != focus_resolved.id) {
+                child_edges.push(GraphEdge {
+                    source: sib.id.to_string(),
+                    target: focus_resolved.id.to_string(),
+                    relation: "lives_in".to_string(),
+                    style_class: "edge.calls".to_string(),
+                });
+                child_nodes.push(GraphNode {
+                    id: sib.id.to_string(),
+                    label: sib.name.clone(),
+                    kind: format!("{:?}", sib.kind).to_lowercase(),
+                    file: Some(sib.file.clone()),
+                    line: Some(sib.line),
+                    style_class: crate::api::style_class_for(&format!("{:?}", sib.kind).to_lowercase()).to_string(),
+                });
+            }
+
+            let clipped = child_nodes.len() > max_nodes;
+            if clipped {
+                child_nodes.truncate(max_nodes);
+                let kept: std::collections::HashSet<String> = child_nodes.iter().map(|n| n.id.clone()).collect();
+                child_edges.retain(|e| kept.contains(&e.source));
+            }
+            (
+                Some(parent_section),
+                Some(ChildrenSection { nodes: child_nodes, edges: child_edges }),
+                clipped,
+            )
+        };
+
+        // Same-level section using graph_query
+        let remaining_cap = max_nodes.saturating_sub(
+            children.as_ref().map(|c| c.nodes.len()).unwrap_or(0),
+        );
+        let (same_nodes, same_edges) = if remaining_cap == 0 || self.graph_query.is_none() {
+            (Vec::new(), Vec::new())
+        } else {
+            let gq = self.graph_query.as_ref().unwrap();
+            let focus_sym_id = SymbolId::new(focus_id);
+            let callees = gq.callees(&focus_sym_id);
+            let callers = gq.callers(&focus_sym_id);
+
+            let mut nodes = Vec::new();
+            let mut edges = Vec::new();
+            let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+            visited.insert(focus_id.to_string());
+
+            for callee in callees.iter().take(remaining_cap) {
+                let callee_id_str = callee.id.to_string();
+                if visited.insert(callee_id_str.clone()) {
+                    nodes.push(GraphNode {
+                        id: callee_id_str.clone(),
+                        label: callee.name.clone(),
+                        kind: format!("{:?}", callee.kind).to_lowercase(),
+                        file: Some(callee.file.clone()),
+                        line: Some(callee.line),
+                        style_class: crate::api::style_class_for(&format!("{:?}", callee.kind).to_lowercase()).to_string(),
+                    });
+                    edges.push(GraphEdge {
+                        source: focus_id.to_string(),
+                        target: callee_id_str,
+                        relation: "calls".to_string(),
+                        style_class: "edge.calls".to_string(),
+                    });
+                }
+            }
+
+            for caller in callers.iter().take(remaining_cap.saturating_sub(nodes.len())) {
+                let caller_id_str = caller.id.to_string();
+                if visited.insert(caller_id_str.clone()) {
+                    nodes.push(GraphNode {
+                        id: caller_id_str.clone(),
+                        label: caller.name.clone(),
+                        kind: format!("{:?}", caller.kind).to_lowercase(),
+                        file: Some(caller.file.clone()),
+                        line: Some(caller.line),
+                        style_class: crate::api::style_class_for(&format!("{:?}", caller.kind).to_lowercase()).to_string(),
+                    });
+                    edges.push(GraphEdge {
+                        source: caller_id_str,
+                        target: focus_id.to_string(),
+                        relation: "calls".to_string(),
+                        style_class: "edge.calls".to_string(),
+                    });
+                }
+            }
+
+            (nodes, edges)
+        };
+
+        let fan_in = self.graph_query.as_ref().map(|gq| gq.fan_in(&SymbolId::new(focus_id))).unwrap_or(0);
+        let fan_out = self.graph_query.as_ref().map(|gq| gq.fan_out(&SymbolId::new(focus_id))).unwrap_or(0);
+        let bfs_clipped = !same_nodes.is_empty() && same_nodes.len() >= remaining_cap
+            && (fan_in + fan_out) > remaining_cap as usize;
+        let truncated = children_clipped || bfs_clipped;
+
+        Ok(ContextualGraphResponse {
+            focus_node,
+            parent,
+            children,
+            same_level: SameLevelSection { nodes: same_nodes, edges: same_edges },
+            level: level.to_string(),
+            truncated,
+            truncation_reason: if truncated { Some("max_nodes_exceeded".to_string()) } else { None },
+        })
+    }
+}
+
+#[async_trait]
+impl ViewService for TestContextualViewService {
+    async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::ViewDescriptor>> {
+        Ok(vec![])
+    }
+    async fn contextual_view(&self, _object_id: &str, _view_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+        Err(ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn build_contextual_graph(&self, focus_id: &str, level: &str, depth: u8, max_nodes: usize) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
+        let focus_id = focus_id.to_string();
+        let level = level.to_string();
+        let result = self.build_contextual_graph_sync(&focus_id, &level, depth, max_nodes);
+        tokio::task::spawn_blocking(move || result)
+            .await
+            .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("join error: {}", e)))?
+    }
+    async fn available_lenses(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
+        Ok(vec![])
+    }
+    async fn apply_lens(&self, _object_id: &str, _lens_id: &str) -> crate::ExplorerResult<crate::dto::LensResult> {
+        Err(ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn execute_view_spec(&self, _spec: &crate::dto::ViewSpec, _object_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+        Err(ExplorerError::FeatureDisabled("mock".into()))
+    }
+}
+
+/// Construct an `ApiState` for testing with the given symbol repository
+/// and optional graph query port.
+fn make_test_api_state(
+    symbol_repo: Arc<dyn SymbolRepository>,
+    graph_query: Option<Arc<dyn GraphQueryPort>>,
+) -> ApiState {
+    let graph = Arc::new(GraphServiceImpl::new(symbol_repo, graph_query));
+    ApiState::new(
+        Arc::new(MockWorkspaceService),
+        Arc::new(MockSearchService),
+        Arc::new(MockViewService),
+        Arc::new(MockPersistenceService),
+        Arc::new(MockMoldQLService),
+        graph,
+    )
+}
 
 // ============================================================================
 // style_class_for (node)
@@ -416,42 +797,6 @@ impl SymbolRepository for TinyRepo {
         Ok(None)
     }
 
-    fn callers(&self, _id: &SymbolId) -> Vec<RelationTarget> {
-        Vec::new()
-    }
-
-    fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
-        if id.as_str() == "sym:foo::bar" {
-            return vec![RelationTarget {
-                id: SymbolId::new("sym:foo::baz"),
-                name: "baz".to_string(),
-                kind: SymbolKind::Function,
-                file: "foo.rs".to_string(),
-                line: 20,
-                signature: Some("fn baz()".to_string()),
-            }];
-        }
-        if id.as_str() == "sym:foo::baz" {
-            return vec![RelationTarget {
-                id: SymbolId::new("sym:ext::lib"),
-                name: "lib".to_string(),
-                kind: SymbolKind::Module,
-                file: "ext/lib.rs".to_string(),
-                line: 1,
-                signature: None,
-            }];
-        }
-        Vec::new()
-    }
-
-    fn fan_in(&self, _id: &SymbolId) -> usize {
-        0
-    }
-
-    fn fan_out(&self, id: &SymbolId) -> usize {
-        self.callees(id).len()
-    }
-
     fn find_symbols_by_name(
         &self,
         _name: &str,
@@ -482,6 +827,77 @@ impl SymbolRepository for TinyRepo {
     }
 }
 
+/// Graph query port for TinyRepo — sym:foo::bar calls sym:foo::baz and sym:ext::lib.
+struct TinyGraphQueryPort;
+
+impl GraphQueryPort for TinyGraphQueryPort {
+    fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
+        match id.as_str() {
+            "sym:foo::baz" | "sym:ext::lib" => vec![RelationTarget {
+                id: SymbolId::new("sym:foo::bar"),
+                name: "bar".to_string(),
+                kind: SymbolKind::Function,
+                file: "foo.rs".to_string(),
+                line: 10,
+                signature: Some("fn bar()".to_string()),
+            }],
+            _ => Vec::new(),
+        }
+    }
+
+    fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
+        match id.as_str() {
+            "sym:foo::bar" => vec![
+                RelationTarget {
+                    id: SymbolId::new("sym:foo::baz"),
+                    name: "baz".to_string(),
+                    kind: SymbolKind::Function,
+                    file: "foo.rs".to_string(),
+                    line: 20,
+                    signature: Some("fn baz()".to_string()),
+                },
+                RelationTarget {
+                    id: SymbolId::new("sym:ext::lib"),
+                    name: "lib".to_string(),
+                    kind: SymbolKind::Module,
+                    file: "ext/lib.rs".to_string(),
+                    line: 1,
+                    signature: None,
+                },
+            ],
+            _ => Vec::new(),
+        }
+    }
+
+    fn fan_in(&self, _id: &SymbolId) -> usize {
+        0
+    }
+
+    fn fan_out(&self, _id: &SymbolId) -> usize {
+        0
+    }
+
+    fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<CallerWithMetadata> {
+        Vec::new()
+    }
+
+    fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<CalleeWithMetadata> {
+        Vec::new()
+    }
+
+    fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<RelationTargetWithMetadata> {
+        Vec::new()
+    }
+
+    fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+        Vec::new()
+    }
+
+    fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+        Vec::new()
+    }
+}
+
 struct EmptyReader;
 impl SourceReader for EmptyReader {
     fn read_source(&self, _file: &str) -> crate::error::ExplorerResult<String> {
@@ -499,9 +915,8 @@ impl SourceReader for EmptyReader {
 
 fn test_app() -> axum::Router {
     let repo = Arc::new(TinyRepo);
-    let reader = Arc::new(EmptyReader);
-    let service = ExplorerService::new(repo, reader, "/tmp/test");
-    router(service)
+    let state = make_test_api_state(repo, Some(Arc::new(TinyGraphQueryPort)));
+    router(state)
 }
 
 #[tokio::test]
@@ -633,31 +1048,6 @@ impl SymbolRepository for WideRepo {
         }))
     }
 
-    fn callers(&self, _id: &SymbolId) -> Vec<RelationTarget> {
-        Vec::new()
-    }
-
-    fn callees(&self, _id: &SymbolId) -> Vec<RelationTarget> {
-        (1..=600)
-            .map(|i| RelationTarget {
-                id: SymbolId::new(format!("sym:wide::n{i:04}")),
-                name: format!("n{i:04}"),
-                kind: SymbolKind::Function,
-                file: "wide.rs".to_string(),
-                line: i as u32,
-                signature: None,
-            })
-            .collect()
-    }
-
-    fn fan_in(&self, _id: &SymbolId) -> usize {
-        0
-    }
-
-    fn fan_out(&self, id: &SymbolId) -> usize {
-        self.callees(id).len()
-    }
-
     fn find_symbols_by_name(
         &self,
         _name: &str,
@@ -688,11 +1078,70 @@ impl SymbolRepository for WideRepo {
     }
 }
 
+/// Graph query port for WideRepo — sym:wide::root has 600 callees to
+/// trigger truncation at max_nodes=500.
+struct WideGraphQueryPort;
+
+impl GraphQueryPort for WideGraphQueryPort {
+    fn callers(&self, _id: &SymbolId) -> Vec<RelationTarget> {
+        Vec::new()
+    }
+
+    fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
+        if id.as_str() == "sym:wide::root" {
+            // Return 600 callees to trigger truncation at max_nodes=500
+            (0..600)
+                .map(|i| RelationTarget {
+                    id: SymbolId::new(format!("sym:wide::leaf_{}", i)),
+                    name: format!("leaf_{}", i),
+                    kind: SymbolKind::Function,
+                    file: "wide.rs".to_string(),
+                    line: 1,
+                    signature: None,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn fan_in(&self, _id: &SymbolId) -> usize {
+        0
+    }
+
+    fn fan_out(&self, id: &SymbolId) -> usize {
+        if id.as_str() == "sym:wide::root" {
+            600
+        } else {
+            0
+        }
+    }
+
+    fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<CallerWithMetadata> {
+        Vec::new()
+    }
+
+    fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<CalleeWithMetadata> {
+        Vec::new()
+    }
+
+    fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<RelationTargetWithMetadata> {
+        Vec::new()
+    }
+
+    fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+        Vec::new()
+    }
+
+    fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+        Vec::new()
+    }
+}
+
 fn wide_app() -> axum::Router {
     let repo = Arc::new(WideRepo);
-    let reader = Arc::new(EmptyReader);
-    let service = ExplorerService::new(repo, reader, "/tmp/wide");
-    router(service)
+    let state = make_test_api_state(repo, Some(Arc::new(WideGraphQueryPort)));
+    router(state)
 }
 
 #[tokio::test]
@@ -796,18 +1245,6 @@ async fn handler_graph_unavailable_returns_503() {
         ) -> crate::error::ExplorerResult<Option<ResolvedSymbol>> {
             Err(ExplorerError::GraphNotReady)
         }
-        fn callers(&self, _id: &SymbolId) -> Vec<RelationTarget> {
-            Vec::new()
-        }
-        fn callees(&self, _id: &SymbolId) -> Vec<RelationTarget> {
-            Vec::new()
-        }
-        fn fan_in(&self, _id: &SymbolId) -> usize {
-            0
-        }
-        fn fan_out(&self, _id: &SymbolId) -> usize {
-            0
-        }
         fn find_symbols_by_name(
             &self,
             _name: &str,
@@ -833,9 +1270,8 @@ async fn handler_graph_unavailable_returns_503() {
 
     let app = {
         let repo = Arc::new(UnavailableRepo);
-        let reader = Arc::new(EmptyReader);
-        let service = ExplorerService::new(repo, reader, "/tmp/unavail");
-        router(service)
+        let state = make_test_api_state(repo, None);
+        router(state)
     };
     let req = Request::builder()
         .method("GET")
@@ -900,31 +1336,6 @@ impl SymbolRepository for ContextualRepo {
         }
     }
 
-    fn callers(&self, _id: &SymbolId) -> Vec<RelationTarget> {
-        Vec::new()
-    }
-
-    fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
-        if id.as_str() == "sym:ctx::alpha" {
-            vec![RelationTarget {
-                id: SymbolId::new("sym:ctx::beta"),
-                name: "beta".to_string(),
-                kind: SymbolKind::Function,
-                file: "src/ctx.rs".to_string(),
-                line: 10,
-                signature: Some("fn beta()".to_string()),
-            }]
-        } else {
-            Vec::new()
-        }
-    }
-
-    fn fan_in(&self, _id: &SymbolId) -> usize {
-        0
-    }
-    fn fan_out(&self, _id: &SymbolId) -> usize {
-        0
-    }
     fn find_symbols_by_name(
         &self,
         _name: &str,
@@ -971,11 +1382,101 @@ impl SymbolRepository for ContextualRepo {
     }
 }
 
+/// Graph query port for contextual tests — alpha and beta are same-level
+/// neighbours (beta is alpha's callee, alpha is beta's caller).
+struct ContextualGraphQueryPort;
+
+impl GraphQueryPort for ContextualGraphQueryPort {
+    fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
+        match id.as_str() {
+            "sym:ctx::beta" => vec![RelationTarget {
+                id: SymbolId::new("sym:ctx::alpha"),
+                name: "alpha".to_string(),
+                kind: SymbolKind::Function,
+                file: "src/ctx.rs".to_string(),
+                line: 1,
+                signature: Some("fn alpha()".to_string()),
+            }],
+            _ => Vec::new(),
+        }
+    }
+
+    fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
+        match id.as_str() {
+            "sym:ctx::alpha" => vec![RelationTarget {
+                id: SymbolId::new("sym:ctx::beta"),
+                name: "beta".to_string(),
+                kind: SymbolKind::Function,
+                file: "src/ctx.rs".to_string(),
+                line: 10,
+                signature: Some("fn beta()".to_string()),
+            }],
+            _ => Vec::new(),
+        }
+    }
+
+    fn fan_in(&self, _id: &SymbolId) -> usize {
+        0
+    }
+
+    fn fan_out(&self, _id: &SymbolId) -> usize {
+        0
+    }
+
+    fn callers_with_metadata(
+        &self,
+        _id: &SymbolId,
+    ) -> Vec<CallerWithMetadata> {
+        Vec::new()
+    }
+
+    fn callees_with_metadata(
+        &self,
+        _id: &SymbolId,
+    ) -> Vec<CalleeWithMetadata> {
+        Vec::new()
+    }
+
+    fn dependencies_with_metadata(
+        &self,
+        _id: &SymbolId,
+    ) -> Vec<RelationTargetWithMetadata> {
+        Vec::new()
+    }
+
+    fn traverse_callees(
+        &self,
+        _id: &SymbolId,
+        _max_depth: u8,
+    ) -> Vec<CallEntry> {
+        Vec::new()
+    }
+
+    fn traverse_callers(
+        &self,
+        _id: &SymbolId,
+        _max_depth: u8,
+    ) -> Vec<CallEntry> {
+        Vec::new()
+    }
+}
+
 fn contextual_app() -> axum::Router {
     let repo = Arc::new(ContextualRepo);
-    let reader = Arc::new(EmptyReader);
-    let service = ExplorerService::new(repo, reader, "/tmp/ctx");
-    router(service)
+    let graph = Arc::new(GraphServiceImpl::new(repo.clone(), Some(Arc::new(ContextualGraphQueryPort))));
+    let view_service = TestContextualViewService {
+        symbol_repo: repo,
+        graph_query: Some(Arc::new(ContextualGraphQueryPort)),
+    };
+    let state = ApiState::new(
+        Arc::new(MockWorkspaceService),
+        Arc::new(MockSearchService),
+        Arc::new(view_service),
+        Arc::new(MockPersistenceService),
+        Arc::new(MockMoldQLService),
+        graph,
+    );
+    router(state)
 }
 
 #[tokio::test]

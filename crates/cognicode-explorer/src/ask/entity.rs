@@ -4,12 +4,10 @@
 //! to an `ExplorerService`) runs `spotter_search` to disambiguate
 //! candidates whose `confidence >= 0.6`.
 
-use std::sync::Arc;
-
 use serde::Serialize;
 
+use crate::facades::SearchService;
 use crate::mcp::FollowUp;
-use crate::service::ExplorerService;
 
 /// A symbol-like token pulled from a free-form question, with the
 /// `spotter_search` results attached.
@@ -46,14 +44,14 @@ pub(crate) fn extract_backtick_tokens(question: &str) -> Vec<String> {
 /// disambiguation follow-ups that should be surfaced in the envelope.
 pub async fn extract_entities(
     question: &str,
-    service: &Arc<ExplorerService>,
+    search: &dyn SearchService,
 ) -> (Vec<ExtractedEntity>, Vec<FollowUp>) {
     let tokens = extract_backtick_tokens(question);
     let mut entities = Vec::with_capacity(tokens.len());
     let mut follow_ups: Vec<FollowUp> = Vec::new();
 
     for token in tokens {
-        let hits = service.spotter_search(&token, None).unwrap_or_default();
+        let hits = search.spotter_search(&token, None).await.unwrap_or_default();
         // The spec threshold is 0.6.
         let candidates: Vec<EntityCandidate> = hits
             .into_iter()

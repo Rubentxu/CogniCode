@@ -15,7 +15,11 @@ pub use graph_repository::{GraphRepository, SearchPage};
 pub use quality_repository::{QualityGateSummary, QualityIssue, QualityRepository, RuleSummary};
 pub use search_repository::{SearchHit, SearchRepository};
 pub use source_reader::SourceReader;
-pub use symbol_repository::{
-    EdgeWithMetadata, MetadataAwareRepository, RelationTarget, RelationTargetWithMetadata,
-    ResolvedSymbol, SymbolRepository,
+pub use symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
+
+// Re-export GraphQueryPort types from cognicode-core for consumers that need
+// both SymbolRepository (identity) and GraphQueryPort (navigation).
+pub use cognicode_core::domain::traits::graph_query_port::{
+    CalleeWithMetadata, CallerWithMetadata, EdgeWithMetadata, GraphQueryPort, RelationTarget,
+    RelationTargetWithMetadata,
 };

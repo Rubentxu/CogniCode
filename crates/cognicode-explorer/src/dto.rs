@@ -2,6 +2,12 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+// Ports for InspectionTarget and ViewContext
+use crate::ports::quality_repository::{QualityIssue, QualityRepository};
+use crate::ports::source_reader::SourceReader;
+use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
+use cognicode_core::domain::traits::GraphQueryPort;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceSummary {
     pub id: String,
@@ -26,6 +32,31 @@ pub struct SpotterResult {
     pub object: InspectableObjectSummary,
     pub score: f32,
     pub match_type: String,
+}
+
+/// A ViewSpec summary for Spotter search results.
+/// Includes the minimal set of fields needed to display a hit and open the spec.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ViewSpecSummary {
+    pub id: String,
+    pub title: String,
+    pub view_kind: ViewKind,
+    pub applies_to: InspectableObjectType,
+    pub owner: String,
+    pub updated_at: String,
+}
+
+/// Discriminated union of symbol/file hits and ViewSpec hits for Spotter results.
+/// The frontend can switch on `kind` to render each variant appropriately.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "result")]
+pub enum SpotterSearchResult {
+    /// A symbol or file hit from the code graph.
+    #[serde(rename = "symbol")]
+    Symbol(SpotterResult),
+    /// A runtime ViewSpec hit from the store.
+    #[serde(rename = "viewspec")]
+    ViewSpec(ViewSpecSummary),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,10 +87,19 @@ pub enum InspectableObjectType {
     Rule,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ViewDescriptor {
     pub id: String,
     pub title: String,
+    /// Whether this is a built-in view (`true`) or a runtime user-defined view (`false`).
+    /// Phase 4+: included so the frontend can badge runtime views.
+    /// Default `true` when absent (backward compat).
+    #[serde(default)]
+    pub is_builtin: bool,
+    /// Source discriminator for runtime views. `"runtime"` for user-defined specs;
+    /// absent (or `null`) for built-ins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,7 +191,7 @@ pub struct LineRange {
     pub end: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ContextualView {
     pub object_id: String,
     pub view_id: String,
@@ -165,6 +205,45 @@ pub struct ContextualView {
     /// with an empty `Vec` — backward compatibility is the contract.
     #[serde(default)]
     pub findings: Vec<DesignFinding>,
+    /// Visual rendering strategy for this view. `#[serde(default)]` preserves
+    /// backward compatibility with payloads that predate this field — they
+    /// deserialize with `RendererKind::Json`, the most common fallback.
+    #[serde(default)]
+    pub renderer_kind: RendererKind,
+}
+
+// ============================================================================
+// Phase 1 — View Seam Consolidation: InspectionTarget + ViewContext
+// ============================================================================
+//
+// InspectionTarget carries the pre-resolved object data passed to ViewExecutor::build().
+// The service resolves identity BEFORE calling build(); capabilities MUST NOT re-resolve.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InspectionTarget {
+    Symbol(ResolvedSymbol),
+    File {
+        path: String,
+        symbols: Vec<ResolvedSymbol>,
+    },
+    Scope {
+        path: String,
+        files: Vec<String>,
+        symbols: Vec<ResolvedSymbol>,
+    },
+    Issue(QualityIssue),
+    Rule { rule_id: String },
+}
+
+/// Context passed to ViewExecutor::build(). The service populates all
+/// fields before calling build(); capabilities MUST NOT re-resolve identity.
+pub struct ViewContext<'a> {
+    pub target: &'a InspectionTarget,
+    pub repo: &'a dyn SymbolRepository,
+    pub reader: &'a dyn SourceReader,
+    pub quality: Option<&'a dyn QualityRepository>,
+    /// Optional graph query port for traversal and navigation queries.
+    /// `None` when no call graph is wired.
+    pub graph_query: Option<&'a dyn GraphQueryPort>,
 }
 
 // ============================================================================
@@ -376,6 +455,10 @@ impl From<crate::moldql::MoldQLResult> for MoldQLResultDto {
 /// Full persistence shape of a saved named view. Returned by
 /// `view_save` (the `id` and `created_at` are server-assigned on
 /// insert) and by `view_load` (re-fetched from PG).
+///
+/// **Deprecated** in favor of [`ViewSpec`] (ADR-008 Phase 2).
+/// Use [`NamedView::to_view_spec`] to migrate existing rows.
+#[deprecated(since = "0.6.0", note = "Use ViewSpec / view_spec_* instead")]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NamedView {
     pub id: String,
@@ -390,10 +473,100 @@ pub struct NamedView {
     pub created_at: String,
 }
 
+impl NamedView {
+    /// Convert this `NamedView` to a [`ViewSpec`].
+    ///
+    /// Maps the four-tuple `(level, lens, focus_node, max_depth)` to
+    /// the equivalent `ViewSpec` fields. The `data_source` is set to
+    /// `DataSource::Moldql { query: "" }` (filled in later via the
+    /// authoring wizard). The `renderer_kind` defaults to `RendererKind::Json`.
+    ///
+    /// Level → `InspectableObjectType` map:
+    /// `function|method` → `Symbol`; `file` → `File`; `module|scope` →
+    /// `Scope`; `system` → `Workspace`; unknown → `Symbol` (safe default).
+    ///
+    /// Lens → `ViewKind` map:
+    /// `callgraph` → `CallGraph`; `overview` → `Custom("overview")`;
+    /// `quality` → `QualityHotspots`; unknown → `Custom(lens)`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use cognicode_explorer::dto::{NamedView, ViewKind, DataSource, RendererKind};
+    ///
+    /// let nv = NamedView {
+    ///     id: "test-id".to_string(),
+    ///     workspace_id: "ws1".to_string(),
+    ///     owner: "alice".to_string(),
+    ///     name: "My View".to_string(),
+    ///     description: None,
+    ///     level: "function".to_string(),
+    ///     lens: "callgraph".to_string(),
+    ///     focus_node: "crate::foo".to_string(),
+    ///     max_depth: 3,
+    ///     created_at: "2024-01-01T00:00:00Z".to_string(),
+    /// };
+    /// let spec = nv.to_view_spec();
+    /// assert_eq!(spec.title, "My View");
+    /// assert_eq!(spec.view_kind, ViewKind::CallGraph);
+    /// assert!(matches!(spec.data_source, DataSource::Moldql { .. }));
+    /// assert_eq!(spec.renderer_kind, RendererKind::Json);
+    /// ```
+    #[must_use]
+    pub fn to_view_spec(&self) -> ViewSpec {
+        let applies_to = level_to_inspectable_object_type(&self.level);
+        let view_kind = lens_to_view_kind(&self.lens);
+        let props = serde_json::json!({
+            "focus_node": &self.focus_node,
+            "max_depth": self.max_depth,
+        });
+
+        ViewSpec {
+            id: self.id.clone(),
+            title: self.name.clone(),
+            applies_to,
+            view_kind,
+            data_source: DataSource::Moldql {
+                query: String::new(),
+            },
+            transform: None,
+            renderer_kind: RendererKind::Json,
+            props,
+            created_at: self.created_at.clone(),
+            updated_at: self.created_at.clone(),
+            owner: self.owner.clone(),
+        }
+    }
+}
+
+/// Convert a `NamedView.level` string to an `InspectableObjectType`.
+fn level_to_inspectable_object_type(level: &str) -> InspectableObjectType {
+    match level {
+        "function" | "method" => InspectableObjectType::Symbol,
+        "file" => InspectableObjectType::File,
+        "module" | "scope" => InspectableObjectType::Scope,
+        "system" => InspectableObjectType::Workspace,
+        _ => InspectableObjectType::Symbol, // safe default
+    }
+}
+
+/// Convert a `NamedView.lens` string to a `ViewKind`.
+fn lens_to_view_kind(lens: &str) -> ViewKind {
+    match lens {
+        "callgraph" => ViewKind::CallGraph,
+        "overview" => ViewKind::Custom("overview".to_string()),
+        "quality" => ViewKind::QualityHotspots,
+        _ => ViewKind::Custom(lens.to_string()),
+    }
+}
+
 /// List response shape for `view_list`. The descriptor carries the
 /// same fields as [`NamedView`] — the truncation in the service
 /// layer keeps `description` ≤ 201 chars (200 + `…`) when the
 /// stored text is longer.
+///
+/// **Deprecated** in favor of [`ViewSpec`] (ADR-008 Phase 2).
+#[deprecated(since = "0.6.0", note = "Use ViewSpec / view_spec_* instead")]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NamedViewDescriptor {
     pub id: String,
@@ -641,5 +814,919 @@ mod named_view_tests {
     #[test]
     fn truncate_description_none_passthrough() {
         assert_eq!(truncate_description(None, 200), None);
+    }
+
+    // --- NamedView::to_view_spec ---
+
+    #[test]
+    fn to_view_spec_callgraph_roundtrip() {
+        let nv = NamedView {
+            id: "11111111-1111-1111-1111-111111111111".to_string(),
+            workspace_id: "ws1".to_string(),
+            owner: "alice".to_string(),
+            name: "hotspots".to_string(),
+            description: None,
+            level: "function".to_string(),
+            lens: "callgraph".to_string(),
+            focus_node: "crate::foo::bar".to_string(),
+            max_depth: 3,
+            created_at: "2026-06-09T00:00:00Z".to_string(),
+        };
+        let spec = nv.to_view_spec();
+        assert_eq!(spec.id, nv.id);
+        assert_eq!(spec.title, nv.name);
+        assert_eq!(spec.applies_to, InspectableObjectType::Symbol);
+        assert_eq!(spec.view_kind, ViewKind::CallGraph);
+        assert!(matches!(spec.data_source, DataSource::Moldql { query } if query.is_empty()));
+        assert_eq!(spec.renderer_kind, RendererKind::Json);
+        let props = serde_json::json!({
+            "focus_node": "crate::foo::bar",
+            "max_depth": 3,
+        });
+        assert_eq!(spec.props, props);
+    }
+
+    #[test]
+    fn to_view_spec_unknown_lens_becomes_custom() {
+        let nv = NamedView {
+            id: "22222222-2222-2222-2222-222222222222".to_string(),
+            workspace_id: "ws1".to_string(),
+            owner: "alice".to_string(),
+            name: "experimental".to_string(),
+            description: None,
+            level: "function".to_string(),
+            lens: "experimental_lens".to_string(),
+            focus_node: "crate::foo".to_string(),
+            max_depth: 1,
+            created_at: "2026-06-09T00:00:00Z".to_string(),
+        };
+        let spec = nv.to_view_spec();
+        assert!(matches!(spec.view_kind, ViewKind::Custom(s) if s == "experimental_lens"));
+    }
+
+    #[test]
+    fn to_view_spec_file_level_maps_to_file() {
+        let nv = NamedView {
+            id: "33333333-3333-3333-3333-333333333333".to_string(),
+            workspace_id: "ws1".to_string(),
+            owner: "alice".to_string(),
+            name: "file view".to_string(),
+            description: None,
+            level: "file".to_string(),
+            lens: "overview".to_string(),
+            focus_node: "src/main.rs".to_string(),
+            max_depth: 0,
+            created_at: "2026-06-09T00:00:00Z".to_string(),
+        };
+        let spec = nv.to_view_spec();
+        assert_eq!(spec.applies_to, InspectableObjectType::File);
+    }
+
+    #[test]
+    fn to_view_spec_module_level_maps_to_scope() {
+        let nv = NamedView {
+            id: "44444444-4444-4444-4444-444444444444".to_string(),
+            workspace_id: "ws1".to_string(),
+            owner: "alice".to_string(),
+            name: "module view".to_string(),
+            description: None,
+            level: "module".to_string(),
+            lens: "overview".to_string(),
+            focus_node: "crate::foo".to_string(),
+            max_depth: 0,
+            created_at: "2026-06-09T00:00:00Z".to_string(),
+        };
+        let spec = nv.to_view_spec();
+        assert_eq!(spec.applies_to, InspectableObjectType::Scope);
+    }
+
+    #[test]
+    fn to_view_spec_system_level_maps_to_workspace() {
+        let nv = NamedView {
+            id: "55555555-5555-5555-5555-555555555555".to_string(),
+            workspace_id: "ws1".to_string(),
+            owner: "alice".to_string(),
+            name: "system view".to_string(),
+            description: None,
+            level: "system".to_string(),
+            lens: "overview".to_string(),
+            focus_node: "/".to_string(),
+            max_depth: 0,
+            created_at: "2026-06-09T00:00:00Z".to_string(),
+        };
+        let spec = nv.to_view_spec();
+        assert_eq!(spec.applies_to, InspectableObjectType::Workspace);
+    }
+
+    #[test]
+    fn to_view_spec_unknown_level_defaults_to_symbol() {
+        let nv = NamedView {
+            id: "66666666-6666-6666-6666-666666666666".to_string(),
+            workspace_id: "ws1".to_string(),
+            owner: "alice".to_string(),
+            name: "unknown level".to_string(),
+            description: None,
+            level: "totally_unknown".to_string(),
+            lens: "overview".to_string(),
+            focus_node: "crate::foo".to_string(),
+            max_depth: 0,
+            created_at: "2026-06-09T00:00:00Z".to_string(),
+        };
+        let spec = nv.to_view_spec();
+        assert_eq!(spec.applies_to, InspectableObjectType::Symbol);
+    }
+
+    #[test]
+    fn to_view_spec_quality_lens_maps_to_quality_hotspots() {
+        let nv = NamedView {
+            id: "77777777-7777-7777-7777-777777777777".to_string(),
+            workspace_id: "ws1".to_string(),
+            owner: "alice".to_string(),
+            name: "quality view".to_string(),
+            description: None,
+            level: "function".to_string(),
+            lens: "quality".to_string(),
+            focus_node: "crate::foo".to_string(),
+            max_depth: 0,
+            created_at: "2026-06-09T00:00:00Z".to_string(),
+        };
+        let spec = nv.to_view_spec();
+        assert_eq!(spec.view_kind, ViewKind::QualityHotspots);
+    }
+}
+
+// ============================================================================
+// Phase 0: Moldable View Runtime — Domain Vocabulary
+// ============================================================================
+//
+// ViewKind, RendererKind, HierarchyKind, ViewSpec DTO, DataSource,
+// Transform, and validation — Phase 0 of the Moldable View Runtime
+// roadmap (ADR-008). Zero behaviour change; purely additive vocabulary.
+
+// ============================================================================
+// ViewSpec errors
+// ============================================================================
+
+/// Validation errors returned by [`ViewSpec::validate`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ViewSpecError {
+    /// `title` was empty.
+    EmptyTitle,
+    /// `title` exceeded 200 characters.
+    TitleTooLong,
+    /// `applies_to` resolved to an unknown [`InspectableObjectType`].
+    UnknownAppliesTo,
+    /// `data_source` was a Moldql variant with an empty query string.
+    EmptyQuery,
+    /// `id` was not a valid UUID.
+    InvalidUuid,
+}
+
+impl std::fmt::Display for ViewSpecError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ViewSpecError::EmptyTitle => write!(f, "title must not be empty"),
+            ViewSpecError::TitleTooLong => write!(f, "title must not exceed 200 characters"),
+            ViewSpecError::UnknownAppliesTo => write!(f, "applies_to is not a valid object type"),
+            ViewSpecError::EmptyQuery => write!(f, "data_source query must not be empty"),
+            ViewSpecError::InvalidUuid => write!(f, "id must be a valid UUID"),
+        }
+    }
+}
+
+impl std::error::Error for ViewSpecError {}
+
+impl From<ViewSpecError> for crate::error::ExplorerError {
+    fn from(err: ViewSpecError) -> Self {
+        crate::error::ExplorerError::InvalidInput(err.to_string())
+    }
+}
+
+/// One first-class ViewKind — the semantic intent of a view.
+///
+/// Variants cover the full catalog from ADR-008 §First-class ViewKind.
+/// The `Custom(String)` variant absorbs any future / user-defined value
+/// without breaking deserialisation, preserving the original tag string
+/// for round-trip fidelity.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ViewKind {
+    // Core
+    VerticalSlice,
+    CallGraph,
+    SeamMap,
+    DependencyGraph,
+    SourceView,
+    DataFlow,
+    ImpactRadius,
+    DiffView,
+    // C4
+    C4Context,
+    C4Container,
+    C4Component,
+    C4Code,
+    // Quality
+    QualityHotspots,
+    EvidenceView,
+    DecisionGraph,
+    // Architecture
+    ArchitectureRationale,
+    ArchitectureDrift,
+    BoundaryMap,
+    DependencyPressure,
+    ChangeImpactStory,
+    OwnershipMap,
+    RiskMap,
+    DecisionTrace,
+    // Development
+    TestSlice,
+    DebugSlice,
+    RefactorPlan,
+    CallersAndImplementors,
+    UsageExamples,
+    ApiSurface,
+    DeadCodeCandidates,
+    SemanticSearchResults,
+    // Living doc
+    DocCodeAlignment,
+    ExampleObject,
+    ComposedNarrative,
+    ProjectDiary,
+    ConceptMap,
+    EvidencePack,
+    /// Forward-compatibility arm: any unknown tag is captured here,
+    /// preserving the original string for round-trip serialization.
+    Custom(String),
+}
+
+impl Serialize for ViewKind {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            ViewKind::VerticalSlice => serializer.serialize_str("vertical_slice"),
+            ViewKind::CallGraph => serializer.serialize_str("call_graph"),
+            ViewKind::SeamMap => serializer.serialize_str("seam_map"),
+            ViewKind::DependencyGraph => serializer.serialize_str("dependency_graph"),
+            ViewKind::SourceView => serializer.serialize_str("source_view"),
+            ViewKind::DataFlow => serializer.serialize_str("data_flow"),
+            ViewKind::ImpactRadius => serializer.serialize_str("impact_radius"),
+            ViewKind::DiffView => serializer.serialize_str("diff_view"),
+            ViewKind::C4Context => serializer.serialize_str("c4_context"),
+            ViewKind::C4Container => serializer.serialize_str("c4_container"),
+            ViewKind::C4Component => serializer.serialize_str("c4_component"),
+            ViewKind::C4Code => serializer.serialize_str("c4_code"),
+            ViewKind::QualityHotspots => serializer.serialize_str("quality_hotspots"),
+            ViewKind::EvidenceView => serializer.serialize_str("evidence_view"),
+            ViewKind::DecisionGraph => serializer.serialize_str("decision_graph"),
+            ViewKind::ArchitectureRationale => serializer.serialize_str("architecture_rationale"),
+            ViewKind::ArchitectureDrift => serializer.serialize_str("architecture_drift"),
+            ViewKind::BoundaryMap => serializer.serialize_str("boundary_map"),
+            ViewKind::DependencyPressure => serializer.serialize_str("dependency_pressure"),
+            ViewKind::ChangeImpactStory => serializer.serialize_str("change_impact_story"),
+            ViewKind::OwnershipMap => serializer.serialize_str("ownership_map"),
+            ViewKind::RiskMap => serializer.serialize_str("risk_map"),
+            ViewKind::DecisionTrace => serializer.serialize_str("decision_trace"),
+            ViewKind::TestSlice => serializer.serialize_str("test_slice"),
+            ViewKind::DebugSlice => serializer.serialize_str("debug_slice"),
+            ViewKind::RefactorPlan => serializer.serialize_str("refactor_plan"),
+            ViewKind::CallersAndImplementors => serializer.serialize_str("callers_and_implementors"),
+            ViewKind::UsageExamples => serializer.serialize_str("usage_examples"),
+            ViewKind::ApiSurface => serializer.serialize_str("api_surface"),
+            ViewKind::DeadCodeCandidates => serializer.serialize_str("dead_code_candidates"),
+            ViewKind::SemanticSearchResults => serializer.serialize_str("semantic_search_results"),
+            ViewKind::DocCodeAlignment => serializer.serialize_str("doc_code_alignment"),
+            ViewKind::ExampleObject => serializer.serialize_str("example_object"),
+            ViewKind::ComposedNarrative => serializer.serialize_str("composed_narrative"),
+            ViewKind::ProjectDiary => serializer.serialize_str("project_diary"),
+            ViewKind::ConceptMap => serializer.serialize_str("concept_map"),
+            ViewKind::EvidencePack => serializer.serialize_str("evidence_pack"),
+            ViewKind::Custom(s) => serializer.serialize_str(s),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ViewKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "vertical_slice" => Ok(ViewKind::VerticalSlice),
+            "call_graph" => Ok(ViewKind::CallGraph),
+            "seam_map" => Ok(ViewKind::SeamMap),
+            "dependency_graph" => Ok(ViewKind::DependencyGraph),
+            "source_view" => Ok(ViewKind::SourceView),
+            "data_flow" => Ok(ViewKind::DataFlow),
+            "impact_radius" => Ok(ViewKind::ImpactRadius),
+            "diff_view" => Ok(ViewKind::DiffView),
+            "c4_context" => Ok(ViewKind::C4Context),
+            "c4_container" => Ok(ViewKind::C4Container),
+            "c4_component" => Ok(ViewKind::C4Component),
+            "c4_code" => Ok(ViewKind::C4Code),
+            "quality_hotspots" => Ok(ViewKind::QualityHotspots),
+            "evidence_view" => Ok(ViewKind::EvidenceView),
+            "decision_graph" => Ok(ViewKind::DecisionGraph),
+            "architecture_rationale" => Ok(ViewKind::ArchitectureRationale),
+            "architecture_drift" => Ok(ViewKind::ArchitectureDrift),
+            "boundary_map" => Ok(ViewKind::BoundaryMap),
+            "dependency_pressure" => Ok(ViewKind::DependencyPressure),
+            "change_impact_story" => Ok(ViewKind::ChangeImpactStory),
+            "ownership_map" => Ok(ViewKind::OwnershipMap),
+            "risk_map" => Ok(ViewKind::RiskMap),
+            "decision_trace" => Ok(ViewKind::DecisionTrace),
+            "test_slice" => Ok(ViewKind::TestSlice),
+            "debug_slice" => Ok(ViewKind::DebugSlice),
+            "refactor_plan" => Ok(ViewKind::RefactorPlan),
+            "callers_and_implementors" => Ok(ViewKind::CallersAndImplementors),
+            "usage_examples" => Ok(ViewKind::UsageExamples),
+            "api_surface" => Ok(ViewKind::ApiSurface),
+            "dead_code_candidates" => Ok(ViewKind::DeadCodeCandidates),
+            "semantic_search_results" => Ok(ViewKind::SemanticSearchResults),
+            "doc_code_alignment" => Ok(ViewKind::DocCodeAlignment),
+            "example_object" => Ok(ViewKind::ExampleObject),
+            "composed_narrative" => Ok(ViewKind::ComposedNarrative),
+            "project_diary" => Ok(ViewKind::ProjectDiary),
+            "concept_map" => Ok(ViewKind::ConceptMap),
+            "evidence_pack" => Ok(ViewKind::EvidencePack),
+            "custom" => Ok(ViewKind::Custom("custom".to_string())),
+            other => Ok(ViewKind::Custom(other.to_string())),
+        }
+    }
+}
+
+/// One first-class RendererKind — the visual rendering strategy.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum RendererKind {
+    Graph,
+    Table,
+    Tree,
+    Code,
+    Markdown,
+    VegaLite,
+    Json,
+    Composite,
+    /// Forward-compatibility arm: catches any unknown renderer id,
+    /// preserving the original string for round-trip serialization.
+    Custom(String),
+}
+
+impl Default for RendererKind {
+    fn default() -> Self {
+        RendererKind::Json
+    }
+}
+
+impl Serialize for RendererKind {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            RendererKind::Graph => serializer.serialize_str("graph"),
+            RendererKind::Table => serializer.serialize_str("table"),
+            RendererKind::Tree => serializer.serialize_str("tree"),
+            RendererKind::Code => serializer.serialize_str("code"),
+            RendererKind::Markdown => serializer.serialize_str("markdown"),
+            RendererKind::VegaLite => serializer.serialize_str("vega_lite"),
+            RendererKind::Json => serializer.serialize_str("json"),
+            RendererKind::Composite => serializer.serialize_str("composite"),
+            RendererKind::Custom(s) => serializer.serialize_str(s),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for RendererKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "graph" => Ok(RendererKind::Graph),
+            "table" => Ok(RendererKind::Table),
+            "tree" => Ok(RendererKind::Tree),
+            "code" => Ok(RendererKind::Code),
+            "markdown" => Ok(RendererKind::Markdown),
+            "vega_lite" => Ok(RendererKind::VegaLite),
+            "json" => Ok(RendererKind::Json),
+            "composite" => Ok(RendererKind::Composite),
+            "custom" => Ok(RendererKind::Custom("custom".to_string())),
+            other => Ok(RendererKind::Custom(other.to_string())),
+        }
+    }
+}
+
+/// One first-class HierarchyKind — a navigable structural projection.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum HierarchyKind {
+    FileTree,
+    ModuleTree,
+    TypeHierarchy,
+    CallHierarchy,
+    PackageGraph,
+    C4Hierarchy,
+    /// Forward-compatibility arm: catches any unknown hierarchy id,
+    /// preserving the original string for round-trip serialization.
+    Custom(String),
+}
+
+impl Serialize for HierarchyKind {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            HierarchyKind::FileTree => serializer.serialize_str("file_tree"),
+            HierarchyKind::ModuleTree => serializer.serialize_str("module_tree"),
+            HierarchyKind::TypeHierarchy => serializer.serialize_str("type_hierarchy"),
+            HierarchyKind::CallHierarchy => serializer.serialize_str("call_hierarchy"),
+            HierarchyKind::PackageGraph => serializer.serialize_str("package_graph"),
+            HierarchyKind::C4Hierarchy => serializer.serialize_str("c4_hierarchy"),
+            HierarchyKind::Custom(s) => serializer.serialize_str(s),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for HierarchyKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "file_tree" => Ok(HierarchyKind::FileTree),
+            "module_tree" => Ok(HierarchyKind::ModuleTree),
+            "type_hierarchy" => Ok(HierarchyKind::TypeHierarchy),
+            "call_hierarchy" => Ok(HierarchyKind::CallHierarchy),
+            "package_graph" => Ok(HierarchyKind::PackageGraph),
+            "c4_hierarchy" => Ok(HierarchyKind::C4Hierarchy),
+            "custom" => Ok(HierarchyKind::Custom("custom".to_string())),
+            other => Ok(HierarchyKind::Custom(other.to_string())),
+        }
+    }
+}
+
+/// Where the data for a [`ViewSpec`] comes from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DataSource {
+    /// A MoldQL query string.
+    Moldql { query: String },
+    /// Forward-compatibility arm: catches any unknown `kind` value.
+    /// The `kind` field is still present in the JSON but is not
+    /// captured (serde `other` is a unit-variant catch-all).
+    #[serde(other)]
+    Other,
+}
+
+/// How the data from [`DataSource`] is transformed before rendering.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Transform {
+    /// No transform — the MoldQL result passes through unchanged.
+    /// This is distinct from `transform: None` (Option) which means
+    /// "not specified". `Transform::None` represents an explicit user choice
+    /// of "no transform" in the authoring wizard (Phase 4).
+    None,
+    /// A JSONata expression string.
+    Jsonata { expression: String },
+    /// Forward-compatibility arm: catches any unknown `kind` value.
+    #[serde(other)]
+    Other,
+}
+
+/// A persisted view specification — the core DTO of the Moldable View Runtime.
+///
+/// `id` is server-assigned UUID on persist; client-suggested on create.
+/// `applies_to` narrows which [`InspectableObjectType`] the view works on.
+/// `view_kind` names the semantic intent; `renderer_kind` selects the visual
+/// strategy; `data_source` + `transform` supply and reshape the data.
+/// `owner` is the user who created this spec.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ViewSpec {
+    pub id: String,
+    pub title: String,
+    pub applies_to: InspectableObjectType,
+    pub view_kind: ViewKind,
+    pub data_source: DataSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<Transform>,
+    pub renderer_kind: RendererKind,
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    pub props: serde_json::Value,
+    /// ISO-8601 UTC; server-assigned on insert; `#[serde(default)]` allows
+    /// clients to omit it on create.
+    #[serde(default)]
+    pub created_at: String,
+    /// ISO-8601 UTC; server-assigned on update; `#[serde(default)]` allows
+    /// clients to omit it on create.
+    #[serde(default)]
+    pub updated_at: String,
+    /// The user who owns this spec. Used for ownership checks and Spotter display.
+    #[serde(default)]
+    pub owner: String,
+}
+
+impl ViewSpec {
+    /// Validate this spec. Returns `Ok(())` if the spec is well-formed;
+    /// `Err(ViewSpecError)` describing the first problem found.
+    pub fn validate(&self) -> Result<(), ViewSpecError> {
+        if self.title.is_empty() {
+            return Err(ViewSpecError::EmptyTitle);
+        }
+        if self.title.chars().count() > 200 {
+            return Err(ViewSpecError::TitleTooLong);
+        }
+        if let DataSource::Moldql { query } = &self.data_source {
+            if query.trim().is_empty() {
+                return Err(ViewSpecError::EmptyQuery);
+            }
+        }
+        // Validate id is a valid UUID (basic format check without adding uuid dep)
+        if !is_valid_uuid_format(&self.id) {
+            return Err(ViewSpecError::InvalidUuid);
+        }
+        Ok(())
+    }
+}
+
+/// Basic UUID v4 format validator.
+///
+/// Checks that the string is exactly 36 characters, with hyphens
+/// at positions 8, 13, 18, and 23, and hexadecimal digits elsewhere.
+/// This is sufficient for validating user-supplied IDs without pulling
+/// in the full `uuid` crate.
+fn is_valid_uuid_format(s: &str) -> bool {
+    if s.len() != 36 {
+        return false;
+    }
+    let bytes = s.as_bytes();
+    // Check hyphen positions: 8, 13, 18, 23
+    bytes[8] == b'-'
+        && bytes[13] == b'-'
+        && bytes[18] == b'-'
+        && bytes[23] == b'-'
+        // Check all hex digits
+        && bytes.iter().enumerate().all(|(i, &b)| {
+            if i == 8 || i == 13 || i == 18 || i == 23 {
+                b == b'-'
+            } else {
+                b.is_ascii_hexdigit()
+            }
+        })
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod view_spec_tests {
+    use super::*;
+
+    // --- ViewKind serde round-trip ---
+
+    #[test]
+    fn view_kind_known_variant_round_trips() {
+        for vk in [
+            ViewKind::CallGraph,
+            ViewKind::VerticalSlice,
+            ViewKind::SourceView,
+            ViewKind::QualityHotspots,
+        ] {
+            let json = serde_json::to_string(&vk).expect("serialize");
+            let back: ViewKind = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(vk, back, "ViewKind::{vk:?} must round-trip");
+        }
+    }
+
+    #[test]
+    fn view_kind_snake_case_on_wire() {
+        let vk = ViewKind::CallGraph;
+        let json = serde_json::to_string(&vk).expect("serialize");
+        assert_eq!(json, "\"call_graph\"", "CallGraph serialises as snake_case");
+    }
+
+    #[test]
+    fn view_kind_unknown_string_deserialises_to_custom() {
+        let json = r#""future_view""#;
+        let back: ViewKind = serde_json::from_str(json).expect("deserialize");
+        // Unknown variant tag deserializes to Custom with original string preserved
+        assert_eq!(back, ViewKind::Custom("future_view".to_string()));
+    }
+
+    #[test]
+    fn view_kind_custom_round_trips() {
+        let vk = ViewKind::Custom("custom".to_string());
+        let json = serde_json::to_string(&vk).expect("serialize");
+        assert_eq!(json, "\"custom\"", "Custom serialises as original string");
+        let back: ViewKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(vk, back);
+    }
+
+    // --- Unknown-string preservation tests (C1 fix) ---
+
+    #[test]
+    fn view_kind_unknown_round_trip_preserves_string() {
+        // Deserialize an unknown wire tag
+        let json = r#""future_view_kind""#;
+        let back: ViewKind = serde_json::from_str(json).expect("deserialize");
+        // Re-serialize and verify the original string is preserved
+        let reserialized = serde_json::to_string(&back).expect("serialize");
+        assert_eq!(reserialized, json, "unknown tag must round-trip as original string");
+    }
+
+    #[test]
+    fn view_kind_unknown_with_underscores_round_trip() {
+        let json = r#""custom_view_v2_alpha""#;
+        let back: ViewKind = serde_json::from_str(json).expect("deserialize");
+        let reserialized = serde_json::to_string(&back).expect("serialize");
+        assert_eq!(reserialized, json);
+    }
+
+    #[test]
+    fn renderer_kind_unknown_round_trip_preserves_string() {
+        let json = r#""future_renderer_v3""#;
+        let back: RendererKind = serde_json::from_str(json).expect("deserialize");
+        let reserialized = serde_json::to_string(&back).expect("serialize");
+        assert_eq!(reserialized, json, "unknown renderer tag must round-trip as original string");
+    }
+
+    #[test]
+    fn hierarchy_kind_unknown_round_trip_preserves_string() {
+        let json = r#""experimental_hierarchy_kind""#;
+        let back: HierarchyKind = serde_json::from_str(json).expect("deserialize");
+        let reserialized = serde_json::to_string(&back).expect("serialize");
+        assert_eq!(reserialized, json, "unknown hierarchy tag must round-trip as original string");
+    }
+
+    // --- RendererKind serde round-trip ---
+
+    #[test]
+    fn renderer_kind_known_variant_round_trips() {
+        for rk in [
+            RendererKind::Graph,
+            RendererKind::Table,
+            RendererKind::Code,
+            RendererKind::Json,
+            RendererKind::Composite,
+        ] {
+            let json = serde_json::to_string(&rk).expect("serialize");
+            let back: RendererKind = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(rk, back, "RendererKind::{rk:?} must round-trip");
+        }
+    }
+
+    #[test]
+    fn renderer_kind_json_round_trip() {
+        let rk = RendererKind::Json;
+        let json = serde_json::to_string(&rk).expect("serialize");
+        let back: RendererKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(rk, back);
+    }
+
+    #[test]
+    fn renderer_kind_unknown_string_deserialises_to_custom() {
+        let json = r#""future_renderer""#;
+        let back: RendererKind = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(back, RendererKind::Custom("future_renderer".to_string()));
+    }
+
+    // --- HierarchyKind serde round-trip ---
+
+    #[test]
+    fn hierarchy_kind_known_variant_round_trips() {
+        for hk in [
+            HierarchyKind::FileTree,
+            HierarchyKind::ModuleTree,
+            HierarchyKind::CallHierarchy,
+            HierarchyKind::C4Hierarchy,
+        ] {
+            let json = serde_json::to_string(&hk).expect("serialize");
+            let back: HierarchyKind = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(hk, back, "HierarchyKind::{hk:?} must round-trip");
+        }
+    }
+
+    #[test]
+    fn hierarchy_kind_unknown_string_deserialises_to_custom() {
+        let json = r#""experimental_x""#;
+        let back: HierarchyKind = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(back, HierarchyKind::Custom("experimental_x".to_string()));
+    }
+
+    // --- DataSource serde ---
+
+    #[test]
+    fn data_source_moldql_round_trips() {
+        let ds = DataSource::Moldql {
+            query: "symbols where fan_out > 5".to_string(),
+        };
+        let json = serde_json::to_string(&ds).expect("serialize");
+        let back: DataSource = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(ds, back);
+    }
+
+    #[test]
+    fn data_source_unknown_kind_is_permissive() {
+        // Simulates a future data source that we don't know yet.
+        // Unknown `kind` values are caught by the `Other` unit variant.
+        let json = r#"{"kind": "graphql", "endpoint": "http://example.com/graphql"}"#;
+        let back: DataSource = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(back, DataSource::Other);
+    }
+
+    // --- Transform serde ---
+
+    #[test]
+    fn transform_jsonata_round_trips() {
+        let t = Transform::Jsonata {
+            expression: "$.data".to_string(),
+        };
+        let json = serde_json::to_string(&t).expect("serialize");
+        let back: Transform = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(t, back);
+    }
+
+    #[test]
+    fn transform_none_round_trips() {
+        // Transform::None represents explicit "no transform" choice (Phase 4).
+        let t = Transform::None;
+        let json = serde_json::to_string(&t).expect("serialize");
+        assert_eq!(json, r#"{"kind":"none"}"#);
+        let back: Transform = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(t, back);
+    }
+
+    #[test]
+    fn transform_other_catches_unknown_variant() {
+        // Unknown transform kinds fall through to Other (forward compat).
+        let json = r#"{"kind":"future_transform","value":123}"#;
+        let back: Transform = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(back, Transform::Other);
+    }
+
+    // --- ViewSpec serde round-trip ---
+
+    #[test]
+    fn view_spec_minimal_round_trip() {
+        let vs = ViewSpec {
+            id: "a1b2c3d4-e5f6-4789-a123-456789abcdef".to_string(),
+            title: "Hot Symbols".to_string(),
+            applies_to: InspectableObjectType::Symbol,
+            view_kind: ViewKind::QualityHotspots,
+            data_source: DataSource::Moldql {
+                query: "symbols where fan_out > 5".to_string(),
+            },
+            transform: None,
+            renderer_kind: RendererKind::Table,
+            props: serde_json::Value::Object(serde_json::Map::new()),
+            created_at: "2026-06-12T00:00:00Z".to_string(),
+            updated_at: "2026-06-12T00:00:00Z".to_string(),
+            owner: "test-user".to_string(),
+        };
+        let json = serde_json::to_string(&vs).expect("serialize");
+        let back: ViewSpec = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(vs, back);
+        // Verify wire format
+        let v: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        assert_eq!(v["view_kind"], "quality_hotspots");
+        assert_eq!(v["renderer_kind"], "table");
+    }
+
+    // --- ViewSpec validation ---
+
+    #[test]
+    fn validate_rejects_empty_title() {
+        let vs = ViewSpec {
+            id: "a1b2c3d4-e5f6-4789-a123-456789abcdef".to_string(),
+            title: "".to_string(),
+            applies_to: InspectableObjectType::Symbol,
+            view_kind: ViewKind::CallGraph,
+            data_source: DataSource::Moldql {
+                query: "symbols".to_string(),
+            },
+            transform: None,
+            renderer_kind: RendererKind::Graph,
+            props: serde_json::Value::Null,
+            created_at: "2026-06-12T00:00:00Z".to_string(),
+            updated_at: "2026-06-12T00:00:00Z".to_string(),
+            owner: "test-user".to_string(),
+        };
+        let err = vs.validate().expect_err("validate must fail");
+        assert_eq!(err, ViewSpecError::EmptyTitle);
+    }
+
+    #[test]
+    fn validate_rejects_title_too_long() {
+        let vs = ViewSpec {
+            id: "a1b2c3d4-e5f6-4789-a123-456789abcdef".to_string(),
+            title: "a".repeat(201),
+            applies_to: InspectableObjectType::Symbol,
+            view_kind: ViewKind::CallGraph,
+            data_source: DataSource::Moldql {
+                query: "symbols".to_string(),
+            },
+            transform: None,
+            renderer_kind: RendererKind::Graph,
+            props: serde_json::Value::Null,
+            created_at: "2026-06-12T00:00:00Z".to_string(),
+            updated_at: "2026-06-12T00:00:00Z".to_string(),
+            owner: "test-user".to_string(),
+        };
+        let err = vs.validate().expect_err("validate must fail");
+        assert_eq!(err, ViewSpecError::TitleTooLong);
+    }
+
+    #[test]
+    fn validate_rejects_empty_query() {
+        let vs = ViewSpec {
+            id: "a1b2c3d4-e5f6-4789-a123-456789abcdef".to_string(),
+            title: "Valid".to_string(),
+            applies_to: InspectableObjectType::Symbol,
+            view_kind: ViewKind::CallGraph,
+            data_source: DataSource::Moldql {
+                query: "   ".to_string(),
+            },
+            transform: None,
+            renderer_kind: RendererKind::Graph,
+            props: serde_json::Value::Null,
+            created_at: "2026-06-12T00:00:00Z".to_string(),
+            updated_at: "2026-06-12T00:00:00Z".to_string(),
+            owner: "test-user".to_string(),
+        };
+        let err = vs.validate().expect_err("validate must fail");
+        assert_eq!(err, ViewSpecError::EmptyQuery);
+    }
+
+    #[test]
+    fn validate_rejects_invalid_uuid() {
+        let vs = ViewSpec {
+            id: "not-a-uuid".to_string(),
+            title: "Valid".to_string(),
+            applies_to: InspectableObjectType::Symbol,
+            view_kind: ViewKind::CallGraph,
+            data_source: DataSource::Moldql {
+                query: "symbols".to_string(),
+            },
+            transform: None,
+            renderer_kind: RendererKind::Graph,
+            props: serde_json::Value::Null,
+            created_at: "2026-06-12T00:00:00Z".to_string(),
+            updated_at: "2026-06-12T00:00:00Z".to_string(),
+            owner: "test-user".to_string(),
+        };
+        let err = vs.validate().expect_err("validate must fail");
+        assert_eq!(err, ViewSpecError::InvalidUuid);
+    }
+
+    #[test]
+    fn validate_accepts_valid_view_spec() {
+        let vs = ViewSpec {
+            id: "a1b2c3d4-e5f6-4789-a123-456789abcdef".to_string(),
+            title: "Hot Symbols".to_string(),
+            applies_to: InspectableObjectType::Symbol,
+            view_kind: ViewKind::QualityHotspots,
+            data_source: DataSource::Moldql {
+                query: "symbols where fan_out > 5".to_string(),
+            },
+            transform: None,
+            renderer_kind: RendererKind::Table,
+            props: serde_json::json!({"max_nodes": 50}),
+            created_at: "2026-06-12T00:00:00Z".to_string(),
+            updated_at: "2026-06-12T00:00:00Z".to_string(),
+            owner: "test-user".to_string(),
+        };
+        vs.validate().expect("valid ViewSpec must pass");
+    }
+
+    // --- ViewSpecError Display ---
+
+    #[test]
+    fn view_spec_error_display() {
+        assert_eq!(ViewSpecError::EmptyTitle.to_string(), "title must not be empty");
+        assert_eq!(
+            ViewSpecError::TitleTooLong.to_string(),
+            "title must not exceed 200 characters"
+        );
+        assert_eq!(
+            ViewSpecError::UnknownAppliesTo.to_string(),
+            "applies_to is not a valid object type"
+        );
+        assert_eq!(
+            ViewSpecError::EmptyQuery.to_string(),
+            "data_source query must not be empty"
+        );
+        assert_eq!(ViewSpecError::InvalidUuid.to_string(), "id must be a valid UUID");
+    }
+
+    // --- ViewSpecError -> ExplorerError conversion ---
+
+    #[test]
+    fn view_spec_error_converts_to_explorer_error() {
+        let err: crate::error::ExplorerError = ViewSpecError::EmptyTitle.into();
+        assert!(matches!(err, crate::error::ExplorerError::InvalidInput(_)));
     }
 }

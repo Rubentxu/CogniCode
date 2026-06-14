@@ -1,4 +1,3 @@
-use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -7,17 +6,18 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use cognicode_core::domain::aggregates::SymbolId;
 use serde::Deserialize;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
-use crate::ExplorerError;
 use crate::dto::{
-    GenerateArtifactRequest, GraphEdge, GraphNode, OpenWorkspaceRequest, SaveExplorationRequest,
-    SubgraphResponse,
+    GenerateArtifactRequest, OpenWorkspaceRequest, SaveExplorationRequest,
 };
-use crate::service::ExplorerService;
+use crate::error::ExplorerError;
+use crate::facades::{
+    GraphService, MoldQLService, PersistenceService, SearchService,
+    SubgraphDirection as FacadeSubgraphDirection, ViewService, WorkspaceService,
+};
 
 // ============================================================================
 // Style-class taxonomy
@@ -173,171 +173,6 @@ pub fn validate_id(id: &str) -> Result<&str, ExplorerError> {
 }
 
 // ============================================================================
-// Traversal helper
-// ============================================================================
-
-/// Walk the graph from `root` and return a `SubgraphResponse`.
-///
-/// Traversal is a BFS bounded by `depth` hops and `max_nodes`
-/// collected symbols. When the reachable set would exceed
-/// `max_nodes`, we trim to the cap and set `truncated = true` /
-/// `truncated_reason = Some("node_cap")`. Edges are filtered so
-/// `source` and `target` always survive in `nodes`.
-fn build_subgraph(
-    service: &ExplorerService,
-    root_id: &str,
-    depth: u8,
-    direction: SubgraphDirection,
-    max_nodes: u32,
-) -> Result<SubgraphResponse, ExplorerError> {
-    let root_symbol_id = SymbolId::new(root_id);
-
-    // Resolve the root — the canonical "symbol_not_found" branch.
-    let root_resolved = service
-        .symbol_repo()
-        .resolve(&root_symbol_id)
-        .map_err(map_repo_unavailable)?
-        .ok_or_else(|| ExplorerError::SymbolNotFound(root_id.to_string()))?;
-
-    // BFS, deduplicated by id. Bounded by `depth` AND `max_nodes`.
-    let max_nodes_usize = max_nodes as usize;
-    let mut visited_ids: Vec<String> = Vec::with_capacity(max_nodes_usize.min(1024));
-    let mut visited_set: HashSet<String> = HashSet::new();
-    let mut nodes: Vec<GraphNode> = Vec::with_capacity(max_nodes_usize.min(1024));
-    let mut edges: Vec<GraphEdge> = Vec::new();
-
-    // 1-entry queue of (symbol_id, current_depth). We keep ids in
-    // `visited` order so the response is stable for a given graph.
-    let mut queue: Vec<(String, u8)> = Vec::new();
-    let root_str = root_id.to_string();
-    queue.push((root_str.clone(), 0));
-    visited_set.insert(root_str.clone());
-    visited_ids.push(root_str.clone());
-    nodes.push(symbol_to_node(&root_resolved.id.to_string(), &root_resolved, "function"));
-
-    let mut truncated = false;
-
-    while let Some((current_id, current_depth)) = queue.first().cloned() {
-        queue.remove(0);
-        if current_depth >= depth {
-            continue;
-        }
-        // Truncation check before expanding — keeps `nodes.len()`
-        // at or below `max_nodes` (we already enqueued the root).
-        if nodes.len() >= max_nodes_usize {
-            truncated = true;
-            break;
-        }
-        let current_sym = SymbolId::new(&current_id);
-        let (incoming, outgoing) = match direction {
-            SubgraphDirection::Incoming => {
-                (service.symbol_repo().callers(&current_sym), Vec::new())
-            }
-            SubgraphDirection::Outgoing => {
-                (Vec::new(), service.symbol_repo().callees(&current_sym))
-            }
-            SubgraphDirection::Both => (
-                service.symbol_repo().callers(&current_sym),
-                service.symbol_repo().callees(&current_sym),
-            ),
-        };
-
-        for (rel_label, neighbour) in incoming
-            .into_iter()
-            .map(|t| ("calls", t))
-            .chain(outgoing.into_iter().map(|t| ("calls", t)))
-        {
-            if nodes.len() >= max_nodes_usize {
-                truncated = true;
-                break;
-            }
-            let neighbour_id = neighbour.id.to_string();
-            let is_new = visited_set.insert(neighbour_id.clone());
-            if is_new {
-                visited_ids.push(neighbour_id.clone());
-                let style = style_class_for(&format!("{:?}", neighbour.kind).to_lowercase());
-                // Use the underlying kind label where possible; the
-                // symbol kind's `Debug` representation is stable
-                // enough for the style_class bucket.
-                let kind_label = format!("{:?}", neighbour.kind).to_lowercase();
-                let kind_label = match kind_label.as_str() {
-                    "function" | "method" | "fn" => "function".to_string(),
-                    "module" | "crate" | "trait" => "module".to_string(),
-                    "external" => "external".to_string(),
-                    other => other.to_string(),
-                };
-                let _ = style; // we use the resolved kind_label above
-                nodes.push(GraphNode {
-                    id: neighbour_id.clone(),
-                    label: neighbour.name.clone(),
-                    kind: kind_label,
-                    file: Some(neighbour.file.clone()),
-                    line: Some(neighbour.line),
-                    style_class: style_class_for(&format!(
-                        "{:?}",
-                        neighbour.kind
-                    )
-                    .to_lowercase())
-                    .to_string(),
-                });
-                queue.push((neighbour_id.clone(), current_depth + 1));
-            }
-            edges.push(GraphEdge {
-                source: current_id.clone(),
-                target: neighbour_id,
-                relation: rel_label.to_string(),
-                style_class: edge_style_class_for(rel_label).to_string(),
-            });
-        }
-        if truncated {
-            break;
-        }
-    }
-
-    // If we never hit the cap, `truncated` stays false.
-    if truncated {
-        // Drop edges whose endpoints are not in the kept set — keep
-        // the response self-consistent (no dangling references).
-        let kept: HashSet<&String> = nodes.iter().map(|n| &n.id).collect();
-        edges.retain(|e| kept.contains(&e.source) && kept.contains(&e.target));
-    }
-
-    Ok(SubgraphResponse {
-        root: root_id.to_string(),
-        nodes,
-        edges,
-        truncated,
-        truncated_reason: if truncated {
-            Some("node_cap".to_string())
-        } else {
-            None
-        },
-        corroboration_scores: HashMap::new(),
-    })
-}
-
-fn symbol_to_node(id: &str, s: &crate::ports::symbol_repository::ResolvedSymbol, _style_hint: &str) -> GraphNode {
-    let kind_label = format!("{:?}", s.kind).to_lowercase();
-    GraphNode {
-        id: id.to_string(),
-        label: s.name.clone(),
-        kind: kind_label.clone(),
-        file: Some(s.file.clone()),
-        line: Some(s.line),
-        style_class: style_class_for(&kind_label).to_string(),
-    }
-}
-
-fn map_repo_unavailable(e: ExplorerError) -> ExplorerError {
-    match e {
-        ExplorerError::GraphNotReady => {
-            ExplorerError::GraphUnavailable("call graph is not loaded yet".to_string())
-        }
-        other => other,
-    }
-}
-
-// ============================================================================
 // Handler
 // ============================================================================
 
@@ -349,7 +184,15 @@ async fn subgraph_handler(
     let _ = id; // silence unused warning before validation
     let id = validate_id(&id).map_err(ApiError)?;
     let (depth, direction, max_nodes) = q.validated().map_err(ApiError)?;
-    let response = build_subgraph(&state.service, id, depth, direction, max_nodes)
+    let facade_direction = match direction {
+        SubgraphDirection::Incoming => FacadeSubgraphDirection::Incoming,
+        SubgraphDirection::Outgoing => FacadeSubgraphDirection::Outgoing,
+        SubgraphDirection::Both => FacadeSubgraphDirection::Both,
+    };
+    let response = state
+        .graph
+        .build_subgraph(id, depth, facade_direction, max_nodes)
+        .await
         .map_err(ApiError)?;
     Ok(Json(response).into_response())
 }
@@ -412,10 +255,10 @@ async fn contextual_handler(
 ) -> Result<Response, ApiError> {
     let id = validate_id(&id).map_err(ApiError)?;
     let (level, depth, max_nodes) = q.validated().map_err(ApiError)?;
-    let focus = SymbolId::new(id);
     let response = state
-        .service
-        .build_contextual_graph(&focus, level, depth, max_nodes)
+        .view
+        .build_contextual_graph(id, level, depth, max_nodes)
+        .await
         .map_err(ApiError)?;
     Ok(Json(response).into_response())
 }
@@ -463,6 +306,10 @@ async fn rationale_handler(
     Path(id): Path<String>,
     Query(q): Query<RationaleParams>,
 ) -> Result<Response, ApiError> {
+    use cognicode_core::domain::aggregates::generic_graph::NodeId;
+    use cognicode_core::domain::services::score_subgraph;
+    use crate::ports::graph_repository::GraphRepository;
+
     let id = validate_id(&id).map_err(ApiError)?;
     let (max_depth, max_nodes) = q.validated().map_err(ApiError)?;
     let focus = NodeId::new(id);
@@ -525,16 +372,14 @@ async fn rationale_handler(
     Ok(Json(response).into_response())
 }
 
-#[cfg(feature = "multimodal")]
-use cognicode_core::domain::aggregates::generic_graph::NodeId;
-#[cfg(feature = "multimodal")]
-use cognicode_core::domain::services::{score_subgraph};
-#[cfg(feature = "multimodal")]
-use crate::ports::graph_repository::GraphRepository;
-
 #[derive(Clone)]
 pub struct ApiState {
-    service: Arc<ExplorerService>,
+    pub workspace: Arc<dyn WorkspaceService>,
+    pub search: Arc<dyn SearchService>,
+    pub view: Arc<dyn ViewService>,
+    pub persistence: Arc<dyn PersistenceService>,
+    pub moldql: Arc<dyn MoldQLService>,
+    pub graph: Arc<dyn GraphService>,
     /// Optional generic graph repository for multimodal endpoints
     /// (rationale, graph_search, etc.).
     #[cfg(feature = "multimodal")]
@@ -542,9 +387,21 @@ pub struct ApiState {
 }
 
 impl ApiState {
-    pub fn new(service: ExplorerService) -> Self {
+    pub fn new(
+        workspace: Arc<dyn WorkspaceService>,
+        search: Arc<dyn SearchService>,
+        view: Arc<dyn ViewService>,
+        persistence: Arc<dyn PersistenceService>,
+        moldql: Arc<dyn MoldQLService>,
+        graph: Arc<dyn GraphService>,
+    ) -> Self {
         Self {
-            service: Arc::new(service),
+            workspace,
+            search,
+            view,
+            persistence,
+            moldql,
+            graph,
             #[cfg(feature = "multimodal")]
             graph_repo: None,
         }
@@ -589,7 +446,7 @@ pub fn router_with_state(state: ApiState) -> Router {
         .with_state(state)
 }
 
-pub fn router(service: ExplorerService) -> Router {
+pub fn router(state: ApiState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/api/workspaces/open", post(open_workspace))
@@ -621,12 +478,12 @@ pub fn router(service: ExplorerService) -> Router {
         )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .with_state(ApiState::new(service))
+        .with_state(state)
 }
 
-pub async fn serve(service: ExplorerService, addr: SocketAddr) -> anyhow::Result<()> {
+pub async fn serve(state: ApiState, addr: SocketAddr) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, router(service)).await?;
+    axum::serve(listener, router(state)).await?;
     Ok(())
 }
 
@@ -645,7 +502,7 @@ async fn open_workspace(
     State(state): State<ApiState>,
     Json(request): Json<OpenWorkspaceRequest>,
 ) -> Result<Response, ApiError> {
-    Ok(Json(state.service.open_workspace(request)?).into_response())
+    Ok(Json(state.workspace.open_workspace(request).await?).into_response())
 }
 
 async fn index_workspace(Path(_workspace_id): Path<String>) -> Result<Response, ApiError> {
@@ -665,54 +522,49 @@ async fn spotter(
     Path(_workspace_id): Path<String>,
     Query(query): Query<SpotterQuery>,
 ) -> Result<Response, ApiError> {
-    Ok(Json(
-        state
-            .service
-            .spotter_search(&query.q, query.kind.as_deref())?,
-    )
-    .into_response())
+    Ok(Json(state.search.spotter_search(&query.q, query.kind.as_deref()).await?).into_response())
 }
 
 async fn inspect_object(
     State(state): State<ApiState>,
     Path(object_id): Path<String>,
 ) -> Result<Response, ApiError> {
-    Ok(Json(state.service.inspect_object(&object_id)?).into_response())
+    Ok(Json(state.search.inspect_object(&object_id).await?).into_response())
 }
 
 async fn available_views(
     State(state): State<ApiState>,
     Path(object_id): Path<String>,
 ) -> Result<Response, ApiError> {
-    Ok(Json(state.service.available_views(&object_id)?).into_response())
+    Ok(Json(state.view.available_views(&object_id).await?).into_response())
 }
 
 async fn contextual_view(
     State(state): State<ApiState>,
     Path((object_id, view_id)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
-    Ok(Json(state.service.contextual_view(&object_id, &view_id)?).into_response())
+    Ok(Json(state.view.contextual_view(&object_id, &view_id).await?).into_response())
 }
 
 async fn available_lenses(
     State(state): State<ApiState>,
     Path(object_id): Path<String>,
 ) -> Result<Response, ApiError> {
-    Ok(Json(state.service.available_lenses(&object_id)?).into_response())
+    Ok(Json(state.view.available_lenses(&object_id).await?).into_response())
 }
 
 async fn apply_lens(
     State(state): State<ApiState>,
     Path((object_id, lens_id)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
-    Ok(Json(state.service.apply_lens(&object_id, &lens_id)?).into_response())
+    Ok(Json(state.view.apply_lens(&object_id, &lens_id).await?).into_response())
 }
 
 async fn save_exploration(
     State(state): State<ApiState>,
     Json(request): Json<SaveExplorationRequest>,
 ) -> Result<Response, ApiError> {
-    Ok(Json(state.service.save_exploration(request)?).into_response())
+    Ok(Json(state.persistence.save_exploration(request).await?).into_response())
 }
 
 async fn generate_artifact(
@@ -720,7 +572,7 @@ async fn generate_artifact(
     Path(exploration_id): Path<String>,
     Json(request): Json<GenerateArtifactRequest>,
 ) -> Result<Response, ApiError> {
-    Ok(Json(state.service.generate_artifact(&exploration_id, request)?).into_response())
+    Ok(Json(state.persistence.generate_artifact(&exploration_id, request).await?).into_response())
 }
 
 struct ApiError(ExplorerError);

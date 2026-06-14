@@ -25,8 +25,11 @@ use tower::ServiceExt;
 use crate::adapters::InMemoryGraphRepository;
 use crate::api::{router_with_state, ApiState};
 use crate::dto::SubgraphResponse;
+use crate::facades::{
+    GraphService, GraphServiceImpl, MoldQLService, PersistenceService, SearchService,
+    ViewService, WorkspaceService,
+};
 use crate::ports::graph_repository::GraphRepository;
-use crate::service::ExplorerService;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository};
 use cognicode_core::domain::aggregates::SymbolId;
@@ -131,10 +134,6 @@ impl SymbolRepository for EmptySymbolRepo {
     fn resolve(&self, _id: &SymbolId) -> crate::error::ExplorerResult<Option<ResolvedSymbol>> {
         Ok(None)
     }
-    fn callers(&self, _id: &SymbolId) -> Vec<RelationTarget> { Vec::new() }
-    fn callees(&self, _id: &SymbolId) -> Vec<RelationTarget> { Vec::new() }
-    fn fan_in(&self, _id: &SymbolId) -> usize { 0 }
-    fn fan_out(&self, _id: &SymbolId) -> usize { 0 }
     fn find_symbols_by_name(&self, _name: &str) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> { Ok(Vec::new()) }
     fn find_symbols_by_file(&self, _file: &str) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> { Ok(Vec::new()) }
     fn module_list(&self) -> Vec<String> { Vec::new() }
@@ -148,11 +147,106 @@ impl SourceReader for EmptyReader {
     fn read_lines(&self, _file: &str, _start: u32, _end: u32) -> crate::error::ExplorerResult<Vec<(u32, String)>> { Ok(Vec::new()) }
 }
 
+// Minimal mocks for the 5 non-graph facades needed by ApiState
+use async_trait::async_trait;
+
+#[derive(Clone)]
+struct MockWorkspaceService;
+#[async_trait]
+impl WorkspaceService for MockWorkspaceService {
+    async fn open_workspace(&self, _request: crate::dto::OpenWorkspaceRequest) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
+        Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+    }
+    fn current_workspace(&self) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
+        Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+    }
+}
+
+#[derive(Clone)]
+struct MockSearchService;
+#[async_trait]
+impl SearchService for MockSearchService {
+    async fn spotter_search(&self, _query: &str, _kind: Option<&str>) -> crate::ExplorerResult<Vec<crate::dto::SpotterResult>> {
+        Ok(vec![])
+    }
+    async fn spotter_search_with_viewspecs(&self, _query: &str, _kind: Option<&str>, _workspace_id: Option<&str>) -> crate::ExplorerResult<Vec<crate::dto::SpotterSearchResult>> {
+        Ok(vec![])
+    }
+    async fn inspect_object(&self, _object_id: &str) -> crate::ExplorerResult<crate::dto::InspectableObjectSummary> {
+        Err(crate::error::ExplorerError::ObjectNotFound("mock".into()))
+    }
+}
+
+#[derive(Clone)]
+struct MockViewService;
+#[async_trait]
+impl ViewService for MockViewService {
+    async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::ViewDescriptor>> { Ok(vec![]) }
+    async fn contextual_view(&self, _object_id: &str, _view_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn build_contextual_graph(&self, _focus_id: &str, _level: &str, _depth: u8, _max_nodes: usize) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn available_lenses(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> { Ok(vec![]) }
+    async fn apply_lens(&self, _object_id: &str, _lens_id: &str) -> crate::ExplorerResult<crate::dto::LensResult> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn execute_view_spec(&self, _spec: &crate::dto::ViewSpec, _object_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+}
+
+#[derive(Clone)]
+struct MockPersistenceService;
+#[async_trait]
+impl PersistenceService for MockPersistenceService {
+    async fn save_exploration(&self, _request: crate::dto::SaveExplorationRequest) -> crate::ExplorerResult<crate::dto::ExplorationPath> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn generate_artifact(&self, _exploration_id: &str, _request: crate::dto::GenerateArtifactRequest) -> crate::ExplorerResult<crate::dto::DecisionArtifactSummary> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn save_view_spec(&self, _spec: &crate::dto::ViewSpec, _workspace_id: &str, _owner: &str) -> crate::ExplorerResult<()> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn load_view_spec(&self, _id: &str, _workspace_id: &str, _owner: &str) -> crate::ExplorerResult<Option<crate::dto::ViewSpec>> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn list_view_specs(&self, _workspace_id: &str, _owner: &str) -> crate::ExplorerResult<Vec<crate::dto::ViewSpec>> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn delete_view_spec(&self, _id: &str, _workspace_id: &str, _owner: &str) -> crate::ExplorerResult<bool> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+}
+
+#[derive(Clone)]
+struct MockMoldQLService;
+#[async_trait]
+impl MoldQLService for MockMoldQLService {
+    async fn execute_query(&self, _query: &str) -> crate::ExplorerResult<crate::moldql::MoldQLResult> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+    async fn execute_query_with_target(&self, _query: &str, _target: crate::moldql::compile::CompileTarget) -> crate::ExplorerResult<crate::moldql::MoldQLResult> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+}
+
 fn rationale_app() -> axum::Router {
     let (nodes, edges) = rationale_fixture();
     let graph_repo: Arc<dyn GraphRepository> = Arc::new(InMemoryGraphRepository::new(nodes, edges));
-    let service = ExplorerService::new(Arc::new(EmptySymbolRepo), Arc::new(EmptyReader), "/tmp/rationale");
-    let state = ApiState::new(service).with_graph_repo(graph_repo);
+    let empty_repo = Arc::new(EmptySymbolRepo);
+    let graph = Arc::new(GraphServiceImpl::new(empty_repo, None));
+    let state = ApiState::new(
+        Arc::new(MockWorkspaceService),
+        Arc::new(MockSearchService),
+        Arc::new(MockViewService),
+        Arc::new(MockPersistenceService),
+        Arc::new(MockMoldQLService),
+        graph,
+    )
+    .with_graph_repo(graph_repo);
     router_with_state(state)
 }
 

@@ -5,13 +5,16 @@
 
 use std::sync::Arc;
 
-use cognicode_core::domain::aggregates::{CallGraph, Symbol, SymbolId};
+use cognicode_core::domain::aggregates::{CallEntry, CallGraph, Symbol, SymbolId};
+use cognicode_core::domain::traits::graph_query_port::{
+    CalleeWithMetadata, CallerWithMetadata, EdgeWithMetadata, GraphQueryPort, RelationTarget,
+    RelationTargetWithMetadata,
+};
 use cognicode_core::domain::value_objects::{DependencyType, Provenance};
 
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::ports::symbol_repository::{
-    EdgeWithMetadata, GraphStats, MetadataAwareRepository, RelationTarget,
-    RelationTargetWithMetadata, ResolvedSymbol, SymbolRepository,
+    GraphStats, ResolvedSymbol, SymbolRepository,
 };
 
 /// Adapter that exposes a `CallGraph` through the explorer port.
@@ -78,36 +81,19 @@ fn build_resolved(id: SymbolId, sym: &Symbol) -> ResolvedSymbol {
 }
 
 fn relation_target(id: &SymbolId, graph: &CallGraph) -> Option<RelationTarget> {
-    resolve_symbol(id, graph).map(|r| RelationTarget::from(&r))
+    resolve_symbol(id, graph).map(|r| RelationTarget {
+        id: r.id,
+        name: r.name,
+        kind: r.kind,
+        file: r.file,
+        line: r.line,
+        signature: r.signature,
+    })
 }
 
 impl SymbolRepository for CallGraphRepository {
     fn resolve(&self, id: &SymbolId) -> ExplorerResult<Option<ResolvedSymbol>> {
         Ok(resolve_symbol(id, &self.graph))
-    }
-
-    fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
-        self.graph
-            .callers(id)
-            .into_iter()
-            .filter_map(|caller_id| relation_target(&caller_id, &self.graph))
-            .collect()
-    }
-
-    fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
-        self.graph
-            .callees(id)
-            .into_iter()
-            .filter_map(|(callee_id, _)| relation_target(&callee_id, &self.graph))
-            .collect()
-    }
-
-    fn fan_in(&self, id: &SymbolId) -> usize {
-        self.graph.fan_in(id)
-    }
-
-    fn fan_out(&self, id: &SymbolId) -> usize {
-        self.graph.fan_out(id)
     }
 
     fn find_symbols_by_name(&self, name: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
@@ -161,44 +147,64 @@ impl SymbolRepository for CallGraphRepository {
             relation_count: self.graph.edge_count(),
         }
     }
-
-    /// Downcast override — exposes this adapter as a
-    /// [`MetadataAwareRepository`] so consumers holding a
-    /// `&dyn SymbolRepository` can reach the metadata surface without
-    /// an `Any`-based downcast. Replaces the former inherent helper
-    /// (which was unreachable from a `&dyn SymbolRepository`); the
-    /// default trait method returns `None` for every other adapter
-    /// and every mock, so the view builders get a clean seam.
-    fn as_metadata_aware(&self) -> Option<&dyn MetadataAwareRepository> {
-        Some(self as &dyn MetadataAwareRepository)
-    }
 }
 
-impl MetadataAwareRepository for CallGraphRepository {
-    fn callees_with_metadata(&self, id: &SymbolId) -> Vec<RelationTargetWithMetadata> {
+impl GraphQueryPort for CallGraphRepository {
+    fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
+        self.graph
+            .callers(id)
+            .into_iter()
+            .filter_map(|caller_id| relation_target(&caller_id, &self.graph))
+            .collect()
+    }
+
+    fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
+        self.graph
+            .callees(id)
+            .into_iter()
+            .filter_map(|(callee_id, _)| relation_target(&callee_id, &self.graph))
+            .collect()
+    }
+
+    fn fan_in(&self, id: &SymbolId) -> usize {
+        self.graph.fan_in(id)
+    }
+
+    fn fan_out(&self, id: &SymbolId) -> usize {
+        self.graph.fan_out(id)
+    }
+
+    fn callers_with_metadata(&self, id: &SymbolId) -> Vec<CallerWithMetadata> {
+        self.graph
+            .edges_with_metadata()
+            .filter(|(_, target, _, _, _)| target == id)
+            .map(|(source, _, _, provenance, confidence)| CallerWithMetadata {
+                caller_id: source,
+                provenance,
+                confidence,
+            })
+            .collect()
+    }
+
+    fn callees_with_metadata(&self, id: &SymbolId) -> Vec<CalleeWithMetadata> {
         self.graph
             .callees_with_metadata(id)
             .into_iter()
-            .filter_map(|(target_id, dependency_type, provenance, confidence)| {
-                relation_target(&target_id, &self.graph).map(|target| RelationTargetWithMetadata {
-                    target,
-                    dependency_type,
-                    provenance,
-                    confidence,
-                })
+            .map(|(callee_id, dependency_type, provenance, confidence)| CalleeWithMetadata {
+                callee_id,
+                dependency_type,
+                provenance,
+                confidence,
             })
             .collect()
     }
 
     fn dependencies_with_metadata(&self, id: &SymbolId) -> Vec<RelationTargetWithMetadata> {
-        // `CallGraph::dependencies_with_metadata` returns the same shape as
-        // `callees_with_metadata` for the outgoing-edge set; the distinction
-        // is preserved at the trait level for semantic clarity.
         self.graph
             .dependencies_with_metadata(id)
             .map(|(target_id, dependency_type, provenance, confidence)| {
                 let target =
-                    relation_target(target_id, &self.graph).unwrap_or_else(|| RelationTarget {
+                    relation_target(&target_id, &self.graph).unwrap_or_else(|| RelationTarget {
                         id: target_id.clone(),
                         name: String::new(),
                         kind: cognicode_core::domain::value_objects::SymbolKind::Function,
@@ -216,21 +222,12 @@ impl MetadataAwareRepository for CallGraphRepository {
             .collect()
     }
 
-    fn edges_with_metadata(&self) -> Vec<EdgeWithMetadata> {
-        self.graph
-            .edges_with_metadata()
-            .filter_map(
-                |(source, target_id, dependency_type, provenance, confidence)| {
-                    relation_target(&target_id, &self.graph).map(|target| EdgeWithMetadata {
-                        source,
-                        target,
-                        dependency_type,
-                        provenance,
-                        confidence,
-                    })
-                },
-            )
-            .collect()
+    fn traverse_callees(&self, id: &SymbolId, max_depth: u8) -> Vec<CallEntry> {
+        self.graph.traverse_callees(id, max_depth)
+    }
+
+    fn traverse_callers(&self, id: &SymbolId, max_depth: u8) -> Vec<CallEntry> {
+        self.graph.traverse_callers(id, max_depth)
     }
 }
 

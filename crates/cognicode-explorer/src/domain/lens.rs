@@ -20,6 +20,7 @@ use crate::error::ExplorerResult;
 use crate::ports::quality_repository::QualityRepository;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::SymbolRepository;
+use cognicode_core::domain::traits::GraphQueryPort;
 
 /// Bundles every port a lens is allowed to touch, plus the resolved
 /// object the lens is being applied to.
@@ -35,6 +36,9 @@ pub struct LensContext {
     /// findings, but no errors).
     pub quality_repo: Option<Arc<dyn QualityRepository>>,
     pub source_reader: Arc<dyn SourceReader>,
+    /// Optional graph query port for traversal and navigation queries.
+    /// `None` when no call graph is wired.
+    pub graph_query: Option<Arc<dyn GraphQueryPort>>,
 }
 
 impl LensContext {
@@ -45,12 +49,14 @@ impl LensContext {
         symbol_repo: Arc<dyn SymbolRepository>,
         quality_repo: Option<Arc<dyn QualityRepository>>,
         source_reader: Arc<dyn SourceReader>,
+        graph_query: Option<Arc<dyn GraphQueryPort>>,
     ) -> Self {
         Self {
             object_id,
             symbol_repo,
             quality_repo,
             source_reader,
+            graph_query,
         }
     }
 }
@@ -83,6 +89,7 @@ pub trait Lens: Send + Sync {
 
 /// `HashMap` of lens id → lens instance, plus an insertion-order vec of
 /// descriptors so `list()` returns a stable, predictable order.
+#[derive(Clone)]
 pub struct LensRegistry {
     lenses: HashMap<String, Arc<dyn Lens>>,
     /// Preserves registration order so `list()` and `applicable_to()`

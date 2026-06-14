@@ -22,7 +22,9 @@ use crate::dto::{
     DesignFinding, FindingSeverity, InspectableObjectType, LensDescriptor, LensResult,
 };
 use crate::error::ExplorerResult;
-use crate::ports::symbol_repository::ResolvedSymbol;
+use crate::ports::symbol_repository::{ResolvedSymbol, RelationTarget};
+use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
+use cognicode_core::domain::aggregates::SymbolId;
 
 /// Lens id — also the `lens_id` every finding carries.
 pub const LENS_ID: &str = "hotspots";
@@ -112,7 +114,7 @@ impl Lens for HotspotsLens {
 }
 
 fn symbol_risk(symbol: &ResolvedSymbol, ctx: &LensContext) -> (f32, f32) {
-    let fan_in = ctx.symbol_repo.fan_in(&symbol.id) as f32;
+    let fan_in = ctx.graph_query.as_ref().map(|gq| gq.fan_in(&symbol.id)).unwrap_or(0) as f32;
     let weighted_issues: f32 = match &ctx.quality_repo {
         Some(q) => q
             .issues_at_line(&symbol.file, symbol.line)
@@ -423,18 +425,6 @@ mod tests {
         fn resolve(&self, id: &SymbolId) -> ExplorerResult<Option<ResolvedSymbol>> {
             Ok(self.by_id.get(id.as_str()).cloned())
         }
-        fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
-            self.callers.get(id.as_str()).cloned().unwrap_or_default()
-        }
-        fn callees(&self, _id: &SymbolId) -> Vec<RelationTarget> {
-            Vec::new()
-        }
-        fn fan_in(&self, id: &SymbolId) -> usize {
-            self.callers.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
-        }
-        fn fan_out(&self, _id: &SymbolId) -> usize {
-            0
-        }
         fn find_symbols_by_name(&self, _name: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
             Ok(Vec::new())
         }
@@ -449,6 +439,36 @@ mod tests {
         }
         fn graph_stats(&self) -> GraphStats {
             GraphStats::default()
+        }
+    }
+
+    impl GraphQueryPort for MockRepo {
+        fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
+            self.callers.get(id.as_str()).cloned().unwrap_or_default()
+        }
+        fn callees(&self, _id: &SymbolId) -> Vec<RelationTarget> {
+            Vec::new()
+        }
+        fn fan_in(&self, id: &SymbolId) -> usize {
+            self.callers.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
+        }
+        fn fan_out(&self, _id: &SymbolId) -> usize {
+            0
+        }
+        fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
+            Vec::new()
+        }
+        fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
+            Vec::new()
+        }
+        fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata> {
+            Vec::new()
+        }
+        fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
+            Vec::new()
+        }
+        fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
+            Vec::new()
         }
     }
 
@@ -525,6 +545,7 @@ mod tests {
             repo_sym,
             quality_arc,
             Arc::new(FsSourceReader::new("/tmp")),
+            None,
         )
     }
 
@@ -559,6 +580,7 @@ mod tests {
             Arc::new(repo),
             Some(Arc::new(quality) as Arc<dyn QualityRepository>),
             Arc::new(FsSourceReader::new("/tmp")),
+            None,
         );
         let result = HotspotsLens.apply(&ctx).expect("ok");
         assert!(result.findings.is_empty());
@@ -586,11 +608,15 @@ mod tests {
             vec![make_issue("src/a.rs", 5, "Blocker")],
         );
         let quality_arc: Arc<dyn QualityRepository> = Arc::new(quality);
+        let repo_arc: Arc<MockRepo> = Arc::new(repo);
+        let repo_sym: Arc<dyn SymbolRepository> = repo_arc.clone() as Arc<dyn SymbolRepository>;
+        let repo_graph: Arc<dyn GraphQueryPort> = repo_arc.clone() as Arc<dyn GraphQueryPort>;
         let ctx = LensContext::new(
             crate::domain::ObjectIdentity::new_symbol("src/a.rs", "alpha", 5),
-            Arc::new(repo),
+            repo_sym,
             Some(quality_arc),
             Arc::new(FsSourceReader::new("/tmp")),
+            Some(repo_graph),
         );
         let result = HotspotsLens.apply(&ctx).expect("ok");
         assert_eq!(result.findings.len(), 1, "exactly one finding");
@@ -626,11 +652,15 @@ mod tests {
             ],
         );
         let quality_arc: Arc<dyn QualityRepository> = Arc::new(quality);
+        let repo_arc: Arc<MockRepo> = Arc::new(repo);
+        let repo_sym: Arc<dyn SymbolRepository> = repo_arc.clone() as Arc<dyn SymbolRepository>;
+        let repo_graph: Arc<dyn GraphQueryPort> = repo_arc.clone() as Arc<dyn GraphQueryPort>;
         let ctx = LensContext::new(
             crate::domain::ObjectIdentity::new_file("src/main.rs"),
-            Arc::new(repo),
+            repo_sym,
             Some(quality_arc),
             Arc::new(FsSourceReader::new("/tmp")),
+            Some(repo_graph),
         );
         let result = HotspotsLens.apply(&ctx).expect("ok");
         assert!(!result.findings.is_empty(), "file-level finding expected");
@@ -651,11 +681,15 @@ mod tests {
             let caller = make_resolved(&format!("src/c{i}.rs"), "c", 1);
             repo.with_caller(&owner, caller);
         }
+        let repo_arc: Arc<MockRepo> = Arc::new(repo);
+        let repo_sym: Arc<dyn SymbolRepository> = repo_arc.clone() as Arc<dyn SymbolRepository>;
+        let repo_graph: Arc<dyn GraphQueryPort> = repo_arc.clone() as Arc<dyn GraphQueryPort>;
         let ctx = LensContext::new(
             crate::domain::ObjectIdentity::new_symbol("src/a.rs", "alpha", 1),
-            Arc::new(repo),
+            repo_sym,
             None,
             Arc::new(FsSourceReader::new("/tmp")),
+            Some(repo_graph),
         );
         let result = HotspotsLens
             .apply(&ctx)
@@ -677,6 +711,7 @@ mod tests {
             Arc::new(repo),
             None,
             Arc::new(FsSourceReader::new("/tmp")),
+            None,
         );
         let result = HotspotsLens.apply(&ctx).expect("ok");
         assert!(result.findings.is_empty());
@@ -691,6 +726,7 @@ mod tests {
             Arc::new(MockRepo::new()),
             None,
             Arc::new(FsSourceReader::new("/tmp")),
+            None,
         );
         let result = lens.apply(&ctx).expect("ok");
         assert!(result.findings.is_empty());

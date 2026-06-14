@@ -14,7 +14,9 @@ use crate::dto::{
     DesignFinding, FindingSeverity, InspectableObjectType, LensDescriptor, LensResult,
 };
 use crate::error::ExplorerResult;
-use crate::ports::symbol_repository::ResolvedSymbol;
+use crate::ports::symbol_repository::{ResolvedSymbol, RelationTarget};
+use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
+use cognicode_core::domain::aggregates::SymbolId;
 
 pub const LENS_ID: &str = "architecture";
 const FINDING_CAP: usize = 20;
@@ -95,7 +97,7 @@ fn analyse_scope(scope: &str, ctx: &LensContext, quality_present: bool) -> Vec<D
     // into this one). Used to detect "god modules".
     let mut incoming_counts: HashMap<String, BTreeSet<String>> = HashMap::new();
     for sym in &all {
-        for caller in ctx.symbol_repo.callers(&sym.id) {
+        for caller in ctx.graph_query.as_ref().map(|gq| gq.callers(&sym.id)).unwrap_or_default() {
             if crate::domain::views::scope_contains_file(scope, &caller.file) {
                 continue;
             }
@@ -118,7 +120,7 @@ fn analyse_scope(scope: &str, ctx: &LensContext, quality_present: bool) -> Vec<D
     // counting the unique parent dirs that are foreign.
     let mut foreign_callers: BTreeSet<String> = BTreeSet::new();
     for sym in &members {
-        for caller in ctx.symbol_repo.callers(&sym.id) {
+        for caller in ctx.graph_query.as_ref().map(|gq| gq.callers(&sym.id)).unwrap_or_default() {
             if !crate::domain::views::scope_contains_file(scope, &caller.file) {
                 foreign_callers.insert(parent_dir(&caller.file));
             }
@@ -199,10 +201,10 @@ fn analyse_file(file: &str, ctx: &LensContext, quality_present: bool) -> Vec<Des
         .unwrap_or_default();
     let mut scopes_touched: BTreeSet<String> = BTreeSet::new();
     for sym in &symbols {
-        for callee in ctx.symbol_repo.callees(&sym.id) {
+        for callee in ctx.graph_query.as_ref().map(|gq| gq.callees(&sym.id)).unwrap_or_default() {
             scopes_touched.insert(parent_dir(&callee.file));
         }
-        for caller in ctx.symbol_repo.callers(&sym.id) {
+        for caller in ctx.graph_query.as_ref().map(|gq| gq.callers(&sym.id)).unwrap_or_default() {
             scopes_touched.insert(parent_dir(&caller.file));
         }
     }
@@ -242,13 +244,13 @@ fn analyse_symbol(
     let mut findings = Vec::new();
     let own_scope = parent_dir(&symbol.file);
     let mut foreign_scopes: BTreeSet<String> = BTreeSet::new();
-    for callee in ctx.symbol_repo.callees(&symbol.id) {
+    for callee in ctx.graph_query.as_ref().map(|gq| gq.callees(&symbol.id)).unwrap_or_default() {
         let other = parent_dir(&callee.file);
         if other != own_scope {
             foreign_scopes.insert(other);
         }
     }
-    for caller in ctx.symbol_repo.callers(&symbol.id) {
+    for caller in ctx.graph_query.as_ref().map(|gq| gq.callers(&symbol.id)).unwrap_or_default() {
         let other = parent_dir(&caller.file);
         if other != own_scope {
             foreign_scopes.insert(other);
@@ -303,7 +305,7 @@ fn detect_scope_cycle(
             if parent_dir(&sym.file) != current {
                 continue;
             }
-            for callee in ctx.symbol_repo.callees(&sym.id) {
+            for callee in ctx.graph_query.as_ref().map(|gq| gq.callees(&sym.id)).unwrap_or_default() {
                 let other = parent_dir(&callee.file);
                 if other == current {
                     continue;
@@ -399,18 +401,6 @@ mod tests {
         fn resolve(&self, id: &SymbolId) -> ExplorerResult<Option<ResolvedSymbol>> {
             Ok(self.by_id.get(id.as_str()).cloned())
         }
-        fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
-            self.callers.get(id.as_str()).cloned().unwrap_or_default()
-        }
-        fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
-            self.callees.get(id.as_str()).cloned().unwrap_or_default()
-        }
-        fn fan_in(&self, id: &SymbolId) -> usize {
-            self.callers.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
-        }
-        fn fan_out(&self, id: &SymbolId) -> usize {
-            self.callees.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
-        }
         fn find_symbols_by_name(&self, _n: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
             Ok(Vec::new())
         }
@@ -425,6 +415,36 @@ mod tests {
         }
         fn graph_stats(&self) -> GraphStats {
             GraphStats::default()
+        }
+    }
+
+    impl GraphQueryPort for MockRepo {
+        fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
+            self.callers.get(id.as_str()).cloned().unwrap_or_default()
+        }
+        fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
+            self.callees.get(id.as_str()).cloned().unwrap_or_default()
+        }
+        fn fan_in(&self, id: &SymbolId) -> usize {
+            self.callers.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
+        }
+        fn fan_out(&self, id: &SymbolId) -> usize {
+            self.callees.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
+        }
+        fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
+            Vec::new()
+        }
+        fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
+            Vec::new()
+        }
+        fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata> {
+            Vec::new()
+        }
+        fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
+            Vec::new()
+        }
+        fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
+            Vec::new()
         }
     }
 
@@ -445,6 +465,7 @@ mod tests {
             Arc::new(repo),
             None,
             Arc::new(FsSourceReader::new("/tmp")),
+            None,
         );
         let result = ArchitectureLens.apply(&ctx).expect("ok");
         assert!(result.findings.is_empty());
@@ -460,6 +481,7 @@ mod tests {
             Arc::new(repo),
             None,
             Arc::new(FsSourceReader::new("/tmp")),
+            None,
         );
         let result = ArchitectureLens.apply(&ctx).expect("ok");
         assert_eq!(result.findings.len(), 1);
@@ -477,11 +499,15 @@ mod tests {
         repo.with_symbol(x.clone());
         repo.with_callee(&a.id.to_string(), x.clone());
         repo.with_callee(&x.id.to_string(), a.clone());
+        let repo_arc: Arc<MockRepo> = Arc::new(repo);
+        let repo_sym: Arc<dyn SymbolRepository> = repo_arc.clone() as Arc<dyn SymbolRepository>;
+        let repo_graph: Arc<dyn GraphQueryPort> = repo_arc.clone() as Arc<dyn GraphQueryPort>;
         let ctx = LensContext::new(
             crate::domain::ObjectIdentity::new_scope("src/foo"),
-            Arc::new(repo),
+            repo_sym,
             None,
             Arc::new(FsSourceReader::new("/tmp")),
+            Some(repo_graph),
         );
         let result = ArchitectureLens.apply(&ctx).expect("ok");
         let has_critical = result
@@ -503,11 +529,15 @@ mod tests {
         repo.with_symbol(sym.clone());
         repo.with_symbol(other.clone());
         repo.with_callee(&sym.id.to_string(), other);
+        let repo_arc: Arc<MockRepo> = Arc::new(repo);
+        let repo_sym: Arc<dyn SymbolRepository> = repo_arc.clone() as Arc<dyn SymbolRepository>;
+        let repo_graph: Arc<dyn GraphQueryPort> = repo_arc.clone() as Arc<dyn GraphQueryPort>;
         let ctx = LensContext::new(
             crate::domain::ObjectIdentity::new_symbol("src/foo/a.rs", "alpha", 1),
-            Arc::new(repo),
+            repo_sym,
             None,
             Arc::new(FsSourceReader::new("/tmp")),
+            Some(repo_graph),
         );
         let result = ArchitectureLens.apply(&ctx).expect("ok");
         assert_eq!(result.findings.len(), 1);

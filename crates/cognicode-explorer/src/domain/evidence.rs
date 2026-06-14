@@ -11,6 +11,7 @@ use std::path::Path;
 use crate::dto::{EvidenceBlock, LineRange};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
+use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 
 /// Build the full evidence chain for a symbol.
 ///
@@ -20,10 +21,11 @@ pub fn build_evidence_blocks(
     symbol: &ResolvedSymbol,
     repo: &dyn SymbolRepository,
     reader: &dyn SourceReader,
+    graph_query: Option<&dyn GraphQueryPort>,
 ) -> Vec<EvidenceBlock> {
     vec![
         symbol_metadata_evidence(symbol),
-        call_graph_evidence(symbol, repo),
+        call_graph_evidence(symbol, graph_query),
         source_file_evidence(symbol, reader),
         fs_index_evidence(symbol),
     ]
@@ -62,9 +64,9 @@ fn symbol_metadata_evidence(symbol: &ResolvedSymbol) -> EvidenceBlock {
     }
 }
 
-fn call_graph_evidence(symbol: &ResolvedSymbol, repo: &dyn SymbolRepository) -> EvidenceBlock {
-    let fan_in = repo.fan_in(&symbol.id);
-    let fan_out = repo.fan_out(&symbol.id);
+fn call_graph_evidence(symbol: &ResolvedSymbol, graph_query: Option<&dyn GraphQueryPort>) -> EvidenceBlock {
+    let fan_in = graph_query.map(|gq| gq.fan_in(&symbol.id)).unwrap_or(0);
+    let fan_out = graph_query.map(|gq| gq.fan_out(&symbol.id)).unwrap_or(0);
     EvidenceBlock {
         id: "evidence:call_graph".into(),
         kind: "call_graph".into(),
@@ -168,18 +170,6 @@ mod tests {
         fn resolve(&self, _id: &SymbolId) -> ExplorerResult<Option<ResolvedSymbol>> {
             Ok(None)
         }
-        fn callers(&self, _id: &SymbolId) -> Vec<crate::ports::RelationTarget> {
-            Vec::new()
-        }
-        fn callees(&self, _id: &SymbolId) -> Vec<crate::ports::RelationTarget> {
-            Vec::new()
-        }
-        fn fan_in(&self, _id: &SymbolId) -> usize {
-            0
-        }
-        fn fan_out(&self, _id: &SymbolId) -> usize {
-            0
-        }
         fn find_symbols_by_name(&self, _name: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
             Ok(Vec::new())
         }
@@ -238,7 +228,7 @@ mod tests {
     #[test]
     fn symbol_metadata_freshness_is_unknown() {
         let sym = make_resolved("src/missing.rs", "x", 1);
-        let blocks = build_evidence_blocks(&sym, &StubRepo, &StubReader::new());
+        let blocks = build_evidence_blocks(&sym, &StubRepo, &StubReader::new(), None);
         let meta = blocks.iter().find(|b| b.kind == "symbol_metadata").unwrap();
         assert_eq!(meta.freshness.as_deref(), Some("unknown"));
     }
@@ -246,7 +236,7 @@ mod tests {
     #[test]
     fn call_graph_freshness_is_unknown() {
         let sym = make_resolved("src/missing.rs", "x", 1);
-        let blocks = build_evidence_blocks(&sym, &StubRepo, &StubReader::new());
+        let blocks = build_evidence_blocks(&sym, &StubRepo, &StubReader::new(), None);
         let cg = blocks.iter().find(|b| b.kind == "call_graph").unwrap();
         assert_eq!(cg.freshness.as_deref(), Some("unknown"));
     }
@@ -273,7 +263,7 @@ mod tests {
         };
 
         let sym = make_resolved(&rel, "real", 1);
-        let blocks = build_evidence_blocks(&sym, &StubRepo, &reader);
+        let blocks = build_evidence_blocks(&sym, &StubRepo, &reader, None);
         let src = blocks.iter().find(|b| b.kind == "source_file").unwrap();
         assert_eq!(src.freshness.as_deref(), Some("fresh"));
     }
@@ -282,7 +272,7 @@ mod tests {
     fn source_file_freshness_stale_when_file_missing() {
         let reader = StubReader::new();
         let sym = make_resolved("does_not_exist.rs", "x", 1);
-        let blocks = build_evidence_blocks(&sym, &StubRepo, &reader);
+        let blocks = build_evidence_blocks(&sym, &StubRepo, &reader, None);
         let src = blocks.iter().find(|b| b.kind == "source_file").unwrap();
         assert_eq!(src.freshness.as_deref(), Some("stale"));
     }
@@ -296,13 +286,13 @@ mod tests {
         // heuristic actually sees the file we just created.
         let abs = file.to_str().unwrap().to_string();
         let sym = make_resolved(&abs, "p", 1);
-        let blocks = build_evidence_blocks(&sym, &StubRepo, &StubReader::new());
+        let blocks = build_evidence_blocks(&sym, &StubRepo, &StubReader::new(), None);
         let fs = blocks.iter().find(|b| b.kind == "fs_index").unwrap();
         assert_eq!(fs.freshness.as_deref(), Some("fresh"));
 
         // Now try a path that does not exist — must be "stale".
         let sym2 = make_resolved("__definitely_not_there__.rs", "q", 1);
-        let blocks2 = build_evidence_blocks(&sym2, &StubRepo, &StubReader::new());
+        let blocks2 = build_evidence_blocks(&sym2, &StubRepo, &StubReader::new(), None);
         let fs2 = blocks2.iter().find(|b| b.kind == "fs_index").unwrap();
         assert_eq!(fs2.freshness.as_deref(), Some("stale"));
     }

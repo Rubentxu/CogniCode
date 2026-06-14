@@ -21,8 +21,8 @@ use crate::ask::ClassifiedQuestion;
 use crate::ask::entity;
 use crate::ask::followups::generate_follow_ups;
 use crate::ask::patterns::{PATTERNS, QuestionCategory};
+use crate::facades::{SearchService, ViewService, WorkspaceService};
 use crate::mcp::{FollowUp, McpResultEnvelope, ProvenanceMetadata};
-use crate::service::ExplorerService;
 use crate::session::service::BrainSessionService;
 
 /// Dispatch a classified question. Pure async — no shared state,
@@ -42,14 +42,16 @@ use crate::session::service::BrainSessionService;
 #[allow(dead_code)]
 pub async fn dispatch_ask(
     classified: ClassifiedQuestion,
-    service: &Arc<ExplorerService>,
+    search: &dyn SearchService,
+    workspace: &dyn WorkspaceService,
+    view: &dyn ViewService,
     graph: &Option<Arc<CallGraph>>,
     _session: Option<&BrainSessionService>,
 ) -> McpResultEnvelope<Value> {
     // 1. Resolve entities via spotter (if any backtick tokens are
     //    present in the question).
     let (entities, entity_follow_ups) =
-        entity::extract_entities(&classified.entities.join(" "), service).await;
+        entity::extract_entities(&classified.entities.join(" "), search).await;
     let _ = entities; // existence is enough; the dispatch chains below
     // re-resolve by name from the question string.
 
@@ -60,7 +62,7 @@ pub async fn dispatch_ask(
 
     // 3. Build (primary_result, supporting) for the matched category.
     let (primary_result, supporting) =
-        match dispatch_category(classified.category, &classified.entities, service, graph).await {
+        match dispatch_category(classified.category, &classified.entities, search, workspace, view, graph).await {
             Ok(t) => t,
             Err(message) => {
                 return error_envelope(&classified, message, entity_follow_ups);
@@ -103,24 +105,26 @@ pub async fn dispatch_ask(
 async fn dispatch_category(
     category: QuestionCategory,
     entities: &[String],
-    service: &Arc<ExplorerService>,
+    search: &dyn SearchService,
+    workspace: &dyn WorkspaceService,
+    view: &dyn ViewService,
     graph: &Option<Arc<CallGraph>>,
 ) -> Result<(Value, Value), String> {
     match category {
-        QuestionCategory::PathBetween => path_between(entities, service, graph).await,
-        QuestionCategory::ForwardReach => forward_reach(entities, service, graph).await,
-        QuestionCategory::BackwardReach => backward_reach(entities, service, graph).await,
-        QuestionCategory::CodeQuality => code_quality(entities, service).await,
+        QuestionCategory::PathBetween => path_between(entities, search, graph).await,
+        QuestionCategory::ForwardReach => forward_reach(entities, search, graph).await,
+        QuestionCategory::BackwardReach => backward_reach(entities, search, graph).await,
+        QuestionCategory::CodeQuality => code_quality(entities, search, view).await,
         QuestionCategory::Architecture => architecture(graph).await,
-        QuestionCategory::WorkspaceOverview => workspace_overview(service, graph).await,
-        QuestionCategory::ComponentCluster => component_cluster(entities, service, graph).await,
-        QuestionCategory::GenericDescription => generic_description(entities, service).await,
+        QuestionCategory::WorkspaceOverview => workspace_overview(workspace, view, graph).await,
+        QuestionCategory::ComponentCluster => component_cluster(entities, search, graph).await,
+        QuestionCategory::GenericDescription => generic_description(entities, search, view).await,
     }
 }
 
 async fn path_between(
     entities: &[String],
-    service: &Arc<ExplorerService>,
+    search: &dyn SearchService,
     graph: &Option<Arc<CallGraph>>,
 ) -> Result<(Value, Value), String> {
     let (src, dst) = (entities.first(), entities.get(1));
@@ -128,11 +132,13 @@ async fn path_between(
         (Some(s), Some(d)) => (s.clone(), d.clone()),
         _ => return Ok((Value::Null, json!({}))),
     };
-    let spotter_src = service
+    let spotter_src = search
         .spotter_search(&src, None)
+        .await
         .map_err(|e| e.to_string())?;
-    let spotter_dst = service
+    let spotter_dst = search
         .spotter_search(&dst, None)
+        .await
         .map_err(|e| e.to_string())?;
     // Resolved id is the first hit's `object.id` (or the raw token
     // if spotter returned nothing — let the graph layer produce
@@ -183,15 +189,16 @@ async fn path_between(
 
 async fn forward_reach(
     entities: &[String],
-    service: &Arc<ExplorerService>,
+    search: &dyn SearchService,
     graph: &Option<Arc<CallGraph>>,
 ) -> Result<(Value, Value), String> {
     let root = entities
         .first()
         .cloned()
         .ok_or_else(|| "forward_reach:missing root".to_string())?;
-    let spotter = service
+    let spotter = search
         .spotter_search(&root, None)
+        .await
         .map_err(|e| e.to_string())?;
     let resolved = spotter
         .first()
@@ -211,15 +218,16 @@ async fn forward_reach(
 
 async fn backward_reach(
     entities: &[String],
-    service: &Arc<ExplorerService>,
+    search: &dyn SearchService,
     graph: &Option<Arc<CallGraph>>,
 ) -> Result<(Value, Value), String> {
     let root = entities
         .first()
         .cloned()
         .ok_or_else(|| "backward_reach:missing root".to_string())?;
-    let spotter = service
+    let spotter = search
         .spotter_search(&root, None)
+        .await
         .map_err(|e| e.to_string())?;
     let resolved = spotter
         .first()
@@ -239,28 +247,32 @@ async fn backward_reach(
 
 async fn code_quality(
     entities: &[String],
-    service: &Arc<ExplorerService>,
+    search: &dyn SearchService,
+    view: &dyn ViewService,
 ) -> Result<(Value, Value), String> {
     let root = entities
         .first()
         .cloned()
         .ok_or_else(|| "code_quality:missing root".to_string())?;
-    let spotter = service
+    let spotter = search
         .spotter_search(&root, None)
+        .await
         .map_err(|e| e.to_string())?;
     let resolved = spotter
         .first()
         .map(|h| h.object.id.clone())
         .unwrap_or_else(|| root.clone());
-    let view = service
+    let quality_view = view
         .contextual_view(&resolved, "quality")
+        .await
         .map_err(|e| e.to_string())?;
-    let object = service
+    let object = search
         .inspect_object(&resolved)
+        .await
         .map_err(|e| e.to_string())?;
     Ok((
         json!({ "smells": [], "score": 1.0 }),
-        json!({ "view": view, "object": object }),
+        json!({ "view": quality_view, "object": object }),
     ))
 }
 
@@ -276,40 +288,43 @@ async fn architecture(graph: &Option<Arc<CallGraph>>) -> Result<(Value, Value), 
 }
 
 async fn workspace_overview(
-    service: &Arc<ExplorerService>,
+    workspace: &dyn WorkspaceService,
+    view: &dyn ViewService,
     graph: &Option<Arc<CallGraph>>,
 ) -> Result<(Value, Value), String> {
-    let workspace = service.current_workspace().map_err(|e| e.to_string())?;
+    let workspace_meta = workspace.current_workspace().map_err(|e| e.to_string())?;
     let clusters = if let Some(g) = graph.as_ref() {
         let svc = ImpactAnalysisService::new();
         Some(svc.cluster_components(g, "scc"))
     } else {
         None
     };
-    let lens = service
+    let lens = view
         .apply_lens("scope:.", "hotspots")
+        .await
         .ok()
         .map(|r| serde_json::to_value(r).unwrap_or(Value::Null));
     Ok((
         json!({ "hotspots": lens.clone().unwrap_or(Value::Null) }),
         json!({
             "clusters": clusters,
-            "workspace_meta": workspace,
+            "workspace_meta": workspace_meta,
         }),
     ))
 }
 
 async fn component_cluster(
     entities: &[String],
-    service: &Arc<ExplorerService>,
+    search: &dyn SearchService,
     graph: &Option<Arc<CallGraph>>,
 ) -> Result<(Value, Value), String> {
     let root = entities
         .first()
         .cloned()
         .ok_or_else(|| "component_cluster:missing root".to_string())?;
-    let spotter = service
+    let spotter = search
         .spotter_search(&root, None)
+        .await
         .map_err(|e| e.to_string())?;
     let resolved = spotter
         .first()
@@ -338,24 +353,28 @@ async fn component_cluster(
 
 async fn generic_description(
     entities: &[String],
-    service: &Arc<ExplorerService>,
+    search: &dyn SearchService,
+    view: &dyn ViewService,
 ) -> Result<(Value, Value), String> {
     let root = entities
         .first()
         .cloned()
         .ok_or_else(|| "generic_description:missing root".to_string())?;
-    let spotter = service
+    let spotter = search
         .spotter_search(&root, None)
+        .await
         .map_err(|e| e.to_string())?;
     let resolved = spotter
         .first()
         .map(|h| h.object.id.clone())
         .unwrap_or_else(|| root.clone());
-    let object = service
+    let object = search
         .inspect_object(&resolved)
+        .await
         .map_err(|e| e.to_string())?;
-    let view = service
+    let overview_view = view
         .contextual_view(&resolved, "overview")
+        .await
         .map_err(|e| e.to_string())?;
     Ok((
         json!({
@@ -363,7 +382,7 @@ async fn generic_description(
             "kind": "symbol",
             "location": resolved,
         }),
-        json!({ "overview_view": view }),
+        json!({ "overview_view": overview_view }),
     ))
 }
 
@@ -437,11 +456,79 @@ impl GraphRequired for QuestionCategory {
 mod tests {
     use super::*;
     use crate::ask::AskRouter;
+    use crate::dto::{InspectableObjectSummary, LensResult, SpotterResult, ViewDescriptor, WorkspaceSummary, OpenWorkspaceRequest};
+    use async_trait::async_trait;
 
     // Helper — let the tests be tight. Build a question that maps to
     // each category and assert we get the right envelope shape back.
     async fn run_classify(question: &str) -> ClassifiedQuestion {
         AskRouter::classify(question)
+    }
+
+    // --- Mock facades -------------------------------------------------------
+
+    #[derive(Clone)]
+    struct MockSearchService;
+    #[async_trait]
+    impl SearchService for MockSearchService {
+        async fn spotter_search(
+            &self,
+            _query: &str,
+            _kind: Option<&str>,
+        ) -> crate::ExplorerResult<Vec<SpotterResult>> {
+            Ok(vec![])
+        }
+        async fn spotter_search_with_viewspecs(
+            &self,
+            _query: &str,
+            _kind: Option<&str>,
+            _workspace_id: Option<&str>,
+        ) -> crate::ExplorerResult<Vec<crate::dto::SpotterSearchResult>> {
+            Ok(vec![])
+        }
+        async fn inspect_object(&self, _object_id: &str) -> crate::ExplorerResult<InspectableObjectSummary> {
+            Err(crate::error::ExplorerError::ObjectNotFound("mock".into()))
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockViewService;
+    #[async_trait]
+    impl ViewService for MockViewService {
+        async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<ViewDescriptor>> {
+            Ok(vec![])
+        }
+        async fn contextual_view(&self, _object_id: &str, _view_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        }
+        async fn build_contextual_graph(&self, _focus_id: &str, _level: &str, _depth: u8, _max_nodes: usize) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
+            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        }
+        async fn available_lenses(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
+            Ok(vec![])
+        }
+        async fn apply_lens(&self, _object_id: &str, _lens_id: &str) -> crate::ExplorerResult<LensResult> {
+            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        }
+        async fn execute_view_spec(&self, _spec: &crate::dto::ViewSpec, _object_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockWorkspaceService;
+    #[async_trait]
+    impl WorkspaceService for MockWorkspaceService {
+        async fn open_workspace(&self, _request: OpenWorkspaceRequest) -> crate::ExplorerResult<WorkspaceSummary> {
+            Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        }
+        fn current_workspace(&self) -> crate::ExplorerResult<WorkspaceSummary> {
+            Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        }
+    }
+
+    fn build_mocks() -> (MockSearchService, MockViewService, MockWorkspaceService) {
+        (MockSearchService, MockViewService, MockWorkspaceService)
     }
 
     #[tokio::test]
@@ -497,55 +584,17 @@ mod tests {
         // A graph-dependent question with no graph should return a
         // "graph_unavailable" envelope that names the patterns that
         // remain available (4 and 8 per the spec).
-        use crate::adapters::FsSourceReader;
-        use crate::ports::symbol_repository::{
-            GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
-        };
-        use cognicode_core::domain::aggregates::SymbolId;
-        use std::collections::HashMap;
-        let dir = tempfile::tempdir().unwrap();
-        struct NoopRepo;
-        impl SymbolRepository for NoopRepo {
-            fn resolve(&self, _: &SymbolId) -> crate::ExplorerResult<Option<ResolvedSymbol>> {
-                Ok(None)
-            }
-            fn callers(&self, _: &SymbolId) -> Vec<RelationTarget> {
-                Vec::new()
-            }
-            fn callees(&self, _: &SymbolId) -> Vec<RelationTarget> {
-                Vec::new()
-            }
-            fn fan_in(&self, _: &SymbolId) -> usize {
-                0
-            }
-            fn fan_out(&self, _: &SymbolId) -> usize {
-                0
-            }
-            fn find_symbols_by_name(&self, _: &str) -> crate::ExplorerResult<Vec<ResolvedSymbol>> {
-                Ok(Vec::new())
-            }
-            fn find_symbols_by_file(&self, _: &str) -> crate::ExplorerResult<Vec<ResolvedSymbol>> {
-                Ok(Vec::new())
-            }
-            fn module_list(&self) -> Vec<String> {
-                Vec::new()
-            }
-            fn all_symbols(&self) -> crate::ExplorerResult<Vec<ResolvedSymbol>> {
-                Ok(Vec::new())
-            }
-            fn graph_stats(&self) -> GraphStats {
-                GraphStats {
-                    symbol_count: 0,
-                    relation_count: 0,
-                }
-            }
-        }
-        let repo: Arc<dyn SymbolRepository> = Arc::new(NoopRepo);
-        let _unused: HashMap<String, ()> = HashMap::new();
-        let reader = Arc::new(FsSourceReader::new(dir.path().to_path_buf()));
-        let service = Arc::new(ExplorerService::new(repo, reader, dir.path().to_path_buf()));
+        let (search, view, workspace) = build_mocks();
         let classified = run_classify("path between `a` and `b`").await;
-        let env = dispatch_ask(classified, &service, &None, None).await;
+        let env = dispatch_ask(
+            classified,
+            &search,
+            &workspace,
+            &view,
+            &None,
+            None,
+        )
+        .await;
         // No graph → graph_unavailable envelope, alternatives 4 and 8.
         let body = serde_json::to_string(&env).unwrap();
         assert!(
@@ -562,53 +611,17 @@ mod tests {
     async fn dispatch_non_graph_question_works_without_graph() {
         // Pattern 4 (code quality) must dispatch normally when the
         // graph is None.
-        use crate::adapters::FsSourceReader;
-        use crate::ports::symbol_repository::{
-            GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
-        };
-        use cognicode_core::domain::aggregates::SymbolId;
-        let dir = tempfile::tempdir().unwrap();
-        struct NoopRepo;
-        impl SymbolRepository for NoopRepo {
-            fn resolve(&self, _: &SymbolId) -> crate::ExplorerResult<Option<ResolvedSymbol>> {
-                Ok(None)
-            }
-            fn callers(&self, _: &SymbolId) -> Vec<RelationTarget> {
-                Vec::new()
-            }
-            fn callees(&self, _: &SymbolId) -> Vec<RelationTarget> {
-                Vec::new()
-            }
-            fn fan_in(&self, _: &SymbolId) -> usize {
-                0
-            }
-            fn fan_out(&self, _: &SymbolId) -> usize {
-                0
-            }
-            fn find_symbols_by_name(&self, _: &str) -> crate::ExplorerResult<Vec<ResolvedSymbol>> {
-                Ok(Vec::new())
-            }
-            fn find_symbols_by_file(&self, _: &str) -> crate::ExplorerResult<Vec<ResolvedSymbol>> {
-                Ok(Vec::new())
-            }
-            fn module_list(&self) -> Vec<String> {
-                Vec::new()
-            }
-            fn all_symbols(&self) -> crate::ExplorerResult<Vec<ResolvedSymbol>> {
-                Ok(Vec::new())
-            }
-            fn graph_stats(&self) -> GraphStats {
-                GraphStats {
-                    symbol_count: 0,
-                    relation_count: 0,
-                }
-            }
-        }
-        let repo: Arc<dyn SymbolRepository> = Arc::new(NoopRepo);
-        let reader = Arc::new(FsSourceReader::new(dir.path().to_path_buf()));
-        let service = Arc::new(ExplorerService::new(repo, reader, dir.path().to_path_buf()));
+        let (search, view, workspace) = build_mocks();
         let classified = run_classify("any smells in `parse_config`?").await;
-        let env = dispatch_ask(classified, &service, &None, None).await;
+        let env = dispatch_ask(
+            classified,
+            &search,
+            &workspace,
+            &view,
+            &None,
+            None,
+        )
+        .await;
         // No graph_unavailable should appear — pattern 4 doesn't need
         // the graph.
         let body = serde_json::to_string(&env).unwrap();

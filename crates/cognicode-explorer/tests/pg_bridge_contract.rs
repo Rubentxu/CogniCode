@@ -293,12 +293,12 @@ async fn connect_failure_propagates_with_prefix() {
     );
 }
 
-// Spec requirement: `MetadataAwareRepository` preserves
+// Spec requirement: `GraphQueryPort` preserves
 // `(provenance, confidence)` bit-exact through the bridge.
 pg_test!(
     metadata_aware_callees_round_trip,
     |url: String, pool: PgPool| {
-        use cognicode_explorer::ports::MetadataAwareRepository;
+        use cognicode_explorer::ports::GraphQueryPort;
 
         // Build a graph with three edges from `alpha` covering all
         // three `Provenance` variants: Extracted/1.0, Inferred/0.7,
@@ -362,7 +362,7 @@ pg_test!(
             .expect("bridge must succeed");
         let loaded_repo = CallGraphRepository::new(loaded_arc);
 
-        let metas = MetadataAwareRepository::callees_with_metadata(&loaded_repo, &a);
+        let metas = GraphQueryPort::callees_with_metadata(&loaded_repo, &a);
         assert_eq!(metas.len(), 3, "expected 3 edges from alpha after bridge");
 
         // Every entry's confidence is finite, in [0.0, 1.0], and

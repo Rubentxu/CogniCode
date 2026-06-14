@@ -19,6 +19,7 @@ use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::SymbolId;
+use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 
 use crate::domain::object_identity::ObjectIdentity;
 use crate::domain::views::scope_contains_file;
@@ -298,8 +299,8 @@ impl<'a> MoldQLExecutor<'a> {
                 break;
             }
             let neighbors: Vec<RelationTarget> = match explore.direction {
-                Direction::Callers => self.view.repo.callers(&current),
-                Direction::Callees => self.view.repo.callees(&current),
+                Direction::Callers => self.view.graph_query.as_ref().map(|gq| gq.callers(&current)).unwrap_or_default(),
+                Direction::Callees => self.view.graph_query.as_ref().map(|gq| gq.callees(&current)).unwrap_or_default(),
             };
             for n in neighbors {
                 if visited.insert(n.id.to_string()) {
@@ -354,8 +355,8 @@ impl<'a> MoldQLExecutor<'a> {
     fn eval_symbol_condition(&self, cond: &Condition, s: &ResolvedSymbol) -> bool {
         let field = &cond.field;
         let raw = match field.head() {
-            "fan_in" => Some(Value::Number(self.view.repo.fan_in(&s.id) as f64)),
-            "fan_out" => Some(Value::Number(self.view.repo.fan_out(&s.id) as f64)),
+            "fan_in" => Some(Value::Number(self.view.graph_query.as_ref().map(|gq| gq.fan_in(&s.id)).unwrap_or(0) as f64)),
+            "fan_out" => Some(Value::Number(self.view.graph_query.as_ref().map(|gq| gq.fan_out(&s.id)).unwrap_or(0) as f64)),
             "kind" => Some(Value::String(s.kind.name().to_string())),
             "name" => Some(Value::String(s.name.clone())),
             "file" => Some(Value::String(s.file.clone())),
@@ -591,6 +592,9 @@ pub struct MoldQLView {
     /// is enabled; the executor uses this for `FIND decisions/docs`.
     #[cfg(feature = "multimodal")]
     pub graph_repo: Option<Arc<dyn crate::ports::GraphRepository>>,
+    /// Optional GraphQueryPort for call graph traversal (callers, callees,
+    /// fan_in, fan_out). When `None`, these methods degrade gracefully.
+    pub graph_query: Option<Arc<dyn GraphQueryPort>>,
 }
 
 impl MoldQLView {
@@ -790,38 +794,6 @@ mod tests {
         fn resolve(&self, id: &SymbolId) -> ExplorerResult<Option<ResolvedSymbol>> {
             Ok(self.by_id.get(id.as_str()).cloned())
         }
-        fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
-            self.callers_of
-                .get(id.as_str())
-                .map(|ids| {
-                    ids.iter()
-                        .filter_map(|cid| self.by_id.get(cid).map(|s| RelationTarget::from(s)))
-                        .collect()
-                })
-                .unwrap_or_default()
-        }
-        fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
-            self.callees_of
-                .get(id.as_str())
-                .map(|ids| {
-                    ids.iter()
-                        .filter_map(|cid| self.by_id.get(cid).map(|s| RelationTarget::from(s)))
-                        .collect()
-                })
-                .unwrap_or_default()
-        }
-        fn fan_in(&self, id: &SymbolId) -> usize {
-            self.callers_of
-                .get(id.as_str())
-                .map(|v| v.len())
-                .unwrap_or(0)
-        }
-        fn fan_out(&self, id: &SymbolId) -> usize {
-            self.callees_of
-                .get(id.as_str())
-                .map(|v| v.len())
-                .unwrap_or(0)
-        }
         fn find_symbols_by_name(&self, name: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
             Ok(self
                 .by_id
@@ -855,6 +827,54 @@ mod tests {
         }
         fn graph_stats(&self) -> crate::ports::symbol_repository::GraphStats {
             crate::ports::symbol_repository::GraphStats::default()
+        }
+    }
+
+    impl GraphQueryPort for MockRepo {
+        fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
+            self.callers_of
+                .get(id.as_str())
+                .map(|ids| {
+                    ids.iter()
+                        .filter_map(|caller_id| {
+                            self.by_id.get(caller_id).map(|sym| RelationTarget::from(sym))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
+        fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
+            self.callees_of
+                .get(id.as_str())
+                .map(|ids| {
+                    ids.iter()
+                        .filter_map(|callee_id| {
+                            self.by_id.get(callee_id).map(|sym| RelationTarget::from(sym))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
+        fn fan_in(&self, id: &SymbolId) -> usize {
+            self.callers_of.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
+        }
+        fn fan_out(&self, id: &SymbolId) -> usize {
+            self.callees_of.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
+        }
+        fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
+            Vec::new()
+        }
+        fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
+            Vec::new()
+        }
+        fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata> {
+            Vec::new()
+        }
+        fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
+            Vec::new()
+        }
+        fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
+            Vec::new()
         }
     }
 
@@ -977,12 +997,13 @@ mod tests {
                 }
             });
         MoldQLView {
-            repo: repo as Arc<dyn SymbolRepository>,
+            repo: repo.clone() as Arc<dyn SymbolRepository>,
             quality: None,
             reader,
             apply_lens: apply,
             #[cfg(feature = "multimodal")]
             graph_repo: None,
+            graph_query: Some(repo as Arc<dyn GraphQueryPort>),
         }
     }
 
@@ -999,12 +1020,13 @@ mod tests {
                 Err(ExplorerError::ResolutionFailed("no lens in test".into()))
             });
         MoldQLView {
-            repo: repo as Arc<dyn SymbolRepository>,
+            repo: repo.clone() as Arc<dyn SymbolRepository>,
             quality: Some(quality),
             reader,
             apply_lens: apply,
             #[cfg(feature = "multimodal")]
             graph_repo: None,
+            graph_query: Some(repo as Arc<dyn GraphQueryPort>),
         }
     }
 

@@ -1,11 +1,11 @@
 //! Per-session service.
 //!
 //! Owns a [`BrainSessionState`] behind a `Mutex`, plus shared
-//! handles to the underlying [`crate::service::ExplorerService`] and
-//! the optional call graph. Per-session logic — focus management,
-//! history append with FIFO cap, ask-with-focus-injection — lives
-//! here. The registry only knows about this type by its `Arc`; the
-//! service never holds a reference back to the registry.
+//! handles to the ISP-segregated service facades and the optional
+//! call graph. Per-session logic — focus management, history append
+//! with FIFO cap, ask-with-focus-injection — lives here. The
+//! registry only knows about this type by its `Arc`; the service
+//! never holds a reference back to the registry.
 //!
 //! All public methods acquire the state mutex, do the work, and
 //! release the lock. They never hold the guard across `.await`.
@@ -15,8 +15,8 @@ use std::sync::{Arc, Mutex};
 use cognicode_core::domain::aggregates::CallGraph;
 use serde_json::Value;
 
+use crate::facades::{SearchService, ViewService, WorkspaceService};
 use crate::mcp::McpResultEnvelope;
-use crate::service::ExplorerService;
 use crate::session::state::{
     BrainSessionState, DEFAULT_HISTORY_CAP, DEFAULT_TTL_SECS, HistoryEntry,
 };
@@ -31,8 +31,9 @@ use crate::federation::SpaceRegistry;
 /// a `Mutex`).
 pub struct BrainSessionService {
     state: Mutex<BrainSessionState>,
-    #[allow(dead_code)]
-    service: Arc<ExplorerService>,
+    search: Arc<dyn SearchService>,
+    view: Arc<dyn ViewService>,
+    workspace: Arc<dyn WorkspaceService>,
     #[allow(dead_code)]
     graph: Option<Arc<CallGraph>>,
     /// Multimodal (brain-federation) — per-session space registry.
@@ -66,13 +67,17 @@ impl BrainSessionService {
         session_id: String,
         workspace_id: String,
         ttl_secs: u64,
-        service: Arc<ExplorerService>,
+        search: Arc<dyn SearchService>,
+        view: Arc<dyn ViewService>,
+        workspace: Arc<dyn WorkspaceService>,
         graph: Option<Arc<CallGraph>>,
     ) -> Self {
         let state = BrainSessionState::new(session_id, workspace_id, ttl_secs);
         Self {
             state: Mutex::new(state),
-            service,
+            search,
+            view,
+            workspace,
             graph,
             #[cfg(feature = "multimodal")]
             space_registry: Mutex::new(SpaceRegistry::new()),
@@ -238,8 +243,15 @@ impl BrainSessionService {
         };
 
         let classified = crate::ask::AskRouter::classify(&enriched);
-        let env =
-            crate::ask::dispatch::dispatch_ask(classified, &self.service, &self.graph, None).await;
+        let env = crate::ask::dispatch::dispatch_ask(
+            classified,
+            self.search.as_ref(),
+            self.workspace.as_ref(),
+            self.view.as_ref(),
+            &self.graph,
+            None,
+        )
+        .await;
 
         // If the inner envelope is an error, do NOT append history.
         let is_error = env
@@ -287,66 +299,86 @@ pub const SESSION_DEFAULT_TTL_SECS: u64 = DEFAULT_TTL_SECS;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::FsSourceReader;
-    use crate::ports::symbol_repository::{
-        GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
-    };
-    use cognicode_core::domain::aggregates::SymbolId;
-    use std::collections::HashMap;
-    use tempfile::TempDir;
+    use crate::dto::{InspectableObjectSummary, InspectableObjectType, LensResult, SpotterResult, ViewDescriptor};
+    use crate::dto::{WorkspaceSummary, OpenWorkspaceRequest};
+    use async_trait::async_trait;
 
-    fn build_service() -> (Arc<ExplorerService>, TempDir) {
-        let dir = tempfile::tempdir().expect("tempdir");
-        struct NoopRepo;
-        impl SymbolRepository for NoopRepo {
-            fn resolve(&self, _: &SymbolId) -> crate::ExplorerResult<Option<ResolvedSymbol>> {
-                Ok(None)
-            }
-            fn callers(&self, _: &SymbolId) -> Vec<RelationTarget> {
-                Vec::new()
-            }
-            fn callees(&self, _: &SymbolId) -> Vec<RelationTarget> {
-                Vec::new()
-            }
-            fn fan_in(&self, _: &SymbolId) -> usize {
-                0
-            }
-            fn fan_out(&self, _: &SymbolId) -> usize {
-                0
-            }
-            fn find_symbols_by_name(&self, _: &str) -> crate::ExplorerResult<Vec<ResolvedSymbol>> {
-                Ok(Vec::new())
-            }
-            fn find_symbols_by_file(&self, _: &str) -> crate::ExplorerResult<Vec<ResolvedSymbol>> {
-                Ok(Vec::new())
-            }
-            fn module_list(&self) -> Vec<String> {
-                Vec::new()
-            }
-            fn all_symbols(&self) -> crate::ExplorerResult<Vec<ResolvedSymbol>> {
-                Ok(Vec::new())
-            }
-            fn graph_stats(&self) -> GraphStats {
-                GraphStats {
-                    symbol_count: 0,
-                    relation_count: 0,
-                }
-            }
+    // --- Mock facades -------------------------------------------------------
+
+    #[derive(Clone)]
+    struct MockSearchService;
+    #[async_trait]
+    impl SearchService for MockSearchService {
+        async fn spotter_search(
+            &self,
+            _query: &str,
+            _kind: Option<&str>,
+        ) -> crate::ExplorerResult<Vec<SpotterResult>> {
+            Ok(vec![])
         }
-        let repo: Arc<dyn SymbolRepository> = Arc::new(NoopRepo);
-        let reader = Arc::new(FsSourceReader::new(dir.path().to_path_buf()));
-        let service = Arc::new(ExplorerService::new(repo, reader, dir.path().to_path_buf()));
-        (service, dir)
+        async fn spotter_search_with_viewspecs(
+            &self,
+            _query: &str,
+            _kind: Option<&str>,
+            _workspace_id: Option<&str>,
+        ) -> crate::ExplorerResult<Vec<crate::dto::SpotterSearchResult>> {
+            Ok(vec![])
+        }
+        async fn inspect_object(&self, _object_id: &str) -> crate::ExplorerResult<InspectableObjectSummary> {
+            Err(crate::error::ExplorerError::ObjectNotFound("mock".into()))
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockViewService;
+    #[async_trait]
+    impl ViewService for MockViewService {
+        async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<ViewDescriptor>> {
+            Ok(vec![])
+        }
+        async fn contextual_view(&self, _object_id: &str, _view_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        }
+        async fn build_contextual_graph(&self, _focus_id: &str, _level: &str, _depth: u8, _max_nodes: usize) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
+            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        }
+        async fn available_lenses(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
+            Ok(vec![])
+        }
+        async fn apply_lens(&self, _object_id: &str, _lens_id: &str) -> crate::ExplorerResult<LensResult> {
+            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        }
+        async fn execute_view_spec(&self, _spec: &crate::dto::ViewSpec, _object_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockWorkspaceService;
+    #[async_trait]
+    impl WorkspaceService for MockWorkspaceService {
+        async fn open_workspace(&self, _request: OpenWorkspaceRequest) -> crate::ExplorerResult<WorkspaceSummary> {
+            Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        }
+        fn current_workspace(&self) -> crate::ExplorerResult<WorkspaceSummary> {
+            Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        }
+    }
+
+    fn build_facades() -> (Arc<dyn SearchService>, Arc<dyn ViewService>, Arc<dyn WorkspaceService>) {
+        (Arc::new(MockSearchService), Arc::new(MockViewService), Arc::new(MockWorkspaceService))
     }
 
     #[test]
     fn service_set_focus_stores_value() {
-        let (svc, _dir) = build_service();
+        let (search, view, workspace) = build_facades();
         let s = BrainSessionService::new(
             "00000000-0000-4000-8000-000000000001".into(),
             "ws".into(),
             DEFAULT_TTL_SECS,
-            svc,
+            search,
+            view,
+            workspace,
             None,
         );
         assert!(s.focus_node().is_none());
@@ -356,12 +388,14 @@ mod tests {
 
     #[test]
     fn service_set_focus_none_clears() {
-        let (svc, _dir) = build_service();
+        let (search, view, workspace) = build_facades();
         let s = BrainSessionService::new(
             "00000000-0000-4000-8000-000000000002".into(),
             "ws".into(),
             DEFAULT_TTL_SECS,
-            svc,
+            search,
+            view,
+            workspace,
             None,
         );
         s.set_focus(Some("Foo::bar".into()));
@@ -374,12 +408,14 @@ mod tests {
     /// last, the first pushed entry is gone.
     #[test]
     fn service_history_caps_at_50_fifo() {
-        let (svc, _dir) = build_service();
+        let (search, view, workspace) = build_facades();
         let s = BrainSessionService::new(
             "00000000-0000-4000-8000-000000000003".into(),
             "ws".into(),
             DEFAULT_TTL_SECS,
-            svc,
+            search,
+            view,
+            workspace,
             None,
         );
         for i in 0..55 {
@@ -463,15 +499,17 @@ mod tests {
         // This test focuses on the recording side: when the inner
         // dispatch returns a non-error envelope, we record the
         // original (not enriched) question. We can't easily fabricate
-        // a successful ask through the full chain with NoopRepo, so
-        // we verify the contract by calling `push_history` directly
+        // a successful ask through the full chain with mock facades,
+        // so we verify the contract by calling `push_history` directly
         // and asserting the question stored is the one we pass in.
-        let (svc, _dir) = build_service();
+        let (search, view, workspace) = build_facades();
         let s = BrainSessionService::new(
             "00000000-0000-4000-8000-000000000004".into(),
             "ws".into(),
             DEFAULT_TTL_SECS,
-            svc,
+            search,
+            view,
+            workspace,
             None,
         );
         // `ask_with_session` uses the un-enriched question when
@@ -499,12 +537,14 @@ mod tests {
     /// history append.
     #[tokio::test]
     async fn service_failed_ask_does_not_append_to_history() {
-        let (svc, _dir) = build_service();
+        let (search, view, workspace) = build_facades();
         let s = BrainSessionService::new(
             "00000000-0000-4000-8000-000000000005".into(),
             "ws".into(),
             DEFAULT_TTL_SECS,
-            svc,
+            search,
+            view,
+            workspace,
             None,
         );
         let _env = s.ask_with_session("path between `a` and `b`").await;

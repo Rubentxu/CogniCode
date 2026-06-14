@@ -10,11 +10,14 @@ pub mod cli_dispatch;
 pub mod domain;
 pub mod dto;
 pub mod error;
+pub mod facades;
 pub mod mcp;
 pub mod moldql;
 pub mod ports;
-pub mod service;
+pub mod registry;
 pub mod session;
+#[cfg(feature = "postgres")]
+pub mod view_spec_store;
 
 // Multimodal (brain-federation) — `FederatedNodeId`,
 // `FederatedGraphService`, `SpaceRegistry`, `MergeDetector`. Hidden
@@ -28,8 +31,6 @@ mod api_graph_tests;
 mod api_rationale_tests;
 #[cfg(test)]
 mod dto_tests;
-#[cfg(test)]
-mod service_tests;
 
 // In-Memory Bridge for loading a `CallGraph` from PostgreSQL into the
 // explorer at binary startup. Feature-gated: when the `postgres`
@@ -44,7 +45,7 @@ pub use error::{ExplorerError, ExplorerResult};
 pub use mcp::ExplorerMcpHandler;
 pub use moldql::{MoldQLExecutor, MoldQLItem, MoldQLQuery, MoldQLResult, ParseError};
 pub use ports::{
-    EdgeWithMetadata, MetadataAwareRepository, QualityGateSummary, QualityIssue, QualityRepository,
-    RelationTarget, RelationTargetWithMetadata, ResolvedSymbol, RuleSummary, SearchHit,
-    SearchRepository, SourceReader, SymbolRepository,
+    EdgeWithMetadata, QualityGateSummary, QualityIssue, QualityRepository, RelationTarget,
+    RelationTargetWithMetadata, ResolvedSymbol, RuleSummary, SearchHit, SearchRepository,
+    SourceReader, SymbolRepository,
 };

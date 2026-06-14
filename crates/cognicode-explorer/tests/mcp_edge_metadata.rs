@@ -40,8 +40,8 @@ impl SourceReader for EmptySourceReader {
     }
 }
 
-#[test]
-fn inspect_object_returns_enriched_relations() {
+#[tokio::test]
+async fn inspect_object_returns_enriched_relations() {
     // 1. Build a CallGraph with two symbols and a known edge of mixed
     //    provenance so the test exercises the real `(Provenance,
     //    confidence)` plumbing through the explorer service.
@@ -66,15 +66,16 @@ fn inspect_object_returns_enriched_relations() {
 
     // 2. Wrap the graph in a `CallGraphRepository` and build the
     //    explorer service with it. The service holds an
-    //    `Arc<dyn SymbolRepository>` — exactly the seam the downcast
-    //    must work through.
+    //    `Arc<dyn SymbolRepository>` and `Arc<dyn GraphQueryPort>` —
+    //    both are provided by CallGraphRepository so we wire both.
     let repo: Arc<CallGraphRepository> = Arc::new(CallGraphRepository::from_graph(g));
     let reader: Arc<dyn SourceReader> = Arc::new(EmptySourceReader);
     let service = ExplorerService::new(
         repo.clone() as Arc<dyn cognicode_explorer::SymbolRepository>,
         reader,
         PathBuf::from("/tmp"),
-    );
+    )
+    .with_graph_query(repo as Arc<dyn cognicode_explorer::ports::GraphQueryPort>);
 
     // 3. Dispatch to the call-graph view for the source symbol.
     //    `contextual_view` is the public entry point that routes to
@@ -135,16 +136,15 @@ fn inspect_object_returns_enriched_relations() {
 /// must serialise relations with `provenance: null` and
 /// `confidence: null` — and the lookup itself must NOT panic. This
 /// pins the graceful-degradation contract from spec REQ3.
-#[test]
-fn inspect_object_with_non_metadata_aware_repo_emits_null_metadata() {
+#[tokio::test]
+async fn inspect_object_with_non_metadata_aware_repo_emits_null_metadata() {
     use cognicode_core::domain::aggregates::SymbolId;
     use cognicode_explorer::ports::symbol_repository::{
-        GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
+        GraphStats, ResolvedSymbol, SymbolRepository,
     };
 
     /// Mock repository used ONLY for this test — it implements the
-    /// base `SymbolRepository` but does NOT override
-    /// `as_metadata_aware` (so the downcast returns `None`).
+    /// base `SymbolRepository` only, with no metadata-aware support.
     struct StubRepo;
 
     impl SymbolRepository for StubRepo {
@@ -153,18 +153,6 @@ fn inspect_object_with_non_metadata_aware_repo_emits_null_metadata() {
             _id: &SymbolId,
         ) -> cognicode_explorer::ExplorerResult<Option<ResolvedSymbol>> {
             Ok(None)
-        }
-        fn callers(&self, _id: &SymbolId) -> Vec<RelationTarget> {
-            Vec::new()
-        }
-        fn callees(&self, _id: &SymbolId) -> Vec<RelationTarget> {
-            Vec::new()
-        }
-        fn fan_in(&self, _id: &SymbolId) -> usize {
-            0
-        }
-        fn fan_out(&self, _id: &SymbolId) -> usize {
-            0
         }
         fn find_symbols_by_name(
             &self,
@@ -187,7 +175,6 @@ fn inspect_object_with_non_metadata_aware_repo_emits_null_metadata() {
         fn graph_stats(&self) -> GraphStats {
             GraphStats::default()
         }
-        // `as_metadata_aware` inherits the `None` default.
     }
 
     let reader: Arc<dyn SourceReader> = Arc::new(EmptySourceReader);

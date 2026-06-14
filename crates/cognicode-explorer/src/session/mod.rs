@@ -6,7 +6,8 @@
 //! session owns a `BrainSessionService` that holds:
 //!
 //! - the per-session state ([`state::BrainSessionState`]),
-//! - a shared handle to the underlying [`crate::service::ExplorerService`],
+//! - ISP-segregated service facades ([`SearchService`],
+//!   [`ViewService`], [`WorkspaceService`]),
 //! - the optional call graph (used by follow-up asks).
 //!
 //! Lock protocol: `SessionRegistry` holds a `Mutex<HashMap<_, _>>` only
