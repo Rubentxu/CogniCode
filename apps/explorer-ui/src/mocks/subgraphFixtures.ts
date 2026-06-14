@@ -76,6 +76,7 @@ export const smallSubgraphFixture: SubgraphResponse = {
   nodes: smallNodes,
   edges: smallEdges,
   truncated: false,
+  corroboration_scores: {},
 };
 
 // ============================================================================
@@ -105,6 +106,7 @@ function buildSized(nodeCount: number, edgeCount: number): SubgraphResponse {
     nodes,
     edges,
     truncated: false,
+    corroboration_scores: {},
   };
 }
 

@@ -322,10 +322,10 @@ function TabsHarness({ views, activeViewId, onChange, isLoading }: HarnessProps)
 
 describe("ViewTabs", () => {
   const views: ViewDescriptor[] = [
-    { id: "overview", title: "Overview" },
-    { id: "call-graph", title: "Call graph" },
-    { id: "source", title: "Source" },
-    { id: "quality", title: "Quality" },
+    { id: "overview", title: "Overview", is_builtin: true, source: null },
+    { id: "call-graph", title: "Call graph", is_builtin: true, source: null },
+    { id: "source", title: "Source", is_builtin: true, source: null },
+    { id: "quality", title: "Quality", is_builtin: true, source: null },
   ];
 
   it("renders a tab per view with the right a11y wiring", () => {

@@ -1,47 +1,64 @@
+mod newtype;
+mod aix_tool;
+
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemFn, ItemStruct, Ident, Type, Expr, Token, LitStr};
+use syn::{parse_macro_input, ItemStruct, Ident, Type, Expr, Token, LitStr};
+
+/// Newtype macro for creating wrapper types with consistent derives.
+///
+/// Auto-derives: `Debug`, `Display`, `From`, `Serialize`, `Deserialize`
+/// Opt-in derives via `#[newtype(derive(Clone, Copy, Eq, Ord, Hash, Default))]`
+///
+/// # Example
+///
+/// ```ignore
+/// #[newtype]
+/// pub struct UserId(i64);
+///
+/// #[newtype(derive(Clone, Eq))]
+/// pub struct ResourceHandle(String);
+/// ```
+#[proc_macro_derive(newtype, attributes(newtype))]
+pub fn derive_newtype(input: TokenStream) -> TokenStream {
+    // Convert proc_macro::TokenStream to proc_macro2::TokenStream
+    let input2 = proc_macro2::TokenStream::from(input);
+    let output2 = newtype::derive_newtype(input2);
+    // Convert back to proc_macro::TokenStream
+    proc_macro::TokenStream::from(output2)
+}
 
 /// AIX Tool macro for simplified MCP tool registration.
 ///
 /// # Example
 /// ```ignore
 /// #[aix_tool(
-///     name = "smart_overview",
-///     description = "Get AI-optimized executive summary",
-///     input = SmartOverviewInput,
-///     output = SmartOverviewDto
+///     name = "build_graph",
+///     description = "Build the call graph for a project directory",
+///     input_schema = BuildGraphInput
 /// )]
-/// pub async fn handle_smart_overview(
+/// pub async fn handle_build_graph(
 ///     ctx: &HandlerContext,
-///     input: SmartOverviewInput
-/// ) -> HandlerResult<SmartOverviewDto> {
+///     input: BuildGraphInput
+/// ) -> HandlerResult<BuildGraphOutput> {
 ///     // ... implementation
 /// }
 /// ```
 ///
-/// For v1, this macro simply validates the attribute syntax and passes
-/// the function through unchanged. Full tool registration code generation
-/// will be added in future iterations.
+/// The macro generates:
+/// - A `ToolDef<name>` struct containing the tool metadata
+/// - A `TOOL_DEF_<NAME>` constant for registration
+///
+/// The ToolDef provides:
+/// - `name`: The tool's identifier
+/// - `description`: Human-readable description
+/// - `input_schema_fn`: A function returning the JSON schema for the input type
 #[proc_macro_attribute]
 pub fn aix_tool(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let input_fn = parse_macro_input!(item as ItemFn);
-    let fn_name = &input_fn.sig.ident;
-    let fn_name_str = fn_name.to_string();
-
-    // Validate attribute syntax minimally
-    // In v1, we just ensure it parses as a delimited group
-    let _ = attr.to_string();
-
-    // For v1, we just pass through the function unchanged
-    // Full tool registration will come in future iterations
-    let output = quote! {
-        #[doc = "AIX Tool registered handler: "]
-        #[doc = #fn_name_str]
-        #input_fn
-    };
-
-    output.into()
+    let attr2 = proc_macro2::TokenStream::from(attr);
+    let item2 = proc_macro2::TokenStream::from(item);
+    let output2 = aix_tool::derive_aix_tool(attr2, item2);
+    proc_macro::TokenStream::from(output2)
 }
 
 /// Declare a code smell rule for the rule engine.

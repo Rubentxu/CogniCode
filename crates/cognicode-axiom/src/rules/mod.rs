@@ -32,7 +32,7 @@ pub mod preflight; // Layer-0 preflight filter using Aho-Corasick
 pub mod poc_rules; // PoC rules using #[cogni_rule] attribute macro
 pub mod symbol_table; // Lightweight per-file SymbolTable for LCPG MVP
 pub mod visitor; // Reusable AST visitor trait and traversal patterns
-pub mod kb_security; // KB-generated security rules (auto-generated)
+// pub mod kb_security; // KB-generated security rules (auto-generated) — directory missing
 
 #[cfg(feature = "scraper")]
 pub mod scraper;

@@ -12,7 +12,7 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use thiserror::Error;
@@ -287,6 +287,155 @@ impl InputValidator {
         }
 
         Ok(path_buf)
+    }
+
+    /// Validates a path for path traversal and workspace boundaries.
+    ///
+    /// This is the single authority for path validation. It performs:
+    /// - Path traversal pattern detection (including URL-encoded and backslash variants)
+    /// - Null byte detection
+    /// - Path depth validation
+    /// - Symlink detection before canonicalization (TOCTOU protection)
+    /// - Workspace boundary enforcement
+    ///
+    /// Returns `Ok(())` if valid, `Err(SecurityError)` otherwise.
+    ///
+    /// # Arguments
+    /// * `path` - The path to validate (can be relative or absolute)
+    pub fn validate_path(&self, path: &Path) -> Result<(), SecurityError> {
+        let path_str = path.to_string_lossy();
+
+        // Check for path traversal patterns
+        if self.contains_path_traversal(&path_str) {
+            warn!("Path traversal attempt detected: {}", path_str);
+            return Err(SecurityError::PathTraversalAttempt {
+                path: path_str.to_string(),
+            });
+        }
+
+        // Check for null bytes
+        if path_str.contains('\0') {
+            return Err(SecurityError::InvalidPathCharacters {
+                path: path_str.to_string(),
+            });
+        }
+
+        // Parse the path and resolve relative paths against workspace.
+        let resolved = if path.is_absolute() {
+            path.to_path_buf()
+        } else if !self.allowed_paths.is_empty() {
+            // Resolve relative paths against workspace dirs
+            let mut resolved = path.to_path_buf();
+            let mut found = false;
+            for ws in &self.allowed_paths {
+                let candidate = ws.join(path);
+                if candidate.exists() || candidate.parent().is_some_and(|p| p.exists()) {
+                    resolved = candidate;
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                if let Some(first_ws) = self.allowed_paths.first() {
+                    resolved = first_ws.join(path);
+                }
+            }
+            resolved
+        } else {
+            path.to_path_buf()
+        };
+
+        // Check path depth
+        let component_count = resolved.components().count();
+        if component_count > MAX_PATH_COMPONENTS {
+            return Err(SecurityError::PathTooDeep {
+                depth: component_count,
+                max: MAX_PATH_COMPONENTS,
+            });
+        }
+
+        // CRITICAL: Check for symlinks BEFORE canonicalization using symlink_metadata()
+        if let Ok(metadata) = std::fs::symlink_metadata(&resolved)
+            && metadata.file_type().is_symlink()
+        {
+            warn!("Symlink detected in path: {}", path_str);
+            return Err(SecurityError::SymlinkDetected {
+                path: path_str.to_string(),
+            });
+        }
+
+        // Check if any parent component is a symlink
+        let mut current = PathBuf::from(&resolved);
+        while let Some(parent) = current.parent() {
+            if parent.as_os_str().is_empty() {
+                break;
+            }
+            if let Ok(metadata) = std::fs::symlink_metadata(parent)
+                && metadata.file_type().is_symlink()
+            {
+                warn!("Symlink detected in parent path: {}", parent.display());
+                return Err(SecurityError::SymlinkDetected {
+                    path: parent.display().to_string(),
+                });
+            }
+            current = parent.to_path_buf();
+        }
+
+        // Canonicalize and verify workspace boundary
+        let canonical = match std::fs::canonicalize(&resolved) {
+            Ok(c) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // File doesn't exist - check parent directory
+                if let Some(parent) = resolved.parent() {
+                    if parent.exists()
+                        && let Ok(metadata) = std::fs::symlink_metadata(parent)
+                        && metadata.file_type().is_symlink()
+                    {
+                        warn!("Symlink detected in parent path: {}", parent.display());
+                        return Err(SecurityError::SymlinkDetected {
+                            path: parent.display().to_string(),
+                        });
+                    }
+
+                    match std::fs::canonicalize(parent) {
+                        Ok(c) => c,
+                        Err(_) => {
+                            return Err(SecurityError::PathNotAccessible {
+                                path: path_str.to_string(),
+                            });
+                        }
+                    }
+                } else {
+                    return Err(SecurityError::PathNotAccessible {
+                        path: path_str.to_string(),
+                    });
+                }
+            }
+            Err(_) => {
+                return Err(SecurityError::PathNotAccessible {
+                    path: path_str.to_string(),
+                });
+            }
+        };
+
+        // Verify path is within workspace
+        if !self.allowed_paths.is_empty() {
+            let is_allowed = self
+                .allowed_paths
+                .iter()
+                .any(|allowed| canonical.starts_with(allowed) || canonical == *allowed);
+
+            if !is_allowed {
+                debug!(
+                    "Path {} is not within allowed workspace: {:?}",
+                    canonical.display(),
+                    self.allowed_paths
+                );
+                return Err(SecurityError::PathOutsideWorkspace);
+            }
+        }
+
+        Ok(())
     }
 
     /// Validates file content size

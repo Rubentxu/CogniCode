@@ -210,8 +210,10 @@ describe("useAvailableViews", () => {
       { wrapper },
     );
 
+    // Wait for data to have actual items (not just defined as empty array from initial merge)
     await waitFor(() => {
       expect(result.current.data).toBeDefined();
+      expect(result.current.data!.length).toBeGreaterThan(0);
     });
     expect(result.current.data!.length).toBe(
       inspectableObjectFixture.available_views.length,

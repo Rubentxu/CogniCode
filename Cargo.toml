@@ -3,8 +3,6 @@ resolver = "2"
 members = [
     "crates/cognicode",
     "crates/cognicode-core",
-    "crates/cognicode-db",
-    "crates/cognicode-store-traits",
     "crates/cognicode-mcp",
     "crates/cognicode-cli",
     "crates/cognicode-sandbox",
@@ -14,6 +12,8 @@ members = [
     "crates/cognicode-quality",
     "crates/cognicode-rule-test-harness",
     "crates/cognicode-explorer",
+    "crates/cognicode-core-mock",
+    "crates/cognicode-runtime",
 ]
 
 [workspace.package]
@@ -24,8 +24,6 @@ authors = ["CogniCode Team"]
 [workspace.dependencies]
 # Internal
 cognicode-core = { path = "crates/cognicode-core" }
-cognicode-db = { path = "crates/cognicode-db" }
-cognicode-store-traits = { path = "crates/cognicode-store-traits" }
 cognicode-axiom = { path = "crates/cognicode-axiom" }
 cognicode-macros = { path = "crates/cognicode-macros" }
 

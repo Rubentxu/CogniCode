@@ -162,7 +162,7 @@ describe("InteractiveGraph", () => {
     render(
       <InteractiveGraph
         root="sym:foo::bar"
-        data={{ root: "x", nodes: [], edges: [], truncated: false }}
+        data={{ root: "x", nodes: [], edges: [], truncated: false, corroboration_scores: {} }}
         onSelectObject={() => {}}
       />,
     );
@@ -262,6 +262,7 @@ describe("InteractiveGraph", () => {
       ],
       edges: [],
       truncated: false,
+      corroboration_scores: {},
     };
     render(
       <InteractiveGraph

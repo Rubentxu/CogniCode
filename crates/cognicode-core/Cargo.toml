@@ -27,6 +27,9 @@ postgres = ["dep:sqlx"]
 multimodal = []
 
 [dependencies]
+# Proc macros for tool definitions
+cognicode-macros.workspace = true
+
 # Parsing
 tree-sitter.workspace = true
 tree-sitter-python.workspace = true
@@ -109,11 +112,6 @@ process-wrap.workspace = true
 # can `use pulldown_cmark::…` behind a `#[cfg(feature = "multimodal")]`
 # guard without needing the dep to be optional.
 pulldown-cmark.workspace = true
-
-# (REMOVED for `explorer-graph-repository-bridge` slice — `cognicode-store-traits`
-# is now deprecated and has zero Rust-level uses in this crate. The crate remains
-# in the workspace for now; removal is scheduled for after the PostgreSQL adapter
-# lands. See crates/cognicode-store-traits/src/lib.rs for the migration map.)
 
 # PostgreSQL async driver — optional, gated behind the `postgres` feature.
 # When the feature is off, this dep is absent from the build graph.

@@ -3,6 +3,12 @@
 //! These DTOs decouple the application layer from the MCP protocol.
 
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
+
+// Import shared types from common.rs
+use super::common::{
+    ContentMatch, EditValidation, FileEdit, FileEntry, FileMetadata, ListFilesResult, SyntaxIssue,
+};
 
 // ============================================================================
 // Read File
@@ -29,6 +35,20 @@ impl std::fmt::Display for ReadMode {
     }
 }
 
+impl FromStr for ReadMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "raw" => Ok(ReadMode::Raw),
+            "outline" => Ok(ReadMode::Outline),
+            "symbols" => Ok(ReadMode::Symbols),
+            "compressed" => Ok(ReadMode::Compressed),
+            _ => Err(format!("Unknown read mode: {}", s)),
+        }
+    }
+}
+
 /// Request for reading a file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadFileRequest {
@@ -38,7 +58,7 @@ pub struct ReadFileRequest {
     #[serde(default)]
     pub end_line: Option<u32>,
     #[serde(default)]
-    pub mode: Option<String>,
+    pub mode: Option<ReadMode>,
     #[serde(default)]
     pub chunk_size: Option<usize>,
     #[serde(default)]
@@ -56,16 +76,6 @@ impl ReadFileRequest {
             continuation_token: None,
         }
     }
-}
-
-/// File metadata
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileMetadata {
-    pub path: String,
-    pub size: u64,
-    pub modified: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub language: Option<String>,
 }
 
 /// Result of reading a file
@@ -119,15 +129,6 @@ pub struct WriteFileResult {
 // Edit File
 // ============================================================================
 
-/// A single file edit operation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileEdit {
-    /// The exact text to replace
-    pub old_string: String,
-    /// The replacement text
-    pub new_string: String,
-}
-
 /// Request for editing a file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EditFileRequest {
@@ -142,23 +143,6 @@ impl EditFileRequest {
             edits,
         }
     }
-}
-
-/// Syntax error in a file
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyntaxIssue {
-    pub line: u32,
-    pub column: u32,
-    pub message: String,
-    pub severity: String,
-}
-
-/// Validation result for edit operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EditValidation {
-    pub passed: bool,
-    #[serde(default)]
-    pub syntax_errors: Vec<SyntaxIssue>,
 }
 
 /// Result of editing a file
@@ -209,17 +193,6 @@ impl SearchContentRequest {
     }
 }
 
-/// A single content match
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContentMatch {
-    pub file: String,
-    pub line: u32,
-    pub col: u32,
-    pub text: String,
-    #[serde(default)]
-    pub context: Vec<String>,
-}
-
 /// Result of searching content
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchContentResult {
@@ -247,26 +220,6 @@ pub struct ListFilesRequest {
     pub recursive: Option<bool>,
     #[serde(default)]
     pub max_depth: Option<usize>,
-}
-
-/// A single file entry
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileEntry {
-    pub path: String,
-    pub size: u64,
-    pub modified: u64,
-    pub is_dir: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub language: Option<String>,
-}
-
-/// Result of listing files
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListFilesResult {
-    pub files: Vec<FileEntry>,
-    pub total: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub depth_traversed: Option<usize>,
 }
 
 // ============================================================================

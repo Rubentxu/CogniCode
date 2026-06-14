@@ -20,8 +20,15 @@ import {
 } from "react";
 
 export interface ViewTabsProps {
-  /** The list of available views (id + title). */
-  views: ReadonlyArray<{ id: string; title: string }>;
+  /** The list of available views (id + title + optional runtime metadata). */
+  views: ReadonlyArray<{
+    id: string;
+    title: string;
+    /** Whether this is a built-in view (true) or runtime user-defined view (false). */
+    is_builtin?: boolean;
+    /** Source discriminator: "runtime" for user-defined specs, null for built-ins. */
+    source?: string | null;
+  }>;
   /** The currently active view id. `null` when nothing is selected. */
   activeViewId: string | null;
   /** True while the next view is loading. */
@@ -30,6 +37,12 @@ export interface ViewTabsProps {
   onChange: (viewId: string) => void;
   /** Optional className passthrough (e.g., for layout overrides). */
   className?: string;
+  /** Optional object context for the "Create custom view" wizard trigger. */
+  objectId?: string | null;
+  objectType?: string | null;
+  objectLabel?: string | null;
+  /** Callback to open the ViewSpecWizard. When provided, an overflow menu appears. */
+  onOpenWizard?: () => void;
 }
 
 const TABS_ID = "object-inspector-view-tabs";
@@ -47,6 +60,10 @@ export function ViewTabs({
   isLoading,
   onChange,
   className,
+  objectId,
+  objectType,
+  objectLabel,
+  onOpenWizard,
 }: ViewTabsProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -145,6 +162,7 @@ export function ViewTabs({
             data-testid={`view-tab-${view.id}`}
             data-view-id={view.id}
             data-active={isActive ? "true" : "false"}
+            data-source={view.is_builtin === false ? "runtime" : undefined}
             onClick={() => onChange(view.id)}
             className="rounded-md px-2 py-1 text-xs font-medium transition-colors"
             style={{
@@ -157,6 +175,15 @@ export function ViewTabs({
             }}
           >
             {view.title}
+            {/* "custom" badge for runtime (user-defined) views */}
+            {view.is_builtin === false && (
+              <span
+                aria-label="Custom view"
+                className="ml-1 rounded bg-blue-100 px-1 py-0.5 text-[10px] font-normal text-blue-700"
+              >
+                custom
+              </span>
+            )}
             {isLoading && isActive && (
               <span
                 aria-hidden="true"
@@ -167,6 +194,23 @@ export function ViewTabs({
           </button>
         );
       })}
+      {/* Overflow menu — "Create custom view" opens the ViewSpecWizard */}
+      {onOpenWizard && objectId && objectType && objectLabel && (
+        <button
+          type="button"
+          aria-label="Create custom view"
+          data-testid="view-tabs-overflow-menu"
+          onClick={onOpenWizard}
+          className="ml-auto rounded-md px-2 py-1 text-xs transition-colors"
+          style={{
+            backgroundColor: "var(--color-surface-overlay)",
+            color: "var(--color-text-secondary)",
+          }}
+          title="Create custom view"
+        >
+          + Custom View
+        </button>
+      )}
     </div>
   );
 }

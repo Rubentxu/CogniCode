@@ -6,14 +6,17 @@
 //! - edit_file: String-replacement edits with tree-sitter validation
 //! - search_content: Regex/literal search with .gitignore awareness
 //! - list_files: Directory listing with .gitignore filtering
+//!
+//! Security: Path validation is delegated to InputValidator (single authority).
 
 use crate::application::dto::{
     ContentMatch, EditFileRequest, EditFileResult, EditValidation, FileEntry, FileMetadata,
-    ListFilesRequest, ListFilesResult, ReadFileRequest, ReadFileResult, RetrieveAndVerifyRequest,
-    RetrieveAndVerifyResult, SearchContentRequest, SearchContentResult, VerificationStatus,
-    VerifiedMatchDto, WriteFileRequest, WriteFileResult,
+    ListFilesRequest, ListFilesResult, ReadFileRequest, ReadFileResult, ReadMode,
+    RetrieveAndVerifyRequest, RetrieveAndVerifyResult, SearchContentRequest, SearchContentResult,
+    VerificationStatus, VerifiedMatchDto, WriteFileRequest, WriteFileResult,
 };
 use crate::application::error::{AppError, AppResult};
+use crate::interface::mcp::security::{InputValidator, SecurityError};
 use crate::domain::traits::Parser;
 use crate::domain::value_objects::SymbolKind;
 use crate::infrastructure::parser::{Language, TreeSitterParser};
@@ -25,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::SystemTime;
 
 /// Continuation token for chunked file reading
@@ -54,90 +58,97 @@ fn decode_token(token: &str) -> Option<ContinuationToken> {
 /// FileOperationsService - Handles all file manipulation operations
 ///
 /// This service provides safe, workspace-scoped file operations with:
-/// - Path traversal prevention
+/// - Path validation delegated to InputValidator (single authority)
 /// - .gitignore-aware search and listing
 /// - Tree-sitter syntax validation for edits
 /// - Support for multiple read modes (raw, outline, symbols, compressed)
 pub struct FileOperationsService {
-    /// Workspace root for path validation
+    /// Workspace root for fallback path resolution
     workspace_root: String,
 
     /// Virtual file system for edit operations
     #[allow(dead_code)]
     vfs: VirtualFileSystem,
+
+    /// Input validator for path security checks (single authority)
+    validator: Arc<InputValidator>,
 }
 
 impl FileOperationsService {
-    /// Creates a new FileOperationsService
-    pub fn new(workspace_root: impl Into<String>) -> Self {
+    /// Creates a new FileOperationsService with the given InputValidator.
+    ///
+    /// The validator is the single authority for path security validation.
+    pub fn new(workspace_root: impl Into<String>, validator: Arc<InputValidator>) -> Self {
         Self {
             workspace_root: workspace_root.into(),
             vfs: VirtualFileSystem::new(),
+            validator,
         }
     }
 
-    /// Validates that a path is within the workspace
-    /// For existing files: canonicalizes and checks within workspace
-    /// For new files: validates parent directory is within workspace and returns absolute path
+    /// Validates that a path is within the workspace and safe.
+    ///
+    /// Delegates to InputValidator::validate_path for security checks:
+    /// - Path traversal detection
+    /// - Null byte detection
+    /// - Path depth validation
+    /// - Symlink detection
+    /// - Workspace boundary enforcement
+    ///
+    /// Returns the canonical path as a string on success.
     fn validate_path(&self, path: &str) -> AppResult<String> {
         let requested = Path::new(path);
-        let root = Path::new(&self.workspace_root);
 
-        // Get absolute path
+        // Delegate security validation to InputValidator
+        self.validator
+            .validate_path(requested)
+            .map_err(|e| match e {
+                SecurityError::PathTraversalAttempt { path } => {
+                    AppError::InvalidParameter(format!("Path traversal attempt detected: {}", path))
+                }
+                SecurityError::PathNotAccessible { path } => {
+                    AppError::InvalidParameter(format!("Path not accessible: {}", path))
+                }
+                SecurityError::PathOutsideWorkspace => {
+                    AppError::InvalidParameter("Path outside workspace".to_string())
+                }
+                SecurityError::PathTooDeep { depth, max } => {
+                    AppError::InvalidParameter(format!(
+                        "Path too deep: {} components (max: {})",
+                        depth, max
+                    ))
+                }
+                SecurityError::InvalidPathCharacters { path } => {
+                    AppError::InvalidParameter(format!("Invalid characters in path: {}", path))
+                }
+                SecurityError::SymlinkDetected { path } => {
+                    AppError::InvalidParameter(format!("Symlink detected in path: {}", path))
+                }
+                other => AppError::InvalidParameter(format!("Security validation failed: {}", other)),
+            })?;
+
+        // Resolve to absolute path for return value
+        let root = Path::new(&self.workspace_root);
         let absolute_path = if requested.is_absolute() {
             requested.to_path_buf()
         } else {
-            // Resolve relative paths against workspace root, not CWD
             root.join(requested)
         };
 
-        // If the file exists, canonicalize it and check within workspace
-        if absolute_path.exists() {
-            let requested_canonical = absolute_path.canonicalize().map_err(|e| {
-                AppError::InvalidParameter(format!("Failed to canonicalize path: {}", e))
-            })?;
-            let root_canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-
-            if !requested_canonical.starts_with(&root_canonical) {
-                return Err(AppError::InvalidParameter(
-                    "Path outside workspace".to_string(),
-                ));
-            }
-            return Ok(requested_canonical.to_string_lossy().to_string());
+        // Canonicalize to get the real path
+        let canonical = if absolute_path.exists() {
+            std::fs::canonicalize(&absolute_path)
+        } else if let Some(parent) = absolute_path.parent() {
+            parent.canonicalize().map(|p| p.join(absolute_path.file_name().unwrap_or_default()))
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Cannot resolve path",
+            ))
         }
+        .map_err(|e| AppError::InvalidParameter(format!("Failed to resolve path: {}", e)))?;
 
-        // For new files: validate parent directory exists and is within workspace
-        let parent = absolute_path
-            .parent()
-            .ok_or_else(|| AppError::InvalidParameter("No parent directory".to_string()))?;
-
-        // Check parent exists
-        if !parent.exists() {
-            return Err(AppError::InvalidParameter(format!(
-                "Parent directory does not exist: {}",
-                parent.display()
-            )));
-        }
-
-        // Canonicalize parent and check within workspace
-        let parent_canonical = parent.canonicalize().map_err(|e| {
-            AppError::InvalidParameter(format!("Failed to canonicalize parent: {}", e))
-        })?;
-        let root_canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-
-        if !parent_canonical.starts_with(&root_canonical) {
-            return Err(AppError::InvalidParameter(
-                "Path outside workspace".to_string(),
-            ));
-        }
-
-        // Return the full absolute path by joining canonical parent with filename
-        let filename = absolute_path
-            .file_name()
-            .ok_or_else(|| AppError::InvalidParameter("Invalid filename".to_string()))?;
-
-        let final_path = parent_canonical.join(filename);
-        Ok(final_path.to_string_lossy().to_string())
+        Ok(canonical.to_string_lossy().to_string())
     }
 
     /// Reads a file from disk with optional line range and mode
@@ -169,118 +180,123 @@ impl FileOperationsService {
             ));
         }
 
-        let mode = input.mode.as_deref().unwrap_or("raw");
+        let mode = input.mode.unwrap_or(ReadMode::Raw);
         let metadata = self.build_file_metadata(&validated_path)?;
         let total_lines = self.count_lines(&validated_path)?;
 
-        // Handle different modes
-        let (content, start_line, end_line, has_more, next_token, suggested_chunk_size) = match mode
-        {
-            "outline" | "symbols" | "compressed" => {
-                // Non-raw modes ignore chunk_size and continuation_token
-                let content = match mode {
-                    "outline" => self.read_file_outline(&validated_path, &input)?,
-                    "symbols" => self.read_file_symbols(&validated_path, &input)?,
-                    "compressed" => self.read_file_compressed(&validated_path, &input)?,
-                    _ => unreachable!(),
-                };
-                let start = input.start_line.unwrap_or(1);
-                let end = input.end_line.unwrap_or(total_lines);
-                (content, start, end, false, None, None)
-            }
-            _ => {
-                // Raw mode with optional chunked reading
-                let file_size = metadata.size as usize;
-                let is_large_file = file_size > 1_000_000; // 1MB threshold
-
-                // Determine offset from continuation_token or start_line
-                let (offset, chunk_size): (usize, usize) =
-                    if let Some(ref token) = input.continuation_token {
-                        if let Some(ct) = decode_token(token) {
-                            (ct.offset, ct.chunk_size)
-                        } else {
-                            return Err(AppError::InvalidParameter(
-                                "Invalid continuation token".to_string(),
-                            ));
+        // Handle different modes using static enum dispatch
+        let (content, start_line, end_line, has_more, next_token, suggested_chunk_size) =
+            match mode {
+                ReadMode::Outline | ReadMode::Symbols | ReadMode::Compressed => {
+                    // Non-raw modes ignore chunk_size and continuation_token
+                    let content = match mode {
+                        ReadMode::Outline => {
+                            self.read_file_outline(&validated_path, &input)?
                         }
-                    } else {
-                        let start = input.start_line.unwrap_or(1);
-                        // Convert start_line to byte offset (approximate)
-                        let offset = if start <= 1 {
-                            0
+                        ReadMode::Symbols => {
+                            self.read_file_symbols(&validated_path, &input)?
+                        }
+                        ReadMode::Compressed => {
+                            self.read_file_compressed(&validated_path, &input)?
+                        }
+                        ReadMode::Raw => unreachable!(),
+                    };
+                    let start = input.start_line.unwrap_or(1);
+                    let end = input.end_line.unwrap_or(total_lines);
+                    (content, start, end, false, None, None)
+                }
+                ReadMode::Raw => {
+                    // Raw mode with optional chunked reading
+                    let file_size = metadata.size as usize;
+                    let is_large_file = file_size > 1_000_000; // 1MB threshold
+
+                    // Determine offset from continuation_token or start_line
+                    let (offset, chunk_size): (usize, usize) =
+                        if let Some(ref token) = input.continuation_token {
+                            if let Some(ct) = decode_token(token) {
+                                (ct.offset, ct.chunk_size)
+                            } else {
+                                return Err(AppError::InvalidParameter(
+                                    "Invalid continuation token".to_string(),
+                                ));
+                            }
                         } else {
-                            // Read up to start_line to compute approximate offset
-                            self.read_file_raw_at_line(&validated_path, start)?
+                            let start = input.start_line.unwrap_or(1);
+                            // Convert start_line to byte offset (approximate)
+                            let offset = if start <= 1 {
+                                0
+                            } else {
+                                // Read up to start_line to compute approximate offset
+                                self.read_file_raw_at_line(&validated_path, start)?
+                            };
+                            (offset, input.chunk_size.unwrap_or(0))
                         };
-                        (offset, input.chunk_size.unwrap_or(0))
+
+                    // Read chunk or full content
+                    let chunk_mode = chunk_size > 0 || input.continuation_token.is_some();
+                    let effective_chunk_size = chunk_size;
+
+                    let (content, actual_end_line, actual_has_more, actual_next_token) =
+                        if chunk_mode && effective_chunk_size > 0 {
+                            // Chunked reading
+                            let (chunk, new_offset, reached_end) =
+                                self.read_file_chunk(&validated_path, offset, effective_chunk_size)?;
+
+                            let has_more = !reached_end;
+                            let next_token = if has_more {
+                                Some(encode_token(
+                                    &validated_path,
+                                    new_offset,
+                                    effective_chunk_size,
+                                ))
+                            } else {
+                                None
+                            };
+
+                            // Count lines in chunk to determine line numbers
+                            let lines_in_chunk: Vec<&str> = chunk.lines().collect();
+                            let chunk_start_line = if offset == 0 {
+                                1
+                            } else {
+                                // Count newlines before offset to determine line number
+                                let content = fs::read_to_string(&validated_path).map_err(|e| {
+                                    AppError::InvalidParameter(format!("Failed to read file: {}", e))
+                                })?;
+                                content[..offset].lines().count() as u32 + 1
+                            };
+                            let chunk_end_line =
+                                chunk_start_line + lines_in_chunk.len() as u32 - 1;
+
+                            (chunk, chunk_end_line, has_more, next_token)
+                        } else {
+                            // Non-chunked reading (original behavior)
+                            let start = input.start_line.unwrap_or(1);
+                            let end = input.end_line.unwrap_or(500).min(500);
+                            let content = self.read_file_range(&validated_path, start, end)?;
+                            (content, end, false, None)
+                        };
+
+                    // Auto-suggest for large files in raw mode without chunk_size
+                    let auto_suggest =
+                        is_large_file && chunk_size == 0 && input.continuation_token.is_none();
+
+                    let suggested = if auto_suggest {
+                        Some(65536) // 64KB suggested chunk size
+                    } else {
+                        None
                     };
 
-                // Read chunk or full content
-                let chunk_mode = chunk_size > 0 || input.continuation_token.is_some();
-                let effective_chunk_size = chunk_size;
-
-                let (content, actual_end_line, actual_has_more, actual_next_token) =
-                    if chunk_mode && effective_chunk_size > 0 {
-                        // Chunked reading
-                        let (chunk, new_offset, reached_end) =
-                            self.read_file_chunk(&validated_path, offset, effective_chunk_size)?;
-
-                        let has_more = !reached_end;
-                        let next_token = if has_more {
-                            Some(encode_token(
-                                &validated_path,
-                                new_offset,
-                                effective_chunk_size,
-                            ))
-                        } else {
-                            None
-                        };
-
-                        // Count lines in chunk to determine line numbers
-                        let lines_in_chunk: Vec<&str> = chunk.lines().collect();
-                        let chunk_start_line = if offset == 0 {
-                            1
-                        } else {
-                            // Count newlines before offset to determine line number
-                            let content = fs::read_to_string(&validated_path).map_err(|e| {
-                                AppError::InvalidParameter(format!("Failed to read file: {}", e))
-                            })?;
-                            content[..offset].lines().count() as u32 + 1
-                        };
-                        let chunk_end_line = chunk_start_line + lines_in_chunk.len() as u32 - 1;
-
-                        (chunk, chunk_end_line, has_more, next_token)
-                    } else {
-                        // Non-chunked reading (original behavior)
-                        let start = input.start_line.unwrap_or(1);
-                        let end = input.end_line.unwrap_or(500).min(500);
-                        let content = self.read_file_range(&validated_path, start, end)?;
-                        (content, end, false, None)
-                    };
-
-                // Auto-suggest for large files in raw mode without chunk_size
-                let auto_suggest = is_large_file
-                    && chunk_size == 0
-                    && input.continuation_token.is_none()
-                    && mode == "raw";
-
-                let suggested = if auto_suggest {
-                    Some(65536) // 64KB suggested chunk size
-                } else {
-                    None
-                };
-
-                let start = input.start_line.unwrap_or(1);
-                (
-                    content,
-                    start,
-                    actual_end_line,
-                    actual_has_more || auto_suggest,
-                    actual_next_token,
-                    suggested,
-                )
-            }
-        };
+                    let start = input.start_line.unwrap_or(1);
+                    (
+                        content,
+                        start,
+                        actual_end_line,
+                        actual_has_more || auto_suggest,
+                        actual_next_token,
+                        suggested,
+                    )
+                }
+            };
 
         // Handle large file truncation warning
         let truncated = content.len() > 100_000;
@@ -865,7 +881,7 @@ impl FileOperationsService {
                     applied: false,
                     validation: EditValidation {
                         passed: false,
-                        syntax_errors: vec![],
+                        syntax_issues: vec![],
                     },
                     preview: Some(format!(
                         "No matches found for old_string: {}",
@@ -880,7 +896,7 @@ impl FileOperationsService {
                     applied: false,
                     validation: EditValidation {
                         passed: false,
-                        syntax_errors: vec![],
+                        syntax_issues: vec![],
                     },
                     preview: Some(format!(
                         "Multiple matches ({}) found for old_string: {}",
@@ -908,7 +924,7 @@ impl FileOperationsService {
                 applied: false,
                 validation: EditValidation {
                     passed: true,
-                    syntax_errors: vec![],
+                    syntax_issues: vec![],
                 },
                 preview: Some("No changes made".to_string()),
                 bytes_changed: 0,
@@ -936,35 +952,35 @@ impl FileOperationsService {
                             if TreeSitterParser::has_error_nodes(&tree) {
                                 EditValidation {
                                     passed: false,
-                                    syntax_errors: vec![],
+                                    syntax_issues: vec![],
                                 }
                             } else {
                                 EditValidation {
                                     passed: true,
-                                    syntax_errors: vec![],
+                                    syntax_issues: vec![],
                                 }
                             }
                         }
                         Err(_) => EditValidation {
                             passed: false,
-                            syntax_errors: vec![],
+                            syntax_issues: vec![],
                         },
                     },
                     Err(_) => EditValidation {
                         passed: true, // Can't create parser, skip validation
-                        syntax_errors: vec![],
+                        syntax_issues: vec![],
                     },
                 }
             } else {
                 EditValidation {
                     passed: true, // Unsupported language, skip validation
-                    syntax_errors: vec![],
+                    syntax_issues: vec![],
                 }
             }
         } else {
             EditValidation {
                 passed: true, // Unknown language, skip validation
-                syntax_errors: vec![],
+                syntax_issues: vec![],
             }
         };
 
@@ -1808,14 +1824,14 @@ impl FileOperationsService {
 
 impl Default for FileOperationsService {
     fn default() -> Self {
-        Self::new(".")
+        Self::new(".", Arc::new(InputValidator::new()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::dto::FileEdit;
+    use crate::application::dto::{FileEdit, ReadMode};
     use std::io::Write;
     use tempfile::{NamedTempFile, TempDir};
 
@@ -1827,12 +1843,12 @@ mod tests {
         writeln!(file, "}}").unwrap();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
+            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
         let input = ReadFileRequest {
             path: file.path().to_str().unwrap().to_string(),
             start_line: None,
             end_line: None,
-            mode: Some("raw".to_string()),
+            mode: Some(ReadMode::Raw),
             continuation_token: None,
             chunk_size: None,
         };
@@ -1856,12 +1872,12 @@ mod tests {
         writeln!(file, "line 3").unwrap();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
+            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
         let input = ReadFileRequest {
             path: file.path().to_str().unwrap().to_string(),
             start_line: Some(2),
             end_line: Some(3),
-            mode: Some("raw".to_string()),
+            mode: Some(ReadMode::Raw),
             continuation_token: None,
             chunk_size: None,
         };
@@ -1881,12 +1897,12 @@ mod tests {
         writeln!(file, "struct MyStruct {{}}").unwrap();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
+            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
         let input = ReadFileRequest {
             path: file.path().to_str().unwrap().to_string(),
             start_line: None,
             end_line: None,
-            mode: Some("symbols".to_string()),
+            mode: Some(ReadMode::Symbols),
             continuation_token: None,
             chunk_size: None,
         };
@@ -1906,12 +1922,12 @@ mod tests {
         let binary_path = temp_dir.path().join("test.png");
         std::fs::write(&binary_path, &[0x89, 0x50, 0x4E, 0x47]).unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
         let input = ReadFileRequest {
             path: binary_path.to_string_lossy().to_string(),
             start_line: None,
             end_line: None,
-            mode: Some("raw".to_string()),
+            mode: Some(ReadMode::Raw),
             continuation_token: None,
             chunk_size: None,
         };
@@ -1925,7 +1941,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
         let input = WriteFileRequest {
             path: file_path.to_str().unwrap().to_string(),
             content: "Hello, atomic world!".to_string(),
@@ -1953,7 +1969,7 @@ mod tests {
             .join("c")
             .join("test.txt");
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
         let input = WriteFileRequest {
             path: nested_path.to_str().unwrap().to_string(),
             content: "nested content".to_string(),
@@ -1968,7 +1984,7 @@ mod tests {
     #[test]
     fn test_path_traversal_prevention() {
         let temp_dir = TempDir::new().unwrap();
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         // Try to access a path outside workspace
         let input = ReadFileRequest {
@@ -1991,7 +2007,7 @@ mod tests {
         let file_path = file.path().to_str().unwrap().to_string();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
+            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
         let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
@@ -2021,7 +2037,7 @@ mod tests {
         let file_path = file.path().to_str().unwrap().to_string();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
+            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
         let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
@@ -2051,7 +2067,7 @@ mod tests {
         let file_path = file.path().to_str().unwrap().to_string();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
+            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
         let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
@@ -2077,7 +2093,7 @@ mod tests {
         let file2_path = temp_dir.path().join("b.rs");
         fs::write(&file2_path, "fn world() {\n    println!(\"bye\");\n}").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
         let input = SearchContentRequest {
             pattern: "println".to_string(),
             path: None,
@@ -2106,7 +2122,7 @@ mod tests {
         )
         .unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
         let input = SearchContentRequest {
             pattern: r"\w+_handler".to_string(),
             path: None,
@@ -2130,7 +2146,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.rs");
         fs::write(&file_path, "fn HELLO() {}\nfn hello() {}").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
         let input = SearchContentRequest {
             pattern: "hello".to_string(),
             path: None,
@@ -2158,7 +2174,7 @@ mod tests {
             fs::write(&file_path, format!("content {}", i)).unwrap();
         }
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         // Get first 5
         let input = ListFilesRequest {
@@ -2188,7 +2204,7 @@ mod tests {
         let py_path = temp_dir.path().join("test.py");
         fs::write(&py_path, "def main(): pass").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         let input = ListFilesRequest {
             path: None,
@@ -2255,7 +2271,7 @@ mod tests {
         std::fs::write(temp_dir.path().join("file1.txt"), "content1").unwrap();
         std::fs::write(temp_dir.path().join("subdir").join("file2.txt"), "content2").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         let input = ListFilesRequest {
             path: None,
@@ -2301,7 +2317,7 @@ mod tests {
         )
         .unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         let input = ListFilesRequest {
             path: None,
@@ -2349,7 +2365,7 @@ mod tests {
         std::fs::write(temp_dir.path().join("file1.txt"), "content1").unwrap();
         std::fs::write(temp_dir.path().join("subdir").join("file2.txt"), "content2").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         let input = ListFilesRequest {
             path: None,
@@ -2389,7 +2405,7 @@ mod tests {
         std::fs::write(temp_dir.path().join("file1.txt"), "content1").unwrap();
         std::fs::write(temp_dir.path().join("subdir").join("file2.txt"), "content2").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         // Default: no recursive or max_depth specified
         let input = ListFilesRequest {
@@ -2425,7 +2441,7 @@ mod tests {
         let file_path = file.path().to_str().unwrap().to_string();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
+            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
         let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
@@ -2450,7 +2466,7 @@ mod tests {
         let file_path = file.path().to_str().unwrap().to_string();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string());
+            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
 
         // Try to edit something that doesn't exist
         let input = EditFileRequest {
@@ -2482,7 +2498,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.rs");
         fs::write(&file_path, "fn foo() {}\nfn bar() {}\n  fn indented() {}").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
         let input = SearchContentRequest {
             pattern: r"^fn".to_string(),
             path: None,
@@ -2514,7 +2530,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "foo bar baz\nfoo qux foo").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
         let input = SearchContentRequest {
             pattern: r"(foo|bar)".to_string(),
             path: None,
@@ -2543,7 +2559,7 @@ mod tests {
         // "  hello world" - "hello" starts at column 3 (1-indexed)
         fs::write(&file_path, "  hello world\nanother line").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
         let input = SearchContentRequest {
             pattern: r"hello".to_string(),
             path: None,
@@ -2571,7 +2587,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "Hello World\nanother word\n123 Numbers").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
         let input = SearchContentRequest {
             pattern: r"[A-Z][a-z]+".to_string(),
             path: None,
@@ -2617,12 +2633,12 @@ mod tests {
         let content: String = (0..10).map(|i| format!("line {}\n", i)).collect();
         fs::write(&file_path, &content).unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
         let input = ReadFileRequest {
             path: file_path.to_str().unwrap().to_string(),
             start_line: None,
             end_line: None,
-            mode: Some("raw".to_string()),
+            mode: Some(ReadMode::Raw),
             continuation_token: None,
             chunk_size: Some(50), // Small chunk size
         };
@@ -2644,14 +2660,14 @@ mod tests {
         let content: String = (0..20).map(|i| format!("line {}\n", i)).collect();
         fs::write(&file_path, &content).unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         // First read with small chunk
         let input1 = ReadFileRequest {
             path: file_path.to_str().unwrap().to_string(),
             start_line: None,
             end_line: None,
-            mode: Some("raw".to_string()),
+            mode: Some(ReadMode::Raw),
             continuation_token: None,
             chunk_size: Some(50),
         };
@@ -2665,7 +2681,7 @@ mod tests {
                 path: file_path.to_str().unwrap().to_string(),
                 start_line: None,
                 end_line: None,
-                mode: Some("raw".to_string()),
+                mode: Some(ReadMode::Raw),
                 continuation_token: Some(token.clone()),
                 chunk_size: Some(50),
             };
@@ -2686,14 +2702,14 @@ mod tests {
         let content = "aaaaaaaaaa\nbbbbbbbbbb\ncccccccccc\n";
         fs::write(&file_path, content).unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         // Request a chunk size that would cut a line (but not at newline boundary)
         let input = ReadFileRequest {
             path: file_path.to_str().unwrap().to_string(),
             start_line: None,
             end_line: None,
-            mode: Some("raw".to_string()),
+            mode: Some(ReadMode::Raw),
             continuation_token: None,
             chunk_size: Some(15), // Would cut "aaaaaaaaaa\nbbbb" if not adjusted
         };
@@ -2720,14 +2736,14 @@ mod tests {
         let file_path = temp_dir.path().join("test.rs");
         fs::write(&file_path, "fn foo() {}\nfn bar() {}").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         // Even with chunk_size, outline mode should ignore it and return full outline
         let input = ReadFileRequest {
             path: file_path.to_str().unwrap().to_string(),
             start_line: None,
             end_line: None,
-            mode: Some("outline".to_string()),
+            mode: Some(ReadMode::Outline),
             continuation_token: None,
             chunk_size: Some(10), // Small chunk that would truncate if applied
         };
@@ -2756,7 +2772,7 @@ mod tests {
         let file_path = temp_dir.path().join("valid.rs");
         fs::write(&file_path, "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
         let result = service.verify_rust_file(file_path.to_str().unwrap(), 10);
 
         assert!(result.is_ok(), "Verification should succeed");
@@ -2778,7 +2794,7 @@ mod tests {
         // Missing closing brace
         fs::write(&file_path, "pub fn add(a: i32, b: i32) -> i32 { a + b").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
         let result = service.verify_rust_file(file_path.to_str().unwrap(), 10);
 
         assert!(result.is_ok(), "Verification should return result");
@@ -2804,7 +2820,7 @@ mod tests {
         let file_path = temp_dir.path().join("script.py");
         fs::write(&file_path, "def hello():\n    print('world')").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
         let result = service.verify_rust_file(file_path.to_str().unwrap(), 10);
 
         assert!(result.is_ok(), "Verification should return result");
@@ -2826,7 +2842,7 @@ mod tests {
     #[tokio::test]
     async fn test_retrieve_and_verify_empty_query() {
         let temp_dir = TempDir::new().unwrap();
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         let input = RetrieveAndVerifyRequest {
             query: "".to_string(),
@@ -2845,7 +2861,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.rs");
         fs::write(&file_path, "fn main() {}").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         let input = RetrieveAndVerifyRequest {
             query: "nonexistent_pattern_xyz123".to_string(),
@@ -2869,7 +2885,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.rs");
         fs::write(&file_path, "fn hello() { println!(\"hi\"); }").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         let input = RetrieveAndVerifyRequest {
             query: "hello".to_string(),
@@ -2908,7 +2924,7 @@ mod tests {
         let file_b = temp_dir.path().join("b.rs");
         fs::write(&file_b, "fn hello() {}").unwrap(); // 1 function
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         let input = RetrieveAndVerifyRequest {
             query: "fn hello".to_string(), // Search for function definitions
@@ -2966,7 +2982,7 @@ mod tests {
         file.sync_all().unwrap();
         drop(file);
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         let input = RetrieveAndVerifyRequest {
             query: "fn greet".to_string(),
@@ -3009,7 +3025,7 @@ mod tests {
         )
         .unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         let input = RetrieveAndVerifyRequest {
             query: "fn greet".to_string(),
@@ -3053,7 +3069,7 @@ mod tests {
         )
         .unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         // Use 0 second timeout - should always trigger timeout for any actual work
         let result = service
@@ -3102,7 +3118,7 @@ mod tests {
             std::env::set_var("PATH", &new_path_str);
         }
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         let input = RetrieveAndVerifyRequest {
             query: "fn greet".to_string(),
@@ -3151,7 +3167,7 @@ mod tests {
         "#;
         fs::write(&rs_file, source).unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string());
+        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
 
         let count_rustc = || -> usize {
             Command::new("pgrep")

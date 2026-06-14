@@ -91,6 +91,33 @@ export const MULTIMODAL_KIND_INFO: Readonly<
       { id: "ev-freshness", label: "How fresh is this?", question: "how fresh is this evidence?" },
     ],
   },
+  "node-component": {
+    styleClass: "node-component",
+    badgeLabel: "Component",
+    palette: { background: "#3b82f6", foreground: "#1e3a8a" },
+    suggestions: [
+      { id: "comp-owns", label: "What does this own?", question: "what does this component own?" },
+      { id: "comp-deployed-as", label: "How is this deployed?", question: "how is this component deployed?" },
+    ],
+  },
+  "node-container": {
+    styleClass: "node-container",
+    badgeLabel: "Container",
+    palette: { background: "#06b6d4", foreground: "#164e63" },
+    suggestions: [
+      { id: "cont-contains", label: "What does this contain?", question: "what components does this container contain?" },
+      { id: "cont-deployed-as", label: "How is this deployed?", question: "how is this container deployed?" },
+    ],
+  },
+  "node-system": {
+    styleClass: "node-system",
+    badgeLabel: "System",
+    palette: { background: "#10b981", foreground: "#064e3b" },
+    suggestions: [
+      { id: "sys-contains", label: "What does this contain?", question: "what containers does this system contain?" },
+      { id: "sys-context", label: "System context", question: "what is the context of this system?" },
+    ],
+  },
 };
 
 /**

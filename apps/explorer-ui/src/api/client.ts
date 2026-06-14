@@ -11,7 +11,8 @@
  * The boundary is the only place we trust the wire. If the backend
  * drifts, schemas fail loudly here — the rest of the app stays sound.
  */
-import type { z } from "zod";
+import { z } from "zod";
+import * as schemas from "./schemas";
 
 /**
  * `VITE_API_BASE_URL` overrides the proxy in production builds.
@@ -152,6 +153,31 @@ export async function apiPost<T extends z.ZodTypeAny>(
   schema: T,
 ): Promise<z.infer<T>> {
   const response = await request("POST", { path, body });
+  return handleResponse(response, schema);
+}
+
+/**
+ * PUT variant. Body is serialised as JSON; response is validated
+ * against the schema.
+ */
+export async function apiPut<T extends z.ZodTypeAny>(
+  path: string,
+  body: unknown,
+  schema: T,
+): Promise<z.infer<T>> {
+  const response = await request("PUT", { path, body });
+  return handleResponse(response, schema);
+}
+
+/**
+ * DELETE variant. Response is validated against the schema.
+ */
+export async function apiDelete<T extends z.ZodTypeAny>(
+  path: string,
+  schema: T,
+  query?: RequestOpts["query"],
+): Promise<z.infer<T>> {
+  const response = await request("DELETE", { path, query });
   return handleResponse(response, schema);
 }
 
@@ -372,4 +398,110 @@ export function makeSwrFetcher<T extends z.ZodTypeAny>(
     }
     return apiGet(key, schema);
   };
+}
+
+// ============================================================================
+// ViewSpec CRUD — Phase 4 Authoring Wizard
+// ============================================================================
+
+/**
+ * Request body for saving a ViewSpec.
+ * The backend assigns `created_at` / `updated_at`.
+ */
+export interface SaveViewSpecRequest {
+  workspace_id: string;
+  owner: string;
+  spec: import("./schemas").ViewSpec;
+}
+
+/** Response after saving a ViewSpec. */
+interface SaveViewSpecResponse {
+  id: string;
+}
+
+/**
+ * `POST /api/viewspecs` — save (create) a ViewSpec.
+ * Returns the assigned id.
+ */
+export async function saveViewSpec(
+  request: SaveViewSpecRequest,
+): Promise<SaveViewSpecResponse> {
+  return apiPost(
+    "/viewspecs",
+    request,
+    z.object({ id: z.string() }),
+  );
+}
+
+/**
+ * `GET /api/viewspecs` — list ViewSpecs for (workspace_id, owner).
+ */
+export async function listViewSpecs(
+  workspaceId: string,
+  owner: string,
+): Promise<schemas.ViewSpec[]> {
+  return apiGet(
+    "/viewspecs",
+    z.array(schemas.viewSpecSchema),
+    { workspace_id: workspaceId, owner },
+  );
+}
+
+/**
+ * `GET /api/viewspecs/:id` — load a single ViewSpec.
+ */
+export async function loadViewSpec(
+  id: string,
+  workspaceId: string,
+  owner: string,
+): Promise<schemas.ViewSpec> {
+  return apiGet(
+    `/viewspecs/${encodeURIComponent(id)}`,
+    schemas.viewSpecSchema,
+    { workspace_id: workspaceId, owner },
+  );
+}
+
+/**
+ * `PUT /api/viewspecs/:id` — replace a ViewSpec.
+ */
+export async function updateViewSpec(
+  id: string,
+  request: Omit<SaveViewSpecRequest, "workspace_id" | "owner">,
+): Promise<SaveViewSpecResponse> {
+  return apiPut(
+    `/viewspecs/${encodeURIComponent(id)}`,
+    request,
+    z.object({ id: z.string() }),
+  );
+}
+
+/**
+ * `DELETE /api/viewspecs/:id` — delete a ViewSpec.
+ */
+export async function deleteViewSpec(
+  id: string,
+  workspaceId: string,
+  owner: string,
+): Promise<{ deleted: boolean }> {
+  return apiDelete(
+    `/viewspecs/${encodeURIComponent(id)}`,
+    z.object({ deleted: z.boolean() }),
+    { workspace_id: workspaceId, owner },
+  );
+}
+
+/**
+ * `POST /api/viewspecs/execute` — execute a ViewSpec against an object.
+ * Returns a `ContextualView` ready for rendering via `rendererRegistry`.
+ */
+export async function executeViewSpec(
+  spec: schemas.ViewSpec,
+  objectId: string,
+): Promise<schemas.ContextualView> {
+  return apiPost(
+    "/viewspecs/execute",
+    { spec, object_id: objectId },
+    schemas.contextualViewSchema,
+  );
 }

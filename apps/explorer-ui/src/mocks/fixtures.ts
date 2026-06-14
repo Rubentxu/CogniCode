@@ -49,10 +49,10 @@ export const inspectableObjectFixture: InspectableObjectSummary = {
     { key: "visibility", value: "pub", value_type: "string", source: "static" },
   ],
   available_views: [
-    { id: "overview", title: "Overview" },
-    { id: "call-graph", title: "Call graph" },
-    { id: "source", title: "Source" },
-    { id: "quality", title: "Quality" },
+    { id: "overview", title: "Overview", is_builtin: true, source: null },
+    { id: "call-graph", title: "Call graph", is_builtin: true, source: null },
+    { id: "source", title: "Source", is_builtin: true, source: null },
+    { id: "quality", title: "Quality", is_builtin: true, source: null },
   ],
 };
 
@@ -87,6 +87,7 @@ export const contextualViewFixture: ContextualView = {
   object_id: SYMBOL_ID,
   view_id: "overview",
   title: "Overview",
+  renderer_kind: "composite",
   blocks: [
     {
       id: "identity",

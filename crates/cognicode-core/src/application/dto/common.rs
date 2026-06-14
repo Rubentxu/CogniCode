@@ -6,6 +6,94 @@
 use crate::domain::value_objects::Location;
 use serde::{Deserialize, Serialize};
 
+// ============================================================================
+// Shared Types - Used by both MCP protocol AND internal application
+// Defined here with proper serde for camelCase MCP serialization
+// ============================================================================
+
+/// File metadata for file operations.
+/// Used by both MCP protocol (camelCase) and internal DTOs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileMetadata {
+    pub path: String,
+    pub size: u64,
+    pub modified: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+}
+
+/// A single file edit operation.
+/// Used by both MCP protocol and internal DTOs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEdit {
+    pub old_string: String,
+    pub new_string: String,
+}
+
+/// A single file entry for listing operations.
+/// Used by both MCP protocol and internal DTOs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEntry {
+    pub path: String,
+    pub size: u64,
+    pub modified: u64,
+    pub is_dir: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+}
+
+/// A single content match for search operations.
+/// Used by both MCP protocol and internal DTOs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentMatch {
+    pub file: String,
+    pub line: u32,
+    pub col: u32,
+    pub text: String,
+    #[serde(default)]
+    pub context: Vec<String>,
+}
+
+/// Syntax error/warning with location and message.
+/// Used by both MCP protocol and internal DTOs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyntaxIssue {
+    pub line: u32,
+    pub column: u32,
+    pub message: String,
+    pub severity: String,
+}
+
+/// Validation result for edit operations.
+/// Used by both MCP protocol and internal DTOs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditValidation {
+    pub passed: bool,
+    #[serde(default)]
+    pub syntax_issues: Vec<SyntaxIssue>,
+}
+
+/// Result of listing files.
+/// Used by both MCP protocol and internal DTOs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListFilesResult {
+    pub files: Vec<FileEntry>,
+    pub total: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depth_traversed: Option<usize>,
+}
+
+// ============================================================================
+// Domain Value Conversions
+// ============================================================================
+
 /// Represents a location in source code (1-indexed for display)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SourceLocation {
@@ -33,7 +121,10 @@ pub struct AnalysisMetadata {
 }
 
 /// Risk level for impact analysis
+///
+/// Uses lowercase serialization for MCP protocol compatibility.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum RiskLevel {
     Low,
     Medium,

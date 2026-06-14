@@ -15,13 +15,6 @@ pub use s115_rule::S115Rule;
 pub use s1151_rule::S1151Rule;
 pub use s1163_rule::S1163Rule;
 
-pub mod s106_rule;
-
-pub mod s170_rule;
-
-pub mod s120_rule;
-
-// pub mod s1854_rule; // TODO: file missing
 // pub mod s1134_rule; // TODO: file missing
 
 // pub mod s100_rule; // TODO: file missing — restore from branch when available

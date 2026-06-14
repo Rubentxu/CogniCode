@@ -28,7 +28,6 @@ import { SkipLink } from "./SkipLink";
 import { Spotter } from "./Spotter";
 import { detectViewport, type ShellViewport } from "./viewport";
 import { useSubgraph } from "../hooks/useSubgraph";
-import { useAppState } from "../state/context";
 import { ContextualPanel } from "./ContextualPanel";
 
 // `React.lazy` keeps the cytoscape + elkjs chunk out of the

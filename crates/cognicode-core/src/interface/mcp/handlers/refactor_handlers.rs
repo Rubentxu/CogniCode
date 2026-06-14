@@ -1,5 +1,10 @@
 use super::*;
 
+#[cognicode_macros::aix_tool(
+    name = "safe_refactor",
+    description = "Perform safe refactoring with validation and preview.",
+    input_schema = SafeRefactorInput
+)]
 pub async fn handle_safe_refactor(
     ctx: &HandlerContext,
     input: SafeRefactorInput,
@@ -357,6 +362,11 @@ pub async fn handle_safe_refactor(
 }
 
 /// Handler for validate_syntax tool
+#[cognicode_macros::aix_tool(
+    name = "validate_syntax",
+    description = "Validate the syntax of a source file.",
+    input_schema = ValidateSyntaxInput
+)]
 pub async fn handle_validate_syntax(
     ctx: &HandlerContext,
     input: ValidateSyntaxInput,
@@ -385,7 +395,7 @@ pub async fn handle_validate_syntax(
                 Ok(ValidateSyntaxOutput {
                     file_path: input.file_path,
                     is_valid: false,
-                    errors: vec![crate::interface::mcp::schemas::SyntaxError {
+                    errors: vec![crate::interface::mcp::schemas::SyntaxIssue {
                         line: 1,
                         column: 1,
                         message: "Syntax error detected by tree-sitter parser".to_string(),
@@ -398,7 +408,7 @@ pub async fn handle_validate_syntax(
         Err(e) => Ok(ValidateSyntaxOutput {
             file_path: input.file_path,
             is_valid: false,
-            errors: vec![crate::interface::mcp::schemas::SyntaxError {
+            errors: vec![crate::interface::mcp::schemas::SyntaxIssue {
                 line: 1,
                 column: 1,
                 message: e.to_string(),

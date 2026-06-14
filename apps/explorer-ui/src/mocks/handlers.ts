@@ -198,7 +198,7 @@ export const handlers = [
   // -----------------------------------------------------------------------
   // 14. Rationale Graph (corroboration-rationale-views)
   // -----------------------------------------------------------------------
-  http.get("/api/graph/:id/rationale", async ({ params, request }) => {
+  http.get("/api/graph/:id/rationale", async ({ params }) => {
     await delay(LATENCY_MS);
     const id = String(params["id"] ?? "");
     if (id.startsWith("missing")) {

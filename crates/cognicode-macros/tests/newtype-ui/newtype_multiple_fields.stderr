@@ -1,0 +1,5 @@
+error: expected attribute, found derive macro `newtype`
+ --> tests/newtype-ui/newtype_multiple_fields.rs
+  |
+  | #[newtype]
+  |   ^^^^^^^ not an attribute

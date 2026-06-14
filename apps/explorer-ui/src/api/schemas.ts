@@ -125,6 +125,10 @@ export type WorkspaceSummary = z.infer<typeof workspaceSummarySchema>;
 export const viewDescriptorSchema = z.object({
   id: z.string(),
   title: z.string(),
+  /** Whether this is a built-in view (true) or runtime user-defined view (false). */
+  is_builtin: z.boolean().default(true),
+  /** Source discriminator for runtime views: "runtime" for user-defined specs. */
+  source: z.string().nullable().default(null),
 });
 export type ViewDescriptor = z.infer<typeof viewDescriptorSchema>;
 
@@ -571,6 +575,209 @@ export const viewBlockAnySchema = z
 export type ViewBlockAny = z.output<typeof viewBlockAnySchema>;
 
 // ============================================================================
+// Phase 0: Moldable View Runtime — Domain Vocabulary (ADR-008)
+// ============================================================================
+//
+// Forward-compatible enums: unknown string values are accepted by the
+// schema (they pass parse) so that wire-format evolution doesn't break
+// clients. The Rust side resolves unknown values to the catch-all
+// `Custom` unit variant at deserialization time.
+
+// --- ViewKind — semantic intent of a view ---
+
+/**
+ * First-class ViewKind catalog from ADR-008 §First-class ViewKind.
+ * Unknown strings are accepted (forward compatibility) — the Rust enum
+ * maps them to the `Custom` unit variant on deserialization.
+ */
+export const viewKindSchema = z.union([
+  z.literal("vertical_slice"),
+  z.literal("call_graph"),
+  z.literal("seam_map"),
+  z.literal("dependency_graph"),
+  z.literal("source_view"),
+  z.literal("data_flow"),
+  z.literal("impact_radius"),
+  z.literal("diff_view"),
+  z.literal("c4_context"),
+  z.literal("c4_container"),
+  z.literal("c4_component"),
+  z.literal("c4_code"),
+  z.literal("quality_hotspots"),
+  z.literal("evidence_view"),
+  z.literal("decision_graph"),
+  z.literal("architecture_rationale"),
+  z.literal("architecture_drift"),
+  z.literal("boundary_map"),
+  z.literal("dependency_pressure"),
+  z.literal("change_impact_story"),
+  z.literal("ownership_map"),
+  z.literal("risk_map"),
+  z.literal("decision_trace"),
+  z.literal("test_slice"),
+  z.literal("debug_slice"),
+  z.literal("refactor_plan"),
+  z.literal("callers_and_implementors"),
+  z.literal("usage_examples"),
+  z.literal("api_surface"),
+  z.literal("dead_code_candidates"),
+  z.literal("semantic_search_results"),
+  z.literal("doc_code_alignment"),
+  z.literal("example_object"),
+  z.literal("composed_narrative"),
+  z.literal("project_diary"),
+  z.literal("concept_map"),
+  z.literal("evidence_pack"),
+  // Forward-compatibility: any unknown string accepted here; the Rust
+  // deserializer maps it to `ViewKind::Custom`.
+  z.string(),
+]);
+export type ViewKind = z.infer<typeof viewKindSchema>;
+
+// --- RendererKind — visual rendering strategy ---
+
+/**
+ * First-class RendererKind catalog. Unknown strings are accepted
+ * (forward compatibility) — the Rust enum maps them to the `Custom`
+ * unit variant on deserialization.
+ */
+export const rendererKindSchema = z.union([
+  z.literal("graph"),
+  z.literal("table"),
+  z.literal("tree"),
+  z.literal("code"),
+  z.literal("markdown"),
+  z.literal("vega_lite"),
+  z.literal("json"),
+  z.literal("composite"),
+  // Forward-compatibility catch-all
+  z.string(),
+]);
+export type RendererKind = z.infer<typeof rendererKindSchema>;
+
+// --- HierarchyKind — navigable structural projection ---
+
+/**
+ * First-class HierarchyKind catalog. Unknown strings are accepted
+ * (forward compatibility) — the Rust enum maps them to the `Custom`
+ * unit variant on deserialization.
+ */
+export const hierarchyKindSchema = z.union([
+  z.literal("file_tree"),
+  z.literal("module_tree"),
+  z.literal("type_hierarchy"),
+  z.literal("call_hierarchy"),
+  z.literal("package_graph"),
+  z.literal("c4_hierarchy"),
+  // Forward-compatibility catch-all
+  z.string(),
+]);
+export type HierarchyKind = z.infer<typeof hierarchyKindSchema>;
+
+// --- DataSource — where view data comes from ---
+
+/**
+ * DataSource union. Moldql is the v1 runtime source; unknown `kind`
+ * values fall through to the permissive Other shape (forward compatibility).
+ *
+ * Note: uses a plain `z.union` (not discriminated) because the
+ * forward-compatibility arm has `kind: z.string()` which is not valid
+ * in a discriminated union.
+ */
+export const dataSourceSchema = z.union([
+  z.object({
+    kind: z.literal("moldql"),
+    query: z.string(),
+  }),
+  // Forward-compatibility: any unknown `kind` is accepted.
+  // The entire object is preserved so the payload survives round-trip.
+  z.object({
+    kind: z.string(),
+  }),
+]);
+export type DataSource = z.infer<typeof dataSourceSchema>;
+
+// --- Transform — how view data is shaped before rendering ---
+
+/**
+ * Transform union. Jsonata is the v1 transform language; unknown
+ * `kind` values fall through to the permissive Other shape
+ * (forward compatibility).
+ */
+export const transformSchema = z.union([
+  z.object({
+    kind: z.literal("jsonata"),
+    expression: z.string(),
+  }),
+  // Forward-compatibility catch-all
+  z.object({
+    kind: z.string(),
+  }),
+]);
+export type Transform = z.infer<typeof transformSchema>;
+
+// --- ViewSpec — the core Moldable View Runtime DTO ---
+
+/**
+ * A persisted view specification — the core DTO of the Moldable View Runtime.
+ *
+ * `id`: server-assigned UUID on persist; client-suggested on create.
+ * `title`: non-empty, ≤ 200 chars (validated at the service layer).
+ * `applies_to`: narrows which InspectableObjectType the view works on.
+ * `view_kind`: semantic intent; `renderer_kind`: visual strategy.
+ * `data_source` + `transform`: data supply and reshape (v1 = Moldql + Jsonata).
+ * `props`: renderer-specific config; defaults to `{}`.
+ * `created_at` / `updated_at`: ISO-8601 UTC; server-assigned.
+ */
+export const viewSpecSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string().min(1).max(200),
+  applies_to: inspectableObjectTypeSchema,
+  view_kind: viewKindSchema,
+  data_source: dataSourceSchema,
+  transform: transformSchema.nullable().optional(),
+  renderer_kind: rendererKindSchema,
+  props: z.unknown().default({}),
+  created_at: z.string(),
+  updated_at: z.string(),
+  /** The user who owns this spec. Used for ownership checks and Spotter display. */
+  owner: z.string().default(""),
+});
+export type ViewSpec = z.infer<typeof viewSpecSchema>;
+
+// --- ViewSpecSummary — minimal ViewSpec for Spotter search hits ---
+
+/**
+ * ViewSpec summary for Spotter search hits.
+ * Minimal info needed to display a hit and open the spec.
+ */
+export const viewSpecSummarySchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  view_kind: viewKindSchema,
+  applies_to: inspectableObjectTypeSchema,
+  owner: z.string(),
+  updated_at: z.string(),
+});
+export type ViewSpecSummary = z.infer<typeof viewSpecSummarySchema>;
+
+/**
+ * Discriminated union of symbol/file hits and ViewSpec hits for Spotter.
+ * Frontend switches on `kind` to render each variant appropriately.
+ */
+export const spotterSearchResultSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("symbol"),
+    result: spotterResultSchema,
+  }),
+  z.object({
+    kind: z.literal("viewspec"),
+    result: viewSpecSummarySchema,
+  }),
+]);
+export type SpotterSearchResult = z.infer<typeof spotterSearchResultSchema>;
+
+// ============================================================================
 // ContextualView, exploration, artifact
 // ============================================================================
 
@@ -582,6 +789,13 @@ export const contextualViewSchema = z.object({
   relations: z.array(typedRelationSchema),
   evidence: z.array(evidenceBlockSchema),
   findings: z.array(designFindingSchema).default([]),
+  /**
+   * Visual rendering strategy for this view.
+   * Mirrors `RendererKind` from the Moldable View Runtime (ADR-008).
+   * Defaults to `"json"` when absent — backward compatible with payloads
+   * that predate this field (serde default on the Rust side).
+   */
+  renderer_kind: rendererKindSchema.default("json"),
 });
 export type ContextualView = z.infer<typeof contextualViewSchema>;
 
@@ -699,6 +913,9 @@ export const graphNodeStyleClassSchema = z.enum([
   "node-doc",
   "node-issue",
   "node-evidence",
+  "node-component",
+  "node-container",
+  "node-system",
 ]);
 export type GraphNodeStyleClass = z.infer<typeof graphNodeStyleClassSchema>;
 
@@ -867,7 +1084,7 @@ export const subgraphResponseSchema = z.object({
   edges: z.array(graphEdgeSchema),
   truncated: z.boolean(),
   truncated_reason: z.string().nullable().optional(),
-  corroboration_scores: z.record(z.number().min(0).max(1)).default({}),
+  corroboration_scores: z.record(z.string(), z.number().min(0).max(1)).default({}),
 });
 export type SubgraphResponse = z.infer<typeof subgraphResponseSchema>;
 
@@ -877,7 +1094,7 @@ export type SubgraphResponse = z.infer<typeof subgraphResponseSchema>;
  */
 export const rationaleViewPayloadSchema = z.object({
   subgraph: subgraphResponseSchema,
-  corroboration_scores: z.record(z.number().min(0).max(1)),
+  corroboration_scores: z.record(z.string(), z.number().min(0).max(1)),
   source_count: z.number().int().nonnegative(),
 });
 export type RationaleViewPayload = z.infer<typeof rationaleViewPayloadSchema>;

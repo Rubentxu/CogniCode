@@ -30,7 +30,6 @@ use crate::application::dto::{
     NlToSymbolResult,
     OnboardingPlanDto,
     OnboardingStep,
-    OverviewDetail,
     OverviewMeta,
     ProjectType,
     RankedSymbolDto,
@@ -58,6 +57,7 @@ use crate::infrastructure::semantic::{
 };
 use crate::interface::mcp::schemas::{
     AnalysisMetadata,
+    OverviewDetail,
     // Existing schemas
     AnalyzeImpactInput,
     AnalyzeImpactOutput,
@@ -141,6 +141,7 @@ use crate::interface::mcp::schemas::{
     SemanticSearchInput,
     SemanticSearchOutput,
     SmartOverviewInput,
+    OverviewMeta as SchemaOverviewMeta,
     SourceLocation,
     StructuralSearchInput,
     StructuralSearchOutput,
@@ -163,6 +164,21 @@ use crate::interface::mcp::schemas::{
     ValidateSyntaxInput,
     ValidateSyntaxOutput,
     ValidationResult,
+    // Phase 4b: Graph Analytics input schemas
+    GraphPageRankInput,
+    GraphAllPathsInput,
+    GraphCondensedInput,
+    GraphGodNodesInput,
+    GraphReducedInput,
+    GraphFeedbackArcsInput,
+    // Phase 5: Community Detection input schemas
+    GraphCommunitiesInput,
+    GraphCommunityDetailInput,
+    GraphSurprisingConnectionsInput,
+    // Phase 6: IDF Search & Insights input schemas
+    GraphSearchIdfInput,
+    GraphInsightsInput,
+    GraphSuggestQuestionsInput,
 };
 use crate::interface::mcp::security::{InputValidator, SecurityError};
 // Re-export file operations handlers
@@ -170,41 +186,135 @@ pub use crate::interface::mcp::file_ops_handlers::*;
 
 use crate::domain::traits::GraphStore;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
-use crate::domain::traits::graph_store::StoreError;
-use crate::domain::value_objects::file_manifest::FileManifest;
 use crate::infrastructure::persistence::InMemoryGraphStore;
-
-/// Wrapper that delegates GraphStore calls to an inner Arc<dyn GraphStore>
-struct ContextGraphStore {
-    inner: Arc<dyn GraphStore>,
-}
-
-impl GraphStore for ContextGraphStore {
-    fn save_graph(&self, graph: &CallGraph) -> Result<(), StoreError> {
-        self.inner.save_graph(graph)
-    }
-    fn load_graph(&self) -> Result<Option<CallGraph>, StoreError> {
-        self.inner.load_graph()
-    }
-    fn save_manifest(&self, m: &FileManifest) -> Result<(), StoreError> {
-        self.inner.save_manifest(m)
-    }
-    fn load_manifest(&self) -> Result<Option<FileManifest>, StoreError> {
-        self.inner.load_manifest()
-    }
-    fn clear(&self) -> Result<(), StoreError> {
-        self.inner.clear()
-    }
-    fn exists(&self) -> Result<bool, StoreError> {
-        self.inner.exists()
-    }
-}
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+
+// =============================================================================
+// Capability Traits - Allow handlers to request only the services they need
+// =============================================================================
+
+/// Capability for handlers that need access to graph analysis services.
+/// Provides access to the analysis service and optional graph store.
+pub trait AnalysisAccess {
+    fn analysis_service(&self) -> Arc<AnalysisService>;
+    fn graph_store(&self) -> Arc<dyn GraphStore>;
+}
+
+impl AnalysisAccess for HandlerContext {
+    fn analysis_service(&self) -> Arc<AnalysisService> {
+        self.analysis_service.clone()
+    }
+
+    fn graph_store(&self) -> Arc<dyn GraphStore> {
+        if let Some(ref store) = self.graph_store {
+            store.clone()
+        } else {
+            Arc::new(InMemoryGraphStore::new())
+        }
+    }
+}
+
+/// Capability for handlers that need cancellation support.
+/// Allows checking if operation was cancelled.
+pub trait Cancellation {
+    fn cancellation_token(&self) -> Arc<AtomicBool>;
+    fn is_cancelled(&self) -> bool;
+}
+
+impl Cancellation for HandlerContext {
+    fn cancellation_token(&self) -> Arc<AtomicBool> {
+        self.cancellation_token.clone()
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancellation_token.load(Ordering::SeqCst)
+    }
+}
+
+/// Capability for handlers that need input validation and working directory access.
+/// This is a common combination for file-based operations.
+pub trait Validation {
+    fn validator(&self) -> Arc<InputValidator>;
+    fn working_dir(&self) -> PathBuf;
+}
+
+impl Validation for HandlerContext {
+    fn validator(&self) -> Arc<InputValidator> {
+        self.validator.clone()
+    }
+
+    fn working_dir(&self) -> PathBuf {
+        self.working_dir.clone()
+    }
+}
+
+/// Capability for handlers that need refactoring services.
+pub trait RefactorAccess {
+    fn refactor_service(&self) -> Arc<RefactorService>;
+    fn validator(&self) -> Arc<InputValidator>;
+    fn working_dir(&self) -> PathBuf;
+}
+
+impl RefactorAccess for HandlerContext {
+    fn refactor_service(&self) -> Arc<RefactorService> {
+        self.refactor_service.clone()
+    }
+
+    fn validator(&self) -> Arc<InputValidator> {
+        self.validator.clone()
+    }
+
+    fn working_dir(&self) -> PathBuf {
+        self.working_dir.clone()
+    }
+}
+
+/// Capability for handlers that need semantic search services.
+pub trait SemanticSearch {
+    fn semantic_search(&self) -> Arc<SemanticSearchService>;
+    fn symbol_code(&self) -> Arc<SymbolCodeService>;
+}
+
+impl SemanticSearch for HandlerContext {
+    fn semantic_search(&self) -> Arc<SemanticSearchService> {
+        self.semantic_search.clone()
+    }
+
+    fn symbol_code(&self) -> Arc<SymbolCodeService> {
+        self.symbol_code.clone()
+    }
+}
+
+/// Capability for handlers that need telemetry/logging support.
+pub trait Telemetry {
+    fn log_level(&self) -> Arc<tokio::sync::RwLock<tracing::Level>>;
+    fn symbol_hotness(&self) -> Arc<Mutex<HashMap<String, usize>>>;
+    fn should_log(&self, level: tracing::Level) -> bool;
+}
+
+impl Telemetry for HandlerContext {
+    fn log_level(&self) -> Arc<tokio::sync::RwLock<tracing::Level>> {
+        self.log_level.clone()
+    }
+
+    fn symbol_hotness(&self) -> Arc<Mutex<HashMap<String, usize>>> {
+        self.symbol_hotness.clone()
+    }
+
+    fn should_log(&self, level: tracing::Level) -> bool {
+        let stored_level = self
+            .log_level
+            .try_read()
+            .map(|g| *g)
+            .unwrap_or(tracing::Level::INFO);
+        level >= stored_level
+    }
+}
 
 /// Context passed to all handlers containing shared services
 #[derive(Clone)]
@@ -227,6 +337,8 @@ pub struct HandlerContext {
     pub graph_store: Option<Arc<dyn GraphStore>>,
     /// Optional CodeIntelligenceProvider for LSP operations. Falls back to creating CompositeProvider if None.
     pub code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
+    /// Optional FileOperationsService for shared file operation handlers. If None, handlers create their own.
+    pub file_ops_service: Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -239,105 +351,38 @@ impl std::fmt::Debug for HandlerContext {
 }
 
 impl HandlerContext {
+    #[deprecated(since = "0.6.0", note = "Use HandlerContext::builder() instead")]
     pub fn new(working_dir: PathBuf) -> Self {
-        // Canonicalize the working directory to ensure consistent path handling.
-        // This is critical because InputValidator::with_workspace canonicalizes paths
-        // for security checks. If we store a non-canonical path in working_dir but
-        // the validator canonicalizes its allowed_paths, file path validation will
-        // fail due to path representation mismatch (e.g., relative vs absolute).
-        // By canonicalizing upfront, both working_dir and allowed_paths use the
-        // same canonical representation.
-        let canonical_working_dir =
-            std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
-
-        Self {
-            working_dir: canonical_working_dir.clone(),
-            validator: Arc::new(InputValidator::new().with_workspace(vec![canonical_working_dir])),
-            analysis_service: Arc::new(AnalysisService::new()),
-            refactor_service: Arc::new(RefactorService::new()),
-            compressor: Arc::new(ContextCompressorService::new()),
-            semantic_search: Arc::new(SemanticSearchService::new()),
-            symbol_code: Arc::new(SymbolCodeService::new()),
-            client_protocol_version: None,
-            client_name: None,
-            client_version: None,
-            cancellation_token: Arc::new(AtomicBool::new(false)),
-            log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
-            symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
-            graph_store: None,
-            code_intelligence_provider: None,
-        }
+        Self::builder().with_working_dir(working_dir).build()
     }
 
+    #[deprecated(since = "0.6.0", note = "Use HandlerContext::builder() instead")]
     pub fn with_validator(working_dir: PathBuf, validator: InputValidator) -> Self {
-        Self {
-            working_dir,
-            validator: Arc::new(validator),
-            analysis_service: Arc::new(AnalysisService::new()),
-            refactor_service: Arc::new(RefactorService::new()),
-            compressor: Arc::new(ContextCompressorService::new()),
-            semantic_search: Arc::new(SemanticSearchService::new()),
-            symbol_code: Arc::new(SymbolCodeService::new()),
-            client_protocol_version: None,
-            client_name: None,
-            client_version: None,
-            cancellation_token: Arc::new(AtomicBool::new(false)),
-            log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
-            symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
-            graph_store: None,
-            code_intelligence_provider: None,
-        }
+        Self::builder()
+            .with_working_dir(working_dir)
+            .with_validator(validator)
+            .build()
     }
 
+    #[deprecated(since = "0.6.0", note = "Use HandlerContext::builder() instead")]
     pub fn with_analysis_service(working_dir: PathBuf, analysis_service: AnalysisService) -> Self {
-        // Canonicalize working_dir for consistent path handling (same reason as HandlerContext::new)
-        let canonical_working_dir =
-            std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
-
-        Self {
-            working_dir: canonical_working_dir.clone(),
-            validator: Arc::new(InputValidator::new().with_workspace(vec![canonical_working_dir])),
-            analysis_service: Arc::new(analysis_service),
-            refactor_service: Arc::new(RefactorService::new()),
-            compressor: Arc::new(ContextCompressorService::new()),
-            semantic_search: Arc::new(SemanticSearchService::new()),
-            symbol_code: Arc::new(SymbolCodeService::new()),
-            client_protocol_version: None,
-            client_name: None,
-            client_version: None,
-            cancellation_token: Arc::new(AtomicBool::new(false)),
-            log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
-            symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
-            graph_store: None,
-            code_intelligence_provider: None,
-        }
+        Self::builder()
+            .with_working_dir(working_dir)
+            .with_analysis_service(analysis_service)
+            .build()
     }
 
+    #[deprecated(since = "0.6.0", note = "Use HandlerContext::builder() instead")]
     pub fn with_refactor_service(working_dir: PathBuf, refactor_service: RefactorService) -> Self {
-        // Canonicalize working_dir for consistent path handling (same reason as HandlerContext::new)
-        let canonical_working_dir =
-            std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
-
-        Self {
-            working_dir: canonical_working_dir.clone(),
-            validator: Arc::new(InputValidator::new().with_workspace(vec![canonical_working_dir])),
-            analysis_service: Arc::new(AnalysisService::new()),
-            refactor_service: Arc::new(refactor_service),
-            compressor: Arc::new(ContextCompressorService::new()),
-            semantic_search: Arc::new(SemanticSearchService::new()),
-            symbol_code: Arc::new(SymbolCodeService::new()),
-            client_protocol_version: None,
-            client_name: None,
-            client_version: None,
-            cancellation_token: Arc::new(AtomicBool::new(false)),
-            log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
-            symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
-            graph_store: None,
-            code_intelligence_provider: None,
-        }
+        Self::builder()
+            .with_working_dir(working_dir)
+            .with_refactor_service(refactor_service)
+            .build()
     }
 
     /// Create a HandlerContext with a pre-configured CodeIntelligenceProvider for testing
+    /// Create a HandlerContext with a pre-configured CodeIntelligenceProvider for testing
+    #[deprecated(since = "0.6.0", note = "Use HandlerContext::builder() instead")]
     pub fn with_code_intelligence_provider(
         working_dir: PathBuf,
         provider: Arc<dyn CodeIntelligenceProvider>,
@@ -361,6 +406,7 @@ impl HandlerContext {
             symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
             graph_store: None,
             code_intelligence_provider: Some(provider),
+            file_ops_service: None,
         }
     }
 
@@ -373,21 +419,38 @@ impl HandlerContext {
     }
 
     /// Get the GraphStore — persistent (SQLite) if configured, or InMemory fallback
-    pub fn get_graph_store(&self) -> Box<dyn GraphStore> {
+    pub fn get_graph_store(&self) -> Arc<dyn GraphStore> {
         if let Some(ref store) = self.graph_store {
-            Box::new(ContextGraphStore {
-                inner: store.clone(),
-            })
+            store.clone()
         } else {
-            Box::new(InMemoryGraphStore::new())
+            Arc::new(InMemoryGraphStore::new())
         }
     }
 
     /// Create a HandlerContext with a pre-configured persistent GraphStore
-    pub fn with_graph_store(working_dir: PathBuf, store: Box<dyn GraphStore>) -> Self {
-        let mut ctx = Self::new(working_dir);
-        ctx.graph_store = Some(Arc::from(store));
-        ctx
+    #[deprecated(since = "0.6.0", note = "Use HandlerContext::builder() instead")]
+    pub fn with_graph_store(working_dir: PathBuf, store: Arc<dyn GraphStore>) -> Self {
+        let canonical_working_dir =
+            std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
+
+        Self {
+            working_dir: canonical_working_dir.clone(),
+            validator: Arc::new(InputValidator::new().with_workspace(vec![canonical_working_dir])),
+            analysis_service: Arc::new(AnalysisService::new()),
+            refactor_service: Arc::new(RefactorService::new()),
+            compressor: Arc::new(ContextCompressorService::new()),
+            semantic_search: Arc::new(SemanticSearchService::new()),
+            symbol_code: Arc::new(SymbolCodeService::new()),
+            client_protocol_version: None,
+            client_name: None,
+            client_version: None,
+            cancellation_token: Arc::new(AtomicBool::new(false)),
+            log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
+            symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
+            graph_store: Some(store),
+            code_intelligence_provider: None,
+            file_ops_service: None,
+        }
     }
 
     pub fn should_log(&self, level: tracing::Level) -> bool {
@@ -441,14 +504,237 @@ impl HandlerContext {
     }
 }
 
-/// Handler error type
+// =============================================================================
+// HandlerContextBuilder
+// =============================================================================
+
+/// Builder for constructing HandlerContext instances with explicit field control.
+///
+/// Use [`HandlerContext::builder()`] to create a new builder.
+///
+/// # Example
+/// ```ignore
+/// let ctx = HandlerContext::builder()
+///     .with_working_dir("/path/to/project")
+///     .with_graph_store(my_graph_store)
+///     .with_code_intelligence(my_provider)
+///     .build();
+/// ```
+#[derive(Default)]
+pub struct HandlerContextBuilder {
+    working_dir: Option<PathBuf>,
+    validator: Option<Arc<InputValidator>>,
+    analysis_service: Option<Arc<AnalysisService>>,
+    refactor_service: Option<Arc<RefactorService>>,
+    compressor: Option<Arc<ContextCompressorService>>,
+    semantic_search: Option<Arc<SemanticSearchService>>,
+    symbol_code: Option<Arc<SymbolCodeService>>,
+    client_protocol_version: Option<String>,
+    client_name: Option<String>,
+    client_version: Option<String>,
+    cancellation_token: Option<Arc<AtomicBool>>,
+    log_level: Option<Arc<tokio::sync::RwLock<tracing::Level>>>,
+    symbol_hotness: Option<Arc<Mutex<HashMap<String, usize>>>>,
+    graph_store: Option<Arc<dyn GraphStore>>,
+    code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
+    file_ops_service: Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
+}
+
+impl HandlerContextBuilder {
+    /// Creates a new HandlerContextBuilder with all fields unset (will use defaults on build).
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the working directory.
+    ///
+    /// If the path is not absolute, it will be canonicalized on build.
+    pub fn with_working_dir(mut self, working_dir: impl Into<PathBuf>) -> Self {
+        self.working_dir = Some(working_dir.into());
+        self
+    }
+
+    /// Sets a custom InputValidator.
+    pub fn with_validator(mut self, validator: InputValidator) -> Self {
+        self.validator = Some(Arc::new(validator));
+        self
+    }
+
+    /// Sets a custom AnalysisService.
+    pub fn with_analysis_service(mut self, service: AnalysisService) -> Self {
+        self.analysis_service = Some(Arc::new(service));
+        self
+    }
+
+    /// Sets a custom RefactorService.
+    pub fn with_refactor_service(mut self, service: RefactorService) -> Self {
+        self.refactor_service = Some(Arc::new(service));
+        self
+    }
+
+    /// Sets a custom ContextCompressorService.
+    pub fn with_compressor(mut self, compressor: ContextCompressorService) -> Self {
+        self.compressor = Some(Arc::new(compressor));
+        self
+    }
+
+    /// Sets a custom SemanticSearchService.
+    pub fn with_semantic_search(mut self, service: SemanticSearchService) -> Self {
+        self.semantic_search = Some(Arc::new(service));
+        self
+    }
+
+    /// Sets a custom SymbolCodeService.
+    pub fn with_symbol_code(mut self, service: SymbolCodeService) -> Self {
+        self.symbol_code = Some(Arc::new(service));
+        self
+    }
+
+    /// Sets the client protocol version.
+    pub fn with_client_protocol_version(mut self, version: impl Into<String>) -> Self {
+        self.client_protocol_version = Some(version.into());
+        self
+    }
+
+    /// Sets the client name.
+    pub fn with_client_name(mut self, name: impl Into<String>) -> Self {
+        self.client_name = Some(name.into());
+        self
+    }
+
+    /// Sets the client version.
+    pub fn with_client_version(mut self, version: impl Into<String>) -> Self {
+        self.client_version = Some(version.into());
+        self
+    }
+
+    /// Sets a custom cancellation token.
+    pub fn with_cancellation_token(mut self, token: Arc<AtomicBool>) -> Self {
+        self.cancellation_token = Some(token);
+        self
+    }
+
+    /// Sets the log level.
+    pub fn with_log_level(mut self, level: tracing::Level) -> Self {
+        self.log_level = Some(Arc::new(tokio::sync::RwLock::new(level)));
+        self
+    }
+
+    /// Sets the symbol hotness tracker.
+    pub fn with_symbol_hotness(mut self, hotness: Arc<Mutex<HashMap<String, usize>>>) -> Self {
+        self.symbol_hotness = Some(hotness);
+        self
+    }
+
+    /// Sets the GraphStore for persistent storage.
+    ///
+    /// If not set, an InMemoryGraphStore fallback is used at runtime.
+    pub fn with_graph_store(mut self, store: impl GraphStore + 'static) -> Self {
+        self.graph_store = Some(Arc::new(store));
+        self
+    }
+
+    /// Sets the CodeIntelligenceProvider for LSP operations.
+    ///
+    /// If not set, a CompositeProvider is created on demand at runtime.
+    pub fn with_code_intelligence(mut self, provider: impl CodeIntelligenceProvider + 'static) -> Self {
+        self.code_intelligence_provider = Some(Arc::new(provider));
+        self
+    }
+
+    /// Sets the FileOperationsService for shared file operations.
+    ///
+    /// If not set, handlers create their own instance per request.
+    pub fn with_file_ops_service(
+        mut self,
+        service: Arc<crate::application::services::file_operations::FileOperationsService>,
+    ) -> Self {
+        self.file_ops_service = Some(service);
+        self
+    }
+
+    /// Builds the HandlerContext, applying defaults for any unset fields.
+    ///
+    /// For working_dir: if not set, defaults to the current directory.
+    /// For validator: if not set, creates a default InputValidator with workspace set to working_dir.
+    /// All services default to their `::new()` constructors.
+    /// Optional fields (client_*, graph_store, code_intelligence_provider) remain None if not set.
+    pub fn build(self) -> HandlerContext {
+        let canonical_working_dir = self
+            .working_dir
+            .map(|p| std::fs::canonicalize(&p).unwrap_or_else(|_| p.clone()))
+            .unwrap_or_else(|| {
+                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+            });
+
+        HandlerContext {
+            working_dir: canonical_working_dir.clone(),
+            validator: self.validator.unwrap_or_else(|| {
+                Arc::new(InputValidator::new().with_workspace(vec![canonical_working_dir]))
+            }),
+            analysis_service: self
+                .analysis_service
+                .unwrap_or_else(|| Arc::new(AnalysisService::new())),
+            refactor_service: self
+                .refactor_service
+                .unwrap_or_else(|| Arc::new(RefactorService::new())),
+            compressor: self
+                .compressor
+                .unwrap_or_else(|| Arc::new(ContextCompressorService::new())),
+            semantic_search: self
+                .semantic_search
+                .unwrap_or_else(|| Arc::new(SemanticSearchService::new())),
+            symbol_code: self
+                .symbol_code
+                .unwrap_or_else(|| Arc::new(SymbolCodeService::new())),
+            client_protocol_version: self.client_protocol_version,
+            client_name: self.client_name,
+            client_version: self.client_version,
+            cancellation_token: self
+                .cancellation_token
+                .unwrap_or_else(|| Arc::new(AtomicBool::new(false))),
+            log_level: self
+                .log_level
+                .unwrap_or_else(|| Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO))),
+            symbol_hotness: self
+                .symbol_hotness
+                .unwrap_or_else(|| Arc::new(Mutex::new(HashMap::new()))),
+            graph_store: self.graph_store,
+            code_intelligence_provider: self.code_intelligence_provider,
+            file_ops_service: self.file_ops_service,
+        }
+    }
+}
+
+impl HandlerContext {
+    /// Returns a new builder for constructing HandlerContext with explicit field control.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let ctx = HandlerContext::builder()
+    ///     .with_working_dir("/path/to/project")
+    ///     .with_graph_store(my_store)
+    ///     .build();
+    /// ```
+    pub fn builder() -> HandlerContextBuilder {
+        HandlerContextBuilder::new()
+    }
+}
+
+/// Handler error type - thin wrapper enum that maps to InterfaceError
+/// while maintaining backward-compatible variant names for existing call sites.
 #[derive(Debug, thiserror::Error)]
 pub enum HandlerError {
     #[error("Security error: {0}")]
-    Security(#[from] SecurityError),
+    Security(#[source] crate::interface::mcp::security::SecurityError),
 
+    /// Application-level error (backward compatible name: was App in old HandlerError)
     #[error("Application error: {0}")]
-    App(#[from] AppError),
+    App(#[source] crate::application::error::AppError),
+
+    /// Domain-level error
+    #[error("Domain error: {0}")]
+    Domain(#[source] crate::domain::error::DomainError),
 
     #[error("Invalid input: {0}")]
     InvalidInput(String),
@@ -460,6 +746,40 @@ pub enum HandlerError {
     Internal(String),
 }
 
+// From<SecurityError> is needed for ? operator in handlers
+impl From<crate::interface::mcp::security::SecurityError> for HandlerError {
+    fn from(err: crate::interface::mcp::security::SecurityError) -> Self {
+        HandlerError::Security(err)
+    }
+}
+
+impl From<crate::application::error::AppError> for HandlerError {
+    fn from(err: crate::application::error::AppError) -> Self {
+        HandlerError::App(err)
+    }
+}
+
+impl From<crate::domain::error::DomainError> for HandlerError {
+    fn from(err: crate::domain::error::DomainError) -> Self {
+        HandlerError::Domain(err)
+    }
+}
+
+impl From<crate::interface::mcp::error::InterfaceError> for HandlerError {
+    fn from(err: crate::interface::mcp::error::InterfaceError) -> Self {
+        use crate::interface::mcp::error::InterfaceError;
+        match err {
+            InterfaceError::ToolNotFound(s) => HandlerError::Internal(format!("tool not found: {}", s)),
+            InterfaceError::InvalidInput(s) => HandlerError::InvalidInput(s),
+            InterfaceError::Security(e) => HandlerError::Security(e),
+            InterfaceError::NotFound(s) => HandlerError::NotFound(s),
+            InterfaceError::Internal(s) => HandlerError::Internal(s),
+            InterfaceError::Domain(e) => HandlerError::Domain(e),
+            InterfaceError::Application(e) => HandlerError::App(e),
+        }
+    }
+}
+
 impl From<HandlerError> for crate::interface::mcp::schemas::McpError {
     fn from(err: HandlerError) -> Self {
         match err {
@@ -469,14 +789,17 @@ impl From<HandlerError> for crate::interface::mcp::schemas::McpError {
             HandlerError::App(e) => {
                 crate::interface::mcp::schemas::McpError::new(-32001, e.to_string())
             }
-            HandlerError::InvalidInput(e) => {
+            HandlerError::Domain(e) => {
                 crate::interface::mcp::schemas::McpError::new(-32002, e.to_string())
             }
-            HandlerError::NotFound(e) => {
+            HandlerError::InvalidInput(e) => {
                 crate::interface::mcp::schemas::McpError::new(-32003, e.to_string())
             }
-            HandlerError::Internal(e) => {
+            HandlerError::NotFound(e) => {
                 crate::interface::mcp::schemas::McpError::new(-32004, e.to_string())
+            }
+            HandlerError::Internal(e) => {
+                crate::interface::mcp::schemas::McpError::new(-32005, e.to_string())
             }
         }
     }
@@ -783,6 +1106,11 @@ pub async fn handle_build_graph(
 }
 
 /// Handler for get_call_hierarchy tool
+#[cognicode_macros::aix_tool(
+    name = "get_call_hierarchy",
+    description = "Traverse call graph to find callers (incoming) or callees (outgoing). Requires build_graph first.",
+    input_schema = GetCallHierarchyInput
+)]
 pub async fn handle_get_call_hierarchy(
     ctx: &HandlerContext,
     input: GetCallHierarchyInput,
@@ -840,6 +1168,11 @@ pub async fn handle_get_call_hierarchy(
 }
 
 /// Handler for get_file_symbols tool
+#[cognicode_macros::aix_tool(
+    name = "get_file_symbols",
+    description = "Extract symbols (functions, classes, variables) from a source file. Set compressed=true for natural language summary.",
+    input_schema = GetFileSymbolsInput
+)]
 pub async fn handle_get_file_symbols(
     ctx: &HandlerContext,
     input: GetFileSymbolsInput,
@@ -1043,6 +1376,11 @@ fn find_symbol_usages(params: UsageSearchParams) -> Result<Vec<Usage>, String> {
 }
 
 /// Handler for find_usages tool
+#[cognicode_macros::aix_tool(
+    name = "find_usages",
+    description = "Find all usages of a symbol across the project.",
+    input_schema = FindUsagesInput
+)]
 pub async fn handle_find_usages(
     ctx: &HandlerContext,
     input: FindUsagesInput,
@@ -1079,6 +1417,11 @@ pub async fn handle_find_usages(
 }
 
 /// Handler for structural_search tool
+#[cognicode_macros::aix_tool(
+    name = "structural_search",
+    description = "Search for code patterns using AST-based structural matching.",
+    input_schema = StructuralSearchInput
+)]
 pub async fn handle_structural_search(
     ctx: &HandlerContext,
     input: StructuralSearchInput,
@@ -1100,6 +1443,11 @@ pub async fn handle_structural_search(
 }
 
 /// Handler for analyze_impact tool
+#[cognicode_macros::aix_tool(
+    name = "analyze_impact",
+    description = "Analyze the impact of changing a symbol. Returns impacted files and risk level.",
+    input_schema = AnalyzeImpactInput
+)]
 pub async fn handle_analyze_impact(
     ctx: &HandlerContext,
     input: AnalyzeImpactInput,
@@ -1244,7 +1592,34 @@ fn ensure_semantic_indexed(ctx: &HandlerContext) -> HandlerResult<EnsureResult> 
     ))
 }
 
+/// Ensures the semantic search index is populated using direct service parameters.
+/// This version is used by handlers that accept SemanticSearch as a parameter.
+fn ensure_semantic_indexed_with_services(
+    semantic_search: &Arc<SemanticSearchService>,
+    working_dir: &PathBuf,
+) -> HandlerResult<EnsureResult> {
+    if !semantic_search.index().is_empty() {
+        return Ok(EnsureResult::already_present(
+            semantic_search.index().len(),
+        ));
+    }
+    let start = std::time::Instant::now();
+    semantic_search
+        .populate_from_directory(working_dir)
+        .map_err(HandlerError::Internal)?;
+    let elapsed = start.elapsed().as_millis() as u64;
+    Ok(EnsureResult::auto_built(
+        semantic_search.index().len(),
+        elapsed,
+    ))
+}
+
 /// Handler for check_architecture tool
+#[cognicode_macros::aix_tool(
+    name = "check_architecture",
+    description = "Detect cycles and architecture violations using Tarjan SCC algorithm.",
+    input_schema = CheckArchitectureInput
+)]
 pub async fn handle_check_architecture(
     ctx: &HandlerContext,
     input: CheckArchitectureInput,
@@ -1379,6 +1754,13 @@ pub async fn handle_check_architecture(
 /// Handler for safe_refactor tool
 // Refactor handlers module
 pub mod refactor_handlers;
+
+/// Handler for get_complexity tool
+#[cognicode_macros::aix_tool(
+    name = "get_complexity",
+    description = "Calculate code complexity metrics (cyclomatic, cognitive, nesting).",
+    input_schema = GetComplexityInput
+)]
 pub async fn handle_get_complexity(
     ctx: &HandlerContext,
     input: GetComplexityInput,
@@ -1664,7 +2046,11 @@ fn process_decision_points(
 }
 
 /// Handler for get_entry_points tool
-
+#[cognicode_macros::aix_tool(
+    name = "get_entry_points",
+    description = "Find symbols with no incoming edges (entry points in the call graph).",
+    input_schema = GetEntryPointsInput
+)]
 pub async fn handle_get_entry_points(
     ctx: &HandlerContext,
     _input: GetEntryPointsInput,
@@ -1726,7 +2112,11 @@ pub async fn handle_get_entry_points(
 }
 
 /// Handler for get_leaf_functions tool
-
+#[cognicode_macros::aix_tool(
+    name = "get_leaf_functions",
+    description = "Find symbols with no outgoing edges (leaf functions in the call graph).",
+    input_schema = GetLeafFunctionsInput
+)]
 pub async fn handle_get_leaf_functions(
     ctx: &HandlerContext,
     _input: GetLeafFunctionsInput,
@@ -1789,6 +2179,11 @@ pub async fn handle_get_leaf_functions(
 }
 
 /// Handler for trace_path tool
+#[cognicode_macros::aix_tool(
+    name = "trace_path",
+    description = "Find execution path between two symbols using BFS.",
+    input_schema = TracePathInput
+)]
 pub async fn handle_trace_path(
     ctx: &HandlerContext,
     input: TracePathInput,
@@ -1854,6 +2249,11 @@ pub async fn handle_trace_path(
 }
 
 /// Handler for export_mermaid tool
+#[cognicode_macros::aix_tool(
+    name = "export_mermaid",
+    description = "Export call graph or subgraph as Mermaid flowchart. Optionally render to SVG with a theme.",
+    input_schema = ExportMermaidInput
+)]
 pub async fn handle_export_mermaid(
     ctx: &HandlerContext,
     input: ExportMermaidInput,
@@ -1978,6 +2378,11 @@ pub async fn handle_export_mermaid(
 }
 
 /// Handler for get_hot_paths tool
+#[cognicode_macros::aix_tool(
+    name = "get_hot_paths",
+    description = "Find functions with highest fan-in (most called functions).",
+    input_schema = GetHotPathsInput
+)]
 pub async fn handle_get_hot_paths(
     ctx: &HandlerContext,
     input: GetHotPathsInput,
@@ -2035,6 +2440,11 @@ pub async fn handle_get_hot_paths(
 }
 
 /// Handler for get_hot_symbols tool (PL3)
+#[cognicode_macros::aix_tool(
+    name = "get_hot_symbols",
+    description = "Get the most frequently accessed symbols (AI query hotness tracking).",
+    input_schema = GetHotSymbolsInput
+)]
 pub async fn handle_get_hot_symbols(
     ctx: &HandlerContext,
     input: GetHotSymbolsInput,
@@ -2079,6 +2489,11 @@ pub async fn handle_get_hot_symbols(
 }
 
 /// Handler for find_dead_code tool
+#[cognicode_macros::aix_tool(
+    name = "find_dead_code",
+    description = "Detect unreachable or unused code in the call graph.",
+    input_schema = FindDeadCodeInput
+)]
 pub async fn handle_find_dead_code(
     ctx: &HandlerContext,
     input: FindDeadCodeInput,
@@ -2116,6 +2531,11 @@ pub async fn handle_find_dead_code(
 }
 
 /// Handler for get_module_dependencies tool
+#[cognicode_macros::aix_tool(
+    name = "get_module_dependencies",
+    description = "Analyze module-level dependencies and coupling between source files.",
+    input_schema = GetModuleDependenciesInput
+)]
 pub async fn handle_get_module_dependencies(
     ctx: &HandlerContext,
     input: GetModuleDependenciesInput,
@@ -2156,6 +2576,11 @@ pub async fn handle_get_module_dependencies(
 }
 
 /// Handler for get_all_symbols tool
+#[cognicode_macros::aix_tool(
+    name = "get_all_symbols",
+    description = "Get all symbols in the call graph with optional pagination.",
+    input_schema = GetAllSymbolsInput
+)]
 pub async fn handle_get_all_symbols(
     ctx: &HandlerContext,
     input: GetAllSymbolsInput,
@@ -2371,10 +2796,6 @@ pub async fn handle_build_lightweight_index(
         return Err(HandlerError::Internal("Cancelled".into()));
     }
 
-    if ctx.is_cancelled() {
-        return Err(HandlerError::Internal("Cancelled".into()));
-    }
-
     // Build the index — CPU-bound blocking work, offload to blocking thread pool
     // to avoid starving the tokio async runtime (which caused MCP timeout -32001).
     // For lightweight strategy, build directly as LightweightStrategy (concrete type)
@@ -2437,6 +2858,11 @@ pub async fn handle_build_lightweight_index(
 }
 
 /// Handler for query_symbol_index tool
+#[cognicode_macros::aix_tool(
+    name = "query_symbol_index",
+    description = "Query the symbol index to find locations of a symbol by name (case-insensitive).",
+    input_schema = QuerySymbolInput
+)]
 pub async fn handle_query_symbol_index(
     ctx: &HandlerContext,
     input: QuerySymbolInput,
@@ -2493,6 +2919,11 @@ pub async fn handle_query_symbol_index(
 }
 
 /// Handler for build_call_subgraph tool
+#[cognicode_macros::aix_tool(
+    name = "build_call_subgraph",
+    description = "Build an on-demand call subgraph centered on a symbol.",
+    input_schema = BuildSubgraphInput
+)]
 pub async fn handle_build_call_subgraph(
     ctx: &HandlerContext,
     input: BuildSubgraphInput,
@@ -2569,6 +3000,11 @@ pub async fn handle_build_call_subgraph(
 }
 
 /// Handler for get_per_file_graph tool
+#[cognicode_macros::aix_tool(
+    name = "get_per_file_graph",
+    description = "Get the call graph for a specific file.",
+    input_schema = GetPerFileGraphInput
+)]
 pub async fn handle_get_per_file_graph(
     ctx: &HandlerContext,
     input: GetPerFileGraphInput,
@@ -2623,6 +3059,11 @@ pub async fn handle_get_per_file_graph(
 }
 
 /// Handler for merge_file_graphs tool
+#[cognicode_macros::aix_tool(
+    name = "merge_file_graphs",
+    description = "Merge call graphs from multiple files into a single graph.",
+    input_schema = MergeGraphsInput
+)]
 pub async fn handle_merge_graphs(
     ctx: &HandlerContext,
     input: MergeGraphsInput,
@@ -2695,6 +3136,11 @@ pub async fn handle_merge_graphs(
 // ============================================================================
 
 /// Handler for get_outline tool
+#[cognicode_macros::aix_tool(
+    name = "get_outline",
+    description = "Get a hierarchical outline of symbols in a source file.",
+    input_schema = OutlineInput
+)]
 pub async fn handle_get_outline(
     ctx: &HandlerContext,
     input: OutlineInput,
@@ -2757,18 +3203,22 @@ fn convert_outline_node(node: &crate::infrastructure::semantic::OutlineNode) -> 
 }
 
 /// Handler for get_symbol_code tool
+///
+/// Migrated to use SemanticSearch capability trait directly.
 pub async fn handle_get_symbol_code(
-    ctx: &HandlerContext,
+    symbol_code: Arc<SymbolCodeService>,
+    validator: Arc<InputValidator>,
+    working_dir: PathBuf,
     input: SymbolCodeInput,
 ) -> HandlerResult<SymbolCodeOutput> {
     // Validate file path
-    ctx.validator.validate_file_path(&input.file)?;
+    validator.validate_file_path(&input.file)?;
 
     // Resolve the file path
     let file_path = if Path::new(&input.file).is_absolute() {
         PathBuf::from(&input.file)
     } else {
-        ctx.working_dir.join(&input.file)
+        working_dir.join(&input.file)
     };
 
     // Check cache first
@@ -2778,7 +3228,7 @@ pub async fn handle_get_symbol_code(
         input.col,
     );
 
-    let cached = ctx.symbol_code.cache().get(&cache_key);
+    let cached = symbol_code.cache().get(&cache_key);
 
     if let Some(cached) = cached {
         return Ok(SymbolCodeOutput {
@@ -2792,9 +3242,7 @@ pub async fn handle_get_symbol_code(
     }
 
     // Get symbol code
-    match ctx
-        .symbol_code
-        .get_symbol_code(&file_path.to_string_lossy(), input.line, input.col)
+    match symbol_code.get_symbol_code(&file_path.to_string_lossy(), input.line, input.col)
     {
         Ok(result) => Ok(SymbolCodeOutput {
             file: input.file,
@@ -2809,8 +3257,11 @@ pub async fn handle_get_symbol_code(
 }
 
 /// Handler for semantic_search tool
+///
+/// Migrated to use SemanticSearch capability trait directly.
 pub async fn handle_semantic_search(
-    ctx: &HandlerContext,
+    semantic_search: Arc<SemanticSearchService>,
+    working_dir: PathBuf,
     input: SemanticSearchInput,
 ) -> HandlerResult<SemanticSearchOutput> {
     let start = Instant::now();
@@ -2823,7 +3274,7 @@ pub async fn handle_semantic_search(
     }
 
     // Ensure the search index is populated before querying
-    let _ensure = ensure_semantic_indexed(ctx)?;
+    let _ensure = ensure_semantic_indexed_with_services(&semantic_search, &working_dir)?;
 
     // Convert kind filters
     let kinds: Vec<SearchSymbolKind> = input
@@ -2857,7 +3308,7 @@ pub async fn handle_semantic_search(
     };
 
     // Search
-    let results = ctx.semantic_search.search(query);
+    let results = semantic_search.search(query);
 
     // Convert to DTOs
     let results_dto: Vec<SearchResultDto> = results
@@ -2886,14 +3337,17 @@ pub async fn handle_semantic_search(
 }
 
 /// Handler for find_usages_with_context tool
+///
+/// Migrated to use Validation capability trait directly.
 pub async fn handle_find_usages_with_context(
-    ctx: &HandlerContext,
+    validator: Arc<InputValidator>,
+    working_dir: PathBuf,
     input: FindUsagesWithContextInput,
 ) -> HandlerResult<FindUsagesWithContextOutput> {
-    ctx.validator.validate_query(&input.symbol)?;
+    validator.validate_query(&input.symbol)?;
 
     let usages = find_symbol_usages(UsageSearchParams {
-        project_dir: ctx.working_dir.clone(),
+        project_dir: working_dir,
         symbol_name: input.symbol.clone(),
         include_declaration: input.include_declaration,
         context_lines: Some(input.context_lines as usize),
@@ -2976,6 +3430,12 @@ pub mod lsp_handlers;
 // have been replaced with no-op stubs (see
 // `aix_handlers::persist_findings`, `handle_generate_contract`, etc.).
 pub mod aix_handlers;
+
+// Graph analytics handlers — extracted from rmcp_adapter.rs inline implementations.
+// Includes: graph_pagerank, graph_all_paths, graph_condensed, graph_god_nodes,
+// graph_reduced, graph_feedback_arcs, graph_communities, graph_community_detail,
+// graph_surprising_connections, graph_search_idf, graph_insights, graph_suggest_questions.
+pub mod graph_handlers;
 
 #[cfg(test)]
 mod tests {
@@ -3639,16 +4099,20 @@ mod tests {
         assert_eq!(mcp_err.code, -32001);
 
         let mcp_err: crate::interface::mcp::schemas::McpError =
-            HandlerError::InvalidInput("bad input".into()).into();
+            HandlerError::Domain(crate::domain::error::DomainError::AnalysisError("test".into())).into();
         assert_eq!(mcp_err.code, -32002);
 
         let mcp_err: crate::interface::mcp::schemas::McpError =
-            HandlerError::NotFound("not found".into()).into();
+            HandlerError::InvalidInput("bad input".into()).into();
         assert_eq!(mcp_err.code, -32003);
 
         let mcp_err: crate::interface::mcp::schemas::McpError =
-            HandlerError::Internal("internal error".into()).into();
+            HandlerError::NotFound("not found".into()).into();
         assert_eq!(mcp_err.code, -32004);
+
+        let mcp_err: crate::interface::mcp::schemas::McpError =
+            HandlerError::Internal("internal error".into()).into();
+        assert_eq!(mcp_err.code, -32005);
     }
 
     #[test]
@@ -3661,6 +4125,10 @@ mod tests {
             .code,
             Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::App(
                 AppError::AnalysisError("t".into()),
+            ))
+            .code,
+            Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::Domain(
+                crate::domain::error::DomainError::AnalysisError("t".into()),
             ))
             .code,
             Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::InvalidInput(
@@ -3688,13 +4156,13 @@ mod tests {
 
         // Serialize to JSON
         let json = serde_json::to_string(&mcp_err).unwrap();
-        assert!(json.contains("-32003"));
+        assert!(json.contains("-32004"));
         assert!(json.contains("Symbol 'foo' not found"));
 
         // Deserialize back
         let deserialized: crate::interface::mcp::schemas::McpError =
             serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.code, -32003);
+        assert_eq!(deserialized.code, -32004);
         assert!(deserialized.message.contains("foo"));
     }
 
@@ -3739,7 +4207,7 @@ mod tests {
         let err = result.unwrap_err();
         // Should be InvalidInput for non-existent directory
         let mcp_err: crate::interface::mcp::schemas::McpError = err.into();
-        assert_eq!(mcp_err.code, -32002); // InvalidInput
+        assert_eq!(mcp_err.code, -32003); // InvalidInput
     }
 
     #[tokio::test]
@@ -3813,5 +4281,113 @@ mod tests {
                 assert!(mcp_err.code < 0); // All error codes should be negative
             }
         }
+    }
+
+    // =============================================================================
+    // HandlerContextBuilder tests
+    // =============================================================================
+
+    #[test]
+    fn test_handler_context_builder_default() {
+        let builder = HandlerContextBuilder::default();
+        let ctx = builder.build();
+
+        // Should have default working_dir (current dir or ".")
+        assert!(ctx.working_dir.exists() || ctx.working_dir.to_string_lossy() == ".");
+    }
+
+    #[test]
+    fn test_handler_context_builder_with_working_dir() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir.path())
+            .build();
+
+        assert_eq!(ctx.working_dir, tempdir.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn test_handler_context_builder_chained_calls() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir.path())
+            .with_client_name("test-client")
+            .with_client_version("1.0.0")
+            .with_client_protocol_version("2024-01")
+            .with_log_level(tracing::Level::DEBUG)
+            .build();
+
+        assert_eq!(ctx.client_name, Some("test-client".to_string()));
+        assert_eq!(ctx.client_version, Some("1.0.0".to_string()));
+        assert_eq!(ctx.client_protocol_version, Some("2024-01".to_string()));
+    }
+
+    #[test]
+    fn test_handler_context_builder_symbol_hotness() {
+        let ctx = HandlerContext::builder()
+            .with_working_dir(".")
+            .build();
+
+        // Default hotness should be empty
+        assert_eq!(ctx.get_symbol_hotness("nonexistent"), 0.0);
+
+        // Record some accesses
+        ctx.record_symbol_access("test_symbol", 5);
+        assert_eq!(ctx.get_symbol_hotness("test_symbol"), 1.0); // 5/5 = 1.0
+        assert_eq!(ctx.get_symbol_hotness("other"), 0.0); // 0/5 = 0.0
+    }
+
+    #[test]
+    fn test_handler_context_builder_cancellation_token() {
+        use std::sync::atomic::AtomicBool;
+        use std::sync::atomic::Ordering;
+
+        let token = Arc::new(AtomicBool::new(false));
+        let ctx = HandlerContext::builder()
+            .with_working_dir(".")
+            .with_cancellation_token(token.clone())
+            .build();
+
+        assert!(!ctx.is_cancelled());
+        token.store(true, Ordering::SeqCst);
+        assert!(ctx.is_cancelled());
+    }
+
+    #[test]
+    fn test_handler_context_builder_equivalence_with_new() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let tempdir_path = tempdir.path().to_path_buf();
+
+        // Create with new()
+        let ctx_new = HandlerContext::new(tempdir_path.clone());
+
+        // Create with builder (no overrides)
+        let ctx_builder = HandlerContext::builder()
+            .with_working_dir(&tempdir_path)
+            .build();
+
+        // Both should have canonicalized working_dir
+        assert_eq!(ctx_new.working_dir, ctx_builder.working_dir);
+        assert_eq!(ctx_new.client_name, ctx_builder.client_name);
+        assert_eq!(ctx_new.client_version, ctx_builder.client_version);
+    }
+
+    #[test]
+    fn test_handler_context_builder_partial_override() {
+        let tempdir = tempfile::tempdir().unwrap();
+
+        // Builder with only graph_store set
+        let custom_store = InMemoryGraphStore::new();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir.path())
+            .with_graph_store(custom_store)
+            .build();
+
+        // graph_store should be set
+        assert!(ctx.graph_store.is_some());
+
+        // Other services should be initialized (Arc pointers are non-null)
+        assert!(Arc::strong_count(&ctx.analysis_service) >= 1);
+        assert!(Arc::strong_count(&ctx.refactor_service) >= 1);
     }
 }

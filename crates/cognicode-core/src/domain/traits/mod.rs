@@ -5,6 +5,7 @@
 pub mod code_intelligence;
 pub mod dependency_repository;
 pub mod file_system;
+pub mod graph_query_port;
 pub mod graph_store;
 pub mod parser;
 pub mod refactor_strategy;
@@ -19,6 +20,10 @@ pub use code_intelligence::{
 };
 pub use dependency_repository::{DependencyError, DependencyRepository};
 pub use file_system::{FileSystem, TextEdit, VfsError, VfsResult};
+pub use graph_query_port::{
+    CalleeWithMetadata, CallerWithMetadata, EdgeWithMetadata, GraphQueryPort, RelationTarget,
+    RelationTargetWithMetadata,
+};
 pub use graph_store::{GraphStore, StoreError};
 pub use parser::{AstScanner, ParseError, ParseResult, ParsedTree, Parser, ScannedNode};
 pub use refactor_strategy::{RefactorError, RefactorStrategy};

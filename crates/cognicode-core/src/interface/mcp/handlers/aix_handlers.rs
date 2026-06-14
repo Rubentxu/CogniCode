@@ -18,6 +18,11 @@ use super::*;
 // ============================================================================
 
 /// Handler for smart_overview tool (AIX-1.1)
+#[cognicode_macros::aix_tool(
+    name = "smart_overview",
+    description = "Get a comprehensive project overview with architecture score, hot paths, and recommended first reads for AI agents.",
+    input_schema = SmartOverviewInput
+)]
 pub async fn handle_smart_overview(
     ctx: &HandlerContext,
     input: SmartOverviewInput,
@@ -104,6 +109,11 @@ pub async fn handle_smart_overview(
 }
 
 /// Handler for ranked_symbols tool (AIX-1.3)
+#[cognicode_macros::aix_tool(
+    name = "ranked_symbols",
+    description = "Get AI-relevance ranked symbols based on a search query, considering fan-in, complexity, and documentation.",
+    input_schema = RankedSymbolsInput
+)]
 pub async fn handle_ranked_symbols(
     ctx: &HandlerContext,
     input: RankedSymbolsInput,
@@ -198,6 +208,11 @@ pub async fn handle_ranked_symbols(
 }
 
 /// Handler for suggest_onboarding_plan tool (AIX-2.1)
+#[cognicode_macros::aix_tool(
+    name = "suggest_onboarding_plan",
+    description = "Generate a step-by-step onboarding plan to understand, refactor, debug, or extend a codebase.",
+    input_schema = OnboardingPlanInput
+)]
 pub async fn handle_suggest_onboarding_plan(
     ctx: &HandlerContext,
     input: OnboardingPlanInput,
@@ -240,6 +255,11 @@ pub async fn handle_suggest_onboarding_plan(
 }
 
 /// Handler for auto_diagnose tool (AIX-2.3)
+#[cognicode_macros::aix_tool(
+    name = "auto_diagnose",
+    description = "Automatically diagnose project health issues including architecture problems, dead code, and complexity hotspots.",
+    input_schema = AutoDiagnoseInput
+)]
 pub async fn handle_auto_diagnose(
     ctx: &HandlerContext,
     _input: AutoDiagnoseInput,
@@ -384,6 +404,11 @@ pub async fn handle_auto_diagnose(
 }
 
 /// Handler for suggest_refactor_plan tool (AIX-2.2)
+#[cognicode_macros::aix_tool(
+    name = "suggest_refactor_plan",
+    description = "Analyze a symbol and suggest a concrete refactoring plan with risk assessment.",
+    input_schema = SuggestRefactorPlanInput
+)]
 pub async fn handle_suggest_refactor_plan(
     ctx: &HandlerContext,
     input: SuggestRefactorPlanInput,
@@ -485,6 +510,11 @@ pub async fn handle_suggest_refactor_plan(
 }
 
 /// Handler for nl_to_symbol tool (AIX-3.1)
+#[cognicode_macros::aix_tool(
+    name = "nl_to_symbol",
+    description = "Convert natural language descriptions to precise symbol matches using keyword extraction and semantic search.",
+    input_schema = NlToSymbolInput
+)]
 pub async fn handle_nl_to_symbol(
     ctx: &HandlerContext,
     input: NlToSymbolInput,
@@ -580,6 +610,11 @@ pub async fn handle_nl_to_symbol(
 }
 
 /// Handler for ask_about_code tool (AIX-3.2)
+#[cognicode_macros::aix_tool(
+    name = "ask_about_code",
+    description = "Answer questions about code flow by tracing execution paths between symbols.",
+    input_schema = AskAboutCodeInput
+)]
 pub async fn handle_ask_about_code(
     ctx: &HandlerContext,
     input: AskAboutCodeInput,
@@ -652,6 +687,11 @@ pub async fn handle_ask_about_code(
 }
 
 /// Handler for find_pattern_by_intent tool (AIX-3.3)
+#[cognicode_macros::aix_tool(
+    name = "find_pattern_by_intent",
+    description = "Match natural language intent descriptions to known code patterns.",
+    input_schema = FindPatternByIntentInput
+)]
 pub async fn handle_find_pattern_by_intent(
     ctx: &HandlerContext,
     input: FindPatternByIntentInput,
@@ -802,6 +842,11 @@ pub async fn handle_find_pattern_by_intent(
 }
 
 /// Handler for compare_call_graphs tool (AIX-4.1)
+#[cognicode_macros::aix_tool(
+    name = "compare_call_graphs",
+    description = "Compare the current call graph against a baseline to detect structural changes.",
+    input_schema = CompareCallGraphsInput
+)]
 pub async fn handle_compare_call_graphs(
     ctx: &HandlerContext,
     input: CompareCallGraphsInput,
@@ -921,6 +966,11 @@ pub async fn handle_compare_call_graphs(
 }
 
 /// Handler for detect_api_breaks tool (AIX-4.2)
+#[cognicode_macros::aix_tool(
+    name = "detect_api_breaks",
+    description = "Detect breaking changes in the public API by comparing entry points between current and baseline graphs.",
+    input_schema = DetectApiBreaksInput
+)]
 pub async fn handle_detect_api_breaks(
     ctx: &HandlerContext,
     input: DetectApiBreaksInput,
@@ -999,6 +1049,11 @@ pub async fn handle_detect_api_breaks(
 }
 
 /// Handler for generate_system_prompt_context tool (AIX-5.1)
+#[cognicode_macros::aix_tool(
+    name = "generate_system_prompt_context",
+    description = "Generate a structured context block for LLM system prompts in XML, JSON, or Markdown format.",
+    input_schema = SystemPromptContextInput
+)]
 pub async fn handle_generate_system_prompt_context(
     ctx: &HandlerContext,
     input: SystemPromptContextInput,
@@ -1112,6 +1167,11 @@ pub async fn handle_generate_system_prompt_context(
 }
 
 /// Handler for detect_god_functions tool (AIX-5.2)
+#[cognicode_macros::aix_tool(
+    name = "detect_god_functions",
+    description = "Find overly large or complex functions (god functions) that should be refactored.",
+    input_schema = DetectGodFunctionsInput
+)]
 pub async fn handle_detect_god_functions(
     ctx: &HandlerContext,
     input: DetectGodFunctionsInput,
@@ -1194,6 +1254,11 @@ pub async fn handle_detect_god_functions(
 }
 
 /// Handler for detect_long_parameter_lists tool (AIX-5.3)
+#[cognicode_macros::aix_tool(
+    name = "detect_long_parameter_lists",
+    description = "Find functions with too many parameters that should be consolidated into structs.",
+    input_schema = DetectLongParamsInput
+)]
 pub async fn handle_detect_long_parameter_lists(
     ctx: &HandlerContext,
     input: DetectLongParamsInput,
@@ -1255,6 +1320,11 @@ pub async fn handle_detect_long_parameter_lists(
 }
 
 /// Handler for evaluate_refactor_quality tool (AIX-4.3)
+#[cognicode_macros::aix_tool(
+    name = "evaluate_refactor_quality",
+    description = "Evaluate whether a refactoring was beneficial by comparing current graph state vs persisted baseline.",
+    input_schema = EvaluateRefactorQualityInput
+)]
 pub async fn handle_evaluate_refactor_quality(
     ctx: &HandlerContext,
     _input: EvaluateRefactorQualityInput,
@@ -1736,6 +1806,11 @@ use crate::interface::mcp::schemas::{
 /// dispatch surface so existing MCP tool wiring still links, but
 /// contract generation is no longer available until a PostgreSQL
 /// adapter lands.
+#[cognicode_macros::aix_tool(
+    name = "generate_contract",
+    description = "Generate an AVC truth contract from an existing function. Returns syntax, semantic, and safety constraints.",
+    input_schema = GenerateContractInput
+)]
 pub async fn handle_generate_contract(
     _ctx: &HandlerContext,
     _input: GenerateContractInput,
@@ -1750,6 +1825,11 @@ pub async fn handle_generate_contract(
 ///
 /// See `handle_generate_contract` — validation is unavailable without
 /// a persistence layer to load the contract from.
+#[cognicode_macros::aix_tool(
+    name = "validate_contract",
+    description = "Validate generated code against an AVC truth contract. Returns pass/fail with violations and fix suggestions.",
+    input_schema = ValidateContractInput
+)]
 pub async fn handle_validate_contract(
     _ctx: &HandlerContext,
     _input: ValidateContractInput,
@@ -1764,6 +1844,11 @@ pub async fn handle_validate_contract(
 // =============================================================================
 
 /// Handler for suggest_context tool (Phase 3A)
+#[cognicode_macros::aix_tool(
+    name = "suggest_context",
+    description = "Zero-query proactive context suggestion. Returns ranked files/symbols relevant to an agent's current task.",
+    input_schema = SuggestContextInput
+)]
 pub async fn handle_suggest_context(
     ctx: &HandlerContext,
     input: SuggestContextInput,
@@ -1857,7 +1942,7 @@ pub async fn handle_suggest_context(
             total_calls: total,
             analysis_time_ms: elapsed_ms,
         },
-        _meta: Some(OverviewMeta {
+        _meta: Some(SchemaOverviewMeta {
             estimated_tokens: total * 50,
             detail_level: "suggest_context".to_string(),
         }),
@@ -1865,6 +1950,12 @@ pub async fn handle_suggest_context(
 }
 
 /// Handler for reparse_on_edit tool (Phase 3A)
+#[cfg(feature = "persistence")]
+#[cognicode_macros::aix_tool(
+    name = "reparse_on_edit",
+    description = "MCP-triggered incremental reindex of changed files.",
+    input_schema = ReparseOnEditInput
+)]
 #[cfg(feature = "persistence")]
 pub async fn handle_reparse_on_edit(
     ctx: &HandlerContext,
@@ -2022,7 +2113,7 @@ pub async fn handle_reparse_on_edit(
             total_calls: files_parsed + files_skipped + files_removed,
             analysis_time_ms: elapsed_ms,
         },
-        _meta: Some(OverviewMeta {
+        _meta: Some(SchemaOverviewMeta {
             estimated_tokens: 50,
             detail_level: "reparse_on_edit".to_string(),
         }),
@@ -2034,6 +2125,11 @@ pub async fn handle_reparse_on_edit(
 // ============================================================================
 
 /// Handler for detect_drift tool
+#[cognicode_macros::aix_tool(
+    name = "detect_drift",
+    description = "Analyze a source file for intent drift, AVC violations, obsolete patterns, and forbidden terms.",
+    input_schema = DetectDriftInput
+)]
 pub async fn handle_detect_drift(
     ctx: &HandlerContext,
     input: DetectDriftInput,
@@ -2521,6 +2617,11 @@ use crate::interface::mcp::schemas::{
 /// returns an empty list. The dispatch layer keeps linking; the
 /// handler will gain real implementation when the PostgreSQL adapter
 /// lands.
+#[cognicode_macros::aix_tool(
+    name = "poll_tasks",
+    description = "Poll for pending agent tasks and claim them for execution.",
+    input_schema = PollTasksInput
+)]
 pub async fn handle_poll_tasks(
     _ctx: &HandlerContext,
     _input: PollTasksInput,
@@ -2535,6 +2636,11 @@ pub async fn handle_poll_tasks(
 /// validates the input but reports success:false. The dispatch layer
 /// keeps linking; the handler will gain real implementation when the
 /// PostgreSQL adapter lands.
+#[cognicode_macros::aix_tool(
+    name = "complete_task",
+    description = "Mark an agent task as completed or failed with optional result data.",
+    input_schema = CompleteTaskInput
+)]
 pub async fn handle_complete_task(
     _ctx: &HandlerContext,
     input: CompleteTaskInput,

@@ -9,6 +9,8 @@
 //!
 //! Each handler is wrapped in instrument_tool for OTel metrics collection.
 
+use std::sync::Arc;
+
 use crate::application::error::AppError;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::infrastructure::telemetry::{ToolError, get_global_metrics, instrument_tool};
@@ -31,21 +33,26 @@ fn app_error_to_tool_error(e: AppError) -> ToolError {
 /// - 'outline' mode: Returns hierarchical structure (functions, classes)
 /// - 'symbols' mode: Extracts function/class signatures only
 /// - 'compressed' mode: Token-efficient summaries for large files
+#[cognicode_macros::aix_tool(
+    name = "read_file",
+    description = "Smart file reader with semantic modes.",
+    input_schema = ReadFileInput
+)]
 pub async fn handle_read_file(
     ctx: &HandlerContext,
     input: ReadFileInput,
 ) -> HandlerResult<ReadFileOutput> {
+    let service = ctx.file_ops_service.clone()
+        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone())));
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
             // No metrics available, call service directly
-            let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
             let dto_input: crate::application::dto::ReadFileRequest = input.into();
             let dto_result = service.read_file(dto_input).map_err(HandlerError::App)?;
             return Ok(dto_result.into());
         }
     };
-    let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
     let mode = input.mode.clone();
     let dto_input: crate::application::dto::ReadFileRequest = input.into();
 
@@ -74,20 +81,25 @@ pub async fn handle_read_file(
 ///
 /// Create or overwrite files within the workspace. Validates paths and creates
 /// parent directories. Returns metadata only — token-efficient.
+#[cognicode_macros::aix_tool(
+    name = "write_file",
+    description = "Create or overwrite files within the workspace.",
+    input_schema = WriteFileInput
+)]
 pub async fn handle_write_file(
     ctx: &HandlerContext,
     input: WriteFileInput,
 ) -> HandlerResult<WriteFileOutput> {
+    let service = ctx.file_ops_service.clone()
+        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone())));
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
-            let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
             let dto_input: crate::application::dto::WriteFileRequest = input.into();
             let dto_result = service.write_file(dto_input).map_err(HandlerError::App)?;
             return Ok(dto_result.into());
         }
     };
-    let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
     let dto_input: crate::application::dto::WriteFileRequest = input.into();
 
     let result = instrument_tool(&metrics, "write_file", async {
@@ -114,20 +126,25 @@ pub async fn handle_write_file(
 /// - Validates the result with tree-sitter to catch syntax errors before saving
 /// - Supports multiple edits in one call
 /// - Rejects edits that would cause syntax errors
+#[cognicode_macros::aix_tool(
+    name = "edit_file",
+    description = "Edit files with syntax validation.",
+    input_schema = EditFileInput
+)]
 pub async fn handle_edit_file(
     ctx: &HandlerContext,
     input: EditFileInput,
 ) -> HandlerResult<EditFileOutput> {
+    let service = ctx.file_ops_service.clone()
+        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone())));
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
-            let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
             let dto_input: crate::application::dto::EditFileRequest = input.into();
             let dto_result = service.edit_file(dto_input).map_err(HandlerError::App)?;
             return Ok(dto_result.into());
         }
     };
-    let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
     let dto_input: crate::application::dto::EditFileRequest = input.into();
 
     let result = instrument_tool(&metrics, "edit_file", async {
@@ -159,14 +176,20 @@ pub async fn handle_edit_file(
 /// - Automatically respects .gitignore
 /// - Supports regex and literal patterns
 /// - Returns matches with context lines and capped results
+#[cognicode_macros::aix_tool(
+    name = "search_content",
+    description = "Search file contents with .gitignore awareness.",
+    input_schema = SearchContentInput
+)]
 pub async fn handle_search_content(
     ctx: &HandlerContext,
     input: SearchContentInput,
 ) -> HandlerResult<SearchContentOutput> {
+    let service = ctx.file_ops_service.clone()
+        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone())));
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
-            let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
             let dto_input: crate::application::dto::SearchContentRequest = input.into();
             let dto_result = service
                 .search_content(dto_input)
@@ -174,7 +197,6 @@ pub async fn handle_search_content(
             return Ok(dto_result.into());
         }
     };
-    let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
     let dto_input: crate::application::dto::SearchContentRequest = input.into();
 
     let result = instrument_tool(&metrics, "search_content", async {
@@ -202,20 +224,25 @@ pub async fn handle_search_content(
 /// - Automatically respects .gitignore
 /// - Returns metadata (size, modified time, language detection)
 /// - Supports pagination
+#[cognicode_macros::aix_tool(
+    name = "list_files",
+    description = "List project files with .gitignore awareness.",
+    input_schema = ListFilesInput
+)]
 pub async fn handle_list_files(
     ctx: &HandlerContext,
     input: ListFilesInput,
 ) -> HandlerResult<ListFilesOutput> {
+    let service = ctx.file_ops_service.clone()
+        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone())));
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
-            let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
             let dto_input: crate::application::dto::ListFilesRequest = input.into();
             let dto_result = service.list_files(dto_input).map_err(HandlerError::App)?;
             return Ok(dto_result.into());
         }
     };
-    let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
     let dto_input: crate::application::dto::ListFilesRequest = input.into();
 
     let result = instrument_tool(&metrics, "list_files", async {
@@ -243,6 +270,11 @@ pub async fn handle_list_files(
 /// - Verifies each .rs candidate via `rustc --edition 2021 --crate-type lib`
 /// - Per-candidate timeout: 10s | Total timeout: 60s
 /// - Returns verified/rejected/skipped status per match
+#[cognicode_macros::aix_tool(
+    name = "retrieve_and_verify",
+    description = "Search for code matching a query and verify Rust files via sandboxed rustc compilation.",
+    input_schema = RetrieveAndVerifyInput
+)]
 pub async fn handle_retrieve_and_verify(
     ctx: &HandlerContext,
     input: RetrieveAndVerifyInput,
@@ -254,7 +286,8 @@ pub async fn handle_retrieve_and_verify(
         ));
     }
 
-    let service = FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref());
+    let service = ctx.file_ops_service.clone()
+        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone())));
 
     // Convert MCP input to DTO
     let dto_input = crate::application::dto::RetrieveAndVerifyRequest {

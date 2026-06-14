@@ -1,0 +1,5 @@
+error: expected attribute, found derive macro `newtype`
+ --> tests/newtype-ui/newtype_invalid_derive.rs
+  |
+  | #[newtype(derive(NotAValidTrait))]
+  |   ^^^^^^^ not an attribute

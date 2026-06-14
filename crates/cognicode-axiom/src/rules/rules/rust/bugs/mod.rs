@@ -19,6 +19,3 @@ pub use s2757_rule::S2757Rule;
 pub use s134_rule::S134Rule;
 pub use s7001_rule::S7001Rule;
 
-pub mod s1226_rule;
-
-pub mod s1141_rule;

@@ -3,7 +3,9 @@
 //! This module provides the CogniCodeHandler which implements the rmcp ServerHandler trait,
 //! allowing the CogniCode MCP server to use the official rmcp SDK for transport.
 
+use crate::interface::mcp::error::{InterfaceError, InterfaceResult};
 use crate::interface::mcp::handlers::HandlerContext;
+use crate::application::services::file_operations::FileOperationsService;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, Content, ListToolsResult, ServerCapabilities,
@@ -42,7 +44,7 @@ impl CogniCodeHandler {
     /// Creates a new CogniCodeHandler with a custom GraphStore (SQLite for persistence)
     pub fn with_graph_store(
         project_root: PathBuf,
-        store: Box<dyn crate::domain::traits::GraphStore>,
+        store: Arc<dyn crate::domain::traits::GraphStore>,
     ) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
         let mut ctx = HandlerContext::with_graph_store(project_root, store);
@@ -79,7 +81,21 @@ impl CogniCodeHandler {
     fn build_ctx(project_root: PathBuf) -> HandlerContext {
         let canonical_root =
             std::fs::canonicalize(&project_root).unwrap_or_else(|_| project_root.clone());
-        HandlerContext::new(canonical_root)
+
+        // Create validator and FileOperationsService for shared use across handlers
+        let validator = Arc::new(
+            crate::interface::mcp::security::InputValidator::new()
+                .with_workspace(vec![canonical_root.clone()]),
+        );
+        let file_ops_service = Arc::new(FileOperationsService::new(
+            canonical_root.to_string_lossy().as_ref(),
+            validator,
+        ));
+
+        HandlerContext::builder()
+            .with_working_dir(canonical_root)
+            .with_file_ops_service(file_ops_service)
+            .build()
     }
 
     /// Get the current CallGraph from the store
@@ -1038,7 +1054,7 @@ impl ServerHandler for CogniCodeHandler {
 async fn call_tool_handler(
     ctx: &HandlerContext,
     request: CallToolRequestParams,
-) -> anyhow::Result<String> {
+) -> InterfaceResult<String> {
     let tool_name = request.name.as_ref();
     let arguments = request.arguments.unwrap_or_default();
 
@@ -1153,7 +1169,8 @@ async fn call_tool_handler(
             let input: crate::interface::mcp::schemas::BuildIndexInput =
                 serde_json::from_value(arguments.into())?;
             let output =
-                crate::interface::mcp::handlers::handle_build_lightweight_index(ctx, input).await?;
+                crate::interface::mcp::handlers::handle_build_lightweight_index(ctx, input)
+                    .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "query_symbol_index" => {
@@ -1192,23 +1209,35 @@ async fn call_tool_handler(
         "get_symbol_code" => {
             let input: crate::interface::mcp::schemas::SymbolCodeInput =
                 serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_get_symbol_code(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::handle_get_symbol_code(
+                ctx.symbol_code.clone(),
+                ctx.validator.clone(),
+                ctx.working_dir.clone(),
+                input,
+            )
+            .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "semantic_search" => {
             let input: crate::interface::mcp::schemas::SemanticSearchInput =
                 serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_semantic_search(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::handle_semantic_search(
+                ctx.semantic_search.clone(),
+                ctx.working_dir.clone(),
+                input,
+            )
+            .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "find_usages_with_context" => {
             let input: crate::interface::mcp::schemas::FindUsagesWithContextInput =
                 serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_find_usages_with_context(ctx, input)
-                    .await?;
+            let output = crate::interface::mcp::handlers::handle_find_usages_with_context(
+                ctx.validator.clone(),
+                ctx.working_dir.clone(),
+                input,
+            )
+            .await?;
             Ok(serde_json::to_string(&output)?)
         }
         "go_to_definition" => {
@@ -1514,507 +1543,82 @@ async fn call_tool_handler(
                     .await?;
             Ok(serde_json::to_string(&output)?)
         }
-        // Phase 4b: Graph analytics tools
-        //
-        // Each handler:
-        //   1. Pulls the in-memory `CallGraph` from the context's
-        //      `GraphStore`. The store is populated by `build_graph`,
-        //      which is a hard prerequisite of every analytics tool.
-        //   2. Forwards the typed input to
-        //      `application::services::graph_analytics::GraphAnalyticsService`
-        //      and serialises the result as pretty JSON.
-        //
-        // Symbol lookup uses a private substring + case-insensitive
-        // match against the call graph's symbol set (mirroring the
-        // three-tier lookup used in `get_call_hierarchy`).
+        // Phase 4b: Graph analytics tools (extracted to graph_handlers.rs)
         "graph_pagerank" => {
             let input: crate::interface::mcp::schemas::GraphPageRankInput =
                 serde_json::from_value(arguments.into())?;
-            match ctx.get_graph_store().load_graph() {
-                Ok(Some(graph)) => {
-                    let mut scores = crate::application::services::graph_analytics::GraphAnalyticsService::page_rank(
-                        &graph,
-                        input.alpha,
-                        input.max_iterations as usize,
-                    );
-                    // Sort descending by score so the most important
-                    // symbols come first in the agent's view.
-                    let mut sorted: Vec<(String, f64)> = scores
-                        .drain()
-                        .map(|(id, score)| (id.as_str().to_string(), score))
-                        .collect();
-                    sorted.sort_by(|a, b| {
-                        b.1.partial_cmp(&a.1)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    });
-                    // Truncate to a reasonable cap (200) so the JSON
-                    // payload does not blow up for huge graphs.
-                    sorted.truncate(200);
-                    Ok(serde_json::to_string_pretty(&serde_json::json!({
-                        "algorithm": "page_rank",
-                        "alpha": input.alpha,
-                        "max_iterations": input.max_iterations,
-                        "symbol_count": sorted.len(),
-                        "scores": sorted,
-                    }))?)
-                }
-                Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "error": "No call graph available. Run build_graph first."
-                }))?),
-                Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "error": format!("Graph store error: {}", e)
-                }))?),
-            }
+            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_pagerank(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
         }
         "graph_all_paths" => {
             let input: crate::interface::mcp::schemas::GraphAllPathsInput =
                 serde_json::from_value(arguments.into())?;
-            match ctx.get_graph_store().load_graph() {
-                Ok(Some(graph)) => {
-                    // Substring, case-insensitive lookup. We pick the
-                    // first symbol whose name OR FQN contains the
-                    // query; if there are multiple matches we return
-                    // the first non-ambiguous one (Tier-1 exact name
-                    // > Tier-2 exact FQN > Tier-3 substring).
-                    let find_id = |needle: &str| -> Option<crate::domain::aggregates::SymbolId> {
-                        let needle_lower = needle.to_lowercase();
-                        // Tier 1: exact symbol name (case-insensitive).
-                        for (id, sym) in graph.symbol_ids() {
-                            if sym.name().to_lowercase() == needle_lower {
-                                return Some(id.clone());
-                            }
-                        }
-                        // Tier 2: exact FQN match.
-                        for (id, sym) in graph.symbol_ids() {
-                            if sym.fully_qualified_name().to_lowercase() == needle_lower {
-                                return Some(id.clone());
-                            }
-                        }
-                        // Tier 3: substring match against FQN.
-                        for (id, sym) in graph.symbol_ids() {
-                            if sym
-                                .fully_qualified_name()
-                                .to_lowercase()
-                                .contains(&needle_lower)
-                            {
-                                return Some(id.clone());
-                            }
-                        }
-                        None
-                    };
-
-                    match (find_id(&input.from_symbol), find_id(&input.to_symbol)) {
-                        (Some(from), Some(to)) => {
-                            let paths = crate::application::services::graph_analytics::GraphAnalyticsService::all_simple_paths(
-                                &graph,
-                                &from,
-                                &to,
-                                input.max_hops as usize,
-                            );
-                            // Render paths as lists of FQNs (strings) so
-                            // the output is human-readable; keep SymbolId
-                            // -> FQN mapping consistent with the source
-                            // order.
-                            let rendered: Vec<Vec<String>> = paths
-                                .into_iter()
-                                .map(|path| {
-                                    path.into_iter()
-                                        .map(|id| id.as_str().to_string())
-                                        .collect()
-                                })
-                                .collect();
-                            Ok(serde_json::to_string_pretty(&serde_json::json!({
-                                "from": from.as_str(),
-                                "to": to.as_str(),
-                                "max_hops": input.max_hops,
-                                "path_count": rendered.len(),
-                                "paths": rendered,
-                            }))?)
-                        }
-                        (None, _) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                            "error": format!("Source symbol not found: {}", input.from_symbol)
-                        }))?),
-                        (_, None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                            "error": format!("Target symbol not found: {}", input.to_symbol)
-                        }))?),
-                    }
-                }
-                Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "error": "No call graph available. Run build_graph first."
-                }))?),
-                Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "error": format!("Graph store error: {}", e)
-                }))?),
-            }
+            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_all_paths(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
         }
-        "graph_condensed" => match ctx.get_graph_store().load_graph() {
-            Ok(Some(graph)) => {
-                let comps = crate::application::services::graph_analytics::GraphAnalyticsService::condensation(&graph);
-                let rendered: Vec<Vec<String>> = comps
-                    .into_iter()
-                    .map(|c| c.into_iter().map(|id| id.as_str().to_string()).collect())
-                    .collect();
-                let multi: Vec<&Vec<String>> = rendered.iter().filter(|c| c.len() > 1).collect();
-                let singletons = rendered.iter().filter(|c| c.len() == 1).count();
-                Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "algorithm": "condensation",
-                    "component_count": rendered.len(),
-                    "nontrivial_components": multi.len(),
-                    "singleton_components": singletons,
-                    "components": rendered,
-                }))?)
-            }
-            Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                "error": "No call graph available. Run build_graph first."
-            }))?),
-            Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                "error": format!("Graph store error: {}", e)
-            }))?),
-        },
+        "graph_condensed" => {
+            let input: crate::interface::mcp::schemas::GraphCondensedInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_condensed(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
         "graph_god_nodes" => {
             let input: crate::interface::mcp::schemas::GraphGodNodesInput =
                 serde_json::from_value(arguments.into())?;
-            match ctx.get_graph_store().load_graph() {
-                Ok(Some(graph)) => {
-                    let mut god = crate::application::services::graph_analytics::GraphAnalyticsService::god_nodes(
-                        &graph,
-                        input.percentile,
-                    );
-                    let rendered: Vec<(String, f64)> = god
-                        .drain(..)
-                        .map(|(id, score)| (id.as_str().to_string(), score))
-                        .collect();
-                    Ok(serde_json::to_string_pretty(&serde_json::json!({
-                        "algorithm": "god_nodes",
-                        "percentile": input.percentile,
-                        "count": rendered.len(),
-                        "nodes": rendered,
-                    }))?)
-                }
-                Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "error": "No call graph available. Run build_graph first."
-                }))?),
-                Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "error": format!("Graph store error: {}", e)
-                }))?),
-            }
+            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_god_nodes(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
         }
-        "graph_reduced" => match ctx.get_graph_store().load_graph() {
-            Ok(Some(graph)) => {
-                let reduced = crate::application::services::graph_analytics::GraphAnalyticsService::transitive_reduction(&graph);
-                let rendered: Vec<(String, String)> = reduced
-                    .into_iter()
-                    .map(|(s, d)| (s.as_str().to_string(), d.as_str().to_string()))
-                    .collect();
-                let total_edges = graph.edge_count();
-                Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "algorithm": "transitive_reduction",
-                    "original_edge_count": total_edges,
-                    "reduced_edge_count": rendered.len(),
-                    "edges": rendered,
-                }))?)
-            }
-            Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                "error": "No call graph available. Run build_graph first."
-            }))?),
-            Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                "error": format!("Graph store error: {}", e)
-            }))?),
-        },
-        "graph_feedback_arcs" => match ctx.get_graph_store().load_graph() {
-            Ok(Some(graph)) => {
-                let fas = crate::application::services::graph_analytics::GraphAnalyticsService::feedback_arc_set(&graph);
-                let rendered: Vec<(String, String)> = fas
-                    .into_iter()
-                    .map(|(s, d)| (s.as_str().to_string(), d.as_str().to_string()))
-                    .collect();
-                Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "algorithm": "feedback_arc_set",
-                    "count": rendered.len(),
-                    "edges": rendered,
-                }))?)
-            }
-            Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                "error": "No call graph available. Run build_graph first."
-            }))?),
-            Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                "error": format!("Graph store error: {}", e)
-            }))?),
-        },
-        // Phase 5: Community Detection handlers.
-        //
-        // Each handler pulls the in-memory `CallGraph`, runs the
-        // pure `CommunityDetector` over it, and serialises the result
-        // (or a list of cross-community edges) as pretty JSON. The
-        // algorithm is deterministic: sorted node iteration, label
-        // normalisation by first-node index, and sorted output
-        // guarantee that two runs over the same graph produce the
-        // same JSON.
+        "graph_reduced" => {
+            let input: crate::interface::mcp::schemas::GraphReducedInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_reduced(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "graph_feedback_arcs" => {
+            let input: crate::interface::mcp::schemas::GraphFeedbackArcsInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_feedback_arcs(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        // Phase 5: Community Detection handlers (extracted to graph_handlers.rs)
         "graph_communities" => {
             let input: crate::interface::mcp::schemas::GraphCommunitiesInput =
                 serde_json::from_value(arguments.into())?;
-            match ctx.get_graph_store().load_graph() {
-                Ok(Some(graph)) => {
-                    let result = crate::application::services::community_detector::CommunityDetector::detect(
-                        &graph,
-                        input.max_iterations as usize,
-                    );
-                    let payload = serde_json::json!({
-                        "algorithm": "label_propagation",
-                        "max_iterations": input.max_iterations,
-                        "iterations_used": result.iterations,
-                        "converged": result.converged,
-                        "community_count": result.communities.len(),
-                        "communities": result.communities.iter().map(|c| {
-                            serde_json::json!({
-                                "id": c.id,
-                                "label": c.label,
-                                "size": c.nodes.len(),
-                                "internal_edges": c.internal_edges,
-                                "external_edges": c.external_edges,
-                                "cohesion": c.cohesion,
-                            })
-                        }).collect::<Vec<_>>(),
-                    });
-                    Ok(serde_json::to_string_pretty(&payload)?)
-                }
-                Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "error": "No call graph available. Run build_graph first."
-                }))?),
-                Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "error": format!("Graph store error: {}", e)
-                }))?),
-            }
+            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_communities(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
         }
         "graph_community_detail" => {
             let input: crate::interface::mcp::schemas::GraphCommunityDetailInput =
                 serde_json::from_value(arguments.into())?;
-            match ctx.get_graph_store().load_graph() {
-                Ok(Some(graph)) => {
-                    let result = crate::application::services::community_detector::CommunityDetector::detect(
-                        &graph,
-                        input.max_iterations as usize,
-                    );
-                    match result.communities.iter().find(|c| c.id == input.community_id) {
-                        Some(c) => {
-                            // Top god nodes within this community.
-                            let god = crate::application::services::community_detector::CommunityDetector::community_god_nodes(
-                                &graph,
-                                std::slice::from_ref(c),
-                                5,
-                            );
-                            let god_list = god.into_iter().flat_map(|(_id, scored)| scored).collect::<Vec<_>>();
-                            let god_rendered: Vec<(String, f64)> = god_list
-                                .into_iter()
-                                .map(|(id, score)| (id.as_str().to_string(), score))
-                                .collect();
-                            let nodes_rendered: Vec<String> = c
-                                .nodes
-                                .iter()
-                                .map(|n| n.as_str().to_string())
-                                .collect();
-                            let payload = serde_json::json!({
-                                "community_id": c.id,
-                                "label": c.label,
-                                "size": c.nodes.len(),
-                                "internal_edges": c.internal_edges,
-                                "external_edges": c.external_edges,
-                                "cohesion": c.cohesion,
-                                "nodes": nodes_rendered,
-                                "god_nodes": god_rendered,
-                            });
-                            Ok(serde_json::to_string_pretty(&payload)?)
-                        }
-                        None => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                            "error": format!(
-                                "Community {} not found. Available ids: {:?}",
-                                input.community_id,
-                                result.communities.iter().map(|c| c.id).collect::<Vec<_>>()
-                            )
-                        }))?),
-                    }
-                }
-                Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "error": "No call graph available. Run build_graph first."
-                }))?),
-                Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "error": format!("Graph store error: {}", e)
-                }))?),
-            }
+            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_community_detail(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
         }
         "graph_surprising_connections" => {
             let input: crate::interface::mcp::schemas::GraphSurprisingConnectionsInput =
                 serde_json::from_value(arguments.into())?;
-            match ctx.get_graph_store().load_graph() {
-                Ok(Some(graph)) => {
-                    let result = crate::application::services::community_detector::CommunityDetector::detect(
-                        &graph,
-                        input.max_iterations as usize,
-                    );
-                    let top_n = if input.top_n == 0 { 20 } else { input.top_n as usize };
-                    let crosses = crate::application::services::community_detector::CommunityDetector::surprising_connections(
-                        &graph,
-                        &result,
-                        top_n,
-                    );
-                    let rendered: Vec<serde_json::Value> = crosses
-                        .into_iter()
-                        .map(|(s, d, sc, dc)| {
-                            serde_json::json!({
-                                "source": s.as_str(),
-                                "target": d.as_str(),
-                                "source_community": sc,
-                                "target_community": dc,
-                            })
-                        })
-                        .collect();
-                    let payload = serde_json::json!({
-                        "algorithm": "label_propagation_surprising",
-                        "max_iterations": input.max_iterations,
-                        "community_count": result.communities.len(),
-                        "cross_community_edge_count": rendered.len(),
-                        "edges": rendered,
-                    });
-                    Ok(serde_json::to_string_pretty(&payload)?)
-                }
-                Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "error": "No call graph available. Run build_graph first."
-                }))?),
-                Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "error": format!("Graph store error: {}", e)
-                }))?),
-            }
+            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_surprising_connections(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
         }
-        // Phase 6: IDF-weighted search handler.
-        //
-        // Pulls the in-memory `CallGraph`, runs `SearchRanker::search`
-        // (which tokenises names, computes IDF, applies hub bypass, and
-        // sorts by score), and serialises the top-N results. The
-        // payload includes the `idf_score` (raw) so callers can apply
-        // their own thresholds downstream.
+        // Phase 6: IDF-weighted Search & Unified Insights (extracted to graph_handlers.rs)
         "graph_search_idf" => {
             let input: crate::interface::mcp::schemas::GraphSearchIdfInput =
                 serde_json::from_value(arguments.into())?;
-            match ctx.get_graph_store().load_graph() {
-                Ok(Some(graph)) => {
-                    let max_results = if input.max_results == 0 {
-                        20
-                    } else {
-                        input.max_results as usize
-                    };
-                    let results = crate::application::services::search_ranker::SearchRanker::search(
-                        &graph,
-                        &input.query,
-                        max_results,
-                    );
-                    let payload = serde_json::json!({
-                        "algorithm": "idf_search",
-                        "query": input.query,
-                        "max_results": max_results,
-                        "result_count": results.len(),
-                        "results": results.iter().map(|r| {
-                            serde_json::json!({
-                                "symbol_id": r.symbol_id.as_str(),
-                                "name": r.name,
-                                "file": r.file,
-                                "idf_score": r.idf_score,
-                                "degree": r.degree,
-                            })
-                        }).collect::<Vec<_>>(),
-                    });
-                    Ok(serde_json::to_string_pretty(&payload)?)
-                }
-                Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "error": "No call graph available. Run build_graph first."
-                }))?),
-                Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                    "error": format!("Graph store error: {}", e)
-                }))?),
-            }
+            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_search_idf(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
         }
-        // Phase 6: Unified graph insights handler.
-        //
-        // Runs `GraphInsightsService::analyze` and serialises the full
-        // report. The `suggested_questions` list is the most agent-
-        // facing field — it gives the LLM natural-language prompts
-        // that it can use to start a refactoring conversation.
-        "graph_insights" => match ctx.get_graph_store().load_graph() {
-            Ok(Some(graph)) => {
-                let report = crate::application::services::graph_insights::GraphInsightsService::analyze(&graph);
-                let payload = serde_json::json!({
-                    "summary": {
-                        "total_symbols": report.summary.total_symbols,
-                        "total_edges": report.summary.total_edges,
-                        "total_communities": report.summary.total_communities,
-                        "total_cycles": report.summary.total_cycles,
-                        "symbols_in_cycles": report.summary.symbols_in_cycles,
-                    },
-                    "god_nodes": report.god_nodes.iter().map(|(id, s)| {
-                        serde_json::json!({ "symbol_id": id.as_str(), "score": s })
-                    }).collect::<Vec<_>>(),
-                    "cycle_clusters": report.cycle_clusters.iter().map(|cluster| {
-                        cluster.iter().map(|id| id.as_str()).collect::<Vec<_>>()
-                    }).collect::<Vec<_>>(),
-                    "cycle_breakers": report.cycle_breakers.iter().map(|(s, d)| {
-                        serde_json::json!({ "source": s.as_str(), "target": d.as_str() })
-                    }).collect::<Vec<_>>(),
-                    "communities": {
-                        "count": report.communities.count,
-                        "largest_size": report.communities.largest_size,
-                        "smallest_size": report.communities.smallest_size,
-                        "avg_cohesion": report.communities.avg_cohesion,
-                        "top_communities": report.communities.top_communities.iter().map(|c| {
-                            serde_json::json!({
-                                "id": c.id,
-                                "label": c.label,
-                                "size": c.size,
-                                "cohesion": c.cohesion,
-                            })
-                        }).collect::<Vec<_>>(),
-                    },
-                    "surprising_connections": report.surprising_connections.iter().map(|c| {
-                        serde_json::json!({
-                            "source": c.source.as_str(),
-                            "target": c.target.as_str(),
-                            "source_community": c.source_community,
-                            "target_community": c.target_community,
-                        })
-                    }).collect::<Vec<_>>(),
-                    "health_score": report.health_score,
-                    "suggested_questions": report.suggested_questions,
-                });
-                Ok(serde_json::to_string_pretty(&payload)?)
-            }
-            Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                "error": "No call graph available. Run build_graph first."
-            }))?),
-            Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                "error": format!("Graph store error: {}", e)
-            }))?),
-        },
-        // Phase 6: Suggest-questions handler.
-        //
-        // Same engine as `graph_insights`, but only the
-        // `suggested_questions` array is returned. Useful for
-        // narrow-bandwidth callers (token-constrained prompts) that
-        // just want conversation starters.
-        "graph_suggest_questions" => match ctx.get_graph_store().load_graph() {
-            Ok(Some(graph)) => {
-                let report = crate::application::services::graph_insights::GraphInsightsService::analyze(&graph);
-                let payload = serde_json::json!({
-                    "question_count": report.suggested_questions.len(),
-                    "questions": report.suggested_questions,
-                });
-                Ok(serde_json::to_string_pretty(&payload)?)
-            }
-            Ok(None) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                "error": "No call graph available. Run build_graph first."
-            }))?),
-            Err(e) => Ok(serde_json::to_string_pretty(&serde_json::json!({
-                "error": format!("Graph store error: {}", e)
-            }))?),
-        },
-        _ => anyhow::bail!("Unknown tool: {}", tool_name),
+        "graph_insights" => {
+            let input: crate::interface::mcp::schemas::GraphInsightsInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_insights(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "graph_suggest_questions" => {
+            let input: crate::interface::mcp::schemas::GraphSuggestQuestionsInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_suggest_questions(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        _ => return Err(InterfaceError::ToolNotFound(tool_name.to_string())),
     }
 }
 

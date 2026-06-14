@@ -11,6 +11,7 @@ pub mod node_kind;
 pub mod provenance;
 pub mod source_range;
 pub mod symbol_kind;
+pub mod walk_filter;
 
 // Multimodal (brain-federation) — Space domain value objects.
 // Gated behind the `multimodal` Cargo feature so the default build
@@ -32,6 +33,7 @@ pub use node_kind::NodeKind;
 pub use provenance::Provenance;
 pub use source_range::SourceRange;
 pub use symbol_kind::SymbolKind;
+pub use walk_filter::{WalkDecision, WalkFilter};
 
 // Multimodal re-exports — Space + SpaceId live in `value_objects::space`
 // (with `SpaceId` re-exported at the top-level for ergonomic

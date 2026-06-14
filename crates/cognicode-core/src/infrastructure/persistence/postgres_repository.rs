@@ -541,6 +541,167 @@ impl PostgresRepository {
         .map_err(|e| RepositoryError::Store(format!("delete_named_view: {e}")))?;
         Ok(result.rows_affected() > 0)
     }
+
+    // ===========================================================
+    // ViewSpecs CRUD (PostgreSQL `view_specs` table)
+    // ===========================================================
+    //
+    // A `ViewSpec` row stores a declarative view specification
+    // for the Moldable View Runtime (ADR-008). The table schema
+    // is in the migration at `migrations/20260612000001_view_specs.sql`.
+
+    /// Persist a single view spec. The `id` is client-provided;
+    /// `created_at` and `updated_at` are filled by the PG DEFAULT.
+    ///
+    /// # Errors
+    ///
+    /// - `RepositoryError::UniqueViolation` when a row with the
+    ///   same `(workspace_id, owner, title)` already exists.
+    /// - `RepositoryError::Store` for any other DB failure.
+    pub async fn save_view_spec(
+        &self,
+        id: &str,
+        workspace_id: &str,
+        owner: &str,
+        title: &str,
+        applies_to: &str,
+        view_kind: &str,
+        data_source: &str,
+        transform: Option<&str>,
+        renderer_kind: &str,
+        props: &str,
+    ) -> Result<(), RepositoryError> {
+        let result = sqlx::query(
+            "INSERT INTO view_specs \
+                (id, workspace_id, owner, title, applies_to, view_kind, \
+                 data_source, transform, renderer_kind, props) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        )
+        .bind(id)
+        .bind(workspace_id)
+        .bind(owner)
+        .bind(title)
+        .bind(applies_to)
+        .bind(view_kind)
+        .bind(data_source)
+        .bind(transform)
+        .bind(renderer_kind)
+        .bind(props)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                if let Some(db_err) = e.as_database_error() {
+                    if db_err.code().as_deref() == Some("23505") {
+                        return Err(RepositoryError::UniqueViolation(format!(
+                            "view_spec already exists: ({workspace_id}, {owner}, {title})"
+                        )));
+                    }
+                }
+                Err(RepositoryError::Store(format!("save_view_spec: {e}")))
+            }
+        }
+    }
+
+    /// Load a single view spec by id, scoped to `(workspace_id,
+    /// owner)`. Returns `Ok(None)` when the id is missing OR when
+    /// the scope does not match — the two cases are intentionally
+    /// indistinguishable to avoid existence leaks.
+    pub async fn load_view_spec(
+        &self,
+        id: &str,
+        workspace_id: &str,
+        owner: &str,
+    ) -> Result<Option<ViewSpecRow>, RepositoryError> {
+        let row: Option<ViewSpecRow> = sqlx::query_as(
+            "SELECT id, workspace_id, owner, title, applies_to, view_kind, \
+                    data_source, transform, renderer_kind, props, \
+                    created_at::text AS created_at, \
+                    updated_at::text AS updated_at \
+             FROM view_specs \
+             WHERE id = $1 AND workspace_id = $2 AND owner = $3 \
+             LIMIT 1",
+        )
+        .bind(id)
+        .bind(workspace_id)
+        .bind(owner)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("load_view_spec: {e}")))?;
+        Ok(row)
+    }
+
+    /// List every view spec for `(workspace_id, owner)`, newest
+    /// first. Returns `Ok(Vec::new())` on empty scope (NOT an
+    /// error).
+    pub async fn list_view_specs(
+        &self,
+        workspace_id: &str,
+        owner: &str,
+    ) -> Result<Vec<ViewSpecRow>, RepositoryError> {
+        let rows: Vec<ViewSpecRow> = sqlx::query_as(
+            "SELECT id, workspace_id, owner, title, applies_to, view_kind, \
+                    data_source, transform, renderer_kind, props, \
+                    created_at::text AS created_at, \
+                    updated_at::text AS updated_at \
+             FROM view_specs \
+             WHERE workspace_id = $1 AND owner = $2 \
+             ORDER BY created_at DESC, id DESC",
+        )
+        .bind(workspace_id)
+        .bind(owner)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("list_view_specs: {e}")))?;
+        Ok(rows)
+    }
+
+    /// List all view specs for a workspace, across all owners.
+    /// Used by the "all owners visible" Spotter model.
+    pub async fn list_view_specs_for_workspace(
+        &self,
+        workspace_id: &str,
+        applies_to: &str,
+    ) -> Result<Vec<ViewSpecRow>, RepositoryError> {
+        let rows: Vec<ViewSpecRow> = sqlx::query_as(
+            "SELECT id, workspace_id, owner, title, applies_to, view_kind, \
+                    data_source, transform, renderer_kind, props, \
+                    created_at::text AS created_at, \
+                    updated_at::text AS updated_at \
+             FROM view_specs \
+             WHERE workspace_id = $1 AND applies_to = $2 \
+             ORDER BY title ASC, id ASC",
+        )
+        .bind(workspace_id)
+        .bind(applies_to)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("list_view_specs_for_workspace: {e}")))?;
+        Ok(rows)
+    }
+
+    /// Delete a single view spec, scoped to `(workspace_id, owner)`.
+    /// Returns `true` iff a row was actually removed.
+    pub async fn delete_view_spec(
+        &self,
+        id: &str,
+        workspace_id: &str,
+        owner: &str,
+    ) -> Result<bool, RepositoryError> {
+        let result = sqlx::query(
+            "DELETE FROM view_specs \
+             WHERE id = $1 AND workspace_id = $2 AND owner = $3",
+        )
+        .bind(id)
+        .bind(workspace_id)
+        .bind(owner)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("delete_view_spec: {e}")))?;
+        Ok(result.rows_affected() > 0)
+    }
 }
 
 /// Row-mapping struct used by [`PostgresRepository`]'s queries.
@@ -648,6 +809,30 @@ pub struct NamedViewRow {
     pub focus_node: String,
     pub max_depth: i32,
     pub created_at: String,
+}
+
+/// Row-mapping struct used by [`PostgresRepository`]'s
+/// `view_specs` queries. Mirrors the 12 columns of the
+/// `view_specs` table.
+///
+/// `created_at` and `updated_at` are read as RFC 3339 (PG
+/// `TIMESTAMPTZ` → String) so the wire shape matches the
+/// explorer's `dto::ViewSpec` timestamp fields.
+#[cfg(feature = "postgres")]
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ViewSpecRow {
+    pub id: String,
+    pub workspace_id: String,
+    pub owner: String,
+    pub title: String,
+    pub applies_to: String,
+    pub view_kind: String,
+    pub data_source: String,
+    pub transform: Option<String>,
+    pub renderer_kind: String,
+    pub props: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 /// Split a `file:name:line` qualified name into its components.

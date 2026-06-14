@@ -48,7 +48,7 @@ pub struct QualitySnapshot {
 }
 
 /// Diff between a current run and the stored baseline.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BaselineDiff {
     pub baseline_timestamp: String,
     pub issues_delta: i64,
@@ -115,6 +115,11 @@ impl AnalysisState {
         _new: usize,
         _fixed: usize,
     ) {
+    }
+
+    /// Get run history. Always empty after the SQLite removal.
+    pub fn get_run_history(&self, _n: usize) -> Vec<QualitySnapshot> {
+        Vec::new()
     }
 
     /// Diff the supplied metrics against the baseline. Always `None`

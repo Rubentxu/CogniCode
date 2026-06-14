@@ -11,6 +11,11 @@ fn get_provider(ctx: &HandlerContext) -> Arc<dyn CodeIntelligenceProvider> {
     }
 }
 
+#[cognicode_macros::aix_tool(
+    name = "go_to_definition",
+    description = "Navigate to the definition of a symbol using LSP.",
+    input_schema = GoToDefinitionInput
+)]
 pub async fn handle_go_to_definition(
     ctx: &HandlerContext,
     input: GoToDefinitionInput,
@@ -63,6 +68,11 @@ pub async fn handle_go_to_definition(
 }
 
 /// Handler for hover tool
+#[cognicode_macros::aix_tool(
+    name = "hover",
+    description = "Get type information and documentation for a symbol at a position using LSP.",
+    input_schema = HoverInput
+)]
 pub async fn handle_hover(ctx: &HandlerContext, input: HoverInput) -> HandlerResult<HoverOutput> {
     let provider = get_provider(ctx);
     let location = crate::domain::value_objects::Location::new(
@@ -94,6 +104,11 @@ pub async fn handle_hover(ctx: &HandlerContext, input: HoverInput) -> HandlerRes
 }
 
 /// Handler for find_references tool
+#[cognicode_macros::aix_tool(
+    name = "find_references",
+    description = "Find all references to a symbol using LSP.",
+    input_schema = FindReferencesInput
+)]
 pub async fn handle_find_references(
     ctx: &HandlerContext,
     input: FindReferencesInput,

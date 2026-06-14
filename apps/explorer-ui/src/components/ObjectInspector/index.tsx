@@ -28,6 +28,7 @@ import { detectViewport, type ShellViewport } from "../viewport";
 import { ViewTabs } from "./ViewTabs";
 import { SuggestionStrip } from "./SuggestionStrip";
 import { Blocks } from "./ViewBlock";
+import { ViewSpecWizard } from "./ViewSpecWizard";
 import { multimodalLabelForObjectType } from "./multimodal";
 
 // Public surface — `import { ObjectInspector, ViewBlock } from
@@ -52,8 +53,17 @@ export function ObjectInspector() {
     error: objectError,
   } = useObject(activeObjectId);
 
-  // View descriptors for the tab strip.
-  const { data: views } = useAvailableViews(activeObjectId);
+  // Workspace context for the wizard (owner is "default" until auth is implemented).
+  const { data: workspaceList } = useWorkspaceList();
+  const workspaceId = workspaceList?.[0]?.id ?? null;
+  const wizardOwner = "default";
+
+  // View descriptors for the tab strip — merged with runtime ViewSpecs.
+  const { data: views } = useAvailableViews(
+    activeObjectId,
+    workspaceId,
+    wizardOwner,
+  );
 
   // The active contextual view. Falls back to the cached
   // `state.activeView` so the UI stays responsive while SWR
@@ -79,7 +89,6 @@ export function ObjectInspector() {
   // status from the first workspace in the SWR cache (matches the
   // existing pattern for the "no workspace open" empty state — the
   // list is the source of truth).
-  const { data: workspaceList } = useWorkspaceList();
   const graphStatus = workspaceList?.[0]?.graph_status ?? null;
 
   const { dispatch: askDispatch } = useAsk({
@@ -101,6 +110,9 @@ export function ObjectInspector() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  // ViewSpecWizard state — opened via the "Create custom view" overflow menu in ViewTabs.
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   // If the user navigates to a new object and the current
   // `activeViewId` is not in the new object's `available_views`,
@@ -148,115 +160,136 @@ export function ObjectInspector() {
   const error = objectError ?? viewError ?? null;
 
   return (
-    <LoadingTier
-      data={display ?? object}
-      isLoading={showLoadingShell}
-      isValidating={isObjectValidating || isViewValidating}
-      error={error}
-      label="Object inspector"
-    >
-      <div
-        data-testid="object-inspector"
-        className="flex h-full flex-col"
-        style={{ backgroundColor: "var(--color-surface)" }}
+    <>
+      <LoadingTier
+        data={display ?? object}
+        isLoading={showLoadingShell}
+        isValidating={isObjectValidating || isViewValidating}
+        error={error}
+        label="Object inspector"
       >
-        <header
-          className="flex items-center justify-between gap-2 px-4 py-2"
-          style={{ borderBottom: "1px solid var(--color-border)" }}
-        >
-          <div className="flex min-w-0 items-center gap-2">
-            <h2
-              className="truncate text-sm font-semibold"
-              style={{ color: "var(--color-text-primary)" }}
-              title={display?.title ?? object?.label ?? ""}
-            >
-              {display?.title ?? object?.label ?? "(loading)"}
-            </h2>
-            {/*
-              T19 — surface a multimodal kind badge next to the title
-              when the focused object is a Decision / Doc / Issue /
-              Evidence node. The label is derived from the legacy
-              `InspectableObjectType` so the change is additive (no
-              new fields on the wire DTO, no schema change).
-            */}
-            {object && multimodalLabelForObjectType(object.object_type) && (
-              <span
-                data-testid="multimodal-kind-badge"
-                className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase"
-                style={{
-                  backgroundColor: "var(--color-surface-overlay)",
-                  color: "var(--color-text-muted)",
-                }}
-              >
-                {multimodalLabelForObjectType(object.object_type)}
-              </span>
-            )}
-          </div>
-          <span
-            className="rounded-full px-2 py-0.5 text-xs"
-            style={{
-              backgroundColor: "var(--color-surface-overlay)",
-              color: "var(--color-text-muted)",
-            }}
-          >
-            {blockCount} {blockCount === 1 ? "block" : "blocks"}
-          </span>
-        </header>
-        {object && (
-          <SuggestionStrip
-            objectType={object.object_type}
-            objectId={object.id}
-            objectLabel={object.label}
-            graphStatus={graphStatus}
-            viewport={viewport}
-            onDispatch={askDispatch}
-          />
-        )}
-        {views && views.length > 0 && (
-          <ViewTabs
-            views={views}
-            activeViewId={activeViewId}
-            isLoading={isViewLoading}
-            onChange={(viewId) => {
-              if (!activeObjectId) return;
-              dispatch({
-                type: "SELECT_OBJECT",
-                payload: { objectId: activeObjectId, viewId },
-              });
-            }}
-          />
-        )}
         <div
-          role="tabpanel"
-          id={activeViewId ? `view-tab-panel-${activeViewId}` : undefined}
-          aria-labelledby={
-            activeViewId ? `view-tab-${activeViewId}` : undefined
-          }
-          tabIndex={0}
-          data-testid="object-inspector-body"
-          className="flex-1 overflow-y-auto p-4 text-sm"
-          style={{ color: "var(--color-text-secondary)" }}
+          data-testid="object-inspector"
+          className="flex h-full flex-col"
+          style={{ backgroundColor: "var(--color-surface)" }}
         >
-          {display ? (
-            <Blocks
-              view={display}
-              onSelectObject={(objectId) =>
+          <header
+            className="flex items-center justify-between gap-2 px-4 py-2"
+            style={{ borderBottom: "1px solid var(--color-border)" }}
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <h2
+                className="truncate text-sm font-semibold"
+                style={{ color: "var(--color-text-primary)" }}
+                title={display?.title ?? object?.label ?? ""}
+              >
+                {display?.title ?? object?.label ?? "(loading)"}
+              </h2>
+              {/*
+                T19 — surface a multimodal kind badge next to the title
+                when the focused object is a Decision / Doc / Issue /
+                Evidence node. The label is derived from the legacy
+                `InspectableObjectType` so the change is additive (no
+                new fields on the wire DTO, no schema change).
+              */}
+              {object && multimodalLabelForObjectType(object.object_type) && (
+                <span
+                  data-testid="multimodal-kind-badge"
+                  className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase"
+                  style={{
+                    backgroundColor: "var(--color-surface-overlay)",
+                    color: "var(--color-text-muted)",
+                  }}
+                >
+                  {multimodalLabelForObjectType(object.object_type)}
+                </span>
+              )}
+            </div>
+            <span
+              className="rounded-full px-2 py-0.5 text-xs"
+              style={{
+                backgroundColor: "var(--color-surface-overlay)",
+                color: "var(--color-text-muted)",
+              }}
+            >
+              {blockCount} {blockCount === 1 ? "block" : "blocks"}
+            </span>
+          </header>
+          {object && (
+            <SuggestionStrip
+              objectType={object.object_type}
+              objectId={object.id}
+              objectLabel={object.label}
+              graphStatus={graphStatus}
+              viewport={viewport}
+              onDispatch={askDispatch}
+            />
+          )}
+          {views && views.length > 0 && (
+            <ViewTabs
+              views={views}
+              activeViewId={activeViewId}
+              isLoading={isViewLoading}
+              onChange={(viewId) => {
+                if (!activeObjectId) return;
                 dispatch({
                   type: "SELECT_OBJECT",
-                  payload: { objectId, viewId: "overview" },
-                })
-              }
+                  payload: { objectId: activeObjectId, viewId },
+                });
+              }}
+              objectId={object?.id}
+              objectType={object?.object_type}
+              objectLabel={object?.label}
+              onOpenWizard={() => setWizardOpen(true)}
             />
-          ) : (
-            <p
-              className="text-sm"
-              style={{ color: "var(--color-text-muted)" }}
-            >
-              No view loaded.
-            </p>
           )}
+          <div
+            role="tabpanel"
+            id={activeViewId ? `view-tab-panel-${activeViewId}` : undefined}
+            aria-labelledby={
+              activeViewId ? `view-tab-${activeViewId}` : undefined
+            }
+            tabIndex={0}
+            data-testid="object-inspector-body"
+            className="flex-1 overflow-y-auto p-4 text-sm"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            {display ? (
+              <Blocks
+                view={display}
+                onSelectObject={(objectId) =>
+                  dispatch({
+                    type: "SELECT_OBJECT",
+                    payload: { objectId, viewId: "overview" },
+                  })
+                }
+              />
+            ) : (
+              <p
+                className="text-sm"
+                style={{ color: "var(--color-text-muted)" }}
+              >
+                No view loaded.
+              </p>
+            )}
+          </div>
         </div>
-      </div>
-    </LoadingTier>
+      </LoadingTier>
+      {wizardOpen && object && workspaceId && (
+        <ViewSpecWizard
+          isOpen={wizardOpen}
+          onClose={() => setWizardOpen(false)}
+          objectId={object.id}
+          objectType={object.object_type}
+          objectLabel={object.label}
+          workspaceId={workspaceId}
+          owner={wizardOwner}
+          onSaved={() => {
+            // After saving, the new custom view becomes available;
+            // no explicit navigation needed — the user can pick it from ViewTabs.
+          }}
+        />
+      )}
+    </>
   );
 }

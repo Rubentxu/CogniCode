@@ -3,8 +3,21 @@
 //! This module defines all input/output schemas for MCP tools following
 //! the JSON-RPC 2.0 specification.
 
-use crate::application::dto::{OverviewDetail, OverviewMeta};
 use serde::{Deserialize, Serialize};
+
+// Re-export types from dto for MCP protocol use
+// These types are shared between MCP schemas and application DTOs
+// They are defined in dto/common.rs with proper serde for camelCase MCP serialization
+pub use crate::application::dto::AnalysisMetadata;
+pub use crate::application::dto::ContentMatch;
+pub use crate::application::dto::EditValidation;
+pub use crate::application::dto::FileEdit;
+pub use crate::application::dto::FileEntry;
+pub use crate::application::dto::FileMetadata;
+pub use crate::application::dto::ListFilesResult;
+pub use crate::application::dto::RiskLevel;
+pub use crate::application::dto::SourceLocation;
+pub use crate::application::dto::SyntaxIssue;
 
 /// Default depth for call hierarchy traversal
 fn default_depth() -> u8 {
@@ -75,12 +88,6 @@ pub struct CallEntry {
     pub confidence: f32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AnalysisMetadata {
-    pub total_calls: usize,
-    pub analysis_time_ms: u64,
-}
-
 // ============================================================================
 // File Symbols
 // ============================================================================
@@ -125,14 +132,6 @@ pub enum SymbolKind {
     Interface,
     TypeAlias,
     Parameter,
-}
-
-/// Represents a location in source code for MCP protocol (1-indexed for display)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SourceLocation {
-    pub file: String,
-    pub line: u32,
-    pub column: u32,
 }
 
 // ============================================================================
@@ -246,15 +245,6 @@ pub struct AnalyzeImpactOutput {
     pub summary: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RiskLevel {
-    Low,
-    Medium,
-    High,
-    Critical,
-}
-
 // ============================================================================
 // Check Architecture
 // ============================================================================
@@ -344,16 +334,8 @@ pub struct ValidateSyntaxInput {
 pub struct ValidateSyntaxOutput {
     pub file_path: String,
     pub is_valid: bool,
-    pub errors: Vec<SyntaxError>,
+    pub errors: Vec<SyntaxIssue>,
     pub warnings: Vec<SyntaxWarning>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyntaxError {
-    pub line: u32,
-    pub column: u32,
-    pub message: String,
-    pub severity: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1284,22 +1266,6 @@ pub struct ReadFileOutput {
     pub suggested_chunk_size: Option<usize>,
 }
 
-/// File metadata for file operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileMetadata {
-    /// Absolute path to the file
-    pub path: String,
-
-    /// File size in bytes
-    pub size: u64,
-
-    /// Last modified timestamp (Unix epoch seconds)
-    pub modified: u64,
-
-    /// Detected programming language (if applicable)
-    pub language: Option<String>,
-}
-
 /// Input for edit_file tool
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EditFileInput {
@@ -1308,16 +1274,6 @@ pub struct EditFileInput {
 
     /// Edits to apply (required)
     pub edits: Vec<FileEdit>,
-}
-
-/// A single file edit operation
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileEdit {
-    /// The exact text to replace (required)
-    pub old_string: String,
-
-    /// The replacement text (required)
-    pub new_string: String,
 }
 
 /// Output for edit_file tool
@@ -1340,17 +1296,6 @@ pub struct EditFileOutput {
     /// Possible values: "no_match", "syntax_rejected", or None if applied successfully
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
-}
-
-/// Validation result for edit operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EditValidation {
-    /// Whether syntax validation passed
-    pub passed: bool,
-
-    /// List of syntax errors (empty if passed)
-    #[serde(default)]
-    pub syntax_errors: Vec<SyntaxError>,
 }
 
 /// Input for write_file tool
@@ -1434,25 +1379,6 @@ pub struct SearchContentOutput {
     pub files_scanned: usize,
 }
 
-/// A single content match
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContentMatch {
-    /// File path containing the match
-    pub file: String,
-
-    /// Line number (1-indexed)
-    pub line: u32,
-
-    /// Column number (1-indexed)
-    pub col: u32,
-
-    /// The matching text
-    pub text: String,
-
-    /// Surrounding context lines
-    pub context: Vec<String>,
-}
-
 /// Input for list_files tool
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListFilesInput {
@@ -1499,25 +1425,6 @@ pub struct ListFilesOutput {
     pub depth_traversed: Option<usize>,
 }
 
-/// A single file entry
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileEntry {
-    /// File path
-    pub path: String,
-
-    /// File size in bytes
-    pub size: u64,
-
-    /// Last modified timestamp (Unix epoch seconds)
-    pub modified: u64,
-
-    /// Whether this is a directory
-    pub is_dir: bool,
-
-    /// Detected programming language (if applicable)
-    pub language: Option<String>,
-}
-
 // ============================================================================
 // AVC Tool Schemas
 // ============================================================================
@@ -1546,6 +1453,37 @@ pub struct ValidateContractInput {
 // ============================================================================
 // AIX Tool Input Schemas
 // ============================================================================
+
+/// Detail level for smart_overview output
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum OverviewDetail {
+    /// ~100 tokens: project type + basic stats only
+    Quick,
+    /// ~400 tokens: + top entry points + hot paths + architecture score
+    Medium,
+    /// ~800 tokens: + first reads + complexity summary + coverage
+    Detailed,
+}
+
+impl std::fmt::Display for OverviewDetail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OverviewDetail::Quick => write!(f, "quick"),
+            OverviewDetail::Medium => write!(f, "medium"),
+            OverviewDetail::Detailed => write!(f, "detailed"),
+        }
+    }
+}
+
+/// Metadata for AI context budget management (MCP schema type)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OverviewMeta {
+    /// Estimated token count of this response
+    pub estimated_tokens: usize,
+    /// Detail level used
+    pub detail_level: String,
+}
 
 // AIX-1: Smart Overview & Ranked Symbols
 
@@ -2197,6 +2135,21 @@ pub struct GraphGodNodesInput {
     #[serde(default = "default_god_percentile")]
     pub percentile: f64,
 }
+
+/// Input for `graph_condensed` — SCC condensation of the call graph.
+/// Takes no arguments; everything is inferred from the current call graph.
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct GraphCondensedInput {}
+
+/// Input for `graph_reduced` — transitive reduction of the call graph.
+/// Takes no arguments; everything is inferred from the current call graph.
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct GraphReducedInput {}
+
+/// Input for `graph_feedback_arcs` — find edges whose removal makes the graph acyclic.
+/// Takes no arguments; everything is inferred from the current call graph.
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct GraphFeedbackArcsInput {}
 
 /// Default max iterations for Label Propagation community detection.
 fn default_communities_max_iterations() -> u32 {

@@ -22,7 +22,6 @@ describe("useGraphSearch — T22", () => {
           args?: { cursor?: string; limit?: number };
         };
         const cursor = body.args?.cursor;
-        const limit = body.args?.limit ?? 50;
 
         // First page: 2 hits, next_cursor "1".
         if (cursor === undefined) {

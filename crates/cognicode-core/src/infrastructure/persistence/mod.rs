@@ -17,7 +17,7 @@ pub use memory_graph_store::InMemoryGraphStore;
 pub mod postgres_repository;
 
 #[cfg(feature = "postgres")]
-pub use postgres_repository::{NamedViewRow, PostgresRepository};
+pub use postgres_repository::{NamedViewRow, PostgresRepository, ViewSpecRow};
 
 #[cfg(test)]
 mod store_contract_tests;

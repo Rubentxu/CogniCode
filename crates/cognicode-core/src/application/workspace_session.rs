@@ -25,6 +25,7 @@ use crate::domain::traits::graph_store::GraphStore;
 use crate::domain::value_objects::Location;
 use crate::infrastructure::graph::GraphCache;
 use crate::infrastructure::graph::TraversalDirection;
+use crate::interface::mcp::security::InputValidator;
 use crate::infrastructure::lsp::CompositeProvider;
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::semantic::{
@@ -129,7 +130,8 @@ impl WorkspaceSession {
         // Initialize services with shared graph cache
         let analysis = Arc::new(AnalysisService::with_graph_cache(graph_cache.clone()));
         let refactor = Arc::new(RefactorService::new());
-        let file_ops = Arc::new(FileOperationsService::new(root.display().to_string()));
+        let validator = Arc::new(InputValidator::new().with_workspace(vec![root.clone()]));
+        let file_ops = Arc::new(FileOperationsService::new(root.display().to_string(), validator));
         let semantic_search = Arc::new(RwLock::new(None));
         let symbol_code = Arc::new(SymbolCodeService::new());
         let graph = Arc::new(RwLock::new(None));

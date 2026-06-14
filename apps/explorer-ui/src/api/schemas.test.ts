@@ -493,3 +493,201 @@ describe("edgeKindSchema — T17 multimodal edge kinds", () => {
     expect(() => edgeKindSchema.parse("links_to")).toThrow();
   });
 });
+
+// ============================================================================
+// Phase 0: Moldable View Runtime — ViewKind / RendererKind / HierarchyKind
+// ============================================================================
+
+import {
+  viewKindSchema,
+  rendererKindSchema,
+  hierarchyKindSchema,
+  dataSourceSchema,
+  transformSchema,
+  viewSpecSchema,
+} from "./schemas";
+
+describe("viewKindSchema — ADR-008 catalog", () => {
+  it("accepts every known ViewKind string", () => {
+    const known = [
+      "vertical_slice",
+      "call_graph",
+      "seam_map",
+      "dependency_graph",
+      "source_view",
+      "data_flow",
+      "impact_radius",
+      "diff_view",
+      "c4_context",
+      "c4_container",
+      "c4_component",
+      "c4_code",
+      "quality_hotspots",
+      "evidence_view",
+      "decision_graph",
+      "architecture_rationale",
+      "architecture_drift",
+      "boundary_map",
+      "dependency_pressure",
+      "change_impact_story",
+      "ownership_map",
+      "risk_map",
+      "decision_trace",
+      "test_slice",
+      "debug_slice",
+      "refactor_plan",
+      "callers_and_implementors",
+      "usage_examples",
+      "api_surface",
+      "dead_code_candidates",
+      "semantic_search_results",
+      "doc_code_alignment",
+      "example_object",
+      "composed_narrative",
+      "project_diary",
+      "concept_map",
+      "evidence_pack",
+    ] as const;
+    for (const vk of known) {
+      expect(viewKindSchema.parse(vk)).toBe(vk);
+    }
+  });
+
+  it("accepts an unknown ViewKind string (forward compatibility)", () => {
+    // The Rust side maps unknown values to `ViewKind::Custom`.
+    expect(viewKindSchema.parse("future_ai_view")).toBe("future_ai_view");
+  });
+});
+
+describe("rendererKindSchema", () => {
+  it("accepts every known RendererKind string", () => {
+    const known = [
+      "graph",
+      "table",
+      "tree",
+      "code",
+      "markdown",
+      "vega_lite",
+      "json",
+      "composite",
+    ] as const;
+    for (const rk of known) {
+      expect(rendererKindSchema.parse(rk)).toBe(rk);
+    }
+  });
+
+  it("accepts an unknown RendererKind string (forward compatibility)", () => {
+    expect(rendererKindSchema.parse("future_renderer")).toBe("future_renderer");
+  });
+});
+
+describe("hierarchyKindSchema", () => {
+  it("accepts every known HierarchyKind string", () => {
+    const known = [
+      "file_tree",
+      "module_tree",
+      "type_hierarchy",
+      "call_hierarchy",
+      "package_graph",
+      "c4_hierarchy",
+    ] as const;
+    for (const hk of known) {
+      expect(hierarchyKindSchema.parse(hk)).toBe(hk);
+    }
+  });
+
+  it("accepts an unknown HierarchyKind string (forward compatibility)", () => {
+    expect(hierarchyKindSchema.parse("experimental_x")).toBe("experimental_x");
+  });
+});
+
+describe("dataSourceSchema — Moldql + permissive Other", () => {
+  it("accepts a Moldql data source", () => {
+    const ds = { kind: "moldql", query: "symbols where fan_out > 5" };
+    expect(() => dataSourceSchema.parse(ds)).not.toThrow();
+    const parsed = dataSourceSchema.parse(ds) as { kind: "moldql"; query: string };
+    expect(parsed.kind).toBe("moldql");
+    expect(parsed.query).toBe("symbols where fan_out > 5");
+  });
+
+  it("accepts an unknown data source kind (forward compatibility)", () => {
+    // Unknown `kind` falls through to the permissive Other arm.
+    const ds = { kind: "graphql", endpoint: "http://example.com/graphql" };
+    expect(() => dataSourceSchema.parse(ds)).not.toThrow();
+    const parsed = dataSourceSchema.parse(ds) as { kind: string };
+    expect(parsed.kind).toBe("graphql");
+  });
+});
+
+describe("transformSchema — Jsonata + permissive Other", () => {
+  it("accepts a Jsonata transform", () => {
+    const t = { kind: "jsonata", expression: "$.data" };
+    expect(() => transformSchema.parse(t)).not.toThrow();
+    const parsed = transformSchema.parse(t) as { kind: "jsonata"; expression: string };
+    expect(parsed.kind).toBe("jsonata");
+    expect(parsed.expression).toBe("$.data");
+  });
+
+  it("accepts an unknown transform kind (forward compatibility)", () => {
+    const t = { kind: "custom_transform", config: {} };
+    expect(() => transformSchema.parse(t)).not.toThrow();
+  });
+});
+
+describe("viewSpecSchema — full ViewSpec DTO", () => {
+  // Use a valid UUID v4 format (version digit = 4)
+  const minimalViewSpec = {
+    id: "a1b2c3d4-e5f6-4789-a123-456789abcdef",
+    title: "Hot Symbols",
+    applies_to: "symbol",
+    view_kind: "quality_hotspots",
+    data_source: { kind: "moldql", query: "symbols where fan_out > 5" },
+    renderer_kind: "table",
+    props: {},
+    created_at: "2026-06-12T00:00:00Z",
+    updated_at: "2026-06-12T00:00:00Z",
+  };
+
+  it("accepts a valid ViewSpec", () => {
+    expect(() => viewSpecSchema.parse(minimalViewSpec)).not.toThrow();
+  });
+
+  it("accepts a ViewSpec with optional transform", () => {
+    const withTransform = {
+      ...minimalViewSpec,
+      transform: { kind: "jsonata", expression: "$.data" },
+    };
+    expect(() => viewSpecSchema.parse(withTransform)).not.toThrow();
+  });
+
+  it("accepts a ViewSpec with null transform (explicit)", () => {
+    const withNull = { ...minimalViewSpec, transform: null };
+    expect(() => viewSpecSchema.parse(withNull)).not.toThrow();
+  });
+
+  it("accepts a ViewSpec with future view_kind (forward compatibility)", () => {
+    const withFuture = { ...minimalViewSpec, view_kind: "future_ai_view" };
+    expect(() => viewSpecSchema.parse(withFuture)).not.toThrow();
+  });
+
+  it("accepts a ViewSpec with future renderer_kind (forward compatibility)", () => {
+    const withFuture = { ...minimalViewSpec, renderer_kind: "future_renderer" };
+    expect(() => viewSpecSchema.parse(withFuture)).not.toThrow();
+  });
+
+  it("rejects an empty title", () => {
+    const broken = { ...minimalViewSpec, title: "" };
+    expect(() => viewSpecSchema.parse(broken)).toThrow();
+  });
+
+  it("rejects a missing id", () => {
+    const { id: _id, ...rest } = minimalViewSpec;
+    void _id;
+    expect(() => viewSpecSchema.parse(rest)).toThrow();
+  });
+
+  it("rejects an invalid UUID", () => {
+    const broken = { ...minimalViewSpec, id: "not-a-uuid" };
+    expect(() => viewSpecSchema.parse(broken)).toThrow();
+  });
+});
