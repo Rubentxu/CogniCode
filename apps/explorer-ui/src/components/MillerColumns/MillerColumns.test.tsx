@@ -23,6 +23,7 @@ import {
   initialState,
   type AppState,
 } from "../../state/context";
+import { makeInitialNavigationState } from "../../state/navigation";
 import { MillerColumns } from "./MillerColumns";
 import type { ExplorationColumn } from "../../api/types";
 
@@ -30,6 +31,10 @@ import type { ExplorationColumn } from "../../api/types";
  * Test harness — wraps MillerColumns in a fresh AppContext provider
  * with the REAL `appReducer` so dispatch flows through the real
  * state machine. `onState` fires after every reducer update.
+ *
+ * After the NavigationAdapter refactor, the column chain lives in
+ * `state.navigation.chain`, not at the top level. We seed it
+ * through the navigation slice.
  */
 function Harness({
   initialColumns = [],
@@ -40,7 +45,10 @@ function Harness({
 }) {
   const [state, dispatch] = useReducer(appReducer, {
     ...initialState,
-    columns: initialColumns,
+    navigation: {
+      ...makeInitialNavigationState("column"),
+      chain: initialColumns,
+    },
   });
   // Mirror the latest state into the test on every change.
   // Using a microtask-scheduled effect keeps the assertion stable.
@@ -61,7 +69,7 @@ describe("MillerColumns", () => {
     expect(screen.getByText(/Test Workspace/i)).toBeInTheDocument();
   });
 
-  it("renders one column per entry in state.columns", async () => {
+  it("renders one column per entry in the navigation chain", async () => {
     const initial: ExplorationColumn[] = [
       { object_id: "scope:crates/cognicode-explorer/src", active_view: "overview", kind: "scope" },
       { object_id: "file:crates/cognicode-explorer/src/lib.rs", active_view: "overview", kind: "file" },
@@ -108,7 +116,7 @@ describe("MillerColumns", () => {
     await user.keyboard("{ArrowRight}");
     await waitFor(() => {
       expect(captured).not.toBeNull();
-      expect(captured!.columns.length).toBe(2);
+      expect(captured!.navigation.chain.length).toBe(2);
     });
   });
 
@@ -140,7 +148,7 @@ describe("MillerColumns", () => {
     items[0]!.focus();
     await user.keyboard("{ArrowLeft}");
     await waitFor(() => {
-      expect(captured!.columns.length).toBe(1);
+      expect(captured!.navigation.chain.length).toBe(1);
     });
   });
 
@@ -166,15 +174,15 @@ describe("MillerColumns", () => {
     // so Enter pushes a new column. We assert that a new column
     // appears and the new column's object_id is one of the
     // relations (not the original parent).
-    const beforeColumns = captured.current?.columns.length ?? 0;
+    const beforeColumns = captured.current?.navigation.chain.length ?? 0;
     items[0]!.focus();
     await user.keyboard("{ArrowDown}");
     await user.keyboard("{Enter}");
     await waitFor(() => {
       const state = captured.current;
       expect(state).not.toBeNull();
-      expect(state!.columns.length).toBe(beforeColumns + 1);
-      const lastCol = state!.columns[state!.columns.length - 1]!;
+      expect(state!.navigation.chain.length).toBe(beforeColumns + 1);
+      const lastCol = state!.navigation.chain[state!.navigation.chain.length - 1]!;
       expect(lastCol.object_id).not.toBe(
         "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16",
       );

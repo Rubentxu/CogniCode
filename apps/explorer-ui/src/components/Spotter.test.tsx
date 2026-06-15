@@ -256,7 +256,7 @@ describe("Spotter (open)", () => {
       // The active object is set to the picked one and a column
       // is pushed.
       expect(state!.activeObjectId).toBe(inspectableObjectFixture.id);
-      expect(state!.columns.at(-1)?.object_id).toBe(
+      expect(state!.navigation.chain.at(-1)?.object_id).toBe(
         inspectableObjectFixture.id,
       );
       // The first available view id is forwarded.

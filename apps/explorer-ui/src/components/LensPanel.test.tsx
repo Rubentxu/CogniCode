@@ -23,6 +23,7 @@ import {
   AppContext,
   appReducer,
   initialState,
+  initialStateWithFocus,
   type AppState,
 } from "../state/context";
 import { LensPanel } from "./LensPanel";
@@ -42,10 +43,14 @@ function Harness({
   onState?: (s: AppState) => void;
   initial?: Partial<AppState>;
 }) {
-  const [state, dispatch] = useReducer(appReducer, {
-    ...initialState,
-    ...initial,
-  });
+  // Tests that need an active object must use `initialStateWithFocus`
+  // because the reducer now derives `activeObjectId` from the
+  // navigation adapter. Setting `activeObjectId` directly in `initial`
+  // is no longer enough.
+  const seeded = initial?.activeObjectId
+    ? { ...initialStateWithFocus(initial.activeObjectId), ...initial }
+    : { ...initialState, ...initial };
+  const [state, dispatch] = useReducer(appReducer, seeded);
   if (onState) {
     Promise.resolve().then(() => onState(state));
   }

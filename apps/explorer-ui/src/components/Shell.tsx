@@ -26,6 +26,7 @@ import { HealthProbe } from "./HealthProbe";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SkipLink } from "./SkipLink";
 import { Spotter } from "./Spotter";
+import { NavigationModeToggle } from "./Settings/NavigationModeToggle";
 import { detectViewport, type ShellViewport } from "./viewport";
 import { useSubgraph } from "../hooks/useSubgraph";
 import { ContextualPanel } from "./ContextualPanel";
@@ -139,6 +140,7 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
           <HealthProbe showFullScreenOnError={false} />
         </div>
         <div className="flex items-center gap-2">
+          <NavigationModeToggle />
           <button
             type="button"
             onClick={() =>

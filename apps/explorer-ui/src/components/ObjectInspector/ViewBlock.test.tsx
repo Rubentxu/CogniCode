@@ -26,6 +26,7 @@ import {
   AppContext,
   appReducer,
   initialState,
+  initialStateWithFocus,
   type AppState,
 } from "../../state/context";
 import { contextualViewFixture } from "../../mocks/fixtures";
@@ -413,10 +414,13 @@ describe("ObjectInspector — container", () => {
   }: {
     initial?: Partial<AppState>;
   }) {
-    const [state, dispatch] = useReducer(appReducer, {
-      ...initialState,
-      ...initial,
-    });
+    // When the test seeds `activeObjectId`, the reducer needs the
+    // matching navigation state. Use `initialStateWithFocus` so the
+    // adapter's focus() agrees with what the test asserts.
+    const seeded = initial?.activeObjectId
+      ? { ...initialStateWithFocus(initial.activeObjectId, "column", initial.activeViewId ?? null), ...initial }
+      : { ...initialState, ...initial };
+    const [state, dispatch] = useReducer(appReducer, seeded);
     return (
       <AppContext.Provider value={{ state, dispatch }}>
         <ObjectInspectorContainer />

@@ -1,9 +1,10 @@
 /**
  * `MillerColumns` — the leftmost panel of the Explorer.
  *
- * Renders one column per entry in `state.columns` (a path of object
- * ids). Each column fetches its children via the appropriate SWR
- * hook based on the parent object's `kind`.
+ * Renders one column per entry in the navigation chain
+ * (`selectChain(state)`, derived from `state.navigation.chain`).
+ * Each column fetches its children via the appropriate SWR hook
+ * based on the parent object's `kind`.
  *
  * Keyboard wiring (driven by the shared `useRovingFocus` for the
  * ACTIVE column only — inactive columns are inert):
@@ -27,7 +28,7 @@ import {
   useState,
 } from "react";
 
-import { useApp, useAppDispatch } from "../../state/context";
+import { useApp, useAppDispatch, selectChain } from "../../state/context";
 import { useRovingFocus } from "../../hooks/useRovingFocus";
 import { useViews } from "../../hooks/useViews";
 import { Column, type MillerColumnItem } from "./Column";
@@ -216,14 +217,15 @@ export interface MillerColumnsProps {
 }
 
 /**
- * Container. Reads `state.columns` and renders one `ChildColumn`
- * per entry. The active (last) column drives the keyboard contract
- * via a single `useRovingFocus` instance owned here at the top.
+ * Container. Reads the navigation chain (`selectChain(state)`) and
+ * renders one `ChildColumn` per entry. The active (last) column
+ * drives the keyboard contract via a single `useRovingFocus` instance
+ * owned here at the top.
  */
 export function MillerColumns({ workspaceLabel = "Workspace" }: MillerColumnsProps) {
   const { state } = useApp();
   const dispatch = useAppDispatch();
-  const { columns } = state;
+  const columns = selectChain(state);
 
   // ---------------------------------------------------------------------
   // Shared roving state for the ACTIVE column
