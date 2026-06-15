@@ -170,6 +170,18 @@ pub trait PersistenceService: Send + Sync {
         request: crate::dto::SaveExplorationRequest,
     ) -> ExplorerResult<ExplorationPath>;
 
+    /// Save an exploration session (semantic navigation history, ADR-016 Fase 3).
+    async fn save_exploration_session(
+        &self,
+        request: crate::dto::SaveExplorationSessionRequest,
+    ) -> ExplorerResult<crate::dto::ExplorationSession>;
+
+    /// Load an exploration session by id.
+    async fn load_exploration_session(
+        &self,
+        session_id: &str,
+    ) -> ExplorerResult<Option<crate::dto::ExplorationSession>>;
+
     /// Generate a decision artifact from a saved exploration.
     async fn generate_artifact(
         &self,

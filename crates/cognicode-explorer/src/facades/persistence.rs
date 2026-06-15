@@ -13,8 +13,9 @@ use serde_json::json;
 use cognicode_core::infrastructure::persistence::PostgresRepository;
 
 use crate::dto::{
-    DecisionArtifactSummary, ExplorationPath, GenerateArtifactRequest, ObjectIdentityEntry,
-    SaveExplorationRequest, ViewSpec,
+    DecisionArtifactSummary, ExplorationPath, ExplorationSession,
+    GenerateArtifactRequest, ObjectIdentityEntry,
+    SaveExplorationRequest, SaveExplorationSessionRequest, ViewSpec,
 };
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::PersistenceService;
@@ -25,17 +26,22 @@ use crate::registry::ViewSpecStore;
 /// Phase 1C: process-lifetime only — paths do not survive a restart.
 type ExplorationPathStore = Mutex<HashMap<String, ExplorationPath>>;
 
+/// In-memory store for exploration sessions (ADR-016 Fase 3).
+type ExplorationSessionStore = Mutex<HashMap<String, ExplorationSession>>;
+
 /// Concrete implementation of [`PersistenceService`].
 ///
 /// Holds:
 /// - `view_spec_store` — optional ViewSpec persistence backend
 /// - `postgres_repo` — optional PostgreSQL repository for named views
 /// - `paths` — in-memory exploration path store
+/// - `sessions` — in-memory exploration session store (ADR-016 Fase 3)
 pub struct PersistenceServiceImpl {
     view_spec_store: Option<Arc<dyn ViewSpecStore>>,
     #[cfg(feature = "postgres")]
     postgres_repo: Option<Arc<PostgresRepository>>,
     paths: Arc<ExplorationPathStore>,
+    sessions: Arc<ExplorationSessionStore>,
 }
 
 impl PersistenceServiceImpl {
@@ -49,6 +55,7 @@ impl PersistenceServiceImpl {
             #[cfg(feature = "postgres")]
             postgres_repo,
             paths: Arc::new(Mutex::new(HashMap::new())),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -87,6 +94,7 @@ impl PersistenceService for PersistenceServiceImpl {
             objects,
             lens: request.lens,
             created_at,
+            navigation_mode: request.navigation_mode,
         };
 
         self.paths
@@ -194,6 +202,46 @@ impl PersistenceService for PersistenceServiceImpl {
             .delete(id, workspace_id, owner)
             .await
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("delete_view_spec: {e}")))
+    }
+
+    // --- Exploration Session (ADR-016 Fase 3) ---
+
+    async fn save_exploration_session(
+        &self,
+        request: SaveExplorationSessionRequest,
+    ) -> ExplorerResult<ExplorationSession> {
+        if request.events.is_empty() {
+            return Err(ExplorerError::ResolutionFailed(
+                "exploration session requires at least one event".to_string(),
+            ));
+        }
+
+        let created_at = Utc::now().to_rfc3339();
+        let session = ExplorationSession {
+            id: format!("session:{}", Utc::now().timestamp_millis()),
+            workspace_id: request.workspace_id,
+            events: request.events,
+            navigation_mode: request.navigation_mode,
+            created_at,
+        };
+
+        self.sessions
+            .lock()
+            .map_err(|_| ExplorerError::Anyhow(anyhow::anyhow!("session store poisoned")))?
+            .insert(session.id.clone(), session.clone());
+
+        Ok(session)
+    }
+
+    async fn load_exploration_session(
+        &self,
+        session_id: &str,
+    ) -> ExplorerResult<Option<ExplorationSession>> {
+        let guard = self
+            .sessions
+            .lock()
+            .map_err(|_| ExplorerError::Anyhow(anyhow::anyhow!("session store poisoned")))?;
+        Ok(guard.get(session_id).cloned())
     }
 }
 

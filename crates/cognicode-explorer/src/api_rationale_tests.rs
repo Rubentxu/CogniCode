@@ -219,6 +219,20 @@ impl PersistenceService for MockPersistenceService {
     async fn delete_view_spec(&self, _id: &str, _workspace_id: &str, _owner: &str) -> crate::ExplorerResult<bool> {
         Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
     }
+
+    async fn save_exploration_session(
+        &self,
+        _request: crate::dto::SaveExplorationSessionRequest,
+    ) -> crate::ExplorerResult<crate::dto::ExplorationSession> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
+
+    async fn load_exploration_session(
+        &self,
+        _session_id: &str,
+    ) -> crate::ExplorerResult<Option<crate::dto::ExplorationSession>> {
+        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+    }
 }
 
 #[derive(Clone)]

@@ -343,12 +343,63 @@ pub struct ExplorationPath {
     pub objects: Vec<ObjectIdentityEntry>,
     pub lens: Option<String>,
     pub created_at: String,
+    /// Navigation mode for reconstruction (added jun-15, ADR-016).
+    /// `#[serde(default)]` so paths saved before this field existed
+    /// are treated as column mode.
+    #[serde(default = "default_navigation_mode")]
+    pub navigation_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExplorationColumn {
     pub object_id: String,
     pub active_view: Option<String>,
+}
+
+// ============================================================================
+// ExplorationSession — semantic exploration history (ADR-016 Fase 3)
+// ============================================================================
+
+/// A single step in the user's exploration: which object they looked
+/// at, which view they used, and when. `query` stores the user's
+/// natural-language question if this step came from the Ask panel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExplorationEvent {
+    pub object_id: String,
+    pub view_id: Option<String>,
+    pub query: Option<String>,
+    pub ts: String, // ISO-8601
+}
+
+/// Ordered log of exploration events. The `navigation_mode` field
+/// records whether the user was in column or pane-stack mode when
+/// the session was saved.
+///
+/// Unlike `ExplorationPath` (which models a linear drill-down),
+/// `ExplorationSession` models the raw sequence of object
+/// inspections. A pane-stack navigation can be reconstructed from
+/// the session by grouping consecutive events with the same
+/// `object_id` into a pane.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExplorationSession {
+    pub id: String,
+    pub workspace_id: String,
+    pub events: Vec<ExplorationEvent>,
+    /// Mode for reconstruction: "column" or "pane-stack".
+    /// `#[serde(default)]` so v1 sessions without this field are
+    /// treated as column mode.
+    #[serde(default = "default_navigation_mode")]
+    pub navigation_mode: String,
+    pub created_at: String,
+}
+
+fn default_navigation_mode() -> String { "column".to_string() }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaveExplorationSessionRequest {
+    pub workspace_id: String,
+    pub events: Vec<ExplorationEvent>,
+    pub navigation_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -366,6 +417,10 @@ pub struct SaveExplorationRequest {
     pub workspace_id: String,
     pub columns: Vec<ExplorationColumn>,
     pub lens: Option<String>,
+    /// Navigation mode for reconstruction (added jun-15, ADR-016).
+    /// Defaults to "column" when omitted by old clients.
+    #[serde(default = "default_navigation_mode")]
+    pub navigation_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1728,5 +1783,64 @@ mod view_spec_tests {
     fn view_spec_error_converts_to_explorer_error() {
         let err: crate::error::ExplorerError = ViewSpecError::EmptyTitle.into();
         assert!(matches!(err, crate::error::ExplorerError::InvalidInput(_)));
+    }
+}
+
+#[cfg(test)]
+mod exploration_session_tests {
+    use super::*;
+
+    #[test]
+    fn exploration_session_serde_roundtrip() {
+        let session = ExplorationSession {
+            id: "session:1".into(),
+            workspace_id: "ws1".into(),
+            events: vec![ExplorationEvent {
+                object_id: "symbol:a".into(),
+                view_id: Some("overview".into()),
+                query: None,
+                ts: "2026-06-15T00:00:00Z".into(),
+            }],
+            navigation_mode: "pane-stack".into(),
+            created_at: "2026-06-15T00:00:00Z".into(),
+        };
+        let json = serde_json::to_string(&session).unwrap();
+        let deser: ExplorationSession = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.id, session.id);
+        assert_eq!(deser.navigation_mode, "pane-stack");
+        assert_eq!(deser.events.len(), 1);
+        assert_eq!(deser.events[0].object_id, "symbol:a");
+    }
+
+    #[test]
+    fn exploration_path_old_format_no_navigation_mode() {
+        // Old JSON from before ADR-016: no navigation_mode field.
+        let json = r#"{
+            "id": "exploration:1",
+            "workspace_id": "ws1",
+            "columns": [{"object_id": "symbol:a", "active_view": "overview"}],
+            "lens": null,
+            "created_at": "2026-06-15T00:00:00Z"
+        }"#;
+        let path: ExplorationPath = serde_json::from_str(json).unwrap();
+        assert_eq!(path.navigation_mode, "column"); // default
+    }
+
+    #[test]
+    fn exploration_session_requires_at_least_one_event() {
+        let request = SaveExplorationSessionRequest {
+            workspace_id: "ws1".into(),
+            events: vec![],
+            navigation_mode: "column".into(),
+        };
+        assert!(request.events.is_empty());
+    }
+
+    #[test]
+    fn exploration_event_query_is_optional() {
+        let json = r#"{"object_id":"a","view_id":null,"query":null,"ts":"2026-06-15T00:00:00Z"}"#;
+        let ev: ExplorationEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(ev.object_id, "a");
+        assert!(ev.query.is_none());
     }
 }
