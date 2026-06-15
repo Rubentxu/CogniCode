@@ -12,6 +12,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::dto::{
     GenerateArtifactRequest, OpenWorkspaceRequest, SaveExplorationRequest,
+    SaveExplorationSessionRequest,
 };
 use crate::error::ExplorerError;
 use crate::facades::{
@@ -438,6 +439,15 @@ pub fn router_with_state(state: ApiState) -> Router {
             "/api/explorations/:exploration_id/artifacts",
             post(generate_artifact),
         )
+        .route(
+            "/api/explorations/:exploration_id",
+            get(get_exploration),
+        )
+        .route("/api/exploration-sessions", post(save_exploration_session))
+        .route(
+            "/api/exploration-sessions/:session_id",
+            get(get_exploration_session),
+        )
         .route("/api/graph/:id/subgraph", get(subgraph_handler))
         .route("/api/graph/:id/contextual", get(contextual_handler))
         .route("/api/graph/:id/rationale", get(rationale_handler))
@@ -464,6 +474,15 @@ pub fn router(state: ApiState) -> Router {
         .route(
             "/api/explorations/:exploration_id/artifacts",
             post(generate_artifact),
+        )
+        .route(
+            "/api/explorations/:exploration_id",
+            get(get_exploration),
+        )
+        .route("/api/exploration-sessions", post(save_exploration_session))
+        .route(
+            "/api/exploration-sessions/:session_id",
+            get(get_exploration_session),
         )
         .route("/api/graph/:id/subgraph", get(subgraph_handler))
         .route("/api/graph/:id/contextual", get(contextual_handler))
@@ -573,6 +592,42 @@ async fn generate_artifact(
     Json(request): Json<GenerateArtifactRequest>,
 ) -> Result<Response, ApiError> {
     Ok(Json(state.persistence.generate_artifact(&exploration_id, request).await?).into_response())
+}
+
+/// GET /api/explorations/:id — return a previously saved exploration path.
+async fn get_exploration(
+    State(state): State<ApiState>,
+    Path(exploration_id): Path<String>,
+) -> Result<Response, ApiError> {
+    let session = state.persistence.load_exploration_session(&exploration_id).await?;
+    match session {
+        Some(s) => Ok(Json(s).into_response()),
+        None => Err(ApiError(ExplorerError::NotFound(format!(
+            "exploration session {exploration_id} not found"
+        )))),
+    }
+}
+
+/// POST /api/exploration-sessions — save an exploration session.
+async fn save_exploration_session(
+    State(state): State<ApiState>,
+    Json(request): Json<SaveExplorationSessionRequest>,
+) -> Result<Response, ApiError> {
+    Ok(Json(state.persistence.save_exploration_session(request).await?).into_response())
+}
+
+/// GET /api/exploration-sessions/:session_id — load a session by id.
+async fn get_exploration_session(
+    State(state): State<ApiState>,
+    Path(session_id): Path<String>,
+) -> Result<Response, ApiError> {
+    let session = state.persistence.load_exploration_session(&session_id).await?;
+    match session {
+        Some(s) => Ok(Json(s).into_response()),
+        None => Err(ApiError(ExplorerError::NotFound(format!(
+            "exploration session {session_id} not found"
+        )))),
+    }
 }
 
 struct ApiError(ExplorerError);

@@ -27,8 +27,10 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { SkipLink } from "./SkipLink";
 import { Spotter } from "./Spotter";
 import { NavigationModeToggle } from "./Settings/NavigationModeToggle";
+import { ShareExplorationButton } from "./ShareExplorationButton";
 import { PaneStackView } from "./PaneStackView";
 import { detectViewport, type ShellViewport } from "./viewport";
+import { useRestoreExploration } from "../hooks/useRestoreExploration";
 import { useSubgraph } from "../hooks/useSubgraph";
 import { ContextualPanel } from "./ContextualPanel";
 
@@ -95,6 +97,9 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
   const dispatch = useAppDispatch();
   const appState = useAppState();
 
+  // Restore exploration from ?exploration=<id> on mount (ADR-016 Fase 4).
+  useRestoreExploration();
+
   // Sync the viewport state to the actual window size and re-evaluate
   // on resize. SSR-safe — `window` is undefined on the server and we
   // bail out before touching it. When a `viewportOverride` is supplied
@@ -142,6 +147,7 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
         </div>
         <div className="flex items-center gap-2">
           <NavigationModeToggle />
+          <ShareExplorationButton />
           <button
             type="button"
             onClick={() =>
