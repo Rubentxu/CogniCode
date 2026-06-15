@@ -27,6 +27,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { SkipLink } from "./SkipLink";
 import { Spotter } from "./Spotter";
 import { NavigationModeToggle } from "./Settings/NavigationModeToggle";
+import { PaneStackView } from "./PaneStackView";
 import { detectViewport, type ShellViewport } from "./viewport";
 import { useSubgraph } from "../hooks/useSubgraph";
 import { ContextualPanel } from "./ContextualPanel";
@@ -200,6 +201,7 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
           lensOpen,
           () => setLensOpen(false),
           appState.activeObjectId,
+          appState.navigation.mode,
         )}
       </main>
       <Spotter />
@@ -216,13 +218,28 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
  * - Desktop: 3-column CSS grid, no overlay.
  * - Tablet: 2-column grid, lens panel as a positioned overlay.
  * - Small: single column, ObjectInspector takes the full width.
+ *
+ * When navigation mode is `pane-stack` and viewport is NOT small,
+ * the central column renders a `PaneStackView` instead of a single
+ * `ObjectInspector`.
  */
 function renderPanels(
   viewport: ShellViewport,
   lensOpen: boolean,
   onLensClose: () => void,
   activeObjectId: string | null,
+  navigationMode: string,
 ): ReactNode {
+  // Small viewport always uses column mode — pane-stack would overflow.
+  const effectiveMode = viewport === "small" ? "column" : navigationMode;
+  const inspector =
+    effectiveMode === "pane-stack" ? (
+      <ErrorBoundary label="PaneStackView">
+        <PaneStackView />
+      </ErrorBoundary>
+    ) : (
+      <ErrorBoundary label="ObjectInspector">
+
   if (viewport === "small") {
     return (
       <div
@@ -245,9 +262,7 @@ function renderPanels(
         <ErrorBoundary label="MillerColumns">
           <MillerColumns />
         </ErrorBoundary>
-        <ErrorBoundary label="ObjectInspector">
-          <ObjectInspector />
-        </ErrorBoundary>
+        {inspector}
         {lensOpen && (
           <div
             role="dialog"
@@ -298,9 +313,7 @@ function renderPanels(
         <ErrorBoundary label="MillerColumns">
           <MillerColumns />
         </ErrorBoundary>
-        <ErrorBoundary label="ObjectInspector">
-          <ObjectInspector />
-        </ErrorBoundary>
+        {inspector}
         <ErrorBoundary label="LensPanel">
           <LensPanel />
         </ErrorBoundary>
@@ -341,9 +354,7 @@ function renderPanels(
       <ErrorBoundary label="MillerColumns">
         <MillerColumns />
       </ErrorBoundary>
-      <ErrorBoundary label="ObjectInspector">
-        <ObjectInspector />
-      </ErrorBoundary>
+      {inspector}
       <ErrorBoundary label="LensPanel">
         <LensPanel />
       </ErrorBoundary>
