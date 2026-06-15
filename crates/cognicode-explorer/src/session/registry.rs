@@ -16,7 +16,10 @@ use std::sync::{Arc, Mutex};
 use cognicode_core::domain::aggregates::CallGraph;
 
 use crate::facades::{SearchService, ViewService, WorkspaceService};
+use crate::mcp::envelope::err_envelope;
+use crate::mcp::McpContext;
 use crate::session::service::BrainSessionService;
+use rmcp::model::CallToolResult;
 
 /// Errors raised by [`SessionRegistry`] lookups.
 #[derive(Debug, thiserror::Error)]
@@ -112,6 +115,96 @@ impl SessionRegistry {
     pub fn close(&self, session_id: &str) -> bool {
         let mut map = self.sessions.lock().expect("session map poisoned");
         map.remove(session_id).is_some()
+    }
+
+    /// Look up a session via `get` (no TTL refresh) and invoke the closure.
+    /// Maps `SessionError` to `err_envelope` with the prescribed codes and messages.
+    pub fn resolve_session<F>(
+        &self,
+        tool_name: &str,
+        session_id: &str,
+        f: F,
+    ) -> CallToolResult
+    where
+        F: FnOnce(Arc<BrainSessionService>) -> CallToolResult,
+    {
+        match self.get(session_id) {
+            Ok(session) => f(session),
+            Err(SessionError::NotFound) => {
+                err_envelope(tool_name, "session_not_found", &format!("{tool_name}: session not found"))
+            }
+            Err(SessionError::Expired) => {
+                err_envelope(tool_name, "session_expired", &format!("{tool_name}: ttl elapsed and session was lazy-evicted"))
+            }
+        }
+    }
+
+    /// Async version of [`resolve_session`]. The closure returns a future that
+    /// is awaited before this method returns.
+    pub async fn resolve_session_async<F, Fut>(
+        &self,
+        tool_name: &str,
+        session_id: &str,
+        f: F,
+    ) -> CallToolResult
+    where
+        F: FnOnce(Arc<BrainSessionService>) -> Fut,
+        Fut: std::future::Future<Output = CallToolResult>,
+    {
+        match self.get(session_id) {
+            Ok(session) => f(session).await,
+            Err(SessionError::NotFound) => {
+                err_envelope(tool_name, "session_not_found", &format!("{tool_name}: session not found"))
+            }
+            Err(SessionError::Expired) => {
+                err_envelope(tool_name, "session_expired", &format!("{tool_name}: ttl elapsed and session was lazy-evicted"))
+            }
+        }
+    }
+
+    /// Look up a session via `attach` (TTL refresh) and invoke the closure.
+    /// Maps `SessionError` to `err_envelope` with the prescribed codes and messages.
+    pub fn resolve_session_attached<F>(
+        &self,
+        tool_name: &str,
+        session_id: &str,
+        f: F,
+    ) -> CallToolResult
+    where
+        F: FnOnce(Arc<BrainSessionService>) -> CallToolResult,
+    {
+        match self.attach(session_id) {
+            Ok(session) => f(session),
+            Err(SessionError::NotFound) => {
+                err_envelope(tool_name, "session_not_found", &format!("{tool_name}: session not found"))
+            }
+            Err(SessionError::Expired) => {
+                err_envelope(tool_name, "session_expired", &format!("{tool_name}: ttl elapsed and session was lazy-evicted"))
+            }
+        }
+    }
+
+    /// Async version of [`resolve_session_attached`]. The closure returns a future
+    /// that is awaited before this method returns.
+    pub async fn resolve_session_attached_async<F, Fut>(
+        &self,
+        tool_name: &str,
+        session_id: &str,
+        f: F,
+    ) -> CallToolResult
+    where
+        F: FnOnce(Arc<BrainSessionService>) -> Fut,
+        Fut: std::future::Future<Output = CallToolResult>,
+    {
+        match self.attach(session_id) {
+            Ok(session) => f(session).await,
+            Err(SessionError::NotFound) => {
+                err_envelope(tool_name, "session_not_found", &format!("{tool_name}: session not found"))
+            }
+            Err(SessionError::Expired) => {
+                err_envelope(tool_name, "session_expired", &format!("{tool_name}: ttl elapsed and session was lazy-evicted"))
+            }
+        }
     }
 
     /// Drop every session whose `now - last_activity > ttl` AND

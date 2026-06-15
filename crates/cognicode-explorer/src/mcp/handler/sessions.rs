@@ -313,24 +313,16 @@ impl ToolHandler for BrainAttachHandler {
             _ => return self.err("missing_required_arg", "missing required arg `session_id`"),
         };
 
-        match ctx.session_registry.attach(&session_id) {
-            Ok(session) => {
-                let snap = session.snapshot();
-                self.ok(&serde_json::json!({
-                    "session_id": session_id,
-                    "workspace_id": snap.workspace_id,
-                    "last_activity": snap.last_activity,
-                    "ttl_secs": snap.ttl,
-                    "focus_node": snap.focus_node,
-                }))
-            }
-            Err(crate::session::registry::SessionError::NotFound) => {
-                self.err("session_not_found", "session_not_found: no session with the supplied id (closed or never existed)")
-            }
-            Err(crate::session::registry::SessionError::Expired) => {
-                self.err("session_expired", "session_expired: ttl elapsed and the session was lazy-evicted")
-            }
-        }
+        ctx.session_registry.resolve_session_attached(TOOL_BRAIN_ATTACH, &session_id, |session| {
+            let snap = session.snapshot();
+            self.ok(&serde_json::json!({
+                "session_id": session_id,
+                "workspace_id": snap.workspace_id,
+                "last_activity": snap.last_activity,
+                "ttl_secs": snap.ttl,
+                "focus_node": snap.focus_node,
+            }))
+        })
     }
 }
 
@@ -387,30 +379,21 @@ impl ToolHandler for BrainAskHandler {
             _ => return self.err("missing_required_arg", "missing required arg `question`"),
         };
 
-        // Use `get` (NOT `attach`) so ask does NOT refresh last_activity.
-        let session = match ctx.session_registry.get(&session_id) {
-            Ok(s) => s,
-            Err(crate::session::registry::SessionError::NotFound) => {
-                return self.err("session_not_found", "session_not_found");
+        ctx.session_registry.resolve_session_async(TOOL_BRAIN_ASK, &session_id, |session| async move {
+            let mut env = session.ask_with_session(&question).await;
+            // Override provenance source to "brain-session" so consumers
+            // can distinguish brain-mediated answers from raw ask answers.
+            match env.provenance.as_mut() {
+                Some(p) => p.source = Some("brain-session".to_string()),
+                None => {
+                    env.provenance = Some(crate::mcp::ProvenanceMetadata {
+                        confidence: None,
+                        source: Some("brain-session".to_string()),
+                    });
+                }
             }
-            Err(crate::session::registry::SessionError::Expired) => {
-                return self.err("session_expired", "session_expired");
-            }
-        };
-
-        let mut env = session.ask_with_session(&question).await;
-        // Override provenance source to "brain-session" so consumers
-        // can distinguish brain-mediated answers from raw ask answers.
-        match env.provenance.as_mut() {
-            Some(p) => p.source = Some("brain-session".to_string()),
-            None => {
-                env.provenance = Some(crate::mcp::ProvenanceMetadata {
-                    confidence: None,
-                    source: Some("brain-session".to_string()),
-                });
-            }
-        }
-        self.ok_brain_envelope(env)
+            self.ok_brain_envelope(env)
+        }).await
     }
 }
 
@@ -474,21 +457,13 @@ impl ToolHandler for BrainFocusHandler {
             None => None,
         };
 
-        let session = match ctx.session_registry.get(&session_id) {
-            Ok(s) => s,
-            Err(crate::session::registry::SessionError::NotFound) => {
-                return self.err("session_not_found", "session_not_found");
-            }
-            Err(crate::session::registry::SessionError::Expired) => {
-                return self.err("session_expired", "session_expired");
-            }
-        };
-
-        session.set_focus(focus.clone());
-        self.ok(&serde_json::json!({
-            "session_id": session_id,
-            "focus_node": focus,
-        }))
+        ctx.session_registry.resolve_session(TOOL_BRAIN_FOCUS, &session_id, |session| {
+            session.set_focus(focus.clone());
+            self.ok(&serde_json::json!({
+                "session_id": session_id,
+                "focus_node": focus,
+            }))
+        })
     }
 }
 
@@ -536,46 +511,38 @@ impl ToolHandler for BrainStatusHandler {
             _ => return self.err("missing_required_arg", "missing required arg `session_id`"),
         };
 
-        let session = match ctx.session_registry.get(&session_id) {
-            Ok(s) => s,
-            Err(crate::session::registry::SessionError::NotFound) => {
-                return self.err("session_not_found", "session_not_found");
-            }
-            Err(crate::session::registry::SessionError::Expired) => {
-                return self.err("session_expired", "session_expired");
-            }
-        };
+        ctx.session_registry.resolve_session(TOOL_BRAIN_STATUS, &session_id, |session| {
+            let snap = session.snapshot();
 
-        let snap = session.snapshot();
-
-        #[cfg(feature = "multimodal")]
-        {
-            let space_details: Vec<Value> = session
-                .spaces()
-                .into_iter()
-                .map(|s| {
-                    serde_json::json!({
-                        "id": s.id.as_str(),
-                        "name": s.name,
-                        "kind": s.kind.as_str(),
-                        "source_path": s.source_path.map(|p| p.to_string_lossy().into_owned()),
+            #[cfg(feature = "multimodal")]
+            {
+                let space_details: Vec<Value> = session
+                    .spaces()
+                    .into_iter()
+                    .map(|s| {
+                        serde_json::json!({
+                            "id": s.id.as_str(),
+                            "name": s.name,
+                            "kind": s.kind.as_str(),
+                            "source_path": s.source_path.map(|p| p.to_string_lossy().into_owned()),
+                        })
                     })
-                })
-                .collect();
-            let space_count = space_details.len();
-            let mut payload = serde_json::to_value(&snap).unwrap_or(Value::Null);
-            if let Some(ref mut obj) = payload.as_object_mut() {
-                obj.insert("space_count".to_string(), serde_json::json!(space_count));
-                obj.insert("space_details".to_string(), serde_json::json!(space_details));
+                    .collect();
+                let space_count = space_details.len();
+                let mut payload = serde_json::to_value(&snap).unwrap_or(Value::Null);
+                if let Some(ref mut obj) = payload.as_object_mut() {
+                    obj.insert("space_count".to_string(), serde_json::json!(space_count));
+                    obj.insert("space_details".to_string(), serde_json::json!(space_details));
+                }
+                self.ok(&payload)
             }
-            return self.ok(&payload);
-        }
 
-        #[cfg(not(feature = "multimodal"))]
-        {
-            let payload = serde_json::to_value(&snap).unwrap_or(Value::Null);
-            self.ok(&payload)
-        }
+            #[cfg(not(feature = "multimodal"))]
+            {
+                let payload = serde_json::to_value(&snap).unwrap_or(Value::Null);
+                self.ok(&payload)
+            }
+        })
     }
 }
 
@@ -706,25 +673,17 @@ impl ToolHandler for BrainAddSpaceHandler {
             _ => space,
         };
 
-        let session = match ctx.session_registry.get(&session_id) {
-            Ok(s) => s,
-            Err(crate::session::registry::SessionError::NotFound) => {
-                return self.err("session_not_found", "session_not_found");
+        ctx.session_registry.resolve_session(TOOL_BRAIN_ADD_SPACE, &session_id, |session| {
+            if let Err(e) = session.add_space(space) {
+                return self.err("duplicate_space_id", &format!("duplicate space id: {e}"));
             }
-            Err(crate::session::registry::SessionError::Expired) => {
-                return self.err("session_expired", "session_expired");
-            }
-        };
 
-        if let Err(e) = session.add_space(space) {
-            return self.err("duplicate_space_id", &format!("duplicate space id: {e}"));
-        }
-
-        self.ok(&serde_json::json!({
-            "space_id": space_name,
-            "space_name": space_name,
-            "space_kind": space_kind.as_str(),
-        }))
+            self.ok(&serde_json::json!({
+                "space_id": space_name,
+                "space_name": space_name,
+                "space_kind": space_kind.as_str(),
+            }))
+        })
     }
 }
 
@@ -782,18 +741,10 @@ impl ToolHandler for BrainRemoveSpaceHandler {
             Err(_) => return self.err("invalid_space_id", &format!("invalid space_id `{space_id_str}`")),
         };
 
-        let session = match ctx.session_registry.get(&session_id) {
-            Ok(s) => s,
-            Err(crate::session::registry::SessionError::NotFound) => {
-                return self.err("session_not_found", "session_not_found");
-            }
-            Err(crate::session::registry::SessionError::Expired) => {
-                return self.err("session_expired", "session_expired");
-            }
-        };
-
-        let removed = session.remove_space(&space_id);
-        self.ok(&serde_json::json!({ "removed": removed }))
+        ctx.session_registry.resolve_session(TOOL_BRAIN_REMOVE_SPACE, &session_id, |session| {
+            let removed = session.remove_space(&space_id);
+            self.ok(&serde_json::json!({ "removed": removed }))
+        })
     }
 }
 
@@ -840,30 +791,22 @@ impl ToolHandler for BrainSpacesHandler {
             _ => return self.err("missing_required_arg", "missing required arg `session_id`"),
         };
 
-        let session = match ctx.session_registry.get(&session_id) {
-            Ok(s) => s,
-            Err(crate::session::registry::SessionError::NotFound) => {
-                return self.err("session_not_found", "session_not_found");
-            }
-            Err(crate::session::registry::SessionError::Expired) => {
-                return self.err("session_expired", "session_expired");
-            }
-        };
-
-        let spaces: Vec<Value> = session
-            .spaces()
-            .into_iter()
-            .map(|s| {
-                serde_json::json!({
-                    "id": s.id.as_str(),
-                    "name": s.name,
-                    "kind": s.kind.as_str(),
-                    "source_path": s.source_path.map(|p| p.to_string_lossy().into_owned()),
+        ctx.session_registry.resolve_session(TOOL_BRAIN_SPACES, &session_id, |session| {
+            let spaces: Vec<Value> = session
+                .spaces()
+                .into_iter()
+                .map(|s| {
+                    serde_json::json!({
+                        "id": s.id.as_str(),
+                        "name": s.name,
+                        "kind": s.kind.as_str(),
+                        "source_path": s.source_path.map(|p| p.to_string_lossy().into_owned()),
+                    })
                 })
-            })
-            .collect();
+                .collect();
 
-        self.ok(&serde_json::json!({ "spaces": spaces }))
+            self.ok(&serde_json::json!({ "spaces": spaces }))
+        })
     }
 }
 
