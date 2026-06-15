@@ -148,6 +148,28 @@ impl InputValidator {
     /// Note: This performs validation but does NOT hold any locks on the path.
     /// For true TOCTOU protection, the caller must perform the actual file operation
     /// atomically or use advisory locking.
+
+    /// Canonicalize a path that may not exist by walking up to the nearest existing ancestor.
+    /// Returns the canonical path by appending non-existent components to the canonicalized ancestor.
+    fn canonicalize_with_fallback(path: &std::path::Path) -> std::path::PathBuf {
+        let mut current = path.to_path_buf();
+        while let Some(parent) = current.parent() {
+            if parent.as_os_str().is_empty() {
+                break;
+            }
+            if let Ok(canonical_parent) = std::fs::canonicalize(parent) {
+                // Found existing directory - append remaining path components
+                let remaining = path.strip_prefix(parent).map(|p| p.to_path_buf())
+                    .unwrap_or_else(|_| path.to_path_buf());
+                return canonical_parent.join(remaining);
+            }
+            current = parent.to_path_buf();
+        }
+        // No existing ancestor found - fallback to current directory
+        std::path::PathBuf::from(".").canonicalize()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+    }
+
     pub fn validate_file_path(&self, path: &str) -> Result<PathBuf, SecurityError> {
         // Check for path traversal patterns (including bypass attempts)
         if self.contains_path_traversal(path) {
@@ -157,11 +179,14 @@ impl InputValidator {
             });
         }
 
-        // Check for null bytes
-        if path.contains('\0') {
-            return Err(SecurityError::InvalidPathCharacters {
-                path: path.to_string(),
-            });
+        // Check for null bytes and other invalid control characters
+        // Control chars are ASCII 0-31, except tab (9), newline (10), CR (13)
+        for c in path.chars() {
+            if c == '\0' || (c.is_ascii_control() && c != '\t' && c != '\n' && c != '\r') {
+                return Err(SecurityError::InvalidPathCharacters {
+                    path: path.to_string(),
+                });
+            }
         }
 
         // Parse the path and resolve relative paths against workspace.
@@ -235,32 +260,8 @@ impl InputValidator {
             Ok(c) => c,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 // File doesn't exist yet - that's OK for some operations
-                // But we still need to validate the parent directory
-                if let Some(parent) = resolved.parent() {
-                    // Check parent for symlinks too
-                    if parent.exists()
-                        && let Ok(metadata) = std::fs::symlink_metadata(parent)
-                        && metadata.file_type().is_symlink()
-                    {
-                        warn!("Symlink detected in parent path: {}", parent.display());
-                        return Err(SecurityError::SymlinkDetected {
-                            path: parent.display().to_string(),
-                        });
-                    }
-
-                    match std::fs::canonicalize(parent) {
-                        Ok(c) => c,
-                        Err(_) => {
-                            return Err(SecurityError::PathNotAccessible {
-                                path: path.to_string(),
-                            });
-                        }
-                    }
-                } else {
-                    return Err(SecurityError::PathNotAccessible {
-                        path: path.to_string(),
-                    });
-                }
+                // Walk up the directory tree until we find an existing directory
+                Self::canonicalize_with_fallback(&resolved)
             }
             Err(_) => {
                 return Err(SecurityError::PathNotAccessible {
@@ -556,6 +557,44 @@ impl InputValidator {
         Some(client_ip_str.to_string())
     }
 
+    /// Decode URL-encoded characters in a path string, recursively until no more encodings.
+    /// %2e -> . (dot), %2f -> / (slash), %252e -> %2e -> . (double decode)
+    fn decode_url_encoded(s: &str) -> String {
+        // Single decode pass
+        let decoded = Self::decode_url_encoded_once(s);
+        // If unchanged, no more encoding to decode
+        if decoded == s {
+            decoded
+        } else {
+            // Recursively decode until no more changes
+            Self::decode_url_encoded(&decoded)
+        }
+    }
+
+    /// Single-pass URL-decode of a path string.
+    fn decode_url_encoded_once(s: &str) -> String {
+        let mut result = String::with_capacity(s.len());
+        let mut chars = s.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            if c == '%' {
+                let hex = chars.by_ref().take(2).collect::<String>();
+                if hex.len() == 2 {
+                    if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                        result.push(byte as char);
+                        continue;
+                    }
+                }
+                // Not a valid percent-encoded sequence, keep as-is
+                result.push('%');
+                result.push_str(&hex);
+            } else {
+                result.push(c);
+            }
+        }
+        result
+    }
+
     /// Checks for path traversal patterns including bypass attempts
     ///
     /// Detects:
@@ -576,6 +615,14 @@ impl InputValidator {
             return true;
         }
 
+        // Decode URL-encoded dots and check for traversal patterns.
+        // This catches patterns like .%2e/%2e. which decodes to ../..
+        // We decode all %XX sequences to check the actual path.
+        let decoded = Self::decode_url_encoded(path);
+        if decoded.contains("..") {
+            return true;
+        }
+
         // Check for URL-encoded traversal patterns
         // %2e%2e = .. (URL-encoded)
         // %2E%2E = .. (mixed case URL-encoded)
@@ -584,6 +631,19 @@ impl InputValidator {
             || path_lower.contains("%2e%2e%5c")
             || path_lower.contains("%2e%2e/")
             || path_lower.contains("%2e%2e\\")
+        {
+            return true;
+        }
+
+        // Check for mixed literal + URL-encoded dot patterns that form ..
+        // .%2e = literal dot + %2e (encoded dot) = ..
+        // %2e. = %2e (encoded dot) + literal dot = ..
+        if path_lower.contains(".%2e")
+            || path_lower.contains("%2e.")
+            || path_lower.contains(".%2e%2e")
+            || path_lower.contains("%2e%2e.")
+            || path_lower.contains(".%2e%2e%2f")
+            || path_lower.contains("%2e%2e%2f.")
         {
             return true;
         }
