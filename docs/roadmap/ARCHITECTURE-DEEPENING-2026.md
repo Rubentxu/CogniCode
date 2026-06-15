@@ -3,7 +3,7 @@
 > **Proyecto:** CogniCode Core
 > **Iniciado:** 2026-06-11
 > **Última actualización:** 2026-06-15
-> **Estado:** C7-C11 + ADR-010 100%. C1-C6 auditados (jun-15). Brechas gtoolkit documentadas en ADR-016.
+> **Estado:** C7-C11 + ADR-010 100%. C1-C6 auditados (jun-15). ADR-016 completado (jun-15).
 
 ---
 
@@ -101,9 +101,9 @@ Auditoría del estado real contra el modelo de gtoolkit. El vocabulario es compa
 
 | Aspecto | gtoolkit | CogniCode Explorer | Estado |
 |---------|----------|-------------------|--------|
-| Navegación entre objetos | Pane stack (GtPager) | Column-based (Miller) | ⚠️ Brecha — ADR-016 Fase 2 |
-| Historial de exploración | GtPager navigation history | `HistoryEntry` de Ask (no de navegación) | ⚠️ Brecha — ADR-016 Fase 3 |
-| Persistencia semántica | Sí, primera clase | Solo sesiones efímeras con TTL | ⚠️ Brecha — ADR-016 Fases 3-4 |
+| Navegación entre objetos | Pane stack (GtPager) | Column-based (Miller) | ✅ Cerrado — pane-stack opt-in (jun-15) |
+| Historial de exploración | GtPager navigation history | `HistoryEntry` de Ask (no de navegación) | ✅ Cerrado — `ExplorationEvent` (jun-15) |
+| Persistencia semántica | Sí, primera clase | Solo sesiones efímeras con TTL | ✅ Cerrado — `ExplorationSession` + sharing (jun-15) |
 | Moldable views runtime | Sí, maduro | Sí, v1 (sin remote renderers) | ✅ Parcialmente alineado |
 | Mocks | Hand-written | Hand-written | ✅ Alineado |
 | Spotter | Sí | Sí | ✅ Alineado |
@@ -140,7 +140,7 @@ Auditoría del estado real contra el modelo de gtoolkit. El vocabulario es compa
 | ADR-009 | jun-12 | Hybrid Explorer Navigation | ACCEPTED | |
 | ADR-010 | jun-13 | Deepening Roadmap | ACCEPTED | 100% |
 | ADR-015 | jun-15 | C4 Schema/DTO deuda | ACCEPTED (deuda) | Documenta violación aceptada |
-| ADR-016 | jun-15 | Alineación con gtoolkit | PROPOSED | Pane-stack + ExplorationEvent + sharing. 3-4 semanas. Ver §3.1 |
+| ADR-016 | jun-15 | Alineación con gtoolkit | ACCEPTED | Pane-stack + ExplorationEvent + sharing. Implementado jun-15. Ver §3.1 |
 
 **ADR-011 a ADR-014 NO EXISTEN como archivos en `docs/adr/`.** El roadmap anterior los referenciaba como "PROPOSED" pero no fueron creados formalmente. Las decisiones correspondientes (C8 MCP Envelope, C9 SessionHandler, C10 Rust Verifier, C11 dto Serde) viven en sus commits. No se crean retroactivamente — los commits son la documentación.
 
@@ -162,11 +162,11 @@ Auditoría del estado real contra el modelo de gtoolkit. El vocabulario es compa
 - [x] C4 → ADR-015 con deuda documentada
 - [x] ADR-001-006 actualizados a ARCHIVED en tabla
 
-### Alineación con gtoolkit (jun-15) — ADR-016 PROPOSED
-- [ ] Fase 1: `NavigationAdapter` interface + refactor `ColumnNavigation` (3-4 días)
-- [ ] Fase 2: Pane-stack end-to-end con viewport handling (1-2 semanas)
-- [ ] Fase 3: `ExplorationEvent` + persistencia semántica (1 semana)
-- [ ] Fase 4: Sharing por URL + restore (3-5 días)
+### Alineación con gtoolkit (jun-15) — ADR-016 ACCEPTED ✅
+- [x] Fase 1: `NavigationAdapter` interface + refactor `ColumnNavigation` (commit `7e1ac14`)
+- [x] Fase 2: Pane-stack end-to-end con viewport handling (commit `8cc44c8`)
+- [x] Fase 3: `ExplorationEvent` + persistencia semántica (commit `a9d1818`)
+- [x] Fase 4: Sharing por URL + restore (commit `7f91c31`)
 
 ---
 
@@ -179,6 +179,9 @@ Auditoría del estado real contra el modelo de gtoolkit. El vocabulario es compa
 | SKIP_DIRS duplicado en 5 sitios | Cerrado — WalkFilter consolidado |
 | `mockall` dependencia muerta | Cerrado — removido de Cargo.toml |
 | Brechas con gtoolkit no documentadas | Cerrado — ADR-016 + tabla §3.1 |
+| Brecha de navegación con gtoolkit (pane-stack) | Cerrado — pane-stack opt-in implementado (jun-15) |
+| Brecha de persistencia semántica | Cerrado — `ExplorationEvent` + sharing implementado (jun-15) |
+| `CONTEXT.md` describe visión no implementada | Cerrado — ADR-016 implementado alinea vision con realidad |
 
 ---
 
@@ -188,9 +191,6 @@ Auditoría del estado real contra el modelo de gtoolkit. El vocabulario es compa
 |--------|-----------|------------|
 | Schema/DTO violación (10 re-exports) | Baja | ADR-015, tests de round-trip |
 | 22 tests `#[ignore]` (flaky verification + CI pre-existing) | Baja | Sin acción inmediata — son ruidosos pero no bloquean |
-| Brecha de navegación con gtoolkit | Media | ADR-016, pane-stack opt-in |
-| Brecha de persistencia semántica | Media | ADR-016, `ExplorationEvent` + sharing |
-| `CONTEXT.md` describe visión no implementada | Media | ADR-016 documenta el gap explícitamente |
 
 ---
 
@@ -206,4 +206,4 @@ Auditoría del estado real contra el modelo de gtoolkit. El vocabulario es compa
 
 ---
 
-*Documento actualizado el 2026-06-15: C1-C6 auditados y decididos. C3 consolidado. ADR-015 creado para la única deuda restante.*
+*Documento actualizado el 2026-06-15: C1-C6 auditados. C3 consolidado. ADR-015 creado. ADR-016 implementado (4 fases completadas).*
