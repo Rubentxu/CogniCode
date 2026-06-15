@@ -150,12 +150,12 @@
 
 | ADR | Fuente | Candidato | Implementado | Estado ADR |
 |-----|--------|-----------|-------------|-----------|
-| ADR-001 | jun-11 | C1 Tool Registry | ❌ Nunca | PROPOSED |
-| ADR-002 | jun-11 | C2 HandlerContext | ❌ Nunca | PROPOSED |
-| ADR-003 | jun-11 | C3 WalkFilter | ❌ Nunca | PROPOSED |
-| ADR-004 | jun-11 | C4 Schema/DTO | ❌ Nunca | PROPOSED |
-| ADR-005 | jun-11 | C5 ReadMode | ❌ Nunca | PROPOSED |
-| ADR-006 | jun-11 | C6 Mock Crate | ❌ Nunca | PROPOSED |
+| ADR-001 | jun-11 | C1 Tool Registry | ❌ Nunca | DEFERRED |
+| ADR-002 | jun-11 | C2 HandlerContext | ❌ Nunca | DEFERRED |
+| ADR-003 | jun-11 | C3 WalkFilter | ❌ Nunca | DEFERRED |
+| ADR-004 | jun-11 | C4 Schema/DTO | ❌ Nunca | DEFERRED |
+| ADR-005 | jun-11 | C5 ReadMode | ❌ Nunca | DEFERRED |
+| ADR-006 | jun-11 | C6 Mock Crate | ❌ Nunca | DEFERRED |
 | ADR-007 | jun-12 | No-WASM browser | 🟢 | ACCEPTED |
 | ADR-008 | jun-12 | Moldable View Runtime | 🟢 | ACCEPTED |
 | ADR-009 | jun-12 | Hybrid Explorer Navigation | 🟢 | ACCEPTED |
