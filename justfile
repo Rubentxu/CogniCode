@@ -127,10 +127,26 @@ fmt:
 # Run all tests (unit + e2e)
 test: test-unit test-e2e
 
-# Run unit tests
+# Run all unit tests
 test-unit:
-    @echo "🧪 Running unit tests..."
-    cd {{DASHBOARD_DIR}} && cargo test --lib
+	@echo "🧪 Running unit tests..."
+	cargo test --workspace --no-fail-fast
+
+# Run unit tests with PostgreSQL backend
+test-pg:
+	@echo "🧪 Running unit tests (with PG)..."
+	TEST_DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode_TEST \
+		cargo test --workspace --no-fail-fast --features postgres
+
+# Run ignored tests (flaky, slow, requires external tools)
+test-ignored:
+	@echo "🧪 Running ignored tests (single-threaded)..."
+	cargo test --workspace -- --include-ignored --test-threads=1 || \
+	cargo test --workspace -- --ignored --test-threads=1
+
+# Run unit tests for a specific crate
+test-crate crate:
+	cargo test -p {{crate}} --no-fail-fast
 
 # Run end-to-end tests with Playwright
 test-e2e: start-server

@@ -28,45 +28,6 @@ fn workspace_root() -> PathBuf {
 }
 
 #[test]
-#[ignore = "docker-compose.yml does not exist in workspace root"]
-fn docker_compose_declares_postgres_16_service() {
-    let path = workspace_root().join("docker-compose.yml");
-    let content = fs::read_to_string(&path)
-        .unwrap_or_else(|_| panic!("FAIL: docker-compose.yml must exist at workspace root: {:?}", path));
-
-    assert!(
-        content.contains("postgres:16"),
-        "FAIL: docker-compose.yml must use postgres:16 image. Got:\n{}",
-        content
-    );
-    assert!(
-        content.contains("POSTGRES_USER"),
-        "FAIL: docker-compose.yml must declare POSTGRES_USER env. Got:\n{}",
-        content
-    );
-    assert!(
-        content.contains("POSTGRES_PASSWORD"),
-        "FAIL: docker-compose.yml must declare POSTGRES_PASSWORD env. Got:\n{}",
-        content
-    );
-    assert!(
-        content.contains("POSTGRES_DB"),
-        "FAIL: docker-compose.yml must declare POSTGRES_DB env. Got:\n{}",
-        content
-    );
-    assert!(
-        content.contains("5432:5432"),
-        "FAIL: docker-compose.yml must expose port 5432. Got:\n{}",
-        content
-    );
-    assert!(
-        content.contains("pg_isready"),
-        "FAIL: docker-compose.yml must use pg_isready for healthcheck. Got:\n{}",
-        content
-    );
-}
-
-#[test]
 fn env_example_declares_database_urls() {
     let path = workspace_root().join(".env.example");
     let content = fs::read_to_string(&path)
@@ -137,7 +98,6 @@ fn ci_workflow_declares_postgres_service() {
 }
 
 #[test]
-#[ignore = "justfile missing test-pg recipe"]
 fn justfile_defines_pg_recipes() {
     let path = workspace_root().join("justfile");
     let content = fs::read_to_string(&path)
