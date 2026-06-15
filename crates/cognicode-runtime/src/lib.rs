@@ -77,11 +77,12 @@ impl Runtime {
 
         // Search facade.
         let view_registry = Arc::new(cognicode_explorer::registry::ViewRegistry::new(None));
+        let view_registry_for_search = view_registry.clone();
         let search: Arc<dyn cognicode_explorer::facades::SearchService> = Arc::new(
             cognicode_explorer::facades::search::SearchServiceImpl::new(
                 self.symbol_repo.clone(),
                 None, // search_repo
-                view_registry,
+                view_registry_for_search,
                 None, // view_spec_store
                 None, // quality_repo
             ),

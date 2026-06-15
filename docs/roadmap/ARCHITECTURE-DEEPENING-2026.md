@@ -41,11 +41,11 @@
 | 1 | View seam (ViewDescriptor + ViewExecutor ISP) | 🟢 **Hecho** | C7 completado (commit `19c7700`); `contextual_view()` ahora delega a ejecutores |
 | 2 | PostgreSQL-only + composition root | 🟢 **Hecho** | `5694c2e`; `cognicode-runtime/` existe |
 | 3 | ExplorerService → 6 ISP facades | 🟢 **Hecho** | `37a42e9` + `7323bb3`; 6 facades en `facades/` |
-| 4 | GraphQueryPort (separar navegación de SymbolRepository) | 🟡 **Parcial** | `trait GraphQueryPort` existe (`domain/traits/graph_query_port.rs`); separación no auditada completamente |
+| 4 | GraphQueryPort (separar navegación de SymbolRepository) | 🟢 **Hecho** | Separación completa: `SymbolRepository` (identidad) + `GraphQueryPort` (navegación); `MetadataAwareRepository` eliminado |
 | 5 | Bootstrap absorbido por composition root | 🟢 **Hecho** | `cognicode-runtime/` como root |
 
 **Problemas abiertos de ADR-010:**
-- **Phase 4:** `SymbolRepository` en `ports/symbol_repository.rs` aún no tiene los métodos de navegación completamente separados de `GraphQueryPort`.
+- **Phase 4:** ✅ Completada. Separación auditada: `SymbolRepository` (identidad, 6 métodos) / `GraphQueryPort` (navegación, 9 métodos). `MetadataAwareRepository` eliminado del código activo.
 
 ### 1.3 C7–C11 (junio 2026) — Ejecutados
 
@@ -73,11 +73,11 @@
 │ +9Δ LOC     │  │ -270Δ LOC   │  │ +45Δ LOC    │
 └──────────────┘  └──────────────┘  └──────────────┘
 
-  C10 ✅           C11 ✅           ADR-010 Ph.4
+  C10 ✅           C11 ✅           ADR-010 Ph.4 ✅
 ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
 │ CodeVerifier │  │ dto.rs serde │  │ GraphQuery   │
 │ trait       │  │ impls correct│  │ Port audit   │
-│ +300Δ LOC  │  │ 0Δ (sin cam)│  │ ⏳ Pendiente │
+│ +300Δ LOC  │  │ 0Δ (sin cam)│  │ ✅ Completo  │
 └──────────────┘  └──────────────┘  └──────────────┘
 ```
 
@@ -142,7 +142,7 @@
 - `trait SymbolRepository` en `ports/symbol_repository.rs:72-102` (sólo métodos de identidad)
 - `MetadataAwareRepository` eliminado (confirmado en `graph_query_port.rs:103`)
 
-**Lo que falta:** verificar que `SymbolRepository` no tiene métodos de navegación mezclados.
+**Lo que falta:** ✅ Ninguno. Phase 4 auditada — separación completa.
 
 ---
 
@@ -159,7 +159,7 @@
 | ADR-007 | jun-12 | No-WASM browser | 🟢 | ACCEPTED |
 | ADR-008 | jun-12 | Moldable View Runtime | 🟢 | ACCEPTED |
 | ADR-009 | jun-12 | Hybrid Explorer Navigation | 🟢 | ACCEPTED |
-| ADR-010 | jun-13 | Deepening Roadmap | 🟢 ~90% | PROPOSED |
+| ADR-010 | jun-13 | Deepening Roadmap | 🟢 100% | ACCEPTED |
 | ADR-011 | jun-14 | C8 MCP Envelope | ✅ Implementado | PROPOSED |
 | ADR-012 | jun-14 | C9 SessionHandler | ✅ Implementado | PROPOSED |
 | ADR-013 | jun-14 | C10 Rust Verifier | ✅ Implementado | PROPOSED |

@@ -1,7 +1,7 @@
 # ADR-010: Architecture Deepening Roadmap
 
 **Fecha:** 2026-06-13  
-**Estado:** PROPOSED  
+**Estado:** ACCEPTED  
 **Decisión:** Five-phase deepening roadmap to eliminate shallow modules, consolidate seams, and align the codebase with SOLID + DDD  
 **Fuente:** improve-codebase-architecture grilling session  
 **Confianza:** alta  

@@ -124,7 +124,7 @@ pub struct TypedRelation {
     /// read the field keep working. Populated by the call-graph view
     /// builder when the underlying repository is metadata-aware;
     /// `None` for mocks and other adapters that don't implement
-    /// [`crate::ports::MetadataAwareRepository`].
+    /// [`cognicode_core::domain::traits::GraphQueryPort`].
     #[serde(default)]
     pub provenance: Option<String>,
     /// Edge trust score in `[0.0, 1.0]`, sourced from the per-edge

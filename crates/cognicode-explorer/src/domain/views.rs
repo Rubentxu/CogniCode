@@ -133,7 +133,7 @@ pub fn build_callgraph<'a>(
     let mut relations: Vec<TypedRelation> = Vec::new();
 
     // For incoming (callers) we don't have direct edge metadata in the
-    // current `MetadataAwareRepository` shape (it exposes outgoing
+    // current `GraphQueryPort` shape (it exposes outgoing
     // `callees_with_metadata` / `dependencies_with_metadata`). Incoming
     // edges fall back to `None` — same contract as the mock path.
     for c in &callers {
@@ -2284,7 +2284,7 @@ mod tests {
     // * REQ1: TypedRelation carries provenance + confidence.
     // * REQ2: EvidenceBlock carries provenance; confidence is the per-edge
     //         value (not a hardcoded 1.0).
-    // * REQ3: View builders downcast to MetadataAwareRepository; on failure
+    // * REQ3: View builders use GraphQueryPort; on failure
     //         they leave fields as None and SHOULD log a warning.
     // * REQ4: Serde backward compatibility for both pre-change and
     //         post-change payloads.
