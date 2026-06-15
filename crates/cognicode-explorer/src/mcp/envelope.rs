@@ -19,7 +19,7 @@
 //! | `payload` | any | Tool-specific result or `EnvelopeError` on failure |
 //! | `suggested_follow_ups` | array | Always `[]` in v1 |
 
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, Content, RawContent};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -117,13 +117,13 @@ mod tests {
         let payload = json!({"nodes": [], "edges": []});
         let result = ok_envelope("graph_subgraph", &payload);
 
-        let CallToolResult::success(items) = result else {
-            panic!("expected CallToolResult::Success");
-        };
-        let Content::text(text) = &items[0] else {
+        assert!(result.is_error == Some(false));
+        let items = &result.content;
+        assert!(!items.is_empty());
+        let Content { raw: RawContent::Text(text), annotations: _ } = &items[0] else {
             panic!("expected Content::Text");
         };
-        let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
 
         assert_eq!(parsed["tool_name"], "graph_subgraph");
         assert!(parsed["provenance"].is_null());
@@ -136,21 +136,21 @@ mod tests {
     #[test]
     fn ok_envelope_is_success_variant() {
         let result = ok_envelope("test_tool", &json!({}));
-        assert!(matches!(result, CallToolResult::success(_)));
+        assert!(result.is_error == Some(false));
     }
 
     #[test]
     fn ok_envelope_accepts_borrowed_value() {
         let data = serde_json::json!({"key": "value"});
         let result = ok_envelope("test_tool", &data);
-        assert!(matches!(result, CallToolResult::success(_)));
+        assert!(result.is_error == Some(false));
     }
 
     #[test]
     fn ok_envelope_accepts_vec_string() {
         let data: Vec<String> = vec!["a".to_string(), "b".to_string()];
         let result = ok_envelope("impact_radius", &data);
-        assert!(matches!(result, CallToolResult::success(_)));
+        assert!(result.is_error == Some(false));
     }
 
     // ------------------------------------------------------------------------
@@ -162,13 +162,13 @@ mod tests {
         let msg = "no session with the supplied id";
         let result = err_envelope("brain_open", "session_not_found", msg);
 
-        let CallToolResult::error(items) = result else {
-            panic!("expected CallToolResult::Error");
-        };
-        let Content::text(text) = &items[0] else {
+        assert!(result.is_error == Some(true));
+        let items = &result.content;
+        assert!(!items.is_empty());
+        let Content { raw: RawContent::Text(text), annotations: _ } = &items[0] else {
             panic!("expected Content::Text");
         };
-        let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
 
         assert_eq!(parsed["tool_name"], "brain_open");
         assert!(parsed["provenance"].is_null());
@@ -181,25 +181,25 @@ mod tests {
     #[test]
     fn err_envelope_is_error_variant() {
         let result = err_envelope("test_tool", "err_code", "error message");
-        assert!(matches!(result, CallToolResult::error(_)));
+        assert!(result.is_error == Some(true));
     }
 
     #[test]
     fn err_envelope_top_level_keys() {
         let result = err_envelope("tool_x", "code_y", "msg_z");
-        let CallToolResult::error(items) = result else {
-            panic!()
-        };
-        let Content::text(text) = &items[0] else { panic!() };
-        let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert!(result.is_error == Some(true));
+        let items = &result.content;
+        assert!(!items.is_empty());
+        let Content { raw: RawContent::Text(text), annotations: _ } = &items[0] else { panic!() };
+        let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
 
         let keys: Vec<_> = parsed.as_object().unwrap().keys().collect();
-        assert!(keys.contains(&"tool_name"));
-        assert!(keys.contains(&"version"));
-        assert!(keys.contains(&"timestamp"));
-        assert!(keys.contains(&"provenance"));
-        assert!(keys.contains(&"payload"));
-        assert!(keys.contains(&"suggested_follow_ups"));
+        assert!(keys.contains(&&"tool_name".to_string()));
+        assert!(keys.contains(&&"version".to_string()));
+        assert!(keys.contains(&&"timestamp".to_string()));
+        assert!(keys.contains(&&"provenance".to_string()));
+        assert!(keys.contains(&&"payload".to_string()));
+        assert!(keys.contains(&&"suggested_follow_ups".to_string()));
     }
 
     // ------------------------------------------------------------------------
@@ -215,13 +215,13 @@ mod tests {
         };
         let result = ok_envelope_with_provenance("brain_ask", &payload, prov);
 
-        let CallToolResult::success(items) = result else {
-            panic!("expected CallToolResult::Success");
-        };
-        let Content::text(text) = &items[0] else {
+        assert!(result.is_error == Some(false));
+        let items = &result.content;
+        assert!(!items.is_empty());
+        let Content { raw: RawContent::Text(text), annotations: _ } = &items[0] else {
             panic!("expected Content::Text");
         };
-        let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
 
         assert_eq!(parsed["tool_name"], "brain_ask");
         assert_eq!(parsed["provenance"]["source"], "brain-session");
@@ -238,13 +238,13 @@ mod tests {
         };
         let result = ok_envelope_with_provenance("cognicode_ask", &payload, prov);
 
-        let CallToolResult::success(items) = result else {
-            panic!("expected CallToolResult::Success");
-        };
-        let Content::text(text) = &items[0] else {
+        assert!(result.is_error == Some(false));
+        let items = &result.content;
+        assert!(!items.is_empty());
+        let Content { raw: RawContent::Text(text), annotations: _ } = &items[0] else {
             panic!("expected Content::Text");
         };
-        let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
 
         assert_eq!(parsed["provenance"]["source"], "ask-router");
         assert_eq!(parsed["provenance"]["confidence"], 0.0);
@@ -257,7 +257,7 @@ mod tests {
             &json!({}),
             ProvenanceMetadata::default(),
         );
-        assert!(matches!(result, CallToolResult::success(_)));
+        assert!(result.is_error == Some(false));
     }
 
     #[test]
@@ -265,6 +265,6 @@ mod tests {
         let data = serde_json::json!({"key": "val"});
         let prov = ProvenanceMetadata::default();
         let result = ok_envelope_with_provenance("tool", &data, prov);
-        assert!(matches!(result, CallToolResult::success(_)));
+        assert!(result.is_error == Some(false));
     }
 }

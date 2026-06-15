@@ -949,7 +949,7 @@ pub fn register_session_handlers(registry: &mut crate::mcp::handler::ToolHandler
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, Content, RawContent};
     use serde_json::json;
 
     // ------------------------------------------------------------------------
@@ -962,7 +962,7 @@ mod tests {
     fn err_envelope_returns_error_variant() {
         let result = err_envelope("brain_open", "session_not_found", "no session");
         assert!(
-            matches!(result, CallToolResult::Error(_)),
+            result.is_error == Some(true),
             "err_envelope must return CallToolResult::error, not success"
         );
     }
@@ -970,13 +970,13 @@ mod tests {
     #[test]
     fn err_envelope_json_payload_has_error_code() {
         let result = err_envelope("brain_attach", "session_not_found", "not found");
-        let CallToolResult::Error(items) = result else {
-            panic!("expected CallToolResult::Error");
-        };
-        let Content::Text(text) = &items[0] else {
+        assert!(result.is_error == Some(true));
+        let items = &result.content;
+        assert!(!items.is_empty());
+        let Content { raw: RawContent::Text(text), annotations: _ } = &items[0] else {
             panic!("expected Content::Text");
         };
-        let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
         assert_eq!(parsed["payload"]["error_code"], "session_not_found");
         assert_eq!(parsed["payload"]["error"], "not found");
         assert_eq!(parsed["tool_name"], "brain_attach");
@@ -997,7 +997,7 @@ mod tests {
         for (tool, code) in codes {
             let result = err_envelope(tool, code, "test message");
             assert!(
-                matches!(result, CallToolResult::Error(_)),
+                result.is_error == Some(true),
                 "err_envelope({tool}, {code}, ...) must return Error variant"
             );
         }
@@ -1015,7 +1015,7 @@ mod tests {
             brain_provenance(),
         );
         assert!(
-            matches!(result, CallToolResult::Success(_)),
+            result.is_error == Some(false),
             "ok_envelope_with_provenance must return CallToolResult::success"
         );
     }
@@ -1027,13 +1027,13 @@ mod tests {
             &serde_json::json!({"answer": "42"}),
             brain_provenance(),
         );
-        let CallToolResult::Success(items) = result else {
-            panic!("expected CallToolResult::Success");
-        };
-        let Content::Text(text) = &items[0] else {
+        assert!(result.is_error == Some(false));
+        let items = &result.content;
+        assert!(!items.is_empty());
+        let Content { raw: RawContent::Text(text), annotations: _ } = &items[0] else {
             panic!("expected Content::Text");
         };
-        let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
         assert_eq!(parsed["provenance"]["source"], "brain-session");
     }
 
