@@ -2176,7 +2176,7 @@ mod tests {
         assert!(!score.is_nan(), "Score should not be NaN");
         assert!(gt.symbols.is_some(), "gt.symbols should be Some");
 
-        let (score2, symbol_match2, _, _, _) = compute_correctness_score(&response, &gt, &None);
+        let (score2, _symbol_match2, _, _, _) = compute_correctness_score(&response, &gt, &None);
         assert!(
             !score2.is_nan(),
             "Second call score should not be NaN, got {}",
@@ -2815,7 +2815,7 @@ mod tests {
 
     #[test]
     fn test_percentile_p95_p99() {
-        let mut data: Vec<u64> = (1..=100).collect();
+        let data: Vec<u64> = (1..=100).collect();
         // p95 should be around 95th element (nearest-rank method)
         assert_eq!(percentile(&data, 95.0), 95);
         // p99 with 100 elements: floor(99/100 * 99) = floor(98.01) = 98

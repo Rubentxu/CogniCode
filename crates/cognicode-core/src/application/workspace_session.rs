@@ -2943,8 +2943,8 @@ pub struct PublicStruct {}
     #[cfg(feature = "persistence")]
     #[tokio::test(flavor = "current_thread")]
     async fn test_load_from_store_with_valid_data_returns_true() {
-        use crate::domain::aggregates::symbol::Symbol;
-        use crate::domain::value_objects::{Location, SymbolKind};
+        
+        
         use crate::infrastructure::persistence::InMemoryGraphStore;
         use std::sync::Arc;
 
@@ -3070,7 +3070,7 @@ pub struct PublicStruct {}
 
     #[tokio::test(flavor = "current_thread")]
     async fn test_subscribe_graph_events_returns_receiver_that_receives_events() {
-        use tokio::sync::broadcast;
+        
 
         let temp_dir = tempfile::TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -3423,7 +3423,7 @@ pub struct PublicStruct {}
     /// because AnalysisService and WorkspaceSession share the same GraphCache.
     #[tokio::test(flavor = "current_thread")]
     async fn test_shared_cache_prevents_double_build() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
+        
 
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -3619,7 +3619,7 @@ pub const MY_CONST: i32 = 42;
         // First incremental reindex - should not trigger graph update (no changes yet)
         let result = session.incremental_reindex().await.unwrap();
         // First call may or may not rebuild depending on whether manifest exists
-        let first_files_parsed = result.files_parsed;
+        let _first_files_parsed = result.files_parsed;
         let first_graph_updated = result.graph_updated;
 
         // Modify the file to add a new function
@@ -4232,7 +4232,7 @@ pub const MY_CONST: i32 = 42;
             .unwrap();
         let initial_stats = session.get_graph_stats().await.unwrap().unwrap();
 
-        let session_clone = std::sync::Arc::clone(&session);
+        let _session_clone = std::sync::Arc::clone(&session);
 
         // Concurrent rebuild and queries
         let rebuild_handle = tokio::spawn({

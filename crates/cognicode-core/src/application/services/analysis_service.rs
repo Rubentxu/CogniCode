@@ -2061,7 +2061,7 @@ def d():
 
     #[tokio::test]
     async fn test_build_project_graph_async_completes_without_blocking() {
-        use std::io::Write;
+        
         use tempfile::TempDir;
         use tokio::time::{Duration, timeout};
 

@@ -541,7 +541,7 @@ mod tests {
 
     #[test]
     fn test_lightweight_strategy() {
-        let mut strategy = LightweightStrategy::new();
+        let strategy = LightweightStrategy::new();
         assert_eq!(strategy.name(), "LightweightStrategy");
     }
 

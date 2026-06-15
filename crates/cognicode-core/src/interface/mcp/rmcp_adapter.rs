@@ -1627,10 +1627,10 @@ async fn call_tool_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::model::PaginatedRequestParams;
+    
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use tokio::sync::RwLock;
+    
+    
 
     // ============================================================================
     // Concurrent Request Tests

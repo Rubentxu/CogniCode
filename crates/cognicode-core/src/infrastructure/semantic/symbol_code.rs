@@ -558,7 +558,7 @@ def foo():
     pass
 "#;
 
-        let docstring = extract_docstring(source, 2);
+        let _docstring = extract_docstring(source, 2);
         // May or may not have docstring depending on blank lines
     }
 

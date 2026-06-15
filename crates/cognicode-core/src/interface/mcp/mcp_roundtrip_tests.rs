@@ -770,7 +770,7 @@ fn simple_function() {
         #[tokio::test]
         async fn test_special_chars_in_path_roundtrip() {
             let temp_dir = tempfile::tempdir().unwrap();
-            let ctx = create_test_context(&temp_dir);
+            let _ctx = create_test_context(&temp_dir);
 
             // Create a file with spaces and special chars
             let file_path = temp_dir.path().join("file with spaces & special.txt");

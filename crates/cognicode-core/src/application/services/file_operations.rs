@@ -2628,7 +2628,7 @@ mod tests {
         // Content should not be truncated mid-line - should end at newline
         if !result.has_more || result.next_token.is_some() {
             // If it's a partial chunk, it should end at a newline
-            if let Some(last_line) = result.content.lines().last() {
+            if let Some(_last_line) = result.content.lines().last() {
                 // The last line might be incomplete only if it's the very last line
                 // But since we have 3 full lines, it should be complete
                 assert!(
@@ -3084,7 +3084,7 @@ mod tests {
 
         let service = test_service_in_temp_dir(&temp_dir);
 
-        let count_rustc = || -> usize {
+        let _count_rustc = || -> usize {
             Command::new("pgrep")
                 .args(["rustc"])
                 .output()

@@ -336,7 +336,7 @@ fn process_data(data: &[u8]) -> Vec<u8> {
 }
 "#;
 
-        let mut contract_copy = contract.clone();
+        let contract_copy = contract.clone();
         let result = AvcValidator::validate(&contract_copy, generated);
 
         // Should detect drift because "encrypt/cipher/key" domain terms
