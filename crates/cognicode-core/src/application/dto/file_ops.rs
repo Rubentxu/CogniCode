@@ -7,7 +7,7 @@ use std::str::FromStr;
 
 // Import shared types from common.rs
 use super::common::{
-    ContentMatch, EditValidation, FileEdit, FileEntry, FileMetadata, ListFilesResult, SyntaxIssue,
+    ContentMatch, EditValidation, FileEdit, FileMetadata,
 };
 
 // ============================================================================

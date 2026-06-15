@@ -7,11 +7,11 @@
 //!
 //! ```
 //! use std::path::Path;
-//! use cognicode_core::domain::value_objects::WalkFilter;
+//! use cognicode_core::domain::value_objects::{WalkFilter, WalkDecision};
 //!
 //! let filter = WalkFilter::default();
 //! let path = Path::new("node_modules");
-//! assert!(matches!(filter.should_walk(path), WalkDecision::Skip));
+//! assert!(matches!(filter.should_walk(path), WalkDecision::Prune));
 //! ```
 
 use std::path::Path;

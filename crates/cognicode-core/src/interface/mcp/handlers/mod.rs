@@ -180,7 +180,7 @@ use crate::interface::mcp::schemas::{
     GraphInsightsInput,
     GraphSuggestQuestionsInput,
 };
-use crate::interface::mcp::security::{InputValidator, SecurityError};
+use crate::interface::mcp::security::InputValidator;
 // Re-export file operations handlers
 pub use crate::interface::mcp::file_ops_handlers::*;
 
@@ -4089,6 +4089,7 @@ mod tests {
 
     #[test]
     fn test_handler_error_to_mcp_error_conversion() {
+        use crate::interface::mcp::security::SecurityError;
         // Test error code propagation for each HandlerError variant
         let mcp_err: crate::interface::mcp::schemas::McpError =
             HandlerError::Security(SecurityError::PathOutsideWorkspace).into();
@@ -4117,6 +4118,7 @@ mod tests {
 
     #[test]
     fn test_handler_error_code_values_are_unique() {
+        use crate::interface::mcp::security::SecurityError;
         use std::collections::HashSet;
         let codes = vec![
             Into::<crate::interface::mcp::schemas::McpError>::into(HandlerError::Security(

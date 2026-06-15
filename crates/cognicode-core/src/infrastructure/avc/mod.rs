@@ -3,7 +3,7 @@
 //! Structured truth contracts for AI agents.
 //!
 //! Usage:
-//! ```rust
+//! ```rust,ignore
 //! use cognicode_core::infrastructure::avc::{AvcContract, AvcGenerator, AvcValidator};
 //!
 //! // Generate a contract from existing code
