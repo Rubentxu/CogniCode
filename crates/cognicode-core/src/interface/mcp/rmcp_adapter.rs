@@ -3,9 +3,10 @@
 //! This module provides the CogniCodeHandler which implements the rmcp ServerHandler trait,
 //! allowing the CogniCode MCP server to use the official rmcp SDK for transport.
 
+use crate::application::services::file_operations::FileOperationsService;
+use crate::infrastructure::verification::RustVerifier;
 use crate::interface::mcp::error::{InterfaceError, InterfaceResult};
 use crate::interface::mcp::handlers::HandlerContext;
-use crate::application::services::file_operations::FileOperationsService;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, Content, ListToolsResult, ServerCapabilities,
@@ -90,6 +91,7 @@ impl CogniCodeHandler {
         let file_ops_service = Arc::new(FileOperationsService::new(
             canonical_root.to_string_lossy().as_ref(),
             validator,
+            Arc::new(RustVerifier::new()),
         ));
 
         HandlerContext::builder()

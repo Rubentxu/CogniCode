@@ -8,6 +8,8 @@
 //! - list_files: Directory listing with .gitignore filtering
 //!
 //! Security: Path validation is delegated to InputValidator (single authority).
+//!
+//! Verification: Code verification is delegated to CodeVerifier trait.
 
 use crate::application::dto::{
     ContentMatch, EditFileRequest, EditFileResult, EditValidation, FileEntry, FileMetadata,
@@ -16,11 +18,12 @@ use crate::application::dto::{
     VerificationStatus, VerifiedMatchDto, WriteFileRequest, WriteFileResult,
 };
 use crate::application::error::{AppError, AppResult};
-use crate::interface::mcp::security::{InputValidator, SecurityError};
+use crate::domain::traits::code_verifier::{CodeVerifier, CompilationResult};
 use crate::domain::traits::Parser;
 use crate::domain::value_objects::SymbolKind;
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use crate::infrastructure::vfs::VirtualFileSystem;
+use crate::interface::mcp::security::{InputValidator, SecurityError};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ignore::WalkBuilder;
 use regex::Regex;
@@ -62,6 +65,7 @@ fn decode_token(token: &str) -> Option<ContinuationToken> {
 /// - .gitignore-aware search and listing
 /// - Tree-sitter syntax validation for edits
 /// - Support for multiple read modes (raw, outline, symbols, compressed)
+/// - Code verification delegated to CodeVerifier trait
 pub struct FileOperationsService {
     /// Workspace root for fallback path resolution
     workspace_root: String,
@@ -72,18 +76,39 @@ pub struct FileOperationsService {
 
     /// Input validator for path security checks (single authority)
     validator: Arc<InputValidator>,
+
+    /// Code verifier for retrieve_and_verify operations (ISP-segregated)
+    code_verifier: Arc<dyn CodeVerifier>,
 }
 
 impl FileOperationsService {
-    /// Creates a new FileOperationsService with the given InputValidator.
+    /// Creates a new FileOperationsService with the given InputValidator and CodeVerifier.
     ///
     /// The validator is the single authority for path security validation.
-    pub fn new(workspace_root: impl Into<String>, validator: Arc<InputValidator>) -> Self {
+    /// The code_verifier handles compilation-based code verification.
+    pub fn new(
+        workspace_root: impl Into<String>,
+        validator: Arc<InputValidator>,
+        code_verifier: Arc<dyn CodeVerifier>,
+    ) -> Self {
         Self {
             workspace_root: workspace_root.into(),
             vfs: VirtualFileSystem::new(),
             validator,
+            code_verifier,
         }
+    }
+
+    /// Returns a default FileOperationsService with a default RustVerifier.
+    ///
+    /// This is useful for testing and simple cases where dependency injection is not needed.
+    pub fn with_defaults(workspace_root: impl Into<String>) -> Self {
+        use crate::infrastructure::verification::RustVerifier;
+        Self::new(
+            workspace_root,
+            Arc::new(InputValidator::new()),
+            Arc::new(RustVerifier::new()),
+        )
     }
 
     /// Validates that a path is within the workspace and safe.
@@ -1453,50 +1478,11 @@ impl FileOperationsService {
     /// Sets up a temporary file for rustc verification.
     /// Creates a TempDir with prefix `cognicode_rust_verify_`, writes content to a temp file,
     /// and returns both the TempDir (for lifetime management) and the temp file path.
-    fn setup_temp_file(
-        content: &str,
-        file_name: &str,
-    ) -> AppResult<(tempfile::TempDir, std::path::PathBuf)> {
-        use std::io::Write;
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::with_prefix("cognicode_rust_verify_")
-            .map_err(|e| AppError::InternalError(format!("Failed to create temp dir: {}", e)))?;
-
-        let temp_file_path = temp_dir.path().join(file_name);
-
-        {
-            let mut file = std::fs::File::create(&temp_file_path).map_err(|e| {
-                AppError::InvalidParameter(format!("Failed to create temp file: {}", e))
-            })?;
-            file.write_all(content.as_bytes()).map_err(|e| {
-                AppError::InvalidParameter(format!("Failed to write to temp file: {}", e))
-            })?;
-        }
-
-        Ok((temp_dir, temp_file_path))
-    }
-
-    /// Runs rustc asynchronously with kill_on_drop(true).
-    /// When the returned future is dropped (e.g., on timeout), the child process is killed.
-    async fn run_rustc_async(temp_file: std::path::PathBuf) -> AppResult<std::process::Output> {
-        let mut cmd = tokio::process::Command::new("rustc");
-        cmd.args(["--edition", "2021", "--crate-type", "lib"])
-            .arg(&temp_file)
-            .kill_on_drop(true);
-
-        cmd.output().await.map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                AppError::InvalidParameter("rustc not found".to_string())
-            } else {
-                AppError::InternalError(format!("rustc execution failed: {}", e))
-            }
-        })
-    }
-
     /// Verifies a Rust file by compiling it with rustc in a sandboxed temp directory.
     ///
     /// Returns the verification status, stdout (if verified), and error snippet (if rejected).
+    ///
+    /// NOTE: This method delegates to `code_verifier` for the actual verification.
     fn verify_rust_file(
         &self,
         file_path: &str,
@@ -1509,65 +1495,20 @@ impl FileOperationsService {
     )> {
         use crate::application::dto::VerificationStatus as Vs;
 
-        // Check if file extension is .rs
-        let path = std::path::Path::new(file_path);
-        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-            return Ok((Vs::Skipped, None, None, Some("not-rust".to_string())));
-        }
-
-        // Read the file content
-        let content = fs::read_to_string(file_path).map_err(|e| {
-            AppError::InvalidParameter(format!("Failed to read file for verification: {}", e))
-        })?;
-
-        // Get the file name for temp file
-        let file_name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("lib.rs");
-
-        // Set up temp file (file I/O)
-        let (_temp_dir, temp_file_path) = Self::setup_temp_file(&content, file_name)?;
-
-        // Run rustc --edition 2021 --crate-type lib
-        let output = std::process::Command::new("rustc")
-            .args(["--edition", "2021", "--crate-type", "lib"])
-            .arg(&temp_file_path)
-            .output();
-
-        match output {
-            Ok(output) if output.status.success() => {
-                // Compilation succeeded
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                Ok((Vs::Verified, Some(stdout), None, None))
-            }
-            Ok(output) => {
-                // Compilation failed - truncate stderr to 200 chars
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                let error_snippet = if stderr.len() > 200 {
-                    stderr[..200].to_string()
-                } else {
-                    stderr
-                };
-                Ok((Vs::Rejected, None, Some(error_snippet), None))
-            }
-            Err(e) => {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    Err(AppError::InvalidParameter("rustc not found".to_string()))
-                } else {
-                    Err(AppError::InternalError(format!(
-                        "rustc execution failed: {}",
-                        e
-                    )))
-                }
-            }
-        }
+        let result = self.code_verifier.verify(file_path)?;
+        Ok(match result {
+            CompilationResult::Verified { stdout } => (Vs::Verified, Some(stdout), None, None),
+            CompilationResult::Rejected { error } => (Vs::Rejected, None, Some(error), None),
+            CompilationResult::Skipped { reason } => (Vs::Skipped, None, None, Some(reason)),
+        })
     }
 
     /// Verifies a Rust file with a timeout (async wrapper).
     ///
     /// Uses tokio::process::Command with kill_on_drop(true) so that when the
     /// timeout fires and the future is dropped, the rustc subprocess is killed.
+    ///
+    /// NOTE: This method delegates to `code_verifier` for the actual verification.
     async fn verify_rust_file_with_timeout(
         &self,
         file_path: &str,
@@ -1580,61 +1521,12 @@ impl FileOperationsService {
     )> {
         use crate::application::dto::VerificationStatus as Vs;
 
-        let path = std::path::Path::new(file_path);
-        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-            return Ok((Vs::Skipped, None, None, Some("not-rust".to_string())));
-        }
-
-        // Read file content and set up temp file in spawn_blocking (file I/O only)
-        let file_path_owned = file_path.to_string();
-        let file_name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("lib.rs")
-            .to_string();
-
-        let content = tokio::task::spawn_blocking(move || fs::read_to_string(&file_path_owned))
-            .await
-            .map_err(|e| AppError::InternalError(format!("spawn_blocking failed: {}", e)))?
-            .map_err(|e| {
-                AppError::InvalidParameter(format!("Failed to read file for verification: {}", e))
-            })?;
-
-        // Set up temp file (file I/O)
-        let (_temp_dir, temp_file_path) =
-            tokio::task::spawn_blocking(move || Self::setup_temp_file(&content, &file_name))
-                .await
-                .map_err(|e| AppError::InternalError(format!("spawn_blocking failed: {}", e)))?
-                .map_err(|e| {
-                    AppError::InvalidParameter(format!("Failed to set up temp file: {}", e))
-                })?;
-
-        let timeout = std::time::Duration::from_secs(timeout_secs);
-
-        // Run rustc with timeout — kill_on_drop ensures process dies on timeout
-        let output_result =
-            tokio::time::timeout(timeout, Self::run_rustc_async(temp_file_path)).await;
-
-        // Map output to verification status
-        match output_result {
-            Ok(Ok(output)) if output.status.success() => {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                Ok((Vs::Verified, Some(stdout), None, None))
-            }
-            Ok(Ok(output)) => {
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                let error_snippet = if stderr.len() > 200 {
-                    stderr[..200].to_string()
-                } else {
-                    stderr
-                };
-                Ok((Vs::Rejected, None, Some(error_snippet), None))
-            }
-            Ok(Err(e)) => Err(e),
-            Err(_) => Err(AppError::InvalidParameter(
-                "Verification timed out".to_string(),
-            )),
-        }
+        let result = self.code_verifier.verify_with_timeout(file_path, timeout_secs).await?;
+        Ok(match result {
+            CompilationResult::Verified { stdout } => (Vs::Verified, Some(stdout), None, None),
+            CompilationResult::Rejected { error } => (Vs::Rejected, None, Some(error), None),
+            CompilationResult::Skipped { reason } => (Vs::Skipped, None, None, Some(reason)),
+        })
     }
 
     /// Performs retrieve and verify operation: searches for content and optionally verifies Rust files.
@@ -1824,7 +1716,7 @@ impl FileOperationsService {
 
 impl Default for FileOperationsService {
     fn default() -> Self {
-        Self::new(".", Arc::new(InputValidator::new()))
+        Self::with_defaults(".")
     }
 }
 
@@ -1832,8 +1724,26 @@ impl Default for FileOperationsService {
 mod tests {
     use super::*;
     use crate::application::dto::{FileEdit, ReadMode};
+    use crate::infrastructure::verification::RustVerifier;
     use std::io::Write;
     use tempfile::{NamedTempFile, TempDir};
+
+    fn test_service_with_workspace(path: std::path::PathBuf) -> FileOperationsService {
+        FileOperationsService::new(
+            path.to_string_lossy().to_string(),
+            Arc::new(InputValidator::new().with_workspace(vec![path])),
+            Arc::new(RustVerifier::new()),
+        )
+    }
+
+    fn test_service_in_temp_dir(temp_dir: &TempDir) -> FileOperationsService {
+        test_service_with_workspace(temp_dir.path().to_path_buf())
+    }
+
+    fn test_service_with_temp_file(file: &NamedTempFile) -> FileOperationsService {
+        let parent = file.path().parent().unwrap();
+        test_service_with_workspace(parent.to_path_buf())
+    }
 
     #[test]
     fn test_read_file_raw_mode() {
@@ -1842,8 +1752,7 @@ mod tests {
         writeln!(file, "    println!(\"hello\");").unwrap();
         writeln!(file, "}}").unwrap();
 
-        let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
+        let service = test_service_with_workspace(file.path().parent().unwrap().to_path_buf());
         let input = ReadFileRequest {
             path: file.path().to_str().unwrap().to_string(),
             start_line: None,
@@ -1872,7 +1781,7 @@ mod tests {
         writeln!(file, "line 3").unwrap();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
+            test_service_with_temp_file(&file);
         let input = ReadFileRequest {
             path: file.path().to_str().unwrap().to_string(),
             start_line: Some(2),
@@ -1897,7 +1806,7 @@ mod tests {
         writeln!(file, "struct MyStruct {{}}").unwrap();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
+            test_service_with_temp_file(&file);
         let input = ReadFileRequest {
             path: file.path().to_str().unwrap().to_string(),
             start_line: None,
@@ -1922,7 +1831,7 @@ mod tests {
         let binary_path = temp_dir.path().join("test.png");
         std::fs::write(&binary_path, &[0x89, 0x50, 0x4E, 0x47]).unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
         let input = ReadFileRequest {
             path: binary_path.to_string_lossy().to_string(),
             start_line: None,
@@ -1941,7 +1850,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
         let input = WriteFileRequest {
             path: file_path.to_str().unwrap().to_string(),
             content: "Hello, atomic world!".to_string(),
@@ -1969,7 +1878,7 @@ mod tests {
             .join("c")
             .join("test.txt");
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
         let input = WriteFileRequest {
             path: nested_path.to_str().unwrap().to_string(),
             content: "nested content".to_string(),
@@ -1984,7 +1893,7 @@ mod tests {
     #[test]
     fn test_path_traversal_prevention() {
         let temp_dir = TempDir::new().unwrap();
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         // Try to access a path outside workspace
         let input = ReadFileRequest {
@@ -2007,7 +1916,7 @@ mod tests {
         let file_path = file.path().to_str().unwrap().to_string();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
+            test_service_with_temp_file(&file);
         let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
@@ -2037,7 +1946,7 @@ mod tests {
         let file_path = file.path().to_str().unwrap().to_string();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
+            test_service_with_temp_file(&file);
         let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
@@ -2067,7 +1976,7 @@ mod tests {
         let file_path = file.path().to_str().unwrap().to_string();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
+            test_service_with_temp_file(&file);
         let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
@@ -2093,7 +2002,7 @@ mod tests {
         let file2_path = temp_dir.path().join("b.rs");
         fs::write(&file2_path, "fn world() {\n    println!(\"bye\");\n}").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
         let input = SearchContentRequest {
             pattern: "println".to_string(),
             path: None,
@@ -2122,7 +2031,7 @@ mod tests {
         )
         .unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
         let input = SearchContentRequest {
             pattern: r"\w+_handler".to_string(),
             path: None,
@@ -2146,7 +2055,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.rs");
         fs::write(&file_path, "fn HELLO() {}\nfn hello() {}").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
         let input = SearchContentRequest {
             pattern: "hello".to_string(),
             path: None,
@@ -2174,7 +2083,7 @@ mod tests {
             fs::write(&file_path, format!("content {}", i)).unwrap();
         }
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         // Get first 5
         let input = ListFilesRequest {
@@ -2204,7 +2113,7 @@ mod tests {
         let py_path = temp_dir.path().join("test.py");
         fs::write(&py_path, "def main(): pass").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         let input = ListFilesRequest {
             path: None,
@@ -2271,7 +2180,7 @@ mod tests {
         std::fs::write(temp_dir.path().join("file1.txt"), "content1").unwrap();
         std::fs::write(temp_dir.path().join("subdir").join("file2.txt"), "content2").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         let input = ListFilesRequest {
             path: None,
@@ -2317,7 +2226,7 @@ mod tests {
         )
         .unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         let input = ListFilesRequest {
             path: None,
@@ -2365,7 +2274,7 @@ mod tests {
         std::fs::write(temp_dir.path().join("file1.txt"), "content1").unwrap();
         std::fs::write(temp_dir.path().join("subdir").join("file2.txt"), "content2").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         let input = ListFilesRequest {
             path: None,
@@ -2405,7 +2314,7 @@ mod tests {
         std::fs::write(temp_dir.path().join("file1.txt"), "content1").unwrap();
         std::fs::write(temp_dir.path().join("subdir").join("file2.txt"), "content2").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         // Default: no recursive or max_depth specified
         let input = ListFilesRequest {
@@ -2441,7 +2350,7 @@ mod tests {
         let file_path = file.path().to_str().unwrap().to_string();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
+            test_service_with_temp_file(&file);
         let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
@@ -2466,7 +2375,7 @@ mod tests {
         let file_path = file.path().to_str().unwrap().to_string();
 
         let service =
-            FileOperationsService::new(file.path().parent().unwrap().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![file.path().parent().unwrap().to_path_buf()])));
+            test_service_with_temp_file(&file);
 
         // Try to edit something that doesn't exist
         let input = EditFileRequest {
@@ -2498,7 +2407,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.rs");
         fs::write(&file_path, "fn foo() {}\nfn bar() {}\n  fn indented() {}").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
         let input = SearchContentRequest {
             pattern: r"^fn".to_string(),
             path: None,
@@ -2530,7 +2439,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "foo bar baz\nfoo qux foo").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
         let input = SearchContentRequest {
             pattern: r"(foo|bar)".to_string(),
             path: None,
@@ -2559,7 +2468,7 @@ mod tests {
         // "  hello world" - "hello" starts at column 3 (1-indexed)
         fs::write(&file_path, "  hello world\nanother line").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
         let input = SearchContentRequest {
             pattern: r"hello".to_string(),
             path: None,
@@ -2587,7 +2496,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.txt");
         fs::write(&file_path, "Hello World\nanother word\n123 Numbers").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
         let input = SearchContentRequest {
             pattern: r"[A-Z][a-z]+".to_string(),
             path: None,
@@ -2633,7 +2542,7 @@ mod tests {
         let content: String = (0..10).map(|i| format!("line {}\n", i)).collect();
         fs::write(&file_path, &content).unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
         let input = ReadFileRequest {
             path: file_path.to_str().unwrap().to_string(),
             start_line: None,
@@ -2660,7 +2569,7 @@ mod tests {
         let content: String = (0..20).map(|i| format!("line {}\n", i)).collect();
         fs::write(&file_path, &content).unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         // First read with small chunk
         let input1 = ReadFileRequest {
@@ -2702,7 +2611,7 @@ mod tests {
         let content = "aaaaaaaaaa\nbbbbbbbbbb\ncccccccccc\n";
         fs::write(&file_path, content).unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         // Request a chunk size that would cut a line (but not at newline boundary)
         let input = ReadFileRequest {
@@ -2736,7 +2645,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.rs");
         fs::write(&file_path, "fn foo() {}\nfn bar() {}").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         // Even with chunk_size, outline mode should ignore it and return full outline
         let input = ReadFileRequest {
@@ -2772,7 +2681,7 @@ mod tests {
         let file_path = temp_dir.path().join("valid.rs");
         fs::write(&file_path, "pub fn add(a: i32, b: i32) -> i32 { a + b }").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
         let result = service.verify_rust_file(file_path.to_str().unwrap(), 10);
 
         assert!(result.is_ok(), "Verification should succeed");
@@ -2794,7 +2703,7 @@ mod tests {
         // Missing closing brace
         fs::write(&file_path, "pub fn add(a: i32, b: i32) -> i32 { a + b").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
         let result = service.verify_rust_file(file_path.to_str().unwrap(), 10);
 
         assert!(result.is_ok(), "Verification should return result");
@@ -2820,7 +2729,7 @@ mod tests {
         let file_path = temp_dir.path().join("script.py");
         fs::write(&file_path, "def hello():\n    print('world')").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
         let result = service.verify_rust_file(file_path.to_str().unwrap(), 10);
 
         assert!(result.is_ok(), "Verification should return result");
@@ -2842,7 +2751,7 @@ mod tests {
     #[tokio::test]
     async fn test_retrieve_and_verify_empty_query() {
         let temp_dir = TempDir::new().unwrap();
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         let input = RetrieveAndVerifyRequest {
             query: "".to_string(),
@@ -2861,7 +2770,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.rs");
         fs::write(&file_path, "fn main() {}").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         let input = RetrieveAndVerifyRequest {
             query: "nonexistent_pattern_xyz123".to_string(),
@@ -2885,7 +2794,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.rs");
         fs::write(&file_path, "fn hello() { println!(\"hi\"); }").unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         let input = RetrieveAndVerifyRequest {
             query: "hello".to_string(),
@@ -2924,7 +2833,7 @@ mod tests {
         let file_b = temp_dir.path().join("b.rs");
         fs::write(&file_b, "fn hello() {}").unwrap(); // 1 function
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         let input = RetrieveAndVerifyRequest {
             query: "fn hello".to_string(), // Search for function definitions
@@ -2982,7 +2891,7 @@ mod tests {
         file.sync_all().unwrap();
         drop(file);
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         let input = RetrieveAndVerifyRequest {
             query: "fn greet".to_string(),
@@ -3025,7 +2934,7 @@ mod tests {
         )
         .unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         let input = RetrieveAndVerifyRequest {
             query: "fn greet".to_string(),
@@ -3069,7 +2978,7 @@ mod tests {
         )
         .unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         // Use 0 second timeout - should always trigger timeout for any actual work
         let result = service
@@ -3118,7 +3027,7 @@ mod tests {
             std::env::set_var("PATH", &new_path_str);
         }
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         let input = RetrieveAndVerifyRequest {
             query: "fn greet".to_string(),
@@ -3167,7 +3076,7 @@ mod tests {
         "#;
         fs::write(&rs_file, source).unwrap();
 
-        let service = FileOperationsService::new(temp_dir.path().to_string_lossy().to_string(), Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])));
+        let service = test_service_in_temp_dir(&temp_dir);
 
         let count_rustc = || -> usize {
             Command::new("pgrep")

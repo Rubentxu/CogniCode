@@ -14,6 +14,7 @@ use std::sync::Arc;
 use crate::application::error::AppError;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::infrastructure::telemetry::{ToolError, get_global_metrics, instrument_tool};
+use crate::infrastructure::verification::RustVerifier;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::mcp::schemas::{
     EditFileInput, EditFileOutput, ListFilesInput, ListFilesOutput, ReadFileInput, ReadFileOutput,
@@ -43,7 +44,7 @@ pub async fn handle_read_file(
     input: ReadFileInput,
 ) -> HandlerResult<ReadFileOutput> {
     let service = ctx.file_ops_service.clone()
-        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone())));
+        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone(), Arc::new(RustVerifier::new()))));
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
@@ -91,7 +92,7 @@ pub async fn handle_write_file(
     input: WriteFileInput,
 ) -> HandlerResult<WriteFileOutput> {
     let service = ctx.file_ops_service.clone()
-        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone())));
+        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone(), Arc::new(RustVerifier::new()))));
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
@@ -136,7 +137,7 @@ pub async fn handle_edit_file(
     input: EditFileInput,
 ) -> HandlerResult<EditFileOutput> {
     let service = ctx.file_ops_service.clone()
-        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone())));
+        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone(), Arc::new(RustVerifier::new()))));
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
@@ -186,7 +187,7 @@ pub async fn handle_search_content(
     input: SearchContentInput,
 ) -> HandlerResult<SearchContentOutput> {
     let service = ctx.file_ops_service.clone()
-        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone())));
+        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone(), Arc::new(RustVerifier::new()))));
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
@@ -234,7 +235,7 @@ pub async fn handle_list_files(
     input: ListFilesInput,
 ) -> HandlerResult<ListFilesOutput> {
     let service = ctx.file_ops_service.clone()
-        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone())));
+        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone(), Arc::new(RustVerifier::new()))));
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
@@ -287,7 +288,7 @@ pub async fn handle_retrieve_and_verify(
     }
 
     let service = ctx.file_ops_service.clone()
-        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone())));
+        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone(), Arc::new(RustVerifier::new()))));
 
     // Convert MCP input to DTO
     let dto_input = crate::application::dto::RetrieveAndVerifyRequest {
