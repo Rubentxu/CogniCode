@@ -3,7 +3,7 @@
 > **Proyecto:** CogniCode Core
 > **Iniciado:** 2026-06-11
 > **Última actualización:** 2026-06-15
-> **Estado:** C7-C11 + ADR-010 100%. C1-C6 auditados (jun-15).
+> **Estado:** C7-C11 + ADR-010 100%. C1-C6 auditados (jun-15). Brechas gtoolkit documentadas en ADR-016.
 
 ---
 
@@ -95,6 +95,36 @@ Decisión tomada tras investigación del estado real del código. Cada candidato
 
 ---
 
+## 3.1 Brechas con gtoolkit (jun-15) → ADR-016
+
+Auditoría del estado real contra el modelo de gtoolkit. El vocabulario es compartido pero la implementación diverge en 3 áreas.
+
+| Aspecto | gtoolkit | CogniCode Explorer | Estado |
+|---------|----------|-------------------|--------|
+| Navegación entre objetos | Pane stack (GtPager) | Column-based (Miller) | ⚠️ Brecha — ADR-016 Fase 2 |
+| Historial de exploración | GtPager navigation history | `HistoryEntry` de Ask (no de navegación) | ⚠️ Brecha — ADR-016 Fase 3 |
+| Persistencia semántica | Sí, primera clase | Solo sesiones efímeras con TTL | ⚠️ Brecha — ADR-016 Fases 3-4 |
+| Moldable views runtime | Sí, maduro | Sí, v1 (sin remote renderers) | ✅ Parcialmente alineado |
+| Mocks | Hand-written | Hand-written | ✅ Alineado |
+| Spotter | Sí | Sí | ✅ Alineado |
+| Lepiter (notebook) | Sí | Diseñado, no v1 | Diferido |
+
+**Decisión (ADR-016):** cerrar las 3 brechas con pane-stack opt-in + `ExplorationEvent` + sharing por URL. Estimación: 3-4 semanas, ~1050-1500 LOC, default = column-based (no regresión para vertical slice tracing).
+
+**Detalle por brecha:**
+
+1. **Navegación column-based** — `apps/explorer-ui/src/state/context.ts` modela state como `columns: ExplorationColumn[]` (lineal) + `activeObjectId: string | null` (un foco). `SELECT_OBJECT` "collapses trailing columns" → comportamiento de reemplazo, no apilamiento. Para drill-down funciona; para exploración amplia (comparar implementaciones) hay que navegar来回 entre columnas.
+
+2. **Historial de exploración** — `crates/cognicode-explorer/src/session/state.rs:28-36` define `HistoryEntry { question, answer_summary, pattern_id, ts }`. Es historial de **preguntas del Ask**, no de navegación entre objetos. La acción `ADD_EXPLORATION` en el frontend está definida pero no se usa en código real (solo en tests/fixtures).
+
+3. **Persistencia semántica** — `crates/cognicode-explorer/src/facades/persistence.rs:26` usa `Mutex<HashMap>` en RAM. `ExplorationPath { columns, objects, lens, created_at }` es UNA lista, no modela pane-stack. No hay sharing por URL ni restore desde link.
+
+**Por qué importa:** `CONTEXT.md` describe pane-stack, persistencia, sharing — el código implementa otra cosa. Un contributor que lea `CONTEXT.md` espera GtPager; encuentra Miller. Costo de onboarding para usuarios familiarizados con gtoolkit.
+
+**Por qué opt-in (no default):** el flujo vertical slice tracing (drill-down) funciona bien con column. Forzar pane-stack a todos los usuarios es regresión de UX para el caso primario. El `NavigationAdapter` (Fase 1) permite coexistencia.
+
+---
+
 ## 4. ADRs — Estado Real (jun-15)
 
 | ADR | Fuente | Candidato | Estado ADR | Notas |
@@ -110,6 +140,7 @@ Decisión tomada tras investigación del estado real del código. Cada candidato
 | ADR-009 | jun-12 | Hybrid Explorer Navigation | ACCEPTED | |
 | ADR-010 | jun-13 | Deepening Roadmap | ACCEPTED | 100% |
 | ADR-015 | jun-15 | C4 Schema/DTO deuda | ACCEPTED (deuda) | Documenta violación aceptada |
+| ADR-016 | jun-15 | Alineación con gtoolkit | PROPOSED | Pane-stack + ExplorationEvent + sharing. 3-4 semanas. Ver §3.1 |
 
 **ADR-011 a ADR-014 NO EXISTEN como archivos en `docs/adr/`.** El roadmap anterior los referenciaba como "PROPOSED" pero no fueron creados formalmente. Las decisiones correspondientes (C8 MCP Envelope, C9 SessionHandler, C10 Rust Verifier, C11 dto Serde) viven en sus commits. No se crean retroactivamente — los commits son la documentación.
 
@@ -131,6 +162,12 @@ Decisión tomada tras investigación del estado real del código. Cada candidato
 - [x] C4 → ADR-015 con deuda documentada
 - [x] ADR-001-006 actualizados a ARCHIVED en tabla
 
+### Alineación con gtoolkit (jun-15) — ADR-016 PROPOSED
+- [ ] Fase 1: `NavigationAdapter` interface + refactor `ColumnNavigation` (3-4 días)
+- [ ] Fase 2: Pane-stack end-to-end con viewport handling (1-2 semanas)
+- [ ] Fase 3: `ExplorationEvent` + persistencia semántica (1 semana)
+- [ ] Fase 4: Sharing por URL + restore (3-5 días)
+
 ---
 
 ## 6. Riesgos Cerrados (jun-15)
@@ -141,6 +178,7 @@ Decisión tomada tras investigación del estado real del código. Cada candidato
 | C1-C6 confunde contributors | Cerrado — tabla actualizada con estado real |
 | SKIP_DIRS duplicado en 5 sitios | Cerrado — WalkFilter consolidado |
 | `mockall` dependencia muerta | Cerrado — removido de Cargo.toml |
+| Brechas con gtoolkit no documentadas | Cerrado — ADR-016 + tabla §3.1 |
 
 ---
 
@@ -150,6 +188,9 @@ Decisión tomada tras investigación del estado real del código. Cada candidato
 |--------|-----------|------------|
 | Schema/DTO violación (10 re-exports) | Baja | ADR-015, tests de round-trip |
 | 22 tests `#[ignore]` (flaky verification + CI pre-existing) | Baja | Sin acción inmediata — son ruidosos pero no bloquean |
+| Brecha de navegación con gtoolkit | Media | ADR-016, pane-stack opt-in |
+| Brecha de persistencia semántica | Media | ADR-016, `ExplorationEvent` + sharing |
+| `CONTEXT.md` describe visión no implementada | Media | ADR-016 documenta el gap explícitamente |
 
 ---
 
@@ -161,6 +202,7 @@ Decisión tomada tras investigación del estado real del código. Cada candidato
 | ADR-001-006 (archivo histórico) | `docs/adr/ADR-00X-*.md` (PROPOSED — no se borraron por valor histórico) |
 | ADR-007-010 | `docs/adr/ADR-00X-*.md` (ACCEPTED) |
 | ADR-015 (deuda schema/DTO) | `docs/adr/ADR-015-schema-dto-debt.md` |
+| ADR-016 (alineación gtoolkit) | `docs/adr/ADR-016-gtoolkit-alignment.md` |
 
 ---
 
