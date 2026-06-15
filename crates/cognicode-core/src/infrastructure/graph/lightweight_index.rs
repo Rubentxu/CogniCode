@@ -94,47 +94,26 @@ impl LightweightIndex {
         let mut parser_cache: HashMap<Language, TreeSitterParser> = HashMap::new();
         let mut file_name_set: HashSet<String> = HashSet::new();
 
-        // Directories to skip during indexing — these contain no relevant source code
-        // and can contain thousands of files that slow down indexing.
-        const SKIP_DIRS: &[&str] = &[
-            "target",       // Rust build output
-            "node_modules", // npm packages
-            ".git",         // version control
-            "dist",         // build output
-            "build",        // general build output
-            "vendor",       // dependency vendor
-            "__pycache__",  // Python bytecode cache
-            ".cache",       // general cache
-            ".next",        // Next.js build
-            ".nuxt",        // Nuxt.js build
-            "coverage",     // test coverage reports
-            ".tox",         // Python tox environments
-            "venv",         // Python virtual env
-            ".venv",        // Python virtual env
-            ".env",         // Python virtual env
-            "env",          // Python virtual env
-            ".sandbox",     // sandbox working copies
-            "sandbox",      // sandbox repos and fixtures
-        ];
+        let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
         // Helper to check if a path should be skipped
         // project_dir is the root being indexed - we never skip it even if hidden
-        fn should_skip_path(path: &std::path::Path, project_dir: &std::path::Path) -> bool {
+        let should_skip_path = |path: &std::path::Path, project_dir: &std::path::Path| -> bool {
             // Never skip the project directory itself
             if path == project_dir {
                 return false;
             }
+            if walk_filter.matches_any_component(path) {
+                return true;
+            }
+            // Skip hidden directories (except .git which is already handled)
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if SKIP_DIRS.contains(&name) {
-                    return true;
-                }
-                // Skip hidden directories (except .git which is already handled)
                 if name.starts_with('.') && name != ".git" {
                     return true;
                 }
             }
             false
-        }
+        };
 
         let project_dir = project_dir.as_ref();
         for entry in WalkDir::new(project_dir)

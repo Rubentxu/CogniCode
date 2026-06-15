@@ -197,7 +197,7 @@ impl AnalysisService {
         let mut parsed_files: usize = 0;
         let mut unresolved_edges: usize = 0;
 
-        const BLOCKED_DIRS: &[&str] = &["target", "node_modules", ".git", "dist", "build"];
+        let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
         let files: Vec<_> = WalkBuilder::new(project_dir)
             .hidden(true)
@@ -205,15 +205,7 @@ impl AnalysisService {
             .git_exclude(true)
             .build()
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                let path = e.path();
-                !path.components().any(|c| {
-                    c.as_os_str()
-                        .to_str()
-                        .map(|s| BLOCKED_DIRS.contains(&s))
-                        .unwrap_or(false)
-                })
-            })
+            .filter(|e| !walk_filter.matches_any_component(e.path()))
             .filter(|e| e.path().is_file())
             .map(|e| {
                 let path = e.path().to_path_buf();
@@ -630,7 +622,7 @@ impl AnalysisService {
                 use ignore::WalkBuilder;
                 use rayon::prelude::*;
 
-                const BLOCKED_DIRS: &[&str] = &["target", "node_modules", ".git", "dist", "build"];
+                let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
                 let files: Vec<_> = WalkBuilder::new(&dir_path)
                     .hidden(true)
@@ -638,15 +630,7 @@ impl AnalysisService {
                     .git_exclude(true)
                     .build()
                     .filter_map(|e| e.ok())
-                    .filter(|e| {
-                        let path = e.path();
-                        !path.components().any(|c| {
-                            c.as_os_str()
-                                .to_str()
-                                .map(|s| BLOCKED_DIRS.contains(&s))
-                                .unwrap_or(false)
-                        })
-                    })
+                    .filter(|e| !walk_filter.matches_any_component(e.path()))
                     .filter(|e| e.path().is_file())
                     .map(|e| {
                         let path = e.path().to_path_buf();

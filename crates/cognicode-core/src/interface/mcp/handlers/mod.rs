@@ -856,36 +856,13 @@ fn is_manifest_stale(
     project_dir: &Path,
 ) -> bool {
     use walkdir::WalkDir;
-    const SKIP_DIRS: &[&str] = &[
-        "target",
-        "node_modules",
-        ".git",
-        "dist",
-        "build",
-        "vendor",
-        "__pycache__",
-        ".cache",
-        ".next",
-        ".nuxt",
-        "coverage",
-        ".tox",
-        "venv",
-        ".venv",
-        ".env",
-        "env",
-        ".cognicode",
-    ];
+    let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
     let mut checked = 0usize;
     for entry in WalkDir::new(project_dir)
         .follow_links(false)
         .into_iter()
-        .filter_entry(|e| {
-            !e.file_name()
-                .to_str()
-                .map(|s| SKIP_DIRS.contains(&s))
-                .unwrap_or(false)
-        })
+        .filter_entry(|e| !walk_filter.matches_any_component(e.path()))
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
     {

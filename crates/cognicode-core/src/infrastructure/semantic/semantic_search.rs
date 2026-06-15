@@ -387,34 +387,12 @@ impl SemanticSearchService {
             return Err(format!("Directory does not exist: {}", dir.display()));
         }
 
-        const SKIP_DIRS: &[&str] = &[
-            "node_modules",
-            ".git",
-            "target",
-            "vendor",
-            "dist",
-            "build",
-            "__pycache__",
-            ".cache",
-            ".next",
-            ".nuxt",
-            "coverage",
-            ".tox",
-            "venv",
-            ".venv",
-            "env",
-        ];
+        let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
         for entry in walkdir::WalkDir::new(dir)
             .follow_links(true)
             .into_iter()
-            .filter_entry(|e| {
-                if let Some(name) = e.file_name().to_str() {
-                    !SKIP_DIRS.contains(&name)
-                } else {
-                    true
-                }
-            })
+            .filter_entry(|e| !walk_filter.matches_any_component(e.path()))
             .filter_map(|e| e.ok())
         {
             let path = entry.path();

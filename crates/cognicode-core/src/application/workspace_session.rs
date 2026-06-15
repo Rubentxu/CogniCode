@@ -284,7 +284,7 @@ impl WorkspaceSession {
         })?;
 
         // Build and save a manifest for the current state
-        const BLOCKED_DIRS: &[&str] = &["target", "node_modules", ".git", "dist", "build"];
+        let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
         let files: Vec<_> = WalkBuilder::new(&self.workspace_root)
             .hidden(true)
@@ -292,15 +292,7 @@ impl WorkspaceSession {
             .git_exclude(true)
             .build()
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                let path = e.path();
-                !path.components().any(|c| {
-                    c.as_os_str()
-                        .to_str()
-                        .map(|s| BLOCKED_DIRS.contains(&s))
-                        .unwrap_or(false)
-                })
-            })
+            .filter(|e| !walk_filter.matches_any_component(e.path()))
             .filter(|e| e.path().is_file())
             .filter_map(|e| {
                 let path = e.path();
@@ -367,7 +359,7 @@ impl WorkspaceSession {
             .unwrap_or_else(|| FileManifest::new(self.workspace_root.clone()));
 
         // Scan current files and compute hashes
-        const BLOCKED_DIRS: &[&str] = &["target", "node_modules", ".git", "dist", "build"];
+        let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
         let current_files: Vec<_> = WalkBuilder::new(&self.workspace_root)
             .hidden(true)
@@ -375,15 +367,7 @@ impl WorkspaceSession {
             .git_exclude(true)
             .build()
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                let path = e.path();
-                !path.components().any(|c| {
-                    c.as_os_str()
-                        .to_str()
-                        .map(|s| BLOCKED_DIRS.contains(&s))
-                        .unwrap_or(false)
-                })
-            })
+            .filter(|e| !walk_filter.matches_any_component(e.path()))
             .filter(|e| e.path().is_file())
             .filter_map(|e| {
                 let path = e.path();

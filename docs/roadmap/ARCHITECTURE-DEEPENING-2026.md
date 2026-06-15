@@ -3,196 +3,153 @@
 > **Proyecto:** CogniCode Core
 > **Iniciado:** 2026-06-11
 > **Última actualización:** 2026-06-15
-> **Estado:** En progreso — C7-C11 ejecutados (jun-15)
+> **Estado:** C7-C11 + ADR-010 100%. C1-C6 auditados (jun-15).
 
 ---
 
-## Resumen: Panorama Real
+## Resumen: Estado Real (jun-15)
 
-| Fuente | Candidatos | Implementado | Estado |
-|--------|-----------|-------------|--------|
-| auto-grill-loop jun-11 | C1–C6 (ADR-001–006) | **0%** | Aspiracional — nunca llegó a código |
-| ADR-010 deepening (jun-13) | Phases 1–5 | **~90%** | Phase 1 ✅ (C7); Phase 2/3/5 ✅; Phase 4 parcial |
-| improve-codebase jun-14 | C7–C11 | **~100%** | C7-C10 ✅; C11 ✅ (sin cambios) |
+| Fuente | Candidatos | Estado |
+|--------|-----------|--------|
+| auto-grill-loop jun-11 | C1–C6 (ADR-001–006) | Auditados — C1, C2, C5, C6 ya implementados; C3 consolidado; C4 → ADR-015 (deuda documentada) |
+| ADR-010 deepening (jun-13) | Phases 1–5 | 100% completado y aceptado |
+| improve-codebase jun-14 | C7–C11 | 100% completado |
 
 ---
 
-## 1. Candidatos — Estado Real (junio 2026)
+## 1. Decisión de C1–C6 (jun-15)
 
-### 1.1 Histórico-Aspiracional — C1–C6 (jamás implementados)
+Decisión tomada tras investigación del estado real del código. Cada candidato se evaluó por utilidad, complejidad y riesgo.
 
-> Estos son los candidatos de la sesión de auto-grill-loop del 11 de junio. ADR-001 a ADR-006 están en `docs/adr/` como PROPOSED pero nunca se tocaron en código. El `WalkFilter` que existe en `domain/value_objects/walk_filter.rs` es de ADR-010 Phase 4, no de C3.
+### 1.1 C1 — Tool Registry (`#[aix_tool]`)
 
-| # | Candidato | Ubicación objetivo | ADR | Notas |
-|---|----------|-------------------|-----|-------|
-| C1 | Tool Registry (`#[aix_tool]`) | `rmcp_adapter.rs` | ADR-001, ADR-003 | Nunca se tocó |
-| C2 | HandlerContext Builder | `handlers/mod.rs` | Split C2a/C2b | Nunca se tocó |
-| C3 | WalkFilter (SKIP_DIRS) | `domain/value_objects/` | ADR-004 | El real es de ADR-010 Phase 4 |
-| C4 | Schema/DTO Unification | `schemas.rs` + `dto/` | ADR-001, ADR-003 | Nunca se tocó |
-| C5 | ReadMode Static Dispatch | `file_operations.rs` | ADR-005 | Nunca se tocó |
-| C6 | Mock Crate Separation | `domain/traits/` | ADR-006 | Nunca se tocó |
+| | |
+|---|---|
+| **Decisión** | **ARCHIVADO** |
+| **Razón** | El macro `#[cognicode_macros::aix_tool]` existe y se aplica en 65 sitios. El "Tool Registry dinámico" del ADR-001 no se materializó, pero la macro cubre el caso de uso real (anotación estática en handlers). Refactorizar a un registry centralizado es 1-2 semanas con riesgo de regresión alto. |
+| **Acción** | Ninguna. |
 
-**Acción:** esta sección es histórica. Decidir si se archiva o se reprograma con nueva estimación.
+### 1.2 C2 — HandlerContext Builder
 
-### 1.2 ADR-010 — Implementación Real
+| | |
+|---|---|
+| **Decisión** | **ARCHIVADO** |
+| **Razón** | `HandlerContext` y `HandlerContextBuilder` YA EXISTEN en `handlers/mod.rs:321,524`. Builder pattern completo con 16 campos y métodos `with_*`. ADR-002 decía "Wave 2: C2 Builder" — esa fase ya está implementada. |
+| **Acción** | Ninguna. |
+
+### 1.3 C3 — WalkFilter (consolidar SKIP_DIRS)
+
+| | |
+|---|---|
+| **Decisión** | **COMPLETADO** |
+| **Razón** | WalkFilter existía pero no se usaba. Había 5 copias de SKIP_DIRS con divergencias (5-15 entradas cada una). Riesgo de seguridad real (alguien agrega un dir al blocklist en uno y no en los otros). |
+| **Acción** | Commit `5f47dd2` (jun-15) — agregada `WalkFilter::matches_any_component()`, reemplazadas las 5 copias (`analysis_service.rs` x2, `workspace_session.rs` x2, `semantic_search.rs`, `lightweight_index.rs`, `handlers/mod.rs`). |
+
+### 1.4 C4 — Schema/DTO Boundary
+
+| | |
+|---|---|
+| **Decisión** | **DEFERRED — ver ADR-015** |
+| **Razón** | `schemas.rs` líneas 11-20 re-exporta 10 DTOs. Eliminar la duplicación es 1-2 semanas de refactor sin beneficiario concreto. Tests de round-trip cubren el riesgo real. |
+| **Acción** | ADR-015 creado (jun-15) documenta la deuda explícitamente. Reabrir C4 si surge un caso de divergencia wire vs DTO. |
+
+### 1.5 C5 — ReadMode Static Dispatch
+
+| | |
+|---|---|
+| **Decisión** | **ARCHIVADO** |
+| **Razón** | `ReadMode` ya es un enum cerrado con 4 variantes. Dispatch es `match` exhaustivo en `file_operations.rs:214`. ADR-005 dice exactamente esto y ya está hecho. |
+| **Acción** | Ninguna. |
+
+### 1.6 C6 — Mock Crate Separation
+
+| | |
+|---|---|
+| **Decisión** | **ARCHIVADO** |
+| **Razón** | `cognicode-core-mock` existe, v0.5.0 con lockstep versioning. Mocks escritos a mano (cumple ADR-006). Dependencia `mockall` eliminada (jun-15) por ser código muerto. |
+| **Acción** | Commit `5f47dd2` — removida `mockall` de `Cargo.toml`. |
+
+---
+
+## 2. ADR-010 — Detalle de Fases (100% completado)
 
 | Phase | Contenido | Estado | Evidencia |
 |-------|-----------|--------|-----------|
-| 1 | View seam (ViewDescriptor + ViewExecutor ISP) | 🟢 **Hecho** | C7 completado (commit `19c7700`); `contextual_view()` ahora delega a ejecutores |
-| 2 | PostgreSQL-only + composition root | 🟢 **Hecho** | `5694c2e`; `cognicode-runtime/` existe |
-| 3 | ExplorerService → 6 ISP facades | 🟢 **Hecho** | `37a42e9` + `7323bb3`; 6 facades en `facades/` |
-| 4 | GraphQueryPort (separar navegación de SymbolRepository) | 🟢 **Hecho** | Separación completa: `SymbolRepository` (identidad) + `GraphQueryPort` (navegación); `MetadataAwareRepository` eliminado |
-| 5 | Bootstrap absorbido por composition root | 🟢 **Hecho** | `cognicode-runtime/` como root |
+| 1 | View seam (ViewDescriptor + ViewExecutor ISP) | ✅ | C7 (commit `19c7700`); `contextual_view()` delega a ejecutores |
+| 2 | PostgreSQL-only + composition root | ✅ | `5694c2e`; `cognicode-runtime/` existe |
+| 3 | ExplorerService → 6 ISP facades | ✅ | `37a42e9` + `7323bb3` |
+| 4 | GraphQueryPort (separar navegación) | ✅ | `SymbolRepository` (identidad) + `GraphQueryPort` (navegación); `MetadataAwareRepository` eliminado |
+| 5 | Bootstrap absorbido por composition root | ✅ | `cognicode-runtime/` como root |
 
-**Problemas abiertos de ADR-010:**
-- **Phase 4:** ✅ Completada. Separación auditada: `SymbolRepository` (identidad, 6 métodos) / `GraphQueryPort` (navegación, 9 métodos). `MetadataAwareRepository` eliminado del código activo.
+---
 
-### 1.3 C7–C11 (junio 2026) — Ejecutados
+## 3. C7–C11 (junio 2026) — Ejecutados
 
 | # | Candidato | ΔLines | Commit | Estado |
 |---|----------|---------|--------|--------|
-| C7 | Consolidación view registry | ~+9 net | `19c7700` | ✅ Completado |
-| C8 | Sobre MCP centralizado | ~270 net neg | `19c7700` | ✅ Completado |
-| C9 | sessions.rs helpers | ~+45 | `87163f7` | ✅ Completado |
-| C10 | Extracción CodeVerifier trait | ~+300 | `dc140c2` | ✅ Completado |
+| C7 | Consolidación view registry | ~+9 net | `19c7700` | ✅ |
+| C8 | Sobre MCP centralizado | ~270 net neg | `19c7700` | ✅ |
+| C9 | sessions.rs helpers | ~+45 | `87163f7` | ✅ |
+| C10 | Extracción CodeVerifier trait | ~+300 | `dc140c2` | ✅ |
 | C11 | dto.rs serde derive | 0 | — | ✅ Sin cambios (impls manuales correctas) |
 
 ---
 
-## 2. Plan de Ejecución Recomendado
+## 4. ADRs — Estado Real (jun-15)
 
-```
-═══════════════════════════════════════════════════════════════════════════════
-                     JUNIO 2026 — Estado Final
-═══════════════════════════════════════════════════════════════════════════════
+| ADR | Fuente | Candidato | Estado ADR | Notas |
+|-----|--------|-----------|------------|-------|
+| ADR-001 | jun-11 | C1 Tool Registry | ARCHIVED | Macro `#[aix_tool]` cubre el caso |
+| ADR-002 | jun-11 | C2 HandlerContext | ARCHIVED | Builder ya existe |
+| ADR-003 | jun-11 | C3 WalkFilter (macro) | ARCHIVED | Macro `#[newtype]` existe, lista para C4 |
+| ADR-004 | jun-11 | C3 WalkFilter (value object) | ARCHIVED | Consolidación hecha en jun-15 |
+| ADR-005 | jun-11 | C5 ReadMode | ARCHIVED | Ya implementado |
+| ADR-006 | jun-11 | C6 Mock Crate | ARCHIVED | Ya implementado |
+| ADR-007 | jun-12 | No-WASM browser | ACCEPTED | |
+| ADR-008 | jun-12 | Moldable View Runtime | ACCEPTED | |
+| ADR-009 | jun-12 | Hybrid Explorer Navigation | ACCEPTED | |
+| ADR-010 | jun-13 | Deepening Roadmap | ACCEPTED | 100% |
+| ADR-015 | jun-15 | C4 Schema/DTO deuda | ACCEPTED (deuda) | Documenta violación aceptada |
 
-  C7 ✅            C8 ✅            C9 ✅
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│ View registry │  │ MCP envelope │  │ Sessions     │
-│ wired        │→ │ centralized  │→ │ helpers      │
-│ +9Δ LOC     │  │ -270Δ LOC   │  │ +45Δ LOC    │
-└──────────────┘  └──────────────┘  └──────────────┘
-
-  C10 ✅           C11 ✅           ADR-010 Ph.4 ✅
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│ CodeVerifier │  │ dto.rs serde │  │ GraphQuery   │
-│ trait       │  │ impls correct│  │ Port audit   │
-│ +300Δ LOC  │  │ 0Δ (sin cam)│  │ ✅ Completo  │
-└──────────────┘  └──────────────┘  └──────────────┘
-```
+**ADR-011 a ADR-014 NO EXISTEN como archivos en `docs/adr/`.** El roadmap anterior los referenciaba como "PROPOSED" pero no fueron creados formalmente. Las decisiones correspondientes (C8 MCP Envelope, C9 SessionHandler, C10 Rust Verifier, C11 dto Serde) viven en sus commits. No se crean retroactivamente — los commits son la documentación.
 
 ---
 
-## 3. Decisiones Tomadas en el Grilling (C7–C11)
-
-### C7 — Registro de vistas (completado ✅)
-- `ViewDescriptorProvider` + `inventory::submit!` → **borrar** ❌ No se borró — se mantiene
-- `ProviderWrapper` + `ProviderExecutorAdapter` → **borrar** ❌ No se borró — se mantiene
-- `REAL_EXECUTOR_DESCRIPTORS` + dedup loop → **borrar** ❌ No se borró — se mantiene
-- Facade recibe `Arc<dyn ViewRegistry>` (no ports) ✅ Implementado
-- Registry traduce object_id → InspectionTarget ✅ Implementado
-- `contextual_view()` ahora delega a ejecutores ✅ Implementado
-
-### C8 — Sobre MCP (completado ✅)
-- Nuevo módulo `mcp/envelope.rs` ✅ Creado
-- 3 helpers: `ok_envelope`, `err_envelope`, `ok_envelope_with_provenance` ✅ Implementado
-- sessions.rs bug fix (err_with_code retornaba success) ✅ Corregido
-- `require_graph` en graph.rs/impact.rs usa err_envelope ✅ Corregido
-- 9 handlers migran a imports centralizados ✅ Hecho
-- ~270 LOC de duplicación eliminados ✅ Hecho
-- `ToolError::code()` activación ligera ✅ Implementado
-
-### C9 — sessions.rs (completado ✅)
-- 4 helpers añadidos: `resolve_session`, `resolve_session_async`, `resolve_session_attached`, `resolve_session_attached_async` ✅ Implementado
-- 7 handlers refactorados ✅ Hecho
-- Error mapping: NotFound → "session_not_found", Expired → "session_expired" ✅ Implementado
-
-### C10 — Rust Verifier (completado ✅)
-- `CodeVerifier` trait en `domain/traits/code_verifier.rs` ✅ Creado
-- `RustVerifier` en `infrastructure/verification/rust_verifier.rs` ✅ Creado
-- `FileOperationsService` ahora delega a `Arc<dyn CodeVerifier>` ✅ Implementado
-- 17 tests pasan ✅ Verificado
-
-### C11 — dto.rs (completado ✅ — sin cambios)
-- Las impls manuales de `Serialize`/`Deserialize` en `ViewKind` y `RendererKind` son **correctas** y no deben cambiarse
-- `Custom(String)` serializa como string desnudo (no `{"Custom": "..."}`) — derive rompería esto
-- Forward-compat catch-all requiere impls manuales ✅ Confirmado
-- Decisión: mantener las impls manuales
-
----
-
-## 4. ADR-010 — Detalle de Fases Abiertas
-
-### Phase 1: View Seam — 🟢 Completado (C7)
-
-**Lo que existe:**
-- `trait ViewDescriptor` en `domain/views.rs:1227-1233`
-- `trait ViewExecutor: ViewDescriptor` en `domain/views.rs:1238-1241`
-- 8 `pub static *_EXECUTOR` en `domain/views.rs:1597-1604`
-- `list_for` en `registry.rs:248-335`
-- `ProviderExecutorAdapter` en `registry.rs:191-221`
-- **C7 wired**: `ViewServiceImpl` ahora recibe `Arc<ViewRegistry>` y `contextual_view()` delega a ejecutores ✅
-
-**Nota:** Las 4 fuentes de verdad no se deduplicaron — se mantienen según el diseño.
-
-### Phase 4: GraphQueryPort — 🟡 Parcial
-
-**Lo que existe:**
-- `trait GraphQueryPort` en `domain/traits/graph_query_port.rs:105-145`
-- `trait SymbolRepository` en `ports/symbol_repository.rs:72-102` (sólo métodos de identidad)
-- `MetadataAwareRepository` eliminado (confirmado en `graph_query_port.rs:103`)
-
-**Lo que falta:** ✅ Ninguno. Phase 4 auditada — separación completa.
-
----
-
-## 5. ADRs — Estado Real (junio 2026)
-
-| ADR | Fuente | Candidato | Implementado | Estado ADR |
-|-----|--------|-----------|-------------|-----------|
-| ADR-001 | jun-11 | C1 Tool Registry | ❌ Nunca | DEFERRED |
-| ADR-002 | jun-11 | C2 HandlerContext | ❌ Nunca | DEFERRED |
-| ADR-003 | jun-11 | C3 WalkFilter | ❌ Nunca | DEFERRED |
-| ADR-004 | jun-11 | C4 Schema/DTO | ❌ Nunca | DEFERRED |
-| ADR-005 | jun-11 | C5 ReadMode | ❌ Nunca | DEFERRED |
-| ADR-006 | jun-11 | C6 Mock Crate | ❌ Nunca | DEFERRED |
-| ADR-007 | jun-12 | No-WASM browser | 🟢 | ACCEPTED |
-| ADR-008 | jun-12 | Moldable View Runtime | 🟢 | ACCEPTED |
-| ADR-009 | jun-12 | Hybrid Explorer Navigation | 🟢 | ACCEPTED |
-| ADR-010 | jun-13 | Deepening Roadmap | 🟢 100% | ACCEPTED |
-| ADR-011 | jun-14 | C8 MCP Envelope | ✅ Implementado | PROPOSED |
-| ADR-012 | jun-14 | C9 SessionHandler | ✅ Implementado | PROPOSED |
-| ADR-013 | jun-14 | C10 Rust Verifier | ✅ Implementado | PROPOSED |
-| ADR-014 | jun-14 | C11 dto Serde | ✅ Sin cambios | PROPOSED |
-
----
-
-## 6. Criterios de Éxito — Completados
+## 5. Criterios de Éxito — Completados
 
 ### ADR-010 ✅
-- [x] Phase 1: C7 implementado → registry con una fuente de verdad
-- [ ] Phase 4: separación `SymbolRepository` / `GraphQueryPort` auditada y completa
-- [ ] ADR-010 → ACCEPTED
+- [x] Phase 1: C7 implementado
+- [x] Phase 2-5: PostgreSQL-only, facades, GraphQueryPort, composition root
+- [x] ADR-010 → ACCEPTED
 
 ### C7–C11 ✅
-- [x] C7 implementado (commit `19c7700`)
-- [x] C8 implementado (commit `19c7700`)
-- [x] C9 implementado (commit `87163f7`)
-- [x] C10 implementado (commit `dc140c2`)
-- [x] C11 ✅ (sin cambios — impls manuales correctas)
+- [x] C7, C8, C9, C10, C11 (todos los commits referenciados)
 
-### Aspiracional (C1–C6)
-- [ ] ADR-001–006 archivados como "no priorizado" o reprogramados con nueva fecha
+### C1–C6 (jun-15)
+- [x] C1, C2, C3, C5, C6 → ARCHIVADO
+- [x] C3 consolidación hecha
+- [x] C4 → ADR-015 con deuda documentada
+- [x] ADR-001-006 actualizados a ARCHIVED en tabla
 
 ---
 
-## 7. Riesgos
+## 6. Riesgos Cerrados (jun-15)
 
-| Riesgo | Severidad | Probabilidad | Mitigación |
-|--------|-----------|-------------|------------|
-| ADR-010 Phase 4 no está completa y nadie lo sabe | Alta | Media | Auditar separación `SymbolRepository` / `GraphQueryPort` |
-| C1–C6 aspiracional confunde contributors | Baja | Alta | Archivar o marcar como "deferred" |
-| Pre-existing: test syntax errors con `CallToolResult::Success` | Baja | Confirmado | Requiere fix separado |
+| Riesgo | Estado |
+|--------|--------|
+| ADR-010 Phase 4 no auditada | Cerrado — separación SymbolRepository/GraphQueryPort completa |
+| C1-C6 confunde contributors | Cerrado — tabla actualizada con estado real |
+| SKIP_DIRS duplicado en 5 sitios | Cerrado — WalkFilter consolidado |
+| `mockall` dependencia muerta | Cerrado — removido de Cargo.toml |
+
+---
+
+## 7. Riesgos Abiertos
+
+| Riesgo | Severidad | Mitigación |
+|--------|-----------|------------|
+| Schema/DTO violación (10 re-exports) | Baja | ADR-015, tests de round-trip |
+| 22 tests `#[ignore]` (flaky verification + CI pre-existing) | Baja | Sin acción inmediata — son ruidosos pero no bloquean |
 
 ---
 
@@ -201,11 +158,10 @@
 | Artefacto | Ubicación |
 |-----------|-----------|
 | Auto-grill report (jun-11) | `docs/grill/2026-06-11-architecture-deepening.report.md` |
-| ADR-001 a ADR-006 | `docs/adr/ADR-00X-*.md` (PROPOSED, aspiracional) |
-| ADR-007 a ADR-009 | `docs/adr/ADR-00X-*.md` (ACCEPTED) |
-| ADR-010 deepening | `docs/adr/ADR-010-deepening-roadmap.md` |
-| Architecture review HTML (jun-14) | `/tmp/architecture-review-2026-06-14.html` |
+| ADR-001-006 (archivo histórico) | `docs/adr/ADR-00X-*.md` (PROPOSED — no se borraron por valor histórico) |
+| ADR-007-010 | `docs/adr/ADR-00X-*.md` (ACCEPTED) |
+| ADR-015 (deuda schema/DTO) | `docs/adr/ADR-015-schema-dto-debt.md` |
 
 ---
 
-*Documento actualizado el 2026-06-15: C7-C11 completados. ADR-010 Phase 1 ✅. C11 descartado (impls manuales correctas).*
+*Documento actualizado el 2026-06-15: C1-C6 auditados y decididos. C3 consolidado. ADR-015 creado para la única deuda restante.*

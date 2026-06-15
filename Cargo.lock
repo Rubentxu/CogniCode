@@ -549,7 +549,6 @@ dependencies = [
  "bincode",
  "cognicode-core",
  "lsp-types",
- "mockall",
  "tokio",
  "tree-sitter",
  "tree-sitter-rust",

@@ -145,6 +145,25 @@ impl WalkFilter {
         WalkDecision::Include
     }
 
+    /// Check if any component of the path matches the blocklist or skips.
+    ///
+    /// Use this for `walkdir::WalkDir::filter_entry` to prune entire subtrees
+    /// as soon as we encounter a matching component, instead of yielding
+    /// and then filtering out.
+    ///
+    /// Returns `true` if the path should be skipped (filtered out).
+    pub fn matches_any_component(&self, path: &Path) -> bool {
+        path.components().any(|c| {
+            c.as_os_str()
+                .to_str()
+                .map(|s| {
+                    self.security_blocklist.iter().any(|b| b == s)
+                        || self.performance_skips.iter().any(|p| p == s)
+                })
+                .unwrap_or(false)
+        })
+    }
+
     /// Returns the security blocklist patterns
     pub fn security_blocklist(&self) -> &[String] {
         &self.security_blocklist
