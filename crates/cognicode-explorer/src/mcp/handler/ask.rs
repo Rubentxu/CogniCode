@@ -12,6 +12,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::ask::AskRouter;
+use crate::mcp::envelope::{err_envelope, ok_envelope_with_provenance};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::context::McpContext;
 use crate::mcp::{McpResultEnvelope, ProvenanceMetadata, TOOL_ASK};
@@ -26,64 +27,6 @@ struct AskArgs {
     question: Option<String>,
     /// Reserved for future use (routing hints, conversation state).
     context: Option<serde_json::Value>,
-}
-
-// ============================================================================
-// Envelope helpers
-// ============================================================================
-
-/// Build a `CallToolResult::success` carrying an `McpResultEnvelope`.
-fn ok_envelope(tool_name: &str, payload: Value) -> CallToolResult {
-    let envelope = serde_json::json!({
-        "tool_name": tool_name,
-        "version": env!("CARGO_PKG_VERSION"),
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "provenance": serde_json::Value::Null,
-        "payload": payload,
-        "suggested_follow_ups": serde_json::Value::Array(Vec::new()),
-    });
-    let pretty = serde_json::to_string_pretty(&envelope)
-        .unwrap_or_else(|e| format!("failed to serialize envelope: {e}"));
-    CallToolResult::success(vec![Content::text(pretty)])
-}
-
-/// Build a `CallToolResult::success` with provenance metadata.
-fn ok_envelope_with_provenance(
-    tool_name: &str,
-    payload: Value,
-    provenance: ProvenanceMetadata,
-) -> CallToolResult {
-    let provenance_json =
-        serde_json::to_value(provenance).unwrap_or(serde_json::Value::Null);
-    let envelope = serde_json::json!({
-        "tool_name": tool_name,
-        "version": env!("CARGO_PKG_VERSION"),
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "provenance": provenance_json,
-        "payload": payload,
-        "suggested_follow_ups": serde_json::Value::Array(Vec::new()),
-    });
-    let pretty = serde_json::to_string_pretty(&envelope)
-        .unwrap_or_else(|e| format!("failed to serialize envelope: {e}"));
-    CallToolResult::success(vec![Content::text(pretty)])
-}
-
-/// Build a `CallToolResult::error` with an error payload inside the envelope.
-fn err_envelope(tool_name: &str, code: &str, message: &str) -> CallToolResult {
-    let envelope = serde_json::json!({
-        "tool_name": tool_name,
-        "version": env!("CARGO_PKG_VERSION"),
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "provenance": serde_json::Value::Null,
-        "payload": {
-            "error_code": code,
-            "error": message,
-        },
-        "suggested_follow_ups": serde_json::Value::Array(Vec::new()),
-    });
-    let pretty = serde_json::to_string_pretty(&envelope)
-        .unwrap_or_else(|e| format!("failed to serialize envelope: {e}"));
-    CallToolResult::error(vec![Content::text(pretty)])
 }
 
 // ============================================================================
@@ -196,12 +139,8 @@ impl ToolHandler for AskHandler {
         // match this tool's identity.
         let provenance = ProvenanceMetadata::new(0.0, Some("ask-router".into()))
             .unwrap_or_default();
-
-        ok_envelope_with_provenance(
-            TOOL_ASK,
-            serde_json::to_value(&env).unwrap_or(serde_json::Value::Null),
-            provenance,
-        )
+        let payload = serde_json::to_value(&env).unwrap_or(serde_json::Value::Null);
+        ok_envelope_with_provenance(TOOL_ASK, &payload, provenance)
     }
 }
 

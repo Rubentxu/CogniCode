@@ -299,6 +299,7 @@ impl ExplorerMcpHandler {
             None, // quality_repo
             lens_registry,
             graph_query.clone(),
+            view_registry.clone(),
         ));
         let view: Arc<dyn ViewService> = view_impl.clone();
         let lens_executor: Arc<dyn LensExecutor> = view_impl;

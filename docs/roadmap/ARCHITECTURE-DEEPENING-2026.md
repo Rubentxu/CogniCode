@@ -1,270 +1,225 @@
 # Roadmap: Arquitectura CogniCode — Profundización 2026
 
-> **Proyecto:** CogniCode Core  
-> **Iniciado:** 2026-06-11  
-> **Estado:** Planning  
-> **Fuente:** auto-grill-loop (14 preguntas, 2 passes, coverage 100%)  
-> **ADRs:** ADR-001 a ADR-006  
+> **Proyecto:** CogniCode Core
+> **Iniciado:** 2026-06-11
+> **Estado:** Requiere revisión —混杂了三个来源不同的 roadmap
+> **Fuentes:**
+> - auto-grill-loop jun-11 → ADR-001 a ADR-006 (C1-C6, aspiracional, nunca implementado)
+> - ADR-010 deepening roadmap (jun-13) → parcialmente implementado (~60%)
+> - improve-codebase-architecture jun-14 (C7-C11, decisiones tomadas, sin código)
 
 ---
 
-## 1. Resumen Ejecutivo
+## Resumen: Panorama Real
 
-Este roadmap documenta las decisiones arquitectónicas para profundizar 6 candidatos de deuda técnica en `cognicode-core`. El trabajo se ejecuta en **5 waves** con gates CI automatizados, minimizando blast radius y habilitando paralelismo donde los candidatos son independientes.
+Este documento mezcla **tres hojas de ruta distintas**:
 
-**Impacto estimado:** ~1,450 Δlines distribuidas en 5 waves.  
-**Riesgo:** Bajo-Medio. Las waves 1 y 2 son aditivas. Las waves 4-5 tienen rollback path documentado.  
-**Bloqueo crítico:** Wave 3 (C4 Schema/DTO) gating Wave 5 (C1 Tool Registry).
+| Fuente | Candidatos | Implementado | Estado |
+|--------|-----------|-------------|--------|
+| auto-grill-loop jun-11 | C1–C6 (ADR-001–006) | **0%** | Aspiracional — nunca llegó a código |
+| ADR-010 deepening (jun-13) | Phases 1–5 | **~60%** | Phase 1 (view seam) 50%; Phase 4 (GraphQueryPort) parcial |
+| improve-codebase jun-14 | C7–C11 | **0%** | 5 decisiones tomadas, sin código |
 
----
-
-## 2. Candidatos — Estado Actual
-
-| # | Candidato | Ubicación | Tamaño | Estado | ADR |
-|---|----------|-----------|--------|--------|-----|
-| C1 | Tool Registry (`#[aix_tool]`) | `rmcp_adapter.rs` | ~2205 l. | 🔴 Propuesto | ADR-001 (boundary), macro en ADR-003 |
-| C2 | HandlerContext Builder | `handlers/mod.rs` | ~600 l. | 🟡 Propuesto | Split en C2a/C2b |
-| C3 | WalkFilter (SKIP_DIRS) | `domain/value_objects/` | 9 duplicados | 🟢 Propuesto | ADR-004 |
-| C4 | Schema/DTO Unification | `schemas.rs` + `dto/` | ~5400 l. | 🔴 Propuesto | ADR-001, ADR-003 |
-| C5 | ReadMode Static Dispatch | `file_operations.rs` | ~3226 l. | 🟢 Propuesto | ADR-005 |
-| C6 | Mock Crate Separation | `domain/traits/` | ~370 l. | 🟢 Propuesto | ADR-006 |
-
-**Leyenda estado:**
-- 🔴 Propuesto — necesita implementación
-- 🟡 En progreso
-- 🟢 Completado
-- ⚠️ Bloqueado
+**Problema crítico del documento anterior:** los indicadores 🟢 en C3/C5/C6 decían "Completado" pero eran aspiracionales — significaban "diseñado y listo", no "implementado".
 
 ---
 
-## 3. Plan de Ejecución — 5 Waves
+## 1. Candidatos — Estado Real (junio 2026)
+
+### 1.1 Histórico-Aspiracional — C1–C6 (jamás implementados)
+
+> Estos son los candidatos de la sesión de auto-grill-loop del 11 de junio. ADR-001 a ADR-006 están en `docs/adr/` como PROPOSED pero nunca se tocaron en código. El `WalkFilter` que existe en `domain/value_objects/walk_filter.rs` es de ADR-010 Phase 4, no de C3.
+
+| # | Candidato | Ubicación objetivo | ADR | Notas |
+|---|----------|-------------------|-----|-------|
+| C1 | Tool Registry (`#[aix_tool]`) | `rmcp_adapter.rs` | ADR-001, ADR-003 | Nunca se tocó |
+| C2 | HandlerContext Builder | `handlers/mod.rs` | Split C2a/C2b | Nunca se tocó |
+| C3 | WalkFilter (SKIP_DIRS) | `domain/value_objects/` | ADR-004 | El real es de ADR-010 Phase 4 |
+| C4 | Schema/DTO Unification | `schemas.rs` + `dto/` | ADR-001, ADR-003 | Nunca se tocó |
+| C5 | ReadMode Static Dispatch | `file_operations.rs` | ADR-005 | Nunca se tocó |
+| C6 | Mock Crate Separation | `domain/traits/` | ADR-006 | Nunca se tocó |
+
+**Acción:** esta sección es histórica. Decidir si se archiva o se reprograma con nueva estimación.
+
+### 1.2 ADR-010 — Implementación Real
+
+| Phase | Contenido | Estado | Evidencia |
+|-------|-----------|--------|-----------|
+| 1 | View seam (ViewDescriptor + ViewExecutor ISP) | 🟡 **Mitad** | traits existen en `domain/views.rs:1227-1604`; `facades/view.rs` tiene hardcoded match + devuelve `FeatureDisabled` |
+| 2 | PostgreSQL-only + composition root | 🟢 **Hecho** | `5694c2e`; `cognicode-runtime/` existe |
+| 3 | ExplorerService → 6 ISP facades | 🟢 **Hecho** | `37a42e9` + `7323bb3`; 6 facades en `facades/` |
+| 4 | GraphQueryPort (separar navegación de SymbolRepository) | 🟡 **Parcial** | `trait GraphQueryPort` existe (`domain/traits/graph_query_port.rs`); `MetadataAwareRepository` eliminado; pero separación no completada |
+| 5 | Bootstrap absorbido por composition root | 🟢 **Hecho** | `cognicode-runtime/` como root |
+
+**Problemas abiertos de ADR-010:**
+- **Phase 1:** 4 fuentes de verdad en el registro de vistas. `contextual_view()` devuelve `FeatureDisabled`. Esto ES el C7 que grillamos ayer — la continuación directa de `view-seam-consolidation`.
+- **Phase 4:** `SymbolRepository` en `ports/symbol_repository.rs` aún no tiene los métodos de navegación completamente separados de `GraphQueryPort`.
+
+### 1.3 C7–C11 (junio 2026) — Decisiones Tomadas, Sin Código
+
+| # | Candidato | ΔLines | Depende | Prioridad |
+|---|----------|---------|----------|-----------|
+| C7 | Consolidación view registry | ~200 net negative | — | 🔴 Alta |
+| C8 | Sobre MCP centralizado | ~150 net negative | — | 🔴 Alta |
+| C9 | sessions.rs SessionHandler trait | ~500 net negative | C8 | 🔴 Media |
+| C10 | Extracción Rust Verifier | ~500 | — | 🟡 Media |
+| C11 | dto.rs serde derive + NamedView | ~380 net negative | — | 🟡 Baja |
+
+---
+
+## 2. Plan de Ejecución Recomendado
 
 ```
 ═══════════════════════════════════════════════════════════════════════════════
-                        ROADMAP: Arquitectura CogniCode
+                    PRÓXIMAS 3 SEMANAS — CogniCode
 ═══════════════════════════════════════════════════════════════════════════════
 
-  Wave 1               Wave 2         Wave 3           Wave 4       Wave 5
-┌──────────────┐   ┌───────────┐  ┌────────────┐  ┌───────────┐  ┌───────────┐
-│ C3 + C5 + C6 │ → │  C2a      │ → │   C4       │ → │   C2b     │ → │   C1      │
-│ (PARALELO)   │   │  Builder  │  │ Unification│  │  Deletion │  │ Tool Reg. │
-└──────────────┘   └───────────┘  └────────────┘  └───────────┘  └───────────┘
-  ~500 Δlines        ~150 Δlines   ~500 Δlines     ~50 Δlines    ~200 Δlines
+  AHORA              SIGUIENTE            JUNIO FIN
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│ C7 (view     │  │ C8 (envelope│  │ C9 (sessions│
+│   registry)  │→ │   MCP)      │→ │   trait)     │
+│ ~200Δ net    │  │ ~150Δ net   │  │ ~500Δ, req C8│
+│ continua     │  │ independiente│  └──────────────┘
+│ view-seam    │  └──────────────┘
+│ consolidation│
+└──────────────┘
 
-  └─ C3: WalkFilter     └─ C2a: HandlerContext Builder (aditivo)
-  └─ C5: ReadMode          Requisito: ninguno
-  └─ C6: Mock crate     Gate CI: coexistence tests + deprecated count = 0
-  Gate CI: bench <5%
-                      Gate CI: C2a en prod + wrappers deprecated eliminados
-
-  ⚠ GATE: C4 debe completarse antes de C1 (o 3 precondiciones)
-
-═══════════════════════════════════════════════════════════════════════════════
-```
-
-### Wave 1 — C3 + C5 + C6 (Paralelo, ~500 Δlines)
-
-**并行 execution.** Los 3 candidatos tocan archivos completamente disjuntos. Zero merge conflict risk.
-
-#### C3: WalkFilter Value Object
-- **Archivos:** 5 archivos con SKIP_DIRS duplicados
-- **ΔLines:** ~150
-- **Entregable:** `domain/value_objects/walk_filter.rs`
-  - `WalkDecision` enum: `Include | Skip | Prune`
-  - `WalkFilter` struct con builder: `.with_security_blocklist()` + `.with_performance_skips()`
-  - Función: `fn(&Path) -> WalkDecision`
-- **Gate CI:** Test suite passing + bench <5% regression
-
-#### C5: ReadMode Static Dispatch
-- **Archivos:** 2 (dto/file_ops.rs + file_ops_handlers.rs)
-- **ΔLines:** ~100
-- **Entregable:** Refactor de dispatch a enum estático
-  - Eliminar trait objects si existen
-  - `match` exhaustivo en los 4 ReadMode variants
-- **Gate CI:** 4 modos compilan + tests pasan
-
-#### C6: Mock Crate Separation
-- **Archivos:** ~15 (domain/traits/*.rs)
-- **ΔLines:** ~250
-- **Entregable:** `crates/cognicode-core-mock/`
-  - Cargo.toml con version lockstep
-  - `src/lib.rs` con re-exports + mocks
-  - Tests de integración contra domain traits
-- **Gate CI:** Mock crate compila + integration tests passing
-
----
-
-### Wave 2 — C2a: HandlerContext Builder (~150 Δlines)
-
-**Cambio aditivo puro.** Sin riesgo de blast radius.
-
-- **Archivo:** `handlers/mod.rs`
-- **ΔLines:** ~150
-- **Entregable:** `HandlerContext::builder()`
-  - Builder pattern con todos los campos actuales
-  - `#[deprecated]` thin wrappers sobre constructors existentes
-  - Coexistence: código viejo y nuevo funcionan en paralelo
-- **Gate CI:** `#[deprecated]` wrapper count = 0 al final de la wave (verificado por linter)
-
----
-
-### Wave 3 — C4: Schema/DTO Unification (~500 Δlines) ⚠️ GATE for C1
-
-**La wave más crítica.** Define la frontera MCP/domain para todo el trabajo futuro.
-
-- **Archivos:** 5+ (`schemas.rs`, `application/dto/*.rs`, `dto_mapping.rs`)
-- **ΔLines:** ~500
-- **Entregable:**
-  - Macro `#[newtype]` en `cognicode-macros`
-  - Los 24 pares schema/DTO como newtypes
-  - `schemas.rs` sin imports de `application::dto`
-  - `dto_mapping.rs` eliminado (código muerto)
-  - BuildGraphInput movido a `schemas.rs` (53 call sites actualizados)
-- **Gate CI:**
-  - Trybuild macro tests pasando
-  - `grep -r "use crate::application::dto" schemas.rs` → cero matches
-  - Serde roundtrip tests para los 24 tipos
-
----
-
-### Wave 4 — C2b: ContextGraphStore Deletion (~50 Δlines)
-
-**Post-requisito:** C2a (Builder) debe estar en producción y los deprecated wrappers deben tener count=0.
-
-- **Archivo:** `handlers/mod.rs`
-- **ΔLines:** ~50 (eliminación)
-- **Entregable:**
-  - `ContextGraphStore` eliminado
-  - Todos los 15 call sites migrados a `Arc<dyn GraphStore>`
-  - `Box<dyn GraphStore>` → `Arc<dyn GraphStore>` en toda la base
-- **Gate CI:** `dead_code` lint clean (ningún warning de código muerto)
-
----
-
-### Wave 5 — C1: Tool Registry `#[aix_tool]` (~200 Δlines) ⚠️ GATED by C3
-
-**Última wave.** La de mayor impacto en developer workflow.
-
-**Precondiciones (alternativa a esperar C4):**
-1. `BuildGraphInput` movido a `schemas.rs`
-2. Audit de leakage de DTOs en return types de handlers
-3. `schemas.rs` sin imports de `application::dto`
-
-Si las 3 precondiciones se cumplen, C1 puede comenzar antes de C4.
-
-- **Archivos:** `rmcp_adapter.rs` + `cognicode-macros/src/lib.rs`
-- **ΔLines:** ~200 + macro
-- **Entregable:**
-  - Macro attribute `#[aix_tool]` en `cognicode-macros`
-  - Registro de herramientas refactorizado para usar la macro
-  - ~65+ herramientas registradas via macro
-- **Gate CI:**
-  - Integration test suite passing
-  - Tool count match (mismo número de herramientas antes y después)
-  - Benchmark no regressa
-
----
-
-## 4. CI Gates por Wave
-
-| Wave | Gate | Tool | Pass Criteria |
-|------|------|------|---------------|
-| 1 | Test suite | `cargo test` | 100% passing |
-| 1 | Bench regression | `cargo bench` | <5% regression vs baseline |
-| 1 | Mock crate compiles | `cargo build -p cognicode-core-mock` | Zero errors |
-| 2 | Coexistence tests | integration test | Both old + new API work |
-| 2 | Deprecated count | custom linter | Count = 0 (after migration) |
-| 3 | Trybuild tests | `cargo test` (trybuild) | All snapshots passing |
-| 3 | DTO boundary | `grep` | Zero `application::dto` imports in schemas |
-| 3 | Serde roundtrip | unit tests | All 24 types roundtrip |
-| 4 | Dead code | `cargo clippy -- -W dead-code` | Zero warnings |
-| 5 | Integration | `cargo test --test '*integration*'` | 100% passing |
-| 5 | Tool count | count check | Same count pre/post |
-
----
-
-## 5. ADRs Vinculados
-
-| ADR | Candidato | Wave | Estado |
-|-----|----------|------|--------|
-| ADR-001 | Schema/DTO Boundary | 3, 5 | PROPOSED |
-| ADR-002 | 5-Wave Execution Order | Todas | PROPOSED |
-| ADR-003 | Newtype Macro | 3 | PROPOSED |
-| ADR-004 | WalkFilter | 1 | PROPOSED |
-| ADR-005 | ReadMode Static Dispatch | 1 | PROPOSED |
-| ADR-006 | Mock Crate Separation | 1 | PROPOSED |
-
----
-
-## 6. Dependencias
-
-```
-C4 ──────────────────────► C1
-     (gating, salvo 3 precondiciones)
-
-C2a ──► C2b
-  (C2b requiere C2a en prod)
-
-C3 ──┬──► Wave 1 (paralelo, sin dependencias entre sí)
-C5 ──┘
-C6 ──┘
+PARALELO (junio-julio):
+┌──────────────┐  ┌──────────────┐  ┌──────────────────┐
+│ ADR-010 Ph.4│  │ C10 (rust    │  │ C11 (dto serde)  │
+│ GraphQuery  │  │   verifier)  │  │ ~380Δ net        │
+│ Port        │  │ ~500Δ        │  │ mecánico         │
+└──────────────┘  └──────────────┘  └──────────────────┘
 ```
 
 ---
 
-## 7. Riesgos y Mitigaciones
+## 3. Decisiones Tomadas en el Grilling (C7–C11)
+
+### C7 — Registro de vistas
+- `ViewDescriptorProvider` + `inventory::submit!` → **borrar**
+- `ProviderWrapper` + `ProviderExecutorAdapter` → **borrar**
+- `REAL_EXECUTOR_DESCRIPTORS` + dedup loop → **borrar**
+- Facade recibe `Arc<dyn ViewRegistry>` (no ports)
+- Registry traduce object_id → InspectionTarget (el que llama pasa ViewContext armado)
+- `list_for_with_store` queda en registry — respeta ADR-010
+- Registry: `{ spec_store: Option<Arc<dyn ViewSpecStore>> }` (sin estado de ports)
+
+### C8 — Sobre MCP
+- Nuevo módulo `mcp/handler/envelope.rs`
+- Re-exporta `McpResultEnvelope`, `EnvelopeError`, `ProvenanceMetadata`, `FollowUp` de `explorer.rs`
+- 4 helpers: `ok_envelope`, `ok_envelope_prov`, `err_envelope`, `plain_err`
+- `McpResultEnvelope` usado por fin
+
+### C9 — sessions.rs
+- `make_handler!` macro → **borrar** (declarada, 0 usos)
+- `SessionHandler` trait + `handle_dispatch` fn → absorbs 4 impl blocks por handler
+- Cada handler: const NAME + typed Args + typed Response + validate + call
+- ~1028 LOC → ~520 LOC
+
+### C10 — Rust Verifier
+- Cluster 2 de `file_operations.rs` → nuevo `application/services/rust_verifier.rs`
+- `trait RustVerifier: Send + Sync` → costura
+- `CommandRunnerAdapter` (prod) + `InMemoryCommandRunner` (tests)
+- `file_operations.rs` baja a ~1700 LOC
+
+### C11 — dto.rs
+- `ViewKind`, `RendererKind`, `HierarchyKind` → `#[derive(Serialize, Deserialize)]` + `#[serde(rename_all = "snake_case", other)]`
+- `NamedViewDescriptor` → **borrar** (~170 LOC tests + impl)
+- `to_view_spec`, `lens_to_view_kind`, `level_to_inspectable_object_type`, `truncate_description` → **borrar** (~150 LOC)
+- `NamedView` se conserva (usado por `postgres_repository.rs`)
+
+---
+
+## 4. ADR-010 — Detalle de Fases Abiertas
+
+### Phase 1: View Seam — 🟡 50% hecho
+
+**Lo que existe:**
+- `trait ViewDescriptor` en `domain/views.rs:1227-1233`
+- `trait ViewExecutor: ViewDescriptor` en `domain/views.rs:1238-1241`
+- 8 `pub static *_EXECUTOR` en `domain/views.rs:1597-1604`
+- `list_for` en `registry.rs:248-335` (dedup loop con 4 fuentes)
+- `ProviderExecutorAdapter` en `registry.rs:191-221` (devuelve `FeatureDisabled`)
+
+**El problema:** 4 fuentes de verdad + `contextual_view()` no llama a los ejecutores.
+
+**Continuación = C7.**
+
+### Phase 4: GraphQueryPort — 🟡 Parcial
+
+**Lo que existe:**
+- `trait GraphQueryPort` en `domain/traits/graph_query_port.rs:105-145`
+- `trait SymbolRepository` en `ports/symbol_repository.rs:72-102` (sólo métodos de identidad)
+- `MetadataAwareRepository` eliminado (confirmado en `graph_query_port.rs:103`)
+
+**Lo que falta:** verificar que `SymbolRepository` no tiene métodos de navegación mezclados. La separación se empezó pero no seAuditó completamente.
+
+---
+
+## 5. ADRs — Estado Real (junio 2026)
+
+| ADR | Fuente | Candidato | Implementado | Estado ADR |
+|-----|--------|-----------|-------------|-----------|
+| ADR-001 | jun-11 | C1 Tool Registry | ❌ Nunca | PROPOSED |
+| ADR-002 | jun-11 | C2 HandlerContext | ❌ Nunca | PROPOSED |
+| ADR-003 | jun-11 | C3 WalkFilter | ❌ Nunca | PROPOSED |
+| ADR-004 | jun-11 | C4 Schema/DTO | ❌ Nunca | PROPOSED |
+| ADR-005 | jun-11 | C5 ReadMode | ❌ Nunca | PROPOSED |
+| ADR-006 | jun-11 | C6 Mock Crate | ❌ Nunca | PROPOSED |
+| ADR-007 | jun-12 | No-WASM browser | 🟢 | ACCEPTED |
+| ADR-008 | jun-12 | Moldable View Runtime | 🟢 | ACCEPTED |
+| ADR-009 | jun-12 | Hybrid Explorer Navigation | 🟢 | ACCEPTED |
+| ADR-010 | jun-13 | Deepening Roadmap | 🟡 ~60% | PROPOSED |
+| ADR-011 | jun-14 | C8 MCP Envelope | ❌ | PROPOSED |
+| ADR-012 | jun-14 | C9 SessionHandler | ❌ | PROPOSED |
+| ADR-013 | jun-14 | C10 Rust Verifier | ❌ | PROPOSED |
+| ADR-014 | jun-14 | C11 dto Serde | ❌ | PROPOSED |
+
+---
+
+## 6. Criteria de Éxito — Realista
+
+### ADR-010
+- [ ] Phase 1: C7 implementado → registry con una fuente de verdad
+- [ ] Phase 4: separación `SymbolRepository` / `GraphQueryPort` auditada y completa
+- [ ] ADR-010 → ACCEPTED
+
+### C7–C11
+- [ ] C7 implementado
+- [ ] C8 implementado
+- [ ] C9 implementado (depende de C8)
+- [ ] C10 implementado
+- [ ] C11 implementado
+
+### Aspiracional (C1–C6)
+- [ ] ADR-001–006 archivados como "no priorizado" o reprogramados con nueva fecha
+
+---
+
+## 7. Riesgos
 
 | Riesgo | Severidad | Probabilidad | Mitigación |
-|--------|-----------|-------------|------------|
-| C1 bloqueado indefinidamente por C4 | Media | Baja | 3-precondition escape hatch |
-| C4 rompe serde roundtrip | **Alta** | Baja | trybuild tests + roundtrip tests obligatorios |
-| Merge conflicts en `handlers/mod.rs` | Media | Baja | C2a (Wave 2) y C2b (Wave 4) no se solapan |
-| Mock crate version skew | Baja | Media | Lockstep versioning en CI |
-| Benchmark regression >5% | Media | Baja | Gate CI hard-stop |
+|--------|-----------|-------------|-----------|
+| C7 rompe tests existentes de `available_views` | Media | Media | Tests ya esperan el formato nuevo; la regression test ya existe |
+| ADR-010 Phase 4 no está completa y nadie lo sabe | Alta | Media | Auditar separación `SymbolRepository` / `GraphQueryPort` |
+| C1–C6 aspiracional confunde contributors | Baja | Alta | Archivar o marcar como "deferred" |
+| C9 depende de C8 — si C8 se complica, C9 se retrasa | Baja | Baja | C8 es mecánico (~150 LOC net negative) |
 
 ---
 
-## 8. Criteria de Éxito
-
-- [ ] Los 6 candidatos implementados sin romper tests existentes
-- [ ] Bench regression <5% en todas las waves
-- [ ] Cero imports de `application::dto` en `schemas.rs` post-Wave 3
-- [ ] Los 24 tipos schema/DTO compilan con la macro `#[newtype]`
-- [ ] `ContextGraphStore` eliminado y todos los call sites migrados
-- [ ] Tool registry usa `#[aix_tool]` macro con count unchanged
-- [ ] ADR-001 a ADR-006 promoted a ACCEPTED
-
----
-
-## 9. Timeline Sugerido
-
-```
-Junio 2026
-├── Semana 1: Wave 1 — C3 (WalkFilter) + C5 (ReadMode) + C6 (Mock crate)
-├── Semana 2: Wave 2 — C2a (HandlerContext Builder)
-├── Semana 3: Wave 3 — C4 (Schema/DTO Unification) ← CRÍTICO
-├── Semana 4: Wave 4 — C2b (ContextGraphStore Deletion)
-│
-Julio 2026
-└── Semana 5: Wave 5 — C1 (Tool Registry)
-```
-
----
-
-## 10. Artefactos del Proceso
+## 8. Artefactos
 
 | Artefacto | Ubicación |
 |-----------|-----------|
-| Auto-grill report | `docs/grill/2026-06-11-architecture-deepening.report.md` |
-| ADR-001 Schema/DTO Boundary | `docs/adr/ADR-001-schema-dto-boundary.md` |
-| ADR-002 5-Wave Execution | `docs/adr/ADR-002-5-wave-execution-order.md` |
-| ADR-003 Newtype Macro | `docs/adr/ADR-003-newtype-macro.md` |
-| ADR-004 WalkFilter | `docs/adr/ADR-004-walk-filter.md` |
-| ADR-005 ReadMode | `docs/adr/ADR-005-readmode-static-dispatch.md` |
-| ADR-006 Mock Crate | `docs/adr/ADR-006-mock-crate-separation.md` |
-| Drafts (superseded) | `docs/adr/drafts/DRAFT-*.md` (verificar tras promoción) |
-| Architecture review HTML | `/tmp/architecture-review-cognicode-2026-06-11.html` |
+| Auto-grill report (jun-11) | `docs/grill/2026-06-11-architecture-deepening.report.md` |
+| ADR-001 a ADR-006 | `docs/adr/ADR-00X-*.md` (PROPOSED, aspiracional) |
+| ADR-007 a ADR-009 | `docs/adr/ADR-00X-*.md` (ACCEPTED) |
+| ADR-010 deepening | `docs/adr/ADR-010-deepening-roadmap.md` |
+| Architecture review HTML (jun-11) | `/tmp/architecture-review-cognicode-2026-06-11.html` |
+| Architecture review HTML (jun-14) | `/tmp/architecture-review-2026-06-14.html` |
+| Copia en change | `openspec/changes/view-seam-consolidation/reports/architecture-review-2026-06-14.html` |
 
 ---
 
-*Documento generado via auto-grill-loop. Para contexto completo, ver el report en `docs/grill/2026-06-11-architecture-deepening.report.md`.*
+*Documento reescrito el 2026-06-14: limpio de混杂, estados corregidos, C1-C6 marcados como aspiracional, ADR-010 desglosado por fase, C7-C11 integrados.*

@@ -11,6 +11,7 @@
 //! - [`handler`]  — [`ToolHandler`](handler::ToolHandler) trait + [`ToolHandlerRegistry`](handler::ToolHandlerRegistry)
 //! - [`handler::sessions`] — session-family handlers (9 tools)
 
+pub mod envelope;
 pub mod explorer;
 pub mod context;
 pub mod error;

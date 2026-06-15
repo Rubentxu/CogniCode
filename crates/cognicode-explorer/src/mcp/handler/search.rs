@@ -11,6 +11,7 @@ use rmcp::model::{CallToolResult, Content};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::{McpContext, TOOL_INSPECT_OBJECT, TOOL_SPOTTER_SEARCH};
 
@@ -29,41 +30,6 @@ struct SpotterArgs {
 #[serde(default)]
 struct InspectArgs {
     object_id: Option<String>,
-}
-
-// ============================================================================
-// Envelope helpers
-// ============================================================================
-
-fn ok_envelope<T: serde::Serialize>(tool_name: &str, value: &T) -> CallToolResult {
-    let envelope = serde_json::json!({
-        "tool_name": tool_name,
-        "version": env!("CARGO_PKG_VERSION"),
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "provenance": serde_json::Value::Null,
-        "payload": value,
-        "suggested_follow_ups": serde_json::Value::Array(Vec::new()),
-    });
-    let pretty = serde_json::to_string_pretty(&envelope)
-        .unwrap_or_else(|e| format!("failed to serialize envelope: {e}"));
-    CallToolResult::success(vec![Content::text(pretty)])
-}
-
-fn err_envelope(tool_name: &str, code: &str, message: &str) -> CallToolResult {
-    let envelope = serde_json::json!({
-        "tool_name": tool_name,
-        "version": env!("CARGO_PKG_VERSION"),
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "provenance": serde_json::Value::Null,
-        "payload": {
-            "error_code": code,
-            "error": message,
-        },
-        "suggested_follow_ups": serde_json::Value::Array(Vec::new()),
-    });
-    let pretty = serde_json::to_string_pretty(&envelope)
-        .unwrap_or_else(|e| format!("failed to serialize envelope: {e}"));
-    CallToolResult::error(vec![Content::text(pretty)])
 }
 
 // ============================================================================

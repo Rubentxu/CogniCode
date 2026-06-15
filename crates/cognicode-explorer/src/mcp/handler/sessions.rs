@@ -20,8 +20,9 @@ use rmcp::model::{CallToolResult, Content};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::mcp::envelope::{err_envelope, ok_envelope_with_provenance};
 use crate::mcp::handler::ToolHandler;
-use crate::mcp::{McpContext, TOOL_BRAIN_OPEN, TOOL_BRAIN_ATTACH, TOOL_BRAIN_ASK, TOOL_BRAIN_FOCUS, TOOL_BRAIN_STATUS, TOOL_BRAIN_CLOSE};
+use crate::mcp::{McpContext, ProvenanceMetadata, TOOL_BRAIN_OPEN, TOOL_BRAIN_ATTACH, TOOL_BRAIN_ASK, TOOL_BRAIN_FOCUS, TOOL_BRAIN_STATUS, TOOL_BRAIN_CLOSE};
 #[cfg(feature = "multimodal")]
 use crate::mcp::{TOOL_BRAIN_ADD_SPACE, TOOL_BRAIN_REMOVE_SPACE, TOOL_BRAIN_SPACES};
 use crate::session::DEFAULT_TTL_SECS;
@@ -258,7 +259,7 @@ impl ToolHandler for BrainOpenHandler {
         #[cfg(not(feature = "multimodal"))]
         let space_errors_json = serde_json::json!([]);
 
-        self.ok(serde_json::json!({
+        self.ok(&serde_json::json!({
             "session_id": session_id,
             "workspace_id": workspace_id,
             "ttl_secs": ttl,
@@ -270,10 +271,10 @@ impl ToolHandler for BrainOpenHandler {
 
 impl BrainOpenHandler {
     fn err(&self, code: &str, msg: &str) -> CallToolResult {
-        err_with_code(TOOL_BRAIN_OPEN, code, msg)
+        err_envelope(TOOL_BRAIN_OPEN, code, msg)
     }
-    fn ok(&self, payload: Value) -> CallToolResult {
-        ok_brain(TOOL_BRAIN_OPEN, payload)
+    fn ok(&self, payload: &Value) -> CallToolResult {
+        ok_envelope_with_provenance(TOOL_BRAIN_OPEN, payload, brain_provenance())
     }
 }
 
@@ -315,7 +316,7 @@ impl ToolHandler for BrainAttachHandler {
         match ctx.session_registry.attach(&session_id) {
             Ok(session) => {
                 let snap = session.snapshot();
-                self.ok(serde_json::json!({
+                self.ok(&serde_json::json!({
                     "session_id": session_id,
                     "workspace_id": snap.workspace_id,
                     "last_activity": snap.last_activity,
@@ -335,10 +336,10 @@ impl ToolHandler for BrainAttachHandler {
 
 impl BrainAttachHandler {
     fn err(&self, code: &str, msg: &str) -> CallToolResult {
-        err_with_code(TOOL_BRAIN_ATTACH, code, msg)
+        err_envelope(TOOL_BRAIN_ATTACH, code, msg)
     }
-    fn ok(&self, payload: Value) -> CallToolResult {
-        ok_brain(TOOL_BRAIN_ATTACH, payload)
+    fn ok(&self, payload: &Value) -> CallToolResult {
+        ok_envelope_with_provenance(TOOL_BRAIN_ATTACH, payload, brain_provenance())
     }
 }
 
@@ -415,13 +416,13 @@ impl ToolHandler for BrainAskHandler {
 
 impl BrainAskHandler {
     fn err(&self, code: &str, msg: &str) -> CallToolResult {
-        err_with_code(TOOL_BRAIN_ASK, code, msg)
+        err_envelope(TOOL_BRAIN_ASK, code, msg)
     }
 
     /// Handle ask — returns the full nested envelope as the payload.
     fn ok_brain_envelope(&self, env: crate::mcp::McpResultEnvelope<serde_json::Value>) -> CallToolResult {
         let json = serde_json::to_value(&env).unwrap_or(serde_json::Value::Null);
-        ok_brain(TOOL_BRAIN_ASK, json)
+        ok_envelope_with_provenance(TOOL_BRAIN_ASK, &json, brain_provenance())
     }
 }
 
@@ -484,7 +485,7 @@ impl ToolHandler for BrainFocusHandler {
         };
 
         session.set_focus(focus.clone());
-        self.ok(serde_json::json!({
+        self.ok(&serde_json::json!({
             "session_id": session_id,
             "focus_node": focus,
         }))
@@ -493,10 +494,10 @@ impl ToolHandler for BrainFocusHandler {
 
 impl BrainFocusHandler {
     fn err(&self, code: &str, msg: &str) -> CallToolResult {
-        err_with_code(TOOL_BRAIN_FOCUS, code, msg)
+        err_envelope(TOOL_BRAIN_FOCUS, code, msg)
     }
-    fn ok(&self, payload: Value) -> CallToolResult {
-        ok_brain(TOOL_BRAIN_FOCUS, payload)
+    fn ok(&self, payload: &Value) -> CallToolResult {
+        ok_envelope_with_provenance(TOOL_BRAIN_FOCUS, payload, brain_provenance())
     }
 }
 
@@ -567,23 +568,23 @@ impl ToolHandler for BrainStatusHandler {
                 obj.insert("space_count".to_string(), serde_json::json!(space_count));
                 obj.insert("space_details".to_string(), serde_json::json!(space_details));
             }
-            return self.ok(payload);
+            return self.ok(&payload);
         }
 
         #[cfg(not(feature = "multimodal"))]
         {
             let payload = serde_json::to_value(&snap).unwrap_or(Value::Null);
-            self.ok(payload)
+            self.ok(&payload)
         }
     }
 }
 
 impl BrainStatusHandler {
     fn err(&self, code: &str, msg: &str) -> CallToolResult {
-        err_with_code(TOOL_BRAIN_STATUS, code, msg)
+        err_envelope(TOOL_BRAIN_STATUS, code, msg)
     }
-    fn ok(&self, payload: Value) -> CallToolResult {
-        ok_brain(TOOL_BRAIN_STATUS, payload)
+    fn ok(&self, payload: &Value) -> CallToolResult {
+        ok_envelope_with_provenance(TOOL_BRAIN_STATUS, payload, brain_provenance())
     }
 }
 
@@ -624,7 +625,7 @@ impl ToolHandler for BrainCloseHandler {
 
         // Idempotent: unknown/closed → closed: false, NOT an error.
         let closed = ctx.session_registry.close(&session_id);
-        self.ok(serde_json::json!({
+        self.ok(&serde_json::json!({
             "session_id": session_id,
             "closed": closed,
         }))
@@ -633,10 +634,10 @@ impl ToolHandler for BrainCloseHandler {
 
 impl BrainCloseHandler {
     fn err(&self, code: &str, msg: &str) -> CallToolResult {
-        err_with_code(TOOL_BRAIN_CLOSE, code, msg)
+        err_envelope(TOOL_BRAIN_CLOSE, code, msg)
     }
-    fn ok(&self, payload: Value) -> CallToolResult {
-        ok_brain(TOOL_BRAIN_CLOSE, payload)
+    fn ok(&self, payload: &Value) -> CallToolResult {
+        ok_envelope_with_provenance(TOOL_BRAIN_CLOSE, payload, brain_provenance())
     }
 }
 
@@ -719,7 +720,7 @@ impl ToolHandler for BrainAddSpaceHandler {
             return self.err("duplicate_space_id", &format!("duplicate space id: {e}"));
         }
 
-        self.ok(serde_json::json!({
+        self.ok(&serde_json::json!({
             "space_id": space_name,
             "space_name": space_name,
             "space_kind": space_kind.as_str(),
@@ -730,10 +731,10 @@ impl ToolHandler for BrainAddSpaceHandler {
 #[cfg(feature = "multimodal")]
 impl BrainAddSpaceHandler {
     fn err(&self, code: &str, msg: &str) -> CallToolResult {
-        err_with_code(TOOL_BRAIN_ADD_SPACE, code, msg)
+        err_envelope(TOOL_BRAIN_ADD_SPACE, code, msg)
     }
-    fn ok(&self, payload: Value) -> CallToolResult {
-        ok_brain(TOOL_BRAIN_ADD_SPACE, payload)
+    fn ok(&self, payload: &Value) -> CallToolResult {
+        ok_envelope_with_provenance(TOOL_BRAIN_ADD_SPACE, payload, brain_provenance())
     }
 }
 
@@ -792,17 +793,17 @@ impl ToolHandler for BrainRemoveSpaceHandler {
         };
 
         let removed = session.remove_space(&space_id);
-        self.ok(serde_json::json!({ "removed": removed }))
+        self.ok(&serde_json::json!({ "removed": removed }))
     }
 }
 
 #[cfg(feature = "multimodal")]
 impl BrainRemoveSpaceHandler {
     fn err(&self, code: &str, msg: &str) -> CallToolResult {
-        err_with_code(TOOL_BRAIN_REMOVE_SPACE, code, msg)
+        err_envelope(TOOL_BRAIN_REMOVE_SPACE, code, msg)
     }
-    fn ok(&self, payload: Value) -> CallToolResult {
-        ok_brain(TOOL_BRAIN_REMOVE_SPACE, payload)
+    fn ok(&self, payload: &Value) -> CallToolResult {
+        ok_envelope_with_provenance(TOOL_BRAIN_REMOVE_SPACE, payload, brain_provenance())
     }
 }
 
@@ -862,17 +863,17 @@ impl ToolHandler for BrainSpacesHandler {
             })
             .collect();
 
-        self.ok(serde_json::json!({ "spaces": spaces }))
+        self.ok(&serde_json::json!({ "spaces": spaces }))
     }
 }
 
 #[cfg(feature = "multimodal")]
 impl BrainSpacesHandler {
     fn err(&self, code: &str, msg: &str) -> CallToolResult {
-        err_with_code(TOOL_BRAIN_SPACES, code, msg)
+        err_envelope(TOOL_BRAIN_SPACES, code, msg)
     }
-    fn ok(&self, payload: Value) -> CallToolResult {
-        ok_brain(TOOL_BRAIN_SPACES, payload)
+    fn ok(&self, payload: &Value) -> CallToolResult {
+        ok_envelope_with_provenance(TOOL_BRAIN_SPACES, payload, brain_provenance())
     }
 }
 
@@ -964,46 +965,17 @@ impl SchemaFields for BrainCloseArgs {
 }
 
 // ============================================================================
-// Envelope helpers — produce the exact same wire format as mcp.rs.
-// These are duplicated here (rather than imported) so the handler module
-// is fully self-contained and compilable without the full mcp.rs context.
+// Envelope helpers — use the shared mcp::envelope module.
+// err_with_code and ok_brain are removed; the impl blocks delegate to
+// err_envelope and ok_envelope_with_provenance via brain_provenance().
 // ============================================================================
 
-/// Build a `CallToolResult::success` with a brain-session error envelope
-/// (provenance.source = "brain-session", error_code + error fields).
-fn err_with_code(tool_name: &str, code: &str, message: &str) -> CallToolResult {
-    let envelope = serde_json::json!({
-        "tool_name": tool_name,
-        "version": env!("CARGO_PKG_VERSION"),
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "provenance": serde_json::Value::Null,
-        "payload": {
-            "error_code": code,
-            "error": message,
-        },
-        "suggested_follow_ups": serde_json::Value::Array(Vec::new()),
-    });
-    let pretty = serde_json::to_string_pretty(&envelope)
-        .unwrap_or_else(|e| format!("failed to serialize envelope: {e}"));
-    CallToolResult::success(vec![Content::text(pretty)])
-}
-
-/// Build a `CallToolResult::success` with a brain-session
-/// `McpResultEnvelope` (provenance.source = "brain-session").
-fn ok_brain(tool_name: &str, payload: Value) -> CallToolResult {
-    let envelope = serde_json::json!({
-        "tool_name": tool_name,
-        "version": env!("CARGO_PKG_VERSION"),
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "provenance": {
-            "source": "brain-session",
-        },
-        "payload": payload,
-        "suggested_follow_ups": serde_json::Value::Array(Vec::new()),
-    });
-    let pretty = serde_json::to_string_pretty(&envelope)
-        .unwrap_or_else(|e| format!("failed to serialize envelope: {e}"));
-    CallToolResult::success(vec![Content::text(pretty)])
+/// Provenance metadata for all brain-session tools.
+fn brain_provenance() -> ProvenanceMetadata {
+    ProvenanceMetadata {
+        source: Some("brain-session".to_string()),
+        confidence: None,
+    }
 }
 
 // ============================================================================
@@ -1024,5 +996,118 @@ pub fn register_session_handlers(registry: &mut crate::mcp::handler::ToolHandler
         registry.register(BrainAddSpaceHandler);
         registry.register(BrainRemoveSpaceHandler);
         registry.register(BrainSpacesHandler);
+    }
+}
+
+// ============================================================================
+// Regression tests — lock wire-level error/success semantics
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmcp::model::{CallToolResult, Content};
+    use serde_json::json;
+
+    // ------------------------------------------------------------------------
+    // err_envelope wire semantics
+    // ------------------------------------------------------------------------
+
+    /// Regression: err_envelope must return CallToolResult::error, NOT success.
+    /// The sessions.rs:988 bug was that err_with_code returned success.
+    #[test]
+    fn err_envelope_returns_error_variant() {
+        let result = err_envelope("brain_open", "session_not_found", "no session");
+        assert!(
+            matches!(result, CallToolResult::Error(_)),
+            "err_envelope must return CallToolResult::error, not success"
+        );
+    }
+
+    #[test]
+    fn err_envelope_json_payload_has_error_code() {
+        let result = err_envelope("brain_attach", "session_not_found", "not found");
+        let CallToolResult::Error(items) = result else {
+            panic!("expected CallToolResult::Error");
+        };
+        let Content::Text(text) = &items[0] else {
+            panic!("expected Content::Text");
+        };
+        let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(parsed["payload"]["error_code"], "session_not_found");
+        assert_eq!(parsed["payload"]["error"], "not found");
+        assert_eq!(parsed["tool_name"], "brain_attach");
+    }
+
+    #[test]
+    fn err_envelope_all_session_error_codes() {
+        // These are the 7 error codes used across session handlers.
+        let codes = [
+            ("brain_open", "invalid_workspace_id"),
+            ("brain_attach", "session_not_found"),
+            ("brain_attach", "session_expired"),
+            ("brain_ask", "session_not_found"),
+            ("brain_focus", "invalid_focus_node"),
+            ("brain_open", "invalid_ttl"),
+            ("brain_add_space", "invalid_space_id"),
+        ];
+        for (tool, code) in codes {
+            let result = err_envelope(tool, code, "test message");
+            assert!(
+                matches!(result, CallToolResult::Error(_)),
+                "err_envelope({tool}, {code}, ...) must return Error variant"
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // ok_envelope_with_provenance wire semantics
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn ok_envelope_with_provenance_returns_success_variant() {
+        let result = ok_envelope_with_provenance(
+            "brain_open",
+            &serde_json::json!({}),
+            brain_provenance(),
+        );
+        assert!(
+            matches!(result, CallToolResult::Success(_)),
+            "ok_envelope_with_provenance must return CallToolResult::success"
+        );
+    }
+
+    #[test]
+    fn ok_envelope_with_provenance_has_brain_session_provenance() {
+        let result = ok_envelope_with_provenance(
+            "brain_ask",
+            &serde_json::json!({"answer": "42"}),
+            brain_provenance(),
+        );
+        let CallToolResult::Success(items) = result else {
+            panic!("expected CallToolResult::Success");
+        };
+        let Content::Text(text) = &items[0] else {
+            panic!("expected Content::Text");
+        };
+        let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(parsed["provenance"]["source"], "brain-session");
+    }
+
+    // ------------------------------------------------------------------------
+    // brain_provenance
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn brain_provenance_has_brain_session_source() {
+        let prov = brain_provenance();
+        assert_eq!(prov.source.as_deref(), Some("brain-session"));
+        assert!(prov.confidence.is_none());
+    }
+
+    #[test]
+    fn brain_provenance_is_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<ProvenanceMetadata>();
     }
 }

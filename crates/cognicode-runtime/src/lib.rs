@@ -95,6 +95,7 @@ impl Runtime {
                 None, // quality_repo
                 cognicode_explorer::domain::lens::default_registry(),
                 graph_query.clone(),
+                view_registry.clone(),
             ),
         );
         let view: Arc<dyn cognicode_explorer::facades::ViewService> = view_impl.clone();

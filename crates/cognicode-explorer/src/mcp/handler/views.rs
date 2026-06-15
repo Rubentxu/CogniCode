@@ -14,6 +14,7 @@ use rmcp::model::{CallToolResult, Content};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::{
     McpContext, ProvenanceMetadata, TOOL_APPLY_LENS, TOOL_GET_LENSES,
@@ -49,70 +50,6 @@ struct ApplyLensArgs {
 struct QueryMoldQLArgs {
     query: Option<String>,
     target: Option<String>,
-}
-
-// ============================================================================
-// Envelope helpers — mirror the format used in sessions.rs and explorer.rs.
-// ============================================================================
-
-/// Build a `CallToolResult::success` carrying an `McpResultEnvelope`.
-fn ok_envelope(tool_name: &str, payload: Value) -> CallToolResult {
-    let envelope = serde_json::json!({
-        "tool_name": tool_name,
-        "version": env!("CARGO_PKG_VERSION"),
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "provenance": serde_json::Value::Null,
-        "payload": payload,
-        "suggested_follow_ups": serde_json::Value::Array(Vec::new()),
-    });
-    let pretty = serde_json::to_string_pretty(&envelope)
-        .unwrap_or_else(|e| format!("failed to serialize envelope: {e}"));
-    CallToolResult::success(vec![Content::text(pretty)])
-}
-
-/// Build a `CallToolResult::success` with provenance metadata.
-fn ok_envelope_with_provenance(
-    tool_name: &str,
-    payload: Value,
-    provenance: ProvenanceMetadata,
-) -> CallToolResult {
-    let provenance_json =
-        serde_json::to_value(provenance).unwrap_or(serde_json::Value::Null);
-    let envelope = serde_json::json!({
-        "tool_name": tool_name,
-        "version": env!("CARGO_PKG_VERSION"),
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "provenance": provenance_json,
-        "payload": payload,
-        "suggested_follow_ups": serde_json::Value::Array(Vec::new()),
-    });
-    let pretty = serde_json::to_string_pretty(&envelope)
-        .unwrap_or_else(|e| format!("failed to serialize envelope: {e}"));
-    CallToolResult::success(vec![Content::text(pretty)])
-}
-
-/// Build a `CallToolResult::error` with a structured error payload inside the envelope
-/// (used for service-layer errors that are returned as structured errors).
-fn err_envelope(tool_name: &str, code: &str, message: &str) -> CallToolResult {
-    let envelope = serde_json::json!({
-        "tool_name": tool_name,
-        "version": env!("CARGO_PKG_VERSION"),
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-        "provenance": serde_json::Value::Null,
-        "payload": {
-            "error_code": code,
-            "error": message,
-        },
-        "suggested_follow_ups": serde_json::Value::Array(Vec::new()),
-    });
-    let pretty = serde_json::to_string_pretty(&envelope)
-        .unwrap_or_else(|e| format!("failed to serialize envelope: {e}"));
-    CallToolResult::error(vec![Content::text(pretty)])
-}
-
-/// Build a `CallToolResult::error` with a plain text message.
-fn plain_err(message: String) -> CallToolResult {
-    CallToolResult::error(vec![Content::text(message)])
 }
 
 // ============================================================================
@@ -167,12 +104,21 @@ impl ToolHandler for GetViewsHandler {
 
         let view_service = match ctx.view.as_ref() {
             Some(v) => v,
-            None => return err_envelope(TOOL_GET_VIEWS, "facade_unavailable", "view service not wired"),
+            None => {
+                return err_envelope(
+                    TOOL_GET_VIEWS,
+                    "facade_unavailable",
+                    "view service not wired",
+                );
+            }
         };
 
         let result = view_service.available_views(&object_id).await;
         match result {
-            Ok(views) => ok_envelope(TOOL_GET_VIEWS, serde_json::to_value(views).unwrap_or(Value::Null)),
+            Ok(views) => {
+                let payload = serde_json::to_value(views).unwrap_or(Value::Null);
+                ok_envelope(TOOL_GET_VIEWS, &payload)
+            }
             Err(e) => err_envelope(TOOL_GET_VIEWS, "service_error", &e.to_string()),
         }
     }
@@ -241,12 +187,21 @@ impl ToolHandler for GetViewHandler {
 
         let view_service = match ctx.view.as_ref() {
             Some(v) => v,
-            None => return err_envelope(TOOL_GET_VIEW, "facade_unavailable", "view service not wired"),
+            None => {
+                return err_envelope(
+                    TOOL_GET_VIEW,
+                    "facade_unavailable",
+                    "view service not wired",
+                );
+            }
         };
 
         let result = view_service.contextual_view(&object_id, &view_id).await;
         match result {
-            Ok(view) => ok_envelope(TOOL_GET_VIEW, serde_json::to_value(view).unwrap_or(Value::Null)),
+            Ok(view) => {
+                let payload = serde_json::to_value(view).unwrap_or(Value::Null);
+                ok_envelope(TOOL_GET_VIEW, &payload)
+            }
             Err(e) => err_envelope(TOOL_GET_VIEW, "service_error", &e.to_string()),
         }
     }
@@ -300,12 +255,21 @@ impl ToolHandler for GetLensesHandler {
 
         let view_service = match ctx.view.as_ref() {
             Some(v) => v,
-            None => return err_envelope(TOOL_GET_LENSES, "facade_unavailable", "view service not wired"),
+            None => {
+                return err_envelope(
+                    TOOL_GET_LENSES,
+                    "facade_unavailable",
+                    "view service not wired",
+                );
+            }
         };
 
         let result = view_service.available_lenses(&object_id).await;
         match result {
-            Ok(lenses) => ok_envelope(TOOL_GET_LENSES, serde_json::to_value(lenses).unwrap_or(Value::Null)),
+            Ok(lenses) => {
+                let payload = serde_json::to_value(lenses).unwrap_or(Value::Null);
+                ok_envelope(TOOL_GET_LENSES, &payload)
+            }
             Err(e) => err_envelope(TOOL_GET_LENSES, "service_error", &e.to_string()),
         }
     }
@@ -374,12 +338,21 @@ impl ToolHandler for ApplyLensHandler {
 
         let view_service = match ctx.view.as_ref() {
             Some(v) => v,
-            None => return err_envelope(TOOL_APPLY_LENS, "facade_unavailable", "view service not wired"),
+            None => {
+                return err_envelope(
+                    TOOL_APPLY_LENS,
+                    "facade_unavailable",
+                    "view service not wired",
+                );
+            }
         };
 
         let result = view_service.apply_lens(&object_id, &lens_id).await;
         match result {
-            Ok(lens_result) => ok_envelope(TOOL_APPLY_LENS, serde_json::to_value(lens_result).unwrap_or(Value::Null)),
+            Ok(lens_result) => {
+                let payload = serde_json::to_value(lens_result).unwrap_or(Value::Null);
+                ok_envelope(TOOL_APPLY_LENS, &payload)
+            }
             Err(e) => err_envelope(TOOL_APPLY_LENS, "service_error", &e.to_string()),
         }
     }
@@ -456,13 +429,21 @@ impl ToolHandler for QueryMoldQLHandler {
         let moldql_service = match ctx.moldql.as_ref() {
             Some(ms) => ms,
             None => {
-                return err_envelope(TOOL_QUERY_MOLDQL, "facade_unavailable",
-                    "moldql service not wired");
+                return err_envelope(
+                    TOOL_QUERY_MOLDQL,
+                    "facade_unavailable",
+                    "moldql service not wired",
+                );
             }
         };
 
         let result: Result<crate::dto::MoldQLResultDto, _> = match target {
-            None => moldql_service.execute_query(&query).await.map(crate::dto::MoldQLResultDto::from),
+            None => {
+                moldql_service
+                    .execute_query(&query)
+                    .await
+                    .map(crate::dto::MoldQLResultDto::from)
+            }
             Some(tgt) => moldql_service
                 .execute_query_with_target(&query, tgt)
                 .await
@@ -470,7 +451,10 @@ impl ToolHandler for QueryMoldQLHandler {
         };
 
         match result {
-            Ok(dto) => ok_envelope(TOOL_QUERY_MOLDQL, serde_json::to_value(dto).unwrap_or(Value::Null)),
+            Ok(dto) => {
+                let payload = serde_json::to_value(dto).unwrap_or(Value::Null);
+                ok_envelope(TOOL_QUERY_MOLDQL, &payload)
+            }
             Err(e) => err_envelope(TOOL_QUERY_MOLDQL, "service_error", &e.to_string()),
         }
     }
