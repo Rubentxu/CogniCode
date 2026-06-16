@@ -1659,6 +1659,31 @@ async fn call_tool_handler(
             let output = crate::interface::mcp::handlers::graph_query_handlers::handle_graph_explain(ctx, input).await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
+        // Edge-type query tools (ADR-026)
+        "get_type_references" => {
+            let input: crate::interface::mcp::handlers::graph_query_handlers::GetTypeRefsInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_get_type_references(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "get_imports" => {
+            let input: crate::interface::mcp::handlers::graph_query_handlers::GetImportsInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_get_imports(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "get_implementors" => {
+            let input: crate::interface::mcp::handlers::graph_query_handlers::GetImplementorsInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_get_implementors(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "get_members" => {
+            let input: crate::interface::mcp::handlers::graph_query_handlers::GetMembersInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_get_members(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
         _ => return Err(InterfaceError::ToolNotFound(tool_name.to_string())),
     }
 }

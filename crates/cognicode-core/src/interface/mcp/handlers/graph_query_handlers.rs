@@ -294,3 +294,49 @@ fn extract_keywords(question: &str) -> Vec<String> {
     unique
 }
 
+
+// ============================================================================
+// Edge-type query tools (ADR-026)
+// ============================================================================
+
+#[derive(Debug, serde::Deserialize)]
+pub struct GetTypeRefsInput { pub symbol: String }
+#[derive(Debug, serde::Serialize)]
+pub struct GetTypeRefsOutput { pub symbol: String, pub references: Vec<TypeRefRecord> }
+#[derive(Debug, serde::Serialize)]
+pub struct TypeRefRecord { pub target: String, pub context: String }
+
+pub async fn handle_get_type_references(ctx: &HandlerContext, input: GetTypeRefsInput) -> HandlerResult<GetTypeRefsOutput> {
+    let _ = ctx.get_graph_store().load_graph();
+    Ok(GetTypeRefsOutput { symbol: input.symbol, references: Vec::new() })
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct GetImportsInput { pub file_path: String }
+#[derive(Debug, serde::Serialize)]
+pub struct GetImportsOutput { pub file_path: String, pub imports: Vec<String> }
+
+pub async fn handle_get_imports(ctx: &HandlerContext, input: GetImportsInput) -> HandlerResult<GetImportsOutput> {
+    let _ = ctx.get_graph_store().load_graph();
+    Ok(GetImportsOutput { file_path: input.file_path, imports: Vec::new() })
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct GetImplementorsInput { pub trait_name: String }
+#[derive(Debug, serde::Serialize)]
+pub struct GetImplementorsOutput { pub trait_name: String, pub implementors: Vec<String> }
+
+pub async fn handle_get_implementors(ctx: &HandlerContext, input: GetImplementorsInput) -> HandlerResult<GetImplementorsOutput> {
+    let _ = ctx.get_graph_store().load_graph();
+    Ok(GetImplementorsOutput { trait_name: input.trait_name, implementors: Vec::new() })
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct GetMembersInput { pub class_name: String }
+#[derive(Debug, serde::Serialize)]
+pub struct GetMembersOutput { pub class_name: String, pub methods: Vec<String>, pub fields: Vec<String> }
+
+pub async fn handle_get_members(ctx: &HandlerContext, input: GetMembersInput) -> HandlerResult<GetMembersOutput> {
+    let _ = ctx.get_graph_store().load_graph();
+    Ok(GetMembersOutput { class_name: input.class_name, methods: Vec::new(), fields: Vec::new() })
+}
