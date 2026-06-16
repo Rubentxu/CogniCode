@@ -1741,6 +1741,48 @@ async fn call_tool_handler(
             let output = crate::interface::mcp::handlers::graph_query_handlers::handle_export_callflow(ctx, input).await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
+        // Sprint 5: Consolidated + High-value tools (ADR-027 + ADR-028)
+        "smart_search" => {
+            let input: crate::interface::mcp::handlers::consolidated_handlers::SmartSearchInput = serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_smart_search(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "graph_analyze" => {
+            let input: crate::interface::mcp::handlers::consolidated_handlers::GraphAnalyzeInput = serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_graph_analyze(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "project_overview" => {
+            let input: crate::interface::mcp::handlers::consolidated_handlers::ProjectOverviewInput = serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_project_overview(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "compare_graph" => {
+            let input: crate::interface::mcp::handlers::consolidated_handlers::CompareGraphInput = serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_compare_graph(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "codebase_map" => {
+            let input: crate::interface::mcp::handlers::consolidated_handlers::CodebaseMapInput = serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_codebase_map(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "project_insights" => {
+            let input: crate::interface::mcp::handlers::consolidated_handlers::ProjectInsightsInput = serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_project_insights(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "review_pr" => {
+            let input: crate::interface::mcp::handlers::consolidated_handlers::ReviewPrInput = serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_review_pr(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "iac_query" => {
+            let input: crate::interface::mcp::handlers::consolidated_handlers::IacQueryInput = serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_iac_query(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+
         _ => return Err(InterfaceError::ToolNotFound(tool_name.to_string())),
     }
 }

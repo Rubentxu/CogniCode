@@ -3414,6 +3414,7 @@ pub mod aix_handlers;
 // graph_surprising_connections, graph_search_idf, graph_insights, graph_suggest_questions.
 pub mod graph_handlers;
 pub mod graph_query_handlers;
+pub mod consolidated_handlers;
 
 #[cfg(test)]
 mod tests {
