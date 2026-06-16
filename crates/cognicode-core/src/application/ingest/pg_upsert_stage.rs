@@ -28,6 +28,9 @@ use crate::infrastructure::persistence::{PostgresRepository, ScanManifestRow};
 /// 10 is a good default — reduces commit overhead 10x without OOM risk.
 pub const BATCH_SIZE: usize = 10;
 
+/// Threshold: use COPY bulk load when more than this many files need
+/// extraction. Below this, per-file transactional DELETE+INSERT is faster.
+pub const COPY_THRESHOLD: usize = 50;
 /// Consume extraction results from the channel and upsert to PostgreSQL.
 /// Returns stats and all unresolved edges for the Resolve stage.
 pub async fn pg_upsert_streaming(

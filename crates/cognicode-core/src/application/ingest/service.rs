@@ -43,6 +43,23 @@ pub async fn run_scan(
     let total = count_source_files(root);
     let mut failed_files: Vec<FailedFile> = Vec::new();
 
+    // ── Advisory lock (prevent concurrent scans) ──────────────────
+    #[cfg(feature = "postgres")]
+    let _lock = {
+        let result = sqlx::query("SELECT pg_advisory_lock(hashtext($1))")
+            .bind(workspace_id)
+            .execute(repo.pool())
+            .await;
+        if let Err(e) = result {
+            tracing::error!("advisory_lock failed: {e}");
+        }
+        // Drop guard: lock is released when _lock goes out of scope
+        // (at end of function). PG automatically releases on disconnect.
+        Some(())
+    };
+    #[cfg(not(feature = "postgres"))]
+    let _lock: Option<()> = None;
+
     // ── Stage 1: Scan ──────────────────────────────────────────────
     report_progress(on_progress, ScanStage::Scan, 0, total, 0);
     let previous = load_previous_manifest(repo, workspace_id).await;

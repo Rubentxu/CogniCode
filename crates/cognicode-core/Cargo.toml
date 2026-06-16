@@ -43,6 +43,9 @@ tree-sitter-cpp.workspace = true
 tree-sitter-c-sharp.workspace = true
 tree-sitter-hcl.workspace = true
 tree-sitter-yaml.workspace = true
+tree-sitter-ruby.workspace = true
+tree-sitter-php.workspace = true
+tree-sitter-swift.workspace = true
 
 # Grafos
 petgraph.workspace = true

@@ -44,6 +44,9 @@ pub enum Language {
     CSharp,
     Hcl,
     Yaml,
+    Ruby,
+    Php,
+    Swift,
 }
 
 impl Language {
@@ -64,6 +67,9 @@ impl Language {
                 "cs" => Some(Language::CSharp),
                 "tf" | "tfvars" | "hcl" => Some(Language::Hcl),
                 "yml" | "yaml" => Some(Language::Yaml),
+                "rb" => Some(Language::Ruby),
+                "php" => Some(Language::Php),
+                "swift" => Some(Language::Swift),
                 _ => None,
             })
     }
@@ -82,6 +88,9 @@ impl Language {
             Language::CSharp => tree_sitter_c_sharp::LANGUAGE.into(),
             Language::Hcl => tree_sitter_hcl::LANGUAGE.into(),
             Language::Yaml => tree_sitter_yaml::LANGUAGE.into(),
+            Language::Ruby => tree_sitter_ruby::LANGUAGE.into(),
+            Language::Php => tree_sitter_php::LANGUAGE_PHP.into(),
+            Language::Swift => tree_sitter_swift::LANGUAGE.into(),
         }
     }
 
@@ -99,6 +108,9 @@ impl Language {
             Language::CSharp => "C#",
             Language::Hcl => "HCL",
             Language::Yaml => "YAML",
+            Language::Ruby => "Ruby",
+            Language::Php => "PHP",
+            Language::Swift => "Swift",
         }
     }
 
@@ -115,6 +127,9 @@ impl Language {
             Language::CSharp => "method_declaration",
             Language::Hcl => "block",
             Language::Yaml => "block_mapping",
+            Language::Ruby => "method",
+            Language::Php => "method_declaration",
+            Language::Swift => "method_declaration",
         }
     }
 
@@ -131,6 +146,9 @@ impl Language {
             Language::CSharp => "class_declaration",
             Language::Hcl => "block",
             Language::Yaml => "block_mapping",
+            Language::Ruby => "class",
+            Language::Php => "class_declaration",
+            Language::Swift => "class_declaration",
         }
     }
 
@@ -147,6 +165,9 @@ impl Language {
             Language::CSharp => "local_declaration_statement",
             Language::Hcl => "attribute",
             Language::Yaml => "block_mapping_pair",
+            Language::Ruby => "assignment",
+            Language::Php => "expression_statement",
+            Language::Swift => "variable_declaration",
         }
     }
 
@@ -163,6 +184,9 @@ impl Language {
             Language::CSharp => "invocation_expression",
             Language::Hcl => "expression",
             Language::Yaml => "flow_node",
+            Language::Ruby => "call",
+            Language::Php => "function_call_expression",
+            Language::Swift => "call_expression",
         }
     }
 
@@ -179,6 +203,9 @@ impl Language {
             Language::CSharp => true,
             Language::Hcl => false,
             Language::Yaml => false,
+            Language::Ruby => true,
+            Language::Php => true,
+            Language::Swift => true,
         }
     }
 
@@ -195,6 +222,9 @@ impl Language {
             Language::CSharp => "omnisharp",
             Language::Hcl => "terraform-ls",
             Language::Yaml => "yaml-language-server",
+            Language::Ruby => "solargraph",
+            Language::Php => "intelephense",
+            Language::Swift => "sourcekit-lsp",
         }
     }
 
@@ -213,6 +243,9 @@ impl Language {
             Language::CSharp => "dotnet tool install -g omnisharp",
             Language::Hcl => "brew install hashicorp/tap/terraform-ls",
             Language::Yaml => "npm install -g yaml-language-server",
+            Language::Ruby => "gem install solargraph",
+            Language::Php => "npm install -g intelephense",
+            Language::Swift => "xcrun sourcekit-lsp",
         }
     }
 
@@ -226,6 +259,7 @@ impl Language {
             Language::Java => &[],
             Language::C | Language::Cpp | Language::CSharp => &["--stdio"],
             Language::Hcl | Language::Yaml => &[],
+            Language::Ruby | Language::Php | Language::Swift => &["--stdio"],
         }
     }
 
@@ -242,6 +276,9 @@ impl Language {
             Language::CSharp => "omnisharp",
             Language::Hcl => "",
             Language::Yaml => "",
+            Language::Ruby => "solargraph",
+            Language::Php => "intelephense",
+            Language::Swift => "sourcekit-lsp",
         }
     }
 
@@ -259,6 +296,9 @@ impl Language {
             Language::CSharp,
             Language::Hcl,
             Language::Yaml,
+            Language::Ruby,
+            Language::Php,
+            Language::Swift,
         ]
     }
 }

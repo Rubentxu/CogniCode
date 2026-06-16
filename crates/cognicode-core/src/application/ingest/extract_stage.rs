@@ -116,6 +116,9 @@ fn config_by_name(name: &str) -> Option<&'static LanguageConfig> {
         "csharp" => Some(&crate::infrastructure::parser::language_config::CSHARP_CONFIG),
         "hcl" => Some(&crate::infrastructure::parser::language_config::HCL_CONFIG),
         "yaml" => Some(&crate::infrastructure::parser::language_config::YAML_CONFIG),
+        "ruby" => Some(&crate::infrastructure::parser::language_config::RUBY_CONFIG),
+        "php" => Some(&crate::infrastructure::parser::language_config::PHP_CONFIG),
+        "swift" => Some(&crate::infrastructure::parser::language_config::SWIFT_CONFIG),
         _ => None,
     }
 }

@@ -105,6 +105,9 @@ pub static ALL_LANGUAGES: &[LanguageConfig] = &[
     CSHARP_CONFIG,
     HCL_CONFIG,
     YAML_CONFIG,
+    RUBY_CONFIG,
+    PHP_CONFIG,
+    SWIFT_CONFIG,
 ];
 
 // ── Rust ─────────────────────────────────────────────────────────────────────
@@ -361,3 +364,49 @@ mod tests {
         }
     }
 }
+
+// ── Ruby ─────────────────────────────────────────────────────────────────────
+
+pub const RUBY_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Ruby,
+    extensions: &["rb"],
+    ts_language: || tree_sitter_ruby::LANGUAGE.into(),
+    function_types: &["method", "singleton_method"],
+    class_types: &["class", "module"],
+    variable_types: &["assignment"],
+    call_types: &["call"],
+    call_has_function_field: true,
+    import_types: &["call"],
+    type_ref_walker: NO_TYPE_REFS,
+};
+
+// ── PHP ──────────────────────────────────────────────────────────────────────
+
+pub const PHP_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Php,
+    extensions: &["php"],
+    ts_language: || tree_sitter_php::LANGUAGE_PHP.into(),
+    function_types: &["function_definition", "method_declaration"],
+    class_types: &["class_declaration", "interface_declaration", "trait_declaration"],
+    variable_types: &["expression_statement"],
+    call_types: &["function_call_expression", "method_call_expression"],
+    call_has_function_field: true,
+    import_types: &["namespace_use_declaration"],
+    type_ref_walker: NO_TYPE_REFS,
+};
+
+// ── Swift ────────────────────────────────────────────────────────────────────
+
+pub const SWIFT_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Swift,
+    extensions: &["swift"],
+    ts_language: || tree_sitter_swift::LANGUAGE.into(),
+    function_types: &["function_declaration", "method_declaration"],
+    class_types: &["class_declaration", "struct_declaration", "enum_declaration", "protocol_declaration"],
+    variable_types: &["variable_declaration"],
+    call_types: &["call_expression"],
+    call_has_function_field: true,
+    import_types: &["import_declaration"],
+    type_ref_walker: NO_TYPE_REFS,
+};
+
