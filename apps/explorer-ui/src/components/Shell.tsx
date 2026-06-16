@@ -24,7 +24,8 @@ import { ObjectInspector } from "./ObjectInspector";
 import { LensPanel } from "./LensPanel";
 import { HealthProbe } from "./HealthProbe";
 import { ErrorBoundary } from "./ErrorBoundary";
-import { SkipLink } from "./SkipLink";
+import { SketchLink } from "./SkipLink";
+import { ScanBar } from "./ScanBar";
 import { Spotter } from "./Spotter";
 import { NavigationModeToggle } from "./Settings/NavigationModeToggle";
 import { ShareExplorationButton } from "./ShareExplorationButton";
@@ -144,6 +145,7 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
             CogniCode Explorer
           </h1>
           <HealthProbe showFullScreenOnError={false} />
+          <ScanBar />
         </div>
         <div className="flex items-center gap-2">
           <NavigationModeToggle />
