@@ -201,16 +201,6 @@ impl ServerHandler for CogniCodeHandler {
                     }).as_object().cloned().unwrap()),
                 ),
                 Tool::new(
-                    "check_architecture",
-                    "[DEPRECATED] Detect cycles and architecture violations. Use graph_insights instead — it includes cycle detection plus health score.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "scope": { "type": "string", "description": "Optional scope to check" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
                     "find_usages",
                     "Find all usages of a symbol across the project.",
                     Arc::new(serde_json::json!({
@@ -293,17 +283,6 @@ impl ServerHandler for CogniCodeHandler {
                     }).as_object().cloned().unwrap()),
                 ),
                 Tool::new(
-                    "build_lightweight_index",
-                    "[DEPRECATED] Build a lightweight symbol index. Replaced by build_graph which uses the Scan stage manifest for incremental change detection. Will be removed in v0.7.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "directory": { "type": "string", "description": "Directory to build the index for (default: current working directory)" },
-                            "strategy": { "type": "string", "enum": ["lightweight", "on_demand", "per_file", "full"], "description": "Index strategy to use (default: lightweight)" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
                     "query_symbol_index",
                     "Query the symbol index to find locations of a symbol by name (case-insensitive).",
                     Arc::new(serde_json::json!({
@@ -341,30 +320,6 @@ impl ServerHandler for CogniCodeHandler {
                     }).as_object().cloned().unwrap()),
                 ),
                 Tool::new(
-                    "merge_file_graphs",
-                    "[DEPRECATED] Merge call graphs from multiple files. Replaced by PostgreSQL as single source of truth. Will be removed in v0.7.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file_paths": { "type": "array", "items": { "type": "string" }, "description": "List of file paths to merge" }
-                        },
-                        "required": ["file_paths"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "get_outline",
-                    "[DEPRECATED] Get hierarchical outline of symbols. Use get_file_symbols with hierarchical=true instead.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file_path": { "type": "string", "description": "Path to the source file" },
-                            "include_private": { "type": "boolean", "description": "Include private symbols starting with _ (default: true)" },
-                            "include_tests": { "type": "boolean", "description": "Include test symbols starting with test_ (default: true)" }
-                        },
-                        "required": ["file_path"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
                     "get_symbol_code",
                     "Get the full source code of a symbol at a given location, including docstrings.",
                     Arc::new(serde_json::json!({
@@ -375,32 +330,6 @@ impl ServerHandler for CogniCodeHandler {
                             "col": { "type": "integer", "description": "Column number (0-indexed)" }
                         },
                         "required": ["file", "line", "col"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "semantic_search",
-                    "Search for symbols with fuzzy matching and kind filtering.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "query": { "type": "string", "description": "Search query string" },
-                            "kinds": { "type": "array", "items": { "type": "string" }, "description": "Filter by symbol kinds" },
-                            "max_results": { "type": "integer", "description": "Maximum results to return (default: 50)" }
-                        },
-                        "required": ["query"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "find_usages_with_context",
-                    "[DEPRECATED] Find usages with context lines. Use find_usages with context_lines parameter instead.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "symbol": { "type": "string", "description": "Symbol name to search" },
-                            "context_lines": { "type": "integer", "description": "Number of context lines around each reference (default: 3)" },
-                            "include_declaration": { "type": "boolean", "description": "Include the declaration (default: true)" }
-                        },
-                        "required": ["symbol"]
                     }).as_object().cloned().unwrap()),
                 ),
                 // LSP Navigation tools
@@ -558,63 +487,7 @@ impl ServerHandler for CogniCodeHandler {
                     }).as_object().cloned().unwrap()),
                 ),
                 // AIX-1: Smart Overview & Ranked Symbols
-                Tool::new(
-                    "smart_overview",
-                    "Get a comprehensive project overview with architecture score, hot paths, and recommended first reads for AI agents.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "detail": { "type": "string", "enum": ["quick", "medium", "detailed"], "description": "Detail level: quick (~100 tokens), medium (~400 tokens), detailed (~800 tokens)" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "ranked_symbols",
-                    "[DEPRECATED] Get AI-relevance ranked symbols. Use smart_search with algorithm='ranked' instead (coming in Sprint 5.2).",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "query": { "type": "string", "description": "Search query string" },
-                            "limit": { "type": "integer", "description": "Maximum number of results to return (default: 50)" }
-                        },
-                        "required": ["query"]
-                    }).as_object().cloned().unwrap()),
-                ),
                 // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
-                Tool::new(
-                    "suggest_onboarding_plan",
-                    "Generate a step-by-step onboarding plan to understand, refactor, debug, or extend a codebase.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "goal": { "type": "string", "enum": ["understand", "refactor", "debug", "add_feature", "review"], "description": "Goal for the onboarding plan" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "auto_diagnose",
-                    "Automatically diagnose project health issues including architecture problems, dead code, and complexity hotspots.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "target": { "type": "string", "description": "Optional target directory to diagnose" },
-                            "min_severity": { "type": "string", "enum": ["info", "warning", "important", "critical"], "description": "Minimum severity level to report" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "suggest_refactor_plan",
-                    "Analyze a symbol and suggest a concrete refactoring plan with risk assessment.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "symbol": { "type": "string", "description": "Target symbol to refactor" },
-                            "goal": { "type": "string", "description": "Goal for refactoring (default: reduce_complexity)" },
-                            "max_steps": { "type": "integer", "description": "Maximum number of steps in the plan" }
-                        },
-                        "required": ["symbol"]
-                    }).as_object().cloned().unwrap()),
-                ),
                 // AIX-3: NL to Symbol & Ask About Code & Find Pattern
                 Tool::new(
                     "nl_to_symbol",
@@ -653,48 +526,7 @@ impl ServerHandler for CogniCodeHandler {
                     }).as_object().cloned().unwrap()),
                 ),
                 // AIX-4: Compare Call Graphs & Detect API Breaks
-                Tool::new(
-                    "compare_call_graphs",
-                    "[DEPRECATED] Compare current graph vs baseline. Use compare_graph with mode='diff' instead (coming in Sprint 5.2).",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "baseline_dir": { "type": "string", "description": "Optional baseline directory to compare against" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "detect_api_breaks",
-                    "[DEPRECATED] Detect breaking API changes. Use compare_graph with mode='api' instead (coming in Sprint 5.2).",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "baseline_dir": { "type": "string", "description": "Optional baseline directory to compare against" },
-                            "min_severity": { "type": "string", "enum": ["patch", "minor", "major"], "description": "Minimum severity to report" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "evaluate_refactor_quality",
-                    "[DEPRECATED] Evaluate refactoring quality. Use compare_graph with mode='quality' instead (coming in Sprint 5.2).",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {}
-                    }).as_object().cloned().unwrap()),
-                ),
                 // AIX-5: System Prompt Context & God Functions & Long Params
-                Tool::new(
-                    "generate_system_prompt_context",
-                    "Generate a structured context block for LLM system prompts in XML, JSON, or Markdown format.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "format": { "type": "string", "enum": ["xml", "json", "markdown"], "description": "Output format" },
-                            "include_architecture": { "type": "boolean", "description": "Whether to include architecture info" },
-                            "include_hot_paths": { "type": "boolean", "description": "Whether to include hot paths" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
                 Tool::new(
                     "detect_god_functions",
                     "Find overly large or complex functions (god functions) that should be refactored.",
@@ -718,16 +550,6 @@ impl ServerHandler for CogniCodeHandler {
                     }).as_object().cloned().unwrap()),
                 ),
                 // PL3: Symbol Hotness Tracking
-                Tool::new(
-                    "get_hot_symbols",
-                    "[DEPRECATED] Get most frequently accessed symbols. Use get_hot_paths with source='queries' instead.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "limit": { "type": "integer", "description": "Maximum number of hot symbols to return (default: 20)" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
                 // AVC: Agent-Verifiable Context tools
                 Tool::new(
                     "generate_contract",
@@ -769,53 +591,6 @@ impl ServerHandler for CogniCodeHandler {
                         }
                     }).as_object().cloned().unwrap()),
                 ),
-                Tool::new(
-                    "graph_all_paths",
-                    "[DEPRECATED] Find all simple paths between two symbols. Use trace_path with all=true instead.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "from_symbol": { "type": "string", "description": "Source symbol name (substring match, case-insensitive)" },
-                            "to_symbol": { "type": "string", "description": "Target symbol name (substring match, case-insensitive)" },
-                            "max_hops": { "type": "integer", "description": "Maximum number of intermediate nodes (default: 5)" }
-                        },
-                        "required": ["from_symbol", "to_symbol"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "graph_condensed",
-                    "Compute the SCC condensation of the call graph: every strongly connected component is collapsed into a single node, producing an acyclic condensation DAG. Use to spot circular dependency clusters. Requires build_graph first.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {}
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "graph_god_nodes",
-                    "[DEPRECATED] Find god nodes by PageRank percentile. Use graph_insights instead — it includes god nodes plus communities, surprising connections, and health score.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "percentile": { "type": "number", "description": "Percentile threshold in [0.0, 1.0] (default: 0.95). Symbols at or above this PageRank percentile are returned." }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "graph_reduced",
-                    "Compute the transitive reduction of the call graph — the minimal set of dependency edges that preserves reachability. Redundant edges (implied by longer paths) are dropped. Requires build_graph first.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {}
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "graph_feedback_arcs",
-                    "Find a feedback arc set — edges whose removal would make the call graph acyclic. The greedy heuristic is not optimal but fast; use the result as a starting point when breaking circular dependencies. Requires build_graph first.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {}
-                    }).as_object().cloned().unwrap()),
-                ),
                 // Phase 5: Community Detection (Label Propagation).
                 //
                 // `graph_communities` runs Label Propagation over the
@@ -824,39 +599,6 @@ impl ServerHandler for CogniCodeHandler {
                 // into a single community, and `graph_surprising_
                 // connections` highlights edges that cross community
                 // boundaries (often a sign of unwanted coupling).
-                Tool::new(
-                    "graph_communities",
-                    "[DEPRECATED] Detect code communities using Label Propagation. Use graph_insights instead — it includes communities plus god nodes and health score.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "max_iterations": { "type": "integer", "description": "Max label propagation iterations (default: 100)" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "graph_community_detail",
-                    "[DEPRECATED] Get details for a specific community. Use graph_insights instead — it includes community sizes, cohesion scores, and member counts.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "community_id": { "type": "integer", "description": "Sequential community id from graph_communities output" },
-                            "max_iterations": { "type": "integer", "description": "Max label propagation iterations used to re-detect communities (default: 100)" }
-                        },
-                        "required": ["community_id"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "graph_surprising_connections",
-                    "[DEPRECATED] Find surprising cross-community connections. Use graph_insights instead — it includes cross-community edges ranked by surprise score.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "top_n": { "type": "integer", "description": "Max connections to return (default: 20)" },
-                            "max_iterations": { "type": "integer", "description": "Max label propagation iterations (default: 100)" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
                 // Phase 6: IDF-weighted Search & Unified Insights.
                 //
                 // `graph_search_idf` ranks symbols by an information-
@@ -867,18 +609,6 @@ impl ServerHandler for CogniCodeHandler {
                 // consolidate god-nodes + cycles + communities +
                 // cross-community edges + a 0-100 health score into a
                 // single payload.
-                Tool::new(
-                    "graph_search_idf",
-                    "[DEPRECATED] Search symbols by IDF importance. Use smart_search with algorithm='idf' instead (coming in Sprint 5.2).",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "query": { "type": "string", "description": "Search query (symbol name or partial)" },
-                            "max_results": { "type": "integer", "description": "Max results (default: 20)" }
-                        },
-                        "required": ["query"]
-                    }).as_object().cloned().unwrap()),
-                ),
                 Tool::new(
                     "graph_insights",
                     "Get a complete architecture health report: god nodes, circular dependencies, community overview, surprising cross-module connections, and a health score (0-100). Requires build_graph first.",
@@ -922,45 +652,7 @@ impl ServerHandler for CogniCodeHandler {
                     }).as_object().cloned().unwrap()),
                 ),
                 // Phase 3A: Proactive Tools
-                Tool::new(
-                    "suggest_context",
-                    "Zero-query proactive context suggestion. Returns ranked files/symbols relevant to an agent's current task without explicit search queries. Uses FTS5 search and call-graph hot-path analysis.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "limit": { "type": "integer", "description": "Maximum number of results to return (default: 10, max: 50)" },
-                            "project_path": { "type": "string", "description": "Project path to search within (optional, defaults to workspace root)" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
                 #[cfg(feature = "persistence")]
-                Tool::new(
-                    "reparse_on_edit",
-                    "[DEPRECATED] MCP-triggered incremental reindex. Replaced by the file watcher (notify crate) for automatic re-scanning. Will be removed in v0.7.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file_paths": {
-                                "type": "array",
-                                "items": { "type": "string" },
-                                "description": "File paths that were edited (required)"
-                            },
-                            "edit_ranges": {
-                                "type": "array",
-                                "description": "Optional edit ranges for more precise reindexing",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "file": { "type": "string" },
-                                        "start_line": { "type": "integer" },
-                                        "end_line": { "type": "integer" }
-                                    }
-                                }
-                            }
-                        },
-                        "required": ["file_paths"]
-                    }).as_object().cloned().unwrap()),
-                ),
                 // Detect Drift tool (S7000-S7003 intent drift detection)
                 Tool::new(
                     "detect_drift",
@@ -1041,45 +733,6 @@ impl ServerHandler for CogniCodeHandler {
                 ),
 
 // Batch D: Agent Task Tools (bidirectional interaction)
-                Tool::new(
-                    "poll_tasks",
-                    "[DEPRECATED] Poll for pending agent tasks. Agent management, not a graph intelligence tool. Will be moved to a separate agent-management interface.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "limit": {
-                                "type": "integer",
-                                "description": "Maximum number of tasks to claim (default: 10, max: 100)"
-                            }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "complete_task",
-                    "[DEPRECATED] Mark an agent task as completed. Agent management, not a graph intelligence tool. Will be moved to a separate agent-management interface.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "task_id": {
-                                "type": "integer",
-                                "description": "Task ID to complete (required)"
-                            },
-                            "status": {
-                                "type": "string",
-                                "description": "Completion status: 'completed' or 'failed' (required)"
-                            },
-                            "result_json": {
-                                "type": "string",
-                                "description": "Optional JSON result data"
-                            },
-                            "error_message": {
-                                "type": "string",
-                                "description": "Optional error message (for failed tasks)"
-                            }
-                        },
-                         "required": ["task_id", "status"]
-                     }).as_object().cloned().unwrap()),
-                 ),
                 // Sprint 5.3: graph_diff and graph_timeline tools
                 Tool::new(
                     "graph_diff",
@@ -1201,13 +854,7 @@ async fn call_tool_handler(
             let output = crate::interface::mcp::handlers::handle_analyze_impact(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
-        "check_architecture" => {
-            let input: crate::interface::mcp::schemas::CheckArchitectureInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_check_architecture(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
+        
         "safe_refactor" => {
             let input: crate::interface::mcp::schemas::SafeRefactorInput =
                 serde_json::from_value(arguments.into())?;
@@ -1281,14 +928,7 @@ async fn call_tool_handler(
                 crate::interface::mcp::handlers::handle_get_module_dependencies(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
-        "build_lightweight_index" => {
-            let input: crate::interface::mcp::schemas::BuildIndexInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_build_lightweight_index(ctx, input)
-                    .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
+        
         "query_symbol_index" => {
             let input: crate::interface::mcp::schemas::QuerySymbolInput =
                 serde_json::from_value(arguments.into())?;
@@ -1310,18 +950,8 @@ async fn call_tool_handler(
                 crate::interface::mcp::handlers::handle_get_per_file_graph(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
-        "merge_file_graphs" => {
-            let input: crate::interface::mcp::schemas::MergeGraphsInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_merge_graphs(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "get_outline" => {
-            let input: crate::interface::mcp::schemas::OutlineInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_get_outline(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
+        
+        
         "get_symbol_code" => {
             let input: crate::interface::mcp::schemas::SymbolCodeInput =
                 serde_json::from_value(arguments.into())?;
@@ -1334,28 +964,8 @@ async fn call_tool_handler(
             .await?;
             Ok(serde_json::to_string(&output)?)
         }
-        "semantic_search" => {
-            let input: crate::interface::mcp::schemas::SemanticSearchInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_semantic_search(
-                ctx.semantic_search.clone(),
-                ctx.working_dir.clone(),
-                input,
-            )
-            .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "find_usages_with_context" => {
-            let input: crate::interface::mcp::schemas::FindUsagesWithContextInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_find_usages_with_context(
-                ctx.validator.clone(),
-                ctx.working_dir.clone(),
-                input,
-            )
-            .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
+        
+        
         "go_to_definition" => {
             let input: crate::interface::mcp::schemas::GoToDefinitionInput =
                 serde_json::from_value(arguments.into())?;
@@ -1417,51 +1027,12 @@ async fn call_tool_handler(
             Ok(serde_json::to_string(&output)?)
         }
         // AIX-1: Smart Overview & Ranked Symbols
-        "smart_overview" => {
-            let input: crate::interface::mcp::schemas::SmartOverviewInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_smart_overview(ctx, input)
-                    .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "ranked_symbols" => {
-            let input: crate::interface::mcp::schemas::RankedSymbolsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_ranked_symbols(ctx, input)
-                    .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
+        
+        
         // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
-        "suggest_onboarding_plan" => {
-            let input: crate::interface::mcp::schemas::OnboardingPlanInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_suggest_onboarding_plan(
-                    ctx, input,
-                )
-                .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "auto_diagnose" => {
-            let input: crate::interface::mcp::schemas::AutoDiagnoseInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_auto_diagnose(ctx, input)
-                    .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "suggest_refactor_plan" => {
-            let input: crate::interface::mcp::schemas::SuggestRefactorPlanInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_suggest_refactor_plan(
-                    ctx, input,
-                )
-                .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
+        
+        
+        
         // AIX-3: NL to Symbol & Ask About Code & Find Pattern
         "nl_to_symbol" => {
             let input: crate::interface::mcp::schemas::NlToSymbolInput =
@@ -1490,40 +1061,11 @@ async fn call_tool_handler(
             Ok(serde_json::to_string(&output)?)
         }
         // AIX-4: Compare Call Graphs & Detect API Breaks
-        "compare_call_graphs" => {
-            let input: crate::interface::mcp::schemas::CompareCallGraphsInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_compare_call_graphs(
-                ctx, input,
-            )
-            .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "detect_api_breaks" => {
-            let input: crate::interface::mcp::schemas::DetectApiBreaksInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_detect_api_breaks(ctx, input)
-                    .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "evaluate_refactor_quality" => {
-            let input: crate::interface::mcp::schemas::EvaluateRefactorQualityInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_evaluate_refactor_quality(
-                    ctx, input,
-                )
-                .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
+        
+        
+        
         // AIX-5: System Prompt Context & God Functions & Long Params
-        "generate_system_prompt_context" => {
-            let input: crate::interface::mcp::schemas::SystemPromptContextInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_generate_system_prompt_context(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
+        
         "detect_god_functions" => {
             let input: crate::interface::mcp::schemas::DetectGodFunctionsInput =
                 serde_json::from_value(arguments.into())?;
@@ -1545,13 +1087,7 @@ async fn call_tool_handler(
             Ok(serde_json::to_string(&output)?)
         }
         // PL3: Symbol Hotness Tracking
-        "get_hot_symbols" => {
-            let input: crate::interface::mcp::schemas::GetHotSymbolsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_get_hot_symbols(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
+        
         // AVC: Agent-Verifiable Context tools
         "generate_contract" => {
             let input: crate::interface::mcp::schemas::GenerateContractInput =
@@ -1589,41 +1125,9 @@ async fn call_tool_handler(
             Ok(serde_json::to_string(&output)?)
         }
         // Phase 3A: Proactive Tools
-        "suggest_context" => {
-            let input: crate::interface::mcp::schemas::SuggestContextInput =
-                serde_json::from_value(arguments.into())?;
-            let start = std::time::Instant::now();
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_suggest_context(ctx, input)
-                    .await?;
-            let duration_ms = start.elapsed().as_millis() as f64;
-            // Best-effort telemetry recording
-            ctx.record_tool_usage(
-                "suggest_context",
-                &serde_json::to_string(&output).unwrap_or_default(),
-                duration_ms,
-                None,
-            );
-            Ok(serde_json::to_string(&output)?)
-        }
+        
         #[cfg(feature = "persistence")]
-        "reparse_on_edit" => {
-            let input: crate::interface::mcp::schemas::ReparseOnEditInput =
-                serde_json::from_value(arguments.into())?;
-            let start = std::time::Instant::now();
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_reparse_on_edit(ctx, input)
-                    .await?;
-            let duration_ms = start.elapsed().as_millis() as f64;
-            // Best-effort telemetry recording
-            ctx.record_tool_usage(
-                "reparse_on_edit",
-                &serde_json::to_string(&output).unwrap_or_default(),
-                duration_ms,
-                None,
-            );
-            Ok(serde_json::to_string(&output)?)
-        }
+        
         // Detect Drift tool (S7000-S7003)
         "detect_drift" => {
             let input: crate::interface::mcp::schemas::DetectDriftInput =
@@ -1643,22 +1147,8 @@ async fn call_tool_handler(
             Ok(serde_json::to_string(&output)?)
         }
         // Batch D: Agent Task Tools (bidirectional interaction)
-        "poll_tasks" => {
-            let input: crate::interface::mcp::schemas::PollTasksInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_poll_tasks(ctx, input)
-                    .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "complete_task" => {
-            let input: crate::interface::mcp::schemas::CompleteTaskInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_complete_task(ctx, input)
-                    .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
+        
+        
         // Phase 4b: Graph analytics tools (extracted to graph_handlers.rs)
         "graph_pagerank" => {
             let input: crate::interface::mcp::schemas::GraphPageRankInput =
@@ -1666,62 +1156,17 @@ async fn call_tool_handler(
             let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_pagerank(ctx, input).await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
-        "graph_all_paths" => {
-            let input: crate::interface::mcp::schemas::GraphAllPathsInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_all_paths(ctx, input).await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_condensed" => {
-            let input: crate::interface::mcp::schemas::GraphCondensedInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_condensed(ctx, input).await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_god_nodes" => {
-            let input: crate::interface::mcp::schemas::GraphGodNodesInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_god_nodes(ctx, input).await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_reduced" => {
-            let input: crate::interface::mcp::schemas::GraphReducedInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_reduced(ctx, input).await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_feedback_arcs" => {
-            let input: crate::interface::mcp::schemas::GraphFeedbackArcsInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_feedback_arcs(ctx, input).await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
+        
+        
+        
+        
+        
         // Phase 5: Community Detection handlers (extracted to graph_handlers.rs)
-        "graph_communities" => {
-            let input: crate::interface::mcp::schemas::GraphCommunitiesInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_communities(ctx, input).await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_community_detail" => {
-            let input: crate::interface::mcp::schemas::GraphCommunityDetailInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_community_detail(ctx, input).await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_surprising_connections" => {
-            let input: crate::interface::mcp::schemas::GraphSurprisingConnectionsInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_surprising_connections(ctx, input).await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
+        
+        
+        
         // Phase 6: IDF-weighted Search & Unified Insights (extracted to graph_handlers.rs)
-        "graph_search_idf" => {
-            let input: crate::interface::mcp::schemas::GraphSearchIdfInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_search_idf(ctx, input).await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
+        
         "graph_insights" => {
             let input: crate::interface::mcp::schemas::GraphInsightsInput =
                 serde_json::from_value(arguments.into())?;
