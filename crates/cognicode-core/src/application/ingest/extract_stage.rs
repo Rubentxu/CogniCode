@@ -124,6 +124,16 @@ fn config_by_name(name: &str) -> Option<&'static LanguageConfig> {
         "zig" => Some(&crate::infrastructure::parser::language_config::ZIG_CONFIG),
         "dart" => Some(&crate::infrastructure::parser::language_config::DART_CONFIG),
         "groovy" => Some(&crate::infrastructure::parser::language_config::GROOVY_CONFIG),
+        "elixir" => Some(&crate::infrastructure::parser::language_config::ELIXIR_CONFIG),
+        "erlang" => Some(&crate::infrastructure::parser::language_config::ERLANG_CONFIG),
+        "haskell" => Some(&crate::infrastructure::parser::language_config::HASKELL_CONFIG),
+        "julia" => Some(&crate::infrastructure::parser::language_config::JULIA_CONFIG),
+        "bash" => Some(&crate::infrastructure::parser::language_config::BASH_CONFIG),
+        "elixir" => Some(&crate::infrastructure::parser::language_config::ELIXIR_CONFIG),
+        "erlang" => Some(&crate::infrastructure::parser::language_config::ERLANG_CONFIG),
+        "haskell" => Some(&crate::infrastructure::parser::language_config::HASKELL_CONFIG),
+        "julia" => Some(&crate::infrastructure::parser::language_config::JULIA_CONFIG),
+        "bash" => Some(&crate::infrastructure::parser::language_config::BASH_CONFIG),
         _ => None,
     }
 }

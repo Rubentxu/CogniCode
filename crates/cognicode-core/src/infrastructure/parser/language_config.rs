@@ -113,6 +113,11 @@ pub static ALL_LANGUAGES: &[LanguageConfig] = &[
     ZIG_CONFIG,
     DART_CONFIG,
     GROOVY_CONFIG,
+    ELIXIR_CONFIG,
+    ERLANG_CONFIG,
+    HASKELL_CONFIG,
+    JULIA_CONFIG,
+    BASH_CONFIG,
 ];
 
 // ── Rust ─────────────────────────────────────────────────────────────────────
@@ -480,3 +485,9 @@ pub const GROOVY_CONFIG: LanguageConfig = LanguageConfig {
     import_types: &["import_declaration"],
     type_ref_walker: NO_TYPE_REFS,
 };
+
+pub const ELIXIR_CONFIG: LanguageConfig = LanguageConfig { language: Language::Elixir, extensions: &["ex","exs"], ts_language: || tree_sitter_elixir::LANGUAGE.into(), function_types: &["function"], class_types: &["module"], variable_types: &["variable_declaration"], call_types: &["call"], call_has_function_field: true, import_types: &["call"], type_ref_walker: NO_TYPE_REFS };
+pub const ERLANG_CONFIG: LanguageConfig = LanguageConfig { language: Language::Erlang, extensions: &["erl","hrl"], ts_language: || tree_sitter_erlang::LANGUAGE.into(), function_types: &["function_clause"], class_types: &["module"], variable_types: &["variable_declaration"], call_types: &["function_call"], call_has_function_field: true, import_types: &["function_call"], type_ref_walker: NO_TYPE_REFS };
+pub const HASKELL_CONFIG: LanguageConfig = LanguageConfig { language: Language::Haskell, extensions: &["hs"], ts_language: || tree_sitter_haskell::LANGUAGE.into(), function_types: &["function"], class_types: &["module"], variable_types: &["declaration"], call_types: &["application"], call_has_function_field: true, import_types: &["import"], type_ref_walker: NO_TYPE_REFS };
+pub const JULIA_CONFIG: LanguageConfig = LanguageConfig { language: Language::Julia, extensions: &["jl"], ts_language: || tree_sitter_julia::LANGUAGE.into(), function_types: &["function_definition"], class_types: &["module_definition"], variable_types: &["assignment"], call_types: &["call_expression"], call_has_function_field: true, import_types: &["import_statement"], type_ref_walker: NO_TYPE_REFS };
+pub const BASH_CONFIG: LanguageConfig = LanguageConfig { language: Language::Bash, extensions: &["sh","bash"], ts_language: || tree_sitter_bash::LANGUAGE.into(), function_types: &["function_definition"], class_types: &["function_definition"], variable_types: &["variable_assignment"], call_types: &["command"], call_has_function_field: true, import_types: &["command"], type_ref_walker: NO_TYPE_REFS };

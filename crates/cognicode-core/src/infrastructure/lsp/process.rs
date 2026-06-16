@@ -199,6 +199,16 @@ impl LspProcess {
             Language::Zig => "zig",
             Language::Dart => "dart",
             Language::Groovy => "groovy",
+            Language::Elixir => "elixir",
+            Language::Erlang => "erlang",
+            Language::Haskell => "haskell",
+            Language::Julia => "julia",
+            Language::Bash => "bash",
+            Language::Elixir => "elixir",
+            Language::Erlang => "erlang",
+            Language::Haskell => "haskell",
+            Language::Julia => "julia",
+            Language::Bash => "bash",
             Language::Java => "java",
         };
         let params = serde_json::json!({

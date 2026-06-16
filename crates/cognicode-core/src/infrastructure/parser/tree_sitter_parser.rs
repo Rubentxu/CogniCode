@@ -52,6 +52,11 @@ pub enum Language {
     Zig,
     Dart,
     Groovy,
+    Elixir,
+    Erlang,
+    Haskell,
+    Julia,
+    Bash,
 }
 
 impl Language {
@@ -80,6 +85,11 @@ impl Language {
                 "zig" => Some(Language::Zig),
                 "dart" => Some(Language::Dart),
                 "groovy" | "gradle" => Some(Language::Groovy),
+                "ex" | "exs" => Some(Language::Elixir),
+                "erl" | "hrl" => Some(Language::Erlang),
+                "hs" => Some(Language::Haskell),
+                "jl" => Some(Language::Julia),
+                "sh" | "bash" => Some(Language::Bash),
                 _ => None,
             })
     }
@@ -106,6 +116,11 @@ impl Language {
             Language::Zig => tree_sitter_zig::LANGUAGE.into(),
             Language::Dart => tree_sitter_dart::LANGUAGE.into(),
             Language::Groovy => tree_sitter_groovy::LANGUAGE.into(),
+            Language::Elixir => tree_sitter_elixir::LANGUAGE.into(),
+            Language::Erlang => tree_sitter_erlang::LANGUAGE.into(),
+            Language::Haskell => tree_sitter_haskell::LANGUAGE.into(),
+            Language::Julia => tree_sitter_julia::LANGUAGE.into(),
+            Language::Bash => tree_sitter_bash::LANGUAGE.into(),
         }
     }
 
@@ -131,6 +146,11 @@ impl Language {
             Language::Zig => "Zig",
             Language::Dart => "Dart",
             Language::Groovy => "Groovy",
+            Language::Elixir => "Elixir",
+            Language::Erlang => "Erlang",
+            Language::Haskell => "Haskell",
+            Language::Julia => "Julia",
+            Language::Bash => "Bash",
         }
     }
 
@@ -155,6 +175,11 @@ impl Language {
             Language::Zig => "function_declaration",
             Language::Dart => "method_declaration",
             Language::Groovy => "method_declaration",
+            Language::Elixir => "function",
+            Language::Erlang => "function_clause",
+            Language::Haskell => "function",
+            Language::Julia => "function_definition",
+            Language::Bash => "function_definition",
         }
     }
 
@@ -179,6 +204,11 @@ impl Language {
             Language::Zig => "struct_declaration",
             Language::Dart => "class_declaration",
             Language::Groovy => "class_declaration",
+            Language::Elixir => "module",
+            Language::Erlang => "module",
+            Language::Haskell => "module",
+            Language::Julia => "module_definition",
+            Language::Bash => "function_definition",
         }
     }
 
@@ -203,6 +233,11 @@ impl Language {
             Language::Zig => "variable_declaration",
             Language::Dart => "variable_declaration",
             Language::Groovy => "variable_declaration",
+            Language::Elixir => "variable_declaration",
+            Language::Erlang => "variable_declaration",
+            Language::Haskell => "declaration",
+            Language::Julia => "assignment",
+            Language::Bash => "variable_assignment",
         }
     }
 
@@ -227,6 +262,11 @@ impl Language {
             Language::Zig => "call_expression",
             Language::Dart => "function_expression_invocation",
             Language::Groovy => "method_call_expression",
+            Language::Elixir => "call",
+            Language::Erlang => "function_call",
+            Language::Haskell => "application",
+            Language::Julia => "call_expression",
+            Language::Bash => "command",
         }
     }
 
@@ -251,6 +291,11 @@ impl Language {
             Language::Zig => true,
             Language::Dart => true,
             Language::Groovy => true,
+            Language::Elixir => true,
+            Language::Erlang => true,
+            Language::Haskell => true,
+            Language::Julia => true,
+            Language::Bash => true,
         }
     }
 
@@ -275,11 +320,31 @@ impl Language {
             Language::Zig => "zls",
             Language::Dart => "dart-analysis-server",
             Language::Groovy => "groovy-language-server",
+            Language::Elixir => "elixir-ls",
+            Language::Erlang => "erlang-ls",
+            Language::Haskell => "haskell-language-server",
+            Language::Julia => "julia-language-server",
+            Language::Bash => "bash-language-server",
+            Language::Elixir => "elixir-ls",
+            Language::Erlang => "erlang-ls",
+            Language::Haskell => "haskell-language-server",
+            Language::Julia => "julia",
+            Language::Bash => "bash-language-server",
             Language::Scala => "metals",
             Language::Lua => "lua-language-server",
             Language::Zig => "zls",
             Language::Dart => "dart",
             Language::Groovy => "groovy-language-server",
+            Language::Elixir => "elixir-ls",
+            Language::Erlang => "erlang-ls",
+            Language::Haskell => "haskell-language-server",
+            Language::Julia => "julia-language-server",
+            Language::Bash => "bash-language-server",
+            Language::Elixir => "elixir-ls",
+            Language::Erlang => "erlang-ls",
+            Language::Haskell => "haskell-language-server",
+            Language::Julia => "julia",
+            Language::Bash => "bash-language-server",
         }
     }
 
@@ -306,6 +371,11 @@ impl Language {
             Language::Zig => "brew install zls",
             Language::Dart => "brew install dart",
             Language::Groovy => "brew install groovy-language-server",
+            Language::Elixir => "brew install elixir-ls",
+            Language::Erlang => "brew install erlang-ls",
+            Language::Haskell => "ghcup install hls",
+            Language::Julia => "brew install julia",
+            Language::Bash => "npm install -g bash-language-server",
         }
     }
 
@@ -321,6 +391,7 @@ impl Language {
             Language::Hcl | Language::Yaml => &[],
             Language::Ruby | Language::Php | Language::Swift => &["--stdio"],
             Language::Scala | Language::Lua | Language::Zig | Language::Dart | Language::Groovy => &["--stdio"],
+            Language::Elixir | Language::Erlang | Language::Haskell | Language::Julia | Language::Bash => &["--stdio"],
         }
     }
 
@@ -345,11 +416,31 @@ impl Language {
             Language::Zig => "zls",
             Language::Dart => "dart-analysis-server",
             Language::Groovy => "groovy-language-server",
+            Language::Elixir => "elixir-ls",
+            Language::Erlang => "erlang-ls",
+            Language::Haskell => "haskell-language-server",
+            Language::Julia => "julia-language-server",
+            Language::Bash => "bash-language-server",
+            Language::Elixir => "elixir-ls",
+            Language::Erlang => "erlang-ls",
+            Language::Haskell => "haskell-language-server",
+            Language::Julia => "julia",
+            Language::Bash => "bash-language-server",
             Language::Scala => "metals",
             Language::Lua => "lua-language-server",
             Language::Zig => "zls",
             Language::Dart => "dart",
             Language::Groovy => "groovy-language-server",
+            Language::Elixir => "elixir-ls",
+            Language::Erlang => "erlang-ls",
+            Language::Haskell => "haskell-language-server",
+            Language::Julia => "julia-language-server",
+            Language::Bash => "bash-language-server",
+            Language::Elixir => "elixir-ls",
+            Language::Erlang => "erlang-ls",
+            Language::Haskell => "haskell-language-server",
+            Language::Julia => "julia",
+            Language::Bash => "bash-language-server",
         }
     }
 
@@ -375,6 +466,11 @@ impl Language {
             Language::Zig,
             Language::Dart,
             Language::Groovy,
+            Language::Elixir,
+            Language::Erlang,
+            Language::Haskell,
+            Language::Julia,
+            Language::Bash,
         ]
     }
 }

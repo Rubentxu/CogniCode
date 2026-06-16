@@ -51,6 +51,11 @@ tree-sitter-lua.workspace = true
 tree-sitter-zig.workspace = true
 tree-sitter-dart.workspace = true
 tree-sitter-groovy.workspace = true
+tree-sitter-elixir.workspace = true
+tree-sitter-erlang.workspace = true
+tree-sitter-haskell.workspace = true
+tree-sitter-julia.workspace = true
+tree-sitter-bash.workspace = true
 
 # Grafos
 petgraph.workspace = true

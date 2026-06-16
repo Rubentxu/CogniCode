@@ -340,3 +340,14 @@ pub async fn handle_get_members(ctx: &HandlerContext, input: GetMembersInput) ->
     let _ = ctx.get_graph_store().load_graph();
     Ok(GetMembersOutput { class_name: input.class_name, methods: Vec::new(), fields: Vec::new() })
 }
+
+// get_graph_report — fetch the latest GraphReport from the pipeline
+#[derive(Debug, serde::Deserialize)]
+pub struct GetGraphReportInput {}
+#[derive(Debug, serde::Serialize)]
+pub struct GetGraphReportOutput { pub report: Option<serde_json::Value>, pub message: String }
+
+pub async fn handle_get_graph_report(ctx: &HandlerContext, _input: GetGraphReportInput) -> HandlerResult<GetGraphReportOutput> {
+    let _ = ctx.get_graph_store().load_graph();
+    Ok(GetGraphReportOutput { report: None, message: "GraphReport from pipeline will be available after a scan with analysis stages (Sprint 2)".into() })
+}

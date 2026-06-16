@@ -48,6 +48,11 @@ tree-sitter-lua = "0.5"
 tree-sitter-zig = "1.1"
 tree-sitter-dart = "0.2"
 tree-sitter-groovy = "0.1"
+tree-sitter-elixir = "0.3"
+tree-sitter-erlang = "0.19"
+tree-sitter-haskell = "0.23"
+tree-sitter-julia = "0.23"
+tree-sitter-bash = "0.25"
 
 # Grafos
 petgraph = "0.6"

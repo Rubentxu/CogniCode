@@ -94,6 +94,16 @@ pub fn classify_file(path: &Path) -> (FileType, Option<&'static str>) {
         "zig" => Some("zig"),
         "dart" => Some("dart"),
         "groovy" | "gradle" => Some("groovy"),
+        "ex" | "exs" => Some("elixir"),
+        "erl" | "hrl" => Some("erlang"),
+        "hs" => Some("haskell"),
+        "jl" => Some("julia"),
+        "sh" | "bash" => Some("bash"),
+        "ex" | "exs" => Some("elixir"),
+        "erl" | "hrl" => Some("erlang"),
+        "hs" => Some("haskell"),
+        "jl" => Some("julia"),
+        "sh" | "bash" => Some("bash"),
         _ => None,
     };
     let file_type = match ext.to_lowercase().as_str() {
