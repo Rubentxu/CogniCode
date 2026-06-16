@@ -491,6 +491,56 @@ impl PostgresRepository {
     }
 
     // ===========================================================
+    // Graph Reports (Pipeline — ADR-017/020)
+    // ===========================================================
+
+    /// Load the most recent `graph_reports` row for a workspace.
+    /// Returns `Ok(None)` when no report exists yet.
+    pub async fn load_latest_report(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Option<GraphReportRow>, RepositoryError> {
+        let row: Option<GraphReportRow> = sqlx::query_as(
+            "SELECT id, workspace_id, \
+                    created_at::text AS created_at, \
+                    report, symbol_count, edge_count, health_score \
+             FROM graph_reports \
+             WHERE workspace_id = $1 \
+             ORDER BY created_at DESC \
+             LIMIT 1",
+        )
+        .bind(workspace_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("load_latest_report: {e}")))?;
+        Ok(row)
+    }
+
+    /// Load `graph_reports` rows for a workspace within the last N days.
+    /// Returns rows ordered newest-first.
+    pub async fn load_report_range(
+        &self,
+        workspace_id: &str,
+        days: i32,
+    ) -> Result<Vec<GraphReportRow>, RepositoryError> {
+        let rows: Vec<GraphReportRow> = sqlx::query_as(
+            "SELECT id, workspace_id, \
+                    created_at::text AS created_at, \
+                    report, symbol_count, edge_count, health_score \
+             FROM graph_reports \
+             WHERE workspace_id = $1 \
+               AND created_at >= now() - ($2 || ' days')::interval \
+             ORDER BY created_at DESC",
+        )
+        .bind(workspace_id)
+        .bind(days)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("load_report_range: {e}")))?;
+        Ok(rows)
+    }
+
+    // ===========================================================
     // Named Views CRUD (PostgreSQL `named_views` table)
     // ===========================================================
     //
@@ -1445,6 +1495,20 @@ impl PostgresRepository {
         .map_err(|e| RepositoryError::Store(format!("get_graph_node: {e}")))?;
         Ok(row.map(GraphNodeRow::into_graph_node))
     }
+}
+
+/// Row struct for the `graph_reports` table.
+/// Used by the pipeline's Report stage and graph_diff/graph_timeline tools.
+#[cfg(feature = "postgres")]
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct GraphReportRow {
+    pub id: String,
+    pub workspace_id: String,
+    pub created_at: String,
+    pub report: serde_json::Value,
+    pub symbol_count: i32,
+    pub edge_count: i32,
+    pub health_score: Option<f32>,
 }
 
 /// Row struct for the `scan_manifest` table. One row per scanned file.

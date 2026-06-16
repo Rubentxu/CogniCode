@@ -5,7 +5,6 @@
 //! as a JSON blob in `graph_reports`.
 
 use serde_json::json;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::application::ingest::analyzer::AnalysisSummary;
 use crate::infrastructure::persistence::PostgresRepository;
@@ -19,31 +18,23 @@ pub async fn run_report(
 ) -> Option<String> {
     let report_json = serde_json::to_value(summary).unwrap_or_else(|_| json!({}));
 
-    let report_id = format!(
-        "{}/{}",
-        workspace_id,
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
-    );
-
-    sqlx::query(
+    let row: (String,) = sqlx::query_as(
         "INSERT INTO graph_reports \
-            (id, workspace_id, report, symbol_count, edge_count, health_score) \
-         VALUES ($1, $2, $3, $4, $5, $6)",
+            (workspace_id, report, symbol_count, edge_count, health_score) \
+         VALUES ($1, $2, $3, $4, $5) \
+         RETURNING id",
     )
-    .bind(&report_id)
     .bind(workspace_id)
     .bind(report_json)
     .bind(summary.symbol_count as i32)
     .bind(summary.edge_count as i32)
     .bind(summary.health_score)
-    .execute(repo.pool())
+    .fetch_one(repo.pool())
     .await
     .map_err(|e| tracing::error!("graph_report insert failed: {e}"))
-    .ok();
+    .ok()?;
 
+    let report_id = &row.0;
     tracing::info!(report_id = %report_id, "graph_report persisted");
-    Some(report_id)
+    Some(report_id.clone())
 }

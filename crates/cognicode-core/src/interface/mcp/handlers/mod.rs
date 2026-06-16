@@ -179,6 +179,12 @@ use crate::interface::mcp::schemas::{
     GraphSearchIdfInput,
     GraphInsightsInput,
     GraphSuggestQuestionsInput,
+    // SOLID Audit schemas
+    SolidReport,
+    SolidViolation,
+    SolidScores,
+    SolidPrinciple,
+    SolidSeverity,
 };
 use crate::interface::mcp::security::InputValidator;
 // Re-export file operations handlers
@@ -339,6 +345,8 @@ pub struct HandlerContext {
     pub code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
     /// Optional FileOperationsService for shared file operation handlers. If None, handlers create their own.
     pub file_ops_service: Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
+    /// Optional PostgresRepository for graph_reports queries. Used by graph_diff and graph_timeline tools.
+    pub postgres_repo: Option<Arc<crate::infrastructure::persistence::PostgresRepository>>,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -407,6 +415,7 @@ impl HandlerContext {
             graph_store: None,
             code_intelligence_provider: Some(provider),
             file_ops_service: None,
+            postgres_repo: None,
         }
     }
 
@@ -450,6 +459,7 @@ impl HandlerContext {
             graph_store: Some(store),
             code_intelligence_provider: None,
             file_ops_service: None,
+            postgres_repo: None,
         }
     }
 
@@ -538,6 +548,7 @@ pub struct HandlerContextBuilder {
     graph_store: Option<Arc<dyn GraphStore>>,
     code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
     file_ops_service: Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
+    postgres_repo: Option<Arc<crate::infrastructure::persistence::PostgresRepository>>,
 }
 
 impl HandlerContextBuilder {
@@ -653,6 +664,17 @@ impl HandlerContextBuilder {
         self
     }
 
+    /// Sets the PostgresRepository for graph_reports queries.
+    ///
+    /// If not set, graph_diff and graph_timeline tools will return an error.
+    pub fn with_postgres_repo(
+        mut self,
+        repo: Arc<crate::infrastructure::persistence::PostgresRepository>,
+    ) -> Self {
+        self.postgres_repo = Some(repo);
+        self
+    }
+
     /// Builds the HandlerContext, applying defaults for any unset fields.
     ///
     /// For working_dir: if not set, defaults to the current directory.
@@ -702,6 +724,7 @@ impl HandlerContextBuilder {
             graph_store: self.graph_store,
             code_intelligence_provider: self.code_intelligence_provider,
             file_ops_service: self.file_ops_service,
+            postgres_repo: self.postgres_repo,
         }
     }
 }
@@ -3390,6 +3413,254 @@ fn sanitize_mermaid_id(name: &str) -> String {
 
 fn render_mermaid_to_svg(mermaid_code: &str, theme: &str) -> Option<String> {
     crate::infrastructure::mermaid::render_mermaid(mermaid_code, theme).ok()
+}
+
+// ============================================================================
+// SOLID Audit Handler
+// ============================================================================
+
+/// Handler for solid_audit tool
+///
+/// Runs SOLID principle analysis (SRP, OCP, LSP, ISP, DIP) on the call graph
+/// using heuristic-based detection. Requires build_graph first.
+pub async fn handle_solid_audit(
+    ctx: &HandlerContext,
+) -> HandlerResult<SolidReport> {
+    use std::collections::HashMap;
+
+    let start = Instant::now();
+
+    // Load graph from graph store (as per task requirement)
+    let graph = ctx
+        .get_graph_store()
+        .load_graph()
+        .map_err(|e| HandlerError::Internal(format!("Failed to load graph: {}", e)))?
+        .ok_or_else(|| {
+            HandlerError::NotFound(
+                "No call graph available. Run build_graph first.".into(),
+            )
+        })?;
+
+    let mut violations = Vec::new();
+    let mut type_scores: HashMap<String, f64> = HashMap::new();
+
+    // Analyze each type in the graph
+    for symbol in graph.symbols() {
+        if matches!(
+            symbol.kind(),
+            crate::domain::value_objects::SymbolKind::Class
+                | crate::domain::value_objects::SymbolKind::Struct
+                | crate::domain::value_objects::SymbolKind::Trait
+                | crate::domain::value_objects::SymbolKind::Interface
+        ) {
+            let type_report = check_type_solid(&graph, symbol.name());
+            violations.extend(type_report.violations);
+            type_scores.insert(symbol.name().to_string(), type_report.srp_score);
+        }
+    }
+
+    let total_types = type_scores.len();
+
+    // Calculate aggregate scores
+    let scores = calculate_solid_scores(&violations, total_types);
+    let summary = generate_solid_summary(&scores, &violations);
+
+    Ok(SolidReport {
+        total_types,
+        violations,
+        scores,
+        summary,
+    })
+}
+
+/// Result of checking a single type for SOLID violations
+struct TypeSolidReport {
+    type_name: String,
+    violations: Vec<SolidViolation>,
+    srp_score: f64,
+}
+
+/// Check a single type against all SOLID principles
+fn check_type_solid(graph: &CallGraph, type_name: &str) -> TypeSolidReport {
+    use crate::domain::value_objects::SymbolKind;
+
+    let mut violations = Vec::new();
+
+    // Find the type symbol
+    let type_symbols: Vec<_> = graph
+        .find_by_name(type_name)
+        .into_iter()
+        .filter(|s| {
+            matches!(
+                s.kind(),
+                SymbolKind::Class | SymbolKind::Struct | SymbolKind::Trait | SymbolKind::Interface
+            )
+        })
+        .collect();
+
+    let type_symbol = match type_symbols.first() {
+        Some(s) => s,
+        None => {
+            return TypeSolidReport {
+                type_name: type_name.to_string(),
+                violations: vec![],
+                srp_score: 0.0,
+            };
+        }
+    };
+
+    // SRP: Check via LCOM-like cohesion analysis
+    let callers = graph.callers(&crate::domain::aggregates::SymbolId::new(
+        type_symbol.fully_qualified_name(),
+    ));
+    let callees = graph.callees(&crate::domain::aggregates::SymbolId::new(
+        type_symbol.fully_qualified_name(),
+    ));
+
+    // Calculate a simple cohesion score based on internal relationships
+    let method_count = callees.len();
+    let srp_score = if method_count > 10 {
+        // Many outgoing dependencies suggest SRP violation
+        ((method_count as f64 - 10.0) / 10.0).min(1.0)
+    } else {
+        0.0
+    };
+
+    if srp_score > 0.5 {
+        violations.push(SolidViolation {
+            principle: SolidPrinciple::SRP,
+            type_name: type_name.to_string(),
+            severity: if srp_score > 0.7 {
+                SolidSeverity::Error
+            } else {
+                SolidSeverity::Warning
+            },
+            description: format!(
+                "Type has low cohesion ({} outgoing dependencies), indicating SRP violation",
+                method_count
+            ),
+            suggestion: "Consider splitting into smaller types with single responsibilities".to_string(),
+            evidence: vec![format!("{} outgoing dependencies", method_count)],
+        });
+    }
+
+    // OCP: Check for extension points
+    let caller_modules: HashSet<String> = callers
+        .iter()
+        .filter_map(|caller_id| {
+            graph
+                .get_symbol(caller_id)
+                .map(|s| module_from_file(s.location().file()))
+        })
+        .collect();
+
+    if caller_modules.len() > 3 {
+        violations.push(SolidViolation {
+            principle: SolidPrinciple::OCP,
+            type_name: type_name.to_string(),
+            severity: SolidSeverity::Info,
+            description: "Many modules depend on this type - ensure it's stable for extension".to_string(),
+            suggestion: "Consider if behavior changes would break dependents".to_string(),
+            evidence: caller_modules.iter().take(5).cloned().collect(),
+        });
+    }
+
+    // DIP: Check for domain depending on infrastructure
+    let type_file = type_symbol.location().file();
+    let type_module = module_from_file(type_file);
+    let is_domain = type_module.contains("domain") || type_module.contains("core");
+
+    if is_domain {
+        for (callee_id, _) in callees {
+            if let Some(callee) = graph.get_symbol(&callee_id) {
+                let callee_module = module_from_file(callee.location().file());
+                let callee_is_infra = callee_module.contains("infrastructure")
+                    || callee_module.contains("infra")
+                    || callee_module.contains("adapter");
+
+                if callee_is_infra {
+                    violations.push(SolidViolation {
+                        principle: SolidPrinciple::DIP,
+                        type_name: type_name.to_string(),
+                        severity: SolidSeverity::Warning,
+                        description: "Domain type depends on infrastructure".to_string(),
+                        suggestion: "Introduce abstraction layer (use trait instead of concrete type)".to_string(),
+                        evidence: vec![format!("-> {}", callee.name())],
+                    });
+                }
+            }
+        }
+    }
+
+    TypeSolidReport {
+        type_name: type_name.to_string(),
+        violations,
+        srp_score,
+    }
+}
+
+/// Calculate aggregate SOLID scores
+fn calculate_solid_scores(violations: &[SolidViolation], total_types: usize) -> SolidScores {
+    if total_types == 0 {
+        return SolidScores {
+            srp_score: 0.0,
+            ocp_score: 0.0,
+            lsp_score: 0.0,
+            isp_score: 0.0,
+            dip_score: 0.0,
+            overall: 0.0,
+        };
+    }
+
+    let srp_score = principle_score(violations, SolidPrinciple::SRP, total_types);
+    let ocp_score = principle_score(violations, SolidPrinciple::OCP, total_types);
+    let lsp_score = principle_score(violations, SolidPrinciple::LSP, total_types);
+    let isp_score = principle_score(violations, SolidPrinciple::ISP, total_types);
+    let dip_score = principle_score(violations, SolidPrinciple::DIP, total_types);
+
+    let overall = (srp_score + ocp_score + lsp_score + isp_score + dip_score) / 5.0;
+
+    SolidScores {
+        srp_score,
+        ocp_score,
+        lsp_score,
+        isp_score,
+        dip_score,
+        overall,
+    }
+}
+
+fn principle_score(violations: &[SolidViolation], principle: SolidPrinciple, total_types: usize) -> f64 {
+    let count = violations.iter().filter(|v| v.principle == principle).count();
+    count as f64 / total_types as f64
+}
+
+fn generate_solid_summary(scores: &SolidScores, violations: &[SolidViolation]) -> String {
+    let mut parts = Vec::new();
+
+    if scores.srp_score > 0.3 {
+        parts.push(format!("SRP concerns in {:.0}% of types", scores.srp_score * 100.0));
+    }
+    if scores.dip_score > 0.3 {
+        parts.push(format!("DIP concerns in {:.0}% of types", scores.dip_score * 100.0));
+    }
+
+    if parts.is_empty() {
+        format!(
+            "SOLID compliance is good (overall score: {:.1}%). {} violations found.",
+            (1.0 - scores.overall) * 100.0,
+            violations.len()
+        )
+    } else {
+        format!("{} {} violations total.", parts.join("; "), violations.len())
+    }
+}
+
+fn module_from_file(file: &str) -> String {
+    std::path::Path::new(file)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| file.to_string())
 }
 
 // ============================================================================

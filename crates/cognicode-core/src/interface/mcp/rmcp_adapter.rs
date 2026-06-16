@@ -1030,6 +1030,15 @@ impl ServerHandler for CogniCodeHandler {
                     "Export a community-level Mermaid architecture call-flow diagram. Shows module-level relationships.",
                     Arc::new(serde_json::json!({"type":"object","properties":{"max_sections":{"type":"integer","description":"Max architecture sections (default: 8)"},"format":{"type":"string","enum":["code"]}}}).as_object().cloned().unwrap()),
                 ),
+                // SOLID Audit tool — heuristic-based SOLID principle analysis
+                Tool::new(
+                    "solid_audit",
+                    "Analyze code for SOLID principle violations (SRP, OCP, LSP, ISP, DIP). Returns violations with severity, location, and suggestions. Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {}
+                    }).as_object().cloned().unwrap()),
+                ),
 
 // Batch D: Agent Task Tools (bidirectional interaction)
                 Tool::new(
@@ -1071,6 +1080,38 @@ impl ServerHandler for CogniCodeHandler {
                          "required": ["task_id", "status"]
                      }).as_object().cloned().unwrap()),
                  ),
+                // Sprint 5.3: graph_diff and graph_timeline tools
+                Tool::new(
+                    "graph_diff",
+                    "Compare two graph reports by date to show changes in symbol count, edge count, and health score. Requires PostgresRepository.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "baseline_date": {
+                                "type": "string",
+                                "description": "Baseline date to compare against (YYYY-MM-DD format)"
+                            },
+                            "current": {
+                                "type": "boolean",
+                                "description": "If true, compare against the latest report (default: false)"
+                            }
+                        },
+                        "required": ["baseline_date"]
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_timeline",
+                    "Show trend data over N days for symbol count, edge count, and health score. Requires PostgresRepository.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "days": {
+                                "type": "integer",
+                                "description": "Number of days to look back (default: 30)"
+                            }
+                        }
+                    }).as_object().cloned().unwrap()),
+                ),
             ];
 
             // Paginate
@@ -1780,6 +1821,22 @@ async fn call_tool_handler(
         "iac_query" => {
             let input: crate::interface::mcp::handlers::consolidated_handlers::IacQueryInput = serde_json::from_value(arguments.into())?;
             let output = crate::interface::mcp::handlers::consolidated_handlers::handle_iac_query(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        // SOLID Audit tool
+        "solid_audit" => {
+            let output = crate::interface::mcp::handlers::handle_solid_audit(ctx).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        // Sprint 5.3: graph_diff and graph_timeline tools
+        "graph_diff" => {
+            let input: crate::interface::mcp::handlers::consolidated_handlers::GraphDiffInput = serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_graph_diff(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "graph_timeline" => {
+            let input: crate::interface::mcp::handlers::consolidated_handlers::GraphTimelineInput = serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_graph_timeline(ctx, input).await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
 

@@ -262,3 +262,209 @@ pub async fn handle_iac_query(ctx: &HandlerContext, input: IacQueryInput) -> Han
         dependents: vec![],
     })
 }
+
+// ── graph_diff ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+pub struct GraphDiffInput {
+    pub baseline_date: String,
+    #[serde(default)]
+    pub current: bool,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct GraphDiffOutput {
+    pub baseline_date: String,
+    pub current_date: String,
+    pub baseline_report: Option<serde_json::Value>,
+    pub current_report: Option<serde_json::Value>,
+    pub symbol_delta: i32,
+    pub edge_delta: i32,
+    pub health_delta: f32,
+    pub changes: Vec<GraphDiffChange>,
+    pub summary: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct GraphDiffChange {
+    pub change_type: String,
+    pub description: String,
+}
+
+pub async fn handle_graph_diff(ctx: &HandlerContext, input: GraphDiffInput) -> HandlerResult<GraphDiffOutput> {
+    let repo = ctx.postgres_repo.as_ref().ok_or_else(|| {
+        HandlerError::Internal("PostgresRepository not configured. graph_diff requires database access.".into())
+    })?;
+
+    let workspace_id = ctx.working_dir.to_string_lossy();
+
+    // Parse baseline date
+    let baseline_date = &input.baseline_date;
+    let baseline_reports = repo.load_report_range(&workspace_id, 365).await
+        .map_err(|e| HandlerError::Internal(format!("Failed to load reports: {e}")))?;
+
+    let baseline_report = baseline_reports.iter()
+        .find(|r| r.created_at.starts_with(baseline_date))
+        .or_else(|| baseline_reports.first());
+
+    let current_report = if input.current {
+        repo.load_latest_report(&workspace_id).await
+            .map_err(|e| HandlerError::Internal(format!("Failed to load current report: {e}")))?
+    } else {
+        None
+    };
+
+    let (symbol_delta, edge_delta, health_delta) = match (&baseline_report, &current_report) {
+        (Some(b), Some(c)) => (
+            c.symbol_count - b.symbol_count,
+            c.edge_count - b.edge_count,
+            c.health_score.unwrap_or(0.0) - b.health_score.unwrap_or(0.0),
+        ),
+        _ => (0, 0, 0.0),
+    };
+
+    let mut changes = Vec::new();
+    if symbol_delta != 0 {
+        changes.push(GraphDiffChange {
+            change_type: "symbol_count".into(),
+            description: format!("{} symbols ({})", 
+                if symbol_delta > 0 { "Added" } else { "Removed" },
+                symbol_delta),
+        });
+    }
+    if edge_delta != 0 {
+        changes.push(GraphDiffChange {
+            change_type: "edge_count".into(),
+            description: format!("{} edges ({})",
+                if edge_delta > 0 { "Added" } else { "Removed" },
+                edge_delta),
+        });
+    }
+    if health_delta.abs() > 0.5 {
+        changes.push(GraphDiffChange {
+            change_type: "health_score".into(),
+            description: format!("Health score changed by {:.1}", health_delta),
+        });
+    }
+
+    let current_date = current_report
+        .as_ref()
+        .map(|r| r.created_at.clone())
+        .unwrap_or_else(|| "current".into());
+
+    let summary = if changes.is_empty() {
+        "No significant changes detected between baseline and current.".into()
+    } else {
+        format!("Detected {} change(s) between {} and {}", 
+            changes.len(), baseline_date, current_date)
+    };
+
+    Ok(GraphDiffOutput {
+        baseline_date: baseline_date.clone(),
+        current_date,
+        baseline_report: baseline_report.map(|r| r.report.clone()),
+        current_report: current_report.map(|r| r.report.clone()),
+        symbol_delta,
+        edge_delta,
+        health_delta,
+        changes,
+        summary,
+    })
+}
+
+// ── graph_timeline ────────────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+pub struct GraphTimelineInput {
+    #[serde(default = "default_timeline_days")]
+    pub days: i32,
+}
+
+fn default_timeline_days() -> i32 { 30 }
+
+#[derive(Debug, serde::Serialize)]
+pub struct GraphTimelineOutput {
+    pub days: i32,
+    pub reports: Vec<TimelineReportEntry>,
+    pub trend: GraphTimelineTrend,
+    pub summary: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct TimelineReportEntry {
+    pub date: String,
+    pub symbol_count: i32,
+    pub edge_count: i32,
+    pub health_score: Option<f32>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct GraphTimelineTrend {
+    pub symbol_trend: String,
+    pub edge_trend: String,
+    pub health_trend: String,
+    pub direction: String,
+}
+
+pub async fn handle_graph_timeline(ctx: &HandlerContext, input: GraphTimelineInput) -> HandlerResult<GraphTimelineOutput> {
+    let repo = ctx.postgres_repo.as_ref().ok_or_else(|| {
+        HandlerError::Internal("PostgresRepository not configured. graph_timeline requires database access.".into())
+    })?;
+
+    let workspace_id = ctx.working_dir.to_string_lossy();
+
+    let reports = repo.load_report_range(&workspace_id, input.days).await
+        .map_err(|e| HandlerError::Internal(format!("Failed to load reports: {e}")))?;
+
+    let entries: Vec<TimelineReportEntry> = reports.iter().map(|r| {
+        TimelineReportEntry {
+            date: r.created_at.clone(),
+            symbol_count: r.symbol_count,
+            edge_count: r.edge_count,
+            health_score: r.health_score,
+        }
+    }).collect();
+
+    let (symbol_trend, edge_trend, health_trend, direction) = if entries.len() >= 2 {
+        let first = entries.last().unwrap();
+        let last = entries.first().unwrap();
+        
+        let sym_dir = last.symbol_count - first.symbol_count;
+        let edge_dir = last.edge_count - first.edge_count;
+        let health_dir = last.health_score.unwrap_or(0.0) - first.health_score.unwrap_or(0.0);
+        
+        let direction = match (sym_dir > 0, edge_dir > 0, health_dir > 0.0) {
+            (true, true, true) => "growing_healthy".into(),
+            (false, false, false) => "shrinking_degraded".into(),
+            _ => "mixed".into(),
+        };
+        
+        (
+            format!("{} ({} symbols)", if sym_dir > 0 { "increasing" } else if sym_dir < 0 { "decreasing" } else { "stable" }, sym_dir),
+            format!("{} ({} edges)", if edge_dir > 0 { "increasing" } else if edge_dir < 0 { "decreasing" } else { "stable" }, edge_dir),
+            format!("{} ({:.1} pts)", if health_dir > 0.0 { "improving" } else if health_dir < 0.0 { "declining" } else { "stable" }, health_dir),
+            direction,
+        )
+    } else {
+        ("insufficient_data".into(), "insufficient_data".into(), "insufficient_data".into(), "unknown".into())
+    };
+
+    let summary = if entries.is_empty() {
+        format!("No reports found in the last {} days. Run a scan to generate reports.", input.days)
+    } else {
+        format!("Analyzed {} report(s) over {} days: symbols {}, edges {}, health {}", 
+            entries.len(), input.days, symbol_trend, edge_trend, health_trend)
+    };
+
+    Ok(GraphTimelineOutput {
+        days: input.days,
+        reports: entries,
+        trend: GraphTimelineTrend {
+            symbol_trend,
+            edge_trend,
+            health_trend,
+            direction,
+        },
+        summary,
+    })
+}

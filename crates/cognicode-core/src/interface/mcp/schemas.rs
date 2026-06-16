@@ -2240,3 +2240,93 @@ pub struct GraphInsightsInput {}
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GraphSuggestQuestionsInput {}
 
+// ============================================================================
+// SOLID Audit Tool (Quality Analysis)
+// ============================================================================
+
+/// Severity level for SOLID violations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SolidSeverity {
+    Info,
+    Warning,
+    Error,
+}
+
+/// SOLID principle identifier
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SolidPrinciple {
+    SRP,  // Single Responsibility Principle
+    OCP,  // Open/Closed Principle
+    LSP,  // Liskov Substitution Principle
+    ISP,  // Interface Segregation Principle
+    DIP,  // Dependency Inversion Principle
+}
+
+impl SolidPrinciple {
+    /// Human-readable name
+    pub fn name(&self) -> &'static str {
+        match self {
+            SolidPrinciple::SRP => "Single Responsibility Principle (SRP)",
+            SolidPrinciple::OCP => "Open/Closed Principle (OCP)",
+            SolidPrinciple::LSP => "Liskov Substitution Principle (LSP)",
+            SolidPrinciple::ISP => "Interface Segregation Principle (ISP)",
+            SolidPrinciple::DIP => "Dependency Inversion Principle (DIP)",
+        }
+    }
+}
+
+impl std::fmt::Display for SolidPrinciple {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
+/// A detected SOLID principle violation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SolidViolation {
+    /// The violated principle
+    pub principle: SolidPrinciple,
+    /// Name of the type with violation
+    pub type_name: String,
+    /// Severity of the violation
+    pub severity: SolidSeverity,
+    /// Description of the violation
+    pub description: String,
+    /// Suggested fix
+    pub suggestion: String,
+    /// Evidence supporting the violation detection
+    pub evidence: Vec<String>,
+}
+
+/// SOLID principle scores (0.0 = compliant, 1.0 = problematic)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SolidScores {
+    /// SRP violation ratio
+    pub srp_score: f64,
+    /// OCP violation ratio
+    pub ocp_score: f64,
+    /// LSP violation ratio
+    pub lsp_score: f64,
+    /// ISP violation ratio
+    pub isp_score: f64,
+    /// DIP violation ratio
+    pub dip_score: f64,
+    /// Overall SOLID compliance score
+    pub overall: f64,
+}
+
+/// Complete SOLID analysis report
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SolidReport {
+    /// Total types analyzed
+    pub total_types: usize,
+    /// All detected violations
+    pub violations: Vec<SolidViolation>,
+    /// Principle scores
+    pub scores: SolidScores,
+    /// Human-readable summary
+    pub summary: String,
+}
+
