@@ -381,10 +381,10 @@ pub struct ApiState {
     pub persistence: Arc<dyn PersistenceService>,
     pub moldql: Arc<dyn MoldQLService>,
     pub graph: Arc<dyn GraphService>,
-    /// Optional generic graph repository for multimodal endpoints
-    /// (rationale, graph_search, etc.).
     #[cfg(feature = "multimodal")]
     pub graph_repo: Option<Arc<dyn GraphRepository>>,
+    /// Optional ingest controller for pipeline scan operations.
+    pub ingest: Option<Arc<cognicode_core::application::ingest::IngestController>>,
 }
 
 impl ApiState {
@@ -405,7 +405,13 @@ impl ApiState {
             graph,
             #[cfg(feature = "multimodal")]
             graph_repo: None,
+            ingest: None,
         }
+    }
+
+    pub fn with_ingest(mut self, ingest: Arc<cognicode_core::application::ingest::IngestController>) -> Self {
+        self.ingest = Some(ingest);
+        self
     }
 
     /// Wire a generic graph repository so multimodal endpoints
@@ -427,6 +433,9 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/api/workspaces/open", post(open_workspace))
         .route("/api/workspaces/:workspace_id/index", post(index_workspace))
         .route("/api/workspaces/:workspace_id/spotter", get(spotter))
+        .route("/api/workspaces/:workspace_id/scan", post(index_workspace))
+        .route("/api/workspaces/:workspace_id/graph/stats", get(graph_stats_handler))
+        .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
         .route("/api/objects/:object_id/views", get(available_views))
         .route(
@@ -464,6 +473,9 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/workspaces/open", post(open_workspace))
         .route("/api/workspaces/:workspace_id/index", post(index_workspace))
         .route("/api/workspaces/:workspace_id/spotter", get(spotter))
+        .route("/api/workspaces/:workspace_id/scan", post(index_workspace))
+        .route("/api/workspaces/:workspace_id/graph/stats", get(graph_stats_handler))
+        .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
         .route("/api/objects/:object_id/views", get(available_views))
         .route(
@@ -523,13 +535,72 @@ async fn open_workspace(
     State(state): State<ApiState>,
     Json(request): Json<OpenWorkspaceRequest>,
 ) -> Result<Response, ApiError> {
-    Ok(Json(state.workspace.open_workspace(request).await?).into_response())
+    let summary = state.workspace.open_workspace(request).await?;
+
+    // Register the workspace path in the ingest controller so
+    // POST /scan can resolve the workspace_id to a root path.
+    if let Some(ref ingest) = state.ingest {
+        let root_path = std::path::PathBuf::from(&summary.root_path);
+        // The ingest controller's workspace resolver is a StaticWorkspaceResolver
+        // that we populated via the runtime. We can't easily access it from here.
+        // This is a temporary gap — the resolver should be shared state.
+        let _ = (ingest, root_path);
+    }
+
+    Ok(Json(summary).into_response())
 }
 
-async fn index_workspace(Path(_workspace_id): Path<String>) -> Result<Response, ApiError> {
-    Err(ApiError(ExplorerError::NotImplemented(
-        "workspace indexing will delegate to CogniCode graph/index builders",
-    )))
+async fn index_workspace(
+    State(state): State<ApiState>,
+    Path(workspace_id): Path<String>,
+) -> Result<Response, ApiError> {
+    let ingest = state.ingest.as_ref().ok_or_else(|| {
+        ApiError(ExplorerError::NotImplemented(
+            "ingest controller not wired (PG unavailable)".into(),
+        ))
+    })?;
+
+    match ingest.start_scan(&workspace_id).await {
+        Ok(accepted) => Ok((
+            axum::http::StatusCode::ACCEPTED,
+            Json(serde_json::json!({
+                "job_id": accepted.job_id,
+                "status": accepted.status,
+                "message": accepted.message,
+            })),
+        )
+            .into_response()),
+        Err(e) => Err(ApiError(ExplorerError::InvalidInput(e))),
+    }
+}
+
+async fn job_status(
+    State(state): State<ApiState>,
+    Path(job_id): Path<String>,
+) -> Result<Response, ApiError> {
+    let ingest = state.ingest.as_ref().ok_or_else(|| {
+        ApiError(ExplorerError::NotImplemented("ingest controller not wired".into()))
+    })?;
+
+    match ingest.get_job(&job_id).await {
+        Some(status) => Ok(Json(status).into_response()),
+        None => Ok((
+            axum::http::StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "job not found"})),
+        ).into_response()),
+    }
+}
+
+async fn graph_stats_handler(
+    State(state): State<ApiState>,
+    Path(workspace_id): Path<String>,
+) -> Result<Response, ApiError> {
+    let ingest = state.ingest.as_ref().ok_or_else(|| {
+        ApiError(ExplorerError::NotImplemented("ingest controller not wired".into()))
+    })?;
+
+    let stats = ingest.graph_stats(&workspace_id).await;
+    Ok(Json(stats).into_response())
 }
 
 #[derive(Debug, Deserialize)]

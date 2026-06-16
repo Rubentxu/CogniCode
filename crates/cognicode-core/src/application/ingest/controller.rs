@@ -22,7 +22,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -61,7 +61,7 @@ impl std::fmt::Debug for dyn WorkspaceResolver {
 /// A simple in-memory workspace resolver (for tests / standalone mode).
 #[derive(Default)]
 pub struct StaticWorkspaceResolver {
-    paths: std::sync::Mutex<HashMap<String, PathBuf>>,
+    paths: Mutex<HashMap<String, PathBuf>>,
 }
 
 impl StaticWorkspaceResolver {

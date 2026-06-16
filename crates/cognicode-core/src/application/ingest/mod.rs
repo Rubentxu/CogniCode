@@ -16,7 +16,10 @@ pub mod types;
 
 pub use analyzer::{run_analyze, AnalysisSummary};
 pub use cluster::run_cluster;
-pub use controller::{GraphStats, IngestController, JobState, JobStatus, ScanAccepted};
+pub use controller::{
+    GraphStats, IngestController, JobState, JobStatus, ScanAccepted, StaticWorkspaceResolver,
+    WorkspaceResolver,
+};
 pub use extract_stage::{extract_all, extract_streaming};
 pub use extractor::extract_file;
 pub use pg_upsert_stage::{pg_upsert_streaming, PgUpsertStats};

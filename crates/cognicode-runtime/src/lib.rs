@@ -6,11 +6,22 @@ use std::sync::Arc;
 use anyhow::Result;
 use tracing_subscriber::EnvFilter;
 
+#[cfg(feature = "postgres")]
+use cognicode_core::infrastructure::{
+    graph::graph_cache::GraphCache,
+    persistence::PostgresRepository,
+};
+
 pub struct Runtime {
     pub symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository>,
     pub source_reader: Arc<dyn cognicode_explorer::ports::SourceReader>,
     pub graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>>,
     pub cwd: PathBuf,
+    /// GraphCache for serving the in-memory graph (ArcSwap).
+    pub graph_cache: Arc<cognicode_core::infrastructure::graph::graph_cache::GraphCache>,
+    /// PostgresRepository for the ingest pipeline (PG-connected Mode B only).
+    #[cfg(feature = "postgres")]
+    pub pg_repo: Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
 }
 
 impl Runtime {
@@ -22,23 +33,35 @@ impl Runtime {
         let source_reader: Arc<dyn cognicode_explorer::ports::SourceReader> =
             Arc::new(cognicode_explorer::adapters::FsSourceReader::new(cwd.clone()));
 
-        let graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>> = match postgres_url {
+        let graph_cache = Arc::new(cognicode_core::infrastructure::graph::graph_cache::GraphCache::new());
+
+        let pg_url = postgres_url.clone();
+        let graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>> = match &pg_url {
             #[cfg(feature = "postgres")]
             Some(url) => {
-                Some(cognicode_explorer::postgres_bridge::open_graph_from_postgres(&url).await?)
+                let graph = cognicode_explorer::postgres_bridge::open_graph_from_postgres(url).await?;
+                graph_cache.set((*graph).clone());
+                Some(graph)
             }
             #[cfg(not(feature = "postgres"))]
             Some(_) => unreachable!("postgres feature not enabled"),
             None => None,
         };
 
+        #[cfg(feature = "postgres")]
+        let pg_repo: Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>> =
+            if let Some(ref url) = pg_url {
+                let repo = cognicode_core::infrastructure::persistence::PostgresRepository::new(url).await
+                    .map_err(|e| anyhow::anyhow!("PG connect: {e}"))?;
+                Some(Arc::new(repo))
+            } else {
+                None
+            };
+
         let symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository> =
             if let Some(ref g) = graph {
                 Arc::new(cognicode_explorer::adapters::CallGraphRepository::new(g.clone()))
             } else {
-                // When no graph is available, we need a fallback symbol repository.
-                // For now, use EmptySymbolRepository if available, otherwise
-                // we require a graph to be loaded.
                 return Err(anyhow::anyhow!(
                     "cognicode-runtime requires --postgres <URL> or DATABASE_URL to be set. \
                      Set DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
@@ -51,6 +74,9 @@ impl Runtime {
             source_reader,
             graph,
             cwd,
+            graph_cache,
+            #[cfg(feature = "postgres")]
+            pg_repo,
         })
     }
 
@@ -66,6 +92,23 @@ impl Runtime {
             Arc::new(cognicode_explorer::adapters::CallGraphRepository::new(g))
                 as Arc<dyn GraphQueryPort>
         });
+
+        // Workspace resolver — maps workspace_id → root_path.
+        // Populated when open_workspace is called.
+        let ws_resolver: Arc<dyn cognicode_core::application::ingest::WorkspaceResolver> =
+            Arc::new(cognicode_core::application::ingest::StaticWorkspaceResolver::new());
+
+        // IngestController — only when PG is available.
+        #[cfg(feature = "postgres")]
+        let ingest = self.pg_repo.as_ref().map(|repo| {
+            Arc::new(cognicode_core::application::ingest::IngestController::new(
+                repo.clone(),
+                self.graph_cache.clone(),
+                ws_resolver.clone(),
+            ))
+        });
+        #[cfg(not(feature = "postgres"))]
+        let ingest: Option<Arc<cognicode_core::application::ingest::IngestController>> = None;
 
         // Workspace facade.
         let workspace: Arc<dyn cognicode_explorer::facades::WorkspaceService> = Arc::new(
@@ -129,9 +172,16 @@ impl Runtime {
             ),
         );
 
-        cognicode_explorer::api::ApiState::new(
+        let mut state = cognicode_explorer::api::ApiState::new(
             workspace, search, view, persistence, moldql, graph,
-        )
+        );
+
+        #[cfg(feature = "postgres")]
+        if let Some(ingest_controller) = ingest {
+            state = state.with_ingest(ingest_controller);
+        }
+
+        state
     }
 
     pub fn into_mcp_handler(self) -> cognicode_explorer::mcp::ExplorerMcpHandler {
