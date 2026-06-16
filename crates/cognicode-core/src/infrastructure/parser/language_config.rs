@@ -85,6 +85,9 @@ pub static ALL_LANGUAGES: &[LanguageConfig] = &[
     JAVASCRIPT_CONFIG,
     GO_CONFIG,
     JAVA_CONFIG,
+    C_CONFIG,
+    CPP_CONFIG,
+    CSHARP_CONFIG,
 ];
 
 // ── Rust ─────────────────────────────────────────────────────────────────────
@@ -169,6 +172,48 @@ pub const JAVA_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["method_invocation"],
     call_has_function_field: false,
     import_types: &["import_declaration"],
+};
+
+// ── C ────────────────────────────────────────────────────────────────────────
+
+pub const C_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::C,
+    extensions: &["c", "h"],
+    ts_language: tree_sitter_c::language,
+    function_types: &["function_definition"],
+    class_types: &["struct_specifier", "union_specifier", "enum_specifier"],
+    variable_types: &["declaration"],
+    call_types: &["call_expression"],
+    call_has_function_field: true,
+    import_types: &["preproc_include"],
+};
+
+// ── C++ ──────────────────────────────────────────────────────────────────────
+
+pub const CPP_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Cpp,
+    extensions: &["cpp", "cc", "cxx", "hpp", "hxx"],
+    ts_language: || tree_sitter_cpp::LANGUAGE.into(),
+    function_types: &["function_definition"],
+    class_types: &["class_specifier", "struct_specifier", "union_specifier"],
+    variable_types: &["declaration"],
+    call_types: &["call_expression"],
+    call_has_function_field: true,
+    import_types: &["preproc_include", "using_declaration"],
+};
+
+// ── C# ───────────────────────────────────────────────────────────────────────
+
+pub const CSHARP_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::CSharp,
+    extensions: &["cs"],
+    ts_language: || tree_sitter_c_sharp::LANGUAGE.into(),
+    function_types: &["method_declaration"],
+    class_types: &["class_declaration", "struct_declaration", "interface_declaration", "enum_declaration"],
+    variable_types: &["local_declaration_statement", "field_declaration"],
+    call_types: &["invocation_expression"],
+    call_has_function_field: true,
+    import_types: &["using_directive"],
 };
 
 // ============================================================================

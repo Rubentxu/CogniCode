@@ -688,7 +688,7 @@ impl ChangeSignatureStrategy {
             Language::JavaScript | Language::TypeScript => {
                 format!("function {}({}) {{", function_name, params_str)
             }
-            Language::Go => {
+            Language::Go | Language::C | Language::Cpp | Language::CSharp => {
                 // Convert "name: type" to "name type" for Go syntax
                 let go_params: Vec<String> = new_params
                     .iter()
@@ -703,7 +703,7 @@ impl ChangeSignatureStrategy {
                     go_params.join(", ")
                 )
             }
-            Language::Java => {
+            Language::Java | Language::C | Language::Cpp | Language::CSharp => {
                 // Java uses "ReturnType name(Type1 param1, Type2 param2)"
                 // Return type not available in params, use placeholder
                 format!("/* ReturnType */ {}({})", function_name, params_str)

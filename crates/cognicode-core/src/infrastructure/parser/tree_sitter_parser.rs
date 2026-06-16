@@ -39,6 +39,9 @@ pub enum Language {
     TypeScript,
     Go,
     Java,
+    C,
+    Cpp,
+    CSharp,
 }
 
 impl Language {
@@ -54,6 +57,9 @@ impl Language {
                 "tsx" => Some(Language::TypeScript),
                 "go" => Some(Language::Go),
                 "java" => Some(Language::Java),
+                "c" | "h" => Some(Language::C),
+                "cpp" | "cc" | "cxx" | "hpp" | "hxx" => Some(Language::Cpp),
+                "cs" => Some(Language::CSharp),
                 _ => None,
             })
     }
@@ -67,6 +73,9 @@ impl Language {
             Language::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
             Language::Go => tree_sitter_go::LANGUAGE.into(),
             Language::Java => tree_sitter_java::LANGUAGE.into(),
+            Language::C => tree_sitter_c::language(),
+            Language::Cpp => tree_sitter_cpp::LANGUAGE.into(),
+            Language::CSharp => tree_sitter_c_sharp::LANGUAGE.into(),
         }
     }
 
@@ -79,6 +88,9 @@ impl Language {
             Language::TypeScript => "TypeScript",
             Language::Go => "Go",
             Language::Java => "Java",
+            Language::C => "C",
+            Language::Cpp => "C++",
+            Language::CSharp => "C#",
         }
     }
 
@@ -90,6 +102,9 @@ impl Language {
             Language::JavaScript | Language::TypeScript => "function_declaration",
             Language::Go => "function_declaration",
             Language::Java => "method_declaration",
+            Language::C => "function_definition",
+            Language::Cpp => "function_definition",
+            Language::CSharp => "method_declaration",
         }
     }
 
@@ -101,6 +116,9 @@ impl Language {
             Language::JavaScript | Language::TypeScript => "class_declaration",
             Language::Go => "type_declaration",
             Language::Java => "class_declaration",
+            Language::C => "struct_specifier",
+            Language::Cpp => "class_specifier",
+            Language::CSharp => "class_declaration",
         }
     }
 
@@ -112,6 +130,9 @@ impl Language {
             Language::JavaScript | Language::TypeScript => "variable_declaration",
             Language::Go => "short_var_declaration",
             Language::Java => "local_variable_declaration",
+            Language::C => "declaration",
+            Language::Cpp => "declaration",
+            Language::CSharp => "local_declaration_statement",
         }
     }
 
@@ -123,6 +144,9 @@ impl Language {
             Language::JavaScript | Language::TypeScript => "call_expression",
             Language::Go => "call_expression",
             Language::Java => "method_invocation",
+            Language::C => "call_expression",
+            Language::Cpp => "call_expression",
+            Language::CSharp => "invocation_expression",
         }
     }
 
@@ -134,6 +158,9 @@ impl Language {
             Language::JavaScript | Language::TypeScript => true,
             Language::Go => true,
             Language::Java => false,
+            Language::C => true,
+            Language::Cpp => true,
+            Language::CSharp => true,
         }
     }
 
@@ -145,6 +172,9 @@ impl Language {
             Language::TypeScript | Language::JavaScript => "typescript-language-server",
             Language::Go => "gopls",
             Language::Java => "jdtls",
+            Language::C => "clangd",
+            Language::Cpp => "clangd",
+            Language::CSharp => "omnisharp",
         }
     }
 
@@ -158,6 +188,9 @@ impl Language {
             }
             Language::Go => "go install golang.org/x/tools/gopls@latest",
             Language::Java => "brew install jdtls",
+            Language::C => "apt install clangd",
+            Language::Cpp => "apt install clangd",
+            Language::CSharp => "dotnet tool install -g omnisharp",
         }
     }
 
@@ -169,6 +202,7 @@ impl Language {
             Language::TypeScript | Language::JavaScript => &["--stdio"],
             Language::Go => &["serve"],
             Language::Java => &[],
+            Language::C | Language::Cpp | Language::CSharp => &["--stdio"],
         }
     }
 
@@ -180,6 +214,9 @@ impl Language {
             Language::TypeScript | Language::JavaScript => "typescript-language-server",
             Language::Go => "gopls",
             Language::Java => "eclipse-jdtls",
+            Language::C => "clangd",
+            Language::Cpp => "clangd",
+            Language::CSharp => "omnisharp",
         }
     }
 
@@ -192,6 +229,9 @@ impl Language {
             Language::TypeScript,
             Language::Go,
             Language::Java,
+            Language::C,
+            Language::Cpp,
+            Language::CSharp,
         ]
     }
 }

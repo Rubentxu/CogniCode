@@ -186,6 +186,9 @@ impl LspProcess {
             Language::JavaScript => "javascript",
             Language::TypeScript => "typescript",
             Language::Go => "go",
+            Language::C => "c",
+            Language::Cpp => "cpp",
+            Language::CSharp => "csharp",
             Language::Java => "java",
         };
         let params = serde_json::json!({

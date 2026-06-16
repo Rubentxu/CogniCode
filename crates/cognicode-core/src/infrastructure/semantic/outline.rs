@@ -317,7 +317,7 @@ impl OutlineBuilder {
                     }
                 }
             }
-            Language::Go => {
+            Language::Go | Language::C | Language::Cpp | Language::CSharp => {
                 // Find parameters in Go function
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i)
@@ -327,7 +327,7 @@ impl OutlineBuilder {
                     }
                 }
             }
-            Language::Java => {
+            Language::Java | Language::C | Language::Cpp | Language::CSharp => {
                 // Find parameters in Java method
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i)
