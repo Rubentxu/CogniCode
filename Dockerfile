@@ -20,8 +20,9 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 
 # Build only cognicode-mcp and explorer-api (skip test/dev crates)
-RUN cargo build --release -p cognicode-mcp -p cognicode-runtime --bin explorer-api \
-    && strip target/release/cognicode-mcp target/release/explorer-api
+# Build all binaries: cognicode-mcp (stdio), cognicode-mcp-server (HTTP/SSE), explorer-api
+RUN cargo build --release -p cognicode-mcp -p cognicode-runtime --bin explorer-api --bin cognicode-mcp-server \
+    && strip target/release/cognicode-mcp target/release/explorer-api target/release/cognicode-mcp-server
 
 # ---- Runtime stage ----
 FROM debian:bookworm-slim
@@ -31,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/cognicode-mcp /usr/local/bin/
+COPY --from=builder /build/target/release/cognicode-mcp-server /usr/local/bin/
 COPY --from=builder /build/target/release/explorer-api /usr/local/bin/
 
 # PostgreSQL data directory
@@ -45,6 +47,6 @@ ENV RUST_LOG=info
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-EXPOSE 5432 8010
+EXPOSE 5432 8010 9847
 
 ENTRYPOINT ["docker-entrypoint.sh"]

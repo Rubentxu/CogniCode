@@ -31,7 +31,7 @@ if [ "$1" = "--multi" ]; then
     exec /usr/local/bin/explorer-api --listen 0.0.0.0:8010 --cwd /workspaces &
 fi
 
-# Start cognicode-mcp (single project mode)
+# Start cognicode-mcp-server (HTTP/SSE mode on port 9847)
 PROJECT_DIR="${COGNICODE_PROJECT:-/workspace}"
-echo "🚀 Starting CogniCode MCP (Mode B) for $PROJECT_DIR"
-exec /usr/local/bin/cognicode-mcp --cwd "$PROJECT_DIR" --postgres "$DATABASE_URL"
+echo "🚀 Starting CogniCode MCP HTTP/SSE Server on :9847 for $PROJECT_DIR"
+exec /usr/local/bin/cognicode-mcp-server --cwd "$PROJECT_DIR" --listen 0.0.0.0:9847 --postgres "$DATABASE_URL"
