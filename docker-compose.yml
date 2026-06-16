@@ -1,0 +1,66 @@
+# CogniCode MCP — Self-contained deployment
+#
+# Single project:
+#   COGNICODE_PROJECT=/path/to/project docker-compose up
+#
+# Multi-project (Explorer API):
+#   docker-compose --profile multi up
+#
+# PG-only (connect external MCP):
+#   docker-compose up postgres
+
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cognicode-pg
+    environment:
+      POSTGRES_USER: cognicode
+      POSTGRES_PASSWORD: cognicode
+      POSTGRES_DB: cognicode
+      POSTGRES_INITDB_ARGS: --encoding=UTF-8
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cognicode", "-d", "cognicode"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  cognicode-mcp:
+    image: cognicode-mcp:latest
+    build: .
+    container_name: cognicode-mcp
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://cognicode:cognicode@postgres:5432/cognicode
+      COGNICODE_PROJECT: ${COGNICODE_PROJECT:-/workspace}
+      RUST_LOG: info
+    volumes:
+      - ${COGNICODE_PROJECT:-/workspace}:/workspace:ro
+    profiles: [""]
+
+  explorer-api:
+    image: cognicode-mcp:latest
+    build: .
+    container_name: cognicode-explorer
+    command: ["--multi"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://cognicode:cognicode@postgres:5432/cognicode
+      RUST_LOG: info
+    ports:
+      - "8010:8010"
+    volumes:
+      - ${COGNICODE_WORKSPACES:-/home/projects}:/workspaces:ro
+    profiles: ["multi"]
+
+volumes:
+  pgdata:
