@@ -9,7 +9,9 @@
 > [ADR-023](../adr/ADR-023-bulk-load-advisory-lock-error-isolation.md) ·
 > [ADR-024](../adr/ADR-024-infrastructure-as-code-extraction.md) ·
 > [ADR-025](../adr/ADR-025-mcp-dual-mode-standalone-pg.md) ·
-> [ADR-026](../adr/ADR-026-graphify-style-mcp-tools.md)
+> [ADR-026](../adr/ADR-026-graphify-style-mcp-tools.md) ·
+> [ADR-027](../adr/ADR-027-tool-consolidation.md) ·
+> [ADR-028](../adr/ADR-028-high-value-mcp-tools.md)
 
 This roadmap defines four sprints to deliver the ingest pipeline. Each sprint
 ships independently and builds on the previous one. Sprint 1 closes the
@@ -420,14 +422,75 @@ implemented. Ordered by value-to-effort ratio.
 | `get_implementors` tool | ⬜ |
 | `get_members` tool | ⬜ |
 | `get_iac_references` tool | ⬜ |
-| `graph_query_filtered` tool | ⬜ |
-| `export_callflow` tool | ⬜ |
-| Wire `graph_query` + `graph_explain` in ToolHandler registry | ⬜ |
+| `graph_query_filtered` tool | ✅ |
+| `export_callflow` tool | ✅ |
+| Wire `graph_query` + `graph_explain` in ToolHandler registry | ✅ |
 
 ### Explorer integration
 | Task | Status |
 |------|--------|
-| Frontend: scan button in workspace picker | ⬜ |
-| Frontend: progress bar for scan job | ⬜ |
-| Frontend: graph stats display | ⬜ |
+| Frontend: scan button in workspace picker | ✅ |
+| Frontend: progress bar for scan job | ✅ |
+| Frontend: graph stats display | ✅ |
 | Frontend: GraphReport view in LensPanel | ⬜ |
+
+---
+
+## Sprint 5: Tool Optimization (ADR-027 + ADR-028)
+
+**Goal:** Consolidate 67 tools → 49, add 8 new high-value tools, achieve
+Graphify parity on agent workflow quality while keeping CogniCode's unique
+advantages (IaC, type-refs, LSP, AVC, safe refactoring).
+
+### Phase 5.1: Register missing + deprecate redundant (Day 1)
+
+| Task | ADR | Detail |
+|------|-----|--------|
+| Register 7 unregistered tools | ADR-027 | graph_query_filtered, export_callflow, get_graph_report, get_type_references, get_imports, get_implementors, get_members |
+| Deprecate `build_lightweight_index` | ADR-027 | Replaced by Scan manifest |
+| Deprecate `merge_file_graphs` | ADR-027 | Replaced by PG |
+| Deprecate `reparse_on_edit` | ADR-027 | Replaced by file watcher |
+| Deprecate `complete_task`, `poll_tasks` | ADR-027 | Agent mgmt, not graph tools |
+| Deprecate graph analytics individuals | ADR-027 | graph_god_nodes, graph_communities, graph_community_detail, graph_surprising_connections, check_architecture (→ graph_insights) |
+| Deprecate search/usage duplicates | ADR-027 | ranked_symbols, graph_search_idf, find_usages_with_context, get_hot_symbols, graph_all_paths, get_outline |
+| Deprecate comparison tools | ADR-027 | compare_call_graphs, detect_api_breaks, evaluate_refactor_quality (→ compare_graph) |
+| Add `deprecated: true` to list_tools() metadata | ADR-027 | Agents see warnings before removal |
+
+### Phase 5.2: Consolidate composites (Day 2)
+
+| Task | ADR | Detail |
+|------|-----|--------|
+| `smart_search(algorithm)` | ADR-027 | Merges semantic_search + ranked_symbols + graph_search_idf |
+| `graph_analyze(mode)` | ADR-027 | Merges graph_condensed + graph_reduced + graph_feedback_arcs |
+| `project_overview(detail)` | ADR-027 | Merges smart_overview + auto_diagnose + generate_system_prompt_context + suggest_context |
+| `find_usages + context_lines` | ADR-027 | Add optional param to find_usages |
+| `trace_path + all:bool` | ADR-027 | Add flag to trace_path |
+| `get_file_symbols + hierarchical:bool` | ADR-027 | Add flag to get_file_symbols |
+| `compare_graph(mode)` | ADR-027 | Merge comparison tools |
+| ToolHandler registry cleanup | ADR-027 | Group tools by family in registry |
+
+### Phase 5.3: New high-value tools (Day 3-5)
+
+| Task | ADR | Tier | Effort |
+|------|-----|------|--------|
+| **`codebase_map`** — LLM-optimized codebase map | ADR-028 | T1 🔴 | 1 day |
+| **`project_insights`** — Dashboard in one call | ADR-028 | T1 🔴 | 1 day |
+| **`review_pr`** — PR impact analysis (v1: file list) | ADR-028 | T1 🔴 | 1 day |
+| **`solid_audit`** — SOLID principle analysis | ADR-028 | T2 🟡 | 2 days |
+| **`iac_query`** — Infrastructure graph navigation | ADR-028 | T2 🟡 | 1 day |
+| **`graph_diff`** — Compare graph snapshots | ADR-028 | T2 🟡 | 2 days |
+| **`graph_timeline`** — Temporal evolution | ADR-028 | T2 🟢 | 1 day |
+| **`add_url`** — External content ingestion | ADR-028 | T3 ⚪ | Future |
+
+### Exit criteria
+
+- [ ] 67 tools → 49 after consolidation (18 deprecated, 7 registered, 7→3 composite)
+- [ ] `codebase_map` returns compact (400 tokens) and detailed (2000 tokens) maps
+- [ ] `project_insights` replaces 5+ individual tool calls
+- [ ] `review_pr` analyzes impact for a list of changed files
+- [ ] `solid_audit` detects SRP, DIP violations using type-ref edges
+- [ ] `iac_query` navigates Terraform/Ansible subgraphs
+- [ ] `graph_diff` compares two graph_reports snapshots
+- [ ] `graph_timeline` shows 30-day trend lines
+- [ ] All deprecated tools marked with `deprecated: true` in list_tools()
+- [ ] Tool families visible in tool descriptions
