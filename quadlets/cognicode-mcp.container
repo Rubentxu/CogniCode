@@ -17,7 +17,7 @@ Volume=%h/Proyectos:/workspace:ro
 
 # Expose MCP via stdio (opencode connects via podman exec)
 # For network access, also expose the Explorer API
-PublishPort=127.0.0.1:3456:8010
+PublishPort=127.0.0.1:9847:8010
 
 # Depends on PostgreSQL being healthy
 DependsOn=cognicode-postgres.service

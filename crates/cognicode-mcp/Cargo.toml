@@ -10,6 +10,11 @@ name = "cognicode-mcp"
 path = "src/main.rs"
 
 [[bin]]
+name = "cognicode-mcp-server"
+path = "src/server.rs"
+required-features = ["postgres"]
+
+[[bin]]
 name = "mcp-client"
 path = "src/mcp_client.rs"
 
@@ -25,6 +30,7 @@ multimodal = ["cognicode-core/multimodal"]
 
 [dependencies]
 cognicode-core = { workspace = true }
+cognicode-runtime = { path = "../cognicode-runtime" }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -38,3 +44,8 @@ opentelemetry_sdk.workspace = true
 opentelemetry-otlp.workspace = true
 clap.workspace = true
 rayon.workspace = true
+axum = { workspace = true }
+tower = { workspace = true }
+http = "1"
+http-body-util = "0.1"
+tokio-util = "0.7"

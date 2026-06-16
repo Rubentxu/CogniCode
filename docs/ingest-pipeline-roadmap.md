@@ -11,7 +11,8 @@
 > [ADR-025](../adr/ADR-025-mcp-dual-mode-standalone-pg.md) ·
 > [ADR-026](../adr/ADR-026-graphify-style-mcp-tools.md) ·
 > [ADR-027](../adr/ADR-027-tool-consolidation.md) ·
-> [ADR-028](../adr/ADR-028-high-value-mcp-tools.md)
+> [ADR-028](../adr/ADR-028-high-value-mcp-tools.md) ·
+> [ADR-029](../adr/ADR-029-mcp-http-sse-server.md)
 
 This roadmap defines four sprints to deliver the ingest pipeline. Each sprint
 ships independently and builds on the previous one. Sprint 1 closes the

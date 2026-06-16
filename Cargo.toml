@@ -68,6 +68,8 @@ tokio = { version = "1.45", features = ["rt-multi-thread", "net", "sync", "time"
 async-trait = "0.1"
 futures-util = "0.3"
 tower = { version = "0.5", features = ["util"] }
+axum = "0.7"
+tokio-util = "0.7"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -134,7 +136,7 @@ mermaid-rs-renderer = { version = "0.2", default-features = false }
 clap = { version = "4.4", features = ["derive"] }
 
 # MCP
-rmcp = { version = "1.4", features = ["server", "transport-io", "client", "transport-child-process", "which-command"] }
+rmcp = { version = "1.7", features = ["server", "transport-io", "client", "transport-child-process", "transport-streamable-http-server", "transport-streamable-http-server-session", "which-command"] }
 process-wrap = "9.1"
 
 # Rig-core (optional)
