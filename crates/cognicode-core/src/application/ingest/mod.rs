@@ -30,5 +30,5 @@ pub use scan::{classify_file, hash_file, scan_for_changes, walk_files, ScanEntry
 pub use service::run_scan;
 pub use types::{
     ChangeKind, ExtractionEdge, ExtractionResult, FailedFile, FileChange, FileType,
-    ScanManifestEntry, ScanProgress, ScanResult, ScanStage, TargetRef,
+    ScanManifestEntry, ScanProgress, ScanResult, ScanStage, TargetRef, TypeRef, TypeRefContext,
 };

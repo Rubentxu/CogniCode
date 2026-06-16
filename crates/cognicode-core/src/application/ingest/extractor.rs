@@ -92,6 +92,16 @@ pub fn extract_file(
                     &source_path_str,
                     &mut edges,
                 );
+
+                // Extract type references if walker is configured
+                extract_type_refs(
+                    config,
+                    &node,
+                    source_bytes,
+                    &symbol_id,
+                    &source_path_str,
+                    &mut edges,
+                );
             }
         }
 
@@ -109,6 +119,16 @@ pub fn extract_file(
                 edges.push(contains_edge(&file_node_id, &symbol_id, &source_path_str));
                 nodes.push(symbol_node.clone());
                 symbol_ids.push((symbol_id.clone(), name.clone()));
+
+                // Extract type references for class/struct definitions
+                extract_type_refs(
+                    config,
+                    &node,
+                    source_bytes,
+                    &symbol_id,
+                    &source_path_str,
+                    &mut edges,
+                );
             }
         }
 
@@ -302,4 +322,31 @@ fn node_text(node: &Node, source: &[u8]) -> String {
     let start = node.start_byte();
     let end = node.end_byte();
     String::from_utf8_lossy(&source[start..end]).into_owned()
+}
+
+/// Call the type-ref walker (if configured) and emit `References` edges.
+fn extract_type_refs(
+    config: &LanguageConfig,
+    node: &Node,
+    source: &[u8],
+    symbol_id: &str,
+    source_path: &str,
+    edges: &mut Vec<ExtractionEdge>,
+) {
+    let walker = match config.type_ref_walker {
+        Some(w) => w,
+        None => return,
+    };
+
+    let type_refs = walker(node, source);
+    for tr in type_refs {
+        edges.push(ExtractionEdge {
+            source: symbol_id.to_string(),
+            target_ref: TargetRef::Unresolved(tr.target_name),
+            kind: format!("dependency.{}", DependencyType::References),
+            provenance: Provenance::Extracted,
+            confidence: 1.0,
+            line: Some(tr.line),
+        });
+    }
 }

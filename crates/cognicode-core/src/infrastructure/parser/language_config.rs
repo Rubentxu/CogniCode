@@ -12,6 +12,8 @@ use super::tree_sitter_parser::Language;
 ///
 /// One `const` config per language. The generic extractor walks the AST using
 /// the config's node-type sets.
+pub const NO_TYPE_REFS: Option<TypeRefWalkerFn> = None;
+
 #[derive(Debug, Clone, Copy)]
 pub struct LanguageConfig {
     /// The language enum variant this config describes.
@@ -46,7 +48,20 @@ pub struct LanguageConfig {
     /// Tree-sitter node types that represent import/include statements.
     /// The extractor creates `Imports` edges from the file node.
     pub import_types: &'static [&'static str],
+    pub type_ref_walker: Option<TypeRefWalkerFn>,
+
 }
+
+/// Function signature for a type-reference walker.
+/// Receives the tree-sitter node for a function/class definition and the
+/// source bytes. Returns type references extracted from the node's
+/// type annotations.
+pub type TypeRefWalkerFn = fn(
+    node: &tree_sitter::Node,
+    source: &[u8],
+) -> Vec<crate::application::ingest::types::TypeRef>;
+
+/// Sentinel value: no type-ref walker configured for this language.
 
 impl LanguageConfig {
     /// Look up the `LanguageConfig` for a file extension (without the dot).
@@ -104,6 +119,7 @@ pub const RUST_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["call_expression", "macro_invocation"],
     call_has_function_field: false,
     import_types: &["use_declaration"],
+    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_rust_type_refs),
 };
 
 // ── Python ──────────────────────────────────────────────────────────────────
@@ -118,6 +134,7 @@ pub const PYTHON_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["call"],
     call_has_function_field: true,
     import_types: &["import_statement", "import_from_statement"],
+    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_python_type_refs),
 };
 
 // ── TypeScript ───────────────────────────────────────────────────────────────
@@ -132,6 +149,7 @@ pub const TYPESCRIPT_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["call_expression", "new_expression"],
     call_has_function_field: true,
     import_types: &["import_statement", "export_statement"],
+    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_typescript_type_refs),
 };
 
 // ── JavaScript ───────────────────────────────────────────────────────────────
@@ -146,6 +164,7 @@ pub const JAVASCRIPT_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["call_expression", "new_expression"],
     call_has_function_field: true,
     import_types: &["import_statement", "export_statement"],
+    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_typescript_type_refs),
 };
 
 // ── Go ───────────────────────────────────────────────────────────────────────
@@ -160,6 +179,7 @@ pub const GO_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["call_expression"],
     call_has_function_field: true,
     import_types: &["import_declaration"],
+    type_ref_walker: NO_TYPE_REFS,
 };
 
 // ── Java ─────────────────────────────────────────────────────────────────────
@@ -174,6 +194,7 @@ pub const JAVA_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["method_invocation"],
     call_has_function_field: false,
     import_types: &["import_declaration"],
+    type_ref_walker: NO_TYPE_REFS,
 };
 
 // ── C ────────────────────────────────────────────────────────────────────────
@@ -188,6 +209,7 @@ pub const C_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["call_expression"],
     call_has_function_field: true,
     import_types: &["preproc_include"],
+    type_ref_walker: NO_TYPE_REFS,
 };
 
 // ── C++ ──────────────────────────────────────────────────────────────────────
@@ -202,6 +224,7 @@ pub const CPP_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["call_expression"],
     call_has_function_field: true,
     import_types: &["preproc_include", "using_declaration"],
+    type_ref_walker: NO_TYPE_REFS,
 };
 
 // ── C# ───────────────────────────────────────────────────────────────────────
@@ -216,6 +239,7 @@ pub const CSHARP_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["invocation_expression"],
     call_has_function_field: true,
     import_types: &["using_directive"],
+    type_ref_walker: NO_TYPE_REFS,
 };
 
 // ── HCL / Terraform (ADR-024) ───────────────────────────────────────────────
@@ -230,6 +254,7 @@ pub const HCL_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["expression"],
     call_has_function_field: false,
     import_types: &["block"],
+    type_ref_walker: NO_TYPE_REFS,
 };
 
 // ── YAML / Ansible (ADR-024) ────────────────────────────────────────────────
@@ -244,6 +269,7 @@ pub const YAML_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["flow_node"],
     call_has_function_field: false,
     import_types: &["block_mapping_pair"],
+    type_ref_walker: NO_TYPE_REFS,
 };
 
 // ============================================================================

@@ -213,3 +213,49 @@ pub struct FailedFile {
     pub path: String,
     pub error: String,
 }
+
+// ============================================================================
+// Type reference types
+// ============================================================================
+
+/// A type reference extracted from a symbol's type annotations.
+/// E.g., a function parameter `user: User` produces `TypeRef { target_name: "User", context: ParamType }`.
+#[derive(Debug, Clone)]
+pub struct TypeRef {
+    /// Name of the referenced type.
+    pub target_name: String,
+    /// How the type is referenced in the source.
+    pub context: TypeRefContext,
+    /// Source line number (1-indexed).
+    pub line: u32,
+}
+
+/// The syntactic context in which a type reference appears.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeRefContext {
+    /// Function/method parameter type annotation.
+    ParamType,
+    /// Function/method return type annotation.
+    ReturnType,
+    /// Struct field type annotation.
+    FieldType,
+    /// Generic type argument.
+    GenericArg,
+    /// Variable type annotation.
+    VariableType,
+    /// Trait bound or supertype.
+    TraitBound,
+}
+
+impl TypeRefContext {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TypeRefContext::ParamType => "param_type",
+            TypeRefContext::ReturnType => "return_type",
+            TypeRefContext::FieldType => "field_type",
+            TypeRefContext::GenericArg => "generic_arg",
+            TypeRefContext::VariableType => "variable_type",
+            TypeRefContext::TraitBound => "trait_bound",
+        }
+    }
+}
