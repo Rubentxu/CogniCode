@@ -242,6 +242,45 @@ This preserves the exploration narrative:
 [Entry Point] → [Symbol] → [Repository] → [Decision] → [Test]
 ```
 
+### Ingest Pipeline
+- **Ingest**: The process of scanning a workspace's source files, extracting structural information, and persisting it as a queryable graph in PostgreSQL. The canonical trigger for graph creation and updates.
+_Avoid_: index, build, scan (scan is a phase within ingest, not the whole process)
+
+- **Scan**: The first phase of ingest — walking the filesystem, classifying files by type, computing content hashes, and detecting changes against the `scan_manifest` table. Output: a set of file changes (New, Changed, Deleted, Unchanged).
+_Avoid_: crawl, walk
+
+- **Extraction**: The phase of ingest where each changed source file is parsed via tree-sitter and its structural elements (symbols, calls, imports, type references, inheritance) are emitted as `GraphNode` + `GraphEdge` pairs. Extraction is deterministic and language-specific.
+_Avoid_: parse, analyze
+
+- **LanguageConfig**: A data-driven configuration object describing how to extract structural information from a specific programming language. Contains tree-sitter node-type mappings (function, class, import, call), extension list, and optional import/call handlers. One config per language; the generic extractor is shared.
+_Avoid_: parser config, language definition
+
+- **Infrastructure-as-Code (IaC) Extraction**: The extraction of Terraform (`.tf`/`.hcl`) and Ansible (`.yml`/`.yaml`) files as first-class nodes in the graph. Terraform resources, data sources, variables, and modules become `GraphNode`s with `References` edges between them. Ansible plays, tasks, and modules become `GraphNode`s with `Calls` (task → module) and `Imports` (playbook → playbook) edges.
+_Avoid_: config parsing, deployment analysis
+
+- **GraphQuery**: A natural-language query over the graph's topology. The agent asks "what connects X to Y?" and the tool returns a subgraph grounded in real edges with provenance. The query is deterministic (keyword extraction + IDF matching + BFS expansion), not LLM-based — the AI agent calling the tool provides the intelligence.
+_Avoid_: semantic search (which is keyword-based, not topology-based), graph_search (too generic)
+
+- **GraphReport**: An auto-generated summary of the graph's key structural properties, produced at the end of each ingest. Contains community clusters, god nodes (high PageRank), surprising cross-community connections, and dead code candidates. Cached in PostgreSQL for temporal diffing.
+_Avoid_: analysis output, metrics report
+
+- **Job**: An asynchronous unit of work in the Explorer API. Scan and analyze operations run as jobs with progress tracking (`scanned`, `total`, `stage`) and status polling via `GET /api/jobs/:id`. Jobs use `tokio::spawn_blocking` internally.
+_Avoid_: task, operation, request
+
+- **ScanManifest**: A PostgreSQL table (`scan_manifest`) that tracks `{file_path, content_hash, language, scanned_at}` per file. Serves as both the change-detection manifest and the extraction cache invalidation key. Replaces file-based JSON manifests.
+_Avoid_: cache file, manifest.json
+
+The ingest pipeline is a streaming, PG-native sequence:
+
+```text
+Scan ──▶ Extract ──▶ PgUpsert ──▶ Resolve ──▶ Cluster ──▶ Analyze ──▶ Report ──▶ Refresh ──▶ Notify
+```
+
+Each stage communicates through typed channels. Extraction (CPU-bound, `rayon`)
+and PgUpsert (I/O-bound, `sqlx`) overlap via a `tokio::sync::mpsc` channel.
+PostgreSQL is the sole persistence layer: graph store, manifest, and report
+cache. No intermediate files.
+
 ## Terminology (vs gtoolkit)
 | CogniCode | gtoolkit | Notes |
 |-----------|----------|-------|
@@ -262,9 +301,27 @@ This preserves the exploration narrative:
 | Inspector Pane Stack | GtPager | Lateral stack of object inspections |
 | ExplorationSession | GtPager navigation history | Semantic backend trace of user navigation |
 
+## Terminology (vs Graphify)
+| CogniCode | Graphify | Notes |
+|-----------|----------|-------|
+| Ingest Pipeline | detect → extract → build → cluster → analyze → report | PG-native streaming, no JSON files |
+| Scan | detect() | Walk FS + classify + hash + diff vs `scan_manifest` |
+| Extraction | extract() | tree-sitter AST, 36+ languages via LanguageConfig |
+| LanguageConfig | LanguageConfig dataclass | Data-driven per-language tree-sitter config |
+| GraphReport | GRAPH_REPORT.md | Auto-generated insights, cached in PG |
+| ScanManifest | manifest.json | PG table, not a file |
+| GenericGraph | nx.Graph | petgraph + PG, not NetworkX + JSON |
+| CallGraph | (no equivalent) | Code-only projection of GenericGraph |
+| Dual-write projection | (no equivalent) | GenericGraph → CallGraph via PG dual-write |
+| ArcSwap GraphCache | (no equivalent) | Lock-free serving with broadcast events |
+| SolidLens | (no equivalent) | SOLID principle analysis as a Lens on the graph |
+| PG NOTIFY/LISTEN | (no equivalent) | Real-time graph update notifications to Explorer |
+
 ## Open Questions
 - [ ] How to auto-generate MCP tool schemas from handler signatures
 - [ ] How to implement ReAct agent loop with tool calling
 - [ ] RAG + LLM port from gt4llm patterns
-- [ ] Epoch-based source cache for incremental updates
+- [x] ~~Epoch-based source cache for incremental updates~~ → Resolved: PG-native `scan_manifest` table with SHA256 content hash (ADR-017)
 - [ ] C4 level extraction (component/container/system from code)
+- [ ] Multimodal extraction (docs, PDFs, images via LLM) — Phase 2
+- [ ] File watcher integration (notify crate) — Phase 1.5

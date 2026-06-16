@@ -19,12 +19,10 @@ set positional-arguments := false
 
 EXPLORER_UI_DIR := "apps/explorer-ui"
 EXPLORER_API_BIN := "target/debug/cognicode-explorer-api"
-EXPLORER_PORT := env_var_or_default("EXPLORER_PORT", "5173")
+EXPLORER_PORT := env_var_or_default("EXPLORER_PORT", "5180")
 EXPLORER_API_PORT := env_var_or_default("EXPLORER_API_PORT", "3456")
-DASHBOARD_DIR := "crates/cognicode-dashboard"
-DIST_DIR := DASHBOARD_DIR / "dist"
-SERVER_BIN := "target/release/cognicode-dashboard-server"
-PORT := env_var_or_default("PORT", "3000")
+EXPLORER_API_RELEASE := "target/release/explorer-api"
+PORT := EXPLORER_API_PORT
 PROJECT_PATH := env_var_or_default("COGNICODE_PROJECT_PATH", "")
 
 # ─── Default ──────────────────────────────────────────────────────────────────
@@ -34,88 +32,141 @@ default:
 
 # ─── Build ────────────────────────────────────────────────────────────────────
 
-# Build everything: server + WASM frontend
-build: build-server build-wasm copy-assets
+# Build everything: Explorer API + frontend
+build: build-server
 
-# Build only the server binary
+# Build only the Explorer API binary
 build-server:
-    @echo "🔨 Building server..."
-    cargo build --bin cognicode-dashboard-server --features server
+    @echo "🔨 Building Explorer API..."
+    cargo build -p cognicode-runtime --bin explorer-api --release
 
-# Build only the WASM frontend
+# Build only the Explorer frontend
 build-wasm:
-    @echo "🔨 Building WASM frontend..."
-    cd {{DASHBOARD_DIR}} && trunk build --no-default-features
-
-# Copy style assets to dist directory
-copy-assets:
-    @echo "📋 Copying assets..."
-    cp -r {{DASHBOARD_DIR}}/style {{DIST_DIR}}/style/
+    @echo "🔨 Building Explorer frontend..."
+    cd {{EXPLORER_UI_DIR}} && npm ci && npm run build
 
 # Build in release mode
-build-release:
-    @echo "🔨 Building release..."
-    cargo build --release --bin cognicode-dashboard-server --features server
-    cd {{DASHBOARD_DIR}} && trunk build --release --no-default-features
-    cp -r {{DASHBOARD_DIR}}/style {{DIST_DIR}}/style/
+build-release: build-server
 
 # Clean build artifacts
 clean:
     @echo "🧹 Cleaning..."
     cargo clean
-    rm -rf {{DIST_DIR}}/*
+    rm -rf {{EXPLORER_UI_DIR}}/dist
     echo "Cleaned"
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
 
-# Build and start the dashboard server
-run: stop build-release copy-assets
-    @echo "🚀 Starting dashboard on http://localhost:{{PORT}}"
+# Build and start the Explorer API server
+run: stop build-release
+    @echo "🚀 Starting Explorer API on http://localhost:{{PORT}}"
     @if curl -s --max-time 1 http://localhost:{{PORT}}/health > /dev/null 2>&1; then \
         echo "❌ Port {{PORT}} still in use. Try: just stop && just run"; exit 1; \
     fi
-    @if [ "{{PROJECT_PATH}}" != "" ]; then \
-        echo "📂 Auto-discovering project: {{PROJECT_PATH}}"; \
-    fi
-    DIST_DIR={{DIST_DIR}} COGNICODE_PROJECT_PATH={{PROJECT_PATH}} ./{{SERVER_BIN}}
+    DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
+        ./{{EXPLORER_API_RELEASE}} --listen 127.0.0.1:{{PORT}}
 
 # Start server (without rebuilding)
 start: stop
-    @echo "🚀 Starting dashboard (no rebuild)..."
+    @echo "🚀 Starting Explorer API (no rebuild)..."
     @if curl -s --max-time 1 http://localhost:{{PORT}}/health > /dev/null 2>&1; then \
-        echo "❌ Port {{PORT}} still in use. Try: lsof -i :{{PORT}}"; exit 1; \
+        echo "❌ Port {{PORT}} still in use. Try: just stop"; exit 1; \
     fi
-    @if [ "{{PROJECT_PATH}}" != "" ]; then \
-        echo "📂 Auto-discovering project: {{PROJECT_PATH}}"; \
-    fi
-    DIST_DIR={{DIST_DIR}} COGNICODE_PROJECT_PATH={{PROJECT_PATH}} ./{{SERVER_BIN}}
+    DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
+        ./{{EXPLORER_API_RELEASE}} --listen 127.0.0.1:{{PORT}}
 
-# Run in dev mode (trunk serve for frontend + cargo run for server)
+# Run in dev mode — one command to start everything: PG + API + Frontend
 dev:
-    @echo "🔧 Dev mode — run these in separate terminals:"
-    @echo ""
-    @echo "  Terminal 1 (API server):"
-    @echo "    just start"
-    @echo ""
-    @echo "  Terminal 2 (WASM hot-reload):"
-    @echo "    cd {{DASHBOARD_DIR}} && trunk serve --no-default-features"
-    @echo ""
-    @echo "  Frontend: http://localhost:8080 (trunk proxy)"
-    @echo "  API:      http://localhost:{{PORT}}"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ROOT="$(cd "$(dirname "{{justfile()}}")" && pwd)"
+    API_BIN="$ROOT/{{EXPLORER_API_RELEASE}}"
+    UI_DIR="$ROOT/{{EXPLORER_UI_DIR}}"
+    API_PORT="{{EXPLORER_API_PORT}}"
+    UI_PORT="{{EXPLORER_PORT}}"
+
+    echo "═══════════════════════════════════════════════════════"
+    echo "  CogniCode — Dev Mode"
+    echo "═══════════════════════════════════════════════════════"
+    echo ""
+
+    # 1. PostgreSQL via quadlet (systemd + podman)
+    echo "🐘 [1/4] Starting PostgreSQL..."
+    # Ensure quadlet files are installed
+    QUADLET_DIR="$HOME/.config/containers/systemd"
+    if [ ! -f "$QUADLET_DIR/cognicode-postgres.container" ]; then
+        echo "   📋 Installing quadlet files..."
+        cp "$ROOT/quadlets/cognicode-postgres.container" "$QUADLET_DIR/"
+        cp "$ROOT/quadlets/cognicode-pgdata.volume" "$QUADLET_DIR/"
+        systemctl --user daemon-reload
+    fi
+    systemctl --user start cognicode-postgres 2>/dev/null || true
+    # Unset LD_LIBRARY_PATH to avoid flatpak lib conflicts (e.g. Zed's libselinux.so.1)
+    for i in $(seq 1 30); do
+        PG_CHECK=$(env -u LD_LIBRARY_PATH podman exec cognicode-postgres pg_isready -U cognicode -d cognicode 2>&1) && PG_OK=true || PG_OK=false
+        if [ "$PG_OK" = "true" ]; then
+            echo "   ✅ PostgreSQL ready"
+            break
+        fi
+        if [ "$i" -eq 30 ]; then
+            echo "   ❌ PostgreSQL not ready after 30s"
+            echo "   pg_isready output: $PG_CHECK"
+            echo "   Container status:"
+            env -u LD_LIBRARY_PATH podman ps -a --filter name=cognicode-postgres 2>&1 || true
+            echo "   Try: just dev-pg-status"
+            exit 1
+        fi
+        sleep 1
+    done
+
+    # 2. Build API binary
+    echo "🔨 [2/4] Building Explorer API..."
+    cargo build -p cognicode-runtime --bin explorer-api --release
+    echo "   ✅ API binary ready"
+
+    # 3. Install frontend deps
+    echo "📦 [3/4] Installing frontend deps..."
+    (cd "$UI_DIR" && npm ci --prefer-offline 2>/dev/null || npm install)
+    echo "   ✅ Frontend deps ready"
+
+    # 4. Start both servers
+    echo ""
+    echo "═══════════════════════════════════════════════════════"
+    echo "  Frontend:  http://localhost:$UI_PORT"
+    echo "  API:       http://localhost:$API_PORT"
+    echo "  PG:        localhost:5432/cognicode"
+    echo ""
+    echo "  Press Ctrl+C to stop everything"
+    echo "═══════════════════════════════════════════════════════"
+    echo ""
+
+    # Start API in background
+    DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
+        "$API_BIN" --listen "127.0.0.1:$API_PORT" &
+    API_PID=$!
+
+    # Start frontend dev server in foreground (so Ctrl+C works naturally)
+    cleanup() {
+        echo ""
+        echo "🛑 Stopping..."
+        kill $API_PID 2>/dev/null || true
+        wait $API_PID 2>/dev/null || true
+        echo "✅ Done"
+    }
+    trap cleanup EXIT INT TERM
+    (cd "$UI_DIR" && npx vite --host 127.0.0.1 --port "$UI_PORT")
 
 # ─── Check ────────────────────────────────────────────────────────────────────
 
 # Check compilation (fast, no binary output)
 check:
     @echo "✅ Checking compilation..."
-    cargo check --bin cognicode-dashboard-server
-    cd {{DASHBOARD_DIR}} && cargo check --lib
+    cargo check -p cognicode-runtime --bin explorer-api
 
 # Run clippy lints
 lint:
     @echo "🔍 Running clippy..."
-    cargo clippy --bin cognicode-dashboard-server -- -D warnings
-    cd {{DASHBOARD_DIR}} && cargo clippy --lib -- -D warnings
+    cargo clippy -p cognicode-runtime --bin explorer-api -- -D warnings
 
 # Format code
 fmt:
@@ -164,7 +215,8 @@ start-server:
         echo "🔄 Server already running"; \
     else \
         echo "🔄 Starting server..."; \
-        DIST_DIR={{DIST_DIR}} COGNICODE_PROJECT_PATH={{PROJECT_PATH}} nohup ./{{SERVER_BIN}} > /tmp/cognicode-server.log 2>&1 & \
+        DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
+            nohup ./{{EXPLORER_API_RELEASE}} --listen 127.0.0.1:{{PORT}} > /tmp/cognicode-server.log 2>&1 & \
         sleep 2; \
         echo "Server started"; \
     fi
@@ -239,12 +291,12 @@ docs-screenshots:
 # Build Docker image
 docker-build:
     @echo "🐳 Building Docker image..."
-    docker build -t cognicode-dashboard -f Dockerfile.dashboard .
+    docker build -t cognicode-explorer .
 
 # Run Docker container
 docker-run:
     @echo "🐳 Running Docker container..."
-    docker run -p {{PORT}}:{{PORT}} -e PORT={{PORT}} -v $(pwd)/{{DIST_DIR}}:/app/dist cognicode-dashboard
+    docker run -p {{PORT}}:{{PORT}} cognicode-explorer
 
 # ─── Git ───────────────────────────────────────────────────────────────────────
 
@@ -265,11 +317,10 @@ push:
 status:
     @echo "📊 Project Status"
     @echo "================"
-    @echo "Dashboard:  http://localhost:{{PORT}}"
+    @echo "Explorer:   http://localhost:{{EXPLORER_PORT}}"
+    @echo "API:        http://localhost:{{PORT}}"
     @echo "Health:     http://localhost:{{PORT}}/health"
-    @echo "Tests:      tests/e2e/dashboard.spec.js (61 tests)"
-    @echo "Docs:       docs/dashboard/README.md"
-    @echo "Server PID: $$(pgrep -f cognicode-dashboard-server | head -1 || echo 'not running')"
+    @echo "Server PID: $$(pgrep -f explorer-api | head -1 || echo 'not running')"
     @echo ""
 
 # Stop the server
@@ -282,8 +333,6 @@ stop:
 # Install dependencies
 install:
     @echo "📦 Installing dependencies..."
-    rustup target add wasm32-unknown-unknown 2>/dev/null || true
-    cargo install trunk 2>/dev/null || true
     npm install 2>/dev/null || true
     npx playwright install chromium 2>/dev/null || true
     @echo "Dependencies installed"
@@ -291,95 +340,29 @@ install:
 # Watch for changes and rebuild server
 watch-server:
     @echo "👀 Watching for changes..."
-    cargo watch -x "build --bin cognicode-dashboard-server"
+    cargo watch -x "build -p cognicode-runtime --bin explorer-api"
 
 # Open dashboard in browser
 open:
-    @echo "🌐 Opening dashboard..."
-    @xdg-open http://localhost:{{PORT}} 2>/dev/null || \
-     open http://localhost:{{PORT}} 2>/dev/null || \
-     echo "Open http://localhost:{{PORT}} in your browser"
+    @echo "🌐 Opening Explorer..."
+    @xdg-open http://localhost:{{EXPLORER_PORT}} 2>/dev/null || \
+     open http://localhost:{{EXPLORER_PORT}} 2>/dev/null || \
+     echo "Open http://localhost:{{EXPLORER_PORT}} in your browser"
 
 # Full setup from scratch
 setup: install build
     @echo "✅ Setup complete!"
-    @echo "Run 'just run' to start the dashboard."
-    @echo "Then visit http://localhost:{{PORT}}"
+    @echo "Run 'just run' to start the Explorer API."
+    @echo "Then visit http://localhost:{{EXPLORER_PORT}}"
 
 # ============================================================================
 # Explorer UI (React + TypeScript)
 # ============================================================================
 
 # One command to rule them all: PG + API + Frontend
-# Starts PostgreSQL, builds the API, installs npm deps, and
-# launches both the API server and the React dev server.
-# Frontend: http://localhost:{EXPLORER_PORT}  (default 5173)
-# API:      http://localhost:{EXPLORER_API_PORT} (default 3456)
+# Alias for `just dev` — kept for backwards compatibility.
 explorer-local:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "═══════════════════════════════════════════════════════"
-    echo "  CogniCode Explorer — Local Dev Environment"
-    echo "═══════════════════════════════════════════════════════"
-    echo ""
-
-    # 1. PostgreSQL via quadlet (systemd + podman)
-    echo "🐘 [1/4] Starting PostgreSQL..."
-    systemctl --user start cognicode-postgres 2>/dev/null || true
-    echo "   ⏳ Waiting for PostgreSQL..."
-    for i in $(seq 1 30); do
-        if podman exec cognicode-postgres pg_isready -U cognicode -d cognicode > /dev/null 2>&1; then
-            echo "   ✅ PostgreSQL ready"
-            break
-        fi
-        sleep 1
-    done
-
-    # 2. Build API binary
-    echo "🔨 [2/4] Building Explorer API..."
-    cargo build -p cognicode-explorer --bin cognicode-explorer-api --features multimodal
-    echo "   ✅ API binary ready"
-
-    # 3. Install frontend deps
-    echo "📦 [3/4] Installing frontend deps..."
-    cd {{EXPLORER_UI_DIR}} && npm ci --prefer-offline 2>/dev/null || npm install
-    echo "   ✅ Frontend deps ready"
-
-    # 4. Start both servers
-    echo "🚀 [4/4] Starting servers..."
-    echo ""
-    echo "═══════════════════════════════════════════════════════"
-    echo "  Frontend:  http://localhost:{{EXPLORER_PORT}}"
-    echo "  API:       http://localhost:{{EXPLORER_API_PORT}}"
-    echo "  PG:        localhost:5432/cognicode"
-    echo ""
-    echo "  Press Ctrl+C to stop everything"
-    echo "═══════════════════════════════════════════════════════"
-    echo ""
-
-    # Start API in background
-    DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
-        ./target/debug/cognicode-explorer-api &
-    API_PID=$!
-
-    # Start frontend dev server in background
-    cd {{EXPLORER_UI_DIR}} && VITE_API_URL=http://localhost:{{EXPLORER_API_PORT}} npx vite --host 127.0.0.1 --port {{EXPLORER_PORT}} &
-    UI_PID=$!
-
-    # Trap Ctrl+C to kill both
-    cleanup() {
-        echo ""
-        echo "🛑 Stopping servers..."
-        kill $API_PID 2>/dev/null || true
-        kill $UI_PID 2>/dev/null || true
-        wait $API_PID 2>/dev/null || true
-        wait $UI_PID 2>/dev/null || true
-        echo "✅ Servers stopped"
-    }
-    trap cleanup EXIT INT TERM
-
-    # Wait for either to exit
-    wait -n $API_PID $UI_PID 2>/dev/null || true
+    @just dev
 
 # Quick start with mock data (no PG, no API needed)
 explorer-mock:
@@ -413,9 +396,10 @@ explorer-full:
 # Build and start the Explorer API server
 explorer-api:
     @echo "🔨 Building Explorer API..."
-    cargo build -p cognicode-explorer --bin cognicode-explorer-api
+    cargo build -p cognicode-runtime --bin explorer-api --release
     @echo "🚀 Starting Explorer API on http://127.0.0.1:{{EXPLORER_API_PORT}}..."
-    cargo run -p cognicode-explorer --bin cognicode-explorer-api
+    DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
+        cargo run -p cognicode-runtime --bin explorer-api --release -- --listen 127.0.0.1:{{EXPLORER_API_PORT}}
 
 # Build Explorer frontend for production
 explorer-build:
@@ -470,7 +454,7 @@ dev-pg:
     systemctl --user start cognicode-postgres
     echo "⏳ Waiting for PostgreSQL..."
     for i in $(seq 1 30); do
-        if podman exec cognicode-postgres pg_isready -U cognicode -d cognicode > /dev/null 2>&1; then
+        if env -u LD_LIBRARY_PATH podman exec cognicode-postgres pg_isready -U cognicode -d cognicode > /dev/null 2>&1; then
             echo "✅ PostgreSQL is ready."
             echo "DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode"
             exit 0
@@ -490,8 +474,8 @@ dev-pg-down:
     @echo "🛑 Stopping and removing PostgreSQL..."
     systemctl --user stop cognicode-postgres 2>/dev/null || true
     systemctl --user reset-failed cognicode-postgres 2>/dev/null || true
-    podman rm -f cognicode-postgres 2>/dev/null || true
-    podman volume rm cognicode-pgdata 2>/dev/null || true
+    env -u LD_LIBRARY_PATH podman rm -f cognicode-postgres 2>/dev/null || true
+    env -u LD_LIBRARY_PATH podman volume rm cognicode-pgdata 2>/dev/null || true
     @echo "✅ PostgreSQL and volume removed."
 
 # Show PostgreSQL status
@@ -499,7 +483,7 @@ dev-pg-status:
     @echo "📊 PostgreSQL Status"
     systemctl --user status cognicode-postgres 2>/dev/null || echo "Not installed. Run: just dev-pg"
     @echo ""
-    @podman exec cognicode-postgres pg_isready -U cognicode -d cognicode 2>/dev/null || echo "Not responding"
+    @env -u LD_LIBRARY_PATH podman exec cognicode-postgres pg_isready -U cognicode -d cognicode 2>/dev/null || echo "Not responding"
 
 # Uninstall quadlet files from systemd
 dev-pg-uninstall:

@@ -6,6 +6,7 @@
 pub mod commands;
 pub mod dto;
 pub mod error;
+pub mod ingest;
 pub mod services;
 pub mod workspace_session;
 

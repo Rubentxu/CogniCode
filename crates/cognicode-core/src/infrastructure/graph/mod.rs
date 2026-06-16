@@ -13,7 +13,7 @@
 //!   mtime + blake3 content-hash tracking for incremental graph rescans.
 
 mod call_graph_projection;
-mod graph_cache;
+pub mod graph_cache;
 mod lightweight_index;
 mod on_demand_graph;
 mod per_file_graph;

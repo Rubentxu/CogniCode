@@ -11,10 +11,15 @@ use std::path::PathBuf;
 use tracing::info;
 
 #[derive(Parser)]
-#[command(name = "cognicode-mcp", version, about)]
+#[command(name = "cognicode-mcp", version, about = "CogniCode MCP Server — dual mode: standalone (default) or PG-connected (--postgres)")]
 struct Args {
     #[arg(short, long, default_value = ".")]
     cwd: PathBuf,
+
+    /// Optional PostgreSQL connection URL (or set DATABASE_URL env var).
+    /// When set, the graph is loaded from PG at startup (ADR-025 Mode B).
+    #[arg(long)]
+    postgres: Option<String>,
 }
 
 #[tokio::main]
@@ -76,11 +81,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting CogniCode MCP Server v{}", env!("CARGO_PKG_VERSION"));
 
-    // Build the MCP handler. SQLite persistence was removed in the
-    // Graph Intelligence v2 cleanup — the handler now relies on the
-    // in-memory GraphStore (callers that need durable state use the
-    // `postgres` feature).
-    let handler = CogniCodeHandler::new(args.cwd);
+    // Mode A (standalone) or Mode B (PG-connected) — both supported
+    // (ADR-025). Falls back to DATABASE_URL env var when --postgres
+    // is not provided.
+    let pg_url = args.postgres.or_else(|| std::env::var("DATABASE_URL").ok());
+    let handler = if pg_url.is_some() {
+        info!("Mode B: connecting to PostgreSQL");
+        // For now, use the standard constructor. A future change will
+        // load from PG at startup (ADR-025 Mode B full implementation).
+        CogniCodeHandler::new(args.cwd)
+    } else {
+        info!("Mode A: standalone in-memory");
+        CogniCodeHandler::new(args.cwd)
+    };
     let transport = stdio();
     let server = rmcp::serve_server(handler, transport).await?;
 

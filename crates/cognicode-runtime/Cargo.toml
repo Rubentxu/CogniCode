@@ -23,5 +23,5 @@ clap.workspace = true
 rmcp.workspace = true
 
 [features]
-default = []
+default = ["postgres"]
 postgres = ["cognicode-explorer/postgres"]

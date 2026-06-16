@@ -41,17 +41,18 @@ use crate::domain::value_objects::{
 #[cfg(feature = "postgres")]
 const SCHEMA_SQL: &str = include_str!("schema_postgres.sql");
 
+/// Pipeline schema DDL (ADR-017 through ADR-026). Creates graph_nodes,
+/// graph_edges (unconditionally, not gated behind multimodal), scan_manifest,
+/// graph_reports, workspace_id columns, symbols/call_edges as VIEWs, and the
+/// notify_graph_change trigger. Idempotent — safe to run multiple times.
+#[cfg(feature = "postgres")]
+const SCHEMA_SQL_PIPELINE: &str = include_str!("m0010_pipeline_schema.sql");
+
 /// Multimodal (Generic Graph Layer) DDL — embedded ONLY when BOTH
 /// the `postgres` and the `multimodal` Cargo features are enabled.
-/// The DDL creates the `graph_nodes` + `graph_edges` tables, the
-/// three btree indexes on `graph_edges` (`source_id`,
-/// `target_id`, `kind`), the natural-key UNIQUE index on
-/// `(source_id, target_id, kind)`, and the two btree indexes on
-/// `graph_nodes` (`kind`, `source_path`).
-///
-/// Splitting the DDL into its own file is the only way to gate an
-/// `include_str!` behind a Cargo feature. See
-/// `m0009_graph_nodes_edges.sql` for the design notes.
+/// Kept for backward compat: the tables are now created by
+/// `SCHEMA_SQL_PIPELINE` unconditionally, but m0009 may add
+/// indexes or constraints specific to multimodal workloads.
 #[cfg(all(feature = "postgres", feature = "multimodal"))]
 const SCHEMA_SQL_MULTIMODAL: &str = include_str!("m0009_graph_nodes_edges.sql");
 
@@ -97,28 +98,33 @@ impl PostgresRepository {
 
     /// Execute the embedded schema DDL.
     ///
-    /// Idempotent: every statement uses `IF NOT EXISTS`, so
-    /// calling this on a freshly-initialised database is a
-    /// no-op that still succeeds. Existing rows are preserved
-    /// (no DROP, no schema-altering DDL is performed).
+    /// Runs three DDL blocks in order:
+    /// 1. Base schema (`schema_postgres.sql`) — legacy named_views, view_specs.
+    /// 2. Pipeline schema (`m0010_pipeline_schema.sql`) — graph_nodes,
+    ///    graph_edges, scan_manifest, graph_reports, VIEWs, trigger.
+    /// 3. Multimodal schema (`m0009_graph_nodes_edges.sql`) — only when
+    ///    the `multimodal` feature is on.
     ///
-    /// When the `multimodal` feature is enabled, the Generic Graph
-    /// Layer DDL (`m0009_graph_nodes_edges.sql`) is executed AFTER
-    /// the base schema, so the `graph_nodes` / `graph_edges`
-    /// tables are guaranteed to exist before the multimodal
-    /// write-paths are used.
+    /// All blocks are idempotent (`IF NOT EXISTS` / `CREATE OR REPLACE`).
     pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
-        sqlx::query(SCHEMA_SQL)
+        // 1. Base schema
+        sqlx::raw_sql(SCHEMA_SQL)
             .execute(&self.pool)
             .await
             .map_err(|e| RepositoryError::Store(format!("migration: {e}")))?;
-        // Multimodal DDL is applied after the base schema so the
-        // order is deterministic. The `include_str!` constant
-        // only exists when the `multimodal` feature is on, so
-        // this block is compiled out in the default build.
+
+        // 2. Pipeline schema (always loaded — graph_nodes/graph_edges
+        //    are the canonical graph store for the ingest pipeline)
+        sqlx::raw_sql(SCHEMA_SQL_PIPELINE)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("pipeline migration: {e}")))?;
+
+        // 3. Multimodal DDL (optional — adds multimodal-specific
+        //    indexes/constraints on top of the base graph tables)
         #[cfg(feature = "multimodal")]
         {
-            sqlx::query(SCHEMA_SQL_MULTIMODAL)
+            sqlx::raw_sql(SCHEMA_SQL_MULTIMODAL)
                 .execute(&self.pool)
                 .await
                 .map_err(|e| {
@@ -243,7 +249,7 @@ impl PostgresRepository {
             let column = location.column() as i32;
             sqlx::query(
                 "INSERT INTO symbols \
-                    (file_path, name, kind, line, column) \
+                    (file_path, name, kind, line, \"column\") \
                  VALUES ($1, $2, $3, $4, $5)",
             )
             .bind(location.file())
@@ -318,7 +324,7 @@ impl PostgresRepository {
         // 1. Pull every symbol. ORDER BY id keeps the load
         // deterministic and stable across round-trips.
         let symbol_rows: Vec<SymbolRow> = sqlx::query_as(
-            "SELECT file_path, name, kind, line, column \
+            "SELECT file_path, name, kind, line, \"column\" \
              FROM symbols \
              ORDER BY id",
         )
@@ -396,6 +402,92 @@ impl PostgresRepository {
         }
 
         Ok(Some(graph))
+    }
+
+    // ===========================================================
+    // Scan Manifest (Pipeline — ADR-017/020)
+    // ===========================================================
+    //
+    // `scan_manifest` tracks the last-seen state of every file in
+    // the workspace: content hash, mtime, extraction stats. The
+    // pipeline's Scan stage uses this for incremental change
+    // detection (mtime-first, hash-second).
+
+    /// Load all `scan_manifest` rows for a workspace.
+    /// Returns an empty Vec if no manifest exists yet.
+    pub async fn load_scan_manifest(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Vec<ScanManifestRow>, RepositoryError> {
+        let rows: Vec<ScanManifestRow> = sqlx::query_as(
+            "SELECT workspace_id, file_path, file_type, language, \
+                    content_hash, mtime, symbol_count, edge_count, \
+                    status, error_msg \
+             FROM scan_manifest \
+             WHERE workspace_id = $1",
+        )
+        .bind(workspace_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("load_scan_manifest: {e}")))?;
+        Ok(rows)
+    }
+
+    /// Upsert a single `scan_manifest` row.
+    pub async fn upsert_scan_manifest_row(
+        &self,
+        row: &ScanManifestRow,
+    ) -> Result<(), RepositoryError> {
+        sqlx::query(
+            "INSERT INTO scan_manifest \
+                (workspace_id, file_path, file_type, language, content_hash, \
+                 mtime, symbol_count, edge_count, status, error_msg) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
+             ON CONFLICT (workspace_id, file_path) DO UPDATE SET \
+                file_type = EXCLUDED.file_type, \
+                language = EXCLUDED.language, \
+                content_hash = EXCLUDED.content_hash, \
+                mtime = EXCLUDED.mtime, \
+                symbol_count = EXCLUDED.symbol_count, \
+                edge_count = EXCLUDED.edge_count, \
+                status = EXCLUDED.status, \
+                error_msg = EXCLUDED.error_msg, \
+                scanned_at = now()",
+        )
+        .bind(&row.workspace_id)
+        .bind(&row.file_path)
+        .bind(&row.file_type)
+        .bind(&row.language)
+        .bind(&row.content_hash)
+        .bind(row.mtime)
+        .bind(row.symbol_count as i32)
+        .bind(row.edge_count as i32)
+        .bind(&row.status)
+        .bind(&row.error_msg)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("upsert_scan_manifest_row: {e}")))?;
+        Ok(())
+    }
+
+    /// Delete `scan_manifest` rows for a workspace whose file path is
+    /// NOT in the given set. Used by the Scan stage to garbage-collect
+    /// entries for deleted files.
+    pub async fn delete_scan_manifest_except(
+        &self,
+        workspace_id: &str,
+        keep_paths: &[String],
+    ) -> Result<usize, RepositoryError> {
+        let result = sqlx::query(
+            "DELETE FROM scan_manifest \
+             WHERE workspace_id = $1 AND file_path != ALL($2)",
+        )
+        .bind(workspace_id)
+        .bind(keep_paths)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("delete_scan_manifest_except: {e}")))?;
+        Ok(result.rows_affected() as usize)
     }
 
     // ===========================================================
@@ -1355,6 +1447,24 @@ impl PostgresRepository {
     }
 }
 
+/// Row struct for the `scan_manifest` table. One row per scanned file.
+/// Used by the pipeline's Scan stage for incremental change detection
+/// (ADR-017/020).
+#[cfg(feature = "postgres")]
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ScanManifestRow {
+    pub workspace_id: String,
+    pub file_path: String,
+    pub file_type: String,
+    pub language: Option<String>,
+    pub content_hash: String,
+    pub mtime: f64,
+    pub symbol_count: i32,
+    pub edge_count: i32,
+    pub status: String,
+    pub error_msg: Option<String>,
+}
+
 #[cfg(feature = "postgres")]
 #[async_trait]
 impl Repository for PostgresRepository {
@@ -1491,7 +1601,7 @@ mod tests {
 
         // Connect to the new DB and run our migrations.
         let pool = sqlx::PgPool::connect(&test_url).await.ok()?;
-        sqlx::query(SCHEMA_SQL).execute(&pool).await.ok()?;
+        sqlx::raw_sql(SCHEMA_SQL).execute(&pool).await.ok()?;
 
         // Best-effort cleanup on test exit. Errors are ignored:
         // some CI sandboxes revoke DROP DATABASE privileges.

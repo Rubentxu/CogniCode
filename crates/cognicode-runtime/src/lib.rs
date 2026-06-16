@@ -106,6 +106,7 @@ impl Runtime {
         let persistence: Arc<dyn cognicode_explorer::facades::PersistenceService> = Arc::new(
             cognicode_explorer::facades::persistence::PersistenceServiceImpl::new(
                 None, // view_spec_store
+                #[cfg(feature = "postgres")]
                 None, // postgres_repo
             ),
         );

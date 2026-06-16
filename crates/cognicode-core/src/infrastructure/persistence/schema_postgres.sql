@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS symbols (
     name        TEXT NOT NULL,
     kind        TEXT,
     line        INTEGER,
-    column      INTEGER,
+    "column"    INTEGER,
     complexity  INTEGER
 );
 

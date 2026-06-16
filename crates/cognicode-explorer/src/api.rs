@@ -423,6 +423,7 @@ impl ApiState {
 pub fn router_with_state(state: ApiState) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/api/health", get(health))
         .route("/api/workspaces/open", post(open_workspace))
         .route("/api/workspaces/:workspace_id/index", post(index_workspace))
         .route("/api/workspaces/:workspace_id/spotter", get(spotter))
@@ -459,6 +460,7 @@ pub fn router_with_state(state: ApiState) -> Router {
 pub fn router(state: ApiState) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/api/health", get(health))
         .route("/api/workspaces/open", post(open_workspace))
         .route("/api/workspaces/:workspace_id/index", post(index_workspace))
         .route("/api/workspaces/:workspace_id/spotter", get(spotter))

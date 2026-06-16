@@ -342,18 +342,6 @@ mod tests {
         assert_eq!(edge.provenance, Provenance::Extracted);
         assert!(!edge.has_metadata());
 
-        // Multimodal variant on a different source/target pair.
-        let m_edge = GraphEdge::new(
-            doc_id(),
-            symbol_id(),
-            EdgeKind::Cites,
-            Provenance::Inferred,
-            0.9,
-        )
-        .expect("multimodal edge must construct");
-        assert_eq!(m_edge.kind, EdgeKind::Cites);
-        assert_eq!(m_edge.provenance, Provenance::Inferred);
-
         // Boundary values 0.0 and 1.0 are accepted.
         GraphEdge::new(
             symbol_id(),
@@ -371,6 +359,22 @@ mod tests {
             1.0,
         )
         .expect("1.0 is in-range");
+    }
+
+    /// Multimodal variant on a different source/target pair.
+    #[cfg(feature = "multimodal")]
+    #[test]
+    fn graph_edge_creation_multimodal() {
+        let m_edge = GraphEdge::new(
+            doc_id(),
+            symbol_id(),
+            EdgeKind::Cites,
+            Provenance::Inferred,
+            0.9,
+        )
+        .expect("multimodal edge must construct");
+        assert_eq!(m_edge.kind, EdgeKind::Cites);
+        assert_eq!(m_edge.provenance, Provenance::Inferred);
     }
 
     /// `confidence` outside `[0.0, 1.0]` must be rejected.
@@ -428,9 +432,9 @@ mod tests {
     #[test]
     fn graph_edge_with_metadata_chains() {
         let edge = GraphEdge::new(
-            doc_id(),
             symbol_id(),
-            EdgeKind::Cites,
+            symbol_id_2(),
+            EdgeKind::Dependency(DependencyType::Calls),
             Provenance::Inferred,
             0.7,
         )
@@ -447,7 +451,7 @@ mod tests {
         let edge = GraphEdge::new(
             symbol_id(),
             symbol_id_2(),
-            EdgeKind::Justifies,
+            EdgeKind::Dependency(DependencyType::Calls),
             Provenance::Inferred,
             0.7,
         )
@@ -492,6 +496,7 @@ mod tests {
 
     /// The builder must be a fluent, optional-each-step pattern that
     /// produces a `GraphNode` matching the inputs.
+    #[cfg(feature = "multimodal")]
     #[test]
     fn graph_node_builder_pattern() {
         // 1) minimal: only required fields, defaults for the rest.
@@ -541,6 +546,21 @@ mod tests {
     }
 
     // ---- Feature-gate cross check ----
+
+    #[test]
+    fn graph_node_builder_symbol_only() {
+        let now = Utc::now();
+        let node = GraphNode::builder(symbol_id(), NodeKind::Symbol(SymbolKind::Function))
+            .label("main")
+            .source_path("/repo/src/main.rs")
+            .property("visibility", "pub")
+            .created_at(now)
+            .updated_at(now)
+            .build();
+        assert_eq!(node.label, "main");
+        assert_eq!(node.properties.get("visibility").map(String::as_str), Some("pub"));
+        assert_eq!(node.created_at, now);
+    }
 
     #[test]
     fn node_id_string_newtype_basics() {
