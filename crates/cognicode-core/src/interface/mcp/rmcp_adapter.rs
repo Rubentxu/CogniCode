@@ -895,6 +895,32 @@ impl ServerHandler for CogniCodeHandler {
                         "properties": {}
                     }).as_object().cloned().unwrap()),
                 ),
+                // Sprint 2: Graphify-style tools (ADR-026)
+                Tool::new(
+                    "graph_query",
+                    "Natural language graph topology query. Ask 'what connects X to Y?' and get a subgraph with provenance. Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "question": { "type": "string", "description": "Natural language question about the graph topology" },
+                            "max_depth": { "type": "integer", "description": "Maximum BFS depth from seed nodes (default: 3)" },
+                            "budget": { "type": "integer", "description": "Maximum nodes to collect (default: 1500)" }
+                        },
+                        "required": ["question"]
+                    }).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_explain",
+                    "Composite deep-dive on a symbol: callers, callees, fan-in/out, complexity. Saves multiple tool calls. Requires build_graph first.",
+                    Arc::new(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "symbol": { "type": "string", "description": "Symbol name to explain" },
+                            "depth": { "type": "integer", "description": "Neighbor depth (default: 2)" }
+                        },
+                        "required": ["symbol"]
+                    }).as_object().cloned().unwrap()),
+                ),
                 // Phase 3A: Proactive Tools
                 Tool::new(
                     "suggest_context",
@@ -1618,6 +1644,19 @@ async fn call_tool_handler(
             let input: crate::interface::mcp::schemas::GraphSuggestQuestionsInput =
                 serde_json::from_value(arguments.into())?;
             let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_suggest_questions(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        // Sprint 2: Graphify-style tools (ADR-026)
+        "graph_query" => {
+            let input: crate::interface::mcp::handlers::graph_query_handlers::GraphQueryInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_graph_query(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "graph_explain" => {
+            let input: crate::interface::mcp::handlers::graph_query_handlers::GraphExplainInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_graph_explain(ctx, input).await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         _ => return Err(InterfaceError::ToolNotFound(tool_name.to_string())),

@@ -203,6 +203,8 @@ pub struct ScanResult {
     pub edges: usize,
     pub duration_ms: u64,
     pub failed_files: Vec<FailedFile>,
+    pub community_count: usize,
+    pub health_score: f64,
 }
 
 /// Information about a file that failed extraction.

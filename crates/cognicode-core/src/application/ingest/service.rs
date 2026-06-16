@@ -9,9 +9,13 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
 
+use crate::application::ingest::analyzer::run_analyze;
+use crate::application::ingest::cluster::run_cluster;
 use crate::application::ingest::extract_stage::extract_streaming;
 use crate::application::ingest::pg_upsert_stage::pg_upsert_streaming;
 use crate::application::ingest::refresh::refresh_from_pg;
+use crate::application::ingest::report_stage::run_report;
+use crate::application::ingest::resolve::resolve_cross_file_calls;
 use crate::application::ingest::scan::{scan_for_changes, ScanEntry};
 use crate::application::ingest::types::{
     ChangeKind, FailedFile, ScanProgress, ScanResult, ScanStage,
@@ -80,7 +84,7 @@ pub async fn run_scan(
 
     // ── Stage 3: PgUpsert (streaming) ─────────────────────────────
     report_progress(on_progress, ScanStage::PgUpsert, 0, results.len(), failed_files.len());
-    let upsert_stats = pg_upsert_streaming(repo, workspace_id, {
+    let (upsert_stats, unresolved_edges) = pg_upsert_streaming(repo, workspace_id, {
         let (tx, rx) = tokio::sync::mpsc::channel(crate::application::ingest::pg_upsert_stage::BATCH_SIZE);
         for r in results {
             let _ = tx.send(r).await;
@@ -96,6 +100,28 @@ pub async fn run_scan(
         extract_count,
         failed_files.len() + upsert_stats.errors,
     );
+
+    // ── Stage 3b: Resolve (cross-file calls) ──────────────────────
+    if !unresolved_edges.is_empty() {
+        report_progress(on_progress, ScanStage::Resolve, 0, unresolved_edges.len(), 0);
+        let resolved = resolve_cross_file_calls(repo, workspace_id, &unresolved_edges).await;
+        report_progress(on_progress, ScanStage::Resolve, resolved, unresolved_edges.len(), 0);
+    }
+
+    // ── Stage 5: Cluster (community detection) ──────────────────
+    report_progress(on_progress, ScanStage::Cluster, 0, 1, 0);
+    let communities = run_cluster(repo, cache, workspace_id).await;
+    report_progress(on_progress, ScanStage::Cluster, communities, 1, 0);
+
+    // ── Stage 6: Analyze (god nodes, dead code, hot paths) ──────
+    report_progress(on_progress, ScanStage::Analyze, 0, 1, 0);
+    let summary = run_analyze(cache).await;
+    report_progress(on_progress, ScanStage::Analyze, 1, 1, 0);
+
+    // ── Stage 7: Report (persist to graph_reports) ──────────────
+    report_progress(on_progress, ScanStage::Report, 0, 1, 0);
+    let _report_id = run_report(repo, workspace_id, &summary).await;
+    report_progress(on_progress, ScanStage::Report, 1, 1, 0);
 
     // Delete scan_manifest entries for files that were deleted
     let keep_paths: Vec<String> = previous.keys().cloned().collect();
@@ -121,6 +147,8 @@ pub async fn run_scan(
         edges: total_edges,
         duration_ms: start.elapsed().as_millis() as u64,
         failed_files,
+        community_count: communities,
+        health_score: summary.health_score,
     }
 }
 

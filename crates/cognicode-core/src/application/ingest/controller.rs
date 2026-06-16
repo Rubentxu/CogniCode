@@ -121,6 +121,8 @@ pub struct ScanResultPayload {
     pub edges: usize,
     pub duration_ms: u64,
     pub failed_files: Vec<FailedFilePayload>,
+    pub community_count: usize,
+    pub health_score: f64,
 }
 
 /// Serializable proxy for `FailedFile` (avoids pulling Deserialize into the
@@ -147,6 +149,8 @@ impl From<&ScanResult> for ScanResultPayload {
             edges: r.edges,
             duration_ms: r.duration_ms,
             failed_files: r.failed_files.iter().map(FailedFilePayload::from).collect(),
+            community_count: r.community_count,
+            health_score: r.health_score,
         }
     }
 }

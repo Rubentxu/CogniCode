@@ -19,7 +19,9 @@ use serde_json::json;
 use sqlx::{Acquire, Postgres};
 use tokio::sync::mpsc;
 
-use crate::application::ingest::types::{ExtractionResult, TargetRef};
+use crate::application::ingest::types::{
+    ExtractionEdge, ExtractionResult, TargetRef,
+};
 use crate::infrastructure::persistence::{PostgresRepository, ScanManifestRow};
 
 /// Number of files per transaction. Larger = fewer commits, more memory.
@@ -27,49 +29,53 @@ use crate::infrastructure::persistence::{PostgresRepository, ScanManifestRow};
 pub const BATCH_SIZE: usize = 10;
 
 /// Consume extraction results from the channel and upsert to PostgreSQL.
-/// Returns the total number of nodes and edges written, and the list of
-/// files that failed (already captured in their `ExtractionResult`).
+/// Returns stats and all unresolved edges for the Resolve stage.
 pub async fn pg_upsert_streaming(
     repo: &PostgresRepository,
     workspace_id: &str,
     mut rx: mpsc::Receiver<ExtractionResult>,
-) -> PgUpsertStats {
+) -> (PgUpsertStats, Vec<ExtractionEdge>) {
     let mut stats = PgUpsertStats::default();
+    let mut all_unresolved: Vec<ExtractionEdge> = Vec::new();
     let mut batch: Vec<ExtractionResult> = Vec::with_capacity(BATCH_SIZE);
 
     while let Some(result) = rx.recv().await {
         batch.push(result);
 
         if batch.len() >= BATCH_SIZE {
-            let result_stats = upsert_batch(repo, workspace_id, &batch).await;
+            let (result_stats, unresolved) = upsert_batch(repo, workspace_id, &batch).await;
             stats += result_stats;
+            all_unresolved.extend(unresolved);
             batch.clear();
         }
     }
 
     // Flush remaining
     if !batch.is_empty() {
-        let result_stats = upsert_batch(repo, workspace_id, &batch).await;
+        let (result_stats, unresolved) = upsert_batch(repo, workspace_id, &batch).await;
         stats += result_stats;
+        all_unresolved.extend(unresolved);
     }
 
-    stats
+    (stats, all_unresolved)
 }
 
 /// Upsert a batch of extraction results in a single transaction.
+/// Returns stats and all unresolved edges collected from this batch.
 async fn upsert_batch(
     repo: &PostgresRepository,
     workspace_id: &str,
     batch: &[ExtractionResult],
-) -> PgUpsertStats {
+) -> (PgUpsertStats, Vec<ExtractionEdge>) {
     let mut stats = PgUpsertStats::default();
+    let mut all_unresolved: Vec<ExtractionEdge> = Vec::new();
 
     let mut conn = match repo.pool().acquire().await {
         Ok(c) => c,
         Err(e) => {
             tracing::error!("pg_upsert: failed to acquire connection: {e}");
             stats.errors += batch.len();
-            return stats;
+            return (stats, all_unresolved);
         }
     };
 
@@ -78,13 +84,16 @@ async fn upsert_batch(
         Err(e) => {
             tracing::error!("pg_upsert: failed to begin tx: {e}");
             stats.errors += batch.len();
-            return stats;
+            return (stats, all_unresolved);
         }
     };
 
     for result in batch {
         match upsert_one(&mut tx, workspace_id, result).await {
-            Ok(file_stats) => stats.merge_file(&file_stats),
+            Ok((file_stats, unresolved)) => {
+                stats.merge_file(&file_stats);
+                all_unresolved.extend(unresolved);
+            }
             Err(e) => {
                 tracing::error!(
                     file = %result.source_path.display(),
@@ -100,16 +109,17 @@ async fn upsert_batch(
         stats.errors += batch.len();
     }
 
-    stats
+    (stats, all_unresolved)
 }
 
-/// Upsert a single file's extraction result. Per-file deletion + insert
-/// within the surrounding batch transaction.
+/// Upsert a single file's extraction result. Returns the stats and
+/// the list of unresolved edges (those with `TargetRef::Unresolved`)
+/// that will be processed by the Resolve stage (Sprint 2).
 async fn upsert_one<'c>(
     tx: &mut sqlx::Transaction<'c, Postgres>,
     workspace_id: &str,
     result: &ExtractionResult,
-) -> Result<FileStats, sqlx::Error> {
+) -> Result<(FileStats, Vec<ExtractionEdge>), sqlx::Error> {
     let rel_path = result.source_path.to_string_lossy().into_owned();
 
     // 1. DELETE: remove old nodes/edges for this file
@@ -152,16 +162,17 @@ async fn upsert_one<'c>(
         nodes_written += 1;
     }
 
-    // 3. INSERT: new edges
+    // 3. INSERT: new edges (only Resolved — Unresolved go to the Resolve stage)
     let mut edges_written = 0;
+    let mut unresolved: Vec<ExtractionEdge> = Vec::new();
     for edge in &result.edges {
         let target_id = match &edge.target_ref {
             TargetRef::Resolved(id) => id.clone(),
             TargetRef::Unresolved(name) => {
-                // Unresolved — try the FQN lookup. If the target's
-                // source file is unknown, skip the edge (it will be
-                // resolved by the Resolve stage in Sprint 2).
-                format!("unresolved:{}", name)
+                // Sprint 2: these will be resolved by the Resolve stage.
+                // Collect them for post-PgUpsert processing.
+                unresolved.push(edge.clone());
+                continue;
             }
         };
 
@@ -206,11 +217,11 @@ async fn upsert_one<'c>(
     };
     upsert_manifest_row(tx, &row).await?;
 
-    Ok(FileStats {
+    Ok((FileStats {
         files: 1,
         nodes: nodes_written,
         edges: edges_written,
-    })
+    }, unresolved))
 }
 
 /// Upsert a single scan_manifest row (helper).
@@ -378,7 +389,7 @@ mod tests {
             vec![edge],
         );
 
-        let stats = pg_upsert_streaming(
+        let (stats, _unresolved) = pg_upsert_streaming(
             &repo,
             "test_upsert",
             {

@@ -1,0 +1,296 @@
+//! GraphQuery and GraphExplain handlers — ADR-026 Sprint 2.
+//!
+//! `graph_query`: Natural-language graph topology query (simplified v1).
+//! `graph_explain`: Composite deep-dive on one node.
+
+use std::collections::HashSet;
+
+use crate::domain::aggregates::call_graph::SymbolId;
+use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
+
+// ============================================================================
+// graph_query
+// ============================================================================
+
+#[derive(Debug, serde::Deserialize)]
+pub struct GraphQueryInput {
+    pub question: String,
+    #[serde(default = "default_max_depth")]
+    pub max_depth: usize,
+    #[serde(default = "default_budget")]
+    pub budget: usize,
+}
+
+fn default_max_depth() -> usize { 3 }
+fn default_budget() -> usize { 1500 }
+
+#[derive(Debug, serde::Serialize)]
+pub struct GraphQueryOutput {
+    pub question: String,
+    pub nodes: Vec<GraphQueryNode>,
+    pub edges: Vec<GraphQueryEdge>,
+    pub explanation: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct GraphQueryNode {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
+    pub source_path: Option<String>,
+    pub why_matched: Vec<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct GraphQueryEdge {
+    pub source: String,
+    pub target: String,
+    pub relation: String,
+    pub provenance: String,
+    pub confidence: f64,
+}
+
+/// Handle `graph_query` — natural language graph topology query.
+/// Simplified v1: keyword match + BFS from seed nodes.
+pub async fn handle_graph_query(
+    ctx: &HandlerContext,
+    input: GraphQueryInput,
+) -> HandlerResult<GraphQueryOutput> {
+    let graph = match ctx.get_graph_store().load_graph() {
+        Ok(Some(g)) => g,
+        Ok(None) => return Err(HandlerError::Internal(
+            "No graph available. Run build_graph first.".into()
+        )),
+        Err(e) => return Err(HandlerError::Internal(format!("Graph store error: {e}"))),
+    };
+
+    let keywords = extract_keywords(&input.question);
+    if keywords.is_empty() {
+        return Ok(GraphQueryOutput {
+            question: input.question.clone(),
+            explanation: "No keywords extracted from question.".into(),
+            nodes: Vec::new(),
+            edges: Vec::new(),
+        });
+    }
+
+    let graph_ref = &graph;
+
+    // Find seed nodes by matching keyword against symbol names
+    let mut seeds: Vec<(SymbolId, Vec<String>)> = Vec::new();
+    for kw in &keywords {
+        let matches = graph_ref.find_by_name(kw);
+        for sym in matches {
+            let sid = SymbolId::new(sym.fully_qualified_name());
+            seeds.push((sid, vec![kw.clone()]));
+        }
+    }
+
+    // BFS from seeds
+    let mut visited_nodes: HashSet<String> = HashSet::new();
+    let mut query_nodes: Vec<GraphQueryNode> = Vec::new();
+    let mut query_edges: Vec<GraphQueryEdge> = Vec::new();
+
+    for (seed_id, matched_kws) in &seeds {
+        let seed_str = seed_id.as_str();
+        if !visited_nodes.insert(seed_str.to_string()) {
+            continue;
+        }
+
+        // Add seed node
+        if let Some(sym) = graph_ref.get_symbol(seed_id) {
+            query_nodes.push(GraphQueryNode {
+                id: seed_str.to_string(),
+                label: sym.name().to_string(),
+                kind: sym.kind().name().to_string(),
+                source_path: Some(sym.location().file().to_string()),
+                why_matched: matched_kws.clone(),
+            });
+        }
+
+        // BFS: follow outgoing dependencies
+        let mut frontier: Vec<(SymbolId, usize)> = vec![(seed_id.clone(), 0)];
+        let mut idx = 0;
+        while idx < frontier.len() && visited_nodes.len() < input.budget {
+            let (current_id, depth) = frontier[idx].clone();
+            idx += 1;
+
+            if depth >= input.max_depth {
+                continue;
+            }
+
+            for (callee_id, _dep_type) in graph_ref.dependencies(&current_id) {
+                let callee_str = callee_id.as_str().to_string();
+                if visited_nodes.insert(callee_str.clone()) {
+                    if let Some(sym) = graph_ref.get_symbol(&callee_id) {
+                        query_nodes.push(GraphQueryNode {
+                            id: callee_str.clone(),
+                            label: sym.name().to_string(),
+                            kind: sym.kind().name().to_string(),
+                            source_path: Some(sym.location().file().to_string()),
+                            why_matched: Vec::new(),
+                        });
+                    }
+
+                    query_edges.push(GraphQueryEdge {
+                        source: current_id.as_str().to_string(),
+                        target: callee_str.clone(),
+                        relation: "calls".into(),
+                        provenance: "Extracted".into(),
+                        confidence: 1.0,
+                    });
+
+                    frontier.push((callee_id.clone(), depth + 1));
+                }
+            }
+        }
+    }
+
+    let explanation = format!(
+        "Found {} nodes, {} edges in {} hops. Query: '{}'",
+        query_nodes.len(), query_edges.len(), input.max_depth, input.question
+    );
+
+    Ok(GraphQueryOutput {
+        question: input.question,
+        nodes: query_nodes,
+        edges: query_edges,
+        explanation,
+    })
+}
+
+// ============================================================================
+// graph_explain
+// ============================================================================
+
+#[derive(Debug, serde::Deserialize)]
+pub struct GraphExplainInput {
+    pub symbol: String,
+    #[serde(default = "default_depth_e")]
+    pub depth: usize,
+}
+
+fn default_depth_e() -> usize { 2 }
+
+#[derive(Debug, serde::Serialize)]
+pub struct GraphExplainOutput {
+    pub node: ExplainNode,
+    pub callers: Vec<ExplainNeighbor>,
+    pub callees: Vec<ExplainNeighbor>,
+    pub fan_in: usize,
+    pub fan_out: usize,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct ExplainNode {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
+    pub source_path: Option<String>,
+    pub line: u32,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct ExplainNeighbor {
+    pub symbol: String,
+    pub relation: String,
+    pub depth: usize,
+}
+
+/// Handle `graph_explain` — composite deep-dive on a symbol.
+pub async fn handle_graph_explain(
+    ctx: &HandlerContext,
+    input: GraphExplainInput,
+) -> HandlerResult<GraphExplainOutput> {
+    let graph = match ctx.get_graph_store().load_graph() {
+        Ok(Some(g)) => g,
+        Ok(None) => return Err(HandlerError::Internal("No graph available".into())),
+        Err(e) => return Err(HandlerError::Internal(format!("{e}"))),
+    };
+
+    // Find the target by name
+    let matches = graph.find_by_name(&input.symbol);
+    if matches.is_empty() {
+        return Err(HandlerError::Internal(format!(
+            "Symbol '{}' not found", input.symbol
+        )));
+    }
+
+    let sym_ref = &matches[0];
+    let sid = SymbolId::new(sym_ref.fully_qualified_name());
+    let sym = graph.get_symbol(&sid).unwrap();
+    let loc = sym.location();
+
+    let node = ExplainNode {
+        id: sid.as_str().to_string(),
+        label: sym.name().to_string(),
+        kind: sym.kind().name().to_string(),
+        source_path: Some(loc.file().to_string()),
+        line: loc.line(),
+    };
+
+    let fan_in = graph.fan_in(&sid);
+    let fan_out = graph.fan_out(&sid);
+
+    let callers: Vec<ExplainNeighbor> = graph
+        .callers(&sid)
+        .into_iter()
+        .take(20)
+        .map(|caller_id| ExplainNeighbor {
+            symbol: caller_id.as_str().to_string(),
+            relation: "calls".into(),
+            depth: 1,
+        })
+        .collect();
+
+    let callees: Vec<ExplainNeighbor> = graph
+        .callees(&sid)
+        .into_iter()
+        .take(20)
+        .map(|(callee_id, _dep)| ExplainNeighbor {
+            symbol: callee_id.as_str().to_string(),
+            relation: "called_by".into(),
+            depth: 1,
+        })
+        .collect();
+
+    Ok(GraphExplainOutput {
+        node,
+        callers,
+        callees,
+        fan_in,
+        fan_out,
+    })
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+static STOP_WORDS: &[&str] = &[
+    "the", "a", "an", "is", "are", "was", "were", "does", "do", "did",
+    "what", "how", "who", "where", "when", "why", "which", "whom",
+    "connects", "connect", "connected", "connecting",
+    "between", "from", "to", "in", "on", "at", "of", "for", "with",
+    "and", "or", "but", "not", "this", "that", "these", "those",
+    "it", "its", "they", "them", "we", "you", "i", "me", "my",
+];
+
+fn extract_keywords(question: &str) -> Vec<String> {
+    let words: Vec<String> = question
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+        .filter(|w| w.len() > 1 && !STOP_WORDS.contains(w))
+        .map(|w| w.to_string())
+        .collect();
+
+    let mut seen = std::collections::HashSet::new();
+    let mut unique: Vec<String> = Vec::new();
+    for w in words {
+        if seen.insert(w.clone()) {
+            unique.push(w);
+        }
+    }
+    unique
+}
+
