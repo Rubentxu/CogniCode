@@ -986,7 +986,15 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                                 // Sprint 2+4: Graphify-style tools (ADR-026)
                 Tool::new(
+                    "graph_query",
+                    "Natural language graph topology query. Ask 'what connects X to Y?' and get a subgraph with provenance. Requires build_graph first.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"question":{"type":"string","description":"Natural language question about graph topology"},"max_depth":{"type":"integer","description":"Maximum BFS depth (default: 3)"},"budget":{"type":"integer","description":"Maximum nodes to collect (default: 1500)"}},"required":["question"]}).as_object().cloned().unwrap()),
+                ),
                 Tool::new(
+                    "graph_explain",
+                    "Composite deep-dive on a symbol: callers, callees, fan-in/out, complexity. Saves multiple calls. Requires build_graph first.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"symbol":{"type":"string","description":"Symbol name to explain"},"depth":{"type":"integer","description":"Neighbor depth (default: 2)"}},"required":["symbol"]}).as_object().cloned().unwrap()),
+                ),
                 Tool::new(
                     "get_graph_report",
                     "Fetch the latest auto-generated GraphReport (god nodes, communities, surprising connections, dead code). Requires a completed scan with analysis stages.",
