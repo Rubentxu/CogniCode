@@ -119,6 +119,11 @@ fn config_by_name(name: &str) -> Option<&'static LanguageConfig> {
         "ruby" => Some(&crate::infrastructure::parser::language_config::RUBY_CONFIG),
         "php" => Some(&crate::infrastructure::parser::language_config::PHP_CONFIG),
         "swift" => Some(&crate::infrastructure::parser::language_config::SWIFT_CONFIG),
+        "scala" => Some(&crate::infrastructure::parser::language_config::SCALA_CONFIG),
+        "lua" => Some(&crate::infrastructure::parser::language_config::LUA_CONFIG),
+        "zig" => Some(&crate::infrastructure::parser::language_config::ZIG_CONFIG),
+        "dart" => Some(&crate::infrastructure::parser::language_config::DART_CONFIG),
+        "groovy" => Some(&crate::infrastructure::parser::language_config::GROOVY_CONFIG),
         _ => None,
     }
 }

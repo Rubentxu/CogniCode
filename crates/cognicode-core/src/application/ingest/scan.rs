@@ -89,6 +89,11 @@ pub fn classify_file(path: &Path) -> (FileType, Option<&'static str>) {
         "rb" => Some("ruby"),
         "php" => Some("php"),
         "swift" => Some("swift"),
+        "scala" => Some("scala"),
+        "lua" | "luau" => Some("lua"),
+        "zig" => Some("zig"),
+        "dart" => Some("dart"),
+        "groovy" | "gradle" => Some("groovy"),
         _ => None,
     };
     let file_type = match ext.to_lowercase().as_str() {

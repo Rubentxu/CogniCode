@@ -47,6 +47,11 @@ pub enum Language {
     Ruby,
     Php,
     Swift,
+    Scala,
+    Lua,
+    Zig,
+    Dart,
+    Groovy,
 }
 
 impl Language {
@@ -70,6 +75,11 @@ impl Language {
                 "rb" => Some(Language::Ruby),
                 "php" => Some(Language::Php),
                 "swift" => Some(Language::Swift),
+                "scala" => Some(Language::Scala),
+                "lua" | "luau" => Some(Language::Lua),
+                "zig" => Some(Language::Zig),
+                "dart" => Some(Language::Dart),
+                "groovy" | "gradle" => Some(Language::Groovy),
                 _ => None,
             })
     }
@@ -91,6 +101,11 @@ impl Language {
             Language::Ruby => tree_sitter_ruby::LANGUAGE.into(),
             Language::Php => tree_sitter_php::LANGUAGE_PHP.into(),
             Language::Swift => tree_sitter_swift::LANGUAGE.into(),
+            Language::Scala => tree_sitter_scala::LANGUAGE.into(),
+            Language::Lua => tree_sitter_lua::LANGUAGE.into(),
+            Language::Zig => tree_sitter_zig::LANGUAGE.into(),
+            Language::Dart => tree_sitter_dart::LANGUAGE.into(),
+            Language::Groovy => tree_sitter_groovy::LANGUAGE.into(),
         }
     }
 
@@ -111,6 +126,11 @@ impl Language {
             Language::Ruby => "Ruby",
             Language::Php => "PHP",
             Language::Swift => "Swift",
+            Language::Scala => "Scala",
+            Language::Lua => "Lua",
+            Language::Zig => "Zig",
+            Language::Dart => "Dart",
+            Language::Groovy => "Groovy",
         }
     }
 
@@ -130,6 +150,11 @@ impl Language {
             Language::Ruby => "method",
             Language::Php => "method_declaration",
             Language::Swift => "method_declaration",
+            Language::Scala => "function_declaration",
+            Language::Lua => "function_declaration",
+            Language::Zig => "function_declaration",
+            Language::Dart => "method_declaration",
+            Language::Groovy => "method_declaration",
         }
     }
 
@@ -149,6 +174,11 @@ impl Language {
             Language::Ruby => "class",
             Language::Php => "class_declaration",
             Language::Swift => "class_declaration",
+            Language::Scala => "class_declaration",
+            Language::Lua => "function_declaration",
+            Language::Zig => "struct_declaration",
+            Language::Dart => "class_declaration",
+            Language::Groovy => "class_declaration",
         }
     }
 
@@ -168,6 +198,11 @@ impl Language {
             Language::Ruby => "assignment",
             Language::Php => "expression_statement",
             Language::Swift => "variable_declaration",
+            Language::Scala => "val_declaration",
+            Language::Lua => "variable_declaration",
+            Language::Zig => "variable_declaration",
+            Language::Dart => "variable_declaration",
+            Language::Groovy => "variable_declaration",
         }
     }
 
@@ -187,6 +222,11 @@ impl Language {
             Language::Ruby => "call",
             Language::Php => "function_call_expression",
             Language::Swift => "call_expression",
+            Language::Scala => "call_expression",
+            Language::Lua => "function_call",
+            Language::Zig => "call_expression",
+            Language::Dart => "function_expression_invocation",
+            Language::Groovy => "method_call_expression",
         }
     }
 
@@ -206,6 +246,11 @@ impl Language {
             Language::Ruby => true,
             Language::Php => true,
             Language::Swift => true,
+            Language::Scala => true,
+            Language::Lua => true,
+            Language::Zig => true,
+            Language::Dart => true,
+            Language::Groovy => true,
         }
     }
 
@@ -225,6 +270,16 @@ impl Language {
             Language::Ruby => "solargraph",
             Language::Php => "intelephense",
             Language::Swift => "sourcekit-lsp",
+            Language::Scala => "metals",
+            Language::Lua => "lua-language-server",
+            Language::Zig => "zls",
+            Language::Dart => "dart-analysis-server",
+            Language::Groovy => "groovy-language-server",
+            Language::Scala => "metals",
+            Language::Lua => "lua-language-server",
+            Language::Zig => "zls",
+            Language::Dart => "dart",
+            Language::Groovy => "groovy-language-server",
         }
     }
 
@@ -246,6 +301,11 @@ impl Language {
             Language::Ruby => "gem install solargraph",
             Language::Php => "npm install -g intelephense",
             Language::Swift => "xcrun sourcekit-lsp",
+            Language::Scala => "coursier install metals",
+            Language::Lua => "npm install -g lua-language-server",
+            Language::Zig => "brew install zls",
+            Language::Dart => "brew install dart",
+            Language::Groovy => "brew install groovy-language-server",
         }
     }
 
@@ -260,6 +320,7 @@ impl Language {
             Language::C | Language::Cpp | Language::CSharp => &["--stdio"],
             Language::Hcl | Language::Yaml => &[],
             Language::Ruby | Language::Php | Language::Swift => &["--stdio"],
+            Language::Scala | Language::Lua | Language::Zig | Language::Dart | Language::Groovy => &["--stdio"],
         }
     }
 
@@ -279,6 +340,16 @@ impl Language {
             Language::Ruby => "solargraph",
             Language::Php => "intelephense",
             Language::Swift => "sourcekit-lsp",
+            Language::Scala => "metals",
+            Language::Lua => "lua-language-server",
+            Language::Zig => "zls",
+            Language::Dart => "dart-analysis-server",
+            Language::Groovy => "groovy-language-server",
+            Language::Scala => "metals",
+            Language::Lua => "lua-language-server",
+            Language::Zig => "zls",
+            Language::Dart => "dart",
+            Language::Groovy => "groovy-language-server",
         }
     }
 
@@ -299,6 +370,11 @@ impl Language {
             Language::Ruby,
             Language::Php,
             Language::Swift,
+            Language::Scala,
+            Language::Lua,
+            Language::Zig,
+            Language::Dart,
+            Language::Groovy,
         ]
     }
 }

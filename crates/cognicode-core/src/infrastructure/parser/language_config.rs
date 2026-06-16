@@ -108,6 +108,11 @@ pub static ALL_LANGUAGES: &[LanguageConfig] = &[
     RUBY_CONFIG,
     PHP_CONFIG,
     SWIFT_CONFIG,
+    SCALA_CONFIG,
+    LUA_CONFIG,
+    ZIG_CONFIG,
+    DART_CONFIG,
+    GROOVY_CONFIG,
 ];
 
 // ── Rust ─────────────────────────────────────────────────────────────────────
@@ -410,3 +415,68 @@ pub const SWIFT_CONFIG: LanguageConfig = LanguageConfig {
     type_ref_walker: NO_TYPE_REFS,
 };
 
+
+pub const SCALA_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Scala,
+    extensions: &["scala"],
+    ts_language: || tree_sitter_scala::LANGUAGE.into(),
+    function_types: &["function_declaration", "method_declaration"],
+    class_types: &["class_declaration", "object_declaration", "trait_declaration"],
+    variable_types: &["val_declaration", "var_declaration"],
+    call_types: &["call_expression"],
+    call_has_function_field: true,
+    import_types: &["import_declaration"],
+    type_ref_walker: NO_TYPE_REFS,
+};
+
+pub const LUA_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Lua,
+    extensions: &["lua", "luau"],
+    ts_language: || tree_sitter_lua::LANGUAGE.into(),
+    function_types: &["function_declaration"],
+    class_types: &["function_declaration"],
+    variable_types: &["variable_declaration"],
+    call_types: &["function_call"],
+    call_has_function_field: true,
+    import_types: &["function_call"],
+    type_ref_walker: NO_TYPE_REFS,
+};
+
+pub const ZIG_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Zig,
+    extensions: &["zig"],
+    ts_language: || tree_sitter_zig::LANGUAGE.into(),
+    function_types: &["function_declaration"],
+    class_types: &["struct_declaration"],
+    variable_types: &["variable_declaration"],
+    call_types: &["call_expression"],
+    call_has_function_field: true,
+    import_types: &["variable_declaration"],
+    type_ref_walker: NO_TYPE_REFS,
+};
+
+pub const DART_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Dart,
+    extensions: &["dart"],
+    ts_language: || tree_sitter_dart::LANGUAGE.into(),
+    function_types: &["method_declaration", "function_expression"],
+    class_types: &["class_declaration", "mixin_declaration"],
+    variable_types: &["variable_declaration"],
+    call_types: &["function_expression_invocation"],
+    call_has_function_field: true,
+    import_types: &["import_specification"],
+    type_ref_walker: NO_TYPE_REFS,
+};
+
+pub const GROOVY_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Groovy,
+    extensions: &["groovy", "gradle"],
+    ts_language: || tree_sitter_groovy::LANGUAGE.into(),
+    function_types: &["method_declaration"],
+    class_types: &["class_declaration"],
+    variable_types: &["variable_declaration"],
+    call_types: &["method_call_expression"],
+    call_has_function_field: true,
+    import_types: &["import_declaration"],
+    type_ref_walker: NO_TYPE_REFS,
+};
