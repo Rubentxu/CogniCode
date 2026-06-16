@@ -16,6 +16,13 @@ ships independently and builds on the previous one. Sprint 1 closes the
 Explorer loop (scan → serve). Sprint 2 adds analysis. Sprint 3 scales
 languages. Sprint 4 adds incremental + robustness.
 
+> **Status (2026-06-16):** Sprints 1-4 core pipeline **COMPLETE** (5 commits,
+> ~6,100 lines). Explorer wired with POST /scan, GET /jobs/:id, GET /stats.
+> 11 languages: Rust, Python, TypeScript, JavaScript, Go, Java, C, C++, C#,
+> HCL (Terraform), YAML (Ansible). Pipeline: Scan→Extract→PgUpsert→Resolve→
+> Cluster→Analyze→Report→Refresh→Notify. 2 MCP tools: graph_query, graph_explain.
+> Remaining items in §Pending Work below.
+
 ---
 
 ## Sprint 1: Close the Loop (Explorer scan → serve)
@@ -345,13 +352,82 @@ debouncer.watcher().watch(&root, RecursiveMode::Recursive)?;
 | `sha2` | 0.10 | SHA256 content hashing | S1 |
 | `notify` | 7.x | File system watching | S4 |
 | `notify-debouncer-full` | 0.4 | Debounced watcher events | S4 |
-| `tree-sitter-hcl` | 1.2 | HCL/Terraform grammar | S4 (4a) |
+| `tree-sitter-hcl` | 1.1 | HCL/Terraform grammar | S4 (4a) |
 | `tree-sitter-yaml` | 0.7 | YAML grammar (Ansible playbooks) | S4 (4a) |
-| `tree-sitter-c` | latest | C grammar | S3 |
-| `tree-sitter-cpp` | latest | C++ grammar | S3 |
-| `tree-sitter-c-sharp` | latest | C# grammar | S3 |
-| `tree-sitter-ruby` | latest | Ruby grammar | S3 |
-| `tree-sitter-php` | latest | PHP grammar | S3 |
-| `tree-sitter-swift` | latest | Swift grammar | S3 |
-| `tree-sitter-kotlin` | latest | Kotlin grammar | S3 |
-| ... | ... | (remaining per batch) | S3/S4 |
+| `tree-sitter-c` | 0.21 | C grammar | S3 |
+| `tree-sitter-cpp` | 0.23 | C++ grammar | S3 |
+| `tree-sitter-c-sharp` | 0.23 | C# grammar | S3 |
+| ... | ... | (remaining per batch) | pending |
+
+---
+
+## Pending Work
+
+Items from the roadmap that have been designed (ADRs exist) but not yet
+implemented. Ordered by value-to-effort ratio.
+
+### Type-ref extraction (ADR-018, Sprint 3)
+| Task | Status |
+|------|--------|
+| `TypeRefWalker` trait definition | ⬜ |
+| Rust type-ref walker | ⬜ |
+| Python type-ref walker | ⬜ |
+| TypeScript type-ref walker | ⬜ |
+| Go type-ref walker | ⬜ |
+| Java type-ref walker | ⬜ |
+| `LanguageConfig.type_ref_walker` field | ⬜ |
+| Generic extractor: call walker after AST walk | ⬜ |
+
+### COPY bulk load optimization (ADR-023)
+| Task | Status |
+|------|--------|
+| `sqlx::CopyIn` for graph_nodes (binary) | ⬜ |
+| `sqlx::CopyIn` for graph_edges (binary) | ⬜ |
+| Decision rule: `>50 files → COPY path` | ⬜ |
+
+### Incremental + Robustness (ADR-022/023, Sprint 4)
+| Task | Status |
+|------|--------|
+| Edge-level diffing in `GraphDiffCalculator` | ⬜ |
+| `apply_events()` for edge events | ⬜ |
+| Advisory locks (`pg_advisory_lock`) | ⬜ |
+| 409 Conflict on concurrent scan | ⬜ |
+| File watcher (`notify` crate) | ⬜ |
+| Debounced scan queue | ⬜ |
+| Periodic fallback re-scan | ⬜ |
+| Workspace registration in resolver | ⬜ |
+
+### Ansible semantic handler (ADR-024, Sprint 4)
+| Task | Status |
+|------|--------|
+| `interpret_ansible_playbook` handler | ⬜ |
+| Shared builtin module nodes (`ansible:builtin:*`) | ⬜ |
+| `import_playbook` / `include_tasks` → Imports edges | ⬜ |
+
+### Remaining languages (Sprint 3-4)
+| Priority | Languages |
+|----------|-----------|
+| **High** | Ruby, PHP, Swift, Kotlin |
+| **Medium** | Scala, Lua, R, Zig, Dart, Julia, Groovy, Gradle |
+| **Low** | Fortran, Pascal, Verilog, SystemVerilog, DreamMaker, Bash, PowerShell, Apex, Svelte, Vue, Astro, Elixir, Erlang, Haskell |
+
+### MCP tools (ADR-026)
+| Task | Status |
+|------|--------|
+| `get_graph_report` tool | ⬜ |
+| `get_type_references` tool | ⬜ |
+| `get_imports` tool | ⬜ |
+| `get_implementors` tool | ⬜ |
+| `get_members` tool | ⬜ |
+| `get_iac_references` tool | ⬜ |
+| `graph_query_filtered` tool | ⬜ |
+| `export_callflow` tool | ⬜ |
+| Wire `graph_query` + `graph_explain` in ToolHandler registry | ⬜ |
+
+### Explorer integration
+| Task | Status |
+|------|--------|
+| Frontend: scan button in workspace picker | ⬜ |
+| Frontend: progress bar for scan job | ⬜ |
+| Frontend: graph stats display | ⬜ |
+| Frontend: GraphReport view in LensPanel | ⬜ |
