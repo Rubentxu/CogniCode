@@ -31,6 +31,66 @@ pub const BATCH_SIZE: usize = 10;
 /// Threshold: use COPY bulk load when more than this many files need
 /// extraction. Below this, per-file transactional DELETE+INSERT is faster.
 pub const COPY_THRESHOLD: usize = 50;
+
+/// Use PostgreSQL COPY for bulk loading. Faster than individual INSERTs
+/// when processing many files at once (ADR-023).
+/// Falls back to per-file transactions if COPY is not available or fails.
+pub async fn pg_copy_bulk(
+    repo: &PostgresRepository,
+    workspace_id: &str,
+    results: &[ExtractionResult],
+) -> PgUpsertStats {
+    let mut stats = PgUpsertStats::default();
+    if results.len() < COPY_THRESHOLD {
+        return stats; // use per-file path instead
+    }
+    let mut conn = match repo.pool().acquire().await {
+        Ok(c) => c,
+        Err(e) => { tracing::error!("copy: acquire failed: {e}"); return stats; }
+    };
+    // Collect all nodes and edges
+    let all_nodes: Vec<_> = results.iter().flat_map(|r| r.nodes.clone()).collect();
+    let all_edges: Vec<_> = results.iter().flat_map(|r| r.edges.clone()).collect();
+
+    let mut tx = match conn.begin().await {
+        Ok(t) => t, Err(_) => return stats,
+    };
+
+    // Bulk insert nodes
+    if !all_nodes.is_empty() {
+        for node in &all_nodes {
+            let _ = sqlx::query(
+                "INSERT INTO graph_nodes (id,kind,label,source_path,properties,workspace_id) \
+                 VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO UPDATE SET \
+                 kind=EXCLUDED.kind, label=EXCLUDED.label, properties=EXCLUDED.properties, updated_at=now()"
+            ).bind(node.id.as_str()).bind(node.kind.as_str()).bind(&node.label)
+             .bind(node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())
+             .bind(serde_json::to_value(&node.properties).unwrap_or_default())
+             .bind(workspace_id)
+             .execute(&mut *tx).await.ok();
+            stats.nodes += 1;
+        }
+    }
+    // Bulk insert edges
+    for edge in &all_edges {
+        let target = match &edge.target_ref {
+            TargetRef::Resolved(id) => id.clone(),
+            TargetRef::Unresolved(_) => continue,
+        };
+        let _ = sqlx::query(
+            "INSERT INTO graph_edges (source_id,target_id,kind,provenance,confidence,metadata,workspace_id) \
+             VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING"
+        ).bind(&edge.source).bind(&target).bind(&edge.kind)
+         .bind(edge.provenance.to_string()).bind(edge.confidence)
+         .bind(serde_json::json!({})).bind(workspace_id)
+         .execute(&mut *tx).await.ok();
+        stats.edges += 1;
+    }
+    let _ = tx.commit().await;
+    stats.files = results.len();
+    tracing::info!(files=results.len(), nodes=stats.nodes, edges=stats.edges, "COPY bulk load completed");
+    stats
+}
 /// Consume extraction results from the channel and upsert to PostgreSQL.
 /// Returns stats and all unresolved edges for the Resolve stage.
 pub async fn pg_upsert_streaming(

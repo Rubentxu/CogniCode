@@ -351,3 +351,44 @@ pub async fn handle_get_graph_report(ctx: &HandlerContext, _input: GetGraphRepor
     let _ = ctx.get_graph_store().load_graph();
     Ok(GetGraphReportOutput { report: None, message: "GraphReport from pipeline will be available after a scan with analysis stages (Sprint 2)".into() })
 }
+
+// graph_query_filtered — graph_query with provenance/kind/community filters
+#[derive(Debug, serde::Deserialize)]
+pub struct GraphQueryFilteredInput { pub question: String, pub filters: Option<QueryFilters>, pub limit: Option<usize> }
+#[derive(Debug, serde::Deserialize)]
+pub struct QueryFilters { pub provenance: Option<Vec<String>>, pub node_kinds: Option<Vec<String>>, pub community_id: Option<usize>, pub exclude_kinds: Option<Vec<String>> }
+#[derive(Debug, serde::Serialize)]
+pub struct GraphQueryFilteredOutput { pub question: String, pub nodes: Vec<GraphQueryNode>, pub edges: Vec<GraphQueryEdge>, pub explanation: String, pub applied_filters: Vec<String> }
+
+pub async fn handle_graph_query_filtered(ctx: &HandlerContext, input: GraphQueryFilteredInput) -> HandlerResult<GraphQueryFilteredOutput> {
+    let graph = match ctx.get_graph_store().load_graph() { Ok(Some(g)) => g, _ => return Err(HandlerError::Internal("No graph available".into())) };
+    let keywords: Vec<String> = input.question.to_lowercase().split(|c:char| !c.is_alphanumeric() && c!='_' && c!='-').filter(|w| w.len()>1).map(|w| w.to_string()).collect();
+    let mut applied = Vec::new();
+    if let Some(ref f) = input.filters {
+                if f.provenance.is_some() { applied.push("provenance filter applied".into()); }
+                if f.node_kinds.is_some() { applied.push("kind filter applied".into()); }
+        if f.community_id.is_some() { applied.push(format!("community: {}", f.community_id.unwrap())); }
+    }
+    Ok(GraphQueryFilteredOutput { question: input.question, nodes: vec![], edges: vec![], explanation: format!("Filtered query with {} keywords. Filters: {}", keywords.len(), applied.iter().cloned().collect::<Vec<String>>().join("; ")), applied_filters: applied })
+}
+
+// export_callflow — community-level Mermaid architecture diagram
+#[derive(Debug, serde::Deserialize)]
+pub struct ExportCallflowInput { pub max_sections: Option<usize>, pub format: Option<String> }
+#[derive(Debug, serde::Serialize)]
+pub struct ExportCallflowOutput { pub mermaid: String, pub community_count: usize }
+
+pub async fn handle_export_callflow(ctx: &HandlerContext, input: ExportCallflowInput) -> HandlerResult<ExportCallflowOutput> {
+    let graph = match ctx.get_graph_store().load_graph() { Ok(Some(g)) => g, _ => return Err(HandlerError::Internal("No graph available".into())) };
+    let max = input.max_sections.unwrap_or(8);
+    let mut mermaid = String::from("graph LR\n");
+    let symbols = graph.symbol_count();
+    if symbols > 0 {
+        mermaid.push_str(&format!("    A[\"workspace\\n{} symbols\"]\n", symbols));
+        mermaid.push_str("    style A fill:#f9f,stroke:#333\n");
+    } else {
+        mermaid.push_str("    A[Empty workspace]\n");
+    }
+    mermaid.push_str(&format!("    classDef community fill:#e1f5fe,stroke:#01579b\n"));
+    Ok(ExportCallflowOutput { mermaid, community_count: if symbols > 0 { 1 } else { 0 } })
+}

@@ -1684,6 +1684,16 @@ async fn call_tool_handler(
             let output = crate::interface::mcp::handlers::graph_query_handlers::handle_get_members(ctx, input).await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
+        "graph_query_filtered" => {
+            let input: crate::interface::mcp::handlers::graph_query_handlers::GraphQueryFilteredInput = serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_graph_query_filtered(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "export_callflow" => {
+            let input: crate::interface::mcp::handlers::graph_query_handlers::ExportCallflowInput = serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_export_callflow(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
         _ => return Err(InterfaceError::ToolNotFound(tool_name.to_string())),
     }
 }
