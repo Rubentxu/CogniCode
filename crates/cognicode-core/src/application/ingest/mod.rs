@@ -4,6 +4,7 @@
 pub mod analyzer;
 pub mod cluster;
 pub mod controller;
+pub mod edge_diff;
 pub mod extract_stage;
 pub mod extractor;
 pub mod pg_upsert_stage;
@@ -13,6 +14,7 @@ pub mod resolve;
 pub mod scan;
 pub mod service;
 pub mod types;
+pub mod watcher;
 
 pub use analyzer::{run_analyze, AnalysisSummary};
 pub use cluster::run_cluster;
