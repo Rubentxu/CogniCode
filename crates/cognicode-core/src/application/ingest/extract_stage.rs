@@ -129,11 +129,17 @@ fn config_by_name(name: &str) -> Option<&'static LanguageConfig> {
         "haskell" => Some(&crate::infrastructure::parser::language_config::HASKELL_CONFIG),
         "julia" => Some(&crate::infrastructure::parser::language_config::JULIA_CONFIG),
         "bash" => Some(&crate::infrastructure::parser::language_config::BASH_CONFIG),
+        "r" => Some(&crate::infrastructure::parser::language_config::R_CONFIG),
+        "powershell" => Some(&crate::infrastructure::parser::language_config::POWERSHELL_CONFIG),
+        "json" => Some(&crate::infrastructure::parser::language_config::JSON_CONFIG),
         "elixir" => Some(&crate::infrastructure::parser::language_config::ELIXIR_CONFIG),
         "erlang" => Some(&crate::infrastructure::parser::language_config::ERLANG_CONFIG),
         "haskell" => Some(&crate::infrastructure::parser::language_config::HASKELL_CONFIG),
         "julia" => Some(&crate::infrastructure::parser::language_config::JULIA_CONFIG),
         "bash" => Some(&crate::infrastructure::parser::language_config::BASH_CONFIG),
+        "r" => Some(&crate::infrastructure::parser::language_config::R_CONFIG),
+        "powershell" => Some(&crate::infrastructure::parser::language_config::POWERSHELL_CONFIG),
+        "json" => Some(&crate::infrastructure::parser::language_config::JSON_CONFIG),
         _ => None,
     }
 }

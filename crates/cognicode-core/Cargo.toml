@@ -56,6 +56,9 @@ tree-sitter-erlang.workspace = true
 tree-sitter-haskell.workspace = true
 tree-sitter-julia.workspace = true
 tree-sitter-bash.workspace = true
+tree-sitter-r.workspace = true
+tree-sitter-powershell.workspace = true
+tree-sitter-json.workspace = true
 
 # Grafos
 petgraph.workspace = true

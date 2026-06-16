@@ -118,6 +118,9 @@ pub static ALL_LANGUAGES: &[LanguageConfig] = &[
     HASKELL_CONFIG,
     JULIA_CONFIG,
     BASH_CONFIG,
+    R_CONFIG,
+    POWERSHELL_CONFIG,
+    JSON_CONFIG,
 ];
 
 // ── Rust ─────────────────────────────────────────────────────────────────────
@@ -491,3 +494,7 @@ pub const ERLANG_CONFIG: LanguageConfig = LanguageConfig { language: Language::E
 pub const HASKELL_CONFIG: LanguageConfig = LanguageConfig { language: Language::Haskell, extensions: &["hs"], ts_language: || tree_sitter_haskell::LANGUAGE.into(), function_types: &["function"], class_types: &["module"], variable_types: &["declaration"], call_types: &["application"], call_has_function_field: true, import_types: &["import"], type_ref_walker: NO_TYPE_REFS };
 pub const JULIA_CONFIG: LanguageConfig = LanguageConfig { language: Language::Julia, extensions: &["jl"], ts_language: || tree_sitter_julia::LANGUAGE.into(), function_types: &["function_definition"], class_types: &["module_definition"], variable_types: &["assignment"], call_types: &["call_expression"], call_has_function_field: true, import_types: &["import_statement"], type_ref_walker: NO_TYPE_REFS };
 pub const BASH_CONFIG: LanguageConfig = LanguageConfig { language: Language::Bash, extensions: &["sh","bash"], ts_language: || tree_sitter_bash::LANGUAGE.into(), function_types: &["function_definition"], class_types: &["function_definition"], variable_types: &["variable_assignment"], call_types: &["command"], call_has_function_field: true, import_types: &["command"], type_ref_walker: NO_TYPE_REFS };
+
+pub const R_CONFIG: LanguageConfig = LanguageConfig { language: Language::R, extensions: &["r","R"], ts_language: || tree_sitter_r::LANGUAGE.into(), function_types: &["function_definition"], class_types: &["function_definition"], variable_types: &["assignment"], call_types: &["call"], call_has_function_field: true, import_types: &["call"], type_ref_walker: NO_TYPE_REFS };
+pub const POWERSHELL_CONFIG: LanguageConfig = LanguageConfig { language: Language::PowerShell, extensions: &["ps1","psm1"], ts_language: || tree_sitter_powershell::LANGUAGE.into(), function_types: &["function_definition"], class_types: &["function_definition"], variable_types: &["assignment"], call_types: &["command"], call_has_function_field: true, import_types: &["command"], type_ref_walker: NO_TYPE_REFS };
+pub const JSON_CONFIG: LanguageConfig = LanguageConfig { language: Language::Json, extensions: &["json"], ts_language: || tree_sitter_json::LANGUAGE.into(), function_types: &["object"], class_types: &["object"], variable_types: &["pair"], call_types: &["string"], call_has_function_field: false, import_types: &["object"], type_ref_walker: NO_TYPE_REFS };

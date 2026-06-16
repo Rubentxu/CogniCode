@@ -203,12 +203,12 @@ impl LspProcess {
             Language::Erlang => "erlang",
             Language::Haskell => "haskell",
             Language::Julia => "julia",
-            Language::Bash => "bash",
+            Language::Bash | Language::R | Language::PowerShell | Language::Json => "bash",
             Language::Elixir => "elixir",
             Language::Erlang => "erlang",
             Language::Haskell => "haskell",
             Language::Julia => "julia",
-            Language::Bash => "bash",
+            Language::Bash | Language::R | Language::PowerShell | Language::Json => "bash",
             Language::Java => "java",
         };
         let params = serde_json::json!({

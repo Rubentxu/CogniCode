@@ -57,6 +57,9 @@ pub enum Language {
     Haskell,
     Julia,
     Bash,
+    R,
+    PowerShell,
+    Json,
 }
 
 impl Language {
@@ -90,6 +93,9 @@ impl Language {
                 "hs" => Some(Language::Haskell),
                 "jl" => Some(Language::Julia),
                 "sh" | "bash" => Some(Language::Bash),
+                "r" | "R" => Some(Language::R),
+                "ps1" | "psm1" => Some(Language::PowerShell),
+                "json" => Some(Language::Json),
                 _ => None,
             })
     }
@@ -121,6 +127,9 @@ impl Language {
             Language::Haskell => tree_sitter_haskell::LANGUAGE.into(),
             Language::Julia => tree_sitter_julia::LANGUAGE.into(),
             Language::Bash => tree_sitter_bash::LANGUAGE.into(),
+            Language::R => tree_sitter_r::LANGUAGE.into(),
+            Language::PowerShell => tree_sitter_powershell::LANGUAGE.into(),
+            Language::Json => tree_sitter_json::LANGUAGE.into(),
         }
     }
 
@@ -151,6 +160,9 @@ impl Language {
             Language::Haskell => "Haskell",
             Language::Julia => "Julia",
             Language::Bash => "Bash",
+            Language::R => "R",
+            Language::PowerShell => "PowerShell",
+            Language::Json => "JSON",
         }
     }
 
@@ -180,6 +192,9 @@ impl Language {
             Language::Haskell => "function",
             Language::Julia => "function_definition",
             Language::Bash => "function_definition",
+            Language::R => "function_definition",
+            Language::PowerShell => "function_definition",
+            Language::Json => "object",
         }
     }
 
@@ -209,6 +224,9 @@ impl Language {
             Language::Haskell => "module",
             Language::Julia => "module_definition",
             Language::Bash => "function_definition",
+            Language::R => "function_definition",
+            Language::PowerShell => "function_definition",
+            Language::Json => "object",
         }
     }
 
@@ -238,6 +256,9 @@ impl Language {
             Language::Haskell => "declaration",
             Language::Julia => "assignment",
             Language::Bash => "variable_assignment",
+            Language::R => "assignment",
+            Language::PowerShell => "assignment",
+            Language::Json => "pair",
         }
     }
 
@@ -267,6 +288,9 @@ impl Language {
             Language::Haskell => "application",
             Language::Julia => "call_expression",
             Language::Bash => "command",
+            Language::R => "call",
+            Language::PowerShell => "command",
+            Language::Json => "string",
         }
     }
 
@@ -296,6 +320,9 @@ impl Language {
             Language::Haskell => true,
             Language::Julia => true,
             Language::Bash => true,
+            Language::R => true,
+            Language::PowerShell => true,
+            Language::Json => false,
         }
     }
 
@@ -307,95 +334,35 @@ impl Language {
             Language::TypeScript | Language::JavaScript => "typescript-language-server",
             Language::Go => "gopls",
             Language::Java => "jdtls",
-            Language::C => "clangd",
-            Language::Cpp => "clangd",
+            Language::C | Language::Cpp => "clangd",
             Language::CSharp => "omnisharp",
-            Language::Hcl => "terraform-ls",
-            Language::Yaml => "yaml-language-server",
-            Language::Ruby => "solargraph",
-            Language::Php => "intelephense",
-            Language::Swift => "sourcekit-lsp",
-            Language::Scala => "metals",
-            Language::Lua => "lua-language-server",
-            Language::Zig => "zls",
-            Language::Dart => "dart-analysis-server",
-            Language::Groovy => "groovy-language-server",
-            Language::Elixir => "elixir-ls",
-            Language::Erlang => "erlang-ls",
-            Language::Haskell => "haskell-language-server",
-            Language::Julia => "julia-language-server",
-            Language::Bash => "bash-language-server",
-            Language::Elixir => "elixir-ls",
-            Language::Erlang => "erlang-ls",
-            Language::Haskell => "haskell-language-server",
-            Language::Julia => "julia",
-            Language::Bash => "bash-language-server",
-            Language::Scala => "metals",
-            Language::Lua => "lua-language-server",
-            Language::Zig => "zls",
-            Language::Dart => "dart",
-            Language::Groovy => "groovy-language-server",
-            Language::Elixir => "elixir-ls",
-            Language::Erlang => "erlang-ls",
-            Language::Haskell => "haskell-language-server",
-            Language::Julia => "julia-language-server",
-            Language::Bash => "bash-language-server",
-            Language::Elixir => "elixir-ls",
-            Language::Erlang => "erlang-ls",
-            Language::Haskell => "haskell-language-server",
-            Language::Julia => "julia",
-            Language::Bash => "bash-language-server",
+            _ => "",
         }
     }
 
-    /// Returns the install command for the LSP server
+    /// Returns the install command
     pub fn lsp_install_command(self) -> &'static str {
         match self {
             Language::Rust => "rustup component add rust-analyzer",
             Language::Python => "npm install -g pyright",
-            Language::TypeScript | Language::JavaScript => {
-                "npm install -g typescript-language-server typescript"
-            }
+            Language::TypeScript | Language::JavaScript => "npm install -g typescript-language-server typescript",
             Language::Go => "go install golang.org/x/tools/gopls@latest",
             Language::Java => "brew install jdtls",
-            Language::C => "apt install clangd",
-            Language::Cpp => "apt install clangd",
+            Language::C | Language::Cpp => "apt install clangd",
             Language::CSharp => "dotnet tool install -g omnisharp",
-            Language::Hcl => "brew install hashicorp/tap/terraform-ls",
-            Language::Yaml => "npm install -g yaml-language-server",
-            Language::Ruby => "gem install solargraph",
-            Language::Php => "npm install -g intelephense",
-            Language::Swift => "xcrun sourcekit-lsp",
-            Language::Scala => "coursier install metals",
-            Language::Lua => "npm install -g lua-language-server",
-            Language::Zig => "brew install zls",
-            Language::Dart => "brew install dart",
-            Language::Groovy => "brew install groovy-language-server",
-            Language::Elixir => "brew install elixir-ls",
-            Language::Erlang => "brew install erlang-ls",
-            Language::Haskell => "ghcup install hls",
-            Language::Julia => "brew install julia",
-            Language::Bash => "npm install -g bash-language-server",
+            _ => "",
         }
     }
 
-    /// Returns the arguments to pass to the LSP server binary
     pub fn lsp_args(self) -> &'static [&'static str] {
         match self {
             Language::Rust => &[],
-            Language::Python => &["--stdio"],
-            Language::TypeScript | Language::JavaScript => &["--stdio"],
             Language::Go => &["serve"],
             Language::Java => &[],
-            Language::C | Language::Cpp | Language::CSharp => &["--stdio"],
-            Language::Hcl | Language::Yaml => &[],
-            Language::Ruby | Language::Php | Language::Swift => &["--stdio"],
-            Language::Scala | Language::Lua | Language::Zig | Language::Dart | Language::Groovy => &["--stdio"],
-            Language::Elixir | Language::Erlang | Language::Haskell | Language::Julia | Language::Bash => &["--stdio"],
+            _ => &["--stdio"],
         }
     }
 
-    /// Returns the display name of the LSP server
     pub fn lsp_server_name(self) -> &'static str {
         match self {
             Language::Rust => "rust-analyzer",
@@ -403,44 +370,9 @@ impl Language {
             Language::TypeScript | Language::JavaScript => "typescript-language-server",
             Language::Go => "gopls",
             Language::Java => "eclipse-jdtls",
-            Language::C => "clangd",
-            Language::Cpp => "clangd",
+            Language::C | Language::Cpp => "clangd",
             Language::CSharp => "omnisharp",
-            Language::Hcl => "",
-            Language::Yaml => "",
-            Language::Ruby => "solargraph",
-            Language::Php => "intelephense",
-            Language::Swift => "sourcekit-lsp",
-            Language::Scala => "metals",
-            Language::Lua => "lua-language-server",
-            Language::Zig => "zls",
-            Language::Dart => "dart-analysis-server",
-            Language::Groovy => "groovy-language-server",
-            Language::Elixir => "elixir-ls",
-            Language::Erlang => "erlang-ls",
-            Language::Haskell => "haskell-language-server",
-            Language::Julia => "julia-language-server",
-            Language::Bash => "bash-language-server",
-            Language::Elixir => "elixir-ls",
-            Language::Erlang => "erlang-ls",
-            Language::Haskell => "haskell-language-server",
-            Language::Julia => "julia",
-            Language::Bash => "bash-language-server",
-            Language::Scala => "metals",
-            Language::Lua => "lua-language-server",
-            Language::Zig => "zls",
-            Language::Dart => "dart",
-            Language::Groovy => "groovy-language-server",
-            Language::Elixir => "elixir-ls",
-            Language::Erlang => "erlang-ls",
-            Language::Haskell => "haskell-language-server",
-            Language::Julia => "julia-language-server",
-            Language::Bash => "bash-language-server",
-            Language::Elixir => "elixir-ls",
-            Language::Erlang => "erlang-ls",
-            Language::Haskell => "haskell-language-server",
-            Language::Julia => "julia",
-            Language::Bash => "bash-language-server",
+            _ => "",
         }
     }
 
@@ -471,6 +403,9 @@ impl Language {
             Language::Haskell,
             Language::Julia,
             Language::Bash,
+            Language::R,
+            Language::PowerShell,
+            Language::Json,
         ]
     }
 }
