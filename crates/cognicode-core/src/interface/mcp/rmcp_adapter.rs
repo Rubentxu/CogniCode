@@ -202,7 +202,7 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                 Tool::new(
                     "check_architecture",
-                    "Detect cycles and architecture violations using Tarjan SCC algorithm.",
+                    "[DEPRECATED] Detect cycles and architecture violations. Use graph_insights instead — it includes cycle detection plus health score.",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -294,7 +294,7 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                 Tool::new(
                     "build_lightweight_index",
-                    "Build a lightweight symbol index for fast lookups.",
+                    "[DEPRECATED] Build a lightweight symbol index. Replaced by build_graph which uses the Scan stage manifest for incremental change detection. Will be removed in v0.7.",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -342,7 +342,7 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                 Tool::new(
                     "merge_file_graphs",
-                    "Merge call graphs from multiple files into a single graph.",
+                    "[DEPRECATED] Merge call graphs from multiple files. Replaced by PostgreSQL as single source of truth. Will be removed in v0.7.",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -353,7 +353,7 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                 Tool::new(
                     "get_outline",
-                    "Get a hierarchical outline of symbols in a source file.",
+                    "[DEPRECATED] Get hierarchical outline of symbols. Use get_file_symbols with hierarchical=true instead.",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -392,7 +392,7 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                 Tool::new(
                     "find_usages_with_context",
-                    "Find all usages of a symbol with surrounding context lines.",
+                    "[DEPRECATED] Find usages with context lines. Use find_usages with context_lines parameter instead.",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -570,7 +570,7 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                 Tool::new(
                     "ranked_symbols",
-                    "Get AI-relevance ranked symbols based on a search query, considering fan-in, complexity, and documentation.",
+                    "[DEPRECATED] Get AI-relevance ranked symbols. Use smart_search with algorithm='ranked' instead (coming in Sprint 5.2).",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -655,7 +655,7 @@ impl ServerHandler for CogniCodeHandler {
                 // AIX-4: Compare Call Graphs & Detect API Breaks
                 Tool::new(
                     "compare_call_graphs",
-                    "Compare the current call graph against a baseline to detect structural changes.",
+                    "[DEPRECATED] Compare current graph vs baseline. Use compare_graph with mode='diff' instead (coming in Sprint 5.2).",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -665,7 +665,7 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                 Tool::new(
                     "detect_api_breaks",
-                    "Detect breaking changes in the public API by comparing entry points between current and baseline graphs.",
+                    "[DEPRECATED] Detect breaking API changes. Use compare_graph with mode='api' instead (coming in Sprint 5.2).",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -676,7 +676,7 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                 Tool::new(
                     "evaluate_refactor_quality",
-                    "Evaluate whether a refactoring was beneficial by comparing current graph state vs persisted baseline.",
+                    "[DEPRECATED] Evaluate refactoring quality. Use compare_graph with mode='quality' instead (coming in Sprint 5.2).",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {}
@@ -720,7 +720,7 @@ impl ServerHandler for CogniCodeHandler {
                 // PL3: Symbol Hotness Tracking
                 Tool::new(
                     "get_hot_symbols",
-                    "Get the most frequently accessed symbols (AI query hotness tracking).",
+                    "[DEPRECATED] Get most frequently accessed symbols. Use get_hot_paths with source='queries' instead.",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -771,7 +771,7 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                 Tool::new(
                     "graph_all_paths",
-                    "Find all simple paths between two symbols in the call graph (no repeated nodes). Useful for enumerating every call chain that connects two functions. Requires build_graph first.",
+                    "[DEPRECATED] Find all simple paths between two symbols. Use trace_path with all=true instead.",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -792,7 +792,7 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                 Tool::new(
                     "graph_god_nodes",
-                    "Find god nodes — symbols with unusually high PageRank (above the supplied percentile). These are symbols that too many things depend on and are prime refactoring candidates. Requires build_graph first.",
+                    "[DEPRECATED] Find god nodes by PageRank percentile. Use graph_insights instead — it includes god nodes plus communities, surprising connections, and health score.",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -826,7 +826,7 @@ impl ServerHandler for CogniCodeHandler {
                 // boundaries (often a sign of unwanted coupling).
                 Tool::new(
                     "graph_communities",
-                    "Detect code communities using Label Propagation. Groups symbols that are tightly coupled into clusters. Returns communities with cohesion scores. Requires build_graph first.",
+                    "[DEPRECATED] Detect code communities using Label Propagation. Use graph_insights instead — it includes communities plus god nodes and health score.",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -836,7 +836,7 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                 Tool::new(
                     "graph_community_detail",
-                    "Get details for a specific community detected by graph_communities (members, internal/external edge counts, cohesion score, and top god nodes within the community). Requires build_graph first.",
+                    "[DEPRECATED] Get details for a specific community. Use graph_insights instead — it includes community sizes, cohesion scores, and member counts.",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -848,7 +848,7 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                 Tool::new(
                     "graph_surprising_connections",
-                    "Find surprising cross-community connections. These are edges between symbols in different communities, indicating unexpected coupling. Requires build_graph first.",
+                    "[DEPRECATED] Find surprising cross-community connections. Use graph_insights instead — it includes cross-community edges ranked by surprise score.",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -869,7 +869,7 @@ impl ServerHandler for CogniCodeHandler {
                 // single payload.
                 Tool::new(
                     "graph_search_idf",
-                    "Search symbols ranked by IDF (Inverse Document Frequency) importance. Rare terms score higher. Includes hub bypass for cleaner results. Requires build_graph first.",
+                    "[DEPRECATED] Search symbols by IDF importance. Use smart_search with algorithm='idf' instead (coming in Sprint 5.2).",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -936,7 +936,7 @@ impl ServerHandler for CogniCodeHandler {
                 #[cfg(feature = "persistence")]
                 Tool::new(
                     "reparse_on_edit",
-                    "MCP-triggered incremental reindex of changed files. Accepts explicit file paths and optional edit ranges to inform the reindex scope.",
+                    "[DEPRECATED] MCP-triggered incremental reindex. Replaced by the file watcher (notify crate) for automatic re-scanning. Will be removed in v0.7.",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -984,10 +984,57 @@ impl ServerHandler for CogniCodeHandler {
                         "required": ["file_path"]
                     }).as_object().cloned().unwrap()),
                 ),
-                // Batch D: Agent Task Tools (bidirectional interaction)
+                                // Sprint 2+4: Graphify-style tools (ADR-026)
+                Tool::new(
+                    "graph_query",
+                    "Natural language graph topology query. Ask 'what connects X to Y?' and get a subgraph with provenance. Requires build_graph first.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"question":{"type":"string","description":"Natural language question about graph topology"},"max_depth":{"type":"integer","description":"Maximum BFS depth (default: 3)"},"budget":{"type":"integer","description":"Maximum nodes to collect (default: 1500)"}},"required":["question"]}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_explain",
+                    "Composite deep-dive on a symbol: callers, callees, fan-in/out, complexity. Saves multiple calls. Requires build_graph first.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"symbol":{"type":"string","description":"Symbol name to explain"},"depth":{"type":"integer","description":"Neighbor depth (default: 2)"}},"required":["symbol"]}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "get_graph_report",
+                    "Fetch the latest auto-generated GraphReport (god nodes, communities, surprising connections, dead code). Requires a completed scan with analysis stages.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{}}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "get_type_references",
+                    "List type annotation references for a symbol (param types, return types, field types). Uses References edges from type-ref extraction. Requires build_graph first.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"symbol":{"type":"string","description":"Symbol name"}},"required":["symbol"]}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "get_imports",
+                    "List all imports for a file. Uses Imports edges from the ingest pipeline. Requires build_graph first.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"file_path":{"type":"string","description":"File path"}},"required":["file_path"]}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "get_implementors",
+                    "Find all types that implement a given trait/interface. Uses Implements edges. Requires build_graph first.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"trait_name":{"type":"string","description":"Trait or interface name"}},"required":["trait_name"]}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "get_members",
+                    "List methods and fields of a class/struct. Uses Contains edges. Requires build_graph first.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"class_name":{"type":"string","description":"Class or struct name"}},"required":["class_name"]}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_query_filtered",
+                    "Graph query with provenance, node kind, and community filters. Requires build_graph first.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"question":{"type":"string"},"limit":{"type":"integer"},"filters":{"type":"object","properties":{"provenance":{"type":"array","items":{"type":"string"}},"node_kinds":{"type":"array","items":{"type":"string"}},"community_id":{"type":"integer"},"exclude_kinds":{"type":"array","items":{"type":"string"}}}}},"required":["question"]}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "export_callflow",
+                    "Export a community-level Mermaid architecture call-flow diagram. Shows module-level relationships.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"max_sections":{"type":"integer","description":"Max architecture sections (default: 8)"},"format":{"type":"string","enum":["code"]}}}).as_object().cloned().unwrap()),
+                ),
+
+// Batch D: Agent Task Tools (bidirectional interaction)
                 Tool::new(
                     "poll_tasks",
-                    "Poll for pending agent tasks and claim them for execution. Returns up to `limit` tasks with status changed to 'in_progress'.",
+                    "[DEPRECATED] Poll for pending agent tasks. Agent management, not a graph intelligence tool. Will be moved to a separate agent-management interface.",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -1000,7 +1047,7 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                 Tool::new(
                     "complete_task",
-                    "Mark an agent task as completed or failed with optional result data.",
+                    "[DEPRECATED] Mark an agent task as completed. Agent management, not a graph intelligence tool. Will be moved to a separate agent-management interface.",
                     Arc::new(serde_json::json!({
                         "type": "object",
                         "properties": {
