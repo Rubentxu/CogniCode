@@ -42,6 +42,8 @@ pub enum Language {
     C,
     Cpp,
     CSharp,
+    Hcl,
+    Yaml,
 }
 
 impl Language {
@@ -60,6 +62,8 @@ impl Language {
                 "c" | "h" => Some(Language::C),
                 "cpp" | "cc" | "cxx" | "hpp" | "hxx" => Some(Language::Cpp),
                 "cs" => Some(Language::CSharp),
+                "tf" | "tfvars" | "hcl" => Some(Language::Hcl),
+                "yml" | "yaml" => Some(Language::Yaml),
                 _ => None,
             })
     }
@@ -76,6 +80,8 @@ impl Language {
             Language::C => tree_sitter_c::language(),
             Language::Cpp => tree_sitter_cpp::LANGUAGE.into(),
             Language::CSharp => tree_sitter_c_sharp::LANGUAGE.into(),
+            Language::Hcl => tree_sitter_hcl::LANGUAGE.into(),
+            Language::Yaml => tree_sitter_yaml::LANGUAGE.into(),
         }
     }
 
@@ -91,6 +97,8 @@ impl Language {
             Language::C => "C",
             Language::Cpp => "C++",
             Language::CSharp => "C#",
+            Language::Hcl => "HCL",
+            Language::Yaml => "YAML",
         }
     }
 
@@ -105,6 +113,8 @@ impl Language {
             Language::C => "function_definition",
             Language::Cpp => "function_definition",
             Language::CSharp => "method_declaration",
+            Language::Hcl => "block",
+            Language::Yaml => "block_mapping",
         }
     }
 
@@ -119,6 +129,8 @@ impl Language {
             Language::C => "struct_specifier",
             Language::Cpp => "class_specifier",
             Language::CSharp => "class_declaration",
+            Language::Hcl => "block",
+            Language::Yaml => "block_mapping",
         }
     }
 
@@ -133,6 +145,8 @@ impl Language {
             Language::C => "declaration",
             Language::Cpp => "declaration",
             Language::CSharp => "local_declaration_statement",
+            Language::Hcl => "attribute",
+            Language::Yaml => "block_mapping_pair",
         }
     }
 
@@ -147,6 +161,8 @@ impl Language {
             Language::C => "call_expression",
             Language::Cpp => "call_expression",
             Language::CSharp => "invocation_expression",
+            Language::Hcl => "expression",
+            Language::Yaml => "flow_node",
         }
     }
 
@@ -161,6 +177,8 @@ impl Language {
             Language::C => true,
             Language::Cpp => true,
             Language::CSharp => true,
+            Language::Hcl => false,
+            Language::Yaml => false,
         }
     }
 
@@ -175,6 +193,8 @@ impl Language {
             Language::C => "clangd",
             Language::Cpp => "clangd",
             Language::CSharp => "omnisharp",
+            Language::Hcl => "terraform-ls",
+            Language::Yaml => "yaml-language-server",
         }
     }
 
@@ -191,6 +211,8 @@ impl Language {
             Language::C => "apt install clangd",
             Language::Cpp => "apt install clangd",
             Language::CSharp => "dotnet tool install -g omnisharp",
+            Language::Hcl => "brew install hashicorp/tap/terraform-ls",
+            Language::Yaml => "npm install -g yaml-language-server",
         }
     }
 
@@ -203,6 +225,7 @@ impl Language {
             Language::Go => &["serve"],
             Language::Java => &[],
             Language::C | Language::Cpp | Language::CSharp => &["--stdio"],
+            Language::Hcl | Language::Yaml => &[],
         }
     }
 
@@ -217,6 +240,8 @@ impl Language {
             Language::C => "clangd",
             Language::Cpp => "clangd",
             Language::CSharp => "omnisharp",
+            Language::Hcl => "",
+            Language::Yaml => "",
         }
     }
 
@@ -232,6 +257,8 @@ impl Language {
             Language::C,
             Language::Cpp,
             Language::CSharp,
+            Language::Hcl,
+            Language::Yaml,
         ]
     }
 }

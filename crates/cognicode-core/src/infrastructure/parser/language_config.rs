@@ -88,6 +88,8 @@ pub static ALL_LANGUAGES: &[LanguageConfig] = &[
     C_CONFIG,
     CPP_CONFIG,
     CSHARP_CONFIG,
+    HCL_CONFIG,
+    YAML_CONFIG,
 ];
 
 // ── Rust ─────────────────────────────────────────────────────────────────────
@@ -214,6 +216,34 @@ pub const CSHARP_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["invocation_expression"],
     call_has_function_field: true,
     import_types: &["using_directive"],
+};
+
+// ── HCL / Terraform (ADR-024) ───────────────────────────────────────────────
+
+pub const HCL_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Hcl,
+    extensions: &["tf", "tfvars", "hcl"],
+    ts_language: || tree_sitter_hcl::LANGUAGE.into(),
+    function_types: &["block"],
+    class_types: &["block"],
+    variable_types: &["attribute"],
+    call_types: &["expression"],
+    call_has_function_field: false,
+    import_types: &["block"],
+};
+
+// ── YAML / Ansible (ADR-024) ────────────────────────────────────────────────
+
+pub const YAML_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Yaml,
+    extensions: &["yml", "yaml"],
+    ts_language: || tree_sitter_yaml::LANGUAGE.into(),
+    function_types: &["block_mapping"],
+    class_types: &["block_mapping"],
+    variable_types: &["block_mapping_pair"],
+    call_types: &["flow_node"],
+    call_has_function_field: false,
+    import_types: &["block_mapping_pair"],
 };
 
 // ============================================================================

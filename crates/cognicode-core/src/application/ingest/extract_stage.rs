@@ -111,6 +111,11 @@ fn config_by_name(name: &str) -> Option<&'static LanguageConfig> {
         ),
         "go" => Some(&crate::infrastructure::parser::language_config::GO_CONFIG),
         "java" => Some(&crate::infrastructure::parser::language_config::JAVA_CONFIG),
+        "c" => Some(&crate::infrastructure::parser::language_config::C_CONFIG),
+        "cpp" => Some(&crate::infrastructure::parser::language_config::CPP_CONFIG),
+        "csharp" => Some(&crate::infrastructure::parser::language_config::CSHARP_CONFIG),
+        "hcl" => Some(&crate::infrastructure::parser::language_config::HCL_CONFIG),
+        "yaml" => Some(&crate::infrastructure::parser::language_config::YAML_CONFIG),
         _ => None,
     }
 }

@@ -189,6 +189,8 @@ impl LspProcess {
             Language::C => "c",
             Language::Cpp => "cpp",
             Language::CSharp => "csharp",
+            Language::Hcl => "hcl",
+            Language::Yaml => "yaml",
             Language::Java => "java",
         };
         let params = serde_json::json!({
