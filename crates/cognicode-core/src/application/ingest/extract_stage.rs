@@ -132,6 +132,9 @@ fn config_by_name(name: &str) -> Option<&'static LanguageConfig> {
         "r" => Some(&crate::infrastructure::parser::language_config::R_CONFIG),
         "powershell" => Some(&crate::infrastructure::parser::language_config::POWERSHELL_CONFIG),
         "json" => Some(&crate::infrastructure::parser::language_config::JSON_CONFIG),
+        "fortran" => Some(&crate::infrastructure::parser::language_config::FORTRAN_CONFIG),
+        "verilog" => Some(&crate::infrastructure::parser::language_config::VERILOG_CONFIG),
+        "systemverilog" => Some(&crate::infrastructure::parser::language_config::SYSTEMVERILOG_CONFIG),
         "elixir" => Some(&crate::infrastructure::parser::language_config::ELIXIR_CONFIG),
         "erlang" => Some(&crate::infrastructure::parser::language_config::ERLANG_CONFIG),
         "haskell" => Some(&crate::infrastructure::parser::language_config::HASKELL_CONFIG),
@@ -140,6 +143,9 @@ fn config_by_name(name: &str) -> Option<&'static LanguageConfig> {
         "r" => Some(&crate::infrastructure::parser::language_config::R_CONFIG),
         "powershell" => Some(&crate::infrastructure::parser::language_config::POWERSHELL_CONFIG),
         "json" => Some(&crate::infrastructure::parser::language_config::JSON_CONFIG),
+        "fortran" => Some(&crate::infrastructure::parser::language_config::FORTRAN_CONFIG),
+        "verilog" => Some(&crate::infrastructure::parser::language_config::VERILOG_CONFIG),
+        "systemverilog" => Some(&crate::infrastructure::parser::language_config::SYSTEMVERILOG_CONFIG),
         _ => None,
     }
 }

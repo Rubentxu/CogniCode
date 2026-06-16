@@ -60,6 +60,9 @@ pub enum Language {
     R,
     PowerShell,
     Json,
+    Fortran,
+    Verilog,
+    SystemVerilog,
 }
 
 impl Language {
@@ -96,6 +99,9 @@ impl Language {
                 "r" | "R" => Some(Language::R),
                 "ps1" | "psm1" => Some(Language::PowerShell),
                 "json" => Some(Language::Json),
+                "f" | "f90" | "f95" | "f03" | "f08" => Some(Language::Fortran),
+                "v" => Some(Language::Verilog),
+                "sv" => Some(Language::SystemVerilog),
                 _ => None,
             })
     }
@@ -130,6 +136,9 @@ impl Language {
             Language::R => tree_sitter_r::LANGUAGE.into(),
             Language::PowerShell => tree_sitter_powershell::LANGUAGE.into(),
             Language::Json => tree_sitter_json::LANGUAGE.into(),
+            Language::Fortran => tree_sitter_fortran::LANGUAGE.into(),
+            Language::Verilog => tree_sitter_verilog::LANGUAGE.into(),
+            Language::SystemVerilog => tree_sitter_systemverilog::LANGUAGE.into(),
         }
     }
 
@@ -163,6 +172,9 @@ impl Language {
             Language::R => "R",
             Language::PowerShell => "PowerShell",
             Language::Json => "JSON",
+            Language::Fortran => "Fortran",
+            Language::Verilog => "Verilog",
+            Language::SystemVerilog => "SystemVerilog",
         }
     }
 
@@ -195,6 +207,9 @@ impl Language {
             Language::R => "function_definition",
             Language::PowerShell => "function_definition",
             Language::Json => "object",
+            Language::Fortran => "function_definition",
+            Language::Verilog => "module_declaration",
+            Language::SystemVerilog => "module_declaration",
         }
     }
 
@@ -227,6 +242,9 @@ impl Language {
             Language::R => "function_definition",
             Language::PowerShell => "function_definition",
             Language::Json => "object",
+            Language::Fortran => "module",
+            Language::Verilog => "module_declaration",
+            Language::SystemVerilog => "module_declaration",
         }
     }
 
@@ -259,6 +277,9 @@ impl Language {
             Language::R => "assignment",
             Language::PowerShell => "assignment",
             Language::Json => "pair",
+            Language::Fortran => "variable_declaration",
+            Language::Verilog => "variable_declaration",
+            Language::SystemVerilog => "variable_declaration",
         }
     }
 
@@ -291,6 +312,9 @@ impl Language {
             Language::R => "call",
             Language::PowerShell => "command",
             Language::Json => "string",
+            Language::Fortran => "call_expression",
+            Language::Verilog => "module_instantiation",
+            Language::SystemVerilog => "module_instantiation",
         }
     }
 
@@ -323,6 +347,9 @@ impl Language {
             Language::R => true,
             Language::PowerShell => true,
             Language::Json => false,
+            Language::Fortran => true,
+            Language::Verilog => false,
+            Language::SystemVerilog => false,
         }
     }
 
@@ -406,6 +433,9 @@ impl Language {
             Language::R,
             Language::PowerShell,
             Language::Json,
+            Language::Fortran,
+            Language::Verilog,
+            Language::SystemVerilog,
         ]
     }
 }

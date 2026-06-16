@@ -56,6 +56,9 @@ tree-sitter-bash = "0.25"
 tree-sitter-r = "1.2"
 tree-sitter-powershell = "0.26"
 tree-sitter-json = "0.24"
+tree-sitter-fortran = "0.6"
+tree-sitter-verilog = "1.0"
+tree-sitter-systemverilog = "0.3"
 
 # Grafos
 petgraph = "0.6"

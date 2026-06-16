@@ -59,6 +59,9 @@ tree-sitter-bash.workspace = true
 tree-sitter-r.workspace = true
 tree-sitter-powershell.workspace = true
 tree-sitter-json.workspace = true
+tree-sitter-fortran.workspace = true
+tree-sitter-verilog.workspace = true
+tree-sitter-systemverilog.workspace = true
 
 # Grafos
 petgraph.workspace = true

@@ -102,14 +102,9 @@ pub fn classify_file(path: &Path) -> (FileType, Option<&'static str>) {
         "r" | "R" => Some("r"),
         "ps1" | "psm1" => Some("powershell"),
         "json" => Some("json"),
-        "ex" | "exs" => Some("elixir"),
-        "erl" | "hrl" => Some("erlang"),
-        "hs" => Some("haskell"),
-        "jl" => Some("julia"),
-        "sh" | "bash" => Some("bash"),
-        "r" | "R" => Some("r"),
-        "ps1" | "psm1" => Some("powershell"),
-        "json" => Some("json"),
+        "f" | "f90" | "f95" | "f03" | "f08" => Some("fortran"),
+        "v" => Some("verilog"),
+        "sv" => Some("systemverilog"),
         _ => None,
     };
     let file_type = match ext.to_lowercase().as_str() {

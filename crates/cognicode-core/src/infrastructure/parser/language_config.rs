@@ -121,6 +121,9 @@ pub static ALL_LANGUAGES: &[LanguageConfig] = &[
     R_CONFIG,
     POWERSHELL_CONFIG,
     JSON_CONFIG,
+    FORTRAN_CONFIG,
+    VERILOG_CONFIG,
+    SYSTEMVERILOG_CONFIG,
 ];
 
 // ── Rust ─────────────────────────────────────────────────────────────────────
@@ -498,3 +501,7 @@ pub const BASH_CONFIG: LanguageConfig = LanguageConfig { language: Language::Bas
 pub const R_CONFIG: LanguageConfig = LanguageConfig { language: Language::R, extensions: &["r","R"], ts_language: || tree_sitter_r::LANGUAGE.into(), function_types: &["function_definition"], class_types: &["function_definition"], variable_types: &["assignment"], call_types: &["call"], call_has_function_field: true, import_types: &["call"], type_ref_walker: NO_TYPE_REFS };
 pub const POWERSHELL_CONFIG: LanguageConfig = LanguageConfig { language: Language::PowerShell, extensions: &["ps1","psm1"], ts_language: || tree_sitter_powershell::LANGUAGE.into(), function_types: &["function_definition"], class_types: &["function_definition"], variable_types: &["assignment"], call_types: &["command"], call_has_function_field: true, import_types: &["command"], type_ref_walker: NO_TYPE_REFS };
 pub const JSON_CONFIG: LanguageConfig = LanguageConfig { language: Language::Json, extensions: &["json"], ts_language: || tree_sitter_json::LANGUAGE.into(), function_types: &["object"], class_types: &["object"], variable_types: &["pair"], call_types: &["string"], call_has_function_field: false, import_types: &["object"], type_ref_walker: NO_TYPE_REFS };
+
+pub const FORTRAN_CONFIG: LanguageConfig = LanguageConfig { language: Language::Fortran, extensions: &["f","f90","f95","f03","f08"], ts_language: || tree_sitter_fortran::LANGUAGE.into(), function_types: &["function_definition"], class_types: &["module"], variable_types: &["variable_declaration"], call_types: &["call_expression"], call_has_function_field: true, import_types: &["use_statement"], type_ref_walker: NO_TYPE_REFS };
+pub const VERILOG_CONFIG: LanguageConfig = LanguageConfig { language: Language::Verilog, extensions: &["v"], ts_language: || tree_sitter_verilog::LANGUAGE.into(), function_types: &["module_declaration"], class_types: &["module_declaration"], variable_types: &["variable_declaration"], call_types: &["module_instantiation"], call_has_function_field: false, import_types: &["include_statement"], type_ref_walker: NO_TYPE_REFS };
+pub const SYSTEMVERILOG_CONFIG: LanguageConfig = LanguageConfig { language: Language::SystemVerilog, extensions: &["sv"], ts_language: || tree_sitter_systemverilog::LANGUAGE.into(), function_types: &["module_declaration"], class_types: &["module_declaration"], variable_types: &["variable_declaration"], call_types: &["module_instantiation"], call_has_function_field: false, import_types: &["include_statement"], type_ref_walker: NO_TYPE_REFS };
