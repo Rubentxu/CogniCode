@@ -678,16 +678,6 @@ impl ServerHandler for CogniCodeHandler {
                 ),
                                 // Sprint 2+4: Graphify-style tools (ADR-026)
                 Tool::new(
-                    "graph_query",
-                    "Natural language graph topology query. Ask 'what connects X to Y?' and get a subgraph with provenance. Requires build_graph first.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"question":{"type":"string","description":"Natural language question about graph topology"},"max_depth":{"type":"integer","description":"Maximum BFS depth (default: 3)"},"budget":{"type":"integer","description":"Maximum nodes to collect (default: 1500)"}},"required":["question"]}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "graph_explain",
-                    "Composite deep-dive on a symbol: callers, callees, fan-in/out, complexity. Saves multiple calls. Requires build_graph first.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"symbol":{"type":"string","description":"Symbol name to explain"},"depth":{"type":"integer","description":"Neighbor depth (default: 2)"}},"required":["symbol"]}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
                     "get_graph_report",
                     "Fetch the latest auto-generated GraphReport (god nodes, communities, surprising connections, dead code). Requires a completed scan with analysis stages.",
                     Arc::new(serde_json::json!({"type":"object","properties":{}}).as_object().cloned().unwrap()),
@@ -765,6 +755,62 @@ impl ServerHandler for CogniCodeHandler {
                         }
                     }).as_object().cloned().unwrap()),
                 ),
+                Tool::new(
+                    "solid_audit",
+                    "Analyze code for SOLID principle violations (SRP, OCP, LSP, ISP, DIP). Returns violations with severity, location, and suggestions. Requires build_graph first.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{}}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_diff",
+                    "Compare two graph reports by date to show changes in symbol count, edge count, and health score. Requires PostgresRepository.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"baseline_date":{"type":"string","description":"ISO date of baseline report (e.g. 2026-06-01)"},"current":{"type":"boolean","description":"Compare against latest (default: true)"}}}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_timeline",
+                    "Get trend data for graph metrics over N days. Returns per-report entries with trend direction.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"days":{"type":"integer","description":"Days to look back (default: 30)"}}}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "smart_search",
+                    "Search symbols with configurable algorithm: fuzzy, ranked (fan-in+complexity), or idf (inverse document frequency).",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"query":{"type":"string"},"algorithm":{"type":"string","enum":["fuzzy","ranked","idf"]},"limit":{"type":"integer"}},"required":["query"]}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "graph_analyze",
+                    "Run advanced graph algorithms: scc, reduced, or feedback_arcs.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"mode":{"type":"string","enum":["scc","reduced","feedback_arcs"]}}}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "project_overview",
+                    "Get a comprehensive project overview at quick, medium, or detailed levels.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"detail":{"type":"string","enum":["quick","medium","detailed"]}}}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "compare_graph",
+                    "Compare graph states in diff, api, or quality mode.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"mode":{"type":"string","enum":["diff","api","quality"]}}}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "codebase_map",
+                    "Generate a compact, LLM-optimized codebase map. Format: compact (~400 tokens) or detailed (~2000).",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"format":{"type":"string","enum":["compact","detailed"]}}}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "project_insights",
+                    "Dashboard in a single call: symbols, edges, entry points, dead code, health score, hot paths.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{}}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "review_pr",
+                    "Analyze PR impact: provide changed files, get risk level, impacted files, and breaking changes.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"files":{"type":"array","items":{"type":"string"},"description":"Changed file paths"}},"required":["files"]}).as_object().cloned().unwrap()),
+                ),
+                Tool::new(
+                    "iac_query",
+                    "Navigate the infrastructure graph. Query a Terraform or Ansible resource by ID.",
+                    Arc::new(serde_json::json!({"type":"object","properties":{"resource_id":{"type":"string","description":"IaC resource ID (e.g. tf:main.tf:aws_instance.web)"},"depth":{"type":"integer","description":"Traversal depth (default: 2)"}},"required":["resource_id"]}).as_object().cloned().unwrap()),
+                ),
+
             ];
 
             // Paginate
