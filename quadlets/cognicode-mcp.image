@@ -1,0 +1,5 @@
+[Image]
+Image=cognicode-mcp
+# Auto-rebuild on changes: podman auto-update
+# Build from local Dockerfile
+# SetImageCommand=/usr/bin/podman build -t cognicode-mcp /var/home/rubentxu/Proyectos/rust/CogniCode
