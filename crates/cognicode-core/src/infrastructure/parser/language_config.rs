@@ -417,7 +417,7 @@ pub const RUBY_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["call"],
     call_has_function_field: true,
     import_types: &["call"],
-    type_ref_walker: NO_TYPE_REFS,
+    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_ruby_type_refs),
     semantic_handler: NO_SEMANTIC_HANDLER,
 };
 
@@ -433,7 +433,7 @@ pub const PHP_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["function_call_expression", "method_call_expression"],
     call_has_function_field: true,
     import_types: &["namespace_use_declaration"],
-    type_ref_walker: NO_TYPE_REFS,
+    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_php_type_refs),
     semantic_handler: NO_SEMANTIC_HANDLER,
 };
 
@@ -449,7 +449,7 @@ pub const SWIFT_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["call_expression"],
     call_has_function_field: true,
     import_types: &["import_declaration"],
-    type_ref_walker: NO_TYPE_REFS,
+    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_swift_type_refs),
     semantic_handler: NO_SEMANTIC_HANDLER,
 };
 

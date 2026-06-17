@@ -504,6 +504,153 @@ pub fn walk_csharp_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Typ
 }
 
 // ============================================================================
+// Ruby
+// ============================================================================
+
+/// Walk a Ruby class/module definition and extract type references.
+///
+/// Ruby is dynamically typed — there are no static type annotations.
+/// This walker extracts only inheritance references (superclass).
+pub fn walk_ruby_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef> {
+    let mut refs = Vec::new();
+    let node_type = node.kind();
+
+    match node_type {
+        "class" | "module" => {
+            // Ruby: `class Foo < Bar` — superclass is in `parent` field
+            if let Some(parent) = node.child_by_field_name("parent") {
+                collect_type_names(&parent, source, TypeRefContext::TraitBound, &mut refs);
+            }
+        }
+        // Ruby has no type annotations for methods/params (duck-typed)
+        _ => {}
+    }
+
+    refs
+}
+
+// ============================================================================
+// PHP
+// ============================================================================
+
+/// Walk a PHP function/method/class definition and extract type references.
+///
+/// PHP syntax: `function save(User $user): void`, `class Foo extends Bar implements Baz`
+pub fn walk_php_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef> {
+    let mut refs = Vec::new();
+    let node_type = node.kind();
+
+    match node_type {
+        "function_definition" | "method_declaration" => {
+            // 1. Parameters: PHP typed params have `type_declaration` child
+            if let Some(params) = node.child_by_field_name("parameters") {
+                for i in 0..params.child_count() {
+                    let child = params.child(i).unwrap();
+                    if child.kind() == "formal_parameter" {
+                        // formal_parameter: `$user: Type` → type_declaration is the type
+                        for j in 0..child.child_count() {
+                            let param_child = child.child(j).unwrap();
+                            if param_child.kind() == "type_declaration" {
+                                collect_type_names(&param_child, source, TypeRefContext::ParamType, &mut refs);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Return type: `return_type` field
+            if let Some(ret) = node.child_by_field_name("return_type") {
+                collect_type_names(&ret, source, TypeRefContext::ReturnType, &mut refs);
+            }
+        }
+
+        "class_declaration" | "interface_declaration" | "trait_declaration" => {
+            // PHP extends/implements: `extends` and `implements` clauses
+            for i in 0..node.child_count() {
+                let child = node.child(i).unwrap();
+                let kind = child.kind();
+                if kind == "base_clause" || kind == "interface_base" {
+                    for j in 0..child.child_count() {
+                        let base = child.child(j).unwrap();
+                        if base.is_named() && base.kind() != "named_type" {
+                            collect_type_names(&base, source, TypeRefContext::TraitBound, &mut refs);
+                        }
+                        if base.kind() == "named_type" {
+                            collect_type_names(&base, source, TypeRefContext::TraitBound, &mut refs);
+                        }
+                    }
+                }
+            }
+        }
+
+        _ => {}
+    }
+
+    refs
+}
+
+// ============================================================================
+// Swift
+// ============================================================================
+
+/// Walk a Swift function/class/struct definition and extract type references.
+///
+/// Swift syntax: `func save(user: User) -> Error`, `class Foo: Bar, Baz`
+pub fn walk_swift_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef> {
+    let mut refs = Vec::new();
+    let node_type = node.kind();
+
+    match node_type {
+        "function_declaration" | "method_declaration" => {
+            // Swift params: each `parameter` has a `type` field
+            if let Some(params) = node.child_by_field_name("parameters") {
+                for i in 0..params.child_count() {
+                    let child = params.child(i).unwrap();
+                    if child.kind() == "parameter" {
+                        if let Some(type_node) = child.child_by_field_name("type") {
+                            collect_type_names(&type_node, source, TypeRefContext::ParamType, &mut refs);
+                        }
+                    }
+                }
+            }
+
+            // Return type: `return_type` field
+            if let Some(ret) = node.child_by_field_name("return_type") {
+                collect_type_names(&ret, source, TypeRefContext::ReturnType, &mut refs);
+            }
+        }
+
+        "class_declaration" | "struct_declaration" | "protocol_declaration" | "enum_declaration" => {
+            // Swift inheritance: `inheritance_specifier` or `type_inheritance_clause`
+            if let Some(inheritance) = node.child_by_field_name("inheritance_specifier") {
+                // inheritance_specifier contains comma-separated type identifiers
+                for i in 0..inheritance.child_count() {
+                    let child = inheritance.child(i).unwrap();
+                    if child.kind() == "type_identifier" {
+                        let name = node_text(&child, source);
+                        if !is_primitive(&name) && !name.is_empty() {
+                            refs.push(TypeRef {
+                                target_name: name,
+                                context: TypeRefContext::TraitBound,
+                                line: child.start_position().row as u32 + 1,
+                            });
+                        }
+                    }
+                }
+            }
+            // Also check for generic `where_clause` (protocol constraints)
+            if let Some(where_clause) = node.child_by_field_name("where_clause") {
+                collect_type_names_recursive(&where_clause, source, TypeRefContext::TraitBound, &mut refs);
+            }
+        }
+
+        _ => {}
+    }
+
+    refs
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 
@@ -776,6 +923,48 @@ mod tests {
         test_walker(source, walk_java_type_refs, "class_declaration", |refs| {
             assert!(!refs.is_empty(), "should find extends/implements type refs: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
         }, tree_sitter_java::LANGUAGE.into());
+    }
+
+    #[test]
+    fn test_walk_ruby_type_refs_class() {
+        // Ruby has no static type annotations, but we extract inheritance
+        let source = "class User < ActiveRecord::Base\nend";
+        test_walker(source, walk_ruby_type_refs, "class", |_refs| {
+            // Ruby is dynamically typed — no params/return types to extract
+            // We just verify no panic occurs
+        }, tree_sitter_ruby::LANGUAGE.into());
+    }
+
+    #[test]
+    fn test_walk_php_type_refs_function() {
+        let source = "function save(User $user, Repository $repo): void { }";
+        test_walker(source, walk_php_type_refs, "function_definition", |refs| {
+            assert!(!refs.is_empty(), "should find type refs in PHP function params: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
+        }, tree_sitter_php::LANGUAGE_PHP.into());
+    }
+
+    #[test]
+    fn test_walk_php_type_refs_class() {
+        let source = "class User extends Model implements Serializable {}";
+        test_walker(source, walk_php_type_refs, "class_declaration", |refs| {
+            assert!(!refs.is_empty(), "should find extends/implements type refs: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
+        }, tree_sitter_php::LANGUAGE_PHP.into());
+    }
+
+    #[test]
+    fn test_walk_swift_type_refs_function() {
+        let source = "func save(user: User, repo: Repository) -> Error? { return nil }";
+        test_walker(source, walk_swift_type_refs, "function_declaration", |refs| {
+            assert!(!refs.is_empty(), "should find type refs in Swift function params: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
+        }, tree_sitter_swift::LANGUAGE.into());
+    }
+
+    #[test]
+    fn test_walk_swift_type_refs_class() {
+        let source = "class User: Model, Serializable { }";
+        test_walker(source, walk_swift_type_refs, "class_declaration", |refs| {
+            assert!(!refs.is_empty(), "should find inheritance type refs: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
+        }, tree_sitter_swift::LANGUAGE.into());
     }
 
     fn test_walker(
