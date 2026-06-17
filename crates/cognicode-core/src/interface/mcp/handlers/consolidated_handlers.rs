@@ -3,6 +3,7 @@
 //! Phase 5.2: Smart composites that replace groups of individual tools.
 //! Phase 5.3: New tools combining Graphify + CogniCode capabilities.
 
+use crate::domain::services::CycleDetector;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 
 // ============================================================================
@@ -124,6 +125,8 @@ pub struct ProjectOverviewOutput {
     pub detail: String,
     pub architecture_score: Option<f64>,
     pub hot_paths: Vec<String>,
+    pub entry_points: Vec<String>,
+    pub coverage_estimate: Option<f64>,
     pub recommendations: Vec<String>,
     pub system_prompt_context: Option<String>,
 }
@@ -132,28 +135,88 @@ pub async fn handle_project_overview(
     ctx: &HandlerContext,
     input: ProjectOverviewInput,
 ) -> HandlerResult<ProjectOverviewOutput> {
-    let graph = match ctx.get_graph_store().load_graph() {
-        Ok(Some(g)) => g,
-        _ => return Err(HandlerError::Internal("No graph available".into())),
-    };
-    let symbols = graph.symbol_count();
+    // Ensure graph is built (auto-build if empty)
+    let _ensure = ensure_graph_built(ctx)?;
+
+    let graph = ctx.analysis_service.get_project_graph();
+    let stats = ctx.analysis_service.get_graph_stats();
+    let entry_points = ctx.analysis_service.get_entry_points();
+    let coverage = ctx.analysis_service.get_coverage_metrics();
+
+    // Compute real architecture score via CycleDetector
+    let cycle_detector = CycleDetector::new();
+    let cycle_result = cycle_detector.detect_cycles(&graph);
+    let cycle_penalty = cycle_result.symbols_in_cycles() * 5;
+    let architecture_score = Some((100.0 - cycle_penalty as f64).max(0.0));
+
+    // Build hot paths (symbols with fan_in >= 2, sorted by fan_in desc)
+    let mut hot_paths: Vec<(String, usize)> = graph
+        .symbols()
+        .map(|s| {
+            let id = crate::domain::aggregates::SymbolId::new(s.fully_qualified_name());
+            let fan_in = graph.callers(&id).len();
+            (s.name().to_string(), fan_in)
+        })
+        .filter(|(_, fan_in)| *fan_in >= 2)
+        .collect();
+    hot_paths.sort_by(|a, b| b.1.cmp(&a.1));
+    let hot_paths: Vec<String> = hot_paths.into_iter().take(10).map(|(name, _)| name).collect();
+
+    // Entry point names
+    let entry_point_names: Vec<String> = entry_points.iter().map(|ep| ep.name.clone()).collect();
+
+    // Coverage estimate
+    let coverage_estimate = coverage.as_ref().map(|c| c.coverage_percent);
+
+    // Build recommendations based on findings
+    let mut recommendations = Vec::new();
+    if !hot_paths.is_empty() {
+        recommendations.push(format!(
+            "Start with hot path '{}' (highest fan-in) for core logic understanding",
+            hot_paths.first().unwrap_or(&"unknown".to_string())
+        ));
+    }
+    if cycle_result.cycles.len() > 0 {
+        recommendations.push(format!(
+            "Address {} cyclic dependency cycle(s) to improve architecture score",
+            cycle_result.cycles.len()
+        ));
+    }
+    if entry_points.is_empty() {
+        recommendations.push("No entry points detected. Run build_graph first.".to_string());
+    }
+
     let detail = input.detail.as_str();
-    let (score, _ctx_len) = match detail {
-        "quick" => (None, 100),
-        "medium" => (Some(85.0_f64), 400),
-        "detailed" => (Some(85.0_f64), 800),
-        _ => (None, 400),
-    };
+    let symbol_count = stats.symbol_count;
+    let edge_count = stats.edge_count;
+
     Ok(ProjectOverviewOutput {
         detail: detail.into(),
-        architecture_score: score,
-        hot_paths: vec![],
-        recommendations: vec!["Run build_graph first for full insights".into()],
+        architecture_score,
+        hot_paths,
+        entry_points: entry_point_names,
+        coverage_estimate,
+        recommendations,
         system_prompt_context: Some(format!(
-            "CogniCode project: {} symbols. Pipeline: Scan→Extract→PgUpsert→Resolve→Cluster→Analyze→Report.",
-            symbols
+            "CogniCode project: {} symbols, {} edges. Pipeline: Scan→Extract→PgUpsert→Resolve→Cluster→Analyze→Report.",
+            symbol_count, edge_count
         )),
     })
+}
+
+/// Ensures the project graph is built, building it on-demand if empty.
+/// This prevents empty callgraph results from being returned as "success with no data".
+fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<()> {
+    let graph = ctx.analysis_service.get_project_graph();
+    let count = graph.symbols().count();
+    if count > 0 {
+        return Ok(());
+    }
+    // Auto-build the graph
+    ctx.analysis_service
+        .build_project_graph(&ctx.working_dir)
+        .map_err(HandlerError::App)?;
+    Ok(())
 }
 
 // ── compare_graph ────────────────────────────────────────────────────────────

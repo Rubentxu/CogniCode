@@ -7,8 +7,8 @@ use crate::interface::mcp::error::{InterfaceError, InterfaceResult};
 
 /// Tools known to return STUB responses per ADR-034.
 /// These tools are not yet fully implemented and return placeholder data.
-/// M2 Sprint: project_overview pending M2.9; all others implemented.
-const STUB_TOOLS: &[&str] = &["project_overview"];
+/// M2 Sprint: all 6 tools now fully implemented (M2.9 complete).
+const STUB_TOOLS: &[&str] = &[];
 
 /// Tools that return gated errors when capability is not configured.
 /// These tools detect missing PostgreSQL adapter or persistence.
@@ -108,19 +108,6 @@ mod tests {
     fn test_ok_status() {
         let result: InterfaceResult<String> = Ok(r#"{"results": [{"id": 1}]}"#.to_string());
         assert_eq!(classify_status("get_file_symbols", &result), "ok");
-    }
-
-    #[test]
-    fn test_stub_status_known_tool() {
-        // project_overview is a known STUB tool (pending M2.9)
-        let result: InterfaceResult<String> = Ok(r#"{"results":[],"total_candidates":0}"#.to_string());
-        assert_eq!(classify_status("project_overview", &result), "stub");
-    }
-
-    #[test]
-    fn test_stub_status_note_pattern() {
-        let result: InterfaceResult<String> = Ok(r#"{"note": "not implemented", "results": []}"#.to_string());
-        assert_eq!(classify_status("project_overview", &result), "stub");
     }
 
     #[test]
