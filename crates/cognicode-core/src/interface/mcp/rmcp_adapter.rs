@@ -11,7 +11,7 @@ use crate::interface::mcp::handlers::HandlerContext;
 use opentelemetry::KeyValue;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, Content, ListToolsResult, ServerCapabilities,
+    CallToolRequestParams, CallToolResult, Content, ListToolsResult, Meta, ServerCapabilities,
     ServerInfo, Tool,
 };
 use rmcp::service::RoleServer;
@@ -113,6 +113,34 @@ impl CogniCodeHandler {
             .map_err(|e| anyhow::anyhow!("Graph store error: {}", e))?
             .ok_or_else(|| anyhow::anyhow!("No call graph available. Run build_graph first."))
     }
+}
+
+/// Helper to build cognicode metadata annotation for a tool.
+/// Returns a Meta object with cognicode-specific fields:
+/// - stability: "gated" | "stable" | "experimental"
+/// - category: "graph" | "composite" | "navigation" | "file_ops" | etc.
+/// - requires_graph: whether the tool needs a built call graph
+/// - requires_persistence: whether the tool needs PG-backed persistence
+/// - estimated_latency_ms: expected execution time in milliseconds
+fn cognicode_meta(
+    stability: &str,
+    category: &str,
+    requires_graph: bool,
+    requires_persistence: bool,
+    estimated_latency_ms: u32,
+) -> Meta {
+    let mut meta = Meta::new();
+    meta.insert(
+        "cognicode".to_string(),
+        serde_json::json!({
+            "stability": stability,
+            "category": category,
+            "requires_graph": requires_graph,
+            "requires_persistence": requires_persistence,
+            "estimated_latency_ms": estimated_latency_ms
+        }),
+    );
+    meta
 }
 
 /// Returns the complete list of public MCP tool definitions.
@@ -460,18 +488,6 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
                     // AIX-3: NL to Symbol & Ask About Code & Find Pattern
                     Tool::new(
-                        "nl_to_symbol",
-                        "Convert natural language descriptions to precise symbol matches using keyword extraction and semantic search.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "query": { "type": "string", "description": "Natural language query" },
-                                "limit": { "type": "integer", "description": "Maximum number of results (default: 20)" }
-                            },
-                            "required": ["query"]
-                        }).as_object().cloned().unwrap()),
-                    ),
-                    Tool::new(
                         "ask_about_code",
                         "Answer questions about code flow by tracing execution paths between symbols.",
                         Arc::new(serde_json::json!({
@@ -532,7 +548,8 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             },
                             "required": ["function_name", "file_path"]
                         }).as_object().cloned().unwrap()),
-                    ),
+                    )
+                    .with_meta(cognicode_meta("gated", "composite", false, true, 500)),
                     Tool::new(
                         "validate_contract",
                         "Validate generated code against an AVC truth contract. Returns pass/fail with violations and fix suggestions.",
@@ -797,7 +814,8 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             },
                             "required": ["baseline_date"]
                         }).as_object().cloned().unwrap()),
-                    ),
+                    )
+                    .with_meta(cognicode_meta("gated", "graph", true, true, 2000)),
                     Tool::new(
                         "graph_timeline",
                         "Show trend data over N days for symbol count, edge count, and health score. Requires PostgresRepository.",
@@ -810,12 +828,8 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                                 }
                             }
                         }).as_object().cloned().unwrap()),
-                    ),
-                    Tool::new(
-                        "smart_search",
-                        "Search symbols with configurable algorithm: fuzzy, ranked (fan-in+complexity), or idf (inverse document frequency).",
-                        Arc::new(serde_json::json!({"type":"object","properties":{"query":{"type":"string"},"algorithm":{"type":"string","enum":["fuzzy","ranked","idf"]},"limit":{"type":"integer"}},"required":["query"]}).as_object().cloned().unwrap()),
-                    ),
+                    )
+                    .with_meta(cognicode_meta("gated", "graph", true, true, 2000)),
                     Tool::new(
                         "graph_analyze",
                         "Run advanced graph algorithms: scc, reduced, or feedback_arcs.",
@@ -825,11 +839,6 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                         "project_overview",
                         "Get a comprehensive project overview at quick, medium, or detailed levels.",
                         Arc::new(serde_json::json!({"type":"object","properties":{"detail":{"type":"string","enum":["quick","medium","detailed"]}}}).as_object().cloned().unwrap()),
-                    ),
-                    Tool::new(
-                        "compare_graph",
-                        "Compare graph states in diff, api, or quality mode.",
-                        Arc::new(serde_json::json!({"type":"object","properties":{"mode":{"type":"string","enum":["diff","api","quality"]}}}).as_object().cloned().unwrap()),
                     ),
                     Tool::new(
                         "codebase_map",
@@ -845,11 +854,6 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                         "review_pr",
                         "Analyze PR impact: provide changed files, get risk level, impacted files, and breaking changes.",
                         Arc::new(serde_json::json!({"type":"object","properties":{"files":{"type":"array","items":{"type":"string"},"description":"Changed file paths"}},"required":["files"]}).as_object().cloned().unwrap()),
-                    ),
-                    Tool::new(
-                        "iac_query",
-                        "Navigate the infrastructure graph. Query a Terraform or Ansible resource by ID.",
-                        Arc::new(serde_json::json!({"type":"object","properties":{"resource_id":{"type":"string","description":"IaC resource ID (e.g. tf:main.tf:aws_instance.web)"},"depth":{"type":"integer","description":"Traversal depth (default: 2)"}},"required":["resource_id"]}).as_object().cloned().unwrap()),
                     ),
 
     ]

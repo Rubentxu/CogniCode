@@ -7,11 +7,10 @@ use crate::interface::mcp::error::{InterfaceError, InterfaceResult};
 
 /// Tools known to return STUB responses per ADR-034.
 /// These tools are not yet fully implemented and return placeholder data.
+/// M2 Sprint: reduced from 6 → 2 (smart_search, compare_graph, iac_query,
+/// nl_to_symbol removed in M2.4-M2.7; project_insights + project_overview
+/// pending M2.8/M2.9).
 const STUB_TOOLS: &[&str] = &[
-    "smart_search",
-    "compare_graph",
-    "iac_query",
-    "nl_to_symbol",
     "project_insights",
     "project_overview",
 ];
@@ -118,9 +117,9 @@ mod tests {
 
     #[test]
     fn test_stub_status_known_tool() {
-        // smart_search is a known STUB tool with empty results
+        // project_insights is a known STUB tool (M2.8/M2.9 pending)
         let result: InterfaceResult<String> = Ok(r#"{"results":[],"total_candidates":0}"#.to_string());
-        assert_eq!(classify_status("smart_search", &result), "stub");
+        assert_eq!(classify_status("project_insights", &result), "stub");
     }
 
     #[test]
