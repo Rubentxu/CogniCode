@@ -186,7 +186,7 @@ use crate::interface::mcp::schemas::{
     ValidateSyntaxOutput,
     ValidationResult,
 };
-use crate::interface::mcp::security::InputValidator;
+use crate::interface::mcp::security::{InputValidator, RateLimiter};
 // Re-export file operations handlers
 pub use crate::interface::mcp::file_ops_handlers::*;
 
@@ -455,6 +455,16 @@ impl HandlerContext {
     /// HTTP endpoint to distinguish liveness from readiness.
     pub fn is_graph_loaded(&self) -> bool {
         self.graph_loaded.load(Ordering::SeqCst)
+    }
+
+    /// M3.3: Access the per-context [`RateLimiter`] for tool-dispatch
+    /// rate limiting. The dispatch boundary in `call_tool_handler`
+    /// calls `check_with_key` with a per-tool key before invoking
+    /// each handler. The underlying `RateLimiter` is shared with
+    /// `validator` so calls here are observable from the validator
+    /// path too (e.g., HTTP `check_rate_limit_secure`).
+    pub fn rate_limiter(&self) -> &RateLimiter {
+        self.validator.rate_limiter()
     }
 
     /// Get the GraphStore — persistent (SQLite) if configured, or a

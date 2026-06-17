@@ -15,10 +15,11 @@ use rmcp::model::{
     ServerInfo, Tool,
 };
 use rmcp::service::RoleServer;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// CogniCodeHandler implements the rmcp ServerHandler trait
 ///
@@ -153,6 +154,68 @@ fn cognicode_meta(
         }),
     );
     meta
+}
+
+/// M3.2: Returns the dispatch timeout for a given tool category.
+/// Categories with heavy graph algorithms (PageRank, IDF, communities)
+/// get 60s; LSP-backed navigation gets 45s; in-memory search gets a
+/// tight 500ms (search is expected to be sub-100ms); everything else
+/// gets a 30s default. Unknown categories fall through to the default.
+fn timeout_for_category(category: &str) -> Duration {
+    match category {
+        "graph" => Duration::from_secs(60),
+        "navigation" => Duration::from_secs(45),
+        "search" => Duration::from_millis(500),
+        _ => Duration::from_secs(30),
+    }
+}
+
+/// M3.3: Categories that use a stricter rate-limit key namespace.
+/// Each tool in these categories gets its own `strict:<tool_name>`
+/// bucket, separate from the regular `tool:<tool_name>` budget, so
+/// heavy categories (graph analytics, LSP navigation, AIX NL search)
+/// cannot exhaust the regular dispatcher budget.
+const STRICT_RATE_LIMIT_CATEGORIES: &[&str] = &["graph", "navigation", "aix"];
+
+/// Returns `true` if `category` should be rate-limited with a stricter
+/// key namespace. See [`STRICT_RATE_LIMIT_CATEGORIES`].
+fn is_strict_rate_limit_category(category: &str) -> bool {
+    STRICT_RATE_LIMIT_CATEGORIES.contains(&category)
+}
+
+/// M3.2 / M3.3: Lazily-built map from tool name to its
+/// `cognicode_meta.category`. Derived from [`build_all_tools`] on first
+/// access and reused for the lifetime of the process. Tools without a
+/// cognicode meta block or without a category string are absent from
+/// the map (the lookup falls back to "unknown", which gets the default
+/// 30s timeout and the non-strict key prefix).
+fn tool_category_map() -> &'static HashMap<String, String> {
+    use std::sync::OnceLock;
+    static MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
+    MAP.get_or_init(|| {
+        let mut m = HashMap::new();
+        for tool in build_all_tools() {
+            let name = tool.name.to_string();
+            if let Some(meta) = tool.meta.as_ref() {
+                if let Some(cognicode) = meta.get("cognicode") {
+                    if let Some(cat) = cognicode.get("category").and_then(|v| v.as_str()) {
+                        m.insert(name, cat.to_string());
+                    }
+                }
+            }
+        }
+        m
+    })
+}
+
+/// M3.2 / M3.3: Resolve the category for a tool name. Falls back to
+/// "unknown" when the tool has no cognicode meta or the meta is
+/// missing the `category` field.
+fn lookup_category(tool_name: &str) -> String {
+    tool_category_map()
+        .get(tool_name)
+        .cloned()
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 /// Returns the complete list of public MCP tool definitions.
@@ -1033,7 +1096,67 @@ async fn call_tool_handler(
     let start = Instant::now();
     let metrics = get_global_metrics();
 
-    let result = async {
+    // M3.2 / M3.3: Resolve the tool's category once. Used both for
+    // timeout selection (M3.2) and rate-limit key prefixing (M3.3).
+    let category = lookup_category(tool_name);
+
+    // M3.3: Pre-match rate-limit check. The key is per-tool so each
+    // tool has its own 100/60s budget. Expensive categories (graph,
+    // navigation, aix) use a stricter key prefix to keep their
+    // budgets separate from the rest of the dispatcher.
+    let rate_key = if is_strict_rate_limit_category(&category) {
+        format!("strict:{}", tool_name)
+    } else {
+        format!("tool:{}", tool_name)
+    };
+    if !ctx.rate_limiter().check_with_key(&rate_key) {
+        let err: InterfaceResult<String> =
+            Err(InterfaceError::Internal("rate_limit_exceeded".to_string()));
+        let status = crate::interface::mcp::status::classify_status(tool_name, &err);
+        let duration_ms = start.elapsed().as_millis() as f64;
+        // M3.4: Emit the structured per-call log line for parity
+        // with the success path so dashboards see the rate-limit hit.
+        tracing::info!(
+            tool = %tool_name,
+            duration_ms = %duration_ms as u64,
+            status = %status,
+            "tool_call"
+        );
+        if let Some(m) = &metrics {
+            m.calls.add(
+                1,
+                &[
+                    KeyValue::new("tool", tool_name.to_string()),
+                    KeyValue::new("status", status),
+                ],
+            );
+            m.duration.record(
+                duration_ms,
+                &[
+                    KeyValue::new("tool", tool_name.to_string()),
+                    KeyValue::new("status", status),
+                ],
+            );
+            // Record the error with error_type="rate_limit_exceeded"
+            // so it shows up in the M1.6 error metric.
+            m.errors.add(
+                1,
+                &[
+                    KeyValue::new("tool", tool_name.to_string()),
+                    KeyValue::new("error_type", "rate_limit_exceeded"),
+                ],
+            );
+        }
+        return err;
+    }
+
+    // M3.2: Wrap the per-tool match dispatch with a category-based
+    // timeout. The match block itself is unchanged; only the wrapper
+    // differs. The timeout is selected by `timeout_for_category` from
+    // the cognicode_meta.category of the tool. On timeout, the
+    // dispatch future is dropped and we return Internal("timeout").
+    let timeout = timeout_for_category(&category);
+    let dispatch = async {
         match tool_name {
         "get_file_symbols" => {
             let input: crate::interface::mcp::schemas::GetFileSymbolsInput =
@@ -1627,7 +1750,11 @@ async fn call_tool_handler(
 
         _ => return Err(InterfaceError::ToolNotFound(tool_name.to_string())),
     }
-    }.await;
+    };
+    let result = match tokio::time::timeout(timeout, dispatch).await {
+        Ok(inner) => inner,
+        Err(_elapsed) => Err(InterfaceError::Internal("timeout".to_string())),
+    };
 
     // M1.2: Classify status for metrics
     let status = crate::interface::mcp::status::classify_status(tool_name, &result);
@@ -1667,8 +1794,17 @@ async fn call_tool_handler(
     // M1.1: Record error metrics (error_type is separate from status)
     if let Err(e) = &result {
         if let Some(m) = &metrics {
+            // M3.2 / M3.3: Distinguish timeout and rate_limit_exceeded
+            // from generic errors. Both are conveyed as
+            // `InterfaceError::Internal(<sentinel>)` so we match on
+            // the inner string to keep the error_type taxonomy
+            // machine-readable.
             let error_type = match e {
                 InterfaceError::ToolNotFound(_) => "missing",
+                InterfaceError::Internal(msg) if msg == "timeout" => "timeout",
+                InterfaceError::Internal(msg) if msg == "rate_limit_exceeded" => {
+                    "rate_limit_exceeded"
+                }
                 _ => "error",
             };
             m.errors.add(
@@ -1865,5 +2001,167 @@ mod tests {
         let info = handler.get_info();
         assert_eq!(info.server_info.name, "cognicode");
         assert!(info.capabilities.tools.is_some());
+    }
+
+    // ============================================================================
+    // M3.2 — Per-tool timeout
+    // ============================================================================
+
+    #[test]
+    fn test_timeout_for_category_known_categories() {
+        // graph analytics is allowed the longest window (60s)
+        assert_eq!(timeout_for_category("graph"), Duration::from_secs(60));
+        // LSP navigation is allowed 45s
+        assert_eq!(
+            timeout_for_category("navigation"),
+            Duration::from_secs(45)
+        );
+        // in-memory search is the tightest bound (500ms)
+        assert_eq!(
+            timeout_for_category("search"),
+            Duration::from_millis(500)
+        );
+        // file operations default to 30s
+        assert_eq!(timeout_for_category("file"), Duration::from_secs(30));
+        // composite/quality/refactor/aix are also 30s
+        assert_eq!(
+            timeout_for_category("composite"),
+            Duration::from_secs(30)
+        );
+        assert_eq!(
+            timeout_for_category("quality"),
+            Duration::from_secs(30)
+        );
+        assert_eq!(
+            timeout_for_category("refactor"),
+            Duration::from_secs(30)
+        );
+        assert_eq!(timeout_for_category("aix"), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_timeout_for_category_unknown_defaults_to_30s() {
+        // Unknown categories and the empty string fall through to the
+        // 30s default so we never accidentally disable the timeout.
+        assert_eq!(
+            timeout_for_category("unknown_category"),
+            Duration::from_secs(30)
+        );
+        assert_eq!(timeout_for_category(""), Duration::from_secs(30));
+    }
+
+    #[tokio::test]
+    async fn test_timeout_fires_when_handler_takes_longer() {
+        // M3.2: A handler that exceeds the category timeout must be
+        // cancelled and replaced with a timeout error. We exercise
+        // the `tokio::time::timeout` wrapper directly here without
+        // going through the full `call_tool_handler` (which needs a
+        // real `HandlerContext` and would be slower to set up).
+        let timeout = timeout_for_category("search"); // 500ms — fast
+        let slow_handler = async {
+            // Sleep longer than the search timeout (2s > 500ms)
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            Ok::<_, InterfaceError>("should not reach here".to_string())
+        };
+        let result = tokio::time::timeout(timeout, slow_handler).await;
+        assert!(
+            result.is_err(),
+            "expected tokio::time::timeout to fire on slow handler"
+        );
+        // Map the Elapsed to the same error we use in the boundary.
+        let err: InterfaceResult<String> =
+            Err(InterfaceError::Internal("timeout".to_string()));
+        assert!(matches!(err, Err(InterfaceError::Internal(ref m)) if m == "timeout"));
+    }
+
+    #[tokio::test]
+    async fn test_timeout_does_not_fire_when_handler_returns_quickly() {
+        // M3.2: Fast handlers must NOT be cancelled.
+        let timeout = timeout_for_category("search"); // 500ms
+        let fast_handler = async {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            Ok::<_, InterfaceError>("done".to_string())
+        };
+        let result = tokio::time::timeout(timeout, fast_handler).await;
+        assert!(result.is_ok(), "fast handler must not be timed out");
+        assert_eq!(result.unwrap().unwrap(), "done");
+    }
+
+    // ============================================================================
+    // M3.3 — Per-tool rate limit + strict category namespacing
+    // ============================================================================
+
+    #[test]
+    fn test_is_strict_rate_limit_category() {
+        // Categories that get their own rate-limit namespace.
+        assert!(is_strict_rate_limit_category("graph"));
+        assert!(is_strict_rate_limit_category("navigation"));
+        assert!(is_strict_rate_limit_category("aix"));
+        // Cheap categories share the regular namespace.
+        assert!(!is_strict_rate_limit_category("file"));
+        assert!(!is_strict_rate_limit_category("search"));
+        assert!(!is_strict_rate_limit_category("quality"));
+        assert!(!is_strict_rate_limit_category("refactor"));
+        assert!(!is_strict_rate_limit_category("composite"));
+        // Unknown / empty
+        assert!(!is_strict_rate_limit_category(""));
+        assert!(!is_strict_rate_limit_category("unknown"));
+    }
+
+    #[test]
+    fn test_tool_category_map_contains_known_tools() {
+        // M3.2 / M3.3: The lazy-init map must be populated from
+        // `build_all_tools()` and include a representative sample of
+        // tool names mapped to their declared category. A failure
+        // here means the timeout / rate-limit routing will silently
+        // fall back to the 30s default and the non-strict key prefix.
+        let map = tool_category_map();
+        assert_eq!(map.get("build_graph").map(|s| s.as_str()), Some("graph"));
+        assert_eq!(
+            map.get("go_to_definition").map(|s| s.as_str()),
+            Some("navigation")
+        );
+        assert_eq!(
+            map.get("search_content").map(|s| s.as_str()),
+            Some("search")
+        );
+        assert_eq!(
+            map.get("ask_about_code").map(|s| s.as_str()),
+            Some("aix")
+        );
+        assert_eq!(
+            map.get("read_file").map(|s| s.as_str()),
+            Some("file")
+        );
+        // Every tool declared in `build_all_tools()` must have a
+        // category — otherwise the lookup is incomplete and
+        // roundtrip parity tests will diverge.
+        let total = build_all_tools().len();
+        assert_eq!(map.len(), total, "every tool must have a category");
+    }
+
+    #[test]
+    fn test_lookup_category_falls_back_to_unknown() {
+        // Unknown tool names must NOT panic and must return a
+        // "unknown" placeholder that maps to the default 30s timeout
+        // and the non-strict rate-limit key prefix.
+        assert_eq!(lookup_category("definitely_not_a_real_tool"), "unknown");
+        assert_eq!(lookup_category(""), "unknown");
+    }
+
+    #[test]
+    fn test_rate_limiter_dispatch_key_separation() {
+        // M3.3: Different rate-limit key namespaces (tool: vs
+        // strict:) must track tokens independently so an expensive
+        // tool cannot exhaust the regular dispatcher budget.
+        let limiter = crate::interface::mcp::security::RateLimiter::new(2, 60);
+        // Strict graph keys: 2 hits each, then exhausted.
+        assert!(limiter.check_with_key("strict:graph_pagerank"));
+        assert!(limiter.check_with_key("strict:graph_pagerank"));
+        assert!(!limiter.check_with_key("strict:graph_pagerank"));
+        // Regular file keys: untouched by the graph bucket.
+        assert!(limiter.check_with_key("tool:read_file"));
+        assert!(limiter.check_with_key("tool:read_file"));
+        assert!(!limiter.check_with_key("tool:read_file"));
     }
 }

@@ -136,6 +136,27 @@ impl InputValidator {
         self.allowed_paths.push(canonical);
     }
 
+    /// M3.3: Replace the rate limiter with a stricter one (smaller
+    /// `max_tokens` or shorter `window_secs`). Available for callers
+    /// that want a stricter default rate limit. The dispatch
+    /// boundary in `call_tool_handler` selects keys per-category to
+    /// give "expensive" tools (graph, navigation, aix) their own
+    /// namespace; this builder is the global override path.
+    pub fn with_strict_rate_limit(
+        mut self,
+        max_tokens: usize,
+        window_secs: u64,
+    ) -> Self {
+        self.rate_limiter = Arc::new(RateLimiter::new(max_tokens, window_secs));
+        self
+    }
+
+    /// M3.3: Access the rate limiter for direct checks (e.g., per-tool
+    /// rate limiting at the dispatch boundary).
+    pub fn rate_limiter(&self) -> &RateLimiter {
+        &self.rate_limiter
+    }
+
     /// Validates a file path for path traversal and workspace boundaries
     ///
     /// Security measures applied:
@@ -1315,6 +1336,54 @@ mod tests {
         assert!(limiter.check_with_key("::1"));
         assert!(limiter.check_with_key("2001:db8::1"));
         assert!(limiter.check_with_key("fe80::1"));
+    }
+
+    // =============================================================================
+    // M3.3 — Per-tool rate limiting: rate_limiter() accessor + with_strict_rate_limit()
+    // =============================================================================
+
+    #[test]
+    fn test_validator_rate_limiter_accessor() {
+        // M3.3: InputValidator must expose its RateLimiter so the
+        // dispatch boundary can call check_with_key for per-tool limits.
+        let validator = create_test_validator();
+        let limiter = validator.rate_limiter();
+        assert_eq!(limiter.remaining_for("tool:build_graph"), 100);
+        assert!(limiter.check_with_key("tool:build_graph"));
+        assert_eq!(limiter.remaining_for("tool:build_graph"), 99);
+    }
+
+    #[test]
+    fn test_with_strict_rate_limit_replaces_limiter() {
+        // M3.3: with_strict_rate_limit() should swap in a stricter limiter
+        // with the requested max_tokens and window_secs. The previous
+        // limiter is replaced (its per-key state is gone).
+        let validator = InputValidator::new()
+            .with_strict_rate_limit(2, 60);
+        let limiter = validator.rate_limiter();
+        // Stricter cap: only 2 tokens per window.
+        assert!(limiter.check_with_key("tool:graph_pagerank"));
+        assert!(limiter.check_with_key("tool:graph_pagerank"));
+        assert!(!limiter.check_with_key("tool:graph_pagerank"));
+        // A different key still has full budget.
+        assert!(limiter.check_with_key("tool:read_file"));
+    }
+
+    #[test]
+    fn test_rate_limiter_triggers_after_n_calls_within_window() {
+        // M3.3: The dispatch boundary keys rate limits by tool name.
+        // Verify that N+1 calls within the window return false.
+        let limiter = RateLimiter::new(3, 60);
+        let key = "tool:graph_pagerank";
+
+        // First 3 calls within the window should succeed.
+        assert!(limiter.check_with_key(key));
+        assert!(limiter.check_with_key(key));
+        assert!(limiter.check_with_key(key));
+        // The 4th call should be rate-limited.
+        assert!(!limiter.check_with_key(key));
+        // The 5th call is still rate-limited.
+        assert!(!limiter.check_with_key(key));
     }
 
     #[test]

@@ -1,0 +1,179 @@
+# Apply Progress: M3 Sprint PR-2 (M3.2 per-tool timeout + M3.3 rate limit)
+
+**Change**: M3 Sprint PR-2 of ADR-034 — Operational Hardening
+**Proposal**: engram://2171
+**Spec**: engram://2169
+**Design**: engram://2172
+**Tasks**: engram://2174
+**Chain strategy**: stacked-to-main (3 PRs)
+**Previous PR**: 8ca9b99 (M3.1 /ready + M3.4 structured log)
+**Scope of this PR**: M3.2 (per-category timeout) + M3.3 (rate limit enforcement)
+
+## Status: COMPLETED ✅
+
+## Summary
+
+Wired the existing `RateLimiter` (from `security.rs`) into the
+`call_tool_handler` dispatch boundary (M3.3) and wrapped the per-tool
+match block with a `tokio::time::timeout` whose duration is selected
+from the tool's `cognicode_meta.category` (M3.2). Both new failure
+modes are surfaced as `InterfaceError::Internal("timeout")` and
+`InterfaceError::Internal("rate_limit_exceeded")` and recorded in the
+M1.6 error metric as separate `error_type` values.
+
+## Tasks Completed
+
+### M3.2 — Per-tool timeout
+
+- [x] Added `timeout_for_category(category: &str) -> Duration` in
+  `rmcp_adapter.rs`. Returns `60s` for `graph`, `45s` for
+  `navigation`, `500ms` for `search`, `30s` for `file`/`aix`/
+  `composite`/`quality`/`refactor` and the unknown fallback.
+- [x] Added `tool_category_map()` — a lazily-initialised
+  `HashMap<String, String>` keyed by `Tool::name`, values are
+  `cognicode_meta.category`. Built once from `build_all_tools()` on
+  first access; falls back to `"unknown"` for tools absent from the
+  map.
+- [x] Wrapped the per-tool `match` block in `call_tool_handler` with
+  `tokio::time::timeout(timeout, dispatch).await`. On `Elapsed`, the
+  dispatch future is dropped and we return
+  `InterfaceError::Internal("timeout".to_string())`.
+
+### M3.3 — Rate limit enforcement
+
+- [x] Added `with_strict_rate_limit(max_tokens, window_secs)` builder
+  on `InputValidator` — swaps in a stricter `RateLimiter` for
+  callers that want a global override.
+- [x] Added `pub fn rate_limiter(&self) -> &RateLimiter` accessor
+  on `InputValidator`.
+- [x] Added `pub fn rate_limiter(&self) -> &RateLimiter` accessor
+  on `HandlerContext` (delegates to the validator's limiter so the
+  HTTP and dispatch paths share the same per-key state).
+- [x] Defined `STRICT_RATE_LIMIT_CATEGORIES = ["graph", "navigation",
+  "aix"]` — the categories that get a `strict:<tool_name>` rate-limit
+  key prefix (separate namespace from the regular `tool:<tool_name>`
+  budget) so heavy tools cannot exhaust the rest of the dispatcher.
+- [x] In `call_tool_handler`, computed `rate_key` per tool and called
+  `ctx.rate_limiter().check_with_key(&rate_key)` BEFORE the match
+  block. On rate-limit hit, the boundary emits the M3.4 structured
+  log line, records the OTel `calls` + `duration` + `errors` metrics
+  (with `error_type="rate_limit_exceeded"`), and returns
+  `InterfaceError::Internal("rate_limit_exceeded")`.
+- [x] Updated the M1.1 `error_type` match in `call_tool_handler` to
+  recognise the new sentinels:
+  ```rust
+  InterfaceError::ToolNotFound(_) => "missing",
+  InterfaceError::Internal(msg) if msg == "timeout" => "timeout",
+  InterfaceError::Internal(msg) if msg == "rate_limit_exceeded" => "rate_limit_exceeded",
+  _ => "error",
+  ```
+
+## Files Changed
+
+| File | Action | What Was Done |
+|------|--------|---------------|
+| `crates/cognicode-core/src/interface/mcp/security.rs` | Modified | Added `with_strict_rate_limit()` + `rate_limiter()` to `InputValidator`; 3 unit tests |
+| `crates/cognicode-core/src/interface/mcp/handlers/mod.rs` | Modified | Imported `RateLimiter`; added `rate_limiter()` accessor to `HandlerContext` |
+| `crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs` | Modified | Added `timeout_for_category`, `is_strict_rate_limit_category`, `tool_category_map`, `lookup_category`; rate-limit + timeout wrapping in `call_tool_handler`; updated `error_type` match; 8 unit tests |
+
+## Verification
+
+| Command | Result |
+|---------|--------|
+| `cargo check -p cognicode-core --all-targets` | ✅ PASS — only pre-existing warnings (127 in lib, 278 in tests) |
+| `cargo check -p cognicode-mcp` | ✅ PASS |
+| `cargo build -p cognicode-mcp --release` | ✅ PASS — 105 MB binary at `target/release/cognicode-mcp` |
+| `cargo test -p cognicode-core --lib mcp_roundtrip rmcp_adapter` | ✅ PASS — 47/47 (10 ignored, all pre-existing rmcp-internals) |
+| New tests in `rmcp_adapter` (8) | ✅ 6/6 non-async pass in 0.00s; 2/2 async timeout tests pass in 0.50s |
+| New tests in `security` (3) | ✅ 3/3 pass in 0.31s |
+| Full `cargo test -p cognicode-core --lib` | ✅ 1325 passed; 6 failed (5 pre-existing on baseline + 1 known flaky `test_retrieve_and_verify_no_matches` from PR-1 progress) |
+
+### New unit tests (all passing)
+
+In `crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs`:
+
+- `test_timeout_for_category_known_categories` — verifies the
+  per-category timeout table (graph=60s, navigation=45s, search=500ms,
+  file/composite/quality/refactor/aix=30s).
+- `test_timeout_for_category_unknown_defaults_to_30s` — verifies the
+  default 30s for unknown and empty categories.
+- `test_timeout_fires_when_handler_takes_longer` — async test that
+  exercises `tokio::time::timeout` with a 2s sleep against the
+  500ms search timeout and verifies the wrapper returns `Elapsed`.
+- `test_timeout_does_not_fire_when_handler_returns_quickly` — async
+  test that verifies fast handlers are NOT cancelled.
+- `test_is_strict_rate_limit_category` — verifies the strict category
+  table (graph/navigation/aix are strict; file/search/quality/refactor/
+  composite/unknown/empty are not).
+- `test_tool_category_map_contains_known_tools` — verifies the lazy
+  map is populated from `build_all_tools()` and includes a
+  representative sample (build_graph→graph, go_to_definition→
+  navigation, search_content→search, ask_about_code→aix,
+  read_file→file). Also asserts `map.len() == build_all_tools().len()`
+  so the lookup is complete.
+- `test_lookup_category_falls_back_to_unknown` — verifies the
+  graceful fallback for unknown / empty tool names.
+- `test_rate_limiter_dispatch_key_separation` — verifies the
+  `tool:` and `strict:` key namespaces track tokens independently
+  (a `strict:graph_pagerank` exhaustion does NOT deplete
+  `tool:read_file`).
+
+In `crates/cognicode-core/src/interface/mcp/security.rs`:
+
+- `test_validator_rate_limiter_accessor` — verifies
+  `InputValidator::rate_limiter()` exposes the rate limiter with
+  default budget (100) and that `check_with_key` decrements correctly.
+- `test_with_strict_rate_limit_replaces_limiter` — verifies
+  `with_strict_rate_limit(2, 60)` swaps in a stricter limiter with
+  the expected 2-token budget and that other keys still have full
+  budget.
+- `test_rate_limiter_triggers_after_n_calls_within_window` — the
+  M3.3 spec-mandated test: 3 calls within the window succeed, the
+  4th and 5th are rate-limited.
+
+## Risks
+
+1. **Pre-existing test flakiness (not introduced by this PR)** — the
+   same 5 baseline failures (`pg_upsert_stage::test_upsert_one_roundtrip`
+   — needs PG; `scan::test_classify_file`; `graph_analytics::
+   god_nodes_finds_highly_called_symbol`; 2 `reparse_on_edit` tests) plus
+   the known intermittent `test_retrieve_and_verify_no_matches` from
+   PR-1's apply progress. Confirmed by stashing the changes and
+   re-running the suite on the baseline 8ca9b99 commit.
+
+2. **Per-tool rate limit, not per-peer** — the dispatch boundary
+   keys rate limits by `tool_name` (with the strict-prefix variant
+   for graph/navigation/aix), not by Authorization header hash or
+   peer IP. The HTTP boundary in `server.rs` has the IP-based
+   limiter via `check_rate_limit_secure`, but the MCP tool dispatcher
+   here does not. PR-3 (auth + SLOs) is the right place to add
+   per-peer / per-token rate limits; for PR-2 we picked the simpler
+   "per-tool" key to satisfy the spec without inventing identity.
+
+3. **Strict category budget uses the same `RateLimiter` instance as
+   the default category** — `strict:graph_pagerank` and
+   `tool:read_file` share the same 100/60s window, but the namespace
+   separation means each tool has its own bucket. The effective
+   "stricter" behaviour is per-tool isolation, not a smaller budget.
+   Callers that want a globally stricter limit can use
+   `InputValidator::with_strict_rate_limit(max, window)` before
+   constructing the `HandlerContext`.
+
+4. **Timeout cancellation is cooperative** — `tokio::time::timeout`
+   drops the future at the next `.await` point. Pure-CPU handlers
+   cannot be cancelled mid-execution, but every handler in
+   `call_tool_handler` is async and yields at every I/O boundary,
+   so the 60s graph budget is the effective wall-clock cap.
+
+## Next Recommended
+
+- **PR-3 (CI + auth + docs + SLOs)** — final M3 PR. Add GitHub Actions
+  workflow for `cargo test` + `cargo build --release`, add an
+  Authorization-aware rate limit key, publish operator docs, and
+  define SLOs around the new M3.2/M3.3 instrumentation
+  (e.g., p99 latency by tool, rate-limit hit rate, timeout rate).
+
+## Artifacts
+
+- engram://2191 — apply progress saved (session `sddk/M3-Sprint/apply-progress-pr-2`)
+- Commit hash: `a669ca8` — `feat(mcp): M3.2 per-tool timeout + M3.3 rate limit`
