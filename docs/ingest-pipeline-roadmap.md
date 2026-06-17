@@ -537,3 +537,77 @@ advantages (IaC, type-refs, LSP, AVC, safe refactoring).
 - [ ] `graph_timeline` shows 30-day trend lines
 - [ ] All deprecated tools marked with `deprecated: true` in list_tools()
 - [ ] Tool families visible in tool descriptions
+
+---
+
+## Testing & Validation (ADR-037)
+
+**Goal:** Revive the existing sandbox infrastructure and extend it to validate
+all 64 MCP tools with automated, measurable, reportable quality scores.
+
+> **Status (2026-06-17):** Sandbox infrastructure EXISTS (cognicode-sandbox crate
+> with 161 tests, 72 manifests, 33 fixtures, 5-dimension scoring, ground truth
+> matching). Needs revival + new manifests for IaC, type-refs, checkpoints, auth,
+> metrics, watcher.
+
+### T1: Fix pre-existing test failures (2h)
+| Task | Status |
+|------|--------|
+| Fix `test_classify_file` (scan extension mapping) | ⬜ |
+| Fix `god_nodes_finds_highly_called_symbol` (SymbolId format) | ⬜ |
+| Mark `test_retrieve_and_verify_no_matches` as `#[ignore]` (flaky) | ⬜ |
+| Pin `tree-sitter-php` / `tree-sitter-swift` grammar OR skip tests | ⬜ |
+| Gate `test_reparse_on_edit_*` behind `#[cfg(feature = "persistence")]` | ⬜ |
+
+### T2: PG sandbox reset (30min)
+| Task | Status |
+|------|--------|
+| `scripts/mcp/reset_pg_sandbox.sh` — reset + migrate | ⬜ |
+| Verify `graph_nodes`, `graph_edges`, `scan_manifest` tables exist | ⬜ |
+| Verify `test_upsert_one_roundtrip` passes with new schema | ⬜ |
+
+### T3: New fixtures (2h)
+| Task | Status |
+|------|--------|
+| `sandbox/fixtures/terraform-iac/` — main.tf with 2 resources + 1 ref | ⬜ |
+| `sandbox/fixtures/ansible-playbook/` — site.yml with plays + tasks | ⬜ |
+| `sandbox/fixtures/multi-lang-types/` — rust/go/java with type annotations | ⬜ |
+
+### T4: New scenario manifests (3h)
+| Task | Status |
+|------|--------|
+| `sandbox/manifests/iac/terraform_query.yaml` | ⬜ |
+| `sandbox/manifests/iac/ansible_extract.yaml` | ⬜ |
+| `sandbox/manifests/typerefs/rust_types.yaml` | ⬜ |
+| `sandbox/manifests/typerefs/go_types.yaml` | ⬜ |
+| `sandbox/manifests/checkpoint/pin_and_evict.yaml` | ⬜ |
+| `sandbox/manifests/observability/metrics_check.yaml` | ⬜ |
+| `sandbox/manifests/security/auth_bypass.yaml` | ⬜ |
+| `sandbox/manifests/watcher/file_change.yaml` | ⬜ |
+
+### T5: Run full sandbox + capture baseline (1h)
+| Task | Status |
+|------|--------|
+| `cargo run -p cognicode-sandbox -- run --manifests sandbox/manifests/` | ⬜ |
+| Capture health score baseline in `sandbox/results/` | ⬜ |
+| Document KPI report in `docs/operations/mcp-kpi-baseline.md` | ⬜ |
+
+### T6: Runbook documentation (1h)
+| Task | Status |
+|------|--------|
+| Update `docs/operations/mcp-server-runbook.md` with sandbox section | ⬜ |
+| Document `reset_pg_sandbox.sh` + run procedure | ⬜ |
+| Document KPI interpretation (5-dimension scoring) | ⬜ |
+
+### KPIs to track
+
+| KPI | Target | Source |
+|-----|--------|--------|
+| MCP Health Score | > 80/100 | sandbox_core weighted average |
+| Tool correctitud | > 95% ground truth match | sandbox scenarios |
+| Tool latency p50 | < 500ms | /metrics histogram |
+| Tool latency p99 | < 5s | /metrics histogram |
+| Error rate (stable) | < 1% | /metrics counter |
+| Surface honesty | 0 STUB, 4 GATED | tools/list + annotations |
+| Coverage | 64/64 tools tested | sandbox manifests |
+| Observability | 12 instruments visible | /metrics endpoint |
