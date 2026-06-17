@@ -28,69 +28,6 @@ use crate::infrastructure::persistence::{PostgresRepository, ScanManifestRow};
 /// 10 is a good default — reduces commit overhead 10x without OOM risk.
 pub const BATCH_SIZE: usize = 10;
 
-/// Threshold: use COPY bulk load when more than this many files need
-/// extraction. Below this, per-file transactional DELETE+INSERT is faster.
-pub const COPY_THRESHOLD: usize = 50;
-
-/// Use PostgreSQL COPY for bulk loading. Faster than individual INSERTs
-/// when processing many files at once (ADR-023).
-/// Falls back to per-file transactions if COPY is not available or fails.
-pub async fn pg_copy_bulk(
-    repo: &PostgresRepository,
-    workspace_id: &str,
-    results: &[ExtractionResult],
-) -> PgUpsertStats {
-    let mut stats = PgUpsertStats::default();
-    if results.len() < COPY_THRESHOLD {
-        return stats; // use per-file path instead
-    }
-    let mut conn = match repo.pool().acquire().await {
-        Ok(c) => c,
-        Err(e) => { tracing::error!("copy: acquire failed: {e}"); return stats; }
-    };
-    // Collect all nodes and edges
-    let all_nodes: Vec<_> = results.iter().flat_map(|r| r.nodes.clone()).collect();
-    let all_edges: Vec<_> = results.iter().flat_map(|r| r.edges.clone()).collect();
-
-    let mut tx = match conn.begin().await {
-        Ok(t) => t, Err(_) => return stats,
-    };
-
-    // Bulk insert nodes
-    if !all_nodes.is_empty() {
-        for node in &all_nodes {
-            let _ = sqlx::query(
-                "INSERT INTO graph_nodes (id,kind,label,source_path,properties,workspace_id) \
-                 VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO UPDATE SET \
-                 kind=EXCLUDED.kind, label=EXCLUDED.label, properties=EXCLUDED.properties, updated_at=now()"
-            ).bind(node.id.as_str()).bind(node.kind.as_str()).bind(&node.label)
-             .bind(node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())
-             .bind(serde_json::to_value(&node.properties).unwrap_or_default())
-             .bind(workspace_id)
-             .execute(&mut *tx).await.ok();
-            stats.nodes += 1;
-        }
-    }
-    // Bulk insert edges
-    for edge in &all_edges {
-        let target = match &edge.target_ref {
-            TargetRef::Resolved(id) => id.clone(),
-            TargetRef::Unresolved(_) => continue,
-        };
-        let _ = sqlx::query(
-            "INSERT INTO graph_edges (source_id,target_id,kind,provenance,confidence,metadata,workspace_id) \
-             VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING"
-        ).bind(&edge.source).bind(&target).bind(&edge.kind)
-         .bind(edge.provenance.to_string()).bind(edge.confidence)
-         .bind(serde_json::json!({})).bind(workspace_id)
-         .execute(&mut *tx).await.ok();
-        stats.edges += 1;
-    }
-    let _ = tx.commit().await;
-    stats.files = results.len();
-    tracing::info!(files=results.len(), nodes=stats.nodes, edges=stats.edges, "COPY bulk load completed");
-    stats
-}
 /// Consume extraction results from the channel and upsert to PostgreSQL.
 /// Returns stats and all unresolved edges for the Resolve stage.
 pub async fn pg_upsert_streaming(
@@ -198,72 +135,94 @@ async fn upsert_one<'c>(
         .execute(&mut **tx)
         .await?;
 
-    // 2. INSERT: new nodes
-    let mut nodes_written = 0;
-    for node in &result.nodes {
-        let properties = serde_json::to_value(&node.properties)
-            .unwrap_or_else(|_| json!({}));
-        sqlx::query(
-            "INSERT INTO graph_nodes \
-                (id, kind, label, source_path, properties, workspace_id) \
-             VALUES ($1, $2, $3, $4, $5, $6) \
-             ON CONFLICT (id) DO UPDATE SET \
-                kind = EXCLUDED.kind, \
-                label = EXCLUDED.label, \
-                source_path = EXCLUDED.source_path, \
-                properties = EXCLUDED.properties, \
-                updated_at = now()",
-        )
-        .bind(node.id.as_str())
-        .bind(node.kind.as_str())
-        .bind(&node.label)
-        .bind(node.source_path.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())
-        .bind(properties)
-        .bind(workspace_id)
-        .execute(&mut **tx)
-        .await?;
-        nodes_written += 1;
-    }
-
-    // 3. INSERT: new edges (only Resolved — Unresolved go to the Resolve stage)
-    let mut edges_written = 0;
-    let mut unresolved: Vec<ExtractionEdge> = Vec::new();
-    for edge in &result.edges {
-        let target_id = match &edge.target_ref {
-            TargetRef::Resolved(id) => id.clone(),
-            TargetRef::Unresolved(name) => {
-                // Sprint 2: these will be resolved by the Resolve stage.
-                // Collect them for post-PgUpsert processing.
-                unresolved.push(edge.clone());
-                continue;
-            }
-        };
-
-        let metadata = json!({
-            "source_file": result.source_path.to_string_lossy(),
-            "line": edge.line,
+    // 2. INSERT: new nodes (multi-row VALUES batch — 10-50x fewer round-trips)
+    let nodes_written = if result.nodes.is_empty() {
+        0
+    } else {
+        let mut qb = sqlx::QueryBuilder::new(
+            "INSERT INTO graph_nodes (id, kind, label, source_path, properties, workspace_id) ",
+        );
+        qb.push_values(&result.nodes, |mut b, node| {
+            let properties = serde_json::to_value(&node.properties).unwrap_or_else(|_| json!({}));
+            b.push_bind(node.id.as_str())
+                .push_bind(node.kind.as_str())
+                .push_bind(&node.label)
+                .push_bind(
+                    node.source_path
+                        .as_ref()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                )
+                .push_bind(properties)
+                .push_bind(workspace_id);
         });
+        qb.push(
+            " ON CONFLICT (id) DO UPDATE SET \
+             kind = EXCLUDED.kind, \
+             label = EXCLUDED.label, \
+             source_path = EXCLUDED.source_path, \
+             properties = EXCLUDED.properties, \
+             updated_at = now()",
+        );
+        qb.build().execute(&mut **tx).await?;
+        result.nodes.len()
+    };
 
-        sqlx::query(
+    // 3. INSERT: new edges (multi-row VALUES batch)
+    // Only Resolved edges — Unresolved go to the Resolve stage
+    let mut unresolved: Vec<ExtractionEdge> = Vec::new();
+    let resolved_edges: Vec<_> = result
+        .edges
+        .iter()
+        .filter_map(|edge| {
+            match &edge.target_ref {
+                TargetRef::Resolved(id) => {
+                    let metadata = json!({
+                        "source_file": result.source_path.to_string_lossy(),
+                        "line": edge.line,
+                    });
+                    Some((
+                        edge.source.clone(),
+                        id.clone(),
+                        edge.kind.clone(),
+                        edge.provenance.to_string(),
+                        edge.confidence,
+                        metadata,
+                    ))
+                }
+                TargetRef::Unresolved(_) => {
+                    unresolved.push(edge.clone());
+                    None
+                }
+            }
+        })
+        .collect();
+
+    let edges_written = if resolved_edges.is_empty() {
+        0
+    } else {
+        let mut qb = sqlx::QueryBuilder::new(
             "INSERT INTO graph_edges \
-                (source_id, target_id, kind, provenance, confidence, metadata, workspace_id) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7) \
-             ON CONFLICT (source_id, target_id, kind) DO UPDATE SET \
-                provenance = EXCLUDED.provenance, \
-                confidence = EXCLUDED.confidence, \
-                metadata = EXCLUDED.metadata",
-        )
-        .bind(&edge.source)
-        .bind(&target_id)
-        .bind(&edge.kind)
-        .bind(edge.provenance.to_string())
-        .bind(edge.confidence)
-        .bind(metadata)
-        .bind(workspace_id)
-        .execute(&mut **tx)
-        .await?;
-        edges_written += 1;
-    }
+             (source_id, target_id, kind, provenance, confidence, metadata, workspace_id) ",
+        );
+        qb.push_values(resolved_edges.iter(), |mut b, (source, target, kind, prov, conf, meta)| {
+            b.push_bind(source)
+                .push_bind(target)
+                .push_bind(kind)
+                .push_bind(prov)
+                .push_bind(*conf)
+                .push_bind(meta.clone())
+                .push_bind(workspace_id);
+        });
+        qb.push(
+            " ON CONFLICT (source_id, target_id, kind) DO UPDATE SET \
+             provenance = EXCLUDED.provenance, \
+             confidence = EXCLUDED.confidence, \
+             metadata = EXCLUDED.metadata",
+        );
+        qb.build().execute(&mut **tx).await?;
+        resolved_edges.len()
+    };
 
     // 4. UPSERT: scan_manifest row
     let row = ScanManifestRow {
