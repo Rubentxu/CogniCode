@@ -328,6 +328,181 @@ pub fn walk_java_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
     refs
 }
 
+/// Walk a C function/struct definition and extract type references.
+///
+/// C syntax: `void process(User* user, int count)`, `struct Config { DbPool pool; }`
+pub fn walk_c_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef> {
+    let mut refs = Vec::new();
+    let node_type = node.kind();
+
+    match node_type {
+        "function_definition" => {
+            // C functions have `type` (return) and `declarator` (with params)
+            if let Some(ret) = node.child_by_field_name("type") {
+                collect_type_names(&ret, source, TypeRefContext::ReturnType, &mut refs);
+            }
+            // Parameters are inside the declarator → parameter_declaration
+            collect_param_types_recursive(node, source, TypeRefContext::ParamType, &mut refs);
+        }
+
+        "struct_specifier" | "union_specifier" | "enum_specifier" => {
+            // struct/union/enum body → field_declaration_list → field_declaration
+            for i in 0..node.child_count() {
+                let child = node.child(i).unwrap();
+                if child.kind() == "field_declaration_list" {
+                    for j in 0..child.child_count() {
+                        let field = child.child(j).unwrap();
+                        if field.kind() == "field_declaration" || field.kind() == "declaration" {
+                            if let Some(ftype) = field.child_by_field_name("type") {
+                                collect_type_names(&ftype, source, TypeRefContext::FieldType, &mut refs);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        "declaration" => {
+            // Variable declarations: `User* user = ...;`
+            if let Some(type_node) = node.child_by_field_name("type") {
+                collect_type_names(&type_node, source, TypeRefContext::FieldType, &mut refs);
+            }
+        }
+
+        _ => {}
+    }
+
+    refs
+}
+
+/// Walk a C++ function/class definition and extract type references.
+///
+/// C++ reuses C grammar nodes plus: class_specifier, template declarations, etc.
+pub fn walk_cpp_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef> {
+    let mut refs = Vec::new();
+    let node_type = node.kind();
+
+    match node_type {
+        "function_definition" | "function_declaration" => {
+            if let Some(ret) = node.child_by_field_name("type") {
+                collect_type_names(&ret, source, TypeRefContext::ReturnType, &mut refs);
+            }
+            collect_param_types_recursive(node, source, TypeRefContext::ParamType, &mut refs);
+        }
+
+        "class_specifier" | "struct_specifier" => {
+            for i in 0..node.child_count() {
+                let child = node.child(i).unwrap();
+                if child.kind() == "field_declaration_list" {
+                    for j in 0..child.child_count() {
+                        let field = child.child(j).unwrap();
+                        match field.kind() {
+                            "field_declaration" | "declaration" => {
+                                if let Some(ftype) = field.child_by_field_name("type") {
+                                    collect_type_names(&ftype, source, TypeRefContext::FieldType, &mut refs);
+                                }
+                            }
+                            "function_definition" | "function_declaration" => {
+                                // Method return types
+                                if let Some(ret) = field.child_by_field_name("type") {
+                                    collect_type_names(&ret, source, TypeRefContext::ReturnType, &mut refs);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
+        "declaration" => {
+            if let Some(type_node) = node.child_by_field_name("type") {
+                collect_type_names(&type_node, source, TypeRefContext::FieldType, &mut refs);
+            }
+        }
+
+        _ => {}
+    }
+
+    refs
+}
+
+/// Walk a C# method/class definition and extract type references.
+///
+/// C# syntax: `void Save(User user)`, `class Foo : Bar, IBaz`
+pub fn walk_csharp_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef> {
+    let mut refs = Vec::new();
+    let node_type = node.kind();
+
+    match node_type {
+        "method_declaration" | "constructor_declaration" => {
+            // C# params: parameter_list → parameter with `type` field
+            if let Some(params) = node.child_by_field_name("parameters") {
+                for i in 0..params.child_count() {
+                    let child = params.child(i).unwrap();
+                    if child.kind() == "parameter" {
+                        if let Some(type_node) = child.child_by_field_name("type") {
+                            collect_type_names(&type_node, source, TypeRefContext::ParamType, &mut refs);
+                        }
+                    }
+                }
+            }
+
+            // Return type (not for constructors)
+            if node_type == "method_declaration" {
+                if let Some(ret) = node.child_by_field_name("type") {
+                    collect_type_names(&ret, source, TypeRefContext::ReturnType, &mut refs);
+                }
+            }
+        }
+
+        "class_declaration" | "interface_declaration" | "struct_declaration" | "record_declaration" => {
+            // C# inheritance: `class Foo : Bar, IBaz` → base_list
+            for i in 0..node.child_count() {
+                let child = node.child(i).unwrap();
+                if child.kind() == "base_list" {
+                    for j in 0..child.child_count() {
+                        let base = child.child(j).unwrap();
+                        if base.is_named() {
+                            collect_type_names(&base, source, TypeRefContext::TraitBound, &mut refs);
+                        }
+                    }
+                }
+            }
+
+            // Class body fields
+            if let Some(body) = node.child_by_field_name("body") {
+                collect_field_types_java(&body, source, &mut refs);
+            }
+        }
+
+        "enum_declaration" => {
+            // Enum can implement interfaces
+            for i in 0..node.child_count() {
+                let child = node.child(i).unwrap();
+                if child.kind() == "base_list" {
+                    for j in 0..child.child_count() {
+                        let base = child.child(j).unwrap();
+                        if base.is_named() {
+                            collect_type_names(&base, source, TypeRefContext::TraitBound, &mut refs);
+                        }
+                    }
+                }
+            }
+        }
+
+        "field_declaration" => {
+            if let Some(type_node) = node.child_by_field_name("type") {
+                collect_type_names(&type_node, source, TypeRefContext::FieldType, &mut refs);
+            }
+        }
+
+        _ => {}
+    }
+
+    refs
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================

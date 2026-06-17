@@ -249,7 +249,7 @@ pub const C_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["call_expression"],
     call_has_function_field: true,
     import_types: &["preproc_include"],
-    type_ref_walker: NO_TYPE_REFS,
+    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_c_type_refs),
     semantic_handler: NO_SEMANTIC_HANDLER,
 };
 
@@ -265,7 +265,7 @@ pub const CPP_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["call_expression"],
     call_has_function_field: true,
     import_types: &["preproc_include", "using_declaration"],
-    type_ref_walker: NO_TYPE_REFS,
+    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_cpp_type_refs),
     semantic_handler: NO_SEMANTIC_HANDLER,
 };
 
@@ -281,11 +281,9 @@ pub const CSHARP_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["invocation_expression"],
     call_has_function_field: true,
     import_types: &["using_directive"],
-    type_ref_walker: NO_TYPE_REFS,
+    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_csharp_type_refs),
     semantic_handler: NO_SEMANTIC_HANDLER,
 };
-
-// ── HCL / Terraform (ADR-024) ───────────────────────────────────────────────
 
 pub const HCL_CONFIG: LanguageConfig = LanguageConfig {
     language: Language::Hcl,
