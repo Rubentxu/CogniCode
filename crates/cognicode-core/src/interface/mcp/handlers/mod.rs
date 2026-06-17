@@ -57,7 +57,6 @@ use crate::infrastructure::semantic::{
 };
 use crate::interface::mcp::schemas::{
     AnalysisMetadata,
-    OverviewDetail,
     // Existing schemas
     AnalyzeImpactInput,
     AnalyzeImpactOutput,
@@ -113,6 +112,21 @@ use crate::interface::mcp::schemas::{
     GetPerFileGraphOutput,
     GoToDefinitionInput,
     GoToDefinitionOutput,
+    GraphAllPathsInput,
+    // Phase 5: Community Detection input schemas
+    GraphCommunitiesInput,
+    GraphCommunityDetailInput,
+    GraphCondensedInput,
+    GraphFeedbackArcsInput,
+    GraphGodNodesInput,
+    GraphInsightsInput,
+    // Phase 4b: Graph Analytics input schemas
+    GraphPageRankInput,
+    GraphReducedInput,
+    // Phase 6: IDF Search & Insights input schemas
+    GraphSearchIdfInput,
+    GraphSuggestQuestionsInput,
+    GraphSurprisingConnectionsInput,
     HierarchyEntryInfo,
     HierarchySymbolInfo,
     HotPathEntry,
@@ -126,6 +140,8 @@ use crate::interface::mcp::schemas::{
     OutlineInput,
     OutlineNodeDto,
     OutlineOutput,
+    OverviewDetail,
+    OverviewMeta as SchemaOverviewMeta,
     PathEntry,
     QuerySymbolInput,
     QuerySymbolOutput,
@@ -141,7 +157,12 @@ use crate::interface::mcp::schemas::{
     SemanticSearchInput,
     SemanticSearchOutput,
     SmartOverviewInput,
-    OverviewMeta as SchemaOverviewMeta,
+    SolidPrinciple,
+    // SOLID Audit schemas
+    SolidReport,
+    SolidScores,
+    SolidSeverity,
+    SolidViolation,
     SourceLocation,
     StructuralSearchInput,
     StructuralSearchOutput,
@@ -164,27 +185,6 @@ use crate::interface::mcp::schemas::{
     ValidateSyntaxInput,
     ValidateSyntaxOutput,
     ValidationResult,
-    // Phase 4b: Graph Analytics input schemas
-    GraphPageRankInput,
-    GraphAllPathsInput,
-    GraphCondensedInput,
-    GraphGodNodesInput,
-    GraphReducedInput,
-    GraphFeedbackArcsInput,
-    // Phase 5: Community Detection input schemas
-    GraphCommunitiesInput,
-    GraphCommunityDetailInput,
-    GraphSurprisingConnectionsInput,
-    // Phase 6: IDF Search & Insights input schemas
-    GraphSearchIdfInput,
-    GraphInsightsInput,
-    GraphSuggestQuestionsInput,
-    // SOLID Audit schemas
-    SolidReport,
-    SolidViolation,
-    SolidScores,
-    SolidPrinciple,
-    SolidSeverity,
 };
 use crate::interface::mcp::security::InputValidator;
 // Re-export file operations handlers
@@ -192,12 +192,12 @@ pub use crate::interface::mcp::file_ops_handlers::*;
 
 use crate::domain::traits::GraphStore;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
-use crate::infrastructure::persistence::InMemoryGraphStore;
+use crate::infrastructure::persistence::{CachedGraphStore, InMemoryGraphStore};
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 // =============================================================================
@@ -344,9 +344,16 @@ pub struct HandlerContext {
     /// Optional CodeIntelligenceProvider for LSP operations. Falls back to creating CompositeProvider if None.
     pub code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
     /// Optional FileOperationsService for shared file operation handlers. If None, handlers create their own.
-    pub file_ops_service: Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
+    pub file_ops_service:
+        Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
     /// Optional PostgresRepository for graph_reports queries. Used by graph_diff and graph_timeline tools.
     pub postgres_repo: Option<Arc<crate::infrastructure::persistence::PostgresRepository>>,
+    /// Cached InMemoryGraphStore fallback, lazily created on first
+    /// `get_graph_store()` call when no explicit `graph_store` is configured.
+    /// Wrapped in `Arc` so it can live in a `#[derive(Clone)]` struct;
+    /// `OnceLock` ensures thread-safe single initialization.
+    /// See ADR-030.
+    pub fallback_store: Arc<OnceLock<Arc<dyn GraphStore>>>,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -416,6 +423,7 @@ impl HandlerContext {
             code_intelligence_provider: Some(provider),
             file_ops_service: None,
             postgres_repo: None,
+            fallback_store: Arc::new(OnceLock::new()),
         }
     }
 
@@ -427,12 +435,23 @@ impl HandlerContext {
         self.cancellation_token.load(Ordering::SeqCst)
     }
 
-    /// Get the GraphStore — persistent (SQLite) if configured, or InMemory fallback
+    /// Get the GraphStore — persistent (SQLite) if configured, or a
+    /// `CachedGraphStore` fallback that reads from the shared
+    /// `analysis_service.graph_cache()` (lock-free `ArcSwap<CallGraph>`)
+    /// and forwards writes to an inner `InMemoryGraphStore`.
+    ///
+    /// The fallback is created lazily on first access and reused across
+    /// calls so that `build_graph` writes to `graph_cache` are visible
+    /// to subsequent tool calls. See ADR-030 + ADR-032.
     pub fn get_graph_store(&self) -> Arc<dyn GraphStore> {
         if let Some(ref store) = self.graph_store {
             store.clone()
         } else {
-            Arc::new(InMemoryGraphStore::new())
+            self.fallback_store
+                .get_or_init(|| {
+                    Arc::new(CachedGraphStore::new(self.analysis_service.graph_cache()))
+                })
+                .clone()
         }
     }
 
@@ -460,6 +479,7 @@ impl HandlerContext {
             code_intelligence_provider: None,
             file_ops_service: None,
             postgres_repo: None,
+            fallback_store: Arc::new(OnceLock::new()),
         }
     }
 
@@ -547,7 +567,8 @@ pub struct HandlerContextBuilder {
     symbol_hotness: Option<Arc<Mutex<HashMap<String, usize>>>>,
     graph_store: Option<Arc<dyn GraphStore>>,
     code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
-    file_ops_service: Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
+    file_ops_service:
+        Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
     postgres_repo: Option<Arc<crate::infrastructure::persistence::PostgresRepository>>,
 }
 
@@ -648,7 +669,10 @@ impl HandlerContextBuilder {
     /// Sets the CodeIntelligenceProvider for LSP operations.
     ///
     /// If not set, a CompositeProvider is created on demand at runtime.
-    pub fn with_code_intelligence(mut self, provider: impl CodeIntelligenceProvider + 'static) -> Self {
+    pub fn with_code_intelligence(
+        mut self,
+        provider: impl CodeIntelligenceProvider + 'static,
+    ) -> Self {
         self.code_intelligence_provider = Some(Arc::new(provider));
         self
     }
@@ -685,9 +709,7 @@ impl HandlerContextBuilder {
         let canonical_working_dir = self
             .working_dir
             .map(|p| std::fs::canonicalize(&p).unwrap_or_else(|_| p.clone()))
-            .unwrap_or_else(|| {
-                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-            });
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
         HandlerContext {
             working_dir: canonical_working_dir.clone(),
@@ -725,6 +747,7 @@ impl HandlerContextBuilder {
             code_intelligence_provider: self.code_intelligence_provider,
             file_ops_service: self.file_ops_service,
             postgres_repo: self.postgres_repo,
+            fallback_store: Arc::new(OnceLock::new()),
         }
     }
 }
@@ -792,7 +815,9 @@ impl From<crate::interface::mcp::error::InterfaceError> for HandlerError {
     fn from(err: crate::interface::mcp::error::InterfaceError) -> Self {
         use crate::interface::mcp::error::InterfaceError;
         match err {
-            InterfaceError::ToolNotFound(s) => HandlerError::Internal(format!("tool not found: {}", s)),
+            InterfaceError::ToolNotFound(s) => {
+                HandlerError::Internal(format!("tool not found: {}", s))
+            }
             InterfaceError::InvalidInput(s) => HandlerError::InvalidInput(s),
             InterfaceError::Security(e) => HandlerError::Security(e),
             InterfaceError::NotFound(s) => HandlerError::NotFound(s),
@@ -1053,12 +1078,14 @@ pub async fn handle_build_graph(
         if let Err(e) = ctx.analysis_service.build_project_graph(&directory) {
             return Err(HandlerError::App(e));
         }
-        // Store in memory for this session
-        let store = ctx.get_graph_store();
-        let graph = ctx.analysis_service.get_project_graph();
-        let _ = store.save_graph(&graph);
-        // Build and save manifest (stored in memory only)
+        // build_project_graph() already updates analysis_service.graph_cache()
+        // (which CachedGraphStore reads from — see ADR-032). The dual-write
+        // to the inner InMemoryGraphStore is no longer needed.
+        //
+        // Build and save manifest (stored in inner InMemoryGraphStore via
+        // CachedGraphStore — used for staleness check on next build_graph).
         if let Ok(manifest) = build_manifest(&directory) {
+            let store = ctx.get_graph_store();
             let _ = store.save_manifest(&manifest);
         }
     }
@@ -1599,9 +1626,7 @@ fn ensure_semantic_indexed_with_services(
     working_dir: &PathBuf,
 ) -> HandlerResult<EnsureResult> {
     if !semantic_search.index().is_empty() {
-        return Ok(EnsureResult::already_present(
-            semantic_search.index().len(),
-        ));
+        return Ok(EnsureResult::already_present(semantic_search.index().len()));
     }
     let start = std::time::Instant::now();
     semantic_search
@@ -3242,8 +3267,7 @@ pub async fn handle_get_symbol_code(
     }
 
     // Get symbol code
-    match symbol_code.get_symbol_code(&file_path.to_string_lossy(), input.line, input.col)
-    {
+    match symbol_code.get_symbol_code(&file_path.to_string_lossy(), input.line, input.col) {
         Ok(result) => Ok(SymbolCodeOutput {
             file: input.file,
             code: result.code,
@@ -3423,12 +3447,8 @@ fn render_mermaid_to_svg(mermaid_code: &str, theme: &str) -> Option<String> {
 ///
 /// Runs SOLID principle analysis (SRP, OCP, LSP, ISP, DIP) on the call graph
 /// using heuristic-based detection. Requires build_graph first.
-pub async fn handle_solid_audit(
-    ctx: &HandlerContext,
-) -> HandlerResult<SolidReport> {
+pub async fn handle_solid_audit(ctx: &HandlerContext) -> HandlerResult<SolidReport> {
     use std::collections::HashMap;
-
-    let start = Instant::now();
 
     // Load graph from graph store (as per task requirement)
     let graph = ctx
@@ -3436,9 +3456,7 @@ pub async fn handle_solid_audit(
         .load_graph()
         .map_err(|e| HandlerError::Internal(format!("Failed to load graph: {}", e)))?
         .ok_or_else(|| {
-            HandlerError::NotFound(
-                "No call graph available. Run build_graph first.".into(),
-            )
+            HandlerError::NotFound("No call graph available. Run build_graph first.".into())
         })?;
 
     let mut violations = Vec::new();
@@ -3475,7 +3493,6 @@ pub async fn handle_solid_audit(
 
 /// Result of checking a single type for SOLID violations
 struct TypeSolidReport {
-    type_name: String,
     violations: Vec<SolidViolation>,
     srp_score: f64,
 }
@@ -3502,7 +3519,6 @@ fn check_type_solid(graph: &CallGraph, type_name: &str) -> TypeSolidReport {
         Some(s) => s,
         None => {
             return TypeSolidReport {
-                type_name: type_name.to_string(),
                 violations: vec![],
                 srp_score: 0.0,
             };
@@ -3539,7 +3555,8 @@ fn check_type_solid(graph: &CallGraph, type_name: &str) -> TypeSolidReport {
                 "Type has low cohesion ({} outgoing dependencies), indicating SRP violation",
                 method_count
             ),
-            suggestion: "Consider splitting into smaller types with single responsibilities".to_string(),
+            suggestion: "Consider splitting into smaller types with single responsibilities"
+                .to_string(),
             evidence: vec![format!("{} outgoing dependencies", method_count)],
         });
     }
@@ -3559,7 +3576,8 @@ fn check_type_solid(graph: &CallGraph, type_name: &str) -> TypeSolidReport {
             principle: SolidPrinciple::OCP,
             type_name: type_name.to_string(),
             severity: SolidSeverity::Info,
-            description: "Many modules depend on this type - ensure it's stable for extension".to_string(),
+            description: "Many modules depend on this type - ensure it's stable for extension"
+                .to_string(),
             suggestion: "Consider if behavior changes would break dependents".to_string(),
             evidence: caller_modules.iter().take(5).cloned().collect(),
         });
@@ -3584,7 +3602,9 @@ fn check_type_solid(graph: &CallGraph, type_name: &str) -> TypeSolidReport {
                         type_name: type_name.to_string(),
                         severity: SolidSeverity::Warning,
                         description: "Domain type depends on infrastructure".to_string(),
-                        suggestion: "Introduce abstraction layer (use trait instead of concrete type)".to_string(),
+                        suggestion:
+                            "Introduce abstraction layer (use trait instead of concrete type)"
+                                .to_string(),
                         evidence: vec![format!("-> {}", callee.name())],
                     });
                 }
@@ -3593,7 +3613,6 @@ fn check_type_solid(graph: &CallGraph, type_name: &str) -> TypeSolidReport {
     }
 
     TypeSolidReport {
-        type_name: type_name.to_string(),
         violations,
         srp_score,
     }
@@ -3630,8 +3649,15 @@ fn calculate_solid_scores(violations: &[SolidViolation], total_types: usize) -> 
     }
 }
 
-fn principle_score(violations: &[SolidViolation], principle: SolidPrinciple, total_types: usize) -> f64 {
-    let count = violations.iter().filter(|v| v.principle == principle).count();
+fn principle_score(
+    violations: &[SolidViolation],
+    principle: SolidPrinciple,
+    total_types: usize,
+) -> f64 {
+    let count = violations
+        .iter()
+        .filter(|v| v.principle == principle)
+        .count();
     count as f64 / total_types as f64
 }
 
@@ -3639,10 +3665,16 @@ fn generate_solid_summary(scores: &SolidScores, violations: &[SolidViolation]) -
     let mut parts = Vec::new();
 
     if scores.srp_score > 0.3 {
-        parts.push(format!("SRP concerns in {:.0}% of types", scores.srp_score * 100.0));
+        parts.push(format!(
+            "SRP concerns in {:.0}% of types",
+            scores.srp_score * 100.0
+        ));
     }
     if scores.dip_score > 0.3 {
-        parts.push(format!("DIP concerns in {:.0}% of types", scores.dip_score * 100.0));
+        parts.push(format!(
+            "DIP concerns in {:.0}% of types",
+            scores.dip_score * 100.0
+        ));
     }
 
     if parts.is_empty() {
@@ -3652,7 +3684,11 @@ fn generate_solid_summary(scores: &SolidScores, violations: &[SolidViolation]) -
             violations.len()
         )
     } else {
-        format!("{} {} violations total.", parts.join("; "), violations.len())
+        format!(
+            "{} {} violations total.",
+            parts.join("; "),
+            violations.len()
+        )
     }
 }
 
@@ -3683,9 +3719,9 @@ pub mod aix_handlers;
 // Includes: graph_pagerank, graph_all_paths, graph_condensed, graph_god_nodes,
 // graph_reduced, graph_feedback_arcs, graph_communities, graph_community_detail,
 // graph_surprising_connections, graph_search_idf, graph_insights, graph_suggest_questions.
+pub mod consolidated_handlers;
 pub mod graph_handlers;
 pub mod graph_query_handlers;
-pub mod consolidated_handlers;
 
 #[cfg(test)]
 mod tests {
@@ -4349,8 +4385,10 @@ mod tests {
             HandlerError::App(AppError::AnalysisError("test".into())).into();
         assert_eq!(mcp_err.code, -32001);
 
-        let mcp_err: crate::interface::mcp::schemas::McpError =
-            HandlerError::Domain(crate::domain::error::DomainError::AnalysisError("test".into())).into();
+        let mcp_err: crate::interface::mcp::schemas::McpError = HandlerError::Domain(
+            crate::domain::error::DomainError::AnalysisError("test".into()),
+        )
+        .into();
         assert_eq!(mcp_err.code, -32002);
 
         let mcp_err: crate::interface::mcp::schemas::McpError =
@@ -4576,9 +4614,7 @@ mod tests {
 
     #[test]
     fn test_handler_context_builder_symbol_hotness() {
-        let ctx = HandlerContext::builder()
-            .with_working_dir(".")
-            .build();
+        let ctx = HandlerContext::builder().with_working_dir(".").build();
 
         // Default hotness should be empty
         assert_eq!(ctx.get_symbol_hotness("nonexistent"), 0.0);

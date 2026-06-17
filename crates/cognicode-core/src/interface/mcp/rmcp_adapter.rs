@@ -112,6 +112,745 @@ impl CogniCodeHandler {
     }
 }
 
+/// Returns the complete list of public MCP tool definitions.
+/// This is the single source of truth for `tools/list` and the parity-test surface.
+pub(crate) fn build_all_tools() -> Vec<Tool> {
+    vec![
+                    Tool::new(
+                        "build_graph",
+                        "Build the call graph for a project directory. Must be called before get_call_hierarchy, analyze_impact, or check_architecture.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "directory": {
+                                    "type": "string",
+                                    "description": "Path to project directory to analyze (default: current working directory)"
+                                }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "get_file_symbols",
+                        "Extract symbols (functions, classes, variables) from a source file. Set compressed=true for natural language summary.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "file_path": { "type": "string", "description": "Path to the source file" },
+                                "compressed": { "type": "boolean", "description": "Return compressed natural language summary instead of JSON (default: false)" }
+                            },
+                            "required": ["file_path"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "get_call_hierarchy",
+                        "Traverse call graph to find callers (incoming) or callees (outgoing). Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "symbol_name": { "type": "string", "description": "Fully qualified symbol name" },
+                                "direction": { "type": "string", "enum": ["incoming", "outgoing"], "description": "Traverse direction" },
+                                "depth": { "type": "integer", "description": "Traversal depth (default: 1)" },
+                                "compressed": { "type": "boolean", "description": "Return compressed summary" }
+                            },
+                            "required": ["symbol_name", "direction"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "analyze_impact",
+                        "Analyze the impact of changing a symbol. Returns impacted files and risk level.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "symbol_name": { "type": "string", "description": "Symbol to analyze" },
+                                "compressed": { "type": "boolean", "description": "Return compressed summary" }
+                            },
+                            "required": ["symbol_name"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "find_usages",
+                        "Find all usages of a symbol across the project.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "symbol_name": { "type": "string", "description": "Symbol to search" },
+                                "include_declaration": { "type": "boolean", "description": "Include definition (default: true)" }
+                            },
+                            "required": ["symbol_name"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "get_complexity",
+                        "Calculate code complexity metrics (cyclomatic, cognitive, nesting).",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "file_path": { "type": "string", "description": "Path to source file" },
+                                "function_name": { "type": "string", "description": "Optional specific function" }
+                            },
+                            "required": ["file_path"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "get_entry_points",
+                        "Find symbols with no incoming edges (entry points in the call graph).",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "compressed": { "type": "boolean", "description": "Return compressed natural language summary instead of JSON (default: false)" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "get_leaf_functions",
+                        "Find symbols with no outgoing edges (leaf functions in the call graph).",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "compressed": { "type": "boolean", "description": "Return compressed natural language summary instead of JSON (default: false)" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "trace_path",
+                        "Find execution path between two symbols using BFS.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "source": { "type": "string", "description": "Source symbol name (function or method)" },
+                                "target": { "type": "string", "description": "Target symbol name (function or method)" },
+                                "max_depth": { "type": "integer", "description": "Maximum depth for path search (default: 10)" }
+                            },
+                            "required": ["source", "target"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "export_mermaid",
+                        "Export call graph or subgraph as Mermaid flowchart. Optionally render to SVG with a theme.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "root_symbol": { "type": "string", "description": "Subgraph root symbol (optional - if not provided, exports entire graph)" },
+                                "max_depth": { "type": "integer", "description": "Maximum depth for traversal (default: 3)" },
+                                "include_external": { "type": "boolean", "description": "Include external dependencies (default: false)" },
+                                "theme": { "type": "string", "description": "Theme for SVG rendering" },
+                                "format": { "type": "string", "enum": ["code", "svg"], "description": "Output format" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "get_hot_paths",
+                        "Find functions with highest fan-in (most called functions).",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "limit": { "type": "integer", "description": "Number of hot paths to return (default: 10)" },
+                                "min_fan_in": { "type": "integer", "description": "Minimum fan-in threshold (default: 2)" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "query_symbol_index",
+                        "Query the symbol index to find locations of a symbol by name (case-insensitive).",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "symbol_name": { "type": "string", "description": "Symbol name to query (case-insensitive)" },
+                                "directory": { "type": "string", "description": "Directory to search in (default: current working directory)" }
+                            },
+                            "required": ["symbol_name"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "build_call_subgraph",
+                        "Build an on-demand call subgraph centered on a symbol.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "symbol_name": { "type": "string", "description": "Symbol name to build subgraph around" },
+                                "depth": { "type": "integer", "description": "Traversal depth (default: 3)" },
+                                "direction": { "type": "string", "enum": ["in", "out", "both"], "description": "Traversal direction (default: both)" },
+                                "directory": { "type": "string", "description": "Directory to search in (default: current working directory)" }
+                            },
+                            "required": ["symbol_name"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "get_per_file_graph",
+                        "Get the call graph for a specific file.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "file_path": { "type": "string", "description": "File path to get graph for" }
+                            },
+                            "required": ["file_path"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "get_symbol_code",
+                        "Get the full source code of a symbol at a given location, including docstrings.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "file": { "type": "string", "description": "Path to the source file" },
+                                "line": { "type": "integer", "description": "Line number (1-indexed)" },
+                                "col": { "type": "integer", "description": "Column number (0-indexed)" }
+                            },
+                            "required": ["file", "line", "col"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    // LSP Navigation tools
+                    Tool::new(
+                        "go_to_definition",
+                        "Navigate to the definition of a symbol using LSP.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "file_path": { "type": "string" },
+                                "line": { "type": "integer" },
+                                "column": { "type": "integer" }
+                            },
+                            "required": ["file_path", "line", "column"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "hover",
+                        "Get type information and documentation for a symbol at a position using LSP.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "file_path": { "type": "string" },
+                                "line": { "type": "integer" },
+                                "column": { "type": "integer" }
+                            },
+                            "required": ["file_path", "line", "column"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "find_references",
+                        "Find all references to a symbol using LSP.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "file_path": { "type": "string" },
+                                "line": { "type": "integer" },
+                                "column": { "type": "integer" },
+                                "include_declaration": { "type": "boolean", "default": true }
+                            },
+                            "required": ["file_path", "line", "column"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    // File operation tools
+                    Tool::new(
+                        "read_file",
+                        "Smart file reader with semantic modes.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "path": { "type": "string", "description": "Path to the file to read (required)" },
+                                "start_line": { "type": "integer", "description": "Start line for partial read (1-indexed, default: 1)" },
+                                "end_line": { "type": "integer", "description": "End line for partial read (1-indexed, default: last line)" },
+                                "mode": { "type": "string", "enum": ["raw", "outline", "symbols", "compressed"], "description": "Read mode" },
+                                "chunk_size": { "type": "integer", "description": "Chunk size for streaming reads (optional)" },
+                                "continuation_token": { "type": "string", "description": "Continuation token for pagination (optional)" }
+                            },
+                            "required": ["path"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "search_content",
+                        "Search file contents with .gitignore awareness.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "pattern": { "type": "string", "description": "Search pattern (required)" },
+                                "path": { "type": "string", "description": "Path to search within (optional, defaults to workspace root)" },
+                                "file_glob": { "type": "string", "description": "Glob pattern to filter files (e.g., '*.rs')" },
+                                "regex": { "type": "boolean", "description": "Whether to treat pattern as regex (default: true)" },
+                                "case_insensitive": { "type": "boolean", "description": "Case insensitive search (default: false)" },
+                                "max_results": { "type": "integer", "description": "Maximum number of results to return (default: 50)" },
+                                "context_lines": { "type": "integer", "description": "Number of context lines around matches (default: 2)" }
+                            },
+                            "required": ["pattern"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "list_files",
+                        "List project files with .gitignore awareness.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "path": { "type": "string", "description": "Path to list (optional, defaults to workspace root)" },
+                                "glob": { "type": "string", "description": "Glob pattern to filter results (e.g., '**/*.rs')" },
+                                "offset": { "type": "integer", "description": "Pagination offset (default: 0)" },
+                                "limit": { "type": "integer", "description": "Maximum number of results (default: 100)" },
+                                "recursive": { "type": "boolean", "description": "Whether to list files recursively (default: true)" },
+                                "max_depth": { "type": "integer", "description": "Maximum depth for recursive traversal" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "retrieve_and_verify",
+                        "Search for code matching a query and verify Rust files via sandboxed rustc compilation. Combines lexical search with compile-check verification.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "query": { "type": "string", "description": "Search query string (required)" },
+                                "language": { "type": "string", "description": "Language filter (reserved for future use, defaults to 'rust')" },
+                                "max_results": { "type": "integer", "description": "Maximum number of results to return (default: 20)" },
+                                "verify": { "type": "boolean", "description": "Whether to verify Rust files via rustc compilation (default: true)" }
+                            },
+                            "required": ["query"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    // Modification tools (destructive)
+                    Tool::new(
+                        "write_file",
+                        "Create or overwrite files within the workspace.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "path": { "type": "string", "description": "Path to the file to write (required)" },
+                                "content": { "type": "string", "description": "Content to write (required)" },
+                                "create_dirs": { "type": "boolean", "description": "Whether to create parent directories if they don't exist (default: false)" }
+                            },
+                            "required": ["path", "content"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "edit_file",
+                        "Edit files with syntax validation.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "path": { "type": "string", "description": "Path to the file to edit (required)" },
+                                "edits": {
+                                    "type": "array",
+                                    "description": "Edits to apply (required)",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "old_string": { "type": "string", "description": "The exact text to replace (required)" },
+                                            "new_string": { "type": "string", "description": "The replacement text (required)" }
+                                        },
+                                        "required": ["old_string", "new_string"]
+                                    }
+                                }
+                            },
+                            "required": ["path", "edits"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "safe_refactor",
+                        "Perform safe refactoring with validation and preview.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "action": { "type": "string", "enum": ["rename", "extract", "inline", "move", "change_signature"], "description": "Refactor action" },
+                                "target": { "type": "string", "description": "Target symbol name" },
+                                "params": { "type": "object", "description": "Action-specific parameters" }
+                            },
+                            "required": ["action", "target"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    // AIX-1: Smart Overview & Ranked Symbols
+                    // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
+                    // AIX-3: NL to Symbol & Ask About Code & Find Pattern
+                    Tool::new(
+                        "nl_to_symbol",
+                        "Convert natural language descriptions to precise symbol matches using keyword extraction and semantic search.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "query": { "type": "string", "description": "Natural language query" },
+                                "limit": { "type": "integer", "description": "Maximum number of results (default: 20)" }
+                            },
+                            "required": ["query"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "ask_about_code",
+                        "Answer questions about code flow by tracing execution paths between symbols.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "question": { "type": "string", "description": "Question about code flow" },
+                                "limit": { "type": "integer", "description": "Maximum number of answers (default: 10)" }
+                            },
+                            "required": ["question"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "find_pattern_by_intent",
+                        "Match natural language intent descriptions to known code patterns.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "intent": { "type": "string", "description": "Natural language intent description" },
+                                "list_patterns": { "type": "boolean", "description": "Whether to list all available patterns" }
+                            },
+                            "required": ["intent"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    // AIX-4: Compare Call Graphs & Detect API Breaks
+                    // AIX-5: System Prompt Context & God Functions & Long Params
+                    Tool::new(
+                        "detect_god_functions",
+                        "Find overly large or complex functions (god functions) that should be refactored.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "min_lines": { "type": "integer", "description": "Minimum lines of code threshold (default: 50)" },
+                                "min_complexity": { "type": "integer", "description": "Minimum cyclomatic complexity threshold (default: 15)" },
+                                "min_fan_in": { "type": "integer", "description": "Minimum fan-in threshold (default: 5)" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "detect_long_parameter_lists",
+                        "Find functions with too many parameters that should be consolidated into structs.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "max_params": { "type": "integer", "description": "Maximum number of parameters allowed (default: 5)" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    // PL3: Symbol Hotness Tracking
+                    // AVC: Agent-Verifiable Context tools
+                    Tool::new(
+                        "generate_contract",
+                        "Generate an AVC truth contract from an existing function. Returns syntax, semantic, and safety constraints.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "function_name": { "type": "string", "description": "Name of the function to generate a contract for" },
+                                "file_path": { "type": "string", "description": "Path to the source file containing the function" }
+                            },
+                            "required": ["function_name", "file_path"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "validate_contract",
+                        "Validate generated code against an AVC truth contract. Returns pass/fail with violations and fix suggestions.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "contract_id": { "type": "string", "description": "ID of the contract to validate against" },
+                                "generated_code": { "type": "string", "description": "The code to validate" }
+                            },
+                            "required": ["contract_id", "generated_code"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    // Phase 4b: Graph Analytics (PageRank, paths, condensation, god nodes, reduction, FAS)
+                    // These tools operate on the in-memory call graph that
+                    // `build_graph` populates, so they all require a prior
+                    // build. They are always available (not feature-gated)
+                    // because the underlying petgraph algorithms are pure.
+                    Tool::new(
+                        "graph_pagerank",
+                        "Compute PageRank importance scores for all symbols in the call graph. Returns a ranked list of symbols by dependency importance. High-scoring symbols are 'god nodes' (heavily depended-upon). Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "alpha": { "type": "number", "description": "Damping factor (default: 0.85). Must be in (0.0, 1.0]." },
+                                "max_iterations": { "type": "integer", "description": "Max fixed-point iterations (default: 100)" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "graph_all_paths",
+                        "Find all simple paths between two symbols in the call graph. Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "from_symbol": { "type": "string", "description": "Source symbol name (substring match, case-insensitive)" },
+                                "to_symbol": { "type": "string", "description": "Target symbol name (substring match, case-insensitive)" },
+                                "max_hops": { "type": "integer", "description": "Maximum number of intermediate nodes (default: 5)" }
+                            },
+                            "required": ["from_symbol", "to_symbol"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "graph_condensed",
+                        "Compute the SCC condensation of the call graph: every strongly connected component is collapsed into a single node, producing an acyclic condensation DAG. Use to spot circular dependency clusters. Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {}
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "graph_god_nodes",
+                        "Find god nodes — symbols with unusually high PageRank (above the supplied percentile). These are symbols that too many things depend on and are prime refactoring candidates. Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "percentile": { "type": "number", "description": "Percentile threshold in [0.0, 1.0] (default: 0.95). Symbols at or above this PageRank percentile are returned." }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "graph_reduced",
+                        "Compute the transitive reduction of the call graph — the minimal set of dependency edges that preserves reachability. Redundant edges (implied by longer paths) are dropped. Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {}
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "graph_feedback_arcs",
+                        "Find a feedback arc set — edges whose removal would make the call graph acyclic. The greedy heuristic is not optimal but fast; use the result as a starting point when breaking circular dependencies. Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {}
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    // Phase 5: Community Detection (Label Propagation).
+                    //
+                    // `graph_communities` runs Label Propagation over the
+                    // in-memory call graph and returns deterministic
+                    // community labels. `graph_community_detail` drills
+                    // into a single community, and `graph_surprising_
+                    // connections` highlights edges that cross community
+                    // boundaries (often a sign of unwanted coupling).
+                    // Phase 6: IDF-weighted Search & Unified Insights.
+                    //
+                    // `graph_search_idf` ranks symbols by an information-
+                    // retrieval-style score (rare tokens count more) and
+                    // includes a hub-bypass step that demotes the
+                    // 95th-percentile-degree nodes. The remaining two
+                    // tools, `graph_insights` and `graph_suggest_questions`,
+                    // consolidate god-nodes + cycles + communities +
+                    // cross-community edges + a 0-100 health score into a
+                    // single payload.
+                    Tool::new(
+                        "graph_communities",
+                        "Detect code communities using Label Propagation. Groups symbols that are tightly coupled into clusters. Returns communities with cohesion scores. Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "max_iterations": { "type": "integer", "description": "Max label propagation iterations (default: 100)" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "graph_community_detail",
+                        "Get details for a specific community detected by graph_communities (members, internal/external edge counts, cohesion score, and top god nodes within the community). Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "community_id": { "type": "integer", "description": "Sequential community id from graph_communities output" },
+                                "max_iterations": { "type": "integer", "description": "Max label propagation iterations used to re-detect communities (default: 100)" }
+                            },
+                            "required": ["community_id"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "graph_surprising_connections",
+                        "Find surprising cross-community connections. These are edges between symbols in different communities, indicating unexpected coupling. Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "top_n": { "type": "integer", "description": "Max connections to return (default: 20)" },
+                                "max_iterations": { "type": "integer", "description": "Max label propagation iterations (default: 100)" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "graph_search_idf",
+                        "Search symbols ranked by IDF (Inverse Document Frequency) importance. Rare terms score higher. Includes hub bypass for cleaner results. Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "query": { "type": "string", "description": "Search query (symbol name or partial)" },
+                                "max_results": { "type": "integer", "description": "Max results (default: 20)" }
+                            },
+                            "required": ["query"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "graph_insights",
+                        "Get a complete architecture health report: god nodes, circular dependencies, community overview, surprising cross-module connections, and a health score (0-100). Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {}
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "graph_suggest_questions",
+                        "Generate intelligent questions about the codebase architecture based on graph analysis. Helps identify areas that need attention. Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {}
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    // Sprint 2: Graphify-style tools (ADR-026)
+                    Tool::new(
+                        "graph_query",
+                        "Natural language graph topology query. Ask 'what connects X to Y?' and get a subgraph with provenance. Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "question": { "type": "string", "description": "Natural language question about the graph topology" },
+                                "max_depth": { "type": "integer", "description": "Maximum BFS depth from seed nodes (default: 3)" },
+                                "budget": { "type": "integer", "description": "Maximum nodes to collect (default: 1500)" }
+                            },
+                            "required": ["question"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "graph_explain",
+                        "Composite deep-dive on a symbol: callers, callees, fan-in/out, complexity. Saves multiple tool calls. Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "symbol": { "type": "string", "description": "Symbol name to explain" },
+                                "depth": { "type": "integer", "description": "Neighbor depth (default: 2)" }
+                            },
+                            "required": ["symbol"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    // Phase 3A: Proactive Tools
+                    #[cfg(feature = "persistence")]
+                    // Detect Drift tool (S7000-S7003 intent drift detection)
+                    Tool::new(
+                        "detect_drift",
+                        "Analyze a source file for intent drift (S7000: docstring-body mismatch), AVC violations (S7001: unsafe/panic/unwrap), obsolete patterns (S7002: try! macro), and forbidden terms (S7003). Persists high-drift findings to the drift_events store.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "file_path": {
+                                    "type": "string",
+                                    "description": "Path to the source file to analyze (required)"
+                                },
+                                "threshold": {
+                                    "type": "number",
+                                    "description": "Minimum drift score threshold (default: 0.5). Only findings with drift_score >= threshold are included."
+                                },
+                                "function_name": {
+                                    "type": "string",
+                                    "description": "Optional function name to scope analysis to a single function"
+                                }
+                            },
+                            "required": ["file_path"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "get_type_references",
+                        "List type annotation references for a symbol (param types, return types, field types). Uses References edges from type-ref extraction. Requires build_graph first.",
+                        Arc::new(serde_json::json!({"type":"object","properties":{"symbol":{"type":"string","description":"Symbol name"}},"required":["symbol"]}).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "get_imports",
+                        "List all imports for a file. Uses Imports edges from the ingest pipeline. Requires build_graph first.",
+                        Arc::new(serde_json::json!({"type":"object","properties":{"file_path":{"type":"string","description":"File path"}},"required":["file_path"]}).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "get_implementors",
+                        "Find all types that implement a given trait/interface. Uses Implements edges. Requires build_graph first.",
+                        Arc::new(serde_json::json!({"type":"object","properties":{"trait_name":{"type":"string","description":"Trait or interface name"}},"required":["trait_name"]}).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "get_members",
+                        "List methods and fields of a class/struct. Uses Contains edges. Requires build_graph first.",
+                        Arc::new(serde_json::json!({"type":"object","properties":{"class_name":{"type":"string","description":"Class or struct name"}},"required":["class_name"]}).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "graph_query_filtered",
+                        "Graph query with provenance, node kind, and community filters. Requires build_graph first.",
+                        Arc::new(serde_json::json!({"type":"object","properties":{"question":{"type":"string"},"limit":{"type":"integer"},"filters":{"type":"object","properties":{"provenance":{"type":"array","items":{"type":"string"}},"node_kinds":{"type":"array","items":{"type":"string"}},"community_id":{"type":"integer"},"exclude_kinds":{"type":"array","items":{"type":"string"}}}}},"required":["question"]}).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "export_callflow",
+                        "Export a community-level Mermaid architecture call-flow diagram. Shows module-level relationships.",
+                        Arc::new(serde_json::json!({"type":"object","properties":{"max_sections":{"type":"integer","description":"Max architecture sections (default: 8)"},"format":{"type":"string","enum":["code"]}}}).as_object().cloned().unwrap()),
+                    ),
+                    // SOLID Audit tool — heuristic-based SOLID principle analysis
+                    Tool::new(
+                        "solid_audit",
+                        "Analyze code for SOLID principle violations (SRP, OCP, LSP, ISP, DIP). Returns violations with severity, location, and suggestions. Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {}
+                        }).as_object().cloned().unwrap()),
+                    ),
+
+    // Batch D: Agent Task Tools (bidirectional interaction)
+                    // Sprint 5.3: graph_diff and graph_timeline tools
+                    Tool::new(
+                        "graph_diff",
+                        "Compare two graph reports by date to show changes in symbol count, edge count, and health score. Requires PostgresRepository.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "baseline_date": {
+                                    "type": "string",
+                                    "description": "Baseline date to compare against (YYYY-MM-DD format)"
+                                },
+                                "current": {
+                                    "type": "boolean",
+                                    "description": "If true, compare against the latest report (default: false)"
+                                }
+                            },
+                            "required": ["baseline_date"]
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "graph_timeline",
+                        "Show trend data over N days for symbol count, edge count, and health score. Requires PostgresRepository.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "days": {
+                                    "type": "integer",
+                                    "description": "Number of days to look back (default: 30)"
+                                }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "smart_search",
+                        "Search symbols with configurable algorithm: fuzzy, ranked (fan-in+complexity), or idf (inverse document frequency).",
+                        Arc::new(serde_json::json!({"type":"object","properties":{"query":{"type":"string"},"algorithm":{"type":"string","enum":["fuzzy","ranked","idf"]},"limit":{"type":"integer"}},"required":["query"]}).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "graph_analyze",
+                        "Run advanced graph algorithms: scc, reduced, or feedback_arcs.",
+                        Arc::new(serde_json::json!({"type":"object","properties":{"mode":{"type":"string","enum":["scc","reduced","feedback_arcs"]}}}).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "project_overview",
+                        "Get a comprehensive project overview at quick, medium, or detailed levels.",
+                        Arc::new(serde_json::json!({"type":"object","properties":{"detail":{"type":"string","enum":["quick","medium","detailed"]}}}).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "compare_graph",
+                        "Compare graph states in diff, api, or quality mode.",
+                        Arc::new(serde_json::json!({"type":"object","properties":{"mode":{"type":"string","enum":["diff","api","quality"]}}}).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "codebase_map",
+                        "Generate a compact, LLM-optimized codebase map. Format: compact (~400 tokens) or detailed (~2000).",
+                        Arc::new(serde_json::json!({"type":"object","properties":{"format":{"type":"string","enum":["compact","detailed"]}}}).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "project_insights",
+                        "Dashboard in a single call: symbols, edges, entry points, dead code, health score, hot paths.",
+                        Arc::new(serde_json::json!({"type":"object","properties":{}}).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "review_pr",
+                        "Analyze PR impact: provide changed files, get risk level, impacted files, and breaking changes.",
+                        Arc::new(serde_json::json!({"type":"object","properties":{"files":{"type":"array","items":{"type":"string"},"description":"Changed file paths"}},"required":["files"]}).as_object().cloned().unwrap()),
+                    ),
+                    Tool::new(
+                        "iac_query",
+                        "Navigate the infrastructure graph. Query a Terraform or Ansible resource by ID.",
+                        Arc::new(serde_json::json!({"type":"object","properties":{"resource_id":{"type":"string","description":"IaC resource ID (e.g. tf:main.tf:aws_instance.web)"},"depth":{"type":"integer","description":"Traversal depth (default: 2)"}},"required":["resource_id"]}).as_object().cloned().unwrap()),
+                    ),
+
+    ]
+}
 impl ServerHandler for CogniCodeHandler {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(
@@ -148,670 +887,7 @@ impl ServerHandler for CogniCodeHandler {
             const PAGE_SIZE: usize = 20;
 
             // All tools with annotations - same as server.rs handle_tools_list
-            let all_tools = vec![
-                Tool::new(
-                    "build_graph",
-                    "Build the call graph for a project directory. Must be called before get_call_hierarchy, analyze_impact, or check_architecture.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "directory": {
-                                "type": "string",
-                                "description": "Path to project directory to analyze (default: current working directory)"
-                            }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "get_file_symbols",
-                    "Extract symbols (functions, classes, variables) from a source file. Set compressed=true for natural language summary.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file_path": { "type": "string", "description": "Path to the source file" },
-                            "compressed": { "type": "boolean", "description": "Return compressed natural language summary instead of JSON (default: false)" }
-                        },
-                        "required": ["file_path"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "get_call_hierarchy",
-                    "Traverse call graph to find callers (incoming) or callees (outgoing). Requires build_graph first.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "symbol_name": { "type": "string", "description": "Fully qualified symbol name" },
-                            "direction": { "type": "string", "enum": ["incoming", "outgoing"], "description": "Traverse direction" },
-                            "depth": { "type": "integer", "description": "Traversal depth (default: 1)" },
-                            "compressed": { "type": "boolean", "description": "Return compressed summary" }
-                        },
-                        "required": ["symbol_name", "direction"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "analyze_impact",
-                    "Analyze the impact of changing a symbol. Returns impacted files and risk level.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "symbol_name": { "type": "string", "description": "Symbol to analyze" },
-                            "compressed": { "type": "boolean", "description": "Return compressed summary" }
-                        },
-                        "required": ["symbol_name"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "find_usages",
-                    "Find all usages of a symbol across the project.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "symbol_name": { "type": "string", "description": "Symbol to search" },
-                            "include_declaration": { "type": "boolean", "description": "Include definition (default: true)" }
-                        },
-                        "required": ["symbol_name"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "get_complexity",
-                    "Calculate code complexity metrics (cyclomatic, cognitive, nesting).",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file_path": { "type": "string", "description": "Path to source file" },
-                            "function_name": { "type": "string", "description": "Optional specific function" }
-                        },
-                        "required": ["file_path"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "get_entry_points",
-                    "Find symbols with no incoming edges (entry points in the call graph).",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "compressed": { "type": "boolean", "description": "Return compressed natural language summary instead of JSON (default: false)" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "get_leaf_functions",
-                    "Find symbols with no outgoing edges (leaf functions in the call graph).",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "compressed": { "type": "boolean", "description": "Return compressed natural language summary instead of JSON (default: false)" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "trace_path",
-                    "Find execution path between two symbols using BFS.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "source": { "type": "string", "description": "Source symbol name (function or method)" },
-                            "target": { "type": "string", "description": "Target symbol name (function or method)" },
-                            "max_depth": { "type": "integer", "description": "Maximum depth for path search (default: 10)" }
-                        },
-                        "required": ["source", "target"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "export_mermaid",
-                    "Export call graph or subgraph as Mermaid flowchart. Optionally render to SVG with a theme.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "root_symbol": { "type": "string", "description": "Subgraph root symbol (optional - if not provided, exports entire graph)" },
-                            "max_depth": { "type": "integer", "description": "Maximum depth for traversal (default: 3)" },
-                            "include_external": { "type": "boolean", "description": "Include external dependencies (default: false)" },
-                            "theme": { "type": "string", "description": "Theme for SVG rendering" },
-                            "format": { "type": "string", "enum": ["code", "svg"], "description": "Output format" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "get_hot_paths",
-                    "Find functions with highest fan-in (most called functions).",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "limit": { "type": "integer", "description": "Number of hot paths to return (default: 10)" },
-                            "min_fan_in": { "type": "integer", "description": "Minimum fan-in threshold (default: 2)" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "query_symbol_index",
-                    "Query the symbol index to find locations of a symbol by name (case-insensitive).",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "symbol_name": { "type": "string", "description": "Symbol name to query (case-insensitive)" },
-                            "directory": { "type": "string", "description": "Directory to search in (default: current working directory)" }
-                        },
-                        "required": ["symbol_name"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "build_call_subgraph",
-                    "Build an on-demand call subgraph centered on a symbol.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "symbol_name": { "type": "string", "description": "Symbol name to build subgraph around" },
-                            "depth": { "type": "integer", "description": "Traversal depth (default: 3)" },
-                            "direction": { "type": "string", "enum": ["in", "out", "both"], "description": "Traversal direction (default: both)" },
-                            "directory": { "type": "string", "description": "Directory to search in (default: current working directory)" }
-                        },
-                        "required": ["symbol_name"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "get_per_file_graph",
-                    "Get the call graph for a specific file.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file_path": { "type": "string", "description": "File path to get graph for" }
-                        },
-                        "required": ["file_path"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "get_symbol_code",
-                    "Get the full source code of a symbol at a given location, including docstrings.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file": { "type": "string", "description": "Path to the source file" },
-                            "line": { "type": "integer", "description": "Line number (1-indexed)" },
-                            "col": { "type": "integer", "description": "Column number (0-indexed)" }
-                        },
-                        "required": ["file", "line", "col"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                // LSP Navigation tools
-                Tool::new(
-                    "go_to_definition",
-                    "Navigate to the definition of a symbol using LSP.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file_path": { "type": "string" },
-                            "line": { "type": "integer" },
-                            "column": { "type": "integer" }
-                        },
-                        "required": ["file_path", "line", "column"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "hover",
-                    "Get type information and documentation for a symbol at a position using LSP.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file_path": { "type": "string" },
-                            "line": { "type": "integer" },
-                            "column": { "type": "integer" }
-                        },
-                        "required": ["file_path", "line", "column"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "find_references",
-                    "Find all references to a symbol using LSP.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file_path": { "type": "string" },
-                            "line": { "type": "integer" },
-                            "column": { "type": "integer" },
-                            "include_declaration": { "type": "boolean", "default": true }
-                        },
-                        "required": ["file_path", "line", "column"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                // File operation tools
-                Tool::new(
-                    "read_file",
-                    "Smart file reader with semantic modes.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "path": { "type": "string", "description": "Path to the file to read (required)" },
-                            "start_line": { "type": "integer", "description": "Start line for partial read (1-indexed, default: 1)" },
-                            "end_line": { "type": "integer", "description": "End line for partial read (1-indexed, default: last line)" },
-                            "mode": { "type": "string", "enum": ["raw", "outline", "symbols", "compressed"], "description": "Read mode" },
-                            "chunk_size": { "type": "integer", "description": "Chunk size for streaming reads (optional)" },
-                            "continuation_token": { "type": "string", "description": "Continuation token for pagination (optional)" }
-                        },
-                        "required": ["path"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "search_content",
-                    "Search file contents with .gitignore awareness.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "pattern": { "type": "string", "description": "Search pattern (required)" },
-                            "path": { "type": "string", "description": "Path to search within (optional, defaults to workspace root)" },
-                            "file_glob": { "type": "string", "description": "Glob pattern to filter files (e.g., '*.rs')" },
-                            "regex": { "type": "boolean", "description": "Whether to treat pattern as regex (default: true)" },
-                            "case_insensitive": { "type": "boolean", "description": "Case insensitive search (default: false)" },
-                            "max_results": { "type": "integer", "description": "Maximum number of results to return (default: 50)" },
-                            "context_lines": { "type": "integer", "description": "Number of context lines around matches (default: 2)" }
-                        },
-                        "required": ["pattern"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "list_files",
-                    "List project files with .gitignore awareness.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "path": { "type": "string", "description": "Path to list (optional, defaults to workspace root)" },
-                            "glob": { "type": "string", "description": "Glob pattern to filter results (e.g., '**/*.rs')" },
-                            "offset": { "type": "integer", "description": "Pagination offset (default: 0)" },
-                            "limit": { "type": "integer", "description": "Maximum number of results (default: 100)" },
-                            "recursive": { "type": "boolean", "description": "Whether to list files recursively (default: true)" },
-                            "max_depth": { "type": "integer", "description": "Maximum depth for recursive traversal" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "retrieve_and_verify",
-                    "Search for code matching a query and verify Rust files via sandboxed rustc compilation. Combines lexical search with compile-check verification.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "query": { "type": "string", "description": "Search query string (required)" },
-                            "language": { "type": "string", "description": "Language filter (reserved for future use, defaults to 'rust')" },
-                            "max_results": { "type": "integer", "description": "Maximum number of results to return (default: 20)" },
-                            "verify": { "type": "boolean", "description": "Whether to verify Rust files via rustc compilation (default: true)" }
-                        },
-                        "required": ["query"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                // Modification tools (destructive)
-                Tool::new(
-                    "write_file",
-                    "Create or overwrite files within the workspace.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "path": { "type": "string", "description": "Path to the file to write (required)" },
-                            "content": { "type": "string", "description": "Content to write (required)" },
-                            "create_dirs": { "type": "boolean", "description": "Whether to create parent directories if they don't exist (default: false)" }
-                        },
-                        "required": ["path", "content"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "edit_file",
-                    "Edit files with syntax validation.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "path": { "type": "string", "description": "Path to the file to edit (required)" },
-                            "edits": {
-                                "type": "array",
-                                "description": "Edits to apply (required)",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "old_string": { "type": "string", "description": "The exact text to replace (required)" },
-                                        "new_string": { "type": "string", "description": "The replacement text (required)" }
-                                    },
-                                    "required": ["old_string", "new_string"]
-                                }
-                            }
-                        },
-                        "required": ["path", "edits"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "safe_refactor",
-                    "Perform safe refactoring with validation and preview.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "action": { "type": "string", "enum": ["rename", "extract", "inline", "move", "change_signature"], "description": "Refactor action" },
-                            "target": { "type": "string", "description": "Target symbol name" },
-                            "params": { "type": "object", "description": "Action-specific parameters" }
-                        },
-                        "required": ["action", "target"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                // AIX-1: Smart Overview & Ranked Symbols
-                // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
-                // AIX-3: NL to Symbol & Ask About Code & Find Pattern
-                Tool::new(
-                    "nl_to_symbol",
-                    "Convert natural language descriptions to precise symbol matches using keyword extraction and semantic search.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "query": { "type": "string", "description": "Natural language query" },
-                            "limit": { "type": "integer", "description": "Maximum number of results (default: 20)" }
-                        },
-                        "required": ["query"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "ask_about_code",
-                    "Answer questions about code flow by tracing execution paths between symbols.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "question": { "type": "string", "description": "Question about code flow" },
-                            "limit": { "type": "integer", "description": "Maximum number of answers (default: 10)" }
-                        },
-                        "required": ["question"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "find_pattern_by_intent",
-                    "Match natural language intent descriptions to known code patterns.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "intent": { "type": "string", "description": "Natural language intent description" },
-                            "list_patterns": { "type": "boolean", "description": "Whether to list all available patterns" }
-                        },
-                        "required": ["intent"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                // AIX-4: Compare Call Graphs & Detect API Breaks
-                // AIX-5: System Prompt Context & God Functions & Long Params
-                Tool::new(
-                    "detect_god_functions",
-                    "Find overly large or complex functions (god functions) that should be refactored.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "min_lines": { "type": "integer", "description": "Minimum lines of code threshold (default: 50)" },
-                            "min_complexity": { "type": "integer", "description": "Minimum cyclomatic complexity threshold (default: 15)" },
-                            "min_fan_in": { "type": "integer", "description": "Minimum fan-in threshold (default: 5)" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "detect_long_parameter_lists",
-                    "Find functions with too many parameters that should be consolidated into structs.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "max_params": { "type": "integer", "description": "Maximum number of parameters allowed (default: 5)" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                // PL3: Symbol Hotness Tracking
-                // AVC: Agent-Verifiable Context tools
-                Tool::new(
-                    "generate_contract",
-                    "Generate an AVC truth contract from an existing function. Returns syntax, semantic, and safety constraints.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "function_name": { "type": "string", "description": "Name of the function to generate a contract for" },
-                            "file_path": { "type": "string", "description": "Path to the source file containing the function" }
-                        },
-                        "required": ["function_name", "file_path"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "validate_contract",
-                    "Validate generated code against an AVC truth contract. Returns pass/fail with violations and fix suggestions.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "contract_id": { "type": "string", "description": "ID of the contract to validate against" },
-                            "generated_code": { "type": "string", "description": "The code to validate" }
-                        },
-                        "required": ["contract_id", "generated_code"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                // Phase 4b: Graph Analytics (PageRank, paths, condensation, god nodes, reduction, FAS)
-                // These tools operate on the in-memory call graph that
-                // `build_graph` populates, so they all require a prior
-                // build. They are always available (not feature-gated)
-                // because the underlying petgraph algorithms are pure.
-                Tool::new(
-                    "graph_pagerank",
-                    "Compute PageRank importance scores for all symbols in the call graph. Returns a ranked list of symbols by dependency importance. High-scoring symbols are 'god nodes' (heavily depended-upon). Requires build_graph first.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "alpha": { "type": "number", "description": "Damping factor (default: 0.85). Must be in (0.0, 1.0]." },
-                            "max_iterations": { "type": "integer", "description": "Max fixed-point iterations (default: 100)" }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                // Phase 5: Community Detection (Label Propagation).
-                //
-                // `graph_communities` runs Label Propagation over the
-                // in-memory call graph and returns deterministic
-                // community labels. `graph_community_detail` drills
-                // into a single community, and `graph_surprising_
-                // connections` highlights edges that cross community
-                // boundaries (often a sign of unwanted coupling).
-                // Phase 6: IDF-weighted Search & Unified Insights.
-                //
-                // `graph_search_idf` ranks symbols by an information-
-                // retrieval-style score (rare tokens count more) and
-                // includes a hub-bypass step that demotes the
-                // 95th-percentile-degree nodes. The remaining two
-                // tools, `graph_insights` and `graph_suggest_questions`,
-                // consolidate god-nodes + cycles + communities +
-                // cross-community edges + a 0-100 health score into a
-                // single payload.
-                Tool::new(
-                    "graph_insights",
-                    "Get a complete architecture health report: god nodes, circular dependencies, community overview, surprising cross-module connections, and a health score (0-100). Requires build_graph first.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {}
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "graph_suggest_questions",
-                    "Generate intelligent questions about the codebase architecture based on graph analysis. Helps identify areas that need attention. Requires build_graph first.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {}
-                    }).as_object().cloned().unwrap()),
-                ),
-                // Sprint 2: Graphify-style tools (ADR-026)
-                Tool::new(
-                    "graph_query",
-                    "Natural language graph topology query. Ask 'what connects X to Y?' and get a subgraph with provenance. Requires build_graph first.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "question": { "type": "string", "description": "Natural language question about the graph topology" },
-                            "max_depth": { "type": "integer", "description": "Maximum BFS depth from seed nodes (default: 3)" },
-                            "budget": { "type": "integer", "description": "Maximum nodes to collect (default: 1500)" }
-                        },
-                        "required": ["question"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "graph_explain",
-                    "Composite deep-dive on a symbol: callers, callees, fan-in/out, complexity. Saves multiple tool calls. Requires build_graph first.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "symbol": { "type": "string", "description": "Symbol name to explain" },
-                            "depth": { "type": "integer", "description": "Neighbor depth (default: 2)" }
-                        },
-                        "required": ["symbol"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                // Phase 3A: Proactive Tools
-                #[cfg(feature = "persistence")]
-                // Detect Drift tool (S7000-S7003 intent drift detection)
-                Tool::new(
-                    "detect_drift",
-                    "Analyze a source file for intent drift (S7000: docstring-body mismatch), AVC violations (S7001: unsafe/panic/unwrap), obsolete patterns (S7002: try! macro), and forbidden terms (S7003). Persists high-drift findings to the drift_events store.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "file_path": {
-                                "type": "string",
-                                "description": "Path to the source file to analyze (required)"
-                            },
-                            "threshold": {
-                                "type": "number",
-                                "description": "Minimum drift score threshold (default: 0.5). Only findings with drift_score >= threshold are included."
-                            },
-                            "function_name": {
-                                "type": "string",
-                                "description": "Optional function name to scope analysis to a single function"
-                            }
-                        },
-                        "required": ["file_path"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                                // Sprint 2+4: Graphify-style tools (ADR-026)
-                Tool::new(
-                    "get_graph_report",
-                    "Fetch the latest auto-generated GraphReport (god nodes, communities, surprising connections, dead code). Requires a completed scan with analysis stages.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{}}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "get_type_references",
-                    "List type annotation references for a symbol (param types, return types, field types). Uses References edges from type-ref extraction. Requires build_graph first.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"symbol":{"type":"string","description":"Symbol name"}},"required":["symbol"]}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "get_imports",
-                    "List all imports for a file. Uses Imports edges from the ingest pipeline. Requires build_graph first.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"file_path":{"type":"string","description":"File path"}},"required":["file_path"]}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "get_implementors",
-                    "Find all types that implement a given trait/interface. Uses Implements edges. Requires build_graph first.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"trait_name":{"type":"string","description":"Trait or interface name"}},"required":["trait_name"]}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "get_members",
-                    "List methods and fields of a class/struct. Uses Contains edges. Requires build_graph first.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"class_name":{"type":"string","description":"Class or struct name"}},"required":["class_name"]}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "graph_query_filtered",
-                    "Graph query with provenance, node kind, and community filters. Requires build_graph first.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"question":{"type":"string"},"limit":{"type":"integer"},"filters":{"type":"object","properties":{"provenance":{"type":"array","items":{"type":"string"}},"node_kinds":{"type":"array","items":{"type":"string"}},"community_id":{"type":"integer"},"exclude_kinds":{"type":"array","items":{"type":"string"}}}}},"required":["question"]}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "export_callflow",
-                    "Export a community-level Mermaid architecture call-flow diagram. Shows module-level relationships.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"max_sections":{"type":"integer","description":"Max architecture sections (default: 8)"},"format":{"type":"string","enum":["code"]}}}).as_object().cloned().unwrap()),
-                ),
-                // SOLID Audit tool — heuristic-based SOLID principle analysis
-                Tool::new(
-                    "solid_audit",
-                    "Analyze code for SOLID principle violations (SRP, OCP, LSP, ISP, DIP). Returns violations with severity, location, and suggestions. Requires build_graph first.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {}
-                    }).as_object().cloned().unwrap()),
-                ),
-
-// Batch D: Agent Task Tools (bidirectional interaction)
-                // Sprint 5.3: graph_diff and graph_timeline tools
-                Tool::new(
-                    "graph_diff",
-                    "Compare two graph reports by date to show changes in symbol count, edge count, and health score. Requires PostgresRepository.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "baseline_date": {
-                                "type": "string",
-                                "description": "Baseline date to compare against (YYYY-MM-DD format)"
-                            },
-                            "current": {
-                                "type": "boolean",
-                                "description": "If true, compare against the latest report (default: false)"
-                            }
-                        },
-                        "required": ["baseline_date"]
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "graph_timeline",
-                    "Show trend data over N days for symbol count, edge count, and health score. Requires PostgresRepository.",
-                    Arc::new(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "days": {
-                                "type": "integer",
-                                "description": "Number of days to look back (default: 30)"
-                            }
-                        }
-                    }).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "solid_audit",
-                    "Analyze code for SOLID principle violations (SRP, OCP, LSP, ISP, DIP). Returns violations with severity, location, and suggestions. Requires build_graph first.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{}}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "graph_diff",
-                    "Compare two graph reports by date to show changes in symbol count, edge count, and health score. Requires PostgresRepository.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"baseline_date":{"type":"string","description":"ISO date of baseline report (e.g. 2026-06-01)"},"current":{"type":"boolean","description":"Compare against latest (default: true)"}}}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "graph_timeline",
-                    "Get trend data for graph metrics over N days. Returns per-report entries with trend direction.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"days":{"type":"integer","description":"Days to look back (default: 30)"}}}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "smart_search",
-                    "Search symbols with configurable algorithm: fuzzy, ranked (fan-in+complexity), or idf (inverse document frequency).",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"query":{"type":"string"},"algorithm":{"type":"string","enum":["fuzzy","ranked","idf"]},"limit":{"type":"integer"}},"required":["query"]}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "graph_analyze",
-                    "Run advanced graph algorithms: scc, reduced, or feedback_arcs.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"mode":{"type":"string","enum":["scc","reduced","feedback_arcs"]}}}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "project_overview",
-                    "Get a comprehensive project overview at quick, medium, or detailed levels.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"detail":{"type":"string","enum":["quick","medium","detailed"]}}}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "compare_graph",
-                    "Compare graph states in diff, api, or quality mode.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"mode":{"type":"string","enum":["diff","api","quality"]}}}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "codebase_map",
-                    "Generate a compact, LLM-optimized codebase map. Format: compact (~400 tokens) or detailed (~2000).",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"format":{"type":"string","enum":["compact","detailed"]}}}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "project_insights",
-                    "Dashboard in a single call: symbols, edges, entry points, dead code, health score, hot paths.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{}}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "review_pr",
-                    "Analyze PR impact: provide changed files, get risk level, impacted files, and breaking changes.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"files":{"type":"array","items":{"type":"string"},"description":"Changed file paths"}},"required":["files"]}).as_object().cloned().unwrap()),
-                ),
-                Tool::new(
-                    "iac_query",
-                    "Navigate the infrastructure graph. Query a Terraform or Ansible resource by ID.",
-                    Arc::new(serde_json::json!({"type":"object","properties":{"resource_id":{"type":"string","description":"IaC resource ID (e.g. tf:main.tf:aws_instance.web)"},"depth":{"type":"integer","description":"Traversal depth (default: 2)"}},"required":["resource_id"]}).as_object().cloned().unwrap()),
-                ),
-
-            ];
+            let all_tools = build_all_tools();
 
             // Paginate
             let total = all_tools.len();
@@ -900,7 +976,7 @@ async fn call_tool_handler(
             let output = crate::interface::mcp::handlers::handle_analyze_impact(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
-        
+
         "safe_refactor" => {
             let input: crate::interface::mcp::schemas::SafeRefactorInput =
                 serde_json::from_value(arguments.into())?;
@@ -974,7 +1050,7 @@ async fn call_tool_handler(
                 crate::interface::mcp::handlers::handle_get_module_dependencies(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
-        
+
         "query_symbol_index" => {
             let input: crate::interface::mcp::schemas::QuerySymbolInput =
                 serde_json::from_value(arguments.into())?;
@@ -996,8 +1072,7 @@ async fn call_tool_handler(
                 crate::interface::mcp::handlers::handle_get_per_file_graph(ctx, input).await?;
             Ok(serde_json::to_string(&output)?)
         }
-        
-        
+
         "get_symbol_code" => {
             let input: crate::interface::mcp::schemas::SymbolCodeInput =
                 serde_json::from_value(arguments.into())?;
@@ -1010,8 +1085,7 @@ async fn call_tool_handler(
             .await?;
             Ok(serde_json::to_string(&output)?)
         }
-        
-        
+
         "go_to_definition" => {
             let input: crate::interface::mcp::schemas::GoToDefinitionInput =
                 serde_json::from_value(arguments.into())?;
@@ -1073,12 +1147,9 @@ async fn call_tool_handler(
             Ok(serde_json::to_string(&output)?)
         }
         // AIX-1: Smart Overview & Ranked Symbols
-        
-        
+
         // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
-        
-        
-        
+
         // AIX-3: NL to Symbol & Ask About Code & Find Pattern
         "nl_to_symbol" => {
             let input: crate::interface::mcp::schemas::NlToSymbolInput =
@@ -1107,11 +1178,8 @@ async fn call_tool_handler(
             Ok(serde_json::to_string(&output)?)
         }
         // AIX-4: Compare Call Graphs & Detect API Breaks
-        
-        
-        
+
         // AIX-5: System Prompt Context & God Functions & Long Params
-        
         "detect_god_functions" => {
             let input: crate::interface::mcp::schemas::DetectGodFunctionsInput =
                 serde_json::from_value(arguments.into())?;
@@ -1133,7 +1201,7 @@ async fn call_tool_handler(
             Ok(serde_json::to_string(&output)?)
         }
         // PL3: Symbol Hotness Tracking
-        
+
         // AVC: Agent-Verifiable Context tools
         "generate_contract" => {
             let input: crate::interface::mcp::schemas::GenerateContractInput =
@@ -1171,9 +1239,7 @@ async fn call_tool_handler(
             Ok(serde_json::to_string(&output)?)
         }
         // Phase 3A: Proactive Tools
-        
         #[cfg(feature = "persistence")]
-        
         // Detect Drift tool (S7000-S7003)
         "detect_drift" => {
             let input: crate::interface::mcp::schemas::DetectDriftInput =
@@ -1193,125 +1259,271 @@ async fn call_tool_handler(
             Ok(serde_json::to_string(&output)?)
         }
         // Batch D: Agent Task Tools (bidirectional interaction)
-        
-        
+
         // Phase 4b: Graph analytics tools (extracted to graph_handlers.rs)
         "graph_pagerank" => {
             let input: crate::interface::mcp::schemas::GraphPageRankInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_pagerank(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::graph_handlers::handle_graph_pagerank(ctx, input)
+                    .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
-        
-        
-        
-        
-        
+        "graph_all_paths" => {
+            let input: crate::interface::mcp::schemas::GraphAllPathsInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::graph_handlers::handle_graph_all_paths(ctx, input)
+                    .await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "graph_condensed" => {
+            let input: crate::interface::mcp::schemas::GraphCondensedInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::graph_handlers::handle_graph_condensed(ctx, input)
+                    .await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "graph_god_nodes" => {
+            let input: crate::interface::mcp::schemas::GraphGodNodesInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::graph_handlers::handle_graph_god_nodes(ctx, input)
+                    .await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "graph_reduced" => {
+            let input: crate::interface::mcp::schemas::GraphReducedInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::graph_handlers::handle_graph_reduced(ctx, input)
+                    .await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "graph_feedback_arcs" => {
+            let input: crate::interface::mcp::schemas::GraphFeedbackArcsInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::graph_handlers::handle_graph_feedback_arcs(
+                    ctx, input,
+                )
+                .await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+
         // Phase 5: Community Detection handlers (extracted to graph_handlers.rs)
-        
-        
-        
+        "graph_communities" => {
+            let input: crate::interface::mcp::schemas::GraphCommunitiesInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_communities(
+                ctx, input,
+            )
+            .await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "graph_community_detail" => {
+            let input: crate::interface::mcp::schemas::GraphCommunityDetailInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::graph_handlers::handle_graph_community_detail(
+                    ctx, input,
+                )
+                .await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        "graph_surprising_connections" => {
+            let input: crate::interface::mcp::schemas::GraphSurprisingConnectionsInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::graph_handlers::handle_graph_surprising_connections(
+                    ctx, input,
+                )
+                .await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+
         // Phase 6: IDF-weighted Search & Unified Insights (extracted to graph_handlers.rs)
-        
+        "graph_search_idf" => {
+            let input: crate::interface::mcp::schemas::GraphSearchIdfInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_search_idf(
+                ctx, input,
+            )
+            .await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
         "graph_insights" => {
             let input: crate::interface::mcp::schemas::GraphInsightsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_insights(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::graph_handlers::handle_graph_insights(ctx, input)
+                    .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "graph_suggest_questions" => {
             let input: crate::interface::mcp::schemas::GraphSuggestQuestionsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_suggest_questions(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::graph_handlers::handle_graph_suggest_questions(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         // Sprint 2: Graphify-style tools (ADR-026)
         "graph_query" => {
             let input: crate::interface::mcp::handlers::graph_query_handlers::GraphQueryInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_graph_query(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_graph_query(
+                ctx, input,
+            )
+            .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "graph_explain" => {
             let input: crate::interface::mcp::handlers::graph_query_handlers::GraphExplainInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_graph_explain(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::graph_query_handlers::handle_graph_explain(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         // Edge-type query tools (ADR-026)
         "get_type_references" => {
             let input: crate::interface::mcp::handlers::graph_query_handlers::GetTypeRefsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_get_type_references(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::graph_query_handlers::handle_get_type_references(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "get_imports" => {
             let input: crate::interface::mcp::handlers::graph_query_handlers::GetImportsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_get_imports(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_get_imports(
+                ctx, input,
+            )
+            .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "get_implementors" => {
             let input: crate::interface::mcp::handlers::graph_query_handlers::GetImplementorsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_get_implementors(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::graph_query_handlers::handle_get_implementors(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "get_members" => {
             let input: crate::interface::mcp::handlers::graph_query_handlers::GetMembersInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_get_members(ctx, input).await?;
+            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_get_members(
+                ctx, input,
+            )
+            .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "graph_query_filtered" => {
             let input: crate::interface::mcp::handlers::graph_query_handlers::GraphQueryFilteredInput = serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_graph_query_filtered(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::graph_query_handlers::handle_graph_query_filtered(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "export_callflow" => {
-            let input: crate::interface::mcp::handlers::graph_query_handlers::ExportCallflowInput = serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_export_callflow(ctx, input).await?;
+            let input: crate::interface::mcp::handlers::graph_query_handlers::ExportCallflowInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::graph_query_handlers::handle_export_callflow(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         // Sprint 5: Consolidated + High-value tools (ADR-027 + ADR-028)
         "smart_search" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::SmartSearchInput = serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_smart_search(ctx, input).await?;
+            let input: crate::interface::mcp::handlers::consolidated_handlers::SmartSearchInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::consolidated_handlers::handle_smart_search(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "graph_analyze" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::GraphAnalyzeInput = serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_graph_analyze(ctx, input).await?;
+            let input: crate::interface::mcp::handlers::consolidated_handlers::GraphAnalyzeInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::consolidated_handlers::handle_graph_analyze(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "project_overview" => {
             let input: crate::interface::mcp::handlers::consolidated_handlers::ProjectOverviewInput = serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_project_overview(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::consolidated_handlers::handle_project_overview(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "compare_graph" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::CompareGraphInput = serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_compare_graph(ctx, input).await?;
+            let input: crate::interface::mcp::handlers::consolidated_handlers::CompareGraphInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::consolidated_handlers::handle_compare_graph(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "codebase_map" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::CodebaseMapInput = serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_codebase_map(ctx, input).await?;
+            let input: crate::interface::mcp::handlers::consolidated_handlers::CodebaseMapInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::consolidated_handlers::handle_codebase_map(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "project_insights" => {
             let input: crate::interface::mcp::handlers::consolidated_handlers::ProjectInsightsInput = serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_project_insights(ctx, input).await?;
+            let output =
+                crate::interface::mcp::handlers::consolidated_handlers::handle_project_insights(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "review_pr" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::ReviewPrInput = serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_review_pr(ctx, input).await?;
+            let input: crate::interface::mcp::handlers::consolidated_handlers::ReviewPrInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_review_pr(
+                ctx, input,
+            )
+            .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "iac_query" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::IacQueryInput = serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_iac_query(ctx, input).await?;
+            let input: crate::interface::mcp::handlers::consolidated_handlers::IacQueryInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_iac_query(
+                ctx, input,
+            )
+            .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         // SOLID Audit tool
@@ -1321,13 +1533,22 @@ async fn call_tool_handler(
         }
         // Sprint 5.3: graph_diff and graph_timeline tools
         "graph_diff" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::GraphDiffInput = serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_graph_diff(ctx, input).await?;
+            let input: crate::interface::mcp::handlers::consolidated_handlers::GraphDiffInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_graph_diff(
+                ctx, input,
+            )
+            .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "graph_timeline" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::GraphTimelineInput = serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_graph_timeline(ctx, input).await?;
+            let input: crate::interface::mcp::handlers::consolidated_handlers::GraphTimelineInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::consolidated_handlers::handle_graph_timeline(
+                    ctx, input,
+                )
+                .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
 
@@ -1338,10 +1559,8 @@ async fn call_tool_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use std::sync::Arc;
-    
-    
 
     // ============================================================================
     // Concurrent Request Tests

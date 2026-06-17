@@ -12,7 +12,10 @@
 > [ADR-026](../adr/ADR-026-graphify-style-mcp-tools.md) ·
 > [ADR-027](../adr/ADR-027-tool-consolidation.md) ·
 > [ADR-028](../adr/ADR-028-high-value-mcp-tools.md) ·
-> [ADR-029](../adr/ADR-029-mcp-http-sse-server.md)
+> [ADR-029](../adr/ADR-029-mcp-http-sse-server.md) ·
+> [ADR-033](../adr/ADR-033-mcp-tool-surface-integrity.md) ·
+> [ADR-034](../adr/ADR-034-mcp-production-readiness.md) — see also
+> [MCP Production Roadmap](./mcp-production-roadmap.md)
 
 This roadmap defines four sprints to deliver the ingest pipeline. Each sprint
 ships independently and builds on the previous one. Sprint 1 closes the

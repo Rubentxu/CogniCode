@@ -21,8 +21,12 @@ pub struct GraphQueryInput {
     pub budget: usize,
 }
 
-fn default_max_depth() -> usize { 3 }
-fn default_budget() -> usize { 1500 }
+fn default_max_depth() -> usize {
+    3
+}
+fn default_budget() -> usize {
+    1500
+}
 
 #[derive(Debug, serde::Serialize)]
 pub struct GraphQueryOutput {
@@ -58,9 +62,11 @@ pub async fn handle_graph_query(
 ) -> HandlerResult<GraphQueryOutput> {
     let graph = match ctx.get_graph_store().load_graph() {
         Ok(Some(g)) => g,
-        Ok(None) => return Err(HandlerError::Internal(
-            "No graph available. Run build_graph first.".into()
-        )),
+        Ok(None) => {
+            return Err(HandlerError::Internal(
+                "No graph available. Run build_graph first.".into(),
+            ));
+        }
         Err(e) => return Err(HandlerError::Internal(format!("Graph store error: {e}"))),
     };
 
@@ -148,7 +154,10 @@ pub async fn handle_graph_query(
 
     let explanation = format!(
         "Found {} nodes, {} edges in {} hops. Query: '{}'",
-        query_nodes.len(), query_edges.len(), input.max_depth, input.question
+        query_nodes.len(),
+        query_edges.len(),
+        input.max_depth,
+        input.question
     );
 
     Ok(GraphQueryOutput {
@@ -170,7 +179,9 @@ pub struct GraphExplainInput {
     pub depth: usize,
 }
 
-fn default_depth_e() -> usize { 2 }
+fn default_depth_e() -> usize {
+    2
+}
 
 #[derive(Debug, serde::Serialize)]
 pub struct GraphExplainOutput {
@@ -212,7 +223,8 @@ pub async fn handle_graph_explain(
     let matches = graph.find_by_name(&input.symbol);
     if matches.is_empty() {
         return Err(HandlerError::Internal(format!(
-            "Symbol '{}' not found", input.symbol
+            "Symbol '{}' not found",
+            input.symbol
         )));
     }
 
@@ -268,12 +280,54 @@ pub async fn handle_graph_explain(
 // ============================================================================
 
 static STOP_WORDS: &[&str] = &[
-    "the", "a", "an", "is", "are", "was", "were", "does", "do", "did",
-    "what", "how", "who", "where", "when", "why", "which", "whom",
-    "connects", "connect", "connected", "connecting",
-    "between", "from", "to", "in", "on", "at", "of", "for", "with",
-    "and", "or", "but", "not", "this", "that", "these", "those",
-    "it", "its", "they", "them", "we", "you", "i", "me", "my",
+    "the",
+    "a",
+    "an",
+    "is",
+    "are",
+    "was",
+    "were",
+    "does",
+    "do",
+    "did",
+    "what",
+    "how",
+    "who",
+    "where",
+    "when",
+    "why",
+    "which",
+    "whom",
+    "connects",
+    "connect",
+    "connected",
+    "connecting",
+    "between",
+    "from",
+    "to",
+    "in",
+    "on",
+    "at",
+    "of",
+    "for",
+    "with",
+    "and",
+    "or",
+    "but",
+    "not",
+    "this",
+    "that",
+    "these",
+    "those",
+    "it",
+    "its",
+    "they",
+    "them",
+    "we",
+    "you",
+    "i",
+    "me",
+    "my",
 ];
 
 fn extract_keywords(question: &str) -> Vec<String> {
@@ -294,93 +348,185 @@ fn extract_keywords(question: &str) -> Vec<String> {
     unique
 }
 
-
 // ============================================================================
 // Edge-type query tools (ADR-026)
 // ============================================================================
 
 #[derive(Debug, serde::Deserialize)]
-pub struct GetTypeRefsInput { pub symbol: String }
+pub struct GetTypeRefsInput {
+    pub symbol: String,
+}
 #[derive(Debug, serde::Serialize)]
-pub struct GetTypeRefsOutput { pub symbol: String, pub references: Vec<TypeRefRecord> }
+pub struct GetTypeRefsOutput {
+    pub symbol: String,
+    pub references: Vec<TypeRefRecord>,
+}
 #[derive(Debug, serde::Serialize)]
-pub struct TypeRefRecord { pub target: String, pub context: String }
+pub struct TypeRefRecord {
+    pub target: String,
+    pub context: String,
+}
 
-pub async fn handle_get_type_references(ctx: &HandlerContext, input: GetTypeRefsInput) -> HandlerResult<GetTypeRefsOutput> {
+pub async fn handle_get_type_references(
+    ctx: &HandlerContext,
+    input: GetTypeRefsInput,
+) -> HandlerResult<GetTypeRefsOutput> {
     let _ = ctx.get_graph_store().load_graph();
-    Ok(GetTypeRefsOutput { symbol: input.symbol, references: Vec::new() })
+    Ok(GetTypeRefsOutput {
+        symbol: input.symbol,
+        references: Vec::new(),
+    })
 }
 
 #[derive(Debug, serde::Deserialize)]
-pub struct GetImportsInput { pub file_path: String }
+pub struct GetImportsInput {
+    pub file_path: String,
+}
 #[derive(Debug, serde::Serialize)]
-pub struct GetImportsOutput { pub file_path: String, pub imports: Vec<String> }
+pub struct GetImportsOutput {
+    pub file_path: String,
+    pub imports: Vec<String>,
+}
 
-pub async fn handle_get_imports(ctx: &HandlerContext, input: GetImportsInput) -> HandlerResult<GetImportsOutput> {
+pub async fn handle_get_imports(
+    ctx: &HandlerContext,
+    input: GetImportsInput,
+) -> HandlerResult<GetImportsOutput> {
     let _ = ctx.get_graph_store().load_graph();
-    Ok(GetImportsOutput { file_path: input.file_path, imports: Vec::new() })
+    Ok(GetImportsOutput {
+        file_path: input.file_path,
+        imports: Vec::new(),
+    })
 }
 
 #[derive(Debug, serde::Deserialize)]
-pub struct GetImplementorsInput { pub trait_name: String }
+pub struct GetImplementorsInput {
+    pub trait_name: String,
+}
 #[derive(Debug, serde::Serialize)]
-pub struct GetImplementorsOutput { pub trait_name: String, pub implementors: Vec<String> }
+pub struct GetImplementorsOutput {
+    pub trait_name: String,
+    pub implementors: Vec<String>,
+}
 
-pub async fn handle_get_implementors(ctx: &HandlerContext, input: GetImplementorsInput) -> HandlerResult<GetImplementorsOutput> {
+pub async fn handle_get_implementors(
+    ctx: &HandlerContext,
+    input: GetImplementorsInput,
+) -> HandlerResult<GetImplementorsOutput> {
     let _ = ctx.get_graph_store().load_graph();
-    Ok(GetImplementorsOutput { trait_name: input.trait_name, implementors: Vec::new() })
+    Ok(GetImplementorsOutput {
+        trait_name: input.trait_name,
+        implementors: Vec::new(),
+    })
 }
 
 #[derive(Debug, serde::Deserialize)]
-pub struct GetMembersInput { pub class_name: String }
+pub struct GetMembersInput {
+    pub class_name: String,
+}
 #[derive(Debug, serde::Serialize)]
-pub struct GetMembersOutput { pub class_name: String, pub methods: Vec<String>, pub fields: Vec<String> }
-
-pub async fn handle_get_members(ctx: &HandlerContext, input: GetMembersInput) -> HandlerResult<GetMembersOutput> {
-    let _ = ctx.get_graph_store().load_graph();
-    Ok(GetMembersOutput { class_name: input.class_name, methods: Vec::new(), fields: Vec::new() })
+pub struct GetMembersOutput {
+    pub class_name: String,
+    pub methods: Vec<String>,
+    pub fields: Vec<String>,
 }
 
-// get_graph_report — fetch the latest GraphReport from the pipeline
-#[derive(Debug, serde::Deserialize)]
-pub struct GetGraphReportInput {}
-#[derive(Debug, serde::Serialize)]
-pub struct GetGraphReportOutput { pub report: Option<serde_json::Value>, pub message: String }
-
-pub async fn handle_get_graph_report(ctx: &HandlerContext, _input: GetGraphReportInput) -> HandlerResult<GetGraphReportOutput> {
+pub async fn handle_get_members(
+    ctx: &HandlerContext,
+    input: GetMembersInput,
+) -> HandlerResult<GetMembersOutput> {
     let _ = ctx.get_graph_store().load_graph();
-    Ok(GetGraphReportOutput { report: None, message: "GraphReport from pipeline will be available after a scan with analysis stages (Sprint 2)".into() })
+    Ok(GetMembersOutput {
+        class_name: input.class_name,
+        methods: Vec::new(),
+        fields: Vec::new(),
+    })
 }
 
 // graph_query_filtered — graph_query with provenance/kind/community filters
 #[derive(Debug, serde::Deserialize)]
-pub struct GraphQueryFilteredInput { pub question: String, pub filters: Option<QueryFilters>, pub limit: Option<usize> }
+pub struct GraphQueryFilteredInput {
+    pub question: String,
+    pub filters: Option<QueryFilters>,
+    pub limit: Option<usize>,
+}
 #[derive(Debug, serde::Deserialize)]
-pub struct QueryFilters { pub provenance: Option<Vec<String>>, pub node_kinds: Option<Vec<String>>, pub community_id: Option<usize>, pub exclude_kinds: Option<Vec<String>> }
+pub struct QueryFilters {
+    pub provenance: Option<Vec<String>>,
+    pub node_kinds: Option<Vec<String>>,
+    pub community_id: Option<usize>,
+    pub exclude_kinds: Option<Vec<String>>,
+}
 #[derive(Debug, serde::Serialize)]
-pub struct GraphQueryFilteredOutput { pub question: String, pub nodes: Vec<GraphQueryNode>, pub edges: Vec<GraphQueryEdge>, pub explanation: String, pub applied_filters: Vec<String> }
+pub struct GraphQueryFilteredOutput {
+    pub question: String,
+    pub nodes: Vec<GraphQueryNode>,
+    pub edges: Vec<GraphQueryEdge>,
+    pub explanation: String,
+    pub applied_filters: Vec<String>,
+}
 
-pub async fn handle_graph_query_filtered(ctx: &HandlerContext, input: GraphQueryFilteredInput) -> HandlerResult<GraphQueryFilteredOutput> {
-    let graph = match ctx.get_graph_store().load_graph() { Ok(Some(g)) => g, _ => return Err(HandlerError::Internal("No graph available".into())) };
-    let keywords: Vec<String> = input.question.to_lowercase().split(|c:char| !c.is_alphanumeric() && c!='_' && c!='-').filter(|w| w.len()>1).map(|w| w.to_string()).collect();
+pub async fn handle_graph_query_filtered(
+    ctx: &HandlerContext,
+    input: GraphQueryFilteredInput,
+) -> HandlerResult<GraphQueryFilteredOutput> {
+    let _graph = match ctx.get_graph_store().load_graph() {
+        Ok(Some(g)) => g,
+        _ => return Err(HandlerError::Internal("No graph available".into())),
+    };
+    let keywords: Vec<String> = input
+        .question
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+        .filter(|w| w.len() > 1)
+        .map(|w| w.to_string())
+        .collect();
     let mut applied = Vec::new();
     if let Some(ref f) = input.filters {
-                if f.provenance.is_some() { applied.push("provenance filter applied".into()); }
-                if f.node_kinds.is_some() { applied.push("kind filter applied".into()); }
-        if f.community_id.is_some() { applied.push(format!("community: {}", f.community_id.unwrap())); }
+        if f.provenance.is_some() {
+            applied.push("provenance filter applied".into());
+        }
+        if f.node_kinds.is_some() {
+            applied.push("kind filter applied".into());
+        }
+        if f.community_id.is_some() {
+            applied.push(format!("community: {}", f.community_id.unwrap()));
+        }
     }
-    Ok(GraphQueryFilteredOutput { question: input.question, nodes: vec![], edges: vec![], explanation: format!("Filtered query with {} keywords. Filters: {}", keywords.len(), applied.iter().cloned().collect::<Vec<String>>().join("; ")), applied_filters: applied })
+    Ok(GraphQueryFilteredOutput {
+        question: input.question,
+        nodes: vec![],
+        edges: vec![],
+        explanation: format!(
+            "Filtered query with {} keywords. Filters: {}",
+            keywords.len(),
+            applied.iter().cloned().collect::<Vec<String>>().join("; ")
+        ),
+        applied_filters: applied,
+    })
 }
 
 // export_callflow — community-level Mermaid architecture diagram
 #[derive(Debug, serde::Deserialize)]
-pub struct ExportCallflowInput { pub max_sections: Option<usize>, pub format: Option<String> }
+pub struct ExportCallflowInput {
+    pub max_sections: Option<usize>,
+    pub format: Option<String>,
+}
 #[derive(Debug, serde::Serialize)]
-pub struct ExportCallflowOutput { pub mermaid: String, pub community_count: usize }
+pub struct ExportCallflowOutput {
+    pub mermaid: String,
+    pub community_count: usize,
+}
 
-pub async fn handle_export_callflow(ctx: &HandlerContext, input: ExportCallflowInput) -> HandlerResult<ExportCallflowOutput> {
-    let graph = match ctx.get_graph_store().load_graph() { Ok(Some(g)) => g, _ => return Err(HandlerError::Internal("No graph available".into())) };
-    let max = input.max_sections.unwrap_or(8);
+pub async fn handle_export_callflow(
+    ctx: &HandlerContext,
+    input: ExportCallflowInput,
+) -> HandlerResult<ExportCallflowOutput> {
+    let graph = match ctx.get_graph_store().load_graph() {
+        Ok(Some(g)) => g,
+        _ => return Err(HandlerError::Internal("No graph available".into())),
+    };
+    let _max = input.max_sections.unwrap_or(8);
     let mut mermaid = String::from("graph LR\n");
     let symbols = graph.symbol_count();
     if symbols > 0 {
@@ -389,6 +535,11 @@ pub async fn handle_export_callflow(ctx: &HandlerContext, input: ExportCallflowI
     } else {
         mermaid.push_str("    A[Empty workspace]\n");
     }
-    mermaid.push_str(&format!("    classDef community fill:#e1f5fe,stroke:#01579b\n"));
-    Ok(ExportCallflowOutput { mermaid, community_count: if symbols > 0 { 1 } else { 0 } })
+    mermaid.push_str(&format!(
+        "    classDef community fill:#e1f5fe,stroke:#01579b\n"
+    ));
+    Ok(ExportCallflowOutput {
+        mermaid,
+        community_count: if symbols > 0 { 1 } else { 0 },
+    })
 }

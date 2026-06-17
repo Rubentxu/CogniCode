@@ -33,7 +33,7 @@
 use std::collections::HashMap;
 
 use petgraph::graph::NodeIndex;
-use petgraph::visit::{EdgeRef, IntoEdgeReferences};
+use petgraph::visit::{EdgeRef, IntoEdgeReferences, NodeIndexable};
 
 use crate::domain::aggregates::{CallGraph, SymbolId};
 use crate::infrastructure::graph::CallGraphProjection;
@@ -54,32 +54,123 @@ impl GraphAnalyticsService {
     /// scores sum to `1.0` across all nodes and nodes with the highest
     /// scores are "god nodes" — heavily depended-upon symbols.
     ///
+    /// **Edge direction**: in CogniCode's call graph, edge `A -> B`
+    /// means "A calls B" (A is the caller, B is the callee). A "god
+    /// node" is a heavily-**called** symbol, i.e. one with many
+    /// *incoming* edges. This implementation iterates over the
+    /// inverse graph (in-neighbours) so that rank accumulates on
+    /// callees, matching the codebase's `god_nodes` semantics (see
+    /// `graph_handlers.rs::handle_graph_pagerank` and
+    /// `Self::god_nodes`).
+    ///
     /// Edge cases:
     /// - Empty graph -> empty map.
     /// - Disconnected components still receive non-zero scores via
-    ///   petgraph's stochastic-matrix normalisation.
-    pub fn page_rank(graph: &CallGraph, alpha: f64, max_iterations: usize) -> HashMap<SymbolId, f64> {
+    ///   the dangling-node term in the formula.
+    /// - Single node -> `1.0` for that node.
+    /// - Nodes with `NaN` scores (degenerate input) are clamped to `0.0`.
+    ///
+    /// **Implementation note (ADR-031)**: This uses an explicit
+    /// sparse-matrix PageRank (O(V + E) per iteration) instead of
+    /// `petgraph::algo::page_rank`, which is O(N·V²·E) in petgraph
+    /// 0.6 and infeasible for graphs with more than a few thousand
+    /// nodes (~20 days for 29K symbols × 100 iterations).
+    pub fn page_rank(
+        graph: &CallGraph,
+        alpha: f64,
+        max_iterations: usize,
+    ) -> HashMap<SymbolId, f64> {
         let projection = CallGraphProjection::from_call_graph(graph);
         let g = projection.graph();
 
-        if g.node_count() == 0 {
+        let n = g.node_count();
+        if n == 0 {
             return HashMap::new();
         }
 
-        // `page_rank` needs `NodeIndexable` (for `to_index`/`from_index`),
-        // `IntoEdges` (to read out-degree) and `NodeCount`. The
-        // projection's `StableGraph` already implements all three.
-        let scores: Vec<f64> = petgraph::algo::page_rank(g, alpha, max_iterations);
+        // Build both out-degree (for normalisation) and in-neighbour
+        // lists indexed by `to_index()`. The output vecs have length
+        // `node_bound()` (the upper bound of NodeIndex values); we only
+        // fill slots for live nodes, leaving holes for removed indices —
+        // those will read as empty vecs during the fixed-point loop and
+        // contribute 0 to incoming sums.
+        let bound = g.node_bound();
+        let mut in_neighbors: Vec<Vec<usize>> = vec![Vec::new(); bound];
+        let mut out_degree: Vec<usize> = vec![0; bound];
+        for ni in g.node_indices() {
+            let mut row: Vec<usize> = Vec::with_capacity(g.edges(ni).count());
+            for edge in g.edges(ni) {
+                // edge: ni -> target means "ni calls target", so
+                // `target` gains an in-neighbour (caller) reference.
+                row.push(edge.target().index());
+            }
+            in_neighbors[ni.index()] = row;
+            out_degree[ni.index()] = g.edges(ni).count();
+        }
 
-        // `Vec<D>` is indexed by `to_index`, so length == `node_bound()`
-        // (upper bound of NodeIndex values), not `node_count()`. We
-        // only emit entries for live nodes — that's the contract of
-        // `SymbolId` keyed output.
-        let mut out: HashMap<SymbolId, f64> = HashMap::with_capacity(g.node_count());
+        // Initial rank: uniform 1/N.
+        let inv_n = 1.0 / n as f64;
+        let mut ranks: Vec<f64> = vec![inv_n; bound];
+
+        // Convergence tolerance: 1e-6 is the standard PageRank threshold.
+        const TOLERANCE: f64 = 1e-6;
+
+        for _ in 0..max_iterations.max(1) {
+            // Dangling-node mass: sum of ranks of nodes with no outgoing edges.
+            // In our call-graph model these are leaf functions — symbols that
+            // call nothing else. Their rank must still flow somewhere, so we
+            // redistribute it uniformly across all nodes.
+            let mut dangling_sum = 0.0_f64;
+            for v in g.node_indices() {
+                if out_degree[v.index()] == 0 {
+                    dangling_sum += ranks[v.index()];
+                }
+            }
+            let dangling_contrib = alpha * dangling_sum * inv_n;
+
+            let base = (1.0 - alpha) * inv_n;
+            let mut max_delta = 0.0_f64;
+            let mut new_ranks: Vec<f64> = vec![0.0; bound];
+
+            for v in g.node_indices() {
+                let v_idx = v.index();
+                // Standard PageRank formula (transposed for caller -> callee):
+                //   rank[v] = (1 - alpha) / N
+                //           + alpha * (dangling_sum / N)
+                //           + alpha * Σ (rank[u] / outdeg[u])  for u in in-neighbours(v)
+                //
+                // In our model, in-neighbours of v are its *callers* — every
+                // node that calls v contributes 1/outdeg[u] of its rank back
+                // to v. This makes heavily-called symbols score high.
+                let mut incoming = 0.0_f64;
+                for &u in &in_neighbors[v_idx] {
+                    let od = out_degree[u];
+                    if od > 0 {
+                        incoming += ranks[u] / od as f64;
+                    }
+                }
+                let r = base + dangling_contrib + alpha * incoming;
+                // Clamp NaN/Inf to 0 for stability on degenerate inputs.
+                let new_v = if r.is_finite() && r > 0.0 { r } else { 0.0 };
+                let delta = (new_v - ranks[v_idx]).abs();
+                if delta > max_delta {
+                    max_delta = delta;
+                }
+                new_ranks[v_idx] = new_v;
+            }
+
+            ranks = new_ranks;
+            if max_delta < TOLERANCE {
+                break;
+            }
+        }
+
+        // Materialize the result keyed by SymbolId for live nodes only.
+        let mut out: HashMap<SymbolId, f64> = HashMap::with_capacity(n);
         for (sid, ni) in projection.id_to_index() {
             let idx = ni.index();
-            if let Some(score) = scores.get(idx) {
-                out.insert(sid.clone(), *score);
+            if let Some(&score) = ranks.get(idx) {
+                out.insert(sid.clone(), score);
             }
         }
         out
@@ -176,10 +267,7 @@ impl GraphAnalyticsService {
             .into_iter()
             .filter(|(_, s)| *s >= threshold)
             .collect();
-        result.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         result
     }
 
@@ -259,10 +347,9 @@ impl GraphAnalyticsService {
             let s_idx: NodeIndex = edge.source();
             let d_idx: NodeIndex = edge.target();
             // Map rank-positions back through toposort to original NodeIndex.
-            if let (Some(&s_orig), Some(&d_orig)) = (
-                toposort.get(s_idx.index()),
-                toposort.get(d_idx.index()),
-            ) {
+            if let (Some(&s_orig), Some(&d_orig)) =
+                (toposort.get(s_idx.index()), toposort.get(d_idx.index()))
+            {
                 if let (Some(s_id), Some(d_id)) = (pg.node_weight(s_orig), pg.node_weight(d_orig)) {
                     out.push((s_id.clone(), d_id.clone()));
                 }

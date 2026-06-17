@@ -7,7 +7,13 @@
 pub mod memory_graph_store;
 
 #[cfg(feature = "persistence")]
+pub mod cached_graph_store;
+
+#[cfg(feature = "persistence")]
 pub use memory_graph_store::InMemoryGraphStore;
+
+#[cfg(feature = "persistence")]
+pub use cached_graph_store::CachedGraphStore;
 
 // PostgreSQL-backed implementation of the async `Repository` trait.
 // Feature-gated so default builds stay sqlx-free. When the `postgres`
@@ -17,9 +23,7 @@ pub use memory_graph_store::InMemoryGraphStore;
 pub mod postgres_repository;
 
 #[cfg(feature = "postgres")]
-pub use postgres_repository::{
-    NamedViewRow, PostgresRepository, ScanManifestRow, ViewSpecRow,
-};
+pub use postgres_repository::{NamedViewRow, PostgresRepository, ScanManifestRow, ViewSpecRow};
 
 #[cfg(test)]
 mod store_contract_tests;

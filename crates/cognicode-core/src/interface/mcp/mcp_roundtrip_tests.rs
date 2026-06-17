@@ -792,4 +792,182 @@ fn simple_function() {
             assert_eq!(parsed_input.path, input.path);
         }
     }
+
+    // ==========================================================================
+    // Tool Surface Parity Tests (ADR-033 Phase 0)
+    // ==========================================================================
+    // These tests verify the MCP tool surface integrity invariants:
+    // 1. No duplicate tool names in the public tools/list
+    // 2. get_graph_report (ghost) is NOT listed
+    // 3. All listed tools map to a known dispatch arm (static allowlist)
+    //
+    // Note: async dispatch probing (test_every_listed_tool_dispatches) requires
+    // rmcp::service::RequestContext which needs Peer::new (pub(crate)). The
+    // static allowlist test below provides a compile-time-checked proxy until
+    // a proper test helper is available in rmcp.
+
+    mod tool_surface_parity {
+        use super::*;
+        use std::collections::HashSet;
+
+        /// Invariant: every public tool name must appear exactly once in tools/list.
+        /// Duplicate registrations (e.g. solid_audit, graph_diff, graph_timeline in
+        /// pre-ADR-033 code) cause MCP clients to receive conflicting schemas.
+        #[test]
+        fn test_no_duplicate_tool_names() {
+            let tools = crate::interface::mcp::rmcp_adapter::build_all_tools();
+            let names: Vec<_> = tools.iter().map(|t| t.name.as_ref()).collect();
+            let unique: HashSet<_> = names.iter().collect();
+            assert_eq!(
+                unique.len(),
+                names.len(),
+                "Duplicate tool names found: {:?}",
+                names
+                    .iter()
+                    .filter(
+                        |n| unique.contains(*n) && names.iter().filter(|n2| *n2 == *n).count() > 1
+                    )
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        /// Invariant: get_graph_report must NOT be listed in public tools/list.
+        /// It has no dispatch arm (falls through to ToolNotFound) and returns a
+        /// stale Sprint 2 placeholder message. Re-advertisement requires a
+        /// follow-up ADR with a real PG-backed implementation.
+        #[test]
+        fn test_get_graph_report_not_listed() {
+            let tools = crate::interface::mcp::rmcp_adapter::build_all_tools();
+            let names: Vec<_> = tools.iter().map(|t| t.name.as_ref()).collect();
+            assert!(
+                !names.contains(&"get_graph_report"),
+                "get_graph_report must not be listed in public tools/list"
+            );
+        }
+
+        /// Static dispatch allowlist for listed public tools.
+        /// This is the set of tool names that have a corresponding dispatch arm
+        /// in call_tool_handler. It is manually maintained and provides a
+        /// compile-time-checked proxy for the async dispatch test.
+        ///
+        /// To add a new tool: implement the handler, add the dispatch arm in
+        /// rmcp_adapter::call_tool_handler, then add the name here.
+        /// To remove a tool: remove the dispatch arm, then remove the name here.
+        ///
+        /// GATED_OK tools (graph_diff, graph_timeline, generate_contract) are
+        /// listed here because they have real dispatch arms that return explicit
+        /// capability/configuration errors at runtime, not ToolNotFound.
+        fn dispatchable_tool_names() -> &'static [&'static str] {
+            &[
+                "analyze_impact",
+                "ask_about_code",
+                "build_call_subgraph",
+                "build_graph",
+                "codebase_map",
+                "compare_graph",
+                "detect_drift",
+                "detect_god_functions",
+                "detect_long_parameter_lists",
+                "edit_file",
+                "export_callflow",
+                "export_mermaid",
+                "find_pattern_by_intent",
+                "find_references",
+                "find_usages",
+                "generate_contract",
+                "get_call_hierarchy",
+                "get_complexity",
+                "get_entry_points",
+                "get_file_symbols",
+                "get_hot_paths",
+                "get_implementors",
+                "get_imports",
+                "get_leaf_functions",
+                "get_members",
+                "get_per_file_graph",
+                "get_symbol_code",
+                "get_type_references",
+                "go_to_definition",
+                "graph_analyze",
+                "graph_all_paths",
+                "graph_communities",
+                "graph_community_detail",
+                "graph_condensed",
+                "graph_diff",
+                "graph_explain",
+                "graph_feedback_arcs",
+                "graph_god_nodes",
+                "graph_insights",
+                "graph_pagerank",
+                "graph_query",
+                "graph_query_filtered",
+                "graph_reduced",
+                "graph_search_idf",
+                "graph_suggest_questions",
+                "graph_surprising_connections",
+                "graph_timeline",
+                "hover",
+                "iac_query",
+                "list_files",
+                "nl_to_symbol",
+                "project_insights",
+                "project_overview",
+                "query_symbol_index",
+                "read_file",
+                "retrieve_and_verify",
+                "review_pr",
+                "safe_refactor",
+                "search_content",
+                "smart_search",
+                "solid_audit",
+                "trace_path",
+                "validate_contract",
+                "write_file",
+            ]
+        }
+
+        /// Verify every listed tool appears in the static dispatch allowlist.
+        /// This prevents ghost tools (listed but no dispatch arm) from being
+        /// added without deliberate allowlist maintenance.
+        #[test]
+        fn test_all_listed_tools_are_dispatchable() {
+            let tools = crate::interface::mcp::rmcp_adapter::build_all_tools();
+            let listed_names: Vec<_> = tools.iter().map(|t| t.name.as_ref()).collect();
+            let allowlist = dispatchable_tool_names();
+            let allowset: HashSet<_> = allowlist.iter().copied().collect();
+
+            let not_in_allowlist: Vec<_> = listed_names
+                .iter()
+                .filter(|n| !allowset.contains(*n))
+                .collect();
+
+            assert!(
+                not_in_allowlist.is_empty(),
+                "Listed tools missing from dispatch allowlist: {:?}. \
+                 Add them to dispatchable_tool_names() if they have a dispatch arm, \
+                 or remove them from the tools/list if they are ghost tools.",
+                not_in_allowlist
+            );
+        }
+
+        /// Verify every allowlisted tool is actually listed.
+        /// This ensures the allowlist doesn't drift from the actual tool surface.
+        #[test]
+        fn test_allowlist_subset_of_listed() {
+            let tools = crate::interface::mcp::rmcp_adapter::build_all_tools();
+            let listed_names: HashSet<_> = tools.iter().map(|t| t.name.as_ref()).collect();
+            let allowlist = dispatchable_tool_names();
+
+            let not_listed: Vec<_> = allowlist
+                .iter()
+                .filter(|n| !listed_names.contains(*n))
+                .collect();
+
+            assert!(
+                not_listed.is_empty(),
+                "Allowlisted tools not found in tools/list: {:?}",
+                not_listed
+            );
+        }
+    }
 }
