@@ -244,48 +244,111 @@ pub async fn handle_codebase_map(
 
 // ── project_insights ─────────────────────────────────────────────────────────
 
+use crate::application::services::graph_insights::GraphInsightsService;
+
 #[derive(Debug, serde::Deserialize)]
 pub struct ProjectInsightsInput {}
 
 #[derive(Debug, serde::Serialize)]
 pub struct ProjectInsightsOutput {
-    pub symbol_count: usize,
-    pub edge_count: usize,
+    /// Total symbols in the graph.
+    pub total_symbols: usize,
+    /// Total edges (dependencies) in the graph.
+    pub total_edges: usize,
+    /// Entry points (root symbols).
     pub entry_points: usize,
+    /// Dead code count (symbols with no callers/dependents).
     pub dead_code: usize,
+    /// Health score 0-100 from GraphInsightsService.
     pub health_score: f64,
-    pub hot_paths: Vec<String>,
+    /// Hot paths — top god node names ranked by importance score.
+    pub hot_paths: Vec<HotPath>,
+    /// Community overview from GraphInsightsService.
+    pub communities: CommunityOverviewDto,
+    /// Cycle clusters from GraphInsightsService.
+    pub cycles: CycleInfo,
+    /// Human-readable summary.
     pub summary: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct HotPath {
+    pub symbol_id: String,
+    pub score: f64,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct CommunityOverviewDto {
+    pub count: usize,
+    pub largest_size: usize,
+    pub smallest_size: usize,
+    pub avg_cohesion: f64,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct CycleInfo {
+    pub total_clusters: usize,
+    pub symbols_in_cycles: usize,
 }
 
 pub async fn handle_project_insights(
     ctx: &HandlerContext,
     _input: ProjectInsightsInput,
 ) -> HandlerResult<ProjectInsightsOutput> {
-    let graph = match ctx.get_graph_store().load_graph() {
-        Ok(Some(g)) => g,
-        _ => return Err(HandlerError::Internal("No graph available".into())),
-    };
-    let symbols = graph.symbol_count();
-    let edges = graph.edge_count();
+    let graph = ctx.analysis_service.get_project_graph();
+
+    // Analyze with real GraphInsightsService
+    let report = GraphInsightsService::analyze(&graph);
+
+    // Compute entry points and dead code from graph (not in InsightsReport)
     let entries = graph.roots().len();
     let dead = graph.find_dead_code().len();
-    let health = if symbols > 0 {
-        100.0 - (dead as f64 / symbols as f64 * 50.0).min(30.0)
-    } else {
-        100.0
+
+    // Map god_nodes to hot_paths (top 10 by score)
+    let hot_paths: Vec<HotPath> = report
+        .god_nodes
+        .iter()
+        .take(10)
+        .map(|(sid, score)| HotPath {
+            // SymbolId format: "module:symbol_name", extract just the name
+            symbol_id: sid.as_str().split(':').nth(1).unwrap_or(sid.as_str()).to_string(),
+            score: *score,
+        })
+        .collect();
+
+    // Map community overview
+    let communities = CommunityOverviewDto {
+        count: report.communities.count,
+        largest_size: report.communities.largest_size,
+        smallest_size: report.communities.smallest_size,
+        avg_cohesion: report.communities.avg_cohesion,
     };
+
+    // Map cycle info
+    let cycles = CycleInfo {
+        total_clusters: report.summary.total_cycles,
+        symbols_in_cycles: report.summary.symbols_in_cycles,
+    };
+
+    let summary = format!(
+        "{} symbols, {} edges, {} communities, {} cycles, health {:.0}/100",
+        report.summary.total_symbols,
+        report.summary.total_edges,
+        report.communities.count,
+        report.summary.total_cycles,
+        report.health_score
+    );
+
     Ok(ProjectInsightsOutput {
-        symbol_count: symbols,
-        edge_count: edges,
+        total_symbols: report.summary.total_symbols,
+        total_edges: report.summary.total_edges,
         entry_points: entries,
         dead_code: dead,
-        health_score: health,
-        hot_paths: vec![],
-        summary: format!(
-            "{} symbols, {} edges, {} entry points, {} dead, health {:.0}/100",
-            symbols, edges, entries, dead, health
-        ),
+        health_score: report.health_score,
+        hot_paths,
+        communities,
+        cycles,
+        summary,
     })
 }
 
