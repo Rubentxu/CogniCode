@@ -77,11 +77,16 @@ impl ToolMetrics {
         }
     }
 
-    /// Creates a no-op ToolMetrics for testing or when OTel is disabled
+    /// Creates a no-op ToolMetrics for testing or when OTel is disabled.
+    ///
+    /// Uses the global no-op meter (returned when no MeterProvider is set) so
+    /// all instruments silently drop recordings without panicking.
     #[allow(dead_code)]
     pub fn noop() -> Self {
-        // Return zeroed metrics - they won't be used in noop mode
-        panic!("ToolMetrics::noop not intended for direct use")
+        // When no global meter provider is set, global::meter() returns a noop meter.
+        // When a real provider is set (production), we get real instruments — still safe.
+        let meter = opentelemetry::global::meter("cognicode");
+        Self::new(&meter)
     }
 
     /// Records a successful tool call with duration

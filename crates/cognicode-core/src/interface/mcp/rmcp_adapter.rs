@@ -4,9 +4,11 @@
 //! allowing the CogniCode MCP server to use the official rmcp SDK for transport.
 
 use crate::application::services::file_operations::FileOperationsService;
+use crate::infrastructure::telemetry::get_global_metrics;
 use crate::infrastructure::verification::RustVerifier;
 use crate::interface::mcp::error::{InterfaceError, InterfaceResult};
 use crate::interface::mcp::handlers::HandlerContext;
+use opentelemetry::KeyValue;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, Content, ListToolsResult, ServerCapabilities,
@@ -16,6 +18,7 @@ use rmcp::service::RoleServer;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 /// CogniCodeHandler implements the rmcp ServerHandler trait
 ///
@@ -942,6 +945,10 @@ impl ServerHandler for CogniCodeHandler {
 }
 
 /// Handles the tool call by dispatching to the appropriate handler
+///
+/// M1.1: All tool calls flow through this single instrumentation boundary.
+/// Timing, call count, and error classification are recorded here — no
+/// per-handler timing or record_tool_usage calls needed.
 async fn call_tool_handler(
     ctx: &HandlerContext,
     request: CallToolRequestParams,
@@ -949,7 +956,16 @@ async fn call_tool_handler(
     let tool_name = request.name.as_ref();
     let arguments = request.arguments.unwrap_or_default();
 
-    match tool_name {
+    // M1.1: Centralized instrumentation boundary
+    let start = Instant::now();
+    let metrics = get_global_metrics();
+    if let Some(m) = &metrics {
+        m.calls
+            .add(1, &[KeyValue::new("tool", tool_name.to_string())]);
+    }
+
+    let result = async {
+        match tool_name {
         "get_file_symbols" => {
             let input: crate::interface::mcp::schemas::GetFileSymbolsInput =
                 serde_json::from_value(arguments.into())?;
@@ -1206,36 +1222,17 @@ async fn call_tool_handler(
         "generate_contract" => {
             let input: crate::interface::mcp::schemas::GenerateContractInput =
                 serde_json::from_value(arguments.into())?;
-            let start = std::time::Instant::now();
             let output =
                 crate::interface::mcp::handlers::aix_handlers::handle_generate_contract(ctx, input)
                     .await?;
-            let duration_ms = start.elapsed().as_millis() as f64;
-            // Best-effort telemetry recording
-            ctx.record_tool_usage(
-                "generate_contract",
-                &serde_json::to_string(&output).unwrap_or_default(),
-                duration_ms,
-                Some(&output.contract_id),
-            );
             Ok(serde_json::to_string(&output)?)
         }
         "validate_contract" => {
             let input: crate::interface::mcp::schemas::ValidateContractInput =
                 serde_json::from_value(arguments.into())?;
-            let contract_id = input.contract_id.clone();
-            let start = std::time::Instant::now();
             let output =
                 crate::interface::mcp::handlers::aix_handlers::handle_validate_contract(ctx, input)
                     .await?;
-            let duration_ms = start.elapsed().as_millis() as f64;
-            // Best-effort telemetry recording
-            ctx.record_tool_usage(
-                "validate_contract",
-                &serde_json::to_string(&output).unwrap_or_default(),
-                duration_ms,
-                Some(&contract_id),
-            );
             Ok(serde_json::to_string(&output)?)
         }
         // Phase 3A: Proactive Tools
@@ -1244,18 +1241,9 @@ async fn call_tool_handler(
         "detect_drift" => {
             let input: crate::interface::mcp::schemas::DetectDriftInput =
                 serde_json::from_value(arguments.into())?;
-            let start = std::time::Instant::now();
             let output =
                 crate::interface::mcp::handlers::aix_handlers::handle_detect_drift(ctx, input)
                     .await?;
-            let duration_ms = start.elapsed().as_millis() as f64;
-            // Best-effort telemetry recording
-            ctx.record_tool_usage(
-                "detect_drift",
-                &serde_json::to_string(&output).unwrap_or_default(),
-                duration_ms,
-                None,
-            );
             Ok(serde_json::to_string(&output)?)
         }
         // Batch D: Agent Task Tools (bidirectional interaction)
@@ -1554,6 +1542,33 @@ async fn call_tool_handler(
 
         _ => return Err(InterfaceError::ToolNotFound(tool_name.to_string())),
     }
+    }.await;
+
+    // M1.1: Record duration + classify status for error recording
+    let duration_ms = start.elapsed().as_millis() as f64;
+    if let Some(m) = &metrics {
+        m.duration
+            .record(duration_ms, &[KeyValue::new("tool", tool_name.to_string())]);
+    }
+
+    // M1.1: Record error metrics with status classification
+    if let Err(e) = &result {
+        if let Some(m) = &metrics {
+            let error_type = match e {
+                InterfaceError::ToolNotFound(_) => "missing",
+                _ => "error",
+            };
+            m.errors.add(
+                1,
+                &[
+                    KeyValue::new("tool", tool_name.to_string()),
+                    KeyValue::new("error_type", error_type),
+                ],
+            );
+        }
+    }
+
+    result
 }
 
 #[cfg(test)]

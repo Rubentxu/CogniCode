@@ -513,25 +513,6 @@ impl HandlerContext {
             0.0
         }
     }
-
-    /// Records an MCP tool usage event for telemetry.
-    ///
-    /// No-op stub after the Graph Intelligence v2 cleanup removed the
-    /// SQLite-backed telemetry path. The signature is preserved so the
-    /// dispatch layer (`rmcp_adapter.rs`) and existing call sites in
-    /// `aix_handlers.rs` keep linking. When the PostgreSQL adapter
-    /// lands, this hook will gain a real implementation.
-    #[allow(dead_code, unused_variables)]
-    pub fn record_tool_usage(
-        &self,
-        _tool_name: &str,
-        _result_summary: &str,
-        _duration_ms: f64,
-        _contract_id: Option<&str>,
-    ) {
-        // No-op: SQLite telemetry was removed; PostgreSQL adapter
-        // will land in a follow-up slice.
-    }
 }
 
 // =============================================================================

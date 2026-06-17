@@ -118,8 +118,7 @@ pub async fn handle_ranked_symbols(
     ctx: &HandlerContext,
     input: RankedSymbolsInput,
 ) -> HandlerResult<RankedSymbolsResult> {
-    let start = Instant::now();
-    let _ensure_sem = ensure_semantic_indexed(ctx)?;
+        let _ensure_sem = ensure_semantic_indexed(ctx)?;
     let _ensure = ensure_graph_built(ctx)?;
 
     let graph = ctx.analysis_service.get_project_graph();
@@ -195,15 +194,6 @@ pub async fn handle_ranked_symbols(
         },
     };
 
-    // B.3: Record tool usage telemetry
-    let duration_ms = start.elapsed().as_millis() as f64;
-    ctx.record_tool_usage(
-        "ranked_symbols",
-        &serde_json::to_string(&result).unwrap_or_default(),
-        duration_ms,
-        None,
-    );
-
     Ok(result)
 }
 
@@ -217,8 +207,7 @@ pub async fn handle_suggest_onboarding_plan(
     ctx: &HandlerContext,
     input: OnboardingPlanInput,
 ) -> HandlerResult<OnboardingPlanDto> {
-    let start = Instant::now();
-    let _ensure = ensure_graph_built(ctx)?;
+        let _ensure = ensure_graph_built(ctx)?;
 
     let goal = match input.goal {
         OnboardingGoalDetail::Understand => build_understand_plan(ctx)?,
@@ -241,15 +230,6 @@ pub async fn handle_suggest_onboarding_plan(
             detail_level: "onboarding_plan".to_string(),
         },
     };
-
-    // B.3: Record tool usage telemetry
-    let duration_ms = start.elapsed().as_millis() as f64;
-    ctx.record_tool_usage(
-        "suggest_onboarding_plan",
-        &serde_json::to_string(&result).unwrap_or_default(),
-        duration_ms,
-        None,
-    );
 
     Ok(result)
 }
@@ -413,8 +393,7 @@ pub async fn handle_suggest_refactor_plan(
     ctx: &HandlerContext,
     input: SuggestRefactorPlanInput,
 ) -> HandlerResult<RefactorSuggestionDto> {
-    let start = Instant::now();
-    let _ensure = ensure_graph_built(ctx)?;
+        let _ensure = ensure_graph_built(ctx)?;
 
     let graph = ctx.analysis_service.get_project_graph();
     let symbol_id = find_symbol_in_graph(&graph, &input.symbol);
@@ -497,15 +476,6 @@ pub async fn handle_suggest_refactor_plan(
         },
     };
 
-    // B.3: Record tool usage telemetry
-    let duration_ms = start.elapsed().as_millis() as f64;
-    ctx.record_tool_usage(
-        "suggest_refactor_plan",
-        &serde_json::to_string(&result).unwrap_or_default(),
-        duration_ms,
-        None,
-    );
-
     Ok(result)
 }
 
@@ -519,8 +489,7 @@ pub async fn handle_nl_to_symbol(
     ctx: &HandlerContext,
     input: NlToSymbolInput,
 ) -> HandlerResult<NlToSymbolResult> {
-    let start = Instant::now();
-    let _ensure_sem = ensure_semantic_indexed(ctx)?;
+        let _ensure_sem = ensure_semantic_indexed(ctx)?;
     let _ensure = ensure_graph_built(ctx)?;
 
     let graph = ctx.analysis_service.get_project_graph();
@@ -597,15 +566,6 @@ pub async fn handle_nl_to_symbol(
         },
     };
 
-    // B.3: Record tool usage telemetry
-    let duration_ms = start.elapsed().as_millis() as f64;
-    ctx.record_tool_usage(
-        "nl_to_symbol",
-        &serde_json::to_string(&result).unwrap_or_default(),
-        duration_ms,
-        None,
-    );
-
     Ok(result)
 }
 
@@ -619,8 +579,7 @@ pub async fn handle_ask_about_code(
     ctx: &HandlerContext,
     input: AskAboutCodeInput,
 ) -> HandlerResult<AskAboutCodeResult> {
-    let start = Instant::now();
-    let _ensure = ensure_graph_built(ctx)?;
+        let _ensure = ensure_graph_built(ctx)?;
 
     let graph = ctx.analysis_service.get_project_graph();
 
@@ -674,15 +633,6 @@ pub async fn handle_ask_about_code(
         },
     };
 
-    // B.3: Record tool usage telemetry
-    let duration_ms = start.elapsed().as_millis() as f64;
-    ctx.record_tool_usage(
-        "ask_about_code",
-        &serde_json::to_string(&result).unwrap_or_default(),
-        duration_ms,
-        None,
-    );
-
     Ok(result)
 }
 
@@ -696,8 +646,7 @@ pub async fn handle_find_pattern_by_intent(
     ctx: &HandlerContext,
     input: FindPatternByIntentInput,
 ) -> HandlerResult<FindPatternResult> {
-    let start = Instant::now();
-    // Pattern catalog
+        // Pattern catalog
     let patterns = vec![
         (
             "singleton",
@@ -829,15 +778,6 @@ pub async fn handle_find_pattern_by_intent(
         },
     };
 
-    // B.3: Record tool usage telemetry
-    let duration_ms = start.elapsed().as_millis() as f64;
-    ctx.record_tool_usage(
-        "find_pattern_by_intent",
-        &serde_json::to_string(&result).unwrap_or_default(),
-        duration_ms,
-        None,
-    );
-
     Ok(result)
 }
 
@@ -851,8 +791,7 @@ pub async fn handle_compare_call_graphs(
     ctx: &HandlerContext,
     input: CompareCallGraphsInput,
 ) -> HandlerResult<GraphDiffDto> {
-    let start = Instant::now();
-    let _ensure = ensure_graph_built(ctx)?;
+        let _ensure = ensure_graph_built(ctx)?;
 
     let current_graph = ctx.analysis_service.get_project_graph();
     let current_symbols: HashSet<String> = current_graph
@@ -953,15 +892,6 @@ pub async fn handle_compare_call_graphs(
         },
     };
 
-    // B.3: Record tool usage telemetry
-    let duration_ms = start.elapsed().as_millis() as f64;
-    ctx.record_tool_usage(
-        "compare_call_graphs",
-        &serde_json::to_string(&result).unwrap_or_default(),
-        duration_ms,
-        None,
-    );
-
     Ok(result)
 }
 
@@ -975,8 +905,7 @@ pub async fn handle_detect_api_breaks(
     ctx: &HandlerContext,
     input: DetectApiBreaksInput,
 ) -> HandlerResult<ApiBreaksResult> {
-    let start = Instant::now();
-    let _ensure = ensure_graph_built(ctx)?;
+        let _ensure = ensure_graph_built(ctx)?;
 
     let current_graph = ctx.analysis_service.get_project_graph();
     let current_entries: HashSet<String> = current_graph
@@ -1036,15 +965,6 @@ pub async fn handle_detect_api_breaks(
         },
     };
 
-    // B.3: Record tool usage telemetry
-    let duration_ms = start.elapsed().as_millis() as f64;
-    ctx.record_tool_usage(
-        "detect_api_breaks",
-        &serde_json::to_string(&result).unwrap_or_default(),
-        duration_ms,
-        None,
-    );
-
     Ok(result)
 }
 
@@ -1058,8 +978,7 @@ pub async fn handle_generate_system_prompt_context(
     ctx: &HandlerContext,
     input: SystemPromptContextInput,
 ) -> HandlerResult<SystemPromptContext> {
-    let start = Instant::now();
-    let _ensure = ensure_graph_built(ctx)?;
+        let _ensure = ensure_graph_built(ctx)?;
 
     let stats = ctx.analysis_service.get_graph_stats();
     let hot_paths = if input.include_hot_paths.unwrap_or(false) {
@@ -1154,15 +1073,6 @@ pub async fn handle_generate_system_prompt_context(
         estimated_tokens: content_len / 4,
     };
 
-    // B.3: Record tool usage telemetry
-    let duration_ms = start.elapsed().as_millis() as f64;
-    ctx.record_tool_usage(
-        "generate_system_prompt_context",
-        &serde_json::to_string(&result).unwrap_or_default(),
-        duration_ms,
-        None,
-    );
-
     Ok(result)
 }
 
@@ -1176,8 +1086,7 @@ pub async fn handle_detect_god_functions(
     ctx: &HandlerContext,
     input: DetectGodFunctionsInput,
 ) -> HandlerResult<GodFunctionsResult> {
-    let start = Instant::now();
-    let _ensure = ensure_graph_built(ctx)?;
+        let _ensure = ensure_graph_built(ctx)?;
 
     let graph = ctx.analysis_service.get_project_graph();
     let mut god_functions = Vec::new();
@@ -1241,15 +1150,6 @@ pub async fn handle_detect_god_functions(
         },
     };
 
-    // B.3: Record tool usage telemetry
-    let duration_ms = start.elapsed().as_millis() as f64;
-    ctx.record_tool_usage(
-        "detect_god_functions",
-        &serde_json::to_string(&result).unwrap_or_default(),
-        duration_ms,
-        None,
-    );
-
     Ok(result)
 }
 
@@ -1263,8 +1163,7 @@ pub async fn handle_detect_long_parameter_lists(
     ctx: &HandlerContext,
     input: DetectLongParamsInput,
 ) -> HandlerResult<LongParamsResult> {
-    let start = Instant::now();
-    let _ensure = ensure_graph_built(ctx)?;
+        let _ensure = ensure_graph_built(ctx)?;
 
     let graph = ctx.analysis_service.get_project_graph();
     let mut long_param_functions = Vec::new();
@@ -1307,15 +1206,6 @@ pub async fn handle_detect_long_parameter_lists(
         },
     };
 
-    // B.3: Record tool usage telemetry
-    let duration_ms = start.elapsed().as_millis() as f64;
-    ctx.record_tool_usage(
-        "detect_long_parameter_lists",
-        &serde_json::to_string(&result).unwrap_or_default(),
-        duration_ms,
-        None,
-    );
-
     Ok(result)
 }
 
@@ -1329,8 +1219,7 @@ pub async fn handle_evaluate_refactor_quality(
     ctx: &HandlerContext,
     _input: EvaluateRefactorQualityInput,
 ) -> HandlerResult<RefactorEvalDto> {
-    let start = Instant::now();
-    let _ensure = ensure_graph_built(ctx)?;
+        let _ensure = ensure_graph_built(ctx)?;
 
     let _current_graph = ctx.analysis_service.get_project_graph();
     let stats = ctx.analysis_service.get_graph_stats();
@@ -1397,14 +1286,6 @@ pub async fn handle_evaluate_refactor_quality(
                 detail_level: "evaluate_refactor".to_string(),
             },
         };
-        // B.3: Record tool usage telemetry
-        let duration_ms = start.elapsed().as_millis() as f64;
-        ctx.record_tool_usage(
-            "evaluate_refactor_quality",
-            &serde_json::to_string(&result).unwrap_or_default(),
-            duration_ms,
-            None,
-        );
         return Ok(result);
     }
 
@@ -1473,15 +1354,6 @@ pub async fn handle_evaluate_refactor_quality(
             detail_level: "evaluate_refactor".to_string(),
         },
     };
-
-    // B.3: Record tool usage telemetry
-    let duration_ms = start.elapsed().as_millis() as f64;
-    ctx.record_tool_usage(
-        "evaluate_refactor_quality",
-        &serde_json::to_string(&result).unwrap_or_default(),
-        duration_ms,
-        None,
-    );
 
     Ok(result)
 }
