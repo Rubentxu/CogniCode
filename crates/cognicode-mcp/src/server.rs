@@ -261,11 +261,38 @@ async fn main() -> anyhow::Result<()> {
 
     // ── File watcher (Sprint 4 / ADR-022) ─────────────────────────────────
     // Start the file watcher as a background task. It watches the workspace
-    // for file changes and triggers incremental re-scans automatically.
-    let watcher_handle = cognicode_core::application::ingest::watcher::start_watcher(cwd.clone());
-    let watcher_handle = Arc::new(std::sync::Mutex::new(watcher_handle.0));
-    // The watcher receiver (watcher_handle.1) is available for scan integration
-    // but not wired to the pipeline yet — that requires IngestController.
+    // for file changes and triggers graph rebuilds automatically.
+    let (watcher_handle, watcher_rx) = cognicode_core::application::ingest::watcher::start_watcher(cwd.clone());
+    let watcher_handle = Arc::new(std::sync::Mutex::new(watcher_handle));
+
+    // Spawn a task that consumes watcher events and triggers graph rebuilds.
+    // Uses debounce_changes to coalesce rapid file changes into a single rebuild.
+    {
+        let ctx_for_watcher = shared_ctx.clone();
+        let debounced = cognicode_core::application::ingest::watcher::debounce_changes(watcher_rx, 500);
+        tokio::spawn(async move {
+            let mut rx = debounced;
+            while let Some(changed_files) = rx.recv().await {
+                tracing::info!(
+                    "file watcher: {} files changed, rebuilding graph",
+                    changed_files.len()
+                );
+                let input = cognicode_core::interface::mcp::handlers::BuildGraphInput { directory: None };
+                match cognicode_core::interface::mcp::handlers::handle_build_graph(&ctx_for_watcher, input).await {
+                    Ok(output) => {
+                        tracing::info!(
+                            "file watcher: graph rebuilt — {} symbols, {} edges",
+                            output.symbols_found, output.relationships_found
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!("file watcher: graph rebuild failed: {e}");
+                    }
+                }
+            }
+            tracing::info!("file watcher: event channel closed");
+        });
+    }
 
     tracing::info!("file watcher active for {}", cwd.display());
 
