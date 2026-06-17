@@ -45,6 +45,18 @@ impl CogniCodeHandler {
         }
     }
 
+    /// M3.1: Creates a CogniCodeHandler wrapping a pre-built, shared
+    /// `Arc<HandlerContext>`. Used by the HTTP server (cognicode-mcp)
+    /// to share the same `graph_loaded` flag between the MCP dispatch
+    /// and the `/ready` HTTP handler.
+    pub fn from_ctx(ctx: Arc<HandlerContext>) -> Self {
+        let cancellation_token = ctx.cancellation_token.clone();
+        Self {
+            ctx,
+            cancellation_token,
+        }
+    }
+
     /// Creates a new CogniCodeHandler with a custom GraphStore (SQLite for persistence)
     pub fn with_graph_store(
         project_root: PathBuf,
@@ -1046,6 +1058,8 @@ async fn call_tool_handler(
                 if let Some(m) = &metrics {
                     m.record_graph_stats(symbols, edges, health_score);
                 }
+                // M3.1: Flip the readiness flag so /ready returns 200
+                ctx.mark_graph_loaded();
             }
 
             Ok(serde_json::to_string(&output)?)
@@ -1620,6 +1634,17 @@ async fn call_tool_handler(
 
     // M1.1: Record duration + classify status for error recording
     let duration_ms = start.elapsed().as_millis() as f64;
+
+    // M3.4: Structured per-call log line — one entry per tool call
+    // (success, error, gated, missing, skipped). Emitted at the
+    // universal instrumentation boundary so every tool flow is captured
+    // uniformly. Field names match M3-Sprint-spec.md §M3.4.
+    tracing::info!(
+        tool = %tool_name,
+        duration_ms = %duration_ms as u64,
+        status = %status,
+        "tool_call"
+    );
     if let Some(m) = &metrics {
         // M1.6: Record calls with tool + status labels
         m.calls.add(

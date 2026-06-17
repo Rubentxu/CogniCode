@@ -354,6 +354,13 @@ pub struct HandlerContext {
     /// `OnceLock` ensures thread-safe single initialization.
     /// See ADR-030.
     pub fallback_store: Arc<OnceLock<Arc<dyn GraphStore>>>,
+    /// M3.1: Flag flipped to `true` after the first successful `build_graph`
+    /// call completes through `call_tool_handler`. Used by the `/ready`
+    /// HTTP endpoint to report graph-readiness distinct from process
+    /// liveness (`/health`). Atomic + `Arc` so the flag can be observed
+    /// by the HTTP readiness handler without going through the dispatch
+    /// boundary.
+    pub graph_loaded: Arc<AtomicBool>,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -361,6 +368,7 @@ impl std::fmt::Debug for HandlerContext {
         f.debug_struct("HandlerContext")
             .field("working_dir", &self.working_dir)
             .field("validator", &self.validator)
+            .field("graph_loaded", &self.graph_loaded.load(Ordering::SeqCst))
             .finish()
     }
 }
@@ -424,6 +432,7 @@ impl HandlerContext {
             file_ops_service: None,
             postgres_repo: None,
             fallback_store: Arc::new(OnceLock::new()),
+            graph_loaded: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -433,6 +442,19 @@ impl HandlerContext {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancellation_token.load(Ordering::SeqCst)
+    }
+
+    /// M3.1: Mark the graph as loaded. Called by `call_tool_handler` after
+    /// a successful `build_graph` dispatch so the `/ready` HTTP endpoint
+    /// can report readiness.
+    pub fn mark_graph_loaded(&self) {
+        self.graph_loaded.store(true, Ordering::SeqCst);
+    }
+
+    /// M3.1: Read the current graph-loaded state. Used by the `/ready`
+    /// HTTP endpoint to distinguish liveness from readiness.
+    pub fn is_graph_loaded(&self) -> bool {
+        self.graph_loaded.load(Ordering::SeqCst)
     }
 
     /// Get the GraphStore — persistent (SQLite) if configured, or a
@@ -480,6 +502,7 @@ impl HandlerContext {
             file_ops_service: None,
             postgres_repo: None,
             fallback_store: Arc::new(OnceLock::new()),
+            graph_loaded: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -729,6 +752,7 @@ impl HandlerContextBuilder {
             file_ops_service: self.file_ops_service,
             postgres_repo: self.postgres_repo,
             fallback_store: Arc::new(OnceLock::new()),
+            graph_loaded: Arc::new(AtomicBool::new(false)),
         }
     }
 }
