@@ -21,7 +21,7 @@ use tempfile::TempDir;
 
 /// Helper to create a HandlerContext with workspace scoping
 fn create_test_context(temp_dir: &TempDir) -> HandlerContext {
-    HandlerContext::new(temp_dir.path().to_path_buf())
+    HandlerContext::builder().with_working_dir(temp_dir.path().to_path_buf()).build()
 }
 
 // ============================================================================

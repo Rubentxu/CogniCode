@@ -2555,7 +2555,7 @@ mod aix_tests {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph first
         let build_input = BuildGraphInput { directory: None };
@@ -2579,7 +2579,7 @@ mod aix_tests {
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         std::fs::write(&file_path, "fn main() {}\n").unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -2612,7 +2612,7 @@ mod aix_tests {
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         std::fs::write(&file_path, "fn main() { helper(); }\nfn helper() {}").unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -2649,7 +2649,7 @@ mod aix_tests {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -2678,7 +2678,7 @@ mod aix_tests {
     #[tokio::test]
     async fn test_find_pattern_by_intent_list() {
         let temp = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = FindPatternByIntentInput {
             intent: "singleton pattern".to_string(),
@@ -2717,7 +2717,7 @@ fn f15() { f14(); f13(); f12(); f11(); f10(); f9(); f8(); f7(); f6(); f5(); f4()
 fn main() { f15(); }
 "#).unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -2748,7 +2748,7 @@ fn main() { f15(); }
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -2770,7 +2770,7 @@ fn main() { f15(); }
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         std::fs::write(&file_path, "fn main() { helper(); }\nfn helper() {}").unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -2796,7 +2796,7 @@ fn main() { f15(); }
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         std::fs::write(&file_path, "fn main() {}\n").unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -2820,7 +2820,7 @@ fn main() { f15(); }
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         std::fs::write(&file_path, "fn main() {}\n").unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -2873,7 +2873,7 @@ fn main() { f15(); }
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         std::fs::write(&file_path, "fn main() {}\n").unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Do NOT build graph - this ensures no baseline exists
         let input = EvaluateRefactorQualityInput {};
@@ -2895,7 +2895,7 @@ fn main() { f15(); }
     #[tokio::test]
     async fn test_symbol_hotness_tracking_increments() {
         let temp = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Record some symbol accesses
         ctx.record_symbol_access("symbol_a", 5);
@@ -2933,7 +2933,7 @@ fn main() { f15(); }
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph first
         let build_input = BuildGraphInput { directory: None };
@@ -2981,7 +2981,7 @@ fn main() {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -3026,7 +3026,7 @@ fn main() { f5(); }
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -3080,7 +3080,7 @@ fn main() {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -3117,7 +3117,7 @@ fn main() {}
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -3148,7 +3148,7 @@ fn main() {}
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         std::fs::write(&file_path, "fn main() { helper(); }\nfn helper() {}").unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -3177,7 +3177,7 @@ fn main() {}
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         std::fs::write(&file_path, "fn main() {}").unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -3215,7 +3215,7 @@ fn helper2() {}
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -3244,7 +3244,7 @@ fn helper2() {}
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         std::fs::write(&file_path, "fn main() {}\nfn helper() {}").unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph but don't save baseline separately
         let build_input = BuildGraphInput { directory: None };
@@ -3287,7 +3287,7 @@ fn y() {}
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -3326,7 +3326,7 @@ fn another() {}
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph first
         let build_input = BuildGraphInput { directory: None };
@@ -3367,7 +3367,7 @@ fn helper() {}
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -3405,7 +3405,7 @@ fn helper() {}
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // IMPORTANT: Do NOT build the graph first - this tests auto-build
 
@@ -3448,7 +3448,7 @@ fn uncalled_func() {}
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -3488,7 +3488,7 @@ fn main() {}
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph first
         let build_input = BuildGraphInput { directory: None };
@@ -3536,7 +3536,7 @@ fn main() {}
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -3585,7 +3585,7 @@ fn main() {}
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph
         let build_input = BuildGraphInput { directory: None };
@@ -3627,7 +3627,7 @@ fn main() {}
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // Build graph first to establish baseline
         let build_input = BuildGraphInput { directory: None };
@@ -3691,7 +3691,7 @@ fn main() {}
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let build_input = BuildGraphInput { directory: None };
         let _ = handle_build_graph(&ctx, build_input).await;
@@ -3745,7 +3745,7 @@ fn main() {}
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let build_input = BuildGraphInput { directory: None };
         let _ = handle_build_graph(&ctx, build_input).await;
@@ -3798,7 +3798,7 @@ fn validate(data: &str) {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "src/main.rs".to_string(),
@@ -3845,7 +3845,7 @@ fn add(a: i32, b: i32) -> i32 {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "src/main.rs".to_string(),
@@ -3888,7 +3888,7 @@ fn hash_token(token: &str) -> String { base64::encode(token.as_bytes()) }
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "src/main.rs".to_string(),
@@ -3930,7 +3930,7 @@ fn process_ptr(ptr: *const i32) -> i32 {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "src/main.rs".to_string(),
@@ -3969,7 +3969,7 @@ fn critical_op() {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "src/main.rs".to_string(),
@@ -4008,7 +4008,7 @@ fn get_config() -> String {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "src/main.rs".to_string(),
@@ -4047,7 +4047,7 @@ fn safe_add(a: i32, b: i32) -> i32 {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "src/main.rs".to_string(),
@@ -4093,7 +4093,7 @@ fn get_config() -> String {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "src/main.rs".to_string(),
@@ -4136,7 +4136,7 @@ fn legacy_read() -> String {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "src/main.rs".to_string(),
@@ -4178,7 +4178,7 @@ fn modern_read() -> Result<String, std::io::Error> {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "src/main.rs".to_string(),
@@ -4219,7 +4219,7 @@ fn temp_workaround() {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "src/main.rs".to_string(),
@@ -4262,7 +4262,7 @@ fn check_password() {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "src/main.rs".to_string(),
@@ -4305,7 +4305,7 @@ fn process(item: &str) {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "src/main.rs".to_string(),
@@ -4349,7 +4349,7 @@ fn process(data: &str) -> Result<(), ()> {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         // With threshold 0.9, only findings >= 0.9 should be included
         let input_high = DetectDriftInput {
@@ -4397,7 +4397,7 @@ fn test_fn() {
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
         // ctx.db_conn is None by default in HandlerContext::new
 
         let input = DetectDriftInput {
@@ -4439,7 +4439,7 @@ fn test_fn() {
         let file_path = temp.path().join("README.txt");
         std::fs::write(&file_path, "just a text file").unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "README.txt".to_string(),
@@ -4455,7 +4455,7 @@ fn test_fn() {
     async fn test_detect_drift_file_not_found() {
         // Non-existent file should return error
         let temp = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "nonexistent.rs".to_string(),
@@ -4485,7 +4485,7 @@ def process_data(data):
         )
         .unwrap();
 
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = DetectDriftInput {
             file_path: "script.py".to_string(),
@@ -4515,7 +4515,7 @@ def process_data(data):
     #[tokio::test]
     async fn test_poll_tasks_returns_empty_when_no_tasks() {
         let temp = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = PollTasksInput { limit: 10 };
         let result = handle_poll_tasks(&ctx, input).await;
@@ -4530,7 +4530,7 @@ def process_data(data):
     #[tokio::test]
     async fn test_complete_task_rejects_invalid_status() {
         let temp = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::new(temp.path().to_path_buf());
+        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
 
         let input = CompleteTaskInput {
             task_id: 1,
