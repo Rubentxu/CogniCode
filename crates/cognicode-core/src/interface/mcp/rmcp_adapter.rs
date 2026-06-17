@@ -64,30 +64,10 @@ impl CogniCodeHandler {
         store: Arc<dyn crate::domain::traits::GraphStore>,
     ) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        let mut ctx = HandlerContext::with_graph_store(project_root, store);
-        ctx.cancellation_token = cancellation_token.clone();
-        Self {
-            ctx: Arc::new(ctx),
-            cancellation_token,
-        }
-    }
-
-    /// Creates a new CogniCodeHandler with a `GraphRepository`
-    /// wired into the handler context. Used by the MCP binary
-    /// when the user passes `--database-url` — the binary
-    /// builds a `PgGraphRepository` from a `sqlx::PgPool` and
-    /// hands it in here so the `graph_search` / `docs_ingest`
-    /// tools can route to PG.
-    ///
-    /// Gated behind the `multimodal` Cargo feature: callers
-    /// that don't enable `multimodal` see no method.
-    #[cfg(feature = "multimodal")]
-    pub fn with_graph_repository(
-        project_root: PathBuf,
-        repo: std::sync::Arc<dyn crate::domain::GraphRepository>,
-    ) -> Self {
-        let cancellation_token = Arc::new(AtomicBool::new(false));
-        let mut ctx = HandlerContext::with_graph_repository(project_root, repo);
+        let mut ctx = HandlerContext::builder()
+            .with_working_dir(project_root)
+            .with_graph_store_arc(store)
+            .build();
         ctx.cancellation_token = cancellation_token.clone();
         Self {
             ctx: Arc::new(ctx),

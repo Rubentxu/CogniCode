@@ -371,10 +371,10 @@ mod tests {
             Arc::new(MockLspProvider::new().with_definition(Ok(Some(def_location.clone()))));
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::with_code_intelligence_provider(
-            temp_dir.path().to_path_buf(),
-            provider,
-        );
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_code_intelligence_arc(provider)
+            .build();
 
         // Create the file that contains the definition
         std::fs::write(temp_dir.path().join("test.rs"), "fn test() {}\n").unwrap();
@@ -397,10 +397,10 @@ mod tests {
         let provider = Arc::new(MockLspProvider::new().with_definition(Ok(None)));
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::with_code_intelligence_provider(
-            temp_dir.path().to_path_buf(),
-            provider,
-        );
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_code_intelligence_arc(provider)
+            .build();
 
         let input = GoToDefinitionInput {
             file_path: "test.rs".to_string(),
@@ -421,10 +421,10 @@ mod tests {
         )));
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::with_code_intelligence_provider(
-            temp_dir.path().to_path_buf(),
-            provider,
-        );
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_code_intelligence_arc(provider)
+            .build();
 
         let input = GoToDefinitionInput {
             file_path: "test.rs".to_string(),
@@ -452,10 +452,10 @@ mod tests {
         let provider = Arc::new(MockLspProvider::new().with_hover(Ok(Some(hover_info))));
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::with_code_intelligence_provider(
-            temp_dir.path().to_path_buf(),
-            provider,
-        );
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_code_intelligence_arc(provider)
+            .build();
 
         let input = HoverInput {
             file_path: "test.rs".to_string(),
@@ -476,10 +476,10 @@ mod tests {
         let provider = Arc::new(MockLspProvider::new().with_hover(Ok(None)));
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::with_code_intelligence_provider(
-            temp_dir.path().to_path_buf(),
-            provider,
-        );
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_code_intelligence_arc(provider)
+            .build();
 
         let input = HoverInput {
             file_path: "test.rs".to_string(),
@@ -500,10 +500,10 @@ mod tests {
         )));
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::with_code_intelligence_provider(
-            temp_dir.path().to_path_buf(),
-            provider,
-        );
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_code_intelligence_arc(provider)
+            .build();
 
         let input = HoverInput {
             file_path: "test.rs".to_string(),
@@ -538,10 +538,10 @@ mod tests {
         let provider = Arc::new(MockLspProvider::new().with_references(Ok(refs)));
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::with_code_intelligence_provider(
-            temp_dir.path().to_path_buf(),
-            provider,
-        );
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_code_intelligence_arc(provider)
+            .build();
 
         let input = FindReferencesInput {
             file_path: "test.rs".to_string(),
@@ -563,10 +563,10 @@ mod tests {
         let provider = Arc::new(MockLspProvider::new().with_references(Ok(vec![])));
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::with_code_intelligence_provider(
-            temp_dir.path().to_path_buf(),
-            provider,
-        );
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_code_intelligence_arc(provider)
+            .build();
 
         let input = FindReferencesInput {
             file_path: "test.rs".to_string(),
@@ -587,10 +587,10 @@ mod tests {
         )));
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::with_code_intelligence_provider(
-            temp_dir.path().to_path_buf(),
-            provider,
-        );
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_code_intelligence_arc(provider)
+            .build();
 
         let input = FindReferencesInput {
             file_path: "test.rs".to_string(),
@@ -637,10 +637,10 @@ mod tests {
         let provider = Arc::new(MockLspProvider::new().with_document_symbols(Ok(symbols)));
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::with_code_intelligence_provider(
-            temp_dir.path().to_path_buf(),
-            provider,
-        );
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_code_intelligence_arc(provider)
+            .build();
 
         let input = GetDocumentSymbolsInput {
             file_path: "test.rs".to_string(),
@@ -663,10 +663,10 @@ mod tests {
         let provider = Arc::new(MockLspProvider::new().with_document_symbols(Ok(vec![])));
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::with_code_intelligence_provider(
-            temp_dir.path().to_path_buf(),
-            provider,
-        );
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_code_intelligence_arc(provider)
+            .build();
 
         let input = GetDocumentSymbolsInput {
             file_path: "empty.rs".to_string(),
@@ -697,10 +697,10 @@ mod tests {
         let provider = Arc::new(MockLspProvider::new().with_document_symbols(Ok(symbols)));
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::with_code_intelligence_provider(
-            temp_dir.path().to_path_buf(),
-            provider,
-        );
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_code_intelligence_arc(provider)
+            .build();
 
         let input = GetDocumentSymbolsInput {
             file_path: "large.rs".to_string(),
@@ -718,10 +718,10 @@ mod tests {
         )));
 
         let temp_dir = tempfile::tempdir().unwrap();
-        let ctx = HandlerContext::with_code_intelligence_provider(
-            temp_dir.path().to_path_buf(),
-            provider,
-        );
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_code_intelligence_arc(provider)
+            .build();
 
         let input = GetDocumentSymbolsInput {
             file_path: "test.rs".to_string(),

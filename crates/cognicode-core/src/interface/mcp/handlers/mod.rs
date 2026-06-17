@@ -374,68 +374,6 @@ impl std::fmt::Debug for HandlerContext {
 }
 
 impl HandlerContext {
-    #[deprecated(since = "0.6.0", note = "Use HandlerContext::builder() instead")]
-    pub fn new(working_dir: PathBuf) -> Self {
-        Self::builder().with_working_dir(working_dir).build()
-    }
-
-    #[deprecated(since = "0.6.0", note = "Use HandlerContext::builder() instead")]
-    pub fn with_validator(working_dir: PathBuf, validator: InputValidator) -> Self {
-        Self::builder()
-            .with_working_dir(working_dir)
-            .with_validator(validator)
-            .build()
-    }
-
-    #[deprecated(since = "0.6.0", note = "Use HandlerContext::builder() instead")]
-    pub fn with_analysis_service(working_dir: PathBuf, analysis_service: AnalysisService) -> Self {
-        Self::builder()
-            .with_working_dir(working_dir)
-            .with_analysis_service(analysis_service)
-            .build()
-    }
-
-    #[deprecated(since = "0.6.0", note = "Use HandlerContext::builder() instead")]
-    pub fn with_refactor_service(working_dir: PathBuf, refactor_service: RefactorService) -> Self {
-        Self::builder()
-            .with_working_dir(working_dir)
-            .with_refactor_service(refactor_service)
-            .build()
-    }
-
-    /// Create a HandlerContext with a pre-configured CodeIntelligenceProvider for testing
-    /// Create a HandlerContext with a pre-configured CodeIntelligenceProvider for testing
-    #[deprecated(since = "0.6.0", note = "Use HandlerContext::builder() instead")]
-    pub fn with_code_intelligence_provider(
-        working_dir: PathBuf,
-        provider: Arc<dyn CodeIntelligenceProvider>,
-    ) -> Self {
-        let canonical_working_dir =
-            std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
-
-        Self {
-            working_dir: canonical_working_dir.clone(),
-            validator: Arc::new(InputValidator::new().with_workspace(vec![canonical_working_dir])),
-            analysis_service: Arc::new(AnalysisService::new()),
-            refactor_service: Arc::new(RefactorService::new()),
-            compressor: Arc::new(ContextCompressorService::new()),
-            semantic_search: Arc::new(SemanticSearchService::new()),
-            symbol_code: Arc::new(SymbolCodeService::new()),
-            client_protocol_version: None,
-            client_name: None,
-            client_version: None,
-            cancellation_token: Arc::new(AtomicBool::new(false)),
-            log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
-            symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
-            graph_store: None,
-            code_intelligence_provider: Some(provider),
-            file_ops_service: None,
-            postgres_repo: None,
-            fallback_store: Arc::new(OnceLock::new()),
-            graph_loaded: Arc::new(AtomicBool::new(false)),
-        }
-    }
-
     pub fn cancellation_token(&self) -> &Arc<AtomicBool> {
         &self.cancellation_token
     }
@@ -484,35 +422,6 @@ impl HandlerContext {
                     Arc::new(CachedGraphStore::new(self.analysis_service.graph_cache()))
                 })
                 .clone()
-        }
-    }
-
-    /// Create a HandlerContext with a pre-configured persistent GraphStore
-    #[deprecated(since = "0.6.0", note = "Use HandlerContext::builder() instead")]
-    pub fn with_graph_store(working_dir: PathBuf, store: Arc<dyn GraphStore>) -> Self {
-        let canonical_working_dir =
-            std::fs::canonicalize(&working_dir).unwrap_or_else(|_| working_dir.clone());
-
-        Self {
-            working_dir: canonical_working_dir.clone(),
-            validator: Arc::new(InputValidator::new().with_workspace(vec![canonical_working_dir])),
-            analysis_service: Arc::new(AnalysisService::new()),
-            refactor_service: Arc::new(RefactorService::new()),
-            compressor: Arc::new(ContextCompressorService::new()),
-            semantic_search: Arc::new(SemanticSearchService::new()),
-            symbol_code: Arc::new(SymbolCodeService::new()),
-            client_protocol_version: None,
-            client_name: None,
-            client_version: None,
-            cancellation_token: Arc::new(AtomicBool::new(false)),
-            log_level: Arc::new(tokio::sync::RwLock::new(tracing::Level::INFO)),
-            symbol_hotness: Arc::new(Mutex::new(HashMap::new())),
-            graph_store: Some(store),
-            code_intelligence_provider: None,
-            file_ops_service: None,
-            postgres_repo: None,
-            fallback_store: Arc::new(OnceLock::new()),
-            graph_loaded: Arc::new(AtomicBool::new(false)),
         }
     }
 

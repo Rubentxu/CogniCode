@@ -4398,7 +4398,7 @@ fn test_fn() {
         .unwrap();
 
         let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
-        // ctx.db_conn is None by default in HandlerContext::new
+        // ctx.db_conn is None by default in HandlerContext::builder().build()
 
         let input = DetectDriftInput {
             file_path: "src/main.rs".to_string(),
