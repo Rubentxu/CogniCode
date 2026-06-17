@@ -986,7 +986,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["query"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "composite", true, false, 2000)),
+                    .with_meta(cognicode_meta("stable", "composite", true, false, 2000)),
                     Tool::new(
                         "compare_graph",
                         "Compare the current call graph snapshot vs the latest PostgreSQL graph_report. Shows added/removed symbols and metric deltas. Requires PostgreSQL persistence.",

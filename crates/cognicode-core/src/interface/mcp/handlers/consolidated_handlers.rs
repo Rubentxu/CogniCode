@@ -277,7 +277,7 @@ fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<()> {
 
 pub async fn handle_compare_graph(
     ctx: &HandlerContext,
-    input: CompareGraphInput,
+    _input: CompareGraphInput,
 ) -> HandlerResult<CompareGraphOutput> {
     // Requires PG persistence
     let pg_repo = match &ctx.postgres_repo {
