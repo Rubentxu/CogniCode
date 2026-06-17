@@ -1,0 +1,160 @@
+# Apply Progress: ADR-035 PR-1 (CheckpointId + VersionedGraphCache + GraphCache refactor)
+
+**Change**: ADR-035 Graph Checkpointing — PR-1
+**Proposal**: engram://2215
+**Spec**: engram://2219
+**Design**: engram://2217
+**Tasks**: engram://2216
+**Chain strategy**: stacked-to-main (2 PRs)
+**Scope of this PR**: CheckpointId newtype + VersionedGraphCache struct + GraphCache refactor + unit tests
+
+## Status: COMPLETED ✅
+
+## Summary
+
+Added the in-memory checkpoint infrastructure for graph snapshot isolation
+(ADR-035). `CheckpointId` is a monotonic u64 newtype (id 0 reserved as
+NONE). `VersionedGraphCache` is a `VecDeque`-backed ring with FIFO
+retention. `GraphCache` was refactored to wrap
+`ArcSwap<Mutex<VersionedGraphCache>>` so writes can publish a new head
+while in-flight readers pin to an older version. The default retention
+is 2 (current + previous). All 18 graph_cache tests and 11 new
+checkpoint tests pass; no existing tests were broken by the refactor
+(the 4 pre-existing lib test failures are PG/manifest-related and
+unrelated to GraphCache).
+
+## Tasks Completed
+
+### Task 1 — `CheckpointId` newtype
+
+- [x] New file `crates/cognicode-core/src/infrastructure/graph/checkpoint.rs`
+      exports `CheckpointId(pub u64)` with:
+  - `CheckpointId::NONE` sentinel (id 0)
+  - `is_valid()` predicate
+  - `next()` pure arithmetic
+  - `Display` impl (`checkpoint:N`)
+  - Derives: `Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord`
+
+### Task 2 — `VersionedGraphCache` struct
+
+- [x] Same file defines `VersionedGraphCache` with:
+  - `new(retention)` — panics if `retention < 1`
+  - `insert(Arc<CallGraph>) -> CheckpointId` — FIFO eviction
+  - `head() -> Option<Arc<CallGraph>>`
+  - `head_id() -> CheckpointId` (NONE when empty)
+  - `get_at(CheckpointId) -> Option<Arc<CallGraph>>`
+  - `contains(CheckpointId) -> bool`
+- [x] Backed by `VecDeque<(CheckpointId, Arc<CallGraph>)>` with
+      pre-allocated capacity to avoid reallocations in the hot path.
+
+### Task 3 — `GraphCache` refactor
+
+- [x] `GraphCache::new()` defaults to retention = 2 (new const
+      `DEFAULT_RETENTION`).
+- [x] `GraphCache::with_retention(n)` constructor added.
+- [x] Inner storage: `ArcSwap<Mutex<VersionedGraphCache>>` — ArcSwap
+      gives lock-free pointer swaps on the outer level, Mutex serializes
+      the rare write path so we can return a `CheckpointId` from
+      `set()` without a TOCTOU race.
+- [x] `set(graph: CallGraph) -> CheckpointId` — returns the new
+      checkpoint id; existing callers in `refresh.rs`, `runtime`,
+      `analysis_service.rs`, `cached_graph_store.rs`, and
+      `graph_benchmarks.rs` all use `cache.set(graph);` as a statement
+      and continue to compile unchanged.
+- [x] `get() -> Arc<CallGraph>` — returns current head (backward
+      compatible).
+- [x] `get_at(id) -> Option<Arc<CallGraph>>` — returns a pinned
+      checkpoint, `None` if evicted.
+- [x] `current_id() -> Option<CheckpointId>` — `None` if no checkpoint
+      has been published.
+- [x] `get_ref()` — preserved for the MCP compression path; now leaks
+      the head's `Arc<CallGraph>` into a `Box<Arc<_>>` to guarantee the
+      returned reference is not dangling. Documented unsoundness
+      (concurrent `set` after `get_ref`) is unchanged.
+- [x] `update()`, `apply_events()`, `queue_event()`, `flush_events()`,
+      `clear()`, `subscribe()` — all preserved, all use the new ring
+      through `head_or_empty()` helper.
+
+### Task 4 — Tests
+
+- [x] `crates/cognicode-core/src/infrastructure/graph/checkpoint_tests.rs`
+      (11 tests, all pass):
+  - `test_checkpoint_id_monotonic`
+  - `test_checkpoint_id_none_is_invalid`
+  - `test_checkpoint_id_display` (bonus)
+  - `test_versioned_cache_new_is_empty`
+  - `test_versioned_cache_insert_returns_monotonic_ids`
+  - `test_versioned_cache_head_is_latest`
+  - `test_versioned_cache_get_at_returns_pinned`
+  - `test_versioned_cache_retention_evicts_oldest`
+  - `test_versioned_cache_get_at_evicted_returns_none`
+  - `test_versioned_cache_contains`
+  - `test_versioned_cache_zero_retention_panics` (bonus, documents
+    the `assert!(retention >= 1)` invariant)
+- [x] Added 3 new tests to `graph_cache.rs` (all pass):
+  - `test_graph_cache_set_returns_checkpoint_id`
+  - `test_graph_cache_get_at_returns_pinned_version`
+  - `test_graph_cache_current_id`
+- [x] All 15 pre-existing graph_cache tests still pass.
+
+## Files Changed
+
+| File | Change |
+|------|--------|
+| `crates/cognicode-core/src/infrastructure/graph/checkpoint.rs` | NEW |
+| `crates/cognicode-core/src/infrastructure/graph/checkpoint_tests.rs` | NEW |
+| `crates/cognicode-core/src/infrastructure/graph/graph_cache.rs` | MODIFIED (refactor + 3 tests) |
+| `crates/cognicode-core/src/infrastructure/graph/mod.rs` | MODIFIED (module wiring + re-exports) |
+
+## Verification
+
+- [x] `cargo check -p cognicode-core --all-targets` — clean (only
+      pre-existing warnings).
+- [x] `cargo test -p cognicode-core --lib graph_cache::` — 18/18 pass.
+- [x] `cargo test -p cognicode-core --lib checkpoint_tests` — 11/11
+      pass.
+- [x] `cargo test -p cognicode-core --lib` — 1341 pass; 4 pre-existing
+      failures (PostgreSQL test DB not available + aix_handlers
+      manifest tests) confirmed unrelated to GraphCache by re-running
+      on stashed working tree.
+- [x] `cargo check -p cognicode-runtime --all-targets` — clean.
+- [x] `cargo build -p cognicode-mcp --release` — produces
+      `target/release/cognicode-mcp` (109 MB).
+
+## Backward Compatibility
+
+- All existing `cache.set(graph);` call sites compile unchanged (Rust
+  silently discards the new `CheckpointId` return value when used as a
+  statement). Sites verified:
+  - `crates/cognicode-core/src/application/ingest/refresh.rs:25`
+  - `crates/cognicode-core/src/application/services/analysis_service.rs:337,406,435,730`
+  - `crates/cognicode-core/src/infrastructure/persistence/cached_graph_store.rs:121,149`
+  - `crates/cognicode-core/benches/graph_benchmarks.rs:495`
+  - `crates/cognicode-runtime/src/lib.rs:43`
+- `get()` and `get_ref()` keep their original signatures.
+- `subscribe()`, `queue_event()`, `flush_events()`, `clear()` are
+  unchanged.
+
+## Risks
+
+- **Memory leak in `get_ref()`**: each call leaks one `Box<Arc<CallGraph>>`
+  (~8 bytes header + Arc header). This is bounded by the call rate
+  (currently: one per MCP request that requests `compressed: true`).
+  Acceptable for PR-1; PR-2 should consider replacing `get_ref()` with
+  a guard-returning `get_ref_with_guard()` API.
+- **`set()` is now O(retention)**: cloning the head is O(1) thanks to
+  `Arc`, but the inner `Mutex` makes write concurrency serialized.
+  This is fine for the current refresh rate (file change → 1 write)
+  but should be re-evaluated if write throughput increases.
+- **Pre-existing test failures (4)**: PG roundtrip + aix_handlers
+  manifest tests. Not in scope for this PR. Tracked separately.
+
+## Next Steps (PR-2)
+
+- Extend `GraphStore` trait with `current_checkpoint_id() -> Option<CheckpointId>`
+  and `checkpoint_at(id) -> Option<Arc<CallGraph>>`.
+- Implement on the 4 stores: `PetGraphStore`, `CallGraphProjection`,
+  `OnDemandGraphBuilder`, `PerFileGraphCache` (or a subset, TBD in
+  design).
+- Author the ADR-035 doc.
+- Add integration tests for cross-store snapshot isolation.

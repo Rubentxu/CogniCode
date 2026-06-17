@@ -3,7 +3,8 @@
 //! This module provides various graph construction strategies:
 //! - `PetGraphStore`: Full petgraph-based graph store
 //! - `CallGraphProjection`: Read-side petgraph projection for graph algorithms
-//! - `GraphCache`: Thread-safe cache for call graphs
+//! - `GraphCache`: Thread-safe cache for call graphs (ADR-035 checkpointing)
+//! - `CheckpointId` / `VersionedGraphCache`: snapshot-isolation ring (ADR-035)
 //! - `LightweightIndex`: Fast symbol index without edges
 //! - `SymbolIndex`: Symbol index with cache management
 //! - `OnDemandGraphBuilder`: Lazy graph construction
@@ -13,6 +14,7 @@
 //!   mtime + blake3 content-hash tracking for incremental graph rescans.
 
 mod call_graph_projection;
+pub mod checkpoint;
 pub mod graph_cache;
 mod lightweight_index;
 mod on_demand_graph;
@@ -26,11 +28,15 @@ mod file_manifest;
 #[cfg(feature = "persistence")]
 mod incremental_scanner;
 
+#[cfg(test)]
+mod checkpoint_tests;
+
 pub use call_graph_projection::{
     CallGraphProjection, ExplanationHop, ExplanationView, ProjectionError, SubgraphDirection,
     SubgraphEdge, SubgraphView,
 };
-pub use graph_cache::GraphCache;
+pub use checkpoint::{CheckpointId, VersionedGraphCache};
+pub use graph_cache::{GraphCache, DEFAULT_RETENTION};
 pub use lightweight_index::{LightweightIndex, SymbolLocation};
 pub use on_demand_graph::{
     CallHierarchyResult, HierarchyEntry, OnDemandGraphBuilder, TraversalDirection,
