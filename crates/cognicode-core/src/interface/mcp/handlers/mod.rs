@@ -2455,8 +2455,6 @@ pub async fn handle_get_hot_symbols(
     ctx: &HandlerContext,
     input: GetHotSymbolsInput,
 ) -> HandlerResult<HotSymbolsResult> {
-    let _start = Instant::now();
-
     // Get the hotness data from context
     let hotness = ctx
         .symbol_hotness
