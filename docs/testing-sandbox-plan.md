@@ -258,34 +258,15 @@ cat kpi_report.json
 
 Lee `/metrics` (Prometheus text format), extrae KPIs, produce JSON report.
 
-## 5. CI Integration
+## 5. Ejecución Local
 
-```yaml
-# .github/workflows/mcp-sandbox.yml
-name: MCP Sandbox Tests
-on: [push, pull_request]
-jobs:
-  sandbox:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: cognicode
-          POSTGRES_PASSWORD: cognicode
-          POSTGRES_DB: cognicode
-        ports: ["5432:5432"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build -p cognicode-mcp --release --features postgres
-      - run: cargo build -p cognicode-mcp-server --release --features postgres
-      - run: bash scripts/mcp/run_sandbox_tests.sh tests/fixtures/sandbox-workspace
-      - uses: actions/upload-artifact@v4
-        with:
-          name: kpi-report
-          path: kpi_report.json
+El sandbox se ejecuta localmente con un solo comando:
+
+```bash
+bash scripts/mcp/run_sandbox_tests.sh tests/fixtures/sandbox-workspace
 ```
+
+No depende de ningún servicio externo. Todo es local: PG en container, MCP server en localhost, fixtures en el repo.
 
 ## 6. Fixture Workspace — Known Graph
 
