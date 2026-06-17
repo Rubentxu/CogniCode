@@ -645,6 +645,7 @@ dependencies = [
  "opentelemetry-prometheus",
  "opentelemetry_sdk",
  "process-wrap",
+ "prometheus",
  "rayon",
  "rmcp",
  "serde",

@@ -31,7 +31,9 @@ use axum::{
 use clap::Parser;
 use cognicode_core::interface::mcp::CogniCodeHandler;
 use cognicode_core::interface::mcp::handlers::HandlerContext;
-use opentelemetry_prometheus::Prometheus;
+use opentelemetry::global;
+use opentelemetry_sdk::metrics::SdkMeterProvider;
+use prometheus::{Encoder, Registry};
 
 use cognicode_mcp::auth::check_bearer_token;
 
@@ -52,18 +54,33 @@ async fn health_handler() -> &'static str {
 }
 
 /// Handler for `/metrics` endpoint — exposes Prometheus-format metrics.
-async fn metrics_handler() -> impl IntoResponse {
-    let exporter = Prometheus::default();
-    let body = match exporter.export() {
-        Ok(body) => body,
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
-        }
-    };
+///
+/// The shared `Arc<Registry>` is the same instance that the
+/// `PrometheusExporter` registered itself against at startup, so
+/// `Registry::gather()` walks the exporter's collector and yields the
+/// `ToolMetrics` instruments as Prometheus `MetricFamily`s. We then
+/// encode them with `TextEncoder` (the 0.27 replacement for the
+/// removed `Prometheus::default().export()` shortcut).
+///
+/// Content type is locked to `text/plain; version=0.0.4` per the
+/// Prometheus exposition format spec — orchestrator scrape configs
+/// match on this literal.
+async fn metrics_handler(
+    State((_ctx, registry)): State<(Arc<HandlerContext>, Arc<Registry>)>,
+) -> impl IntoResponse {
+    let encoder = prometheus::TextEncoder::new();
+    let mut buffer = Vec::new();
+    if let Err(e) = encoder.encode(&registry.gather(), &mut buffer) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("metrics encode failed: {e}"),
+        )
+            .into_response();
+    }
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],
-        body,
+        buffer,
     )
         .into_response()
 }
@@ -72,7 +89,14 @@ async fn metrics_handler() -> impl IntoResponse {
 /// once `build_graph` has succeeded at least once, otherwise 503 with
 /// `{"status":"not_ready","graph_loaded":false}`. Distinct from `/health`,
 /// which always returns 200 (process alive).
-async fn ready_handler(State(ctx): State<Arc<HandlerContext>>) -> impl IntoResponse {
+///
+/// The state is a tuple `(Arc<HandlerContext>, Arc<Registry>)`; the
+/// readiness probe only needs the context. The registry is the second
+/// slot because the global `Router::with_state` is shared with
+/// `metrics_handler` and `/health`.
+async fn ready_handler(
+    State((ctx, _registry)): State<(Arc<HandlerContext>, Arc<Registry>)>,
+) -> impl IntoResponse {
     if ctx.is_graph_loaded() {
         (
             StatusCode::OK,
@@ -176,6 +200,49 @@ async fn main() -> anyhow::Result<()> {
             .build(),
     );
 
+    // Prometheus wiring (fix for bug-prometheus-027).
+    //
+    // The 0.27 OTel→Prom exporter removed the `Prometheus::default()
+    // .export()` shortcut, so we have to build a `prometheus::Registry`,
+    // register a `PrometheusExporter` against it, hand the exporter to
+    // an `SdkMeterProvider` as a `MetricReader`, install the provider
+    // globally, and then call `init_global_metrics()` so the
+    // `ToolMetrics` instruments in `cognicode-core` (counters /
+    // histograms / gauges for tool calls, duration, errors, graph
+    // health, etc.) attach to our provider.
+    //
+    // The same `Arc<Registry>` is then shared with the `/metrics`
+    // handler via the router's tuple state — `metrics_handler` walks
+    // the registry with `TextEncoder::encode(&registry.gather(), …)`
+    // to render the exposition.
+    //
+    // Note on API: the 0.27 entry point is the free function
+    // `opentelemetry_prometheus::exporter()` (not
+    // `PrometheusExporter::builder()`); it returns an `ExporterBuilder`
+    // whose `.with_registry(reg).build()` returns a `MetricResult`.
+    // We use `?` on `anyhow::Result<()>` because the build error
+    // type (`MetricError`) implements `std::error::Error`.
+    let prometheus_registry = Arc::new(Registry::new());
+
+    let exporter = opentelemetry_prometheus::exporter()
+        .with_registry((*prometheus_registry).clone())
+        .build()?;
+
+    let meter_provider = SdkMeterProvider::builder()
+        .with_reader(exporter)
+        .build();
+    global::set_meter_provider(meter_provider);
+
+    // `init_global_metrics()` returns
+    // `Result<(), Box<dyn std::error::Error>>` (no Send+Sync on the
+    // default `dyn Error`), so the `?` to `anyhow::Result<()>` needs
+    // an explicit conversion. Surface the failure fast — if telemetry
+    // never registers, SC-3 (instrumented metrics visible on
+    // `/metrics`) cannot pass, and silently warning would mask a
+    // broken observability surface from operators.
+    cognicode_core::infrastructure::telemetry::init_global_metrics()
+        .map_err(|e| anyhow::anyhow!("telemetry init failed: {e}"))?;
+
     let service = rmcp::transport::streamable_http_server::StreamableHttpService::new(
         {
             let shared_ctx = shared_ctx.clone();
@@ -189,7 +256,11 @@ async fn main() -> anyhow::Result<()> {
     // only. /health, /ready, /metrics are public — orchestrators and
     // Prometheus scrapers must reach them without a token. We mount
     // the middleware via `from_fn_with_state` so it shares the same
-    // `Arc<HandlerContext>` as the rest of the request pipeline.
+    // `Arc<HandlerContext>` as the rest of the request pipeline. The
+    // middleware's local state (`Arc<HandlerContext>`) is independent
+    // of the global router state (the tuple below), which is why
+    // `auth_middleware` keeps its `State<Arc<HandlerContext>>`
+    // signature unchanged.
     let api_routes = Router::new()
         .nest_service("/mcp", service)
         .layer(middleware::from_fn_with_state(
@@ -205,7 +276,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .merge(api_routes)
         .merge(public_routes)
-        .with_state(shared_ctx);
+        .with_state((shared_ctx, prometheus_registry));
 
     tracing::info!("CogniCode MCP HTTP/SSE Server on {}", args.listen);
     let listener = tokio::net::TcpListener::bind(args.listen).await?;

@@ -52,6 +52,12 @@ opentelemetry.workspace = true
 opentelemetry_sdk.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry-prometheus.workspace = true
+# Direct dep on the `prometheus` crate so the server binary can build a
+# `prometheus::Registry` and call `TextEncoder::encode` on it. The
+# 0.27 OTel→Prom exporter removed the old `Prometheus::default().export()`
+# shortcut — we now use the 0.27 pattern of `Arc<Registry>` shared between
+# the `PrometheusExporter` and the `/metrics` handler.
+prometheus.workspace = true
 clap.workspace = true
 rayon.workspace = true
 axum = { workspace = true }

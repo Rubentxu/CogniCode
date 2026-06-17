@@ -136,6 +136,12 @@ opentelemetry = "0.27"
 opentelemetry_sdk = { version = "0.27", features = ["metrics", "rt-tokio"] }
 opentelemetry-otlp = { version = "0.27", features = ["metrics", "grpc-tonic"] }
 opentelemetry-prometheus = "0.27"
+# Direct dep so the server binary can build a `prometheus::Registry` and
+# call `TextEncoder::encode(&registry.gather(), …)` on `/metrics` (the
+# 0.27 OTel→Prom exporter removed the old `Prometheus::default().export()`
+# shortcut). Matches the 0.13.4 transitive already resolved in Cargo.lock
+# via opentelemetry-prometheus 0.27 — adding it here is resolution-neutral.
+prometheus = "0.13"
 
 # Mermaid
 mermaid-rs-renderer = { version = "0.2", default-features = false }
