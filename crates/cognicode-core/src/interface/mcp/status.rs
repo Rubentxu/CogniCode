@@ -16,6 +16,7 @@ const GATED_TOOLS: &[&str] = &[
     "graph_diff",
     "graph_timeline",
     "generate_contract",
+    "compare_graph",
 ];
 
 /// Gated error message patterns indicating capability not configured.
