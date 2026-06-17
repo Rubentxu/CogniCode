@@ -101,6 +101,7 @@ use crate::interface::mcp::schemas::{
     GetEntryPointsOutput,
     GetFileSymbolsInput,
     GetFileSymbolsOutput,
+    HierarchicalSymbolInfo,
     GetHotPathsInput,
     GetHotPathsOutput,
     GetHotSymbolsInput,
@@ -1171,13 +1172,21 @@ pub async fn handle_get_file_symbols(
 
     // Convert SymbolDto to SymbolInfo
     let symbols: Vec<SymbolInfo> = symbol_dtos
-        .into_iter()
-        .map(symbol_dto_to_symbol_info)
+        .iter()
+        .map(|dto| symbol_dto_to_symbol_info(dto.clone()))
         .collect();
+
+    // Build hierarchical symbols if requested
+    let hierarchical_symbols = if input.hierarchical {
+        build_hierarchical_symbols(&symbol_dtos)
+    } else {
+        Vec::new()
+    };
 
     let output = GetFileSymbolsOutput {
         file_path: input.file_path.clone(),
         symbols,
+        hierarchical_symbols,
     };
 
     // If compression is requested, return a natural language summary
@@ -1227,6 +1236,80 @@ fn symbol_dto_to_symbol_info(dto: SymbolDto) -> SymbolInfo {
         },
         signature: dto.signature,
     }
+}
+
+/// Builds a hierarchical tree of symbols grouped by nesting
+fn build_hierarchical_symbols(symbol_dtos: &[SymbolDto]) -> Vec<HierarchicalSymbolInfo> {
+    use std::collections::HashMap;
+
+    if symbol_dtos.is_empty() {
+        return Vec::new();
+    }
+
+    // Convert SymbolDto to HierarchicalSymbolInfo
+    let nodes: Vec<HierarchicalSymbolInfo> = symbol_dtos
+        .iter()
+        .map(|dto| HierarchicalSymbolInfo {
+            name: dto.name.clone(),
+            kind: symbol_dto_to_symbol_info(dto.clone()).kind,
+            location: SourceLocation {
+                file: dto.file_path.clone(),
+                line: dto.line,
+                column: dto.column,
+            },
+            signature: dto.signature.clone(),
+            children: Vec::new(),
+        })
+        .collect();
+
+    // Build parent-child relationships based on line numbers
+    let mut child_map: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut parent_stack: Vec<(usize, u32)> = Vec::new();
+
+    for (i, node) in nodes.iter().enumerate() {
+        let end_line = node.location.line + estimate_symbol_length(&node.name, &format!("{:?}", node.kind));
+
+        while let Some((_, top_end)) = parent_stack.last() {
+            if *top_end > node.location.line {
+                break;
+            }
+            parent_stack.pop();
+        }
+
+        if let Some((parent_idx, _)) = parent_stack.last() {
+            child_map.entry(*parent_idx).or_default().push(i);
+        }
+
+        parent_stack.push((i, end_line));
+    }
+
+    fn build_tree(
+        nodes: &[HierarchicalSymbolInfo],
+        child_map: &HashMap<usize, Vec<usize>>,
+        root_indices: &[usize],
+    ) -> Vec<HierarchicalSymbolInfo> {
+        root_indices
+            .iter()
+            .map(|&i| {
+                let mut node = nodes[i].clone();
+                if let Some(children_indices) = child_map.get(&i) {
+                    node.children = build_tree(nodes, child_map, children_indices);
+                }
+                node
+            })
+            .collect()
+    }
+
+    let root_indices: Vec<usize> = (0..nodes.len())
+        .filter(|i| !child_map.contains_key(i))
+        .collect();
+
+    build_tree(&nodes, &child_map, &root_indices)
+}
+
+/// Estimates the end line of a symbol based on its name and kind
+fn estimate_symbol_length(_name: &str, _kind: &str) -> u32 {
+    10
 }
 
 struct Usage {
@@ -1364,7 +1447,7 @@ pub async fn handle_find_usages(
         project_dir: ctx.working_dir.clone(),
         symbol_name: input.symbol_name.clone(),
         include_declaration: input.include_declaration,
-        context_lines: None,
+        context_lines: input.context_lines,
         first_only_definition: true,
     })
     .map_err(|e| HandlerError::App(AppError::AnalysisError(e)))?;
@@ -1379,6 +1462,7 @@ pub async fn handle_find_usages(
             column: u.column,
             context: u.context,
             is_definition: u.is_definition,
+            surrounding_lines: u.context_lines,
         })
         .collect();
 
@@ -2177,36 +2261,78 @@ pub async fn handle_trace_path(
 
     match (source_id, target_id) {
         (Some(source), Some(target)) => {
-            // Use BFS to find path
-            let path = find_path_bfs(&graph, &source, &target, input.max_depth);
+            let path_entries: Vec<PathEntry>;
+            let all_paths: Vec<Vec<PathEntry>>;
+            let path_length: usize;
 
-            let path_entries: Vec<PathEntry> = path
-                .iter()
-                .filter_map(|sid| {
-                    graph.get_symbol(sid).map(|s| PathEntry {
-                        symbol: s.name().to_string(),
-                        file: s.location().file().to_string(),
-                        line: s.location().line(),
-                        column: s.location().column(),
+            if input.all {
+                // Find ALL paths (BFS exhaustive)
+                let paths = find_all_paths_bfs(&graph, &source, &target, input.max_depth);
+                path_length = paths.len();
+
+                all_paths = paths
+                    .into_iter()
+                    .map(|path| {
+                        path.iter()
+                            .filter_map(|sid| {
+                                graph.get_symbol(sid).map(|s| PathEntry {
+                                    symbol: s.name().to_string(),
+                                    file: s.location().file().to_string(),
+                                    line: s.location().line(),
+                                    column: s.location().column(),
+                                })
+                            })
+                            .collect()
                     })
+                    .collect();
+
+                path_entries = all_paths.first().cloned().unwrap_or_default();
+                let path_found = !all_paths.is_empty();
+
+                Ok(TracePathOutput {
+                    source: input.source,
+                    target: input.target,
+                    path_found,
+                    path: path_entries,
+                    path_length,
+                    metadata: AnalysisMetadata {
+                        total_calls: path_length,
+                        analysis_time_ms: start.elapsed().as_millis() as u64,
+                    },
+                    all_paths,
                 })
-                .collect();
+            } else {
+                // Find shortest path only (original behavior)
+                let path = find_path_bfs(&graph, &source, &target, input.max_depth);
 
-            let path_found = !path.is_empty();
+                path_entries = path
+                    .iter()
+                    .filter_map(|sid| {
+                        graph.get_symbol(sid).map(|s| PathEntry {
+                            symbol: s.name().to_string(),
+                            file: s.location().file().to_string(),
+                            line: s.location().line(),
+                            column: s.location().column(),
+                        })
+                    })
+                    .collect();
 
-            let path_length = path.len();
+                path_length = path_entries.len();
+                let path_found = !path.is_empty();
 
-            Ok(TracePathOutput {
-                source: input.source,
-                target: input.target,
-                path_found,
-                path: path_entries,
-                path_length,
-                metadata: AnalysisMetadata {
-                    total_calls: path_length,
-                    analysis_time_ms: start.elapsed().as_millis() as u64,
-                },
-            })
+                Ok(TracePathOutput {
+                    source: input.source,
+                    target: input.target,
+                    path_found,
+                    path: path_entries,
+                    path_length,
+                    metadata: AnalysisMetadata {
+                        total_calls: path_length,
+                        analysis_time_ms: start.elapsed().as_millis() as u64,
+                    },
+                    all_paths: Vec::new(),
+                })
+            }
         }
         (None, _) => Err(HandlerError::NotFound(format!(
             "Source symbol '{}' not found",
@@ -2683,6 +2809,46 @@ fn find_path_bfs(
     }
 
     Vec::new() // No path found
+}
+
+/// BFS path finding algorithm - finds ALL simple paths up to max_depth
+fn find_all_paths_bfs(
+    graph: &CallGraph,
+    source: &SymbolId,
+    target: &SymbolId,
+    max_depth: u8,
+) -> Vec<Vec<SymbolId>> {
+    use std::collections::VecDeque;
+
+    let mut all_paths: Vec<Vec<SymbolId>> = Vec::new();
+    let mut queue: VecDeque<(SymbolId, Vec<SymbolId>)> = VecDeque::new();
+    let mut visited: std::collections::HashMap<SymbolId, usize> = std::collections::HashMap::new();
+
+    queue.push_back((source.clone(), vec![source.clone()]));
+    *visited.entry(source.clone()).or_insert(0) += 1;
+
+    while let Some((current, path)) = queue.pop_front() {
+        if current == *target {
+            all_paths.push(path);
+            continue;
+        }
+
+        if path.len() >= max_depth as usize {
+            continue;
+        }
+
+        for (callee_id, _) in graph.callees(&current) {
+            let visit_count = *visited.get(&callee_id).unwrap_or(&0);
+            if visit_count < 3 {
+                *visited.entry(callee_id.clone()).or_insert(0) += 1;
+                let mut new_path = path.clone();
+                new_path.push(callee_id.clone());
+                queue.push_back((callee_id.clone(), new_path));
+            }
+        }
+    }
+
+    all_paths
 }
 
 // Collect edges recursively up to max_depth

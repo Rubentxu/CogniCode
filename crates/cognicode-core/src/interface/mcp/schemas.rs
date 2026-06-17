@@ -99,12 +99,29 @@ pub struct GetFileSymbolsInput {
     /// Return compressed natural language summary instead of JSON (default: false)
     #[serde(default = "default_compressed")]
     pub compressed: bool,
+
+    /// If true, group symbols by nesting (parent→children tree). If false, flat list (default: false)
+    #[serde(default)]
+    pub hierarchical: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetFileSymbolsOutput {
     pub file_path: String,
     pub symbols: Vec<SymbolInfo>,
+    /// Hierarchical symbols tree (when `hierarchical` is true). Empty when `hierarchical` is false.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub hierarchical_symbols: Vec<HierarchicalSymbolInfo>,
+}
+
+/// Hierarchical symbol info with children for tree representation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HierarchicalSymbolInfo {
+    pub name: String,
+    pub kind: SymbolKind,
+    pub location: SourceLocation,
+    pub signature: Option<String>,
+    pub children: Vec<HierarchicalSymbolInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -166,6 +183,10 @@ pub struct FindUsagesInput {
 
     #[serde(default = "default_true")]
     pub include_declaration: bool,
+
+    /// Number of surrounding source lines to include per usage (default: none)
+    #[serde(default)]
+    pub context_lines: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -182,6 +203,9 @@ pub struct UsageEntry {
     pub column: u32,
     pub context: String,
     pub is_definition: bool,
+    /// Surrounding source lines (populated when context_lines > 0 in input)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surrounding_lines: Option<ContextLines>,
 }
 
 // ============================================================================
@@ -423,6 +447,10 @@ pub struct TracePathInput {
     /// Maximum depth for path search (default: 10)
     #[serde(default = "default_depth")]
     pub max_depth: u8,
+
+    /// If true, return ALL paths (BFS exhaustive). If false, return only the shortest path (default: false)
+    #[serde(default)]
+    pub all: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -430,9 +458,13 @@ pub struct TracePathOutput {
     pub source: String,
     pub target: String,
     pub path_found: bool,
+    /// Shortest path (when `all` is false)
     pub path: Vec<PathEntry>,
     pub path_length: usize,
     pub metadata: AnalysisMetadata,
+    /// All paths (when `all` is true). Empty when `all` is false.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub all_paths: Vec<Vec<PathEntry>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

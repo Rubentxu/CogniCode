@@ -218,12 +218,13 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     .with_meta(cognicode_meta("stable", "graph", false, false, 3000)),
                     Tool::new(
                         "get_file_symbols",
-                        "Extract symbols (functions, classes, variables) from a source file. Set compressed=true for natural language summary.",
+                        "Extract symbols (functions, classes, variables) from a source file. Set compressed=true for natural language summary. Set hierarchical=true for tree output.",
                         Arc::new(serde_json::json!({
                             "type": "object",
                             "properties": {
                                 "file_path": { "type": "string", "description": "Path to the source file" },
-                                "compressed": { "type": "boolean", "description": "Return compressed natural language summary instead of JSON (default: false)" }
+                                "compressed": { "type": "boolean", "description": "Return compressed natural language summary instead of JSON (default: false)" },
+                                "hierarchical": { "type": "boolean", "description": "Group symbols by nesting (parent→children tree) (default: false)" }
                             },
                             "required": ["file_path"]
                         }).as_object().cloned().unwrap()),
@@ -264,7 +265,8 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "type": "object",
                             "properties": {
                                 "symbol_name": { "type": "string", "description": "Symbol to search" },
-                                "include_declaration": { "type": "boolean", "description": "Include definition (default: true)" }
+                                "include_declaration": { "type": "boolean", "description": "Include definition (default: true)" },
+                                "context_lines": { "type": "integer", "description": "Number of surrounding source lines to include per usage (default: none)" }
                             },
                             "required": ["symbol_name"]
                         }).as_object().cloned().unwrap()),
@@ -313,7 +315,8 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "properties": {
                                 "source": { "type": "string", "description": "Source symbol name (function or method)" },
                                 "target": { "type": "string", "description": "Target symbol name (function or method)" },
-                                "max_depth": { "type": "integer", "description": "Maximum depth for path search (default: 10)" }
+                                "max_depth": { "type": "integer", "description": "Maximum depth for path search (default: 10)" },
+                                "all": { "type": "boolean", "description": "If true, return ALL paths (BFS exhaustive). If false, return only the shortest path (default: false)" }
                             },
                             "required": ["source", "target"]
                         }).as_object().cloned().unwrap()),
