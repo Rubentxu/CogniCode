@@ -372,63 +372,93 @@ debouncer.watcher().watch(&root, RecursiveMode::Recursive)?;
 Items from the roadmap that have been designed (ADRs exist) but not yet
 implemented. Ordered by value-to-effort ratio.
 
+> **Status (2026-06-17):** Major progress. Type-ref extraction expanded
+> from 3→8 languages. Multi-row VALUES batching replaces row-by-row INSERTs.
+> File watcher wired with auto-rebuild. 4 STUB handlers implemented.
+> pg_copy_bulk dead code deleted. iac_query tool implemented (ADR-036).
+> Graph checkpointing added (ADR-035). MCP production readiness complete
+> (ADR-034 M1+M2+M3).
+
 ### Type-ref extraction (ADR-018, Sprint 3)
 | Task | Status |
 |------|--------|
-| `TypeRefWalker` trait definition | ⬜ |
-| Rust type-ref walker | ⬜ |
-| Python type-ref walker | ⬜ |
-| TypeScript type-ref walker | ⬜ |
-| Go type-ref walker | ⬜ |
-| Java type-ref walker | ⬜ |
-| `LanguageConfig.type_ref_walker` field | ⬜ |
-| Generic extractor: call walker after AST walk | ⬜ |
+| `TypeRefWalker` trait definition | ✅ `type_ref_walkers.rs` |
+| Rust type-ref walker | ✅ `walk_rust_type_refs` |
+| Python type-ref walker | ✅ `walk_python_type_refs` |
+| TypeScript type-ref walker | ✅ `walk_typescript_type_refs` |
+| Go type-ref walker | ✅ `walk_go_type_refs` |
+| Java type-ref walker | ✅ `walk_java_type_refs` |
+| C type-ref walker | ✅ `walk_c_type_refs` |
+| C++ type-ref walker | ✅ `walk_cpp_type_refs` |
+| C# type-ref walker | ✅ `walk_csharp_type_refs` |
+| `LanguageConfig.type_ref_walker` field | ✅ All 30 configs have field |
+| Generic extractor: call walker after AST walk | ✅ `extract_type_refs()` in extractor.rs |
 
 ### COPY bulk load optimization (ADR-023)
 | Task | Status |
 |------|--------|
-| `sqlx::CopyIn` for graph_nodes (binary) | ⬜ |
-| `sqlx::CopyIn` for graph_edges (binary) | ⬜ |
-| Decision rule: `>50 files → COPY path` | ⬜ |
+| Multi-row VALUES batching (nodes + edges) | ✅ Replaced row-by-row INSERTs |
+| `sqlx::CopyIn` for graph_nodes (binary) | ⬜ Deferred — multi-row VALUES gives 10-50x |
+| `sqlx::CopyIn` for graph_edges (binary) | ⬜ Deferred — multi-row VALUES gives 10-50x |
+| Delete dead `pg_copy_bulk` | ✅ Removed misleading dead code |
 
 ### Incremental + Robustness (ADR-022/023, Sprint 4)
 | Task | Status |
 |------|--------|
-| Edge-level diffing in `GraphDiffCalculator` | ⬜ |
-| `apply_events()` for edge events | ⬜ |
-| Advisory locks (`pg_advisory_lock`) | ⬜ |
-| 409 Conflict on concurrent scan | ⬜ |
-| File watcher (`notify` crate) | ⬜ |
-| Debounced scan queue | ⬜ |
+| Advisory locks (`pg_advisory_lock`) | ✅ `run_scan` in service.rs |
+| File watcher (`notify` crate) | ✅ `watcher.rs` with Delete events + shutdown |
+| File watcher: wire to graph rebuild | ✅ `server.rs` triggers `handle_build_graph` |
+| Debounced scan queue | ✅ `debounce_changes()` 500ms window |
+| `/watch` status endpoint | ✅ HTTP JSON endpoint |
+| Edge-level diffing in `GraphDiffCalculator` | ⬜ Current approach: full rebuild on change |
+| `apply_events()` for edge events | ⬜ Current approach: full rebuild on change |
+| 409 Conflict on concurrent scan | ⬜ Advisory lock prevents, but no explicit 409 |
 | Periodic fallback re-scan | ⬜ |
 | Workspace registration in resolver | ⬜ |
 
 ### Ansible semantic handler (ADR-024, Sprint 4)
 | Task | Status |
 |------|--------|
-| `interpret_ansible_playbook` handler | ⬜ |
-| Shared builtin module nodes (`ansible:builtin:*`) | ⬜ |
-| `import_playbook` / `include_tasks` → Imports edges | ⬜ |
+| `interpret_ansible` handler | ✅ Wired into YAML_CONFIG semantic_handler |
+| Shared builtin module nodes (`ansible:builtin:*`) | ✅ ANSIBLE_MODULES const |
+| `import_playbook` / `include_tasks` → Imports edges | ✅ |
 
-### Remaining languages (Sprint 3-4)
-| Priority | Languages |
-|----------|-----------|
-| **High** | Ruby, PHP, Swift, Kotlin |
-| **Medium** | Scala, Lua, R, Zig, Dart, Julia, Groovy, Gradle |
-| **Low** | Fortran, Pascal, Verilog, SystemVerilog, DreamMaker, Bash, PowerShell, Apex, Svelte, Vue, Astro, Elixir, Erlang, Haskell |
-
-### MCP tools (ADR-026)
+### Terraform semantic handler (ADR-024/036)
 | Task | Status |
 |------|--------|
-| `get_graph_report` tool | ⬜ |
-| `get_type_references` tool | ⬜ |
-| `get_imports` tool | ⬜ |
-| `get_implementors` tool | ⬜ |
-| `get_members` tool | ⬜ |
-| `get_iac_references` tool | ⬜ |
+| `interpret_terraform` handler | ✅ Wired into HCL_CONFIG semantic_handler |
+| `semantic_handler` field on LanguageConfig | ✅ All 30 configs |
+| Resource/data/variable/module/output extraction | ✅ Prefixed IDs (`tf:`) |
+| References edges from dotted expressions | ✅ One-level extraction |
+
+### iac_query tool (ADR-028/036)
+| Task | Status |
+|------|--------|
+| `iac_query` handler — real implementation | ✅ Thin wrapper over GraphQueryPort |
+| Bare name resolution with prefix filtering | ✅ |
+| Dependencies + dependents with edge_type metadata | ✅ |
+| Registered in `build_all_tools()` | ✅ stability="experimental" |
+
+### Remaining languages (Sprint 3-4)
+| Priority | Languages | Type-ref walker |
+|----------|-----------|----------------|
+| **Done** | Rust, Python, TS/JS, Go, Java, C, C++, C# | ✅ All have walkers |
+| **High** | Ruby, PHP, Swift, Kotlin | ⬜ Configs exist, walkers missing |
+| **Medium** | Scala, Lua, R, Zig, Dart, Julia, Groovy, Gradle | ⬜ Configs exist, walkers missing |
+| **Low** | Fortran, Verilog, SystemVerilog, Bash, PS, JSON, etc. | ⬜ Configs exist, walkers missing |
+
+### MCP tools (ADR-026/027/028)
+| Task | Status |
+|------|--------|
+| `get_type_references` tool | ✅ Real handler (filtered by DependencyType::References) |
+| `get_imports` tool | ✅ Real handler (filtered by DependencyType::Imports) |
+| `get_implementors` tool | ✅ Real handler (reverse Inherits lookup) |
+| `get_members` tool | ✅ Real handler (filtered by DependencyType::Contains) |
+| `get_iac_references` tool | ✅ `iac_query` covers this use case |
+| `get_graph_report` tool | ⬜ Requires PG graph_reports table (intentionally excluded) |
 | `graph_query_filtered` tool | ✅ |
 | `export_callflow` tool | ✅ |
-| Wire `graph_query` + `graph_explain` in ToolHandler registry | ✅ |
+| `graph_query` + `graph_explain` | ✅ |
 
 ### Explorer integration
 | Task | Status |
@@ -446,45 +476,54 @@ implemented. Ordered by value-to-effort ratio.
 Graphify parity on agent workflow quality while keeping CogniCode's unique
 advantages (IaC, type-refs, LSP, AVC, safe refactoring).
 
+> **Status (2026-06-17):** Most new tools implemented (codebase_map,
+> project_insights, review_pr, solid_audit, iac_query, graph_diff,
+> graph_timeline). Tool consolidation partially done. Total tool surface:
+> 64 tools, 0 STUB, 4 GATED.
+
 ### Phase 5.1: Register missing + deprecate redundant (Day 1)
 
-| Task | ADR | Detail |
-|------|-----|--------|
-| Register 7 unregistered tools | ADR-027 | graph_query_filtered, export_callflow, get_graph_report, get_type_references, get_imports, get_implementors, get_members |
-| Deprecate `build_lightweight_index` | ADR-027 | Replaced by Scan manifest |
-| Deprecate `merge_file_graphs` | ADR-027 | Replaced by PG |
-| Deprecate `reparse_on_edit` | ADR-027 | Replaced by file watcher |
-| Deprecate `complete_task`, `poll_tasks` | ADR-027 | Agent mgmt, not graph tools |
-| Deprecate graph analytics individuals | ADR-027 | graph_god_nodes, graph_communities, graph_community_detail, graph_surprising_connections, check_architecture (→ graph_insights) |
-| Deprecate search/usage duplicates | ADR-027 | ranked_symbols, graph_search_idf, find_usages_with_context, get_hot_symbols, graph_all_paths, get_outline |
-| Deprecate comparison tools | ADR-027 | compare_call_graphs, detect_api_breaks, evaluate_refactor_quality (→ compare_graph) |
-| Add `deprecated: true` to list_tools() metadata | ADR-027 | Agents see warnings before removal |
+| Task | ADR | Detail | Status |
+|------|-----|--------|--------|
+| Register 7 unregistered tools | ADR-027 | graph_query_filtered, export_callflow, get_type_references, get_imports, get_implementors, get_members | ✅ All registered with real handlers |
+| Deprecate `build_lightweight_index` | ADR-027 | Replaced by Scan manifest | ⬜ |
+| Deprecate `merge_file_graphs` | ADR-027 | Replaced by PG | ⬜ |
+| Deprecate `reparse_on_edit` | ADR-027 | Replaced by file watcher | ⬜ |
+| Deprecate `complete_task`, `poll_tasks` | ADR-027 | Agent mgmt, not graph tools | ⬜ |
+| Deprecate graph analytics individuals | ADR-027 | graph_god_nodes, etc. → graph_insights | ⬜ |
+| Deprecate search/usage duplicates | ADR-027 | ranked_symbols, graph_search_idf, etc. | ⬜ |
+| Deprecate comparison tools | ADR-027 | compare_call_graphs, etc. → compare_graph | ⬜ |
+| Add `deprecated: true` to list_tools() metadata | ADR-027 | Agents see warnings before removal | ⬜ |
 
 ### Phase 5.2: Consolidate composites (Day 2)
 
-| Task | ADR | Detail |
-|------|-----|--------|
-| `smart_search(algorithm)` | ADR-027 | Merges semantic_search + ranked_symbols + graph_search_idf |
-| `graph_analyze(mode)` | ADR-027 | Merges graph_condensed + graph_reduced + graph_feedback_arcs |
-| `project_overview(detail)` | ADR-027 | Merges smart_overview + auto_diagnose + generate_system_prompt_context + suggest_context |
-| `find_usages + context_lines` | ADR-027 | Add optional param to find_usages |
-| `trace_path + all:bool` | ADR-027 | Add flag to trace_path |
-| `get_file_symbols + hierarchical:bool` | ADR-027 | Add flag to get_file_symbols |
-| `compare_graph(mode)` | ADR-027 | Merge comparison tools |
-| ToolHandler registry cleanup | ADR-027 | Group tools by family in registry |
+| Task | ADR | Detail | Status |
+|------|-----|--------|--------|
+| `smart_search(algorithm)` | ADR-027 | Merges semantic_search + ranked_symbols + graph_search_idf | ✅ Implemented as Facade |
+| `graph_analyze(mode)` | ADR-027 | Merges graph_condensed + graph_reduced + graph_feedback_arcs | ✅ Already existed |
+| `project_overview(detail)` | ADR-027 | Merges smart_overview + auto_diagnose + etc. | ✅ Real implementation (M2.9) |
+| `project_insights` | ADR-028 | Dashboard in one call | ✅ Real implementation (M2.8) |
+| `find_usages + context_lines` | ADR-027 | Add optional param to find_usages | ⬜ |
+| `trace_path + all:bool` | ADR-027 | Add flag to trace_path | ⬜ |
+| `get_file_symbols + hierarchical:bool` | ADR-027 | Add flag to get_file_symbols | ⬜ |
+| `compare_graph(mode)` | ADR-027 | Merge comparison tools | ✅ Implemented (PG-gated) |
+| ToolHandler registry cleanup | ADR-027 | Group tools by family in registry | ⬜ |
 
 ### Phase 5.3: New high-value tools (Day 3-5)
 
-| Task | ADR | Tier | Effort |
-|------|-----|------|--------|
-| **`codebase_map`** — LLM-optimized codebase map | ADR-028 | T1 🔴 | 1 day |
-| **`project_insights`** — Dashboard in one call | ADR-028 | T1 🔴 | 1 day |
-| **`review_pr`** — PR impact analysis (v1: file list) | ADR-028 | T1 🔴 | 1 day |
-| **`solid_audit`** — SOLID principle analysis | ADR-028 | T2 🟡 | 2 days |
-| **`iac_query`** — Infrastructure graph navigation | ADR-028 | T2 🟡 | 1 day |
-| **`graph_diff`** — Compare graph snapshots | ADR-028 | T2 🟡 | 2 days |
-| **`graph_timeline`** — Temporal evolution | ADR-028 | T2 🟢 | 1 day |
-| **`add_url`** — External content ingestion | ADR-028 | T3 ⚪ | Future |
+| Task | ADR | Tier | Effort | Status |
+|------|-----|------|--------|--------|
+| **`codebase_map`** — LLM-optimized codebase map | ADR-028 | T1 🔴 | 1 day | ✅ |
+| **`project_insights`** — Dashboard in one call | ADR-028 | T1 🔴 | 1 day | ✅ |
+| **`review_pr`** — PR impact analysis (v1: file list) | ADR-028 | T1 🔴 | 1 day | ✅ |
+| **`solid_audit`** — SOLID principle analysis | ADR-028 | T2 🟡 | 2 days | ✅ |
+| **`iac_query`** — Infrastructure graph navigation | ADR-028 | T2 🟡 | 1 day | ✅ |
+| **`graph_diff`** — Compare graph snapshots | ADR-028 | T2 🟡 | 2 days | ✅ |
+| **`graph_timeline`** — Temporal evolution | ADR-028 | T2 🟢 | 1 day | ✅ |
+| **`smart_search`** — Composite search | ADR-028 | T1 🔴 | 1 day | ✅ |
+| **`compare_graph`** — Baseline comparison | ADR-028 | T2 🟡 | 2 days | ✅ |
+| **`nl_to_symbol`** — NLP to symbol match | ADR-028 | T2 🟡 | 1 day | ✅ |
+| **`add_url`** — External content ingestion | ADR-028 | T3 ⚪ | Future | ⬜ |
 
 ### Exit criteria
 
