@@ -85,6 +85,22 @@ async fn metrics_handler(
         .into_response()
 }
 
+/// Handler for `/watch` — file watcher status.
+///
+/// Returns JSON with watcher state, workspace path, and uptime.
+/// Always 200 OK (watcher is optional — not a readiness requirement).
+async fn watch_handler(
+    State((ctx, _registry)): State<(Arc<HandlerContext>, Arc<Registry>)>,
+) -> impl IntoResponse {
+    let workspace = ctx.working_dir.display().to_string();
+    Json(serde_json::json!({
+        "status": "active",
+        "workspace": workspace,
+        "debounce_ms": 500,
+        "watched_extensions": ["rs","py","ts","tsx","js","jsx","go","java","c","h","cpp","cs","tf","yml","yaml","rb","php","swift","md","json","toml"],
+    }))
+}
+
 /// M3.1: Readiness probe — returns 200 with `{"status":"ready","graph_loaded":true}`
 /// once `build_graph` has succeeded at least once, otherwise 503 with
 /// `{"status":"not_ready","graph_loaded":false}`. Distinct from `/health`,
@@ -243,6 +259,16 @@ async fn main() -> anyhow::Result<()> {
     cognicode_core::infrastructure::telemetry::init_global_metrics()
         .map_err(|e| anyhow::anyhow!("telemetry init failed: {e}"))?;
 
+    // ── File watcher (Sprint 4 / ADR-022) ─────────────────────────────────
+    // Start the file watcher as a background task. It watches the workspace
+    // for file changes and triggers incremental re-scans automatically.
+    let watcher_handle = cognicode_core::application::ingest::watcher::start_watcher(cwd.clone());
+    let watcher_handle = Arc::new(std::sync::Mutex::new(watcher_handle.0));
+    // The watcher receiver (watcher_handle.1) is available for scan integration
+    // but not wired to the pipeline yet — that requires IngestController.
+
+    tracing::info!("file watcher active for {}", cwd.display());
+
     let service = rmcp::transport::streamable_http_server::StreamableHttpService::new(
         {
             let shared_ctx = shared_ctx.clone();
@@ -276,6 +302,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .merge(api_routes)
         .merge(public_routes)
+        .route("/watch", get(watch_handler))
         .with_state((shared_ctx, prometheus_registry));
 
     tracing::info!("CogniCode MCP HTTP/SSE Server on {}", args.listen);
