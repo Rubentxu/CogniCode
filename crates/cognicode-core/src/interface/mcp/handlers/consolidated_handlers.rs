@@ -5,6 +5,10 @@
 
 use crate::domain::services::CycleDetector;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
+use crate::interface::mcp::schemas::{
+    CompareGraphInput, CompareGraphOutput, MetricDeltas, SmartSearchInput, SmartSearchOutput,
+    SmartSearchResult,
+};
 
 // ============================================================================
 // Phase 5.2 — Composite Tools
@@ -12,54 +16,104 @@ use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResul
 
 // ── smart_search ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, serde::Deserialize)]
-pub struct SmartSearchInput {
-    pub query: String,
-    #[serde(default = "default_algorithm")]
-    pub algorithm: String,
-    #[serde(default = "default_limit")]
-    pub limit: usize,
-}
-fn default_algorithm() -> String {
-    "fuzzy".into()
-}
-fn default_limit() -> usize {
-    50
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct SmartSearchOutput {
-    pub query: String,
-    pub algorithm: String,
-    pub results: Vec<SearchResultItem>,
-    pub total: usize,
-}
-#[derive(Debug, serde::Serialize)]
-pub struct SearchResultItem {
-    pub name: String,
-    pub kind: String,
-    pub file: Option<String>,
-    pub line: Option<u32>,
-    pub score: f64,
-}
-
 pub async fn handle_smart_search(
     ctx: &HandlerContext,
     input: SmartSearchInput,
 ) -> HandlerResult<SmartSearchOutput> {
-    let _graph = ctx.get_graph_store().load_graph();
-    let algo = input.algorithm.as_str();
-    let _description = match algo {
-        "fuzzy" => "Fuzzy name matching (semantic_search)",
-        "ranked" => "Fan-in + complexity ranked (ranked_symbols)",
-        "idf" => "IDF-weighted (graph_search_idf)",
-        _ => "Unknown algorithm",
+    let limit = input.limit.unwrap_or(20);
+
+    // Build inputs for the three backends
+    let semantic_input = crate::interface::mcp::schemas::SemanticSearchInput {
+        query: input.query.clone(),
+        kinds: None,
+        max_results: limit,
     };
+    let ranked_input = crate::interface::mcp::schemas::RankedSymbolsInput {
+        query: input.query.clone(),
+        limit,
+    };
+    let idf_input = crate::interface::mcp::schemas::GraphSearchIdfInput {
+        query: input.query.clone(),
+        max_results: limit as u32,
+    };
+
+    let sem_svc = ctx.semantic_search.clone();
+    let wd = ctx.working_dir.clone();
+
+    // Run all three searches in parallel
+    let (sem, rank, idf) = tokio::join!(
+        crate::interface::mcp::handlers::handle_semantic_search(sem_svc, wd, semantic_input),
+        crate::interface::mcp::handlers::aix_handlers::handle_ranked_symbols(ctx, ranked_input),
+        crate::interface::mcp::handlers::graph_handlers::handle_graph_search_idf(ctx, idf_input),
+    );
+
+    // Collect all results with source tags, deduplicating by name
+    let mut results: std::collections::HashMap<String, SmartSearchResult> =
+        std::collections::HashMap::new();
+
+    if let Ok(sem) = sem {
+        for r in sem.results {
+            results.entry(r.name.clone()).or_insert_with(|| {
+                SmartSearchResult {
+                    name: r.name,
+                    kind: r.kind,
+                    file: Some(r.file),
+                    score: r.score as f64,
+                    source: "semantic".into(),
+                }
+            });
+        }
+    }
+    if let Ok(rank) = rank {
+        for r in rank.results {
+            results.entry(r.name.clone()).or_insert_with(|| {
+                SmartSearchResult {
+                    name: r.name,
+                    kind: r.kind,
+                    file: Some(r.file),
+                    score: r.relevance_score,
+                    source: "ranked".into(),
+                }
+            });
+        }
+    }
+    if let Ok(idf) = idf {
+        if let Some(results_arr) = idf.get("results").and_then(|v| v.as_array()) {
+            for r in results_arr {
+                if let (Some(name), Some(score)) = (
+                    r.get("name").and_then(|v| v.as_str()),
+                    r.get("idf_score").and_then(|v| v.as_f64()),
+                ) {
+                    let file = r.get("file").and_then(|v| v.as_str());
+                    results.entry(name.to_string()).or_insert_with(|| {
+                        SmartSearchResult {
+                            name: name.to_string(),
+                            kind: "symbol".into(),
+                            file: file.map(|f| f.to_string()),
+                            score,
+                            source: "idf".into(),
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by score descending, truncate to limit
+    let mut sorted: Vec<_> = results.into_values().collect();
+    sorted.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    sorted.truncate(limit);
+    let total = sorted.len();
+    let sources = vec!["semantic".into(), "ranked".into(), "idf".into()];
+
     Ok(SmartSearchOutput {
-        query: input.query,
-        algorithm: algo.into(),
-        results: vec![],
-        total: 0,
+        results: sorted,
+        total,
+        sources,
     })
 }
 
@@ -221,29 +275,90 @@ fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<()> {
 
 // ── compare_graph ────────────────────────────────────────────────────────────
 
-#[derive(Debug, serde::Deserialize)]
-pub struct CompareGraphInput {
-    #[serde(default = "default_compare_mode")]
-    pub mode: String,
-}
-fn default_compare_mode() -> String {
-    "diff".into()
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct CompareGraphOutput {
-    pub mode: String,
-    pub changes: serde_json::Value,
-}
-
 pub async fn handle_compare_graph(
     ctx: &HandlerContext,
     input: CompareGraphInput,
 ) -> HandlerResult<CompareGraphOutput> {
-    let _graph = ctx.get_graph_store().load_graph();
+    // Requires PG persistence
+    let pg_repo = match &ctx.postgres_repo {
+        Some(repo) => repo,
+        None => {
+            return Err(HandlerError::Internal(
+                "GATED: compare_graph requires PostgreSQL persistence. \
+                 Configure --postgres flag or set DATABASE_URL."
+                    .into(),
+            ))
+        }
+    };
+
+    let workspace_id = ctx.working_dir.to_string_lossy();
+
+    // Load latest report from PG
+    let report = match pg_repo
+        .load_latest_report(&workspace_id)
+        .await
+        .map_err(|e| HandlerError::Internal(format!("Failed to load report: {e}")))?
+    {
+        Some(r) => r,
+        None => {
+            return Err(HandlerError::Internal(
+                "No baseline graph_report found. Run build_graph with \
+                 --postgres first to create a baseline."
+                    .into(),
+            ))
+        }
+    };
+
+    // Get current graph snapshot
+    let graph = ctx.analysis_service.get_project_graph();
+
+    // Compare: extract symbol names from current graph vs baseline report
+    let current_symbols: std::collections::HashSet<String> = graph
+        .symbols()
+        .map(|s| s.fully_qualified_name().to_string())
+        .collect();
+
+    // Baseline symbols come from the report's JSON payload
+    let report_symbols: std::collections::HashSet<String> = report
+        .report
+        .get("symbols")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|s| s.get("name").and_then(|v| v.as_str()).map(|n| n.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Compute diffs
+    let mut added: Vec<String> = current_symbols
+        .difference(&report_symbols)
+        .cloned()
+        .collect();
+    let mut removed: Vec<String> = report_symbols
+        .difference(&current_symbols)
+        .cloned()
+        .collect();
+    added.sort();
+    removed.sort();
+
+    let health_score_delta = report.health_score.map(|baseline| {
+        // Compute current health score
+        let current_health =
+            crate::application::services::graph_insights::GraphInsightsService::analyze(&graph)
+                .health_score;
+        current_health - baseline as f64
+    });
+
     Ok(CompareGraphOutput {
-        mode: input.mode,
-        changes: serde_json::json!({"note": "Baseline comparison requires graph_reports snapshots. Run a scan first."}),
+        baseline_date: report.created_at,
+        added_symbols: added,
+        removed_symbols: removed,
+        current_symbol_count: current_symbols.len(),
+        baseline_symbol_count: report_symbols.len(),
+        metric_deltas: MetricDeltas {
+            health_score_delta,
+        },
     })
 }
 

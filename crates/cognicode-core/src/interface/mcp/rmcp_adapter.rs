@@ -593,6 +593,19 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                         }).as_object().cloned().unwrap()),
                     )
                     .with_meta(cognicode_meta("experimental", "aix", true, false, 5000)),
+                    Tool::new(
+                        "nl_to_symbol",
+                        "Convert natural language descriptions to symbol matches using keyword extraction and semantic search.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "query": { "type": "string", "description": "Natural language description of symbol to find" },
+                                "limit": { "type": "integer", "description": "Maximum number of results (default: 20)" }
+                            },
+                            "required": ["query"]
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("stable", "search", true, false, 500)),
                     // AIX-4: Compare Call Graphs & Detect API Breaks
                     // AIX-5: System Prompt Context & God Functions & Long Params
                     Tool::new(
@@ -961,6 +974,30 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                         Arc::new(serde_json::json!({"type":"object","properties":{}}).as_object().cloned().unwrap()),
                     )
                     .with_meta(cognicode_meta("experimental", "composite", true, false, 3000)),
+                    Tool::new(
+                        "smart_search",
+                        "Run semantic_search + ranked_symbols + graph_search_idf in parallel with deduplication. Returns merged results ranked by combined score.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "query": { "type": "string", "description": "Search query string" },
+                                "limit": { "type": "integer", "description": "Maximum number of results (default: 20)" }
+                            },
+                            "required": ["query"]
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("experimental", "composite", true, false, 2000)),
+                    Tool::new(
+                        "compare_graph",
+                        "Compare the current call graph snapshot vs the latest PostgreSQL graph_report. Shows added/removed symbols and metric deltas. Requires PostgreSQL persistence.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "baseline": { "type": "string", "description": "Baseline reference: 'latest' or a date string YYYY-MM-DD (default: 'latest')" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("gated", "composite", true, true, 2000)),
                     Tool::new(
                         "review_pr",
                         "Analyze PR impact: provide changed files, get risk level, impacted files, and breaking changes.",
@@ -1627,7 +1664,7 @@ async fn call_tool_handler(
         }
         // Sprint 5: Consolidated + High-value tools (ADR-027 + ADR-028)
         "smart_search" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::SmartSearchInput =
+            let input: crate::interface::mcp::schemas::SmartSearchInput =
                 serde_json::from_value(arguments.into())?;
             let output =
                 crate::interface::mcp::handlers::consolidated_handlers::handle_smart_search(
@@ -1656,7 +1693,7 @@ async fn call_tool_handler(
             Ok(serde_json::to_string_pretty(&output)?)
         }
         "compare_graph" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::CompareGraphInput =
+            let input: crate::interface::mcp::schemas::CompareGraphInput =
                 serde_json::from_value(arguments.into())?;
             let output =
                 crate::interface::mcp::handlers::consolidated_handlers::handle_compare_graph(

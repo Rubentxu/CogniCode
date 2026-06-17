@@ -2317,6 +2317,88 @@ pub struct SolidScores {
     pub overall: f64,
 }
 
+// ============================================================================
+// Smart Search — Composite search tool (ADR-027)
+// ============================================================================
+
+/// Input for smart_search tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SmartSearchInput {
+    /// Search query string
+    pub query: String,
+
+    /// Maximum number of results to return (default: 20)
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// Output for smart_search tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SmartSearchOutput {
+    /// Merged, deduplicated, and ranked search results
+    pub results: Vec<SmartSearchResult>,
+    /// Total results returned
+    pub total: usize,
+    /// Which sources contributed results
+    pub sources: Vec<String>,
+}
+
+/// Single search result from the smart_search composite
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SmartSearchResult {
+    /// Symbol name
+    pub name: String,
+    /// Symbol kind (function, struct, etc.)
+    pub kind: String,
+    /// File path where the symbol is defined
+    pub file: Option<String>,
+    /// Relevance score (0.0–1.0, higher is better)
+    pub score: f64,
+    /// Source that produced this result: "semantic", "ranked", or "idf"
+    pub source: String,
+}
+
+// ============================================================================
+// Compare Graph — Graph snapshot comparison (ADR-028)
+// ============================================================================
+
+/// Input for compare_graph tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CompareGraphInput {
+    /// Baseline reference: "latest" (compare against latest PG report)
+    /// or a specific date string (YYYY-MM-DD).
+    #[serde(default = "default_compare_mode")]
+    pub baseline: String,
+}
+
+fn default_compare_mode() -> String {
+    "latest".into()
+}
+
+/// Output for compare_graph tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CompareGraphOutput {
+    /// When the baseline was captured
+    pub baseline_date: String,
+    /// Symbols that exist now but not in the baseline
+    pub added_symbols: Vec<String>,
+    /// Symbols that existed in the baseline but not now
+    pub removed_symbols: Vec<String>,
+    /// Current total symbol count
+    pub current_symbol_count: usize,
+    /// Baseline total symbol count
+    pub baseline_symbol_count: usize,
+    /// Per-metric deltas between current and baseline
+    pub metric_deltas: MetricDeltas,
+}
+
+/// Per-metric deltas for graph comparison
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct MetricDeltas {
+    /// Health score delta (current - baseline)
+    pub health_score_delta: Option<f64>,
+}
+
 /// Complete SOLID analysis report
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SolidReport {
