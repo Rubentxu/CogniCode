@@ -371,10 +371,34 @@ pub async fn handle_get_type_references(
     ctx: &HandlerContext,
     input: GetTypeRefsInput,
 ) -> HandlerResult<GetTypeRefsOutput> {
-    let _ = ctx.get_graph_store().load_graph();
+    let graph = match ctx.get_graph_store().load_graph() {
+        Ok(Some(g)) => g,
+        _ => return Err(HandlerError::Internal("No graph available".into())),
+    };
+
+    let candidates = graph.find_by_name(&input.symbol);
+    let symbol = candidates.first().ok_or_else(|| {
+        HandlerError::NotFound(format!("Symbol '{}' not found", input.symbol))
+    })?;
+
+    let sym_id = SymbolId::new(symbol.fully_qualified_name());
+    let mut references = Vec::new();
+
+    // Filter dependencies by References edge type
+    for (target_id, dep_type, _prov, _conf) in graph.dependencies_with_metadata(&sym_id) {
+        if matches!(dep_type, crate::domain::value_objects::DependencyType::References) {
+            if let Some(target_sym) = graph.get_symbol(target_id) {
+                references.push(TypeRefRecord {
+                    target: target_sym.name().to_string(),
+                    context: format!("{:?}", target_sym.kind()),
+                });
+            }
+        }
+    }
+
     Ok(GetTypeRefsOutput {
         symbol: input.symbol,
-        references: Vec::new(),
+        references,
     })
 }
 
@@ -392,10 +416,46 @@ pub async fn handle_get_imports(
     ctx: &HandlerContext,
     input: GetImportsInput,
 ) -> HandlerResult<GetImportsOutput> {
-    let _ = ctx.get_graph_store().load_graph();
+    let graph = match ctx.get_graph_store().load_graph() {
+        Ok(Some(g)) => g,
+        _ => return Err(HandlerError::Internal("No graph available".into())),
+    };
+
+    // The file_path maps to a SymbolId for the file node
+    let file_id = SymbolId::new(&input.file_path);
+    let mut imports = Vec::new();
+
+    // Filter dependencies by Imports edge type
+    for (target_id, dep_type, _prov, _conf) in graph.dependencies_with_metadata(&file_id) {
+        if matches!(dep_type, crate::domain::value_objects::DependencyType::Imports) {
+            if let Some(target_sym) = graph.get_symbol(target_id) {
+                imports.push(target_sym.name().to_string());
+            } else {
+                imports.push(target_id.to_string());
+            }
+        }
+    }
+
+    // Also try searching by file name if exact path doesn't match
+    if imports.is_empty() {
+        let candidates = graph.find_by_name(&input.file_path);
+        if let Some(file_sym) = candidates.first() {
+            let file_id = SymbolId::new(file_sym.fully_qualified_name());
+            for (target_id, dep_type, _prov, _conf) in graph.dependencies_with_metadata(&file_id) {
+                if matches!(dep_type, crate::domain::value_objects::DependencyType::Imports) {
+                    if let Some(target_sym) = graph.get_symbol(target_id) {
+                        imports.push(target_sym.name().to_string());
+                    } else {
+                        imports.push(target_id.to_string());
+                    }
+                }
+            }
+        }
+    }
+
     Ok(GetImportsOutput {
         file_path: input.file_path,
-        imports: Vec::new(),
+        imports,
     })
 }
 
@@ -413,10 +473,36 @@ pub async fn handle_get_implementors(
     ctx: &HandlerContext,
     input: GetImplementorsInput,
 ) -> HandlerResult<GetImplementorsOutput> {
-    let _ = ctx.get_graph_store().load_graph();
+    let graph = match ctx.get_graph_store().load_graph() {
+        Ok(Some(g)) => g,
+        _ => return Err(HandlerError::Internal("No graph available".into())),
+    };
+
+    let candidates = graph.find_by_name(&input.trait_name);
+    let trait_sym = candidates.first().ok_or_else(|| {
+        HandlerError::NotFound(format!("Trait/interface '{}' not found", input.trait_name))
+    })?;
+
+    let trait_id = SymbolId::new(trait_sym.fully_qualified_name());
+    let mut implementors = Vec::new();
+
+    // Find all symbols that have an Inherits edge pointing to this trait
+    for (dep_id, _) in graph.symbol_ids() {
+        for (target_id, dep_type, _prov, _conf) in graph.dependencies_with_metadata(dep_id) {
+            if target_id == &trait_id
+                && matches!(dep_type, crate::domain::value_objects::DependencyType::Inherits)
+            {
+                if let Some(impl_sym) = graph.get_symbol(dep_id) {
+                    implementors.push(impl_sym.name().to_string());
+                }
+                break;
+            }
+        }
+    }
+
     Ok(GetImplementorsOutput {
         trait_name: input.trait_name,
-        implementors: Vec::new(),
+        implementors,
     })
 }
 
@@ -435,11 +521,47 @@ pub async fn handle_get_members(
     ctx: &HandlerContext,
     input: GetMembersInput,
 ) -> HandlerResult<GetMembersOutput> {
-    let _ = ctx.get_graph_store().load_graph();
+    let graph = match ctx.get_graph_store().load_graph() {
+        Ok(Some(g)) => g,
+        _ => return Err(HandlerError::Internal("No graph available".into())),
+    };
+
+    let candidates = graph.find_by_name(&input.class_name);
+    let class_sym = candidates.first().ok_or_else(|| {
+        HandlerError::NotFound(format!("Class/struct '{}' not found", input.class_name))
+    })?;
+
+    let class_id = SymbolId::new(class_sym.fully_qualified_name());
+    let mut methods = Vec::new();
+    let mut fields = Vec::new();
+
+    // Filter dependencies by Contains edge type — these are the class members
+    for (target_id, dep_type, _prov, _conf) in graph.dependencies_with_metadata(&class_id) {
+        if matches!(dep_type, crate::domain::value_objects::DependencyType::Contains) {
+            if let Some(member_sym) = graph.get_symbol(target_id) {
+                match member_sym.kind() {
+                    crate::domain::value_objects::SymbolKind::Function
+                    | crate::domain::value_objects::SymbolKind::Method => {
+                        methods.push(member_sym.name().to_string());
+                    }
+                    crate::domain::value_objects::SymbolKind::Variable
+                    | crate::domain::value_objects::SymbolKind::Field
+                    | crate::domain::value_objects::SymbolKind::Property => {
+                        fields.push(member_sym.name().to_string());
+                    }
+                    _ => {
+                        // Other kinds go to methods as fallback
+                        methods.push(member_sym.name().to_string());
+                    }
+                }
+            }
+        }
+    }
+
     Ok(GetMembersOutput {
         class_name: input.class_name,
-        methods: Vec::new(),
-        fields: Vec::new(),
+        methods,
+        fields,
     })
 }
 
