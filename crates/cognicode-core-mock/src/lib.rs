@@ -16,7 +16,7 @@ use cognicode_core::domain::aggregates::{CallGraph, Refactor, RefactorKind, Refa
 use cognicode_core::domain::services::CycleDetectionResult;
 
 // Import value objects
-use cognicode_core::domain::value_objects::{DependencyType, Location, SourceRange, SymbolKind};
+use cognicode_core::domain::value_objects::{DependencyType, Location, SourceRange, SymbolKind, CheckpointId};
 
 // Import from code_intelligence sub-module directly
 use cognicode_core::domain::traits::code_intelligence::{
@@ -443,6 +443,26 @@ impl GraphStore for MockGraphStore {
         let graph_exists = self.graph.lock().unwrap().is_some();
         let manifest_exists = self.manifest.lock().unwrap().is_some();
         Ok(graph_exists || manifest_exists)
+    }
+
+    // ----- ADR-035: single-version checkpoint stubs -----
+
+    fn current_checkpoint_id(&self) -> Option<CheckpointId> {
+        if self.exists().unwrap_or(false) {
+            Some(CheckpointId(1))
+        } else {
+            None
+        }
+    }
+
+    fn checkpoint_at(
+        &self,
+        id: CheckpointId,
+    ) -> Result<Option<Arc<CallGraph>>, StoreError> {
+        if id != CheckpointId(1) {
+            return Err(StoreError::CheckpointNotFound(id));
+        }
+        self.load_graph().map(|opt| opt.map(Arc::new))
     }
 }
 

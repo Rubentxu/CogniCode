@@ -6,12 +6,19 @@
 //! that is fast on the read path (~2× faster than the bincode path)
 //! while keeping the `GraphStore` trait contract intact for future
 //! persistence adapters. See ADR-032.
+//!
+//! ADR-035: this is the only `GraphStore` impl that exposes
+//! **real** versioned snapshot reads. It delegates to
+//! [`GraphCache::current_id`] and [`GraphCache::get_at`] which read
+//! from the lock-free `VersionedGraphCache` ring inside the cache.
+//! The inner `InMemoryGraphStore` is single-version and reports id 1.
 
 use std::sync::Arc;
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::traits::graph_store::{GraphStore, StoreError};
 use crate::domain::value_objects::file_manifest::FileManifest;
+use crate::domain::value_objects::CheckpointId;
 use crate::infrastructure::graph::GraphCache;
 use crate::infrastructure::persistence::InMemoryGraphStore;
 
@@ -28,7 +35,7 @@ use crate::infrastructure::persistence::InMemoryGraphStore;
 /// only `save_manifest` is called by `build_graph` for staleness
 /// detection.
 pub struct CachedGraphStore {
-    /// Lock-free cache for reads.
+    /// Lock-free cache for reads (real versioned ring per ADR-035).
     cache: Arc<GraphCache>,
     /// Inner store for write/manifest/clear operations.
     inner: InMemoryGraphStore,
@@ -84,6 +91,39 @@ impl GraphStore for CachedGraphStore {
 
     fn exists(&self) -> Result<bool, StoreError> {
         self.inner.exists()
+    }
+
+    // ----- ADR-035: real versioned checkpoint reads -----
+
+    /// Returns the [`CheckpointId`] of the current head, or `None` if
+    /// no checkpoint has ever been published. Delegates to
+    /// [`GraphCache::current_id`].
+    fn current_checkpoint_id(&self) -> Option<CheckpointId> {
+        self.cache.current_id()
+    }
+
+    /// Returns the `CallGraph` snapshot pinned to `id`. `Err(
+    /// StoreError::CheckpointNotFound)` if the id is not (or no
+    /// longer) in the cache's retention window. Delegates to
+    /// [`GraphCache::get_at`].
+    ///
+    /// Note: the cache's `get_at` returns `None` when the ring is
+    /// cold (no inserts yet), which is semantically distinct from
+    /// "id evicted". We therefore check `current_id()` first: if the
+    /// ring is cold we return `Ok(None)`; otherwise a `None` from
+    /// `get_at` is a true "not found" and we lift it to
+    /// `Err(CheckpointNotFound)`.
+    fn checkpoint_at(
+        &self,
+        id: CheckpointId,
+    ) -> Result<Option<Arc<CallGraph>>, StoreError> {
+        if self.cache.current_id().is_none() {
+            return Ok(None);
+        }
+        self.cache
+            .get_at(id)
+            .map(Some)
+            .ok_or(StoreError::CheckpointNotFound(id))
     }
 }
 
@@ -153,5 +193,58 @@ mod tests {
         // Cache itself is untouched by clear() — only inner store cleared.
         // (The cache holds the source of truth for reads.)
         assert_eq!(store.load_graph().unwrap().unwrap().symbol_count(), 1);
+    }
+
+    // ----- ADR-035: checkpoint-aware methods -----
+
+    #[test]
+    fn cached_graph_store_current_checkpoint_id_cold_is_none() {
+        let cache = Arc::new(GraphCache::new());
+        let store = CachedGraphStore::new(cache);
+        assert_eq!(store.current_checkpoint_id(), None);
+    }
+
+    #[test]
+    fn cached_graph_store_current_checkpoint_id_after_set() {
+        let cache = Arc::new(GraphCache::new());
+        let store = CachedGraphStore::new(cache.clone());
+        let id = cache.set(build_small_graph());
+        assert_eq!(store.current_checkpoint_id(), Some(id));
+    }
+
+    #[test]
+    fn cached_graph_store_checkpoint_at_returns_head() {
+        let cache = Arc::new(GraphCache::new());
+        let store = CachedGraphStore::new(cache.clone());
+        let id = cache.set(build_small_graph());
+        let arc = store.checkpoint_at(id).unwrap().unwrap();
+        assert_eq!(arc.symbol_count(), 1);
+    }
+
+    #[test]
+    fn cached_graph_store_checkpoint_at_cold_is_none() {
+        let cache = Arc::new(GraphCache::new());
+        let store = CachedGraphStore::new(cache);
+        // Cold cache: id 1 doesn't exist yet.
+        let result = store.checkpoint_at(CheckpointId(1)).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn cached_graph_store_checkpoint_at_evicted_returns_not_found() {
+        // Retention 2: after 3 inserts, id 1 is evicted.
+        let cache = Arc::new(GraphCache::with_retention(2));
+        let store = CachedGraphStore::new(cache.clone());
+
+        let id1 = cache.set(build_small_graph());
+        let _id2 = cache.set(build_small_graph());
+        let _id3 = cache.set(build_small_graph());
+
+        let result = store.checkpoint_at(id1);
+        assert!(
+            matches!(result, Err(StoreError::CheckpointNotFound(id)) if id == id1),
+            "expected CheckpointNotFound, got {:?}",
+            result
+        );
     }
 }

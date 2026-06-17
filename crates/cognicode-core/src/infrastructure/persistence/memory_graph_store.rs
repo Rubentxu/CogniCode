@@ -2,11 +2,18 @@
 //!
 //! This implementation stores data in memory, useful for tests and scenarios
 //! where persistence is not required.
+//!
+//! ADR-035: this is a **single-version** store. It exposes the checkpoint
+//! methods but reports a fixed id of 1 (or `None` when cold) and always
+//! returns the current graph. Use [`CachedGraphStore`](crate::infrastructure::persistence::CachedGraphStore)
+//! for real versioned snapshot reads.
+
+use std::sync::{Arc, Mutex};
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::traits::graph_store::{GraphStore, StoreError};
 use crate::domain::value_objects::file_manifest::FileManifest;
-use std::sync::Mutex;
+use crate::domain::value_objects::CheckpointId;
 
 /// In-memory implementation of GraphStore for testing
 #[derive(Debug, Default)]
@@ -89,6 +96,29 @@ impl GraphStore for InMemoryGraphStore {
         let graph_exists = self.graph.lock().unwrap().is_some();
         let manifest_exists = self.manifest.lock().unwrap().is_some();
         Ok(graph_exists || manifest_exists)
+    }
+
+    // ----- ADR-035: single-version checkpoint stubs -----
+
+    fn current_checkpoint_id(&self) -> Option<CheckpointId> {
+        // A single-version store reports id 1 once it holds any data.
+        // Cold store => None (mirrors the CachedGraphStore semantics).
+        if self.exists().unwrap_or(false) {
+            Some(CheckpointId(1))
+        } else {
+            None
+        }
+    }
+
+    fn checkpoint_at(
+        &self,
+        id: CheckpointId,
+    ) -> Result<Option<Arc<CallGraph>>, StoreError> {
+        // Only id 1 is valid for a single-version store.
+        if id != CheckpointId(1) {
+            return Err(StoreError::CheckpointNotFound(id));
+        }
+        self.load_graph().map(|opt| opt.map(Arc::new))
     }
 }
 
@@ -189,5 +219,41 @@ mod tests {
             result.unwrap().is_none(),
             "Expected None for corrupted data"
         );
+    }
+
+    #[test]
+    fn test_checkpoint_id_cold_store_is_none() {
+        let store = InMemoryGraphStore::new();
+        assert_eq!(store.current_checkpoint_id(), None);
+    }
+
+    #[test]
+    fn test_checkpoint_id_warm_store_is_one() {
+        let store = InMemoryGraphStore::new();
+        store.save_graph(&create_test_graph()).unwrap();
+        assert_eq!(store.current_checkpoint_id(), Some(CheckpointId(1)));
+    }
+
+    #[test]
+    fn test_checkpoint_at_returns_current_graph() {
+        let store = InMemoryGraphStore::new();
+        store.save_graph(&create_test_graph()).unwrap();
+        let arc = store.checkpoint_at(CheckpointId(1)).unwrap().unwrap();
+        assert_eq!(arc.symbol_count(), 1);
+    }
+
+    #[test]
+    fn test_checkpoint_at_unknown_id_returns_not_found() {
+        let store = InMemoryGraphStore::new();
+        store.save_graph(&create_test_graph()).unwrap();
+        let result = store.checkpoint_at(CheckpointId(42));
+        assert!(matches!(result, Err(StoreError::CheckpointNotFound(id)) if id == CheckpointId(42)));
+    }
+
+    #[test]
+    fn test_checkpoint_at_cold_store_returns_none() {
+        let store = InMemoryGraphStore::new();
+        let result = store.checkpoint_at(CheckpointId(1)).unwrap();
+        assert!(result.is_none());
     }
 }

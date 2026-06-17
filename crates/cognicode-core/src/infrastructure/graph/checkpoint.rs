@@ -4,43 +4,22 @@
 //! buffer ([`VersionedGraphCache`]) that keeps the last N graphs so that
 //! in-flight readers can pin to a specific version while writers replace
 //! the head atomically.
+//!
+//! The [`CheckpointId`] type is canonical in
+//! [`crate::domain::value_objects::CheckpointId`]; this module re-exports
+//! it for ergonomics so callers can write
+//! `use crate::infrastructure::graph::CheckpointId` instead of reaching
+//! across the domain↔infrastructure boundary.
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-/// Monotonic identifier for a graph checkpoint.
-///
-/// Assigned sequentially at creation. Never reused. IDs start at 1
-/// (id 0 is reserved as "no checkpoint").
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct CheckpointId(pub u64);
-
-impl CheckpointId {
-    /// Reserved sentinel for "no checkpoint". Equivalent to `None` in the
-    /// type system, but it lets callers carry an id in structs without an
-    /// extra `Option`.
-    pub const NONE: CheckpointId = CheckpointId(0);
-
-    /// A checkpoint id is valid iff it was produced by
-    /// [`VersionedGraphCache::insert`]. `CheckpointId::NONE` is invalid.
-    pub fn is_valid(self) -> bool {
-        self.0 > 0
-    }
-
-    /// Returns the next checkpoint id. Pure arithmetic — does NOT
-    /// allocate or coordinate. Use [`VersionedGraphCache::insert`] to
-    /// obtain an id that is guaranteed unique within a single cache.
-    pub fn next(self) -> Self {
-        CheckpointId(self.0 + 1)
-    }
-}
-
-impl std::fmt::Display for CheckpointId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "checkpoint:{}", self.0)
-    }
-}
+// Re-export the canonical domain type so existing callers using
+// `crate::infrastructure::graph::checkpoint::CheckpointId` (and the
+// `infrastructure::graph::CheckpointId` glob) keep working unchanged.
+#[doc(no_inline)]
+pub use crate::domain::value_objects::CheckpointId;
 
 /// A versioned ring of `CallGraph` checkpoints.
 ///

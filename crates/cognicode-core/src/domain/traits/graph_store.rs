@@ -2,9 +2,16 @@
 //!
 //! This trait abstracts the persistence backend for the call graph,
 //! supporting both file-based stores and in-memory stores for testing.
+//!
+//! ADR-035 adds versioned checkpoint reads via [`GraphStore::current_checkpoint_id`]
+//! and [`GraphStore::checkpoint_at`]. These let callers pin to a specific
+//! snapshot while writers publish new heads.
+
+use std::sync::Arc;
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::value_objects::file_manifest::FileManifest;
+use crate::domain::value_objects::CheckpointId;
 
 /// Error type for graph store operations
 #[derive(Debug, thiserror::Error)]
@@ -17,9 +24,20 @@ pub enum StoreError {
     Database(String),
     #[error("Corrupted data: {0}")]
     Corrupted(String),
+    /// The requested checkpoint id is not (or no longer) available in the
+    /// store's retention window. Returned by
+    /// [`GraphStore::checkpoint_at`].
+    #[error("Checkpoint not found: {0}")]
+    CheckpointNotFound(CheckpointId),
 }
 
 /// Trait for persisting and loading the call graph
+///
+/// The default implementations of the checkpoint methods panic with a
+/// message naming the concrete type — this is "loud failure > silent
+/// ignore" (ADR-035 D7). Stores that do not maintain versioned
+/// snapshots should override the methods with a single-version stub
+/// (id = 1, current graph).
 pub trait GraphStore: Send + Sync {
     /// Save the call graph to the store
     fn save_graph(&self, graph: &CallGraph) -> Result<(), StoreError>;
@@ -38,6 +56,39 @@ pub trait GraphStore: Send + Sync {
 
     /// Check if data exists in the store
     fn exists(&self) -> Result<bool, StoreError>;
+
+    /// Returns the [`CheckpointId`] of the current head, or `None` if no
+    /// checkpoint has ever been published.
+    ///
+    /// Stores that maintain a versioned ring (e.g. `CachedGraphStore`)
+    /// return the live head id. Single-version stores should return
+    /// `Some(CheckpointId(1))` once the store is non-empty.
+    fn current_checkpoint_id(&self) -> Option<CheckpointId> {
+        panic!(
+            "current_checkpoint_id not implemented for {}",
+            std::any::type_name::<Self>()
+        );
+    }
+
+    /// Returns the `CallGraph` snapshot for a given [`CheckpointId`].
+    ///
+    /// * `Ok(Some(graph))` — checkpoint is in the store's retention window.
+    /// * `Ok(None)` — store has no checkpoints at all (cold store).
+    /// * `Err(StoreError::CheckpointNotFound(id))` — store has at least
+    ///   one checkpoint but `id` is not (or no longer) in the window.
+    ///
+    /// Default impl panics. Single-version stores should override to
+    /// return the current graph for any valid id.
+    fn checkpoint_at(
+        &self,
+        id: CheckpointId,
+    ) -> Result<Option<Arc<CallGraph>>, StoreError> {
+        panic!(
+            "checkpoint_at not implemented for {} (id={})",
+            std::any::type_name::<Self>(),
+            id
+        );
+    }
 }
 
 #[cfg(test)]
