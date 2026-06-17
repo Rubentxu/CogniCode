@@ -128,6 +128,7 @@ lsp-types = "0.93"
 opentelemetry = "0.27"
 opentelemetry_sdk = { version = "0.27", features = ["metrics", "rt-tokio"] }
 opentelemetry-otlp = { version = "0.27", features = ["metrics", "grpc-tonic"] }
+opentelemetry-prometheus = "0.27"
 
 # Mermaid
 mermaid-rs-renderer = { version = "0.2", default-features = false }

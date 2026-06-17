@@ -1034,6 +1034,20 @@ async fn call_tool_handler(
             let input: crate::interface::mcp::handlers::BuildGraphInput =
                 serde_json::from_value(arguments.into())?;
             let output = crate::interface::mcp::handlers::handle_build_graph(ctx, input).await?;
+
+            // M2.1: Record graph statistics after successful build
+            if output.success {
+                let graph = ctx.analysis_service.get_project_graph();
+                let symbols = graph.symbol_count() as u64;
+                let edges = graph.edge_count() as u64;
+                let health_score =
+                    crate::application::services::graph_insights::GraphInsightsService::analyze(&graph)
+                        .health_score;
+                if let Some(m) = &metrics {
+                    m.record_graph_stats(symbols, edges, health_score);
+                }
+            }
+
             Ok(serde_json::to_string(&output)?)
         }
         "get_call_hierarchy" => {

@@ -13,8 +13,16 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use axum::{
+    header,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::get,
+    Router,
+};
 use clap::Parser;
 use cognicode_core::interface::mcp::CogniCodeHandler;
+use opentelemetry_prometheus::Prometheus;
 
 #[derive(Debug, Parser)]
 #[command(name = "cognicode-mcp-server", version)]
@@ -25,6 +33,23 @@ struct Args {
     listen: SocketAddr,
     #[arg(long)]
     postgres: Option<String>,
+}
+
+/// Handler for /metrics endpoint - exposes Prometheus-format metrics
+async fn metrics_handler() -> impl IntoResponse {
+    let exporter = Prometheus::default();
+    let body = match exporter.export() {
+        Ok(body) => body,
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+        }
+    };
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],
+        body,
+    )
+        .into_response()
 }
 
 #[tokio::main]
@@ -63,8 +88,9 @@ async fn main() -> anyhow::Result<()> {
         config,
     );
 
-    let app = axum::Router::new()
-        .route("/health", axum::routing::get(|| async { "OK" }))
+    let app = Router::new()
+        .route("/health", get(|| async { "OK" }))
+        .route("/metrics", get(metrics_handler))
         .nest_service("/mcp", service);
 
     tracing::info!("CogniCode MCP HTTP/SSE Server on {}", args.listen);

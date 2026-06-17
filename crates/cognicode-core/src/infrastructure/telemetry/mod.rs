@@ -4,7 +4,7 @@
 //! the OpenTelemetry SDK with OTLP export.
 
 use opentelemetry::KeyValue;
-use opentelemetry::metrics::{Counter, Histogram, Meter};
+use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Instant;
@@ -32,6 +32,12 @@ pub struct ToolMetrics {
     pub edit_validation_ms: Histogram<f64>,
     /// Edits rejected by syntax validation (by reason)
     pub edit_rejected: Counter<u64>,
+    /// Active symbol count after build_graph
+    pub graph_symbols: Gauge<u64>,
+    /// Active edge count after build_graph
+    pub graph_edges: Gauge<u64>,
+    /// Graph health score from GraphInsightsService (0.0-100.0)
+    pub graph_health_score: Gauge<f64>,
 }
 
 impl ToolMetrics {
@@ -73,6 +79,18 @@ impl ToolMetrics {
             edit_rejected: meter
                 .u64_counter("cognicode.edit.rejected")
                 .with_description("Edits rejected by syntax validation")
+                .build(),
+            graph_symbols: meter
+                .u64_gauge("cognicode.graph.symbols")
+                .with_description("Active symbol count after build_graph")
+                .build(),
+            graph_edges: meter
+                .u64_gauge("cognicode.graph.edges")
+                .with_description("Active edge count after build_graph")
+                .build(),
+            graph_health_score: meter
+                .f64_gauge("cognicode.graph.health_score")
+                .with_description("Graph health score from GraphInsightsService")
                 .build(),
         }
     }
@@ -147,6 +165,14 @@ impl ToolMetrics {
     pub fn record_edit_rejected(&self, reason: &str) {
         self.edit_rejected
             .add(1, &[KeyValue::new("reason", reason.to_string())]);
+    }
+
+    /// Records graph statistics after build_graph
+    #[allow(dead_code)]
+    pub fn record_graph_stats(&self, symbols: u64, edges: u64, health_score: f64) {
+        self.graph_symbols.record(symbols, &[]);
+        self.graph_edges.record(edges, &[]);
+        self.graph_health_score.record(health_score, &[]);
     }
 }
 
