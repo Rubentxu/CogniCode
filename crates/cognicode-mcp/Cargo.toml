@@ -5,6 +5,15 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
+[lib]
+# M3.5: expose `auth::check_bearer_token` as a library surface so the
+# constant-time comparison can be unit-tested without compiling the
+# `cognicode-mcp-server` binary (which has an unrelated pre-existing
+# build break on the opentelemetry-prometheus 0.27 upgrade). Binaries
+# below keep working unchanged; this is purely additive.
+name = "cognicode_mcp"
+path = "src/lib.rs"
+
 [[bin]]
 name = "cognicode-mcp"
 path = "src/main.rs"
@@ -50,3 +59,5 @@ tower = { workspace = true }
 http = "1"
 http-body-util = "0.1"
 tokio-util = "0.7"
+# M3.5: constant-time comparison for Bearer-token auth middleware.
+subtle.workspace = true

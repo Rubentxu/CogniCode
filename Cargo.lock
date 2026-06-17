@@ -649,6 +649,7 @@ dependencies = [
  "rmcp",
  "serde",
  "serde_json",
+ "subtle",
  "tokio",
  "tokio-util",
  "tower 0.5.3",

@@ -8,6 +8,12 @@
 //!
 //! OpenCode connects as remote MCP:
 //!   "cognicode": { "type": "remote", "url": "http://localhost:9847/mcp" }
+//!
+//! M3.5: Bearer-token auth middleware. Set `COGNICODE_MCP_AUTH_TOKEN` to
+//! require `Authorization: Bearer <token>` on `/mcp`. When unset, the
+//! auth layer passes all requests through (localhost dev mode).
+//! `/health`, `/ready`, `/metrics` are exempt by design so orchestrator
+//! probes and Prometheus scrapers do not need to hold a token.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -15,10 +21,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::{
-    extract::State,
-    header,
-    http::StatusCode,
-    response::IntoResponse,
+    extract::{Request, State},
+    http::{header, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::get,
     Json, Router,
 };
@@ -26,6 +32,8 @@ use clap::Parser;
 use cognicode_core::interface::mcp::CogniCodeHandler;
 use cognicode_core::interface::mcp::handlers::HandlerContext;
 use opentelemetry_prometheus::Prometheus;
+
+use cognicode_mcp::auth::check_bearer_token;
 
 #[derive(Debug, Parser)]
 #[command(name = "cognicode-mcp-server", version)]
@@ -38,7 +46,12 @@ struct Args {
     postgres: Option<String>,
 }
 
-/// Handler for /metrics endpoint - exposes Prometheus-format metrics
+/// Handler for `/health` — process alive, always 200 OK.
+async fn health_handler() -> &'static str {
+    "OK"
+}
+
+/// Handler for `/metrics` endpoint — exposes Prometheus-format metrics.
 async fn metrics_handler() -> impl IntoResponse {
     let exporter = Prometheus::default();
     let body = match exporter.export() {
@@ -75,6 +88,41 @@ async fn ready_handler(State(ctx): State<Arc<HandlerContext>>) -> impl IntoRespo
     }
 }
 
+/// M3.5: Bearer-token auth middleware. Applied to `/mcp` only;
+/// `/health`, `/ready`, and `/metrics` remain public so orchestrator
+/// probes and Prometheus scrapers do not need a token.
+///
+/// Behaviour:
+/// - `COGNICODE_MCP_AUTH_TOKEN` unset or empty → pass through (dev mode).
+/// - `COGNICODE_MCP_AUTH_TOKEN` set to non-empty value → require a
+///   matching `Authorization: Bearer <token>` header; otherwise 401.
+/// - Comparison uses `subtle::ConstantTimeEq` to avoid leaking length
+///   or content timing.
+///
+/// We read the env var on every request (instead of caching at startup)
+/// so an operator can rotate the token by restarting the container —
+/// no hot-reload semantics needed for v1.
+async fn auth_middleware(
+    State(_ctx): State<Arc<HandlerContext>>,
+    request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    // No token configured → dev mode, pass through.
+    let expected_token = match std::env::var("COGNICODE_MCP_AUTH_TOKEN") {
+        Ok(t) if !t.is_empty() => t,
+        _ => return Ok(next.run(request).await),
+    };
+
+    // Read the Authorization header (if any) as a string slice.
+    let auth_header = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+
+    check_bearer_token(auth_header, &expected_token)?;
+    Ok(next.run(request).await)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -87,6 +135,18 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("Mode B: PG-connected");
     } else {
         tracing::info!("Mode A: standalone");
+    }
+
+    // M3.5: surface whether the auth gate is active at startup. This
+    // makes the security posture obvious in container logs and is the
+    // same kind of "mode" line we already emit for PG.
+    match std::env::var("COGNICODE_MCP_AUTH_TOKEN") {
+        Ok(t) if !t.is_empty() => {
+            tracing::info!("Mode C: auth ENABLED (Bearer token required on /mcp)");
+        }
+        _ => {
+            tracing::info!("Mode C: auth DISABLED (no COGNICODE_MCP_AUTH_TOKEN set)");
+        }
     }
 
     let cwd = args.cwd.clone();
@@ -125,11 +185,26 @@ async fn main() -> anyhow::Result<()> {
         config,
     );
 
-    let app = Router::new()
-        .route("/health", get(|| async { "OK" }))
-        .route("/ready", get(ready_handler))
-        .route("/metrics", get(metrics_handler))
+    // M3.5: split the router so the auth middleware applies to /mcp
+    // only. /health, /ready, /metrics are public — orchestrators and
+    // Prometheus scrapers must reach them without a token. We mount
+    // the middleware via `from_fn_with_state` so it shares the same
+    // `Arc<HandlerContext>` as the rest of the request pipeline.
+    let api_routes = Router::new()
         .nest_service("/mcp", service)
+        .layer(middleware::from_fn_with_state(
+            shared_ctx.clone(),
+            auth_middleware,
+        ));
+
+    let public_routes = Router::new()
+        .route("/health", get(health_handler))
+        .route("/ready", get(ready_handler))
+        .route("/metrics", get(metrics_handler));
+
+    let app = Router::new()
+        .merge(api_routes)
+        .merge(public_routes)
         .with_state(shared_ctx);
 
     tracing::info!("CogniCode MCP HTTP/SSE Server on {}", args.listen);

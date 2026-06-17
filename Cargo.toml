@@ -111,6 +111,13 @@ regex = "1"
 # Base64
 base64 = "0.22"
 
+# Constant-time comparison (M3.5 Bearer-token auth middleware).
+# `subtle` is a tiny `no_std`-friendly crate that gives us
+# `ConstantTimeEq` to compare Bearer tokens without leaking length or
+# content timing to attackers. Avoids the well-known foot-gun of
+# `if a == b { ok }` for secret comparison.
+subtle = "2.6"
+
 # Markdown parser — pulled in by `cognicode-core` (under the
 # `multimodal` feature) to drive the `DocsExtractor`. Industry-standard
 # event-based parser with zero-copy iteration. Bump the version

@@ -62,7 +62,11 @@ nexus-draw-examples/
 
 # Coverage config
 .cargo/llvm-cov.toml
-.github
+# M2.12: allow `.github/workflows/` to be committed. The previous
+# blanket `.github` ignore was a cleanup-era over-broad rule; the
+# CI workflow file lives here and is required for M2.12 (MCP smoke
+# gate). Other `.github/` artifacts (dependabot, codeowners, etc.)
+# remain fine to add — this entry is removed, not narrowed.
 .junie/
 .windsurfrules
 .playwright-cli/
