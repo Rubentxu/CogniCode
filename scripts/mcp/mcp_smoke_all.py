@@ -4,11 +4,18 @@
 Classification:
 - OK: returned non-error, non-placeholder output
 - STUB: returned placeholder, empty-by-construction, unknown/resource_type, or note-only output
+  (STUB from a stable tool is a failure when --fail-on-stable-stub is set)
+- STUB_WARN: STUB from an experimental tool (allowed, printed as warning)
 - ERROR: runtime/tool-level error
 - MISSING: tool not found / listed without handler
 - SKIP: intentionally skipped (destructive or needs generated contract)
 - GATED_OK: tool has a dispatch arm but returns capability/configuration error at runtime
   (e.g. PostgresRepository not available for graph_diff/graph_timeline)
+
+Stability classification from meta.cognicode.stability (tools/list):
+- stable: STUB is a failure (unless --no-fail-on-stable-stub)
+- experimental: STUB is allowed (STUB_WARN)
+- gated: GATED error response is expected (GATED_OK)
 
 Usage:
     python3 scripts/mcp/mcp_smoke_all.py                    # smoke run (no persist)
@@ -16,8 +23,8 @@ Usage:
     python3 scripts/mcp/mcp_smoke_all.py --help             # show this help
 
 Exit codes:
-    0 = smoke passed (no MISSING tools)
-    1 = smoke failed (≥1 MISSING or transport error)
+    0 = smoke passed (no MISSING, no stable STUB when --fail-on-stable-stub)
+    1 = smoke failed (≥1 MISSING, transport error, or stable STUB with flag set)
 """
 
 import argparse
@@ -42,14 +49,23 @@ SKIP = {
     "validate_contract": "requires contract_id from generated persistent contract",
 }
 
-# Tools that have dispatch arms but return capability/configuration errors at runtime
+# Fallback GATED set for tools without stability annotation.
+# These have dispatch arms but return capability/configuration errors at runtime
 # because the required backend (e.g. PostgresRepository) is not available.
-# These are GATED_OK, not MISSING.
+# Superseded by meta.cognicode.stability="gated" from tools/list when available.
 GATED = {
     "graph_diff": "requires PostgresRepository",
     "graph_timeline": "requires PostgresRepository",
     "generate_contract": "requires rustc/AVC contract infrastructure",
 }
+
+# Stability classification thresholds
+# stable + STUB → failure (unless --fail-on-stable-stub=false)
+# experimental + STUB → warning (allowed)
+# gated + GATED → GATED_OK (expected)
+STABILITY_STABLE = "stable"
+STABILITY_EXPERIMENTAL = "experimental"
+STABILITY_GATED = "gated"
 
 
 def parse_sse(raw):
@@ -112,25 +128,45 @@ def call_tool(name, args, sid, timeout=45):
     return None, "no text content"
 
 
-def classify(name, result, err):
+def classify(name, result, err, stability=None, fail_on_stable_stub=True):
+    """Classify a tool response.
+
+    Args:
+        name: tool name
+        result: deserialized response or str
+        err: error string or None
+        stability: meta.cognicode.stability annotation from tools/list, or None
+        fail_on_stable_stub: if True, STUB from a stable tool is a failure; if False, warn only
+
+    Returns:
+        (status, note)
+    """
     if err:
         msg = err.lower()
         if "tool not found" in msg or "not found" in msg and "jsonrpc" in msg:
             return "MISSING", err
         return "ERROR", err
+
     text = json.dumps(result, ensure_ascii=False) if not isinstance(result, str) else result
     low = text.lower()
+
+    # Internal/application errors — check if this is a known gated tool
     if low.startswith("internal:") or low.startswith("invalid input:") or low.startswith("application error:"):
-        if name in GATED:
-            return "GATED_OK", f"{GATED[name]}: {text[:120]}"
+        # Annotation-based gated classification takes priority over fallback GATED set
+        if stability == STABILITY_GATED or name in GATED:
+            reason = GATED.get(name, "gated capability unavailable")
+            return "GATED_OK", f"{reason}: {text[:120]}"
         return "ERROR", text[:220]
+
     if "tool not found" in low:
         return "MISSING", text[:220]
+
     if isinstance(result, dict) and result.get("error"):
         errtxt = str(result.get("error"))
         if "tool not found" in errtxt.lower():
             return "MISSING", errtxt
         return "ERROR", errtxt[:220]
+
     # Known placeholder/stub patterns
     stub_patterns = [
         "placeholder", "not implemented", "baseline comparison requires",
@@ -140,16 +176,47 @@ def classify(name, result, err):
         "run build_graph first for full insights",
     ]
     if any(p in low for p in stub_patterns):
+        # Annotation-based stability overrides pattern-based classification
+        if stability == STABILITY_EXPERIMENTAL:
+            return "STUB_WARN", f"[experimental] {text[:220]}"
+        if stability == STABILITY_STABLE:
+            if fail_on_stable_stub:
+                return "STUB", f"[stable] {text[:220]}"
+            else:
+                return "STUB_WARN", f"[stable] {text[:220]}"
         return "STUB", text[:220]
+
     if name == "smart_search" and isinstance(result, dict) and result.get("total") == 0:
-        return "STUB", "empty results for known query"
+        if stability == STABILITY_EXPERIMENTAL:
+            return "STUB_WARN", "[experimental] empty results for known query"
+        if stability == STABILITY_STABLE and fail_on_stable_stub:
+            return "STUB", "[stable] empty results for known query"
+        return "STUB_WARN", "empty results for known query"
+
     if name == "compare_graph":
+        if stability == STABILITY_EXPERIMENTAL:
+            return "STUB_WARN", f"[experimental] {text[:220]}"
+        if stability == STABILITY_STABLE:
+            if fail_on_stable_stub:
+                return "STUB", f"[stable] {text[:220]}"
+            else:
+                return "STUB_WARN", f"[stable] {text[:220]}"
         return "STUB", text[:220]
+
     if name == "iac_query" and isinstance(result, dict) and result.get("resource_type") == "unknown":
+        if stability == STABILITY_EXPERIMENTAL:
+            return "STUB_WARN", f"[experimental] {text[:220]}"
+        if stability == STABILITY_STABLE:
+            if fail_on_stable_stub:
+                return "STUB", f"[stable] {text[:220]}"
+            else:
+                return "STUB_WARN", f"[stable] {text[:220]}"
         return "STUB", text[:220]
-    # Gated tools — return explicit capability/config error, not ToolNotFound
-    if name in GATED:
-        return "GATED_OK", f"{GATED[name]}: {text[:120]}"
+
+    # Annotation-based gated classification for non-error responses
+    if stability == STABILITY_GATED or name in GATED:
+        return "GATED_OK", f"{GATED.get(name, 'gated')}: {text[:120]}"
+
     return "OK", summary(result)
 
 
@@ -235,6 +302,7 @@ ARGS = {
 
 
 def list_tools(sid):
+    """Call tools/list and return (tools, stability_map)."""
     all_tools, cursor = [], None
     for _ in range(20):
         params = {"cursor": cursor} if cursor else {}
@@ -247,7 +315,28 @@ def list_tools(sid):
                 break
         if not cursor:
             break
-    return all_tools
+
+    # Build {tool_name: stability} map from meta.cognicode.stability
+    stability_map = {}
+    for tool in all_tools:
+        name = tool.get("name")
+        meta = tool.get("meta", {})
+        # meta may be a dict or a list; normalize
+        if isinstance(meta, dict):
+            stability = meta.get("cognicode", {}).get("stability")
+        elif isinstance(meta, list):
+            # some tools return meta as a list of annotations
+            stability = None
+            for m in meta:
+                if isinstance(m, dict) and m.get("cognicode", {}).get("stability"):
+                    stability = m["cognicode"]["stability"]
+                    break
+        else:
+            stability = None
+        if name and stability:
+            stability_map[name] = stability
+
+    return all_tools, stability_map
 
 
 def main():
@@ -256,6 +345,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--persist", metavar="PATH", help="Write baseline JSON to this path after smoke run")
     parser.add_argument("--server", default=f"{HOST}:{PORT}", help=f"Server address (default: {HOST}:{PORT})")
+    parser.add_argument(
+        "--fail-on-stable-stub",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Fail smoke if a stable tool returns STUB (default: true; use --no-fail-on-stable-stub to disable)",
+    )
     args = parser.parse_args()
 
     if ":" in args.server:
@@ -272,16 +367,21 @@ def main():
         return 1
     mcp("notifications/initialized", None, sid, 5)
 
-    tools = list_tools(sid)
+    tools, stability_map = list_tools(sid)
     listed_names = [t.get("name") for t in tools]
     counts = Counter(listed_names)
     unique = sorted(set(listed_names))
     duplicates = {k: v for k, v in counts.items() if v > 1}
 
+    # Count tools by stability annotation
+    stability_counts = Counter(stability_map.values())
+    unannotated = [n for n in unique if n not in stability_map and n not in SKIP]
+
     # Build graph once as precondition
     t0 = time.time()
     build_res, build_err = call_tool("build_graph", {}, sid, 120)
-    build_status, build_note = classify("build_graph", build_res, build_err)
+    build_stability = stability_map.get("build_graph")
+    build_status, build_note = classify("build_graph", build_res, build_err, build_stability, args.fail_on_stable_stub)
 
     rows = []
     targets = unique + ["get_all_symbols", "find_dead_code", "get_module_dependencies"]
@@ -289,20 +389,23 @@ def main():
         if name == "build_graph":
             continue
         if name in SKIP:
-            rows.append({"name": name, "status": "SKIP", "ms": 0, "note": SKIP[name]})
+            rows.append({"name": name, "status": "SKIP", "ms": 0, "note": SKIP[name], "stability": None})
             continue
         tool_args = ARGS.get(name, {})
         t = time.time()
         result, err = call_tool(name, tool_args, sid, 60)
         ms = int((time.time() - t) * 1000)
-        status, note = classify(name, result, err)
-        rows.append({"name": name, "status": status, "ms": ms, "note": note})
+        stability = stability_map.get(name)
+        status, note = classify(name, result, err, stability, args.fail_on_stable_stub)
+        rows.append({"name": name, "status": status, "ms": ms, "note": note, "stability": stability})
 
     out = {
         "listed_total": len(listed_names),
         "unique_listed": len(unique),
         "duplicates": duplicates,
-        "build_graph": {"status": build_status, "ms": int((time.time()-t0)*1000), "note": build_note, "result": build_res},
+        "stability_counts": dict(stability_counts),
+        "unannotated_tools": unannotated,
+        "build_graph": {"status": build_status, "ms": int((time.time()-t0)*1000), "note": build_note, "stability": build_stability},
         "rows": rows,
         "gated": list(GATED.keys()),
     }
@@ -311,10 +414,12 @@ def main():
         Path(args.persist).write_text(json.dumps(out, indent=2, ensure_ascii=False))
 
     print(f"listed_total={out['listed_total']} unique_listed={out['unique_listed']} duplicates={duplicates}")
+    print(f"stability_counts={out['stability_counts']} unannotated={len(unannotated)}")
     print(f"build_graph={build_status} {build_note}")
     c = Counter(r["status"] for r in rows)
     print("summary", dict(c))
 
+    # Fail conditions
     missing = [r for r in rows if r["status"] == "MISSING"]
     if missing:
         print("\n## MISSING (smoke FAILED)")
@@ -322,12 +427,21 @@ def main():
             print(f"- {r['name']}: {r['note']}")
         return 1
 
-    for status in ["ERROR", "STUB", "GATED_OK", "SKIP", "OK"]:
+    # Fail on stable STUB when flag is set
+    stable_stubs = [r for r in rows if r["status"] == "STUB" and r["stability"] == STABILITY_STABLE]
+    if stable_stubs and args.fail_on_stable_stub:
+        print("\n## STABLE STUB (smoke FAILED)")
+        for r in stable_stubs:
+            print(f"- {r['name']}: {str(r['note'])[:180]}")
+        return 1
+
+    for status in ["ERROR", "STUB", "STUB_WARN", "GATED_OK", "SKIP", "OK"]:
         status_rows = [r for r in rows if r["status"] == status]
         if status_rows:
             print(f"\n## {status}")
             for r in status_rows:
-                print(f"- {r['name']} ({r['ms']}ms): {str(r['note'])[:180]}")
+                stability_tag = f"[{r['stability']}]" if r.get("stability") else ""
+                print(f"- {r['name']} ({r['ms']}ms){stability_tag}: {str(r['note'])[:180]}")
 
     return 0
 
