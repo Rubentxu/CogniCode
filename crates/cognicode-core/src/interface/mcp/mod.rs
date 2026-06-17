@@ -10,6 +10,7 @@ pub mod resources;
 pub mod rmcp_adapter;
 pub mod schemas;
 pub mod security;
+pub mod status;
 
 pub use error::{InterfaceError, InterfaceResult};
 pub use rmcp_adapter::CogniCodeHandler;

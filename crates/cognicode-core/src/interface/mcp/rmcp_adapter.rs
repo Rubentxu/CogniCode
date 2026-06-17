@@ -959,10 +959,6 @@ async fn call_tool_handler(
     // M1.1: Centralized instrumentation boundary
     let start = Instant::now();
     let metrics = get_global_metrics();
-    if let Some(m) = &metrics {
-        m.calls
-            .add(1, &[KeyValue::new("tool", tool_name.to_string())]);
-    }
 
     let result = async {
         match tool_name {
@@ -1544,14 +1540,31 @@ async fn call_tool_handler(
     }
     }.await;
 
+    // M1.2: Classify status for metrics
+    let status = crate::interface::mcp::status::classify_status(tool_name, &result);
+
     // M1.1: Record duration + classify status for error recording
     let duration_ms = start.elapsed().as_millis() as f64;
     if let Some(m) = &metrics {
-        m.duration
-            .record(duration_ms, &[KeyValue::new("tool", tool_name.to_string())]);
+        // M1.6: Record calls with tool + status labels
+        m.calls.add(
+            1,
+            &[
+                KeyValue::new("tool", tool_name.to_string()),
+                KeyValue::new("status", status),
+            ],
+        );
+        // M1.6: Record duration with tool + status labels
+        m.duration.record(
+            duration_ms,
+            &[
+                KeyValue::new("tool", tool_name.to_string()),
+                KeyValue::new("status", status),
+            ],
+        );
     }
 
-    // M1.1: Record error metrics with status classification
+    // M1.1: Record error metrics (error_type is separate from status)
     if let Err(e) = &result {
         if let Some(m) = &metrics {
             let error_type = match e {
