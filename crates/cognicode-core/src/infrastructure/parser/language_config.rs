@@ -217,7 +217,7 @@ pub const GO_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["call_expression"],
     call_has_function_field: true,
     import_types: &["import_declaration"],
-    type_ref_walker: NO_TYPE_REFS,
+    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_go_type_refs),
     semantic_handler: NO_SEMANTIC_HANDLER,
 };
 
@@ -233,7 +233,7 @@ pub const JAVA_CONFIG: LanguageConfig = LanguageConfig {
     call_types: &["method_invocation"],
     call_has_function_field: false,
     import_types: &["import_declaration"],
-    type_ref_walker: NO_TYPE_REFS,
+    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_java_type_refs),
     semantic_handler: NO_SEMANTIC_HANDLER,
 };
 

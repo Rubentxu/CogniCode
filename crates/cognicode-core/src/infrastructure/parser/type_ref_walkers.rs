@@ -173,6 +173,161 @@ pub fn walk_typescript_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec
     refs
 }
 
+/// Walk a Go function/type declaration and extract type references.
+///
+/// Go syntax: `func foo(x int, y string) error`, `type Foo struct { Bar Baz }`
+pub fn walk_go_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef> {
+    let mut refs = Vec::new();
+    let node_type = node.kind();
+
+    match node_type {
+        "function_declaration" | "method_declaration" => {
+            // 1. Parameters: Go has `parameter_list` → `parameter_declaration`
+            // Each param_declaration has `name` and `type` children
+            if let Some(params) = node.child_by_field_name("parameters") {
+                collect_param_types_recursive(&params, source, TypeRefContext::ParamType, &mut refs);
+            }
+
+            // 2. Return type: `result` field in Go grammar
+            if let Some(ret) = node.child_by_field_name("result") {
+                collect_type_names(&ret, source, TypeRefContext::ReturnType, &mut refs);
+            }
+
+            // 3. Receiver type (for methods): `receiver` field
+            if let Some(receiver) = node.child_by_field_name("receiver") {
+                collect_type_names_recursive(&receiver, source, TypeRefContext::ParamType, &mut refs);
+            }
+        }
+
+        "type_declaration" => {
+            // type_declaration wraps type_spec nodes
+            for i in 0..node.child_count() {
+                let child = node.child(i).unwrap();
+                if child.kind() == "type_spec" {
+                    // type_spec has `name` and `type` fields
+                    if let Some(type_node) = child.child_by_field_name("type") {
+                        // If it's a struct/interface, walk its fields
+                        if type_node.kind() == "struct_type" {
+                            // struct_type → field_declaration_list → field_declaration
+                            for j in 0..type_node.child_count() {
+                                let fdl = type_node.child(j).unwrap();
+                                if fdl.kind() == "field_declaration_list" {
+                                    for k in 0..fdl.child_count() {
+                                        let field = fdl.child(k).unwrap();
+                                        if field.kind() == "field_declaration" {
+                                            // field_declaration has `type` field
+                                            if let Some(ftype) = field.child_by_field_name("type") {
+                                                collect_type_names(&ftype, source, TypeRefContext::FieldType, &mut refs);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else if type_node.kind() == "interface_type" {
+                            // interface_type → method_spec_list → method_spec
+                            collect_type_names_recursive(&type_node, source, TypeRefContext::TraitBound, &mut refs);
+                        } else {
+                            // type alias: type Foo = Bar
+                            collect_type_names(&type_node, source, TypeRefContext::FieldType, &mut refs);
+                        }
+                    }
+                }
+            }
+        }
+
+        _ => {}
+    }
+
+    refs
+}
+
+/// Walk a Java method/class declaration and extract type references.
+///
+/// Java syntax: `void save(User user)`, `class Foo extends Bar implements Baz`
+pub fn walk_java_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef> {
+    let mut refs = Vec::new();
+    let node_type = node.kind();
+
+    match node_type {
+        "method_declaration" | "constructor_declaration" => {
+            // 1. Formal parameters: `formal_parameters` → `formal_parameter`
+            if let Some(params) = node.child_by_field_name("parameters") {
+                for i in 0..params.child_count() {
+                    let child = params.child(i).unwrap();
+                    if child.kind() == "formal_parameter" {
+                        // formal_parameter has `type` field (Type comes first in Java)
+                        if let Some(type_node) = child.child_by_field_name("type") {
+                            collect_type_names(&type_node, source, TypeRefContext::ParamType, &mut refs);
+                        }
+                    }
+                }
+            }
+
+            // 2. Return type (not for constructors)
+            if let Some(ret) = node.child_by_field_name("type") {
+                if node_type == "method_declaration" {
+                    collect_type_names(&ret, source, TypeRefContext::ReturnType, &mut refs);
+                }
+            }
+
+            // 3. Throws clause: `throws IOException, RuntimeException`
+            if let Some(throws) = node.child_by_field_name("throws") {
+                for i in 0..throws.child_count() {
+                    let child = throws.child(i).unwrap();
+                    if child.is_named() && child.kind() == "type_identifier" {
+                        let name = node_text(&child, source);
+                        if !is_primitive(&name) && !name.is_empty() {
+                            refs.push(TypeRef {
+                                target_name: name,
+                                context: TypeRefContext::ReturnType,
+                                line: child.start_position().row as u32 + 1,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        "class_declaration" | "interface_declaration" | "record_declaration" => {
+            // Extends: `superclass` field
+            if let Some(supers) = node.child_by_field_name("superclass") {
+                collect_type_names(&supers, source, TypeRefContext::TraitBound, &mut refs);
+            }
+
+            // Implements: `interfaces` field
+            if let Some(interfaces) = node.child_by_field_name("interfaces") {
+                for i in 0..interfaces.child_count() {
+                    let child = interfaces.child(i).unwrap();
+                    if child.is_named() {
+                        collect_type_names(&child, source, TypeRefContext::TraitBound, &mut refs);
+                    }
+                }
+            }
+
+            // Class body fields: walk `body` → `field_declaration`
+            if let Some(body) = node.child_by_field_name("body") {
+                collect_field_types_java(&body, source, &mut refs);
+            }
+        }
+
+        "enum_declaration" => {
+            // Enum implements interfaces
+            if let Some(interfaces) = node.child_by_field_name("interfaces") {
+                for i in 0..interfaces.child_count() {
+                    let child = interfaces.child(i).unwrap();
+                    if child.is_named() {
+                        collect_type_names(&child, source, TypeRefContext::TraitBound, &mut refs);
+                    }
+                }
+            }
+        }
+
+        _ => {}
+    }
+
+    refs
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -311,7 +466,66 @@ fn is_primitive(name: &str) -> bool {
             | "HashMap" | "HashSet" | "BTreeMap" | "BTreeSet"
             | "int" | "float" | "double" | "number" | "void"
             | "boolean" | "any" | "never" | "undefined" | "null"
+            | "byte" | "rune" | "uint" | "int8" | "int16" | "int32" | "int64"
+            | "uint8" | "uint16" | "uint32" | "uint64" | "uintptr" | "complex64" | "complex128"
+            | "error" // Go: error is a built-in interface
     )
+}
+
+/// Recursively collect type names from a Go parameter list.
+/// Go params can be variadic, grouped (`a, b int`), or individual.
+fn collect_param_types_recursive(
+    node: &tree_sitter::Node,
+    source: &[u8],
+    context: TypeRefContext,
+    out: &mut Vec<TypeRef>,
+) {
+    for i in 0..node.child_count() {
+        let child = node.child(i).unwrap();
+        if child.kind() == "parameter_declaration" {
+            // parameter_declaration has a `type` field
+            if let Some(type_node) = child.child_by_field_name("type") {
+                collect_type_names(&type_node, source, context, out);
+            }
+        } else if child.is_named() {
+            // Recurse into nested structures (e.g., variadic args)
+            collect_param_types_recursive(&child, source, context, out);
+        }
+    }
+}
+
+/// Recursively collect all type names from a node tree (generic fallback).
+fn collect_type_names_recursive(
+    node: &tree_sitter::Node,
+    source: &[u8],
+    context: TypeRefContext,
+    out: &mut Vec<TypeRef>,
+) {
+    for i in 0..node.child_count() {
+        let child = node.child(i).unwrap();
+        if child.is_named() {
+            collect_type_names(&child, source, context, out);
+            collect_type_names_recursive(&child, source, context, out);
+        }
+    }
+}
+
+/// Walk Java class body field declarations for type references.
+fn collect_field_types_java(
+    node: &tree_sitter::Node,
+    source: &[u8],
+    out: &mut Vec<TypeRef>,
+) {
+    for i in 0..node.child_count() {
+        let child = node.child(i).unwrap();
+        if child.kind() == "field_declaration" {
+            if let Some(type_node) = child.child_by_field_name("type") {
+                collect_type_names(&type_node, source, TypeRefContext::FieldType, out);
+            }
+        } else if child.is_named() {
+            collect_field_types_java(&child, source, out);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -355,6 +569,38 @@ mod tests {
         test_walker(source, walk_typescript_type_refs, "function_declaration", |refs| {
             assert_eq!(refs.len(), 2);
         }, tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into());
+    }
+
+    #[test]
+    fn test_walk_go_type_refs_function() {
+        let source = "func save(user User, repo Repository) error { return nil }";
+        test_walker(source, walk_go_type_refs, "function_declaration", |refs| {
+            assert!(!refs.is_empty(), "should find type refs in Go function params: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
+        }, tree_sitter_go::LANGUAGE.into());
+    }
+
+    #[test]
+    fn test_walk_go_type_refs_struct() {
+        let source = "type Config struct {\n  pool DbPool\n  cache RedisCache\n}";
+        test_walker(source, walk_go_type_refs, "type_declaration", |refs| {
+            assert!(!refs.is_empty(), "should find field type refs in Go struct: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
+        }, tree_sitter_go::LANGUAGE.into());
+    }
+
+    #[test]
+    fn test_walk_java_type_refs_method() {
+        let source = "void save(User user, Repository repo) throws Exception {}";
+        test_walker(source, walk_java_type_refs, "method_declaration", |refs| {
+            assert!(!refs.is_empty(), "should find type refs in Java method: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
+        }, tree_sitter_java::LANGUAGE.into());
+    }
+
+    #[test]
+    fn test_walk_java_type_refs_class() {
+        let source = "class Foo extends Bar implements Baz, Quux {}";
+        test_walker(source, walk_java_type_refs, "class_declaration", |refs| {
+            assert!(!refs.is_empty(), "should find extends/implements type refs: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
+        }, tree_sitter_java::LANGUAGE.into());
     }
 
     fn test_walker(
