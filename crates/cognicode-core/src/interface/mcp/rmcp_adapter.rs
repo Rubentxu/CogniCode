@@ -999,6 +999,19 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     )
                     .with_meta(cognicode_meta("gated", "composite", true, true, 2000)),
                     Tool::new(
+                        "iac_query",
+                        "Query infrastructure-as-code resources (Terraform, Ansible) and their dependencies from the unified graph. Accepts bare resource names (aws_instance.web) or canonical IDs (tf:main.tf:aws_instance.web). Returns resource type, dependencies, and dependents.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "resource_id": { "type": "string", "description": "Resource ID: bare name (aws_instance.web) or canonical (tf:main.tf:aws_instance.web)" },
+                                "depth": { "type": "integer", "description": "Max traversal depth (default: 2)", "default": 2 }
+                            },
+                            "required": ["resource_id"]
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("experimental", "infra", true, false, 500)),
+                    Tool::new(
                         "review_pr",
                         "Analyze PR impact: provide changed files, get risk level, impacted files, and breaking changes.",
                         Arc::new(serde_json::json!({"type":"object","properties":{"files":{"type":"array","items":{"type":"string"},"description":"Changed file paths"}},"required":["files"]}).as_object().cloned().unwrap()),

@@ -610,20 +610,86 @@ fn default_iac_depth() -> usize {
 pub struct IacQueryOutput {
     pub resource_id: String,
     pub resource_type: String,
-    pub dependencies: Vec<String>,
-    pub dependents: Vec<String>,
+    pub dependencies: Vec<IacRelation>,
+    pub dependents: Vec<IacRelation>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct IacRelation {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub edge_type: String,
+    pub confidence: f64,
 }
 
 pub async fn handle_iac_query(
     ctx: &HandlerContext,
     input: IacQueryInput,
 ) -> HandlerResult<IacQueryOutput> {
-    let _graph = ctx.get_graph_store().load_graph();
+    let graph = match ctx.get_graph_store().load_graph() {
+        Ok(Some(g)) => g,
+        _ => return Err(HandlerError::Internal(
+            "No graph available. Run build_graph first.".into(),
+        )),
+    };
+
+    // Resolve resource_id: canonical (tf:/ansible:) or bare name
+    let resolved_id = if input.resource_id.starts_with("tf:") || input.resource_id.starts_with("ansible:") {
+        // Canonical ID — use as-is
+        input.resource_id.clone()
+    } else {
+        // Bare name — search by name and filter by IaC prefix
+        let candidates = graph.find_by_name(&input.resource_id);
+        let iac_candidates: Vec<_> = candidates.into_iter()
+            .filter(|s| s.fully_qualified_name().starts_with("tf:") || s.fully_qualified_name().starts_with("ansible:"))
+            .collect();
+        match iac_candidates.first() {
+            Some(sym) => sym.fully_qualified_name().to_string(),
+            None => return Err(HandlerError::NotFound(
+                format!("IaC resource '{}' not found. Use canonical ID (tf:file:type.name) or ensure IaC files are scanned.", input.resource_id),
+            )),
+        }
+    };
+
+    // Get the symbol from the graph
+    let symbol_id = crate::domain::aggregates::SymbolId::new(&resolved_id);
+    let symbol = graph.get_symbol(&symbol_id)
+        .ok_or_else(|| HandlerError::NotFound(format!("Resource '{}' not found in graph", resolved_id)))?;
+
+    let resource_type = format!("{:?}", symbol.kind());
+
+    // Get dependencies (outgoing edges)
+    let deps: Vec<_> = graph.dependencies_with_metadata(&symbol_id).collect();
+    let dependencies: Vec<IacRelation> = deps.iter().take(input.depth * 10).map(|(target_id, dep_type, _prov, confidence)| {
+        let target_sym = graph.get_symbol(target_id);
+        IacRelation {
+            id: target_id.to_string(),
+            name: target_sym.map(|s| s.name().to_string()).unwrap_or_default(),
+            kind: target_sym.map(|s| format!("{:?}", s.kind())).unwrap_or_default(),
+            edge_type: format!("{:?}", dep_type),
+            confidence: *confidence,
+        }
+    }).collect();
+
+    // Get dependents (incoming edges)
+    let dependent_ids: Vec<_> = graph.dependents(&symbol_id).collect();
+    let dependents: Vec<IacRelation> = dependent_ids.iter().take(input.depth * 10).filter_map(|dep_id| {
+        let dep_sym = graph.get_symbol(dep_id)?;
+        Some(IacRelation {
+            id: dep_id.to_string(),
+            name: dep_sym.name().to_string(),
+            kind: format!("{:?}", dep_sym.kind()),
+            edge_type: "References".to_string(),
+            confidence: 1.0,
+        })
+    }).collect();
+
     Ok(IacQueryOutput {
-        resource_id: input.resource_id,
-        resource_type: "unknown".into(),
-        dependencies: vec![],
-        dependents: vec![],
+        resource_id: resolved_id,
+        resource_type,
+        dependencies,
+        dependents,
     })
 }
 

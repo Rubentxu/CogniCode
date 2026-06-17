@@ -156,7 +156,24 @@ pub fn extract_file(
         }
     }
 
-    ExtractionResult::ok(path.to_path_buf(), content_hash.to_string(), nodes, edges)
+    let result = ExtractionResult::ok(path.to_path_buf(), content_hash.to_string(), nodes, edges);
+
+    // ── Semantic handler post-parse pass (ADR-024 / ADR-036) ────────────
+    // If a semantic handler is configured (e.g., Ansible, Terraform),
+    // run it to enrich the result with domain-specific nodes and edges.
+    if let Some(handler) = config.semantic_handler {
+        let source_path_str = path.to_string_lossy();
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            handler(&source_path_str, content_hash, &result)
+        }))
+        .unwrap_or_else(|_| {
+            // semantic_handler panicked — return the original result
+            // (error isolation per ADR-023)
+            result.clone()
+        })
+    } else {
+        result
+    }
 }
 
 // ============================================================================

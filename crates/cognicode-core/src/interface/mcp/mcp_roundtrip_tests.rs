@@ -906,6 +906,7 @@ fn simple_function() {
                 "graph_suggest_questions",
                 "graph_surprising_connections",
                 "graph_timeline",
+                "iac_query",
                 "hover",
                 "list_files",
                 "nl_to_symbol",
