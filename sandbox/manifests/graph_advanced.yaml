@@ -1,0 +1,142 @@
+version: '1.0'
+language: rust
+tier: A
+description: Advanced Graph Operations Smoke Tests — consolidation, progressive changes, reindexing, filtered queries
+timeout_seconds: 300
+validation:
+  failure_is_regression: true
+  stages: []
+scenarios:
+- name: adv_merge_graphs_two_files
+  description: Merge per-file call graphs from two files into consolidated graph
+  tool: merge_graphs
+  action: merge
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    file_paths:
+    - src/main.rs
+  ground_truth:
+    file_count: 1
+    merged_symbol_count_min: 5
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000
+- name: adv_build_lightweight_index_default
+  description: Build lightweight symbol index for fast lookups
+  tool: build_lightweight_index
+  action: index
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    strategy: lightweight
+  ground_truth:
+    success: true
+    symbols_indexed_min: 5
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000
+- name: adv_build_lightweight_index_full
+  description: Build full symbol index — validates against build_graph
+  tool: build_lightweight_index
+  action: index
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    strategy: full
+  ground_truth:
+    success: true
+    symbols_indexed_min: 5
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: adv_build_lightweight_index_per_file
+  description: Build per-file symbol index
+  tool: build_lightweight_index
+  action: index
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    strategy: per_file
+  ground_truth:
+    success: true
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000
+- name: adv_progressive_rebuild_consistent
+  description: Rebuild graph twice — validates idempotency and consistency
+  tool: build_graph
+  action: build
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    directory: .
+  ground_truth:
+    symbols_min: 5
+    relationships_min: 3
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000
+- name: adv_progressive_entry_points_stable
+  description: Entry points should be stable across rebuilds
+  tool: get_entry_points
+  action: find
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_entry_points: true
+    total_min: 1
+    contains_main: true
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 500
+- name: adv_graph_query_filtered_by_kind
+  description: Query graph filtered by node kind (functions only)
+  tool: graph_query_filtered
+  action: query
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    question: find helper function
+  ground_truth:
+    has_results: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: adv_compare_graph_latest
+  description: Compare current graph snapshot vs latest PG report
+  tool: compare_graph
+  action: compare
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: expected_fail
+  pre_steps:
+  - build_graph
+  arguments:
+    baseline: latest
+  ground_truth:
+    has_comparison: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+  notes: Requires graph_report in PG from prior ingest run

@@ -1157,6 +1157,42 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     )
                     .with_meta(cognicode_meta("stable", "graph", true, false, 500)),
                     Tool::new(
+                        "merge_graphs",
+                        "Merge per-file call graphs into a consolidated project graph.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "file_paths": { "type": "array", "items": {"type": "string"}, "description": "List of source file paths to merge" }
+                            },
+                            "required": ["file_paths"]
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("stable", "graph", false, false, 500)),
+                    Tool::new(
+                        "build_lightweight_index",
+                        "Build a lightweight symbol index for fast lookups. Supports strategies: lightweight, on_demand, per_file, full.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "directory": { "type": "string", "description": "Directory to index (default: cwd)" },
+                                "strategy": { "type": "string", "enum": ["lightweight", "on_demand", "per_file", "full"], "description": "Indexing strategy (default: lightweight)" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 300)),
+                    Tool::new(
+                        "reparse_on_edit",
+                        "Incrementally reindex changed files without rebuilding the full graph. Much faster than full rebuild for small edits. Requires persistence feature.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "file_paths": { "type": "array", "items": {"type": "string"}, "description": "List of changed file paths to reindex" }
+                            },
+                            "required": ["file_paths"]
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("experimental", "graph", false, true, 200)),
+                    Tool::new(
                         "iac_query",
                         "Query infrastructure-as-code resources (Terraform, Ansible) and their dependencies from the graph. Requires build_graph first. Accepts bare resource names (aws_instance.web) or canonical IDs (tf:main.tf:aws_instance.web). Returns resource type, dependencies, and dependents. Uses PostgreSQL when available for persistent storage; falls back to in-memory graph.",
                         Arc::new(serde_json::json!({
@@ -1950,6 +1986,27 @@ async fn call_tool_handler(
                 ctx, input,
             )
             .await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        // Merge per-file graphs into consolidated project graph
+        "merge_graphs" => {
+            let input: crate::interface::mcp::schemas::MergeGraphsInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_merge_graphs(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        // Build lightweight symbol index
+        "build_lightweight_index" => {
+            let input: crate::interface::mcp::schemas::BuildIndexInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_build_lightweight_index(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        // Incremental reindex after edits (requires persistence feature)
+        "reparse_on_edit" => {
+            let input: crate::interface::mcp::schemas::ReparseOnEditInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::aix_handlers::handle_reparse_on_edit(ctx, input).await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         // Sprint 5.3: graph_diff and graph_timeline tools
