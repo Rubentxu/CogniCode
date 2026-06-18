@@ -354,7 +354,7 @@ fn extract_keywords(question: &str) -> Vec<String> {
 
 #[derive(Debug, serde::Deserialize)]
 pub struct GetTypeRefsInput {
-    pub symbol: String,
+    pub symbol_name: String,
 }
 #[derive(Debug, serde::Serialize)]
 pub struct GetTypeRefsOutput {
@@ -376,9 +376,9 @@ pub async fn handle_get_type_references(
         _ => return Err(HandlerError::Internal("No graph available".into())),
     };
 
-    let candidates = graph.find_by_name(&input.symbol);
+    let candidates = graph.find_by_name(&input.symbol_name);
     let symbol = candidates.first().ok_or_else(|| {
-        HandlerError::NotFound(format!("Symbol '{}' not found", input.symbol))
+        HandlerError::NotFound(format!("Symbol '{}' not found", input.symbol_name))
     })?;
 
     let sym_id = SymbolId::new(symbol.fully_qualified_name());
@@ -397,7 +397,7 @@ pub async fn handle_get_type_references(
     }
 
     Ok(GetTypeRefsOutput {
-        symbol: input.symbol,
+        symbol: input.symbol_name,
         references,
     })
 }

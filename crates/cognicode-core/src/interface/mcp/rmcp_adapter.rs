@@ -21,6 +21,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use regex::Regex;
+
 /// CogniCodeHandler implements the rmcp ServerHandler trait
 ///
 /// This handler bridges the rmcp SDK with the existing CogniCode handler functions.
@@ -73,6 +75,104 @@ impl CogniCodeHandler {
             ctx: Arc::new(ctx),
             cancellation_token,
         }
+    }
+
+    /// M3.1: Creates a CogniCodeHandler with an IacRepository wired from pg_repo.
+    ///
+    /// When `iac_repo` is `Some`, the handler will use it for `iac_query`
+    /// instead of falling back to the in-memory graph. This is the preferred
+    /// constructor when running with PostgreSQL persistence.
+    #[cfg(feature = "postgres")]
+    pub fn with_iac_repo(
+        project_root: PathBuf,
+        store: Arc<dyn crate::domain::traits::GraphStore>,
+        iac_repo: Arc<dyn crate::domain::traits::iac_repository::IacRepository>,
+    ) -> Self {
+        let cancellation_token = Arc::new(AtomicBool::new(false));
+        let mut ctx = HandlerContext::builder()
+            .with_working_dir(project_root)
+            .with_graph_store_arc(store)
+            .with_iac_repo(iac_repo)
+            .build();
+        ctx.cancellation_token = cancellation_token.clone();
+        Self {
+            ctx: Arc::new(ctx),
+            cancellation_token,
+        }
+    }
+
+    /// Fallback for no-cfg builds
+    #[cfg(not(feature = "postgres"))]
+    pub fn with_iac_repo(
+        project_root: PathBuf,
+        store: Arc<dyn crate::domain::traits::GraphStore>,
+        _iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
+    ) -> Self {
+        let cancellation_token = Arc::new(AtomicBool::new(false));
+        let mut ctx = HandlerContext::builder()
+            .with_working_dir(project_root)
+            .with_graph_store_arc(store)
+            .build();
+        ctx.cancellation_token = cancellation_token.clone();
+        Self {
+            ctx: Arc::new(ctx),
+            cancellation_token,
+        }
+    }
+
+    /// Mode B: Creates a CogniCodeHandler with PostgreSQL-backed repositories.
+    ///
+    /// Wires both `postgres_repo` (for graph_diff, graph_timeline) and `iac_repo`
+    /// (for iac_query) from a single PG connection pool. This is the preferred
+    /// constructor when `--postgres <URL>` is provided to `cognicode-mcp`.
+    ///
+    /// Returns an error if the PostgreSQL connection fails.
+    #[cfg(feature = "postgres")]
+    pub async fn with_pg(project_root: PathBuf, pg_url: &str) -> Result<Self, String> {
+        use crate::infrastructure::persistence::{PostgresIacRepository, PostgresRepository};
+        use sqlx::PgPool;
+
+        // Connect to PostgreSQL
+        let pool = PgPool::connect(pg_url)
+            .await
+            .map_err(|e| format!("Failed to connect to PostgreSQL: {}", e))?;
+
+        // Wrap in PostgresRepository (provides run_migrations if needed)
+        let pg_repo = Arc::new(
+            PostgresRepository::from_pool(pool.clone())
+        );
+
+        // Create IacRepository from the same pool
+        let iac_repo: Arc<dyn crate::domain::traits::iac_repository::IacRepository> =
+            Arc::new(PostgresIacRepository::new(pool));
+
+        // Build HandlerContext with PG-backed repos (mirrors build_ctx structure)
+        let cancellation_token = Arc::new(AtomicBool::new(false));
+        let canonical_root =
+            std::fs::canonicalize(&project_root).unwrap_or_else(|_| project_root.clone());
+
+        let validator = Arc::new(
+            crate::interface::mcp::security::InputValidator::new()
+                .with_workspace(vec![canonical_root.clone()]),
+        );
+        let file_ops_service = Arc::new(FileOperationsService::new(
+            canonical_root.to_string_lossy().as_ref(),
+            validator,
+            Arc::new(RustVerifier::new()),
+        ));
+
+        let mut ctx = HandlerContext::builder()
+            .with_working_dir(canonical_root)
+            .with_file_ops_service(file_ops_service)
+            .with_postgres_repo(pg_repo)
+            .with_iac_repo(iac_repo)
+            .build();
+        ctx.cancellation_token = cancellation_token.clone();
+
+        Ok(Self {
+            ctx: Arc::new(ctx),
+            cancellation_token,
+        })
     }
 
     fn build_ctx(project_root: PathBuf) -> HandlerContext {
@@ -198,6 +298,38 @@ fn lookup_category(tool_name: &str) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+/// M3.4: Lazily-built map from tool name to its graph-dependency string
+/// (extracted from the tool description via regex). The regex matches
+/// "Requires build_graph first." and any similar dependency markers.
+/// Returns `None` for tools that have no graph dependency requirement.
+pub(crate) fn tool_graph_deps_map() -> &'static HashMap<String, String> {
+    use std::sync::OnceLock;
+    static MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
+    MAP.get_or_init(|| {
+        let mut m = HashMap::new();
+        // Regex to capture "Requires X first." patterns from tool descriptions
+        let re = Regex::new(r"(?i)(?:requires?\s+(\w+(?:\s+\w+)*)\s+first\.)")
+            .expect("regex compilation error");
+        for tool in build_all_tools() {
+            if let Some(desc) = tool.description.as_deref() {
+                if let Some(caps) = re.captures(desc) {
+                    if let Some(dep) = caps.get(1) {
+                        m.insert(tool.name.to_string(), dep.as_str().to_string());
+                    }
+                }
+            }
+        }
+        m
+    })
+}
+
+/// Returns the graph dependency requirement for a tool, if any.
+/// For example, "iac_query" returns `Some("build_graph")` because its
+/// description contains "Requires build_graph first."
+pub fn lookup_tool_deps(tool_name: &str) -> Option<String> {
+    tool_graph_deps_map().get(tool_name).cloned()
+}
+
 /// Returns the complete list of public MCP tool definitions.
 /// This is the single source of truth for `tools/list` and the parity-test surface.
 pub(crate) fn build_all_tools() -> Vec<Tool> {
@@ -287,7 +419,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     .with_meta(cognicode_meta("stable", "quality", false, false, 200)),
                     Tool::new(
                         "get_entry_points",
-                        "Find symbols with no incoming edges (entry points in the call graph).",
+                        "Find symbols with no incoming edges (entry points in the call graph). Requires build_graph first.",
                         Arc::new(serde_json::json!({
                             "type": "object",
                             "properties": {
@@ -298,7 +430,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     .with_meta(cognicode_meta("stable", "graph", true, false, 150)),
                     Tool::new(
                         "get_leaf_functions",
-                        "Find symbols with no outgoing edges (leaf functions in the call graph).",
+                        "Find symbols with no outgoing edges (leaf functions in the call graph). Requires build_graph first.",
                         Arc::new(serde_json::json!({
                             "type": "object",
                             "properties": {
@@ -542,10 +674,10 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                                     "items": {
                                         "type": "object",
                                         "properties": {
-                                            "old_string": { "type": "string", "description": "The exact text to replace (required)" },
-                                            "new_string": { "type": "string", "description": "The replacement text (required)" }
+                                            "oldString": { "type": "string", "description": "The exact text to replace (required)" },
+                                            "newString": { "type": "string", "description": "The replacement text (required)" }
                                         },
-                                        "required": ["old_string", "new_string"]
+                                        "required": ["oldString", "newString"]
                                     }
                                 }
                             },
@@ -874,7 +1006,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     Tool::new(
                         "get_type_references",
                         "List type annotation references for a symbol (param types, return types, field types). Uses References edges from type-ref extraction. Requires build_graph first.",
-                        Arc::new(serde_json::json!({"type":"object","properties":{"symbol":{"type":"string","description":"Symbol name"}},"required":["symbol"]}).as_object().cloned().unwrap()),
+                        Arc::new(serde_json::json!({"type":"object","properties":{"symbol_name":{"type":"string","description":"Symbol name"}},"required":["symbol_name"]}).as_object().cloned().unwrap()),
                     )
                     .with_meta(cognicode_meta("stable", "graph", true, false, 250)),
                     Tool::new(
@@ -1003,7 +1135,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     .with_meta(cognicode_meta("gated", "composite", true, true, 2000)),
                     Tool::new(
                         "iac_query",
-                        "Query infrastructure-as-code resources (Terraform, Ansible) and their dependencies from the unified graph. Accepts bare resource names (aws_instance.web) or canonical IDs (tf:main.tf:aws_instance.web). Returns resource type, dependencies, and dependents.",
+                        "Query infrastructure-as-code resources (Terraform, Ansible) and their dependencies from the graph. Requires build_graph first. Accepts bare resource names (aws_instance.web) or canonical IDs (tf:main.tf:aws_instance.web). Returns resource type, dependencies, and dependents. Uses PostgreSQL when available for persistent storage; falls back to in-memory graph.",
                         Arc::new(serde_json::json!({
                             "type": "object",
                             "properties": {
@@ -1013,7 +1145,18 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["resource_id"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "infra", true, false, 500)),
+                    .with_meta(cognicode_meta("experimental", "infra", true, true, 500)),
+                    Tool::new(
+                        "ingest",
+                        "Run the full ingest pipeline (scan + extract + pg_upsert) on a workspace directory. Populates PostgreSQL with graph nodes and edges for IaC resources (Terraform, Ansible) and code symbols. Must be called before iac_query when using Mode B (--postgres). Requires PostgreSQL connection (build_graph is not a dependency).",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "directory": { "type": "string", "description": "Directory to ingest (defaults to working directory)" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("experimental", "infra", true, true, 30000)),
                     Tool::new(
                         "review_pr",
                         "Analyze PR impact: provide changed files, get risk level, impacted files, and breaking changes.",
@@ -1755,6 +1898,15 @@ async fn call_tool_handler(
             .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
+        "ingest" => {
+            let input: crate::interface::mcp::handlers::consolidated_handlers::IngestInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_ingest(
+                ctx, input,
+            )
+            .await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
         // SOLID Audit tool
         "solid_audit" => {
             let output = crate::interface::mcp::handlers::handle_solid_audit(ctx).await?;
@@ -2196,5 +2348,73 @@ mod tests {
         assert!(limiter.check_with_key("tool:read_file"));
         assert!(limiter.check_with_key("tool:read_file"));
         assert!(!limiter.check_with_key("tool:read_file"));
+    }
+
+    // ============================================================================
+    // M3.4 — Tool graph-dependency extraction
+    // ============================================================================
+
+    #[test]
+    fn test_tool_graph_deps_map_extracts_requires_build_graph() {
+        // The regex should extract "build_graph" from tool descriptions
+        // that contain "Requires build_graph first."
+        let map = tool_graph_deps_map();
+        // iac_query now has "Requires build_graph first." in its description
+        assert_eq!(
+            map.get("iac_query").map(|s| s.as_str()),
+            Some("build_graph"),
+            "iac_query should have build_graph as a dependency"
+        );
+        // get_call_hierarchy has "Requires build_graph first." in its description
+        assert_eq!(
+            map.get("get_call_hierarchy").map(|s| s.as_str()),
+            Some("build_graph"),
+            "get_call_hierarchy should have build_graph as a dependency"
+        );
+    }
+
+    #[test]
+    fn test_lookup_tool_deps_returns_optional_deps() {
+        // lookup_tool_deps should return Some("build_graph") for tools
+        // that require it, and None for tools that don't.
+        assert_eq!(
+            lookup_tool_deps("iac_query"),
+            Some("build_graph".to_string())
+        );
+        assert_eq!(
+            lookup_tool_deps("get_call_hierarchy"),
+            Some("build_graph".to_string())
+        );
+        assert_eq!(
+            lookup_tool_deps("read_file"),
+            None,
+            "read_file should not have graph dependencies"
+        );
+        assert_eq!(
+            lookup_tool_deps("nonexistent_tool"),
+            None,
+            "nonexistent tools should return None"
+        );
+    }
+
+    #[test]
+    fn test_tool_graph_deps_map_consistency() {
+        // Every tool in build_all_tools() that has "Requires build_graph first."
+        // in its description must be present in the deps map.
+        let deps_map = tool_graph_deps_map();
+        let re = Regex::new(r"(?i)(?:requires?\s+(\w+(?:\s+\w+)*)\s+first\.)").unwrap();
+        for tool in build_all_tools() {
+            if let Some(desc) = tool.description.as_deref() {
+                if re.captures(desc).is_some() {
+                    // Verify the tool is in the deps map by name matching
+                    let tool_name = tool.name.to_string();
+                    assert!(
+                        deps_map.contains_key(&tool_name),
+                        "Tool '{}' has a requires clause but is not in tool_graph_deps_map",
+                        tool_name
+                    );
+                }
+            }
+        }
     }
 }
