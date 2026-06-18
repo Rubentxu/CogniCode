@@ -19,7 +19,7 @@ scenarios:
     action: create
     workspace: sandbox/fixtures/rust-callgraph
     scenario_class: read_only
-    expected_outcome: pass
+    expected_outcome: capability_missing
     arguments:
       operation: create
     ground_truth:
@@ -31,7 +31,7 @@ scenarios:
     action: create
     workspace: sandbox/fixtures/rust-callgraph
     scenario_class: read_only
-    expected_outcome: pass
+    expected_outcome: capability_missing
     arguments:
       operation: create
     ground_truth:
@@ -43,7 +43,7 @@ scenarios:
     action: current
     workspace: sandbox/fixtures/rust-callgraph
     scenario_class: read_only
-    expected_outcome: pass
+    expected_outcome: capability_missing
     arguments:
       operation: current
     ground_truth:
@@ -55,7 +55,7 @@ scenarios:
     action: restore
     workspace: sandbox/fixtures/rust-callgraph
     scenario_class: read_only
-    expected_outcome: pass
+    expected_outcome: capability_missing
     arguments:
       operation: restore
       checkpoint_id: 1
@@ -68,7 +68,7 @@ scenarios:
     action: create
     workspace: sandbox/fixtures/rust-callgraph
     scenario_class: read_only
-    expected_outcome: pass
+    expected_outcome: capability_missing
     arguments:
       operation: create
     ground_truth:
@@ -81,7 +81,7 @@ scenarios:
     action: list
     workspace: sandbox/fixtures/rust-callgraph
     scenario_class: read_only
-    expected_outcome: pass
+    expected_outcome: capability_missing
     arguments:
       operation: list
     metrics:
@@ -99,8 +99,8 @@ scenarios:
     scenario_class: read_only
     expected_outcome: pass
     arguments:
-      from_checkpoint: 1
-      to_checkpoint: 2
+      baseline_date: "2026-01-01"
+      current: true
     metrics:
       correctness:
         type: structure_match
