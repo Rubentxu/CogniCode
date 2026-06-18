@@ -114,7 +114,6 @@ impl WalkFilter {
             "coverage".to_string(),
             ".tox".to_string(),
             ".sandbox".to_string(),
-            "sandbox".to_string(),
             ".cognicode".to_string(),
         ];
         self
