@@ -101,7 +101,10 @@ pub fn classify_file(path: &Path) -> (FileType, Option<&'static str>) {
         "sh" | "bash" => Some("bash"),
         "r" | "R" => Some("r"),
         "ps1" | "psm1" => Some("powershell"),
-        "json" => Some("json"),
+        // NOTE: json is classified as FileType::Config (not Code), so no lang tag.
+        // The lang field is used for tree-sitter parsing; JSON uses tree-sitter-json
+        // but is not parsed as code for graph extraction purposes.
+        "json" => None,
         "f" | "f90" | "f95" | "f03" | "f08" => Some("fortran"),
         "v" => Some("verilog"),
         "sv" => Some("systemverilog"),

@@ -368,6 +368,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "Requires PostgreSQL at localhost:5432/cognicode_test. Run with `podman run -d --name cognicode_pg -e POSTGRES_PASSWORD=cognicode -e POSTGRES_USER=cognicode -e POSTGRES_DB=cognicode_test -p 5432:5432 postgres:16-alpine` before running."]
     async fn test_upsert_one_roundtrip() {
         let pool = test_pool().await;
         let repo = PostgresRepository::from_pool(pool.clone());

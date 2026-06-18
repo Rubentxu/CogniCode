@@ -271,7 +271,7 @@ async fn main() -> anyhow::Result<()> {
         let ctx_for_watcher = shared_ctx.clone();
         let debounced = cognicode_core::application::ingest::watcher::debounce_changes(watcher_rx, 500);
         tokio::spawn(async move {
-            let mut rx = debounced;
+            let mut rx = debounced.await;
             while let Some(changed_files) = rx.recv().await {
                 tracing::info!(
                     "file watcher: {} files changed, rebuilding graph",

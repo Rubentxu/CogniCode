@@ -3504,16 +3504,18 @@ fn main() {}
         let output = result.unwrap();
 
         // Verify output structure and metadata are present (behavioral correctness)
-        // File is parsed as new since manifest from build is not accessible to reparse
+        // The manifest IS shared within the same HandlerContext (via fallback_store OnceLock).
+        // Since the file was already indexed by build_graph and mtime hasn't changed,
+        // reparse correctly skips it: files_skipped=1.
         assert_eq!(
-            output.files_parsed, 1,
-            "File should be parsed as new (manifest not shared between build and reparse)"
+            output.files_skipped, 1,
+            "File should be skipped since manifest is shared and mtime unchanged"
         );
-        assert_eq!(output.files_skipped, 0, "File should not be skipped");
+        assert_eq!(output.files_parsed, 0, "File should not be reparsed");
         assert_eq!(output.files_removed, 0, "No files should be removed");
         assert!(
-            output.graph_updated,
-            "Graph should be updated after parsing new file"
+            !output.graph_updated,
+            "Graph should NOT be updated when file is skipped"
         );
         assert!(output._meta.is_some());
         let meta = output._meta.unwrap();
@@ -3601,11 +3603,15 @@ fn main() {}
         assert!(result.is_ok());
         let output = result.unwrap();
 
-        // File not in manifest after build (separate stores), so treated as new
-        assert_eq!(output.files_skipped, 0, "File not in manifest after build");
+        // File is in manifest and unchanged, so correctly skipped
+        // (manifest IS shared within same HandlerContext via fallback_store OnceLock)
         assert_eq!(
-            output.files_parsed, 1,
-            "File treated as new since manifest not shared"
+            output.files_skipped, 1,
+            "File should be skipped since manifest is shared and mtime unchanged"
+        );
+        assert_eq!(
+            output.files_parsed, 0,
+            "File should not be reparsed since unchanged"
         );
     }
 
