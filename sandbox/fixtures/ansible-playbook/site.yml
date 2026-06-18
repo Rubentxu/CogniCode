@@ -1,0 +1,60 @@
+# Ansible IaC fixture - Multi-tier web application
+# Tests interpret_ansible handler (ADR-036)
+#
+# This playbook deploys a 3-tier web application:
+#   - nginx: reverse proxy / load balancer
+#   - app: Python/Flask application servers
+#   - postgres: PostgreSQL database
+
+---
+- name: Configure infrastructure
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    app_version: "2.1.0"
+    deploy_user: deploy
+    app_port: 8080
+    db_port: 5432
+    nginx_port: 80
+    nginx_ssl_port: 443
+
+  roles:
+    - role: postgres
+      when: "'database' in group_names"
+
+    - role: nginx
+      when: "'webserver' in group_names"
+
+    - role: app
+      when: "'app' in group_names"
+
+- name: Verify deployment
+  hosts: all
+  become: false
+  gather_facts: false
+
+  tasks:
+    - name: Check app is responding
+      uri:
+        url: "http://{{ ansible_host }}:{{ app_port }}/health"
+        status_code: 200
+      when: "'app' in group_names"
+
+    - name: Check nginx is responding
+      uri:
+        url: "http://{{ ansible_host }}/nginx_status"
+        status_code: 200
+      when: "'webserver' in group_names"
+
+    - name: Check postgres is accepting connections
+      postgresql_query:
+        login_host: "{{ groups['database'][0] }}"
+        login_user: "{{ db_admin_user }}"
+        login_password: "{{ db_admin_password }}"
+        query: "SELECT 1"
+      register: pg_check
+      until: pg_check is succeeded
+      retries: 5
+      delay: 5
+      when: "'database' in group_names"

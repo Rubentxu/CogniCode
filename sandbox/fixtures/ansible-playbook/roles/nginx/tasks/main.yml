@@ -1,0 +1,28 @@
+# Nginx role tasks - configure reverse proxy
+- name: Install nginx
+  package:
+    name: nginx
+    state: present
+
+- name: Create nginx directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /etc/nginx/sites-available
+    - /etc/nginx/sites-enabled
+    - /var/log/nginx
+
+- name: Configure nginx.conf
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    mode: '0644'
+  notify: Restart nginx
+
+- name: Ensure nginx is running
+  systemd:
+    name: nginx
+    state: started
+    enabled: true

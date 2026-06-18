@@ -1,0 +1,64 @@
+# PostgreSQL role tasks - database setup and tuning
+- name: Install PostgreSQL
+  package:
+    name:
+      - postgresql
+      - postgresql-contrib
+      - python3-psycopg2
+    state: present
+
+- name: Start PostgreSQL service
+  systemd:
+    name: postgresql
+    state: started
+    enabled: true
+
+- name: Create application database
+  postgresql_db:
+    name: "{{ db_name }}"
+    login_host: localhost
+    login_user: "{{ db_admin_user }}"
+    login_password: "{{ db_admin_password }}"
+    encoding: UTF8
+    lc_collate: en_US.UTF-8
+    lc_ctype: en_US.UTF-8
+    state: present
+  become: true
+  become_user: postgres
+
+- name: Create application user
+  postgresql_user:
+    name: "{{ db_app_user }}"
+    password: "{{ db_app_password }}"
+    login_host: localhost
+    login_user: "{{ db_admin_user }}"
+    login_password: "{{ db_admin_password }}"
+    priv: "{{ db_name }}:ALL"
+    state: present
+  become: true
+  become_user: postgres
+
+- name: Configure PostgreSQL listen address
+  lineinfile:
+    path: /etc/postgresql/15/main/postgresql.conf
+    regexp: "^listen_addresses"
+    line: "listen_addresses = '*'"
+  notify: Restart postgres
+
+- name: Configure PostgreSQL max connections
+  lineinfile:
+    path: /etc/postgresql/15/main/postgresql.conf
+    regexp: "^max_connections"
+    line: "max_connections = 200"
+  notify: Restart postgres
+
+  handlers:
+    - name: Restart postgres
+      systemd:
+        name: postgresql
+        state: restarted
+
+    - name: Reload postgres
+      systemd:
+        name: postgresql
+        state: reloaded

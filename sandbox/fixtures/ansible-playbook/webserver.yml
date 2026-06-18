@@ -1,0 +1,58 @@
+# Webserver playbook - nginx + app servers
+- name: Deploy web tier
+  hosts: webserver
+  become: true
+  vars:
+    node_version: "20.11.0"
+    app_repo_url: "https://github.com/example/cogniapp.git"
+    nginx_worker_processes: auto
+    nginx_worker_connections: 1024
+
+  tasks:
+    - name: Ensure nginx is installed
+      apt:
+        name:
+          - nginx
+          - python3-certbot-nginx
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Start nginx service
+      systemd:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Clone application repository
+      git:
+        repo: "{{ app_repo_url }}"
+        dest: /opt/app
+        version: "v{{ app_version }}"
+        force: yes
+
+    - name: Install Python application dependencies
+      pip:
+        requirements: /opt/app/requirements.txt
+        virtualenv: /opt/venv
+        virtualenv_command: python3 -m venv
+
+    - name: Configure nginx site
+      template:
+        src: nginx-site.conf.j2
+        dest: /etc/nginx/sites-available/cogniapp
+        mode: '0644'
+      notify: Reload nginx
+
+    - name: Enable nginx site
+      file:
+        src: /etc/nginx/sites-available/cogniapp
+        dest: /etc/nginx/sites-enabled/cogniapp
+        state: link
+      notify: Reload nginx
+
+  handlers:
+    - name: Reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
