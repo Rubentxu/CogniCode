@@ -1,0 +1,58 @@
+version: '1.0'
+language: rust
+tier: A
+description: Graph Persistence Smoke Tests — graph_diff and graph_timeline (requires PostgreSQL)
+timeout_seconds: 300
+validation:
+  failure_is_regression: true
+  stages: []
+scenarios:
+- name: persist_build_initial_graph
+  description: Build initial graph to populate PG reports
+  tool: build_graph
+  action: build
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    directory: .
+  ground_truth:
+    symbols_min: 5
+    relationships_min: 3
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000
+- name: persist_graph_diff_latest
+  description: Diff current graph against latest PG report
+  tool: graph_diff
+  action: diff
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    baseline_date: '2026-01-01'
+    current: true
+  ground_truth:
+    has_diff: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: persist_graph_timeline_30d
+  description: Get 30-day graph timeline from PG
+  tool: graph_timeline
+  action: timeline
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    days: 30
+  ground_truth:
+    has_timeline: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000

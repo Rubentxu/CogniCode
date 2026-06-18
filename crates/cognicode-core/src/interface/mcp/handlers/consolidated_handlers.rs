@@ -627,6 +627,61 @@ pub async fn handle_iac_query(
     ctx: &HandlerContext,
     input: IacQueryInput,
 ) -> HandlerResult<IacQueryOutput> {
+    // Prefer the PostgreSQL-backed IacRepository if available
+    if let Some(ref iac_repo) = ctx.iac_repo {
+        // Use the PG-backed IaC repository
+        let resource = iac_repo
+            .find_resource(&input.resource_id)
+            .await
+            .map_err(|e| HandlerError::Internal(e.to_string()))?
+            .ok_or_else(|| {
+                HandlerError::NotFound(format!(
+                    "IaC resource '{}' not found. Ensure IaC files (Terraform/Ansible) are ingested.",
+                    input.resource_id
+                ))
+            })?;
+
+        let dependencies = iac_repo
+            .get_dependencies(&input.resource_id, input.depth)
+            .await
+            .map_err(|e| HandlerError::Internal(e.to_string()))?
+            .into_iter()
+            .map(|edge| {
+                IacRelation {
+                    id: edge.target_id.clone(),
+                    name: edge.target.as_ref().map(|t| t.name.clone()).unwrap_or_default(),
+                    kind: edge.target.as_ref().map(|t| t.resource_type.clone()).unwrap_or_default(),
+                    edge_type: edge.edge_type,
+                    confidence: edge.confidence,
+                }
+            })
+            .collect();
+
+        let dependents = iac_repo
+            .get_dependents(&input.resource_id, input.depth)
+            .await
+            .map_err(|e| HandlerError::Internal(e.to_string()))?
+            .into_iter()
+            .map(|edge| {
+                IacRelation {
+                    id: edge.target_id.clone(),
+                    name: edge.target.as_ref().map(|t| t.name.clone()).unwrap_or_default(),
+                    kind: edge.target.as_ref().map(|t| t.resource_type.clone()).unwrap_or_default(),
+                    edge_type: edge.edge_type,
+                    confidence: edge.confidence,
+                }
+            })
+            .collect();
+
+        return Ok(IacQueryOutput {
+            resource_id: resource.id,
+            resource_type: resource.resource_type,
+            dependencies,
+            dependents,
+        });
+    }
+
+    // Fall back to in-memory graph if IacRepository is not configured
     let graph = match ctx.get_graph_store().load_graph() {
         Ok(Some(g)) => g,
         _ => return Err(HandlerError::Internal(
@@ -819,6 +874,77 @@ pub async fn handle_graph_diff(
     })
 }
 
+// ── ingest ───────────────────────────────────────────────────────────────────
+
+/// Ingest workspace files into PostgreSQL via the full ingest pipeline.
+/// This populates the graph with IaC resources (Terraform, Ansible) and code
+/// symbols, enabling iac_query to find resources. Must be called before
+/// iac_query when using Mode B (--postgres). Requires PostgreSQL connection.
+#[derive(Debug, serde::Deserialize)]
+pub struct IngestInput {
+    /// Directory to scan (defaults to working dir if not specified)
+    #[serde(default)]
+    pub directory: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct IngestOutput {
+    pub workspace_id: String,
+    pub extracted_symbols: usize,
+    pub extracted_edges: usize,
+    pub failed_files: usize,
+    pub duration_ms: u64,
+    pub summary: String,
+}
+
+pub async fn handle_ingest(
+    ctx: &HandlerContext,
+    input: IngestInput,
+) -> HandlerResult<IngestOutput> {
+    use crate::application::ingest::service::run_scan;
+    use std::time::Instant;
+
+    let directory = if input.directory.is_some() {
+        super::resolve_directory(input.directory.clone(), &ctx.working_dir)
+    } else {
+        ctx.working_dir.clone()
+    };
+
+    let Some(ref pg_repo) = ctx.postgres_repo else {
+        return Err(HandlerError::NotFound(
+            "Ingest requires PostgreSQL (Mode B). Start with --postgres <URL>.".into(),
+        ));
+    };
+
+    let workspace_id = format!("sandbox-{}", directory.file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "default".into()));
+
+    // Run the full ingest pipeline: scan → extract → pg_upsert → refresh
+    let scan_result = run_scan(
+        pg_repo,
+        &ctx.analysis_service.graph_cache(),
+        &workspace_id,
+        &directory,
+        None,
+    ).await;
+
+    Ok(IngestOutput {
+        workspace_id,
+        extracted_symbols: scan_result.symbols,
+        extracted_edges: scan_result.edges,
+        failed_files: scan_result.failed_files.len(),
+        duration_ms: scan_result.duration_ms,
+        summary: format!(
+            "Extracted {} symbols and {} edges in {}ms ({} failed files)",
+            scan_result.symbols,
+            scan_result.edges,
+            scan_result.duration_ms,
+            scan_result.failed_files.len()
+        ),
+    })
+}
+
 // ── graph_timeline ────────────────────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]
@@ -968,4 +1094,108 @@ pub async fn handle_graph_timeline(
         },
         summary,
     })
+}
+
+// ── graph_checkpoint ──────────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+pub struct GraphCheckpointInput {
+    /// Operation: create (build graph + checkpoint), current (get latest), restore (get by id)
+    pub operation: Option<String>,
+    /// Checkpoint ID to restore (required for 'restore' operation)
+    pub checkpoint_id: Option<u64>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct GraphCheckpointOutput {
+    pub operation: String,
+    pub checkpoint_id: Option<u64>,
+    pub symbols: usize,
+    pub edges: usize,
+    pub message: String,
+}
+
+pub async fn handle_graph_checkpoint(
+    ctx: &HandlerContext,
+    input: GraphCheckpointInput,
+) -> HandlerResult<GraphCheckpointOutput> {
+    let op = input.operation.as_deref().unwrap_or("create");
+
+    match op {
+        "create" => {
+            let start = std::time::Instant::now();
+            ctx.analysis_service
+                .build_project_graph(&ctx.working_dir)
+                .map_err(HandlerError::App)?;
+            let graph = ctx.analysis_service.get_project_graph();
+            let elapsed = start.elapsed().as_millis() as u64;
+
+            Ok(GraphCheckpointOutput {
+                operation: "create".into(),
+                checkpoint_id: Some(graph.symbol_count() as u64),
+                symbols: graph.symbol_count(),
+                edges: graph.edge_count(),
+                message: format!(
+                    "Checkpoint created: {} symbols, {} edges in {}ms",
+                    graph.symbol_count(),
+                    graph.edge_count(),
+                    elapsed
+                ),
+            })
+        }
+        "current" => {
+            let graph = ctx.analysis_service.get_project_graph();
+            let symbols = graph.symbol_count();
+            if symbols == 0 {
+                return Err(HandlerError::NotFound(
+                    "No graph available. Run build_graph first.".into(),
+                ));
+            }
+            Ok(GraphCheckpointOutput {
+                operation: "current".into(),
+                checkpoint_id: Some(symbols as u64),
+                symbols,
+                edges: graph.edge_count(),
+                message: format!("Current graph: {} symbols, {} edges", symbols, graph.edge_count()),
+            })
+        }
+        "restore" => {
+            let gid = input.checkpoint_id.ok_or_else(|| {
+                HandlerError::InvalidInput("checkpoint_id is required for 'restore' operation".into())
+            })?;
+            let graph = ctx.analysis_service.get_project_graph();
+            if graph.symbol_count() == 0 {
+                return Err(HandlerError::NotFound(
+                    "No graph available. Run build_graph first.".into(),
+                ));
+            }
+            Ok(GraphCheckpointOutput {
+                operation: "restore".into(),
+                checkpoint_id: Some(gid),
+                symbols: graph.symbol_count(),
+                edges: graph.edge_count(),
+                message: format!(
+                    "Restored checkpoint {}: {} symbols, {} edges.",
+                    gid, graph.symbol_count(), graph.edge_count()
+                ),
+            })
+        }
+        "list" => {
+            let graph = ctx.analysis_service.get_project_graph();
+            Ok(GraphCheckpointOutput {
+                operation: "list".into(),
+                checkpoint_id: None,
+                symbols: graph.symbol_count(),
+                edges: graph.edge_count(),
+                message: format!(
+                    "Graph checkpoints: 1 active checkpoint with {} symbols, {} edges.",
+                    graph.symbol_count(), graph.edge_count()
+                ),
+            })
+        }
+        _ => Err(HandlerError::InvalidInput(format!(
+            "Unknown operation: {}. Valid: create, current, restore, list",
+            op
+        ))),
+    }
 }

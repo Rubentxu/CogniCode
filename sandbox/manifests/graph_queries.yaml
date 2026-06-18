@@ -507,7 +507,7 @@ scenarios:
   action: analyze
   workspace: sandbox/fixtures/rust-callgraph
   scenario_class: read_only
-  expected_outcome: capability_missing
+  expected_outcome: pass
   arguments: {}
   ground_truth:
     has_result: true
@@ -719,3 +719,49 @@ scenarios:
       max_ms: 3000
   pre_steps:
   - build_graph
+- name: query_checkpoint_create_rust
+  description: Create graph checkpoint after building graph
+  tool: graph_checkpoint
+  action: create
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    operation: create
+  ground_truth:
+    has_checkpoint: true
+    symbols_min: 5
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000
+- name: query_checkpoint_current_rust
+  description: Get current checkpoint status
+  tool: graph_checkpoint
+  action: current
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    operation: current
+  ground_truth:
+    has_checkpoint: true
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 500
+- name: query_checkpoint_list_rust
+  description: List all graph checkpoints
+  tool: graph_checkpoint
+  action: list
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    operation: list
+  ground_truth:
+    has_list: true
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 500

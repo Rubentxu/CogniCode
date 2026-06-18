@@ -1134,6 +1134,29 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                     )
                     .with_meta(cognicode_meta("gated", "composite", true, true, 2000)),
                     Tool::new(
+                        "check_architecture",
+                        "Detect cycles and architecture violations using Tarjan SCC algorithm. Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "scope": { "type": "string", "description": "Optional scope to filter analysis (e.g., module name)" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 200)),
+                    Tool::new(
+                        "graph_checkpoint",
+                        "Manage graph checkpoints: create (build+checkpoint), current (get latest), restore (get by id), list (list all). Requires build_graph first.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "operation": { "type": "string", "description": "Operation: create, current, restore, list (default: create)" },
+                                "checkpoint_id": { "type": "integer", "description": "Checkpoint ID for restore operation" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 500)),
+                    Tool::new(
                         "iac_query",
                         "Query infrastructure-as-code resources (Terraform, Ansible) and their dependencies from the graph. Requires build_graph first. Accepts bare resource names (aws_instance.web) or canonical IDs (tf:main.tf:aws_instance.web). Returns resource type, dependencies, and dependents. Uses PostgreSQL when available for persistent storage; falls back to in-memory graph.",
                         Arc::new(serde_json::json!({
@@ -1910,6 +1933,23 @@ async fn call_tool_handler(
         // SOLID Audit tool
         "solid_audit" => {
             let output = crate::interface::mcp::handlers::handle_solid_audit(ctx).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        // Architecture check
+        "check_architecture" => {
+            let input: crate::interface::mcp::schemas::CheckArchitectureInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::handle_check_architecture(ctx, input).await?;
+            Ok(serde_json::to_string_pretty(&output)?)
+        }
+        // Graph checkpoint management
+        "graph_checkpoint" => {
+            let input: crate::interface::mcp::handlers::consolidated_handlers::GraphCheckpointInput =
+                serde_json::from_value(arguments.into())?;
+            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_graph_checkpoint(
+                ctx, input,
+            )
+            .await?;
             Ok(serde_json::to_string_pretty(&output)?)
         }
         // Sprint 5.3: graph_diff and graph_timeline tools
