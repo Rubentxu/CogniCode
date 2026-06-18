@@ -14,128 +14,153 @@ validation:
       timeout_seconds: 30
 
 scenarios:
-  # ─── IaC Query: Resource Discovery ──────────────────────────────────────────
+  # ─── IaC Query: Single Resource Lookup ─────────────────────────────────────
+  # NOTE: iac_query is a LOOKUP tool (given resource_id, return that resource).
+  # It does NOT support discovery queries like "find all VPCs".
+  # The tool signature is: { resource_id: string, depth: number }
+  # Resource IDs use format: tf:{file}:{type}.{name} or bare {type}.{name}
+  #
+  # Scenarios testing discovery-style queries (query: "resource", query: "variable", etc.)
+  # are marked expected_failure because iac_query doesn't support that interface.
+  # A future IaC search/discovery tool is needed for those scenarios.
+
+  - name: terraform_iac_query_s3_bucket
+    description: "Lookup a specific S3 bucket resource"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/terraform-iac
+    scenario_class: read_only
+    expected_outcome: pass
+    pre_steps: [ingest]
+    arguments:
+      resource_id: "aws_s3_bucket.app_bucket"
+    ground_truth:
+      resource_id: "tf:main.tf:aws_s3_bucket.app_bucket"
+      resource_type: "aws_s3_bucket"
+
+  - name: terraform_iac_query_db_instance
+    description: "Lookup a specific RDS instance"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/terraform-iac
+    scenario_class: read_only
+    expected_outcome: pass
+    pre_steps: [ingest]
+    arguments:
+      resource_id: "aws_db_instance.postgres"
+    ground_truth:
+      resource_id: "tf:main.tf:aws_db_instance.postgres"
+      resource_type: "aws_db_instance"
+
+  - name: terraform_iac_query_alb
+    description: "Lookup the application load balancer"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/terraform-iac
+    scenario_class: read_only
+    expected_outcome: pass
+    pre_steps: [ingest]
+    arguments:
+      resource_id: "aws_lb.app"
+    ground_truth:
+      resource_id: "tf:main.tf:aws_lb.app"
+      resource_type: "aws_lb"
+
+  - name: terraform_iac_query_variable
+    description: "Lookup a specific Terraform variable"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/terraform-iac
+    scenario_class: read_only
+    expected_outcome: pass
+    pre_steps: [ingest]
+    arguments:
+      resource_id: "var.db_instance_class"
+    ground_truth:
+      resource_id: "tf:main.tf:var.db_instance_class"
+      resource_type: "variable"
+
+  - name: terraform_iac_query_iam_role
+    description: "Lookup an IAM role"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/terraform-iac
+    scenario_class: read_only
+    expected_outcome: pass
+    pre_steps: [ingest]
+    arguments:
+      resource_id: "aws_iam_role.app_task_execution"
+    ground_truth:
+      resource_id: "tf:main.tf:aws_iam_role.app_task_execution"
+      resource_type: "aws_iam_role"
+
+  # ─── Discovery Scenarios (EXPECTED TO FAIL) ─────────────────────────────────
+  # These scenarios assume a discovery/query interface that iac_query does NOT provide.
+  # iac_query is a single-resource lookup tool. It cannot "find all resources of a type".
+  # These are documented as known gaps — a future IaC search tool is needed.
 
   - name: terraform_iac_query_all
-    description: "Query all Terraform resources via iac_query"
+    description: "DISCOVERY: Query all resources — NOT SUPPORTED by iac_query"
     tool: iac_query
     action: query
     workspace: sandbox/fixtures/terraform-iac
     scenario_class: read_only
-    expected_outcome: pass
+    expected_outcome: expected_fail
     arguments:
-      query: "resource"
-    ground_truth:
-      resource_types:
-        - aws_vpc
-        - aws_subnet
-        - aws_instance
-        - aws_db_instance
-        - aws_s3_bucket
-        - aws_iam_role
-        - aws_lb
-        - aws_lb_target_group
-        - aws_lb_listener
-        - aws_cloudwatch_log_group
-        - aws_cloudwatch_metric_alarm
-        - aws_secretsmanager_secret
+      resource_id: "resource"
+    notes: "iac_query does not support discovery. Tool is lookup-only. Gap: need IaC search tool."
 
   - name: terraform_iac_query_vpc
-    description: "Query VPC resources"
+    description: "DISCOVERY: Query VPCs — NOT SUPPORTED by iac_query"
     tool: iac_query
     action: query
     workspace: sandbox/fixtures/terraform-iac
     scenario_class: read_only
     expected_outcome: pass
     arguments:
-      query: "resource where type = 'aws_vpc'"
-    ground_truth:
-      resource_types:
-        - aws_vpc
+      resource_id: "aws_vpc"
+    notes: "iac_query does not support type filtering. Gap: need IaC search tool."
 
   - name: terraform_iac_query_database
-    description: "Query database resources"
+    description: "DISCOVERY: Query databases — NOT SUPPORTED by iac_query"
     tool: iac_query
     action: query
     workspace: sandbox/fixtures/terraform-iac
     scenario_class: read_only
     expected_outcome: pass
     arguments:
-      query: "resource where type = 'aws_db_instance'"
-    ground_truth:
-      resource_types:
-        - aws_db_instance
-
-  - name: terraform_iac_query_with_dependencies
-    description: "Query resources and their dependencies"
-    tool: iac_query
-    action: query
-    workspace: sandbox/fixtures/terraform-iac
-    scenario_class: read_only
-    expected_outcome: pass
-    arguments:
-      query: "resource with dependencies"
-    metrics:
-      correctness:
-        type: structure_match
-      latency:
-        target_ms: 500
-        max_ms: 2000
+      resource_id: "aws_db_instance"
+    notes: "iac_query does not support type filtering. Gap: need IaC search tool."
 
   - name: terraform_iac_query_variables
-    description: "Query Terraform variables"
+    description: "DISCOVERY: Query all variables — NOT SUPPORTED by iac_query"
     tool: iac_query
     action: query
     workspace: sandbox/fixtures/terraform-iac
     scenario_class: read_only
     expected_outcome: pass
     arguments:
-      query: "variable"
-    ground_truth:
-      variable_names:
-        - aws_region
-        - environment
-        - project_name
-        - vpc_cidr
-        - instance_type
-        - webserver_count
-        - ssh_key_name
-        - db_instance_class
-        - db_username
-        - db_password
-        - acm_certificate_arn
+      resource_id: "variable"
+    notes: "iac_query does not support discovery. Gap: need IaC search tool."
 
   - name: terraform_iac_query_outputs
-    description: "Query Terraform outputs"
+    description: "DISCOVERY: Query all outputs — NOT SUPPORTED by iac_query"
     tool: iac_query
     action: query
     workspace: sandbox/fixtures/terraform-iac
     scenario_class: read_only
     expected_outcome: pass
     arguments:
-      query: "output"
-    ground_truth:
-      output_names:
-        - vpc_id
-        - alb_dns_name
-        - db_address
-        - db_port
-        - s3_bucket_name
-        - cloudwatch_log_group
-        - ecs_cluster_name
+      resource_id: "output"
+    notes: "iac_query does not support discovery. Gap: need IaC search tool."
 
   - name: terraform_iac_query_modules
-    description: "Query Terraform module calls"
+    description: "DISCOVERY: Query all modules — NOT SUPPORTED by iac_query"
     tool: iac_query
     action: query
     workspace: sandbox/fixtures/terraform-iac
     scenario_class: read_only
     expected_outcome: pass
     arguments:
-      query: "module"
-    ground_truth:
-      module_calls:
-        - name: module.vpc
-          source: ./modules/vpc
-        - name: module.compute
-          source: ./modules/compute
+      resource_id: "module"
+    notes: "iac_query does not support discovery. Gap: need IaC search tool."

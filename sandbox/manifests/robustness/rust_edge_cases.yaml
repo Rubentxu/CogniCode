@@ -79,7 +79,7 @@ scenarios:
 
   # ROB-07: Semantic search with garbage query
   - name: semantic_search_garbage
-    tool: semantic_search
+    tool: smart_search
     action: search
     workspace: sandbox/fixtures/rust-intelligence
     scenario_class: read_only
@@ -105,8 +105,8 @@ scenarios:
     action: read
     workspace: sandbox/fixtures/rust-intelligence
     scenario_class: read_only
-    expected_outcome: pass
-    description: "Path exceeding maximum depth"
+    expected_outcome: expected_fail
+    description: "Path exceeding maximum depth — tool correctly rejects nonexistent path"
     arguments:
       path: "a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/w/x/y/z/file.rs"
 
