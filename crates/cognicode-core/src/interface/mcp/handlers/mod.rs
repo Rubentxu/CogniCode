@@ -200,6 +200,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
+use tracing::info;
 
 // =============================================================================
 // Capability Traits - Allow handlers to request only the services they need
@@ -349,6 +350,8 @@ pub struct HandlerContext {
         Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
     /// Optional PostgresRepository for graph_reports queries. Used by graph_diff and graph_timeline tools.
     pub postgres_repo: Option<Arc<crate::infrastructure::persistence::PostgresRepository>>,
+    /// Optional IacRepository for IaC resource queries. Used by iac_query tool.
+    pub iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
     /// Cached InMemoryGraphStore fallback, lazily created on first
     /// `get_graph_store()` call when no explicit `graph_store` is configured.
     /// Wrapped in `Arc` so it can live in a `#[derive(Clone)]` struct;
@@ -494,6 +497,7 @@ pub struct HandlerContextBuilder {
     file_ops_service:
         Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
     postgres_repo: Option<Arc<crate::infrastructure::persistence::PostgresRepository>>,
+    iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
 }
 
 impl HandlerContextBuilder {
@@ -645,6 +649,17 @@ impl HandlerContextBuilder {
         self
     }
 
+    /// Sets the IacRepository for IaC resource queries.
+    ///
+    /// If not set, iac_query will fall back to in-memory graph or return an error.
+    pub fn with_iac_repo(
+        mut self,
+        repo: Arc<dyn crate::domain::traits::iac_repository::IacRepository>,
+    ) -> Self {
+        self.iac_repo = Some(repo);
+        self
+    }
+
     /// Builds the HandlerContext, applying defaults for any unset fields.
     ///
     /// For working_dir: if not set, defaults to the current directory.
@@ -693,6 +708,7 @@ impl HandlerContextBuilder {
             code_intelligence_provider: self.code_intelligence_provider,
             file_ops_service: self.file_ops_service,
             postgres_repo: self.postgres_repo,
+            iac_repo: self.iac_repo,
             fallback_store: Arc::new(OnceLock::new()),
             graph_loaded: Arc::new(AtomicBool::new(false)),
         }
@@ -817,7 +833,7 @@ fn graph_db_path(directory: &Path) -> PathBuf {
     canonical_dir.join(".cognicode").join("graph.cache")
 }
 
-fn resolve_directory(input: Option<String>, working_dir: &Path) -> PathBuf {
+pub(crate) fn resolve_directory(input: Option<String>, working_dir: &Path) -> PathBuf {
     match input {
         None => working_dir.to_path_buf(),
         Some(s) => {
@@ -1045,6 +1061,12 @@ pub async fn handle_build_graph(
     let symbols = graph.symbol_count();
     let edges_count = graph.edge_count();
     let elapsed = start.elapsed().as_millis() as u64;
+
+    info!(
+        "handle_build_graph: {} symbols, {} edges in {}ms (source: {})",
+        symbols, edges_count, elapsed,
+        if loaded_from_cache { "cache" } else { "built" }
+    );
 
     // Collect actual edges with base names for correctness evaluation
     let edges: Vec<EdgeInfo> = graph
@@ -1618,9 +1640,17 @@ fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
     let graph = ctx.analysis_service.get_project_graph();
     let count = graph.symbols().count();
     if count > 0 {
+        info!(
+            "ensure_graph_built: graph already has {} symbols (cached), skipping build",
+            count
+        );
         return Ok(EnsureResult::already_present(count));
     }
     // Auto-build the graph
+    info!(
+        "ensure_graph_built: graph empty, auto-building from {:?}",
+        ctx.working_dir
+    );
     let start = std::time::Instant::now();
     ctx.analysis_service
         .build_project_graph(&ctx.working_dir)
@@ -1628,6 +1658,10 @@ fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
     let graph = ctx.analysis_service.get_project_graph();
     let count = graph.symbols().count();
     let elapsed = start.elapsed().as_millis() as u64;
+    info!(
+        "ensure_graph_built: auto-build complete — {} symbols in {}ms",
+        count, elapsed
+    );
     Ok(EnsureResult::auto_built(count, elapsed))
 }
 
@@ -1964,7 +1998,7 @@ fn find_function_metrics(
 
     // Recurse into children
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             find_function_metrics(
                 child,
                 source,
@@ -1984,7 +2018,7 @@ fn find_function_metrics(
 /// Finds an identifier in a node
 fn find_identifier_in_node(node: tree_sitter::Node, source: &str) -> Option<String> {
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             if child.kind() == "identifier" || child.kind() == "type_identifier" {
                 return Some(child.utf8_text(source.as_bytes()).unwrap_or("").to_string());
             }
@@ -2001,11 +2035,11 @@ fn find_identifier_in_node(node: tree_sitter::Node, source: &str) -> Option<Stri
 fn count_parameters(node: tree_sitter::Node, _source: &str) -> u32 {
     let mut count = 0u32;
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             // Handle Python parameters (within parentheses after function name)
             if child.kind() == "parameters" {
                 for j in 0..child.child_count() {
-                    if let Some(param) = child.child(j)
+                    if let Some(param) = child.child(j as u32)
                         && param.kind() == "identifier"
                     {
                         count += 1;
@@ -2094,7 +2128,7 @@ fn process_decision_points(
     };
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
+        if let Some(child) = node.child(i as u32) {
             process_decision_points(child, source, max_nesting, decision_points, child_nesting);
         }
     }

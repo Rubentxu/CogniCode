@@ -36,6 +36,7 @@ use cognicode_core::sandbox_core::scoring::{
     compute_robustness_score, compute_scalability_score, score_scenario, DimensionScores,
     ExecutionMetadata, MetricsDefinition,
 };
+use cognicode_core::interface::mcp::rmcp_adapter::lookup_tool_deps;
 
 const ORCHESTRATOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 const MCP_PROTOCOL_VERSION: &str = "2025-03-26";
@@ -230,6 +231,20 @@ impl ContainerConfig {
                 image: "docker.io/library/node:22-slim".into(),
                 name: "cognicode-ts".into(),
                 network: "container:cognicode-ts-net".into(),
+                workdir: "/workspace".into(),
+            }),
+            // Phase 2: IaC containers (terraform, ansible) — analysis via MCP server
+            // No heavy runtime needed; lightweight images suffice for file-system tools
+            "terraform" => Some(ContainerConfig {
+                image: "docker.io/library/alpine:latest".into(),
+                name: "cognicode-terraform".into(),
+                network: "container:cognicode-terraform-net".into(),
+                workdir: "/workspace".into(),
+            }),
+            "ansible" => Some(ContainerConfig {
+                image: "docker.io/library/alpine:latest".into(),
+                name: "cognicode-ansible".into(),
+                network: "container:cognicode-ansible-net".into(),
                 workdir: "/workspace".into(),
             }),
             // Phase 3: Go and Java containers wired for OSS coverage expansion
@@ -585,23 +600,43 @@ fn execute_scenario(
             || cfg.name.contains("ts")
             || cfg.name.contains("go")
             || cfg.name.contains("java")
+            || cfg.name.contains("terraform")
+            || cfg.name.contains("ansible")
         {
             // Try to spawn server directly (for now, using host binary)
-            match McpServer::spawn(server_binary, &workspace_path) {
-                Ok(mut s) => match s.initialize(MCP_PROTOCOL_VERSION, 30) {
+            // If DATABASE_URL is set, forward --postgres to enable PG-backed IaC queries
+            let spawned_server = if let Ok(db_url) = std::env::var("DATABASE_URL") {
+                match McpServer::spawn_with_env(
+                    &server_binary,
+                    &workspace_path,
+                    &[],
+                    &["--postgres", &db_url],
+                ) {
+                    Ok(s) => Some(s),
+                    Err(e) => {
+                        eprintln!("  [WARN] Could not spawn MCP server with PG: {e}");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            server = spawned_server.or_else(|| {
+                McpServer::spawn(server_binary, &workspace_path).ok()
+            });
+
+            if let Some(ref mut s) = server {
+                match s.initialize(MCP_PROTOCOL_VERSION, 30) {
                     Ok(_) => {
                         if verbose {
                             eprintln!("  [OK] MCP server initialized");
                         }
                         server_startup_ms = server_start.elapsed().as_millis() as u64;
-                        server = Some(s);
                     }
                     Err(e) => {
                         eprintln!("  [WARN] MCP initialize failed: {e}");
                     }
-                },
-                Err(e) => {
-                    eprintln!("  [WARN] Could not spawn MCP server: {e}");
                 }
             }
         }
@@ -610,6 +645,90 @@ fn execute_scenario(
             "  [WARN] No container config for language: {}",
             scenario.language
         );
+    }
+
+    // ── Phase 0: Implicit build_graph for tools that need a pre-built graph ──
+    // Tools whose descriptions contain "Requires build_graph first." (detected via
+    // lookup_tool_deps) need the graph constructed first. We call build_graph
+    // implicitly so scenarios don't need to explicitly include it.
+    let needs_graph = lookup_tool_deps(scenario.tool.as_str());
+    if needs_graph.is_some() {
+        if let Some(ref mut srv) = server {
+            let build_params = serde_json::json!({
+                "name": "build_graph",
+                "arguments": {
+                    "directory": workspace_path.to_string_lossy().into_owned()
+                }
+            });
+            if verbose {
+                eprintln!(
+                    "  [GRAPH] Implicitly calling build_graph for {} (dependency: {:?})...",
+                    scenario.tool,
+                    needs_graph
+                );
+            }
+            match srv.call("tools/call", build_params, 120) {
+                Ok(resp) => {
+                    let symbols = resp
+                        .get("result")
+                        .and_then(|r| r.get("symbols_found"))
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    if symbols == 0 {
+                        eprintln!(
+                            "  [WARN] build_graph completed but found 0 symbols for {}. Main tool likely to fail.",
+                            scenario.tool
+                        );
+                    } else if verbose {
+                        eprintln!(
+                            "  [GRAPH] build_graph completed: {} symbols",
+                            symbols
+                        );
+                    }
+                }
+                Err(e) => {
+                    eprintln!(
+                        "  [WARN] build_graph failed for {}: {:?}. Main tool may fail.",
+                        scenario.tool,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    // ── Phase 0b: Run explicit pre-steps from scenario manifest ──
+    // These are tools the scenario author explicitly listed as pre-requisites.
+    // They use !replace semantics: they run in addition to (not instead of)
+    // any implicit graph-building steps above.
+    if let Some(ref pre_steps) = scenario.pre_steps {
+        if let Some(ref mut srv) = server {
+            for step_tool in pre_steps {
+                let step_params = serde_json::json!({
+                    "name": step_tool,
+                    "arguments": {
+                        "directory": workspace_path.to_string_lossy().into_owned()
+                    }
+                });
+                if verbose {
+                    eprintln!("  [PRE-STEP] Running pre-step tool: {}", step_tool);
+                }
+                match srv.call("tools/call", step_params, 120) {
+                    Ok(resp) => {
+                        if verbose {
+                            eprintln!("  [PRE-STEP] {} completed: {:?}", step_tool, resp);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "  [WARN] Pre-step tool {} failed: {:?}. Continuing with main tool.",
+                            step_tool,
+                            e
+                        );
+                    }
+                }
+            }
+        }
     }
 
     // Phase 1: Reset git repo to pristine state before tool execution
@@ -645,6 +764,7 @@ fn execute_scenario(
     let mut mcp_timeout_occurred = false;
     let mut protocol_violation_occurred = false;
     let mut resource_limit_exceeded = false;
+    let mut mcp_error_detail: Option<String> = None; // Captured MCP error message
     let mut root_cause_validation_passed = true; // For debug_analyze root_cause validation
 
     // Build params: merge action into scenario arguments
@@ -958,7 +1078,8 @@ fn execute_scenario(
 
             // Transform manifest-style edit arguments to MCP schema.
             // The manifest uses: { path, old_text, new_text }
-            // The MCP server expects: { path, edits: [{ old_string, new_string }] }
+            // The MCP server expects: { path, edits: [{ oldString, newString }] }
+            // (FileEdit uses #[serde(rename_all = "camelCase")] so old_string → oldString)
             let mcp_arguments: Value = if scenario.tool == "edit_file" {
                 let path = call_arguments.get("path").cloned();
                 let old_text = call_arguments
@@ -973,8 +1094,8 @@ fn execute_scenario(
                     serde_json::json!({
                         "path": p,
                         "edits": [{
-                            "old_string": ot,
-                            "new_string": nt
+                            "oldString": ot,
+                            "newString": nt
                         }]
                     })
                 } else {
@@ -1010,9 +1131,11 @@ fn execute_scenario(
                 }
                 Err(e) => {
                     tool_call_ms = call_start.elapsed().as_millis() as u64;
-                    eprintln!("  [ERROR] MCP call failed: {e}");
+                    let error_str = e.to_string();
+                    mcp_error_detail = Some(error_str.clone());
+                    eprintln!("  [ERROR] MCP call failed: {error_str}");
                     // Detect timeout specifically - McpError::Timeout contains "timeout" in its display
-                    if e.to_string().contains("timeout") {
+                    if error_str.contains("timeout") {
                         mcp_timeout_occurred = true;
                     }
                     // Detect protocol violation - McpError::ProtocolViolation indicates non-JSON stdout
@@ -1183,7 +1306,7 @@ fn execute_scenario(
                 resource_limit_exceeded,
             )
         };
-    let failure_class = determine_failure_class(&outcome, scenario);
+    let failure_class = determine_failure_class(&outcome, scenario, mcp_error_detail.as_deref());
 
     // Cleanup
     let teardown_start = Instant::now();
@@ -1634,7 +1757,11 @@ fn classify_outcome(
 /// Detecting nondeterminism requires running each scenario twice and comparing outcomes,
 /// which needs the Phase 3 rerun architecture (not yet implemented).
 /// See: SDD change `production-ready-sandbox-validation` Phase 3 plan.
-fn determine_failure_class(outcome: &str, scenario: &ExpandedScenario) -> Option<FailureClass> {
+fn determine_failure_class(
+    outcome: &str,
+    scenario: &ExpandedScenario,
+    error_detail: Option<&str>,
+) -> Option<FailureClass> {
     match outcome {
         // Positive outcomes
         "pass" => Some(FailureClass::Pass),
@@ -1664,7 +1791,7 @@ fn determine_failure_class(outcome: &str, scenario: &ExpandedScenario) -> Option
         // MCP/Protocol errors
         "mcp_error" => Some(FailureClass::McpToolError {
             tool_name: scenario.tool.clone(),
-            error_message: outcome.to_string(),
+            error_message: error_detail.unwrap_or(outcome).to_string(),
         }),
         "protocol_violation" => Some(FailureClass::ProtocolViolation),
         "no_result" => Some(FailureClass::SandboxInfraFailure),
@@ -3043,6 +3170,7 @@ mod validation_pipeline_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -3124,6 +3252,7 @@ mod validation_pipeline_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -3166,6 +3295,7 @@ mod validation_pipeline_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -3210,6 +3340,7 @@ mod protocol_violation_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -3249,7 +3380,7 @@ mod protocol_violation_tests {
     #[test]
     fn test_determine_failure_class_protocol_violation() {
         let scenario = make_test_scenario("pass");
-        let fc = determine_failure_class("protocol_violation", &scenario);
+        let fc = determine_failure_class("protocol_violation", &scenario, None);
         assert_eq!(fc, Some(FailureClass::ProtocolViolation));
     }
 
@@ -3336,9 +3467,18 @@ fn benchmark(args: BenchmarkArgs, verbose: bool) -> Result<i32, String> {
     let arguments: serde_json::Value = serde_json::from_str(&args.arguments)
         .map_err(|e| format!("Invalid JSON arguments: {}", e))?;
 
-    // Spawn MCP server
-    let mut server = McpServer::spawn(&server_binary, &args.workspace)
-        .map_err(|e| format!("Failed to spawn MCP server: {}", e))?;
+    // Spawn MCP server (forward --postgres if DATABASE_URL is set)
+    let mut server = if let Ok(db_url) = std::env::var("DATABASE_URL") {
+        McpServer::spawn_with_env(
+            &server_binary,
+            &args.workspace,
+            &[],
+            &["--postgres", &db_url],
+        )
+    } else {
+        McpServer::spawn(&server_binary, &args.workspace)
+    }
+    .map_err(|e| format!("Failed to spawn MCP server: {}", e))?;
 
     // Initialize MCP connection
     server
@@ -3490,6 +3630,7 @@ mod classify_outcome_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -3877,6 +4018,7 @@ mod determine_failure_class_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -3888,7 +4030,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_pass() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("pass", &scenario);
+        let fc = determine_failure_class("pass", &scenario, None);
         assert_eq!(fc, Some(FailureClass::Pass));
     }
 
@@ -3898,7 +4040,7 @@ mod determine_failure_class_tests {
     fn test_determine_failure_class_expected_fail() {
         let mut scenario = make_test_scenario("edit_file");
         scenario.expected_outcome = "expected_fail".into();
-        let fc = determine_failure_class("expected_fail", &scenario);
+        let fc = determine_failure_class("expected_fail", &scenario, None);
         assert_eq!(fc, Some(FailureClass::ExpectedFail));
     }
 
@@ -3908,7 +4050,7 @@ mod determine_failure_class_tests {
     fn test_determine_failure_class_expected_fail_capability_missing() {
         let mut scenario = make_test_scenario("edit_file");
         scenario.expected_outcome = "capability_missing".into();
-        let fc = determine_failure_class("expected_fail", &scenario);
+        let fc = determine_failure_class("expected_fail", &scenario, None);
         assert_eq!(fc, Some(FailureClass::CapabilityMissing));
     }
 
@@ -3917,7 +4059,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_capability_missing() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("capability_missing", &scenario);
+        let fc = determine_failure_class("capability_missing", &scenario, None);
         assert_eq!(fc, Some(FailureClass::CapabilityMissing));
     }
 
@@ -3926,7 +4068,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_timeout() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("timeout", &scenario);
+        let fc = determine_failure_class("timeout", &scenario, None);
         assert_eq!(fc, Some(FailureClass::Timeout));
     }
 
@@ -3935,7 +4077,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_resource_limit_exceeded() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("resource_limit_exceeded", &scenario);
+        let fc = determine_failure_class("resource_limit_exceeded", &scenario, None);
         assert_eq!(fc, Some(FailureClass::ResourceLimitExceeded));
     }
 
@@ -3944,7 +4086,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_mcp_error() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("mcp_error", &scenario);
+        let fc = determine_failure_class("mcp_error", &scenario, None);
         assert!(matches!(fc, Some(FailureClass::McpToolError { .. })));
     }
 
@@ -3953,7 +4095,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_path_safety_rejection() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("path_safety_rejection", &scenario);
+        let fc = determine_failure_class("path_safety_rejection", &scenario, None);
         assert_eq!(fc, Some(FailureClass::PathSafetyRejection));
     }
 
@@ -3962,7 +4104,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_edit_rejected() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("edit_rejected", &scenario);
+        let fc = determine_failure_class("edit_rejected", &scenario, None);
         assert_eq!(fc, Some(FailureClass::UnexpectedFail));
     }
 
@@ -3971,7 +4113,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_semantic_regression() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("semantic_regression", &scenario);
+        let fc = determine_failure_class("semantic_regression", &scenario, None);
         assert_eq!(fc, Some(FailureClass::SemanticRegression));
     }
 
@@ -3980,7 +4122,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_build_failure() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("build_failure", &scenario);
+        let fc = determine_failure_class("build_failure", &scenario, None);
         assert_eq!(fc, Some(FailureClass::BuildFailure));
     }
 
@@ -3989,7 +4131,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_unexpected_pass() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("unexpected_pass", &scenario);
+        let fc = determine_failure_class("unexpected_pass", &scenario, None);
         assert_eq!(fc, Some(FailureClass::UnexpectedPass));
     }
 
@@ -3998,7 +4140,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_no_result() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("no_result", &scenario);
+        let fc = determine_failure_class("no_result", &scenario, None);
         assert_eq!(fc, Some(FailureClass::SandboxInfraFailure));
     }
 
@@ -4007,7 +4149,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_syntax_failure() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("syntax_failure", &scenario);
+        let fc = determine_failure_class("syntax_failure", &scenario, None);
         assert_eq!(fc, Some(FailureClass::SyntaxValidationFailure));
     }
 
@@ -4016,7 +4158,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_format_failure() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("format_failure", &scenario);
+        let fc = determine_failure_class("format_failure", &scenario, None);
         assert_eq!(fc, Some(FailureClass::FormatFailure));
     }
 
@@ -4025,7 +4167,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_lint_failure() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("lint_failure", &scenario);
+        let fc = determine_failure_class("lint_failure", &scenario, None);
         assert_eq!(fc, Some(FailureClass::LintFailure));
     }
 
@@ -4034,7 +4176,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_test_failure() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("test_failure", &scenario);
+        let fc = determine_failure_class("test_failure", &scenario, None);
         assert_eq!(fc, Some(FailureClass::TestFailure));
     }
 
@@ -4043,7 +4185,7 @@ mod determine_failure_class_tests {
     #[test]
     fn test_determine_failure_class_unknown() {
         let scenario = make_test_scenario("edit_file");
-        let fc = determine_failure_class("what_is_this", &scenario);
+        let fc = determine_failure_class("what_is_this", &scenario, None);
         assert_eq!(fc, Some(FailureClass::UnexpectedFail));
     }
 }
@@ -5064,6 +5206,7 @@ mod bug_detection_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -5188,7 +5331,7 @@ mod bug_detection_tests {
     fn test_determine_failure_class_path_safety_rejection_blocks_ci() {
         let scenario = make_test_scenario("pass");
         let outcome = "path_safety_rejection";
-        let fc = determine_failure_class(outcome, &scenario);
+        let fc = determine_failure_class(outcome, &scenario, None);
         assert!(fc.is_some());
         assert_eq!(fc.unwrap(), FailureClass::PathSafetyRejection);
     }
@@ -5196,7 +5339,7 @@ mod bug_detection_tests {
     #[test]
     fn test_determine_failure_class_timeout_blocks_ci() {
         let scenario = make_test_scenario("pass");
-        let fc = determine_failure_class("timeout", &scenario);
+        let fc = determine_failure_class("timeout", &scenario, None);
         assert!(fc.is_some());
         assert_eq!(fc.unwrap(), FailureClass::Timeout);
     }
@@ -5204,7 +5347,7 @@ mod bug_detection_tests {
     #[test]
     fn test_determine_failure_class_resource_limit_blocks_ci() {
         let scenario = make_test_scenario("pass");
-        let fc = determine_failure_class("resource_limit_exceeded", &scenario);
+        let fc = determine_failure_class("resource_limit_exceeded", &scenario, None);
         assert!(fc.is_some());
         assert_eq!(fc.unwrap(), FailureClass::ResourceLimitExceeded);
     }
@@ -5212,7 +5355,7 @@ mod bug_detection_tests {
     #[test]
     fn test_determine_failure_class_protocol_violation_blocks_ci() {
         let scenario = make_test_scenario("pass");
-        let fc = determine_failure_class("protocol_violation", &scenario);
+        let fc = determine_failure_class("protocol_violation", &scenario, None);
         assert!(fc.is_some());
         assert_eq!(fc.unwrap(), FailureClass::ProtocolViolation);
     }
@@ -5252,6 +5395,7 @@ mod bug_detection_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -5302,6 +5446,7 @@ mod bug_detection_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -5351,6 +5496,7 @@ mod bug_detection_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -5503,6 +5649,7 @@ mod edge_case_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -5852,6 +5999,7 @@ mod edge_case_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -5891,6 +6039,7 @@ mod edge_case_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -5938,6 +6087,7 @@ mod edge_case_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -5980,6 +6130,7 @@ mod edge_case_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
@@ -6024,6 +6175,7 @@ mod edge_case_tests {
             ground_truth: None,
             metrics: None,
             root_cause_validation: None,
+            pre_steps: None,
             repo: None,
             commit: None,
             container_image: None,
