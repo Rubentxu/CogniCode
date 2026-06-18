@@ -1,0 +1,139 @@
+# File Watcher Manifest - Incremental refresh on file changes (ADR-022)
+version: "2.0"
+language: rust
+tier: A
+description: "Test file watcher: auto-rebuild on file change, 500ms debounce, /watch endpoint, GraphCache incremental refresh"
+
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  # ─── File Watcher: Debounce ────────────────────────────────────────────────
+
+  - name: watcher_debounce_500ms
+    description: "Rapid changes within 500ms are debounced to single rebuild"
+    tool: file_watcher
+    action: debounce
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: mutation
+    expected_outcome: pass
+    arguments:
+      file: src/main.rs
+      changes:
+        - action: edit
+          delay_ms: 100
+        - action: edit
+          delay_ms: 100
+        - action: edit
+          delay_ms: 100
+    ground_truth:
+      rebuild_count: 1
+      debounce_window_ms: 500
+
+  - name: watcher_no_debounce_on_slow_changes
+    description: "Changes spaced >500ms apart trigger separate rebuilds"
+    tool: file_watcher
+    action: debounce
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: mutation
+    expected_outcome: pass
+    arguments:
+      file: src/main.rs
+      changes:
+        - action: edit
+          delay_ms: 600
+        - action: edit
+          delay_ms: 600
+    ground_truth:
+      rebuild_count: 2
+
+  # ─── File Watcher: Graph Rebuild ───────────────────────────────────────────
+
+  - name: watcher_triggers_graph_rebuild
+    description: "File modification triggers graph rebuild via GraphCache"
+    tool: file_watcher
+    action: rebuild
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: mutation
+    expected_outcome: pass
+    arguments:
+      file: src/main.rs
+      old_text: "fn main()"
+      new_text: "fn main() { }"
+    ground_truth:
+      graph_updated: true
+      incremental: true
+
+  - name: watcher_new_file_indexed
+    description: "New file is detected and indexed"
+    tool: file_watcher
+    action: new_file
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: mutation
+    expected_outcome: pass
+    arguments:
+      new_file: src/new_module.rs
+    ground_truth:
+      symbol_count: 1
+
+  - name: watcher_deleted_file_removed
+    description: "Deleted file is removed from graph"
+    tool: file_watcher
+    action: delete
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: mutation
+    expected_outcome: pass
+    arguments:
+      file: src/main.rs
+    ground_truth:
+      graph_updated: true
+      symbol_removed: true
+
+  # ─── Watch Endpoint ────────────────────────────────────────────────────────
+
+  - name: watch_endpoint_subscribes_to_events
+    description: "GET /watch returns SSE stream of file change events"
+    tool: http_get
+    action: watch
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: /watch
+    ground_truth:
+      content_type: text/event-stream
+
+  - name: watch_endpoint_reports_file_change
+    description: "/watch SSE stream reports file change event"
+    tool: http_get
+    action: watch
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: mutation
+    expected_outcome: pass
+    arguments:
+      path: /watch
+      trigger_file: src/main.rs
+    ground_truth:
+      event_type: file_change
+      matches_trigger: true
+
+  # ─── Watcher + Graph Integration ───────────────────────────────────────────
+
+  - name: watcher_incremental_refresh_preserves_cache
+    description: "Incremental refresh preserves cached graph data for unchanged files"
+    tool: file_watcher
+    action: incremental_refresh
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: mutation
+    expected_outcome: pass
+    arguments:
+      changed_files:
+        - src/main.rs
+      unchanged_files:
+        - src/lib.rs
+    ground_truth:
+      incremental: true
+      cache_preserved: true

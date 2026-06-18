@@ -1,0 +1,109 @@
+# Graph Checkpointing Manifest - ADR-035 VersionedGraphCache
+version: "2.0"
+language: rust
+tier: A
+description: "Test graph checkpointing: VersionedGraphCache FIFO ring (retention=2), checkpoint_id monotonic u64, current_checkpoint_id(), checkpoint_at(id)"
+
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  # ─── Checkpoint Lifecycle ───────────────────────────────────────────────────
+
+  - name: checkpoint_first_is_id_1
+    description: "First checkpoint should have id=1"
+    tool: graph_checkpoint
+    action: create
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      operation: create
+    ground_truth:
+      checkpoint_id: 1
+
+  - name: checkpoint_second_is_id_2
+    description: "Second checkpoint should have id=2 (monotonic)"
+    tool: graph_checkpoint
+    action: create
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      operation: create
+    ground_truth:
+      checkpoint_id: 2
+
+  - name: checkpoint_current_returns_latest
+    description: "current_checkpoint_id() returns the latest checkpoint id"
+    tool: graph_checkpoint
+    action: current
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      operation: current
+    ground_truth:
+      checkpoint_id: 2
+
+  - name: checkpoint_at_specific_id
+    description: "checkpoint_at(id) returns the graph at that checkpoint"
+    tool: graph_checkpoint
+    action: restore
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      operation: restore
+      checkpoint_id: 1
+    ground_truth:
+      edges_present: true
+
+  - name: checkpoint_retention_fifo_ring
+    description: "After 3 checkpoints, only 2 are retained (FIFO ring with retention=2)"
+    tool: graph_checkpoint
+    action: create
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      operation: create
+    ground_truth:
+      retained_ids: [2, 3]
+      evicted_ids: [1]
+
+  - name: checkpoint_list_all
+    description: "List all available checkpoints"
+    tool: graph_checkpoint
+    action: list
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      operation: list
+    metrics:
+      correctness:
+        type: count_match
+      latency:
+        target_ms: 50
+        max_ms: 200
+
+  - name: checkpoint_differential_graph
+    description: "Query differential graph between two checkpoints"
+    tool: graph_diff
+    action: diff
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      from_checkpoint: 1
+      to_checkpoint: 2
+    metrics:
+      correctness:
+        type: structure_match
+      latency:
+        target_ms: 200
+        max_ms: 1000

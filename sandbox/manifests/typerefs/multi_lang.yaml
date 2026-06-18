@@ -1,0 +1,233 @@
+# Type References Manifest - Multi-language type extraction
+version: "2.0"
+language: rust
+tier: A
+description: "Test type-ref walkers across Rust, Python, TypeScript, Go - verify cross-language type references"
+
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  # ─── Rust Type References ───────────────────────────────────────────────────
+
+  - name: rust_struct_type_refs
+    description: "Extract type references from Rust struct fields"
+    tool: get_type_references
+    action: find
+    workspace: sandbox/fixtures/multi-lang-types/src
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: lib.rs
+      node_kind: struct
+      symbol_name: User
+    ground_truth:
+      type_refs:
+        - name: UserId
+          kind: struct
+        - name: Email
+          kind: struct
+        - name: UserRole
+          kind: enum
+        - name: HashMap
+          kind: generic_type
+        - name: chrono::DateTime
+          kind: type
+
+  - name: rust_trait_type_refs
+    description: "Extract type references from Rust trait definition"
+    tool: get_type_references
+    action: find
+    workspace: sandbox/fixtures/multi-lang-types/src
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: lib.rs
+      node_kind: trait
+      symbol_name: Repository
+    ground_truth:
+      type_refs:
+        - name: T
+          kind: type_parameter
+
+  - name: rust_enum_type_refs
+    description: "Extract type references from Rust enum variants"
+    tool: get_type_references
+    action: find
+    workspace: sandbox/fixtures/multi-lang-types/src
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: lib.rs
+      node_kind: enum
+      symbol_name: UserRole
+    ground_truth:
+      variants:
+        - Admin
+        - Editor
+        - Viewer
+        - Guest
+
+  - name: rust_function_return_type
+    description: "Extract return type from Rust function"
+    tool: get_type_references
+    action: find
+    workspace: sandbox/fixtures/multi-lang-types/src
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: lib.rs
+      node_kind: function
+      symbol_name: create_user
+    ground_truth:
+      return_type: Result
+      error_type: UserServiceError
+
+  # ─── Python Type References ─────────────────────────────────────────────────
+
+  - name: python_class_type_refs
+    description: "Extract type references from Python class"
+    tool: get_type_references
+    action: find
+    workspace: sandbox/fixtures/multi-lang-types/python
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: types.py
+      node_kind: class
+      symbol_name: User
+    ground_truth:
+      type_refs:
+        - name: UserId
+          kind: class
+        - name: Email
+          kind: class
+        - name: UserRole
+          kind: enum
+        - name: Dict
+          kind: generic_type
+        - name: datetime
+          kind: type
+
+  - name: python_protocol_type_refs
+    description: "Extract type references from Python Protocol (trait-like)"
+    tool: get_type_references
+    action: find
+    workspace: sandbox/fixtures/multi-lang-types/python
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: types.py
+      node_kind: protocol
+      symbol_name: Repository
+    ground_truth:
+      type_refs:
+        - name: User
+          kind: type
+
+  - name: python_enum_type_refs
+    description: "Extract type references from Python Enum"
+    tool: get_type_references
+    action: find
+    workspace: sandbox/fixtures/multi-lang-types/python
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: types.py
+      node_kind: enum
+      symbol_name: UserRole
+    ground_truth:
+      variants:
+        - ADMIN
+        - EDITOR
+        - VIEWER
+        - GUEST
+
+  # ─── TypeScript Type References ──────────────────────────────────────────────
+
+  - name: typescript_interface_type_refs
+    description: "Extract type references from TypeScript interface"
+    tool: get_type_references
+    action: find
+    workspace: sandbox/fixtures/multi-lang-types/typescript
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: interfaces.ts
+      node_kind: interface
+      symbol_name: User
+    ground_truth:
+      type_refs:
+        - name: UserId
+          kind: interface
+        - name: Email
+          kind: interface
+        - name: UserRole
+          kind: enum
+        - name: Record
+          kind: generic_type
+        - name: Date
+          kind: type
+
+  - name: typescript_enum_type_refs
+    description: "Extract type references from TypeScript enum"
+    tool: get_type_references
+    action: find
+    workspace: sandbox/fixtures/multi-lang-types/typescript
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: interfaces.ts
+      node_kind: enum
+      symbol_name: UserRole
+    ground_truth:
+      variants:
+        - Admin
+        - Editor
+        - Viewer
+        - Guest
+
+  # ─── Go Type References ──────────────────────────────────────────────────────
+
+  - name: go_struct_type_refs
+    description: "Extract type references from Go struct"
+    tool: get_type_references
+    action: find
+    workspace: sandbox/fixtures/multi-lang-types/go
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: types.go
+      node_kind: struct
+      symbol_name: User
+    ground_truth:
+      type_refs:
+        - name: UserId
+          kind: struct
+        - name: Email
+          kind: struct
+        - name: UserRole
+          kind: type
+        - name: map
+          kind: generic_type
+        - name: time.Time
+          kind: type
+
+  - name: go_interface_type_refs
+    description: "Extract type references from Go interface"
+    tool: get_type_references
+    action: find
+    workspace: sandbox/fixtures/multi-lang-types/go
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: types.go
+      node_kind: interface
+      symbol_name: Repository
+    ground_truth:
+      type_refs:
+        - name: User
+          kind: type

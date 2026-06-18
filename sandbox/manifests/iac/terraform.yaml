@@ -1,0 +1,141 @@
+# IaC Manifest - Terraform infrastructure extraction (ADR-036)
+version: "2.0"
+language: terraform
+tier: A
+description: "Test interpret_terraform handler - extract resources, data sources, variables, modules, outputs as graph nodes with References edges"
+
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: syntax
+      commands: ["terraform fmt -check -recursive 2>&1 || true"]
+      timeout_seconds: 30
+
+scenarios:
+  # ─── IaC Query: Resource Discovery ──────────────────────────────────────────
+
+  - name: terraform_iac_query_all
+    description: "Query all Terraform resources via iac_query"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/terraform-iac
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "resource"
+    ground_truth:
+      resource_types:
+        - aws_vpc
+        - aws_subnet
+        - aws_instance
+        - aws_db_instance
+        - aws_s3_bucket
+        - aws_iam_role
+        - aws_lb
+        - aws_lb_target_group
+        - aws_lb_listener
+        - aws_cloudwatch_log_group
+        - aws_cloudwatch_metric_alarm
+        - aws_secretsmanager_secret
+
+  - name: terraform_iac_query_vpc
+    description: "Query VPC resources"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/terraform-iac
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "resource where type = 'aws_vpc'"
+    ground_truth:
+      resource_types:
+        - aws_vpc
+
+  - name: terraform_iac_query_database
+    description: "Query database resources"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/terraform-iac
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "resource where type = 'aws_db_instance'"
+    ground_truth:
+      resource_types:
+        - aws_db_instance
+
+  - name: terraform_iac_query_with_dependencies
+    description: "Query resources and their dependencies"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/terraform-iac
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "resource with dependencies"
+    metrics:
+      correctness:
+        type: structure_match
+      latency:
+        target_ms: 500
+        max_ms: 2000
+
+  - name: terraform_iac_query_variables
+    description: "Query Terraform variables"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/terraform-iac
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "variable"
+    ground_truth:
+      variable_names:
+        - aws_region
+        - environment
+        - project_name
+        - vpc_cidr
+        - instance_type
+        - webserver_count
+        - ssh_key_name
+        - db_instance_class
+        - db_username
+        - db_password
+        - acm_certificate_arn
+
+  - name: terraform_iac_query_outputs
+    description: "Query Terraform outputs"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/terraform-iac
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "output"
+    ground_truth:
+      output_names:
+        - vpc_id
+        - alb_dns_name
+        - db_address
+        - db_port
+        - s3_bucket_name
+        - cloudwatch_log_group
+        - ecs_cluster_name
+
+  - name: terraform_iac_query_modules
+    description: "Query Terraform module calls"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/terraform-iac
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "module"
+    ground_truth:
+      module_calls:
+        - name: module.vpc
+          source: ./modules/vpc
+        - name: module.compute
+          source: ./modules/compute

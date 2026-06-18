@@ -1,0 +1,158 @@
+# Security Manifest - Path safety and security boundaries
+version: "2.0"
+language: rust
+tier: A
+description: "Test security boundaries: path safety for edit_file, rate limiting enforcement, auth middleware, no arbitrary code execution"
+
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  # ─── Path Safety ───────────────────────────────────────────────────────────
+
+  - name: edit_reject_etc_passwd
+    description: "edit_file must reject /etc/passwd"
+    tool: edit_file
+    action: apply
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: path_safety
+    arguments:
+      path: /etc/passwd
+      old_text: "root:x:0:0:"
+      new_text: "root:x:0:0:root:/root:/bin/bash"
+    ground_truth:
+      error_type: path_safety_violation
+      error_message: "path is outside allowed workspace"
+
+  - name: edit_reject_etc_shadow
+    description: "edit_file must reject /etc/shadow"
+    tool: edit_file
+    action: apply
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: path_safety
+    arguments:
+      path: /etc/shadow
+      old_text: "root:"
+      new_text: "root:encryptedpassword"
+    ground_truth:
+      error_type: path_safety_violation
+
+  - name: edit_reject_proc_mem
+    description: "edit_file must reject /proc/mem"
+    tool: edit_file
+    action: apply
+    workspace: .
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: expected_fail
+    variant: path_safety
+    arguments:
+      path: /proc/meminfo
+      old_text: "MemTotal:"
+      new_text: "MemTotal: 999999999 kB"
+    ground_truth:
+      error_type: path_safety_violation
+
+  - name: edit_allow_workspace_file
+    description: "edit_file must allow editing files within workspace"
+    tool: edit_file
+    action: apply
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: mutation
+    preview_only: false
+    expected_outcome: pass
+    variant: concrete
+    arguments:
+      path: src/main.rs
+      old_text: "fn main()"
+      new_text: "fn main_modified()"
+    validation:
+      failure_is_regression: true
+      stages:
+        - name: build
+          commands: ["cargo build 2>&1"]
+          timeout_seconds: 60
+
+  # ─── Rate Limiting ───────────────────────────────────────────────────────────
+
+  - name: rate_limit_exceeded_returns_429
+    description: "Exceeding rate limit returns HTTP 429"
+    tool: build_graph
+    action: build
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    variant: rate_limited
+    arguments:
+      directory: .
+      burst: 100
+    validation:
+      failure_is_regression: false
+      stages: []
+
+  - name: rate_limit_resets_after_window
+    description: "Rate limit resets after the time window expires"
+    tool: build_graph
+    action: build
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    variant: rate_limit_reset
+    arguments:
+      delay_seconds: 65
+    metrics:
+      latency:
+        max_ms: 10000
+
+  # ─── Auth Middleware ────────────────────────────────────────────────────────
+
+  - name: auth_missing_bearer_returns_401
+    description: "Missing Bearer token returns HTTP 401"
+    tool: http_get
+    action: mcp
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    variant: auth_missing
+    arguments:
+      path: /mcp
+      headers: {}
+    ground_truth:
+      status_code: 401
+
+  - name: auth_invalid_bearer_returns_401
+    description: "Invalid Bearer token returns HTTP 401"
+    tool: http_get
+    action: mcp
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: expected_fail
+    variant: auth_invalid
+    arguments:
+      path: /mcp
+      headers:
+        Authorization: "Bearer invalid-token"
+    ground_truth:
+      status_code: 401
+
+  - name: auth_valid_bearer_returns_200
+    description: "Valid Bearer token allows access"
+    tool: http_get
+    action: mcp
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    variant: auth_valid
+    arguments:
+      path: /mcp
+      headers:
+        Authorization: "Bearer valid-test-token"

@@ -1,0 +1,141 @@
+# Observability Manifest - MCP production readiness metrics (ADR-034 M2)
+version: "2.0"
+language: rust
+tier: A
+description: "Test MCP observability: /metrics Prometheus endpoint, tool-level counters/durations, graph Gauges, per-tool timeout enforcement"
+
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages: []
+
+scenarios:
+  # ─── Prometheus Metrics Endpoint ───────────────────────────────────────────
+
+  - name: metrics_endpoint_returns_prometheus
+    description: "GET /metrics returns Prometheus text format"
+    tool: http_get
+    action: metrics
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: /metrics
+    ground_truth:
+      content_type: text/plain
+      has_cognicode_metrics: true
+
+  - name: metrics_tool_call_counter
+    description: "Tool call counter increments after build_graph"
+    tool: http_get
+    action: metrics
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: /metrics
+      after_tool: build_graph
+    ground_truth:
+      metric_name: cognicode_tools_calls_total
+      labels:
+        - tool="build_graph"
+        - status="success"
+
+  - name: metrics_tool_duration_histogram
+    description: "Tool duration histogram records build_graph latency"
+    tool: http_get
+    action: metrics
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: /metrics
+      after_tool: build_graph
+    ground_truth:
+      metric_name: cognicode_tools_duration_seconds
+      has_histogram_buckets: true
+
+  - name: metrics_graph_symbols_gauge
+    description: "Graph symbols gauge reflects actual symbol count"
+    tool: http_get
+    action: metrics
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: /metrics
+    ground_truth:
+      metric_name: cognicode_graph_symbols
+      gauge_type: gauge
+
+  - name: metrics_graph_edges_gauge
+    description: "Graph edges gauge reflects actual edge count"
+    tool: http_get
+    action: metrics
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: /metrics
+    ground_truth:
+      metric_name: cognicode_graph_edges
+      gauge_type: gauge
+
+  - name: metrics_graph_health_score
+    description: "Graph health score gauge is computed correctly"
+    tool: http_get
+    action: metrics
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: /metrics
+    ground_truth:
+      metric_name: cognicode_graph_health_score
+      gauge_type: gauge
+      min_value: 0
+      max_value: 100
+
+  # ─── Health Endpoint ───────────────────────────────────────────────────────
+
+  - name: health_endpoint_healthy
+    description: "GET /health returns 200 when server is healthy"
+    tool: http_get
+    action: health
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: /health
+    ground_truth:
+      status_code: 200
+
+  # ─── Ready Endpoint ────────────────────────────────────────────────────────
+
+  - name: ready_endpoint_after_build
+    description: "GET /ready returns 200 after build_graph completes"
+    tool: http_get
+    action: ready
+    workspace: .
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      path: /ready
+    ground_truth:
+      status_code: 200
+
+  # ─── Structured Log Per Tool Call ──────────────────────────────────────────
+
+  - name: structured_log_contains_tool_metadata
+    description: "Tool call structured log contains tool_name, duration_ms, status, caller"
+    tool: build_graph
+    action: build
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      directory: .
+    validation:
+      failure_is_regression: false
+      stages: []

@@ -1,0 +1,183 @@
+# Analysis Manifest - Comprehensive Rust code analysis
+version: "2.0"
+language: rust
+tier: A
+description: "Comprehensive Rust analysis: symbol extraction, semantic search, complexity metrics, dead code detection"
+
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: syntax
+      commands: ["cargo check 2>&1"]
+      timeout_seconds: 60
+
+scenarios:
+  # ─── Symbol Extraction ──────────────────────────────────────────────────────
+
+  - name: extract_all_symbols
+    description: "Extract all symbols from Rust project"
+    tool: get_file_symbols
+    action: extract
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: src/main.rs
+      mode: hierarchical
+    ground_truth:
+      has_functions: true
+      has_structs: true
+      has_traits: true
+      has_impls: true
+
+  - name: extract_symbols_hierarchical
+    description: "Extract symbols in hierarchical structure"
+    tool: get_file_symbols
+    action: extract
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: src/main.rs
+      mode: hierarchical
+    metrics:
+      latency:
+        target_ms: 100
+        max_ms: 500
+
+  # ─── Semantic Search ───────────────────────────────────────────────────────
+
+  - name: semantic_search_by_name
+    description: "Search for symbols by exact name match"
+    tool: semantic_search
+    action: search
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "main"
+      max_results: 10
+    ground_truth:
+      results_count_min: 1
+
+  - name: semantic_search_fuzzy
+    description: "Fuzzy semantic search returns ranked results"
+    tool: semantic_search
+    action: search
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "process data"
+      max_results: 10
+    metrics:
+      correctness:
+        type: recall@k
+        k: 5
+      latency:
+        target_ms: 200
+        max_ms: 1000
+
+  # ─── Complexity Analysis ───────────────────────────────────────────────────
+
+  - name: symbol_complexity_score
+    description: "Compute cyclomatic complexity per function"
+    tool: get_symbol_complexity
+    action: analyze
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      file: src/main.rs
+      function_name: main
+    ground_truth:
+      complexity_score: "> 0"
+      has_cyclomatic: true
+
+  - name: project_complexity_overview
+    description: "Get complexity overview for entire project"
+    tool: project_insights
+    action: complexity
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments: {}
+    metrics:
+      latency:
+        target_ms: 500
+        max_ms: 2000
+
+  # ─── Dead Code Detection ───────────────────────────────────────────────────
+
+  - name: dead_code_candidates
+    description: "Find symbols with no callers (potential dead code)"
+    tool: dead_code_candidates
+    action: find
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      min_depth: 2
+    metrics:
+      correctness:
+        type: precision_recall
+      latency:
+        target_ms: 300
+        max_ms: 2000
+
+  - name: unused_imports
+    description: "Find unused imports across the project"
+    tool: find_usages
+    action: unused_imports
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments: {}
+    metrics:
+      latency:
+        target_ms: 200
+        max_ms: 1000
+
+  # ─── Symbol Usages ────────────────────────────────────────────────────────
+
+  - name: find_usages_of_symbol
+    description: "Find all usages of a specific symbol"
+    tool: find_usages
+    action: find
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol_name: process
+    ground_truth:
+      usages_min: 1
+
+  - name: callers_of_symbol
+    description: "Find all callers of a symbol (reverse refs)"
+    tool: find_usages
+    action: callers
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      symbol_name: compute
+    ground_truth:
+      callers_min: 1
+
+  # ─── Project Overview ───────────────────────────────────────────────────────
+
+  - name: project_overview_all_metrics
+    description: "Get complete project overview with all metrics"
+    tool: project_overview
+    action: overview
+    workspace: sandbox/fixtures/rust-callgraph
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments: {}
+    ground_truth:
+      has_symbol_count: true
+      has_edge_count: true
+      has_language_stats: true
+      has_file_count: true

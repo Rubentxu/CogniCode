@@ -1,0 +1,119 @@
+# IaC Manifest - Ansible playbook extraction (ADR-036)
+version: "2.0"
+language: ansible
+tier: A
+description: "Test interpret_ansible handler - extract plays, tasks, roles, modules as graph nodes with Calls edges"
+
+timeout_seconds: 120
+
+validation:
+  failure_is_regression: true
+  stages:
+    - name: syntax
+      commands: ["ansible-playbook --syntax-check site.yml 2>&1"]
+      timeout_seconds: 30
+
+scenarios:
+  # ─── IaC Query: Ansible Playbook Discovery ────────────────────────────────────
+
+  - name: ansible_iac_query_all
+    description: "Query all Ansible resources via iac_query"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/ansible-playbook
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "playbook"
+    ground_truth:
+      play_count: 2
+      playbook_files:
+        - site.yml
+        - webserver.yml
+
+  - name: ansible_iac_query_plays
+    description: "Query plays from Ansible playbook"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/ansible-playbook
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "play"
+    ground_truth:
+      play_names:
+        - Configure infrastructure
+        - Deploy web tier
+        - Verify deployment
+
+  - name: ansible_iac_query_tasks
+    description: "Query tasks across all roles"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/ansible-playbook
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "task"
+    ground_truth:
+      task_modules:
+        - apt
+        - systemd
+        - git
+        - pip
+        - template
+        - file
+        - uri
+        - postgresql_db
+        - postgresql_user
+        - lineinfile
+        - package
+        - user
+        - command
+
+  - name: ansible_iac_query_roles
+    description: "Query Ansible roles"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/ansible-playbook
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "role"
+    ground_truth:
+      role_names:
+        - nginx
+        - postgres
+        - app
+
+  - name: ansible_iac_query_inventory
+    description: "Query inventory groups and hosts"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/ansible-playbook
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "inventory"
+    ground_truth:
+      groups:
+        - webserver
+        - app
+        - database
+      host_count: 8
+
+  - name: ansible_iac_query_with_calls
+    description: "Query task-to-module calls"
+    tool: iac_query
+    action: query
+    workspace: sandbox/fixtures/ansible-playbook
+    scenario_class: read_only
+    expected_outcome: pass
+    arguments:
+      query: "task with calls"
+    metrics:
+      correctness:
+        type: structure_match
+      latency:
+        target_ms: 500
+        max_ms: 2000
