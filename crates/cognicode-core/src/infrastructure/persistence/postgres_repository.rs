@@ -501,7 +501,7 @@ impl PostgresRepository {
         workspace_id: &str,
     ) -> Result<Option<GraphReportRow>, RepositoryError> {
         let row: Option<GraphReportRow> = sqlx::query_as(
-            "SELECT id, workspace_id, \
+            "SELECT id::text AS id, workspace_id, \
                     created_at::text AS created_at, \
                     report, symbol_count, edge_count, health_score \
              FROM graph_reports \
@@ -524,7 +524,7 @@ impl PostgresRepository {
         days: i32,
     ) -> Result<Vec<GraphReportRow>, RepositoryError> {
         let rows: Vec<GraphReportRow> = sqlx::query_as(
-            "SELECT id, workspace_id, \
+            "SELECT id::text AS id, workspace_id, \
                     created_at::text AS created_at, \
                     report, symbol_count, edge_count, health_score \
              FROM graph_reports \

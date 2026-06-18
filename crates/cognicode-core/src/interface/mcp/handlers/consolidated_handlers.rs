@@ -291,7 +291,14 @@ pub async fn handle_compare_graph(
         }
     };
 
-    let workspace_id = ctx.working_dir.to_string_lossy();
+    // Use same workspace_id normalization as ingest: sandbox-{dirname}
+    let workspace_id = format!(
+        "sandbox-{}",
+        ctx.working_dir
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "default".into())
+    );
 
     // Load latest report from PG
     let report = match pg_repo
@@ -786,7 +793,13 @@ pub async fn handle_graph_diff(
         )
     })?;
 
-    let workspace_id = ctx.working_dir.to_string_lossy();
+    let workspace_id = format!(
+        "sandbox-{}",
+        ctx.working_dir
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "default".into())
+    );
 
     // Parse baseline date
     let baseline_date = &input.baseline_date;
@@ -991,7 +1004,13 @@ pub async fn handle_graph_timeline(
         )
     })?;
 
-    let workspace_id = ctx.working_dir.to_string_lossy();
+    let workspace_id = format!(
+        "sandbox-{}",
+        ctx.working_dir
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "default".into())
+    );
 
     let reports = repo
         .load_report_range(&workspace_id, input.days)

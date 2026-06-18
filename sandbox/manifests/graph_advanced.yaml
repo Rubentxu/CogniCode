@@ -123,13 +123,14 @@ scenarios:
       target_ms: 500
       max_ms: 3000
 - name: adv_compare_graph_latest
-  description: Compare current graph snapshot vs latest PG report
+  description: Compare current graph vs PG report — requires ingest first to create baseline
   tool: compare_graph
   action: compare
   workspace: sandbox/fixtures/rust-callgraph
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   pre_steps:
+  - ingest
   - build_graph
   arguments:
     baseline: latest
