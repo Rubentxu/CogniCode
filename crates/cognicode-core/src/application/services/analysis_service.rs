@@ -235,6 +235,14 @@ impl AnalysisService {
             total_files, files_with_lang
         );
 
+        if files_with_lang == 0 && total_files > 0 {
+            warn!(
+                "build_project_graph: stage=walk — {} total files but 0 recognized languages. \
+                 Check that source files have supported extensions (.rs, .py, .go, .java, .ts, .js, etc.)",
+                total_files
+            );
+        }
+
         // Log first few files for debugging
         for (path, lang, _, _) in files.iter().take(5) {
             debug!(
@@ -284,6 +292,30 @@ impl AnalysisService {
             })
             .collect();
 
+        // Stage: parse — count what we got from the parallel extraction
+        let files_cached = results.iter().filter(|(_, _, _, _, was_parsed)| !was_parsed).count();
+        let files_parsed = results.len() - files_cached;
+        let total_symbols_extracted: usize = results
+            .iter()
+            .map(|(_, _, symbols, _, _)| symbols.len())
+            .sum();
+        let total_relationships_found: usize = results
+            .iter()
+            .map(|(_, _, _, rels, _)| rels.len())
+            .sum();
+
+        info!(
+            "build_project_graph: stage=parse — {} files ({} parsed, {} cached), {} symbols, {} relationships",
+            results.len(), files_parsed, files_cached, total_symbols_extracted, total_relationships_found
+        );
+
+        if files_parsed == 0 && files_cached == 0 && files_with_lang > 0 {
+            warn!(
+                "build_project_graph: stage=parse — {} language files found but 0 parsed or cached.                  Possible tree-sitter parsing failure.",
+                files_with_lang
+            );
+        }
+
         let mut cache = self.file_cache.lock().unwrap();
         let mut all_relationships = Vec::new();
 
@@ -307,6 +339,7 @@ impl AnalysisService {
             }
         }
 
+        let total_relationships = all_relationships.len();
         for (caller, callee_name) in all_relationships {
             let caller_id = SymbolId::new(caller.fully_qualified_name());
             if let Some(callee_id) = name_to_symbol_id.get(&callee_name.to_lowercase()) {
@@ -318,13 +351,32 @@ impl AnalysisService {
             }
         }
 
+        // Stage: resolve — log edge resolution outcome
+        info!(
+            "build_project_graph: stage=resolve — {} relationships, {} resolved, {} unresolved",
+            total_relationships,
+            total_relationships.saturating_sub(unresolved_edges),
+            unresolved_edges
+        );
+
         let call_graph = store.to_call_graph();
         let symbol_count = call_graph.symbol_count();
         let edge_count = call_graph.edge_count();
 
+        // Stage: done — final graph with per-language breakdown
+        let mut lang_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for symbol in call_graph.symbols() {
+            let file = symbol.location().file();
+            let lang = std::path::Path::new(file)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            *lang_counts.entry(lang).or_default() += 1;
+        }
         info!(
-            "Graph built: {} symbols, {} edges, {} parsed files, {} unresolved edges",
-            symbol_count, edge_count, parsed_files, unresolved_edges
+            "build_project_graph: stage=done — {} symbols, {} edges ({} parsed files, {} unresolved). Languages: {:?}",
+            symbol_count, edge_count, parsed_files, unresolved_edges, lang_counts
         );
 
         if symbol_count == 0 {

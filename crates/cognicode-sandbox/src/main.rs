@@ -604,17 +604,40 @@ fn execute_scenario(
             || cfg.name.contains("ansible")
         {
             // Try to spawn server directly (for now, using host binary)
+            // Collect environment variables to forward to the MCP server child process
+            let mut server_env: Vec<(String, String)> = Vec::new();
+            if let Ok(rust_log) = std::env::var("RUST_LOG") {
+                server_env.push(("RUST_LOG".into(), rust_log));
+                if verbose {
+                    eprintln!("  [ENV] Forwarding RUST_LOG={} to MCP server", std::env::var("RUST_LOG").unwrap_or_default());
+                }
+            }
+
             // If DATABASE_URL is set, forward --postgres to enable PG-backed IaC queries
+            let mut extra_args: Vec<&str> = Vec::new();
             let spawned_server = if let Ok(db_url) = std::env::var("DATABASE_URL") {
                 match McpServer::spawn_with_env(
                     &server_binary,
                     &workspace_path,
-                    &[],
+                    &server_env,
                     &["--postgres", &db_url],
                 ) {
                     Ok(s) => Some(s),
                     Err(e) => {
                         eprintln!("  [WARN] Could not spawn MCP server with PG: {e}");
+                        None
+                    }
+                }
+            } else if !server_env.is_empty() {
+                match McpServer::spawn_with_env(
+                    &server_binary,
+                    &workspace_path,
+                    &server_env,
+                    &[],
+                ) {
+                    Ok(s) => Some(s),
+                    Err(e) => {
+                        eprintln!("  [WARN] Could not spawn MCP server: {e}");
                         None
                     }
                 }

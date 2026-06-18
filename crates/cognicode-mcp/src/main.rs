@@ -32,7 +32,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
-        .with_max_level(tracing::Level::INFO)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
         .with_target(false)
         .compact()
         .with_writer(std::io::stderr)
@@ -85,11 +88,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // (ADR-025). Falls back to DATABASE_URL env var when --postgres
     // is not provided.
     let pg_url = args.postgres.or_else(|| std::env::var("DATABASE_URL").ok());
-    let handler = if pg_url.is_some() {
-        info!("Mode B: connecting to PostgreSQL");
-        // For now, use the standard constructor. A future change will
-        // load from PG at startup (ADR-025 Mode B full implementation).
-        CogniCodeHandler::new(args.cwd)
+    let handler = if let Some(ref url) = pg_url {
+        info!("Mode B: connecting to PostgreSQL at {}", url);
+        CogniCodeHandler::with_pg(args.cwd, url)
+            .await
+            .map_err(|e| format!("Failed to initialize PG-backed handler: {}", e))?
     } else {
         info!("Mode A: standalone in-memory");
         CogniCodeHandler::new(args.cwd)
