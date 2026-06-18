@@ -1,0 +1,721 @@
+version: '1.0'
+language: rust
+tier: A
+description: Graph Query Smoke Tests — Graphify-style comprehensive validation
+timeout_seconds: 300
+validation:
+  failure_is_regression: true
+  stages:
+  - name: syntax
+    commands:
+    - cargo check
+    expected_exit_range:
+    - 0
+    - 0
+    timeout_seconds: 60
+scenarios:
+- name: query_build_graph_rust
+  description: Build call graph from Rust fixture
+  tool: build_graph
+  action: build
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    directory: .
+  ground_truth:
+    symbols_min: 5
+    relationships_min: 3
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000
+- name: query_build_graph_python
+  description: Build call graph from Python fixture — cross-language
+  tool: build_graph
+  action: build
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    directory: .
+  ground_truth:
+    symbols_min: 5
+    relationships_min: 3
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000
+- name: query_entry_points_rust
+  description: Find entry points — expects main as root
+  tool: get_entry_points
+  action: find
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_entry_points: true
+    total_min: 1
+    contains_main: true
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_entry_points_python
+  description: Find entry points in Python
+  tool: get_entry_points
+  action: find
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_entry_points: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_leaf_functions_rust
+  description: Find leaf functions — expects compute, process, helper_internal
+  tool: get_leaf_functions
+  action: find
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_leaf_functions: true
+    total_min: 2
+    contains_compute: true
+    contains_process: true
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_leaf_functions_python
+  description: Find leaf functions in Python
+  tool: get_leaf_functions
+  action: find
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_leaf_functions: true
+    total_min: 2
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_callers_of_helper_rust
+  description: Find callers of helper — main should be a caller
+  tool: get_call_hierarchy
+  action: callers
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    symbol_name: helper
+    direction: incoming
+    depth: 1
+  ground_truth:
+    has_callers: true
+    caller_count_min: 1
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_callees_of_helper_rust
+  description: Find callees of helper — expects compute, helper_internal
+  tool: get_call_hierarchy
+  action: callees
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    symbol_name: helper
+    direction: outgoing
+    depth: 1
+  ground_truth:
+    has_callees: true
+    callee_count_min: 2
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_callers_of_main_rust
+  description: Find callers of main — should have none
+  tool: get_call_hierarchy
+  action: callers
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    symbol_name: main
+    direction: incoming
+    depth: 1
+  ground_truth:
+    caller_count: 0
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_callees_of_main_rust
+  description: Find callees of main — expects helper, process
+  tool: get_call_hierarchy
+  action: callees
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    symbol_name: main
+    direction: outgoing
+    depth: 1
+  ground_truth:
+    has_callees: true
+    callee_count_min: 2
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_trace_main_to_compute_rust
+  description: Trace execution path from main to compute (2 hops)
+  tool: trace_path
+  action: find
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    source: main
+    target: compute
+    max_depth: 5
+  ground_truth:
+    path_found: true
+    path_length_min: 2
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_trace_no_path_rust
+  description: Trace path between unconnected symbols
+  tool: trace_path
+  action: find
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    source: compute
+    target: process
+    max_depth: 5
+  ground_truth:
+    path_found: false
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_impact_analysis_helper_rust
+  description: Analyze impact of changing helper
+  tool: analyze_impact
+  action: analyze
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    symbol_name: helper
+  ground_truth:
+    has_impact: true
+    dependents_min: 1
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_impact_analysis_compute_rust
+  description: Analyze impact of changing compute (leaf)
+  tool: analyze_impact
+  action: analyze
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    symbol_name: compute
+  ground_truth:
+    has_impact: true
+    transitive_dependents_min: 1
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_complexity_helper_rust
+  description: Calculate complexity for helper function
+  tool: get_complexity
+  action: analyze
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    file_path: src/main.rs
+    function_name: helper
+  ground_truth:
+    has_metrics: true
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_hot_paths_rust
+  description: Find hot paths — most-called functions
+  tool: get_hot_paths
+  action: find
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_hot_paths: true
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_type_references_rust
+  description: Get type references for helper
+  tool: get_type_references
+  action: query
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    symbol_name: helper
+  ground_truth:
+    has_references: true
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 1000
+- name: query_type_references_python
+  description: Get type references in Python
+  tool: get_type_references
+  action: query
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    symbol_name: helper
+  ground_truth:
+    has_references: true
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 1000
+- name: query_symbol_index_rust
+  description: Query symbol index for compute
+  tool: query_symbol_index
+  action: query
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    symbol_name: compute
+  ground_truth:
+    has_results: true
+    result_count_min: 1
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_symbol_code_rust
+  description: Get source code of helper function
+  tool: get_symbol_code
+  action: extract
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    file: src/main.rs
+    line: 18
+    col: 0
+  ground_truth:
+    has_code: true
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_find_usages_main_rust
+  description: Find all usages of main
+  tool: find_usages
+  action: find
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    symbol_name: main
+  ground_truth:
+    has_usages: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 1000
+- name: query_graph_insights_rust
+  description: Get graph insights report
+  tool: graph_insights
+  action: analyze
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_report: true
+    has_health_score: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_graph_communities_rust
+  description: Detect communities in call graph
+  tool: graph_communities
+  action: analyze
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_communities: true
+    community_count_min: 1
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_graph_community_detail_rust
+  description: Get community details
+  tool: graph_community_detail
+  action: analyze
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    community_id: 0
+  ground_truth:
+    has_members: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_graph_god_nodes_rust
+  description: Find god nodes (high PageRank)
+  tool: graph_god_nodes
+  action: analyze
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_god_nodes: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_graph_surprising_connections_rust
+  description: Find surprising cross-community connections
+  tool: graph_surprising_connections
+  action: analyze
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_connections: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_graph_reduced_rust
+  description: Get reduced/compressed graph view
+  tool: graph_reduced
+  action: analyze
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_reduced_graph: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_graph_feedback_arcs_rust
+  description: Find feedback arcs
+  tool: graph_feedback_arcs
+  action: analyze
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_result: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_graph_query_idf_rust
+  description: Search graph using IDF
+  tool: graph_search_idf
+  action: search
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    query: helper compute
+  ground_truth:
+    has_results: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_graph_suggest_questions_rust
+  description: Get suggested exploration questions
+  tool: graph_suggest_questions
+  action: suggest
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_questions: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_graph_explain_rust
+  description: Explain graph structure for a symbol
+  tool: graph_explain
+  action: explain
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    symbol: helper
+  ground_truth:
+    has_explanation: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_check_architecture_rust
+  description: Check architecture for cycles
+  tool: check_architecture
+  action: analyze
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: capability_missing
+  arguments: {}
+  ground_truth:
+    has_result: true
+    has_cycles: false
+  metrics:
+    latency:
+      target_ms: 100
+      max_ms: 1000
+- name: query_solid_audit_rust
+  description: SOLID principles audit
+  tool: solid_audit
+  action: audit
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_audit: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_detect_drift_rust
+  description: Detect architecture drift
+  tool: detect_drift
+  action: analyze
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    file_path: src/main.rs
+  ground_truth:
+    has_drift_analysis: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_cross_lang_build_graph_js
+  description: Build call graph from JS fixture
+  tool: build_graph
+  action: build
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    directory: .
+  ground_truth:
+    symbols_min: 1
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 5000
+- name: query_persistence_rebuild_consistent
+  description: Rebuild graph — verify consistency
+  tool: build_graph
+  action: build
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    directory: .
+  ground_truth:
+    symbols_min: 5
+    relationships_min: 3
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000
+- name: query_export_mermaid_rust
+  description: Export call graph as Mermaid
+  tool: export_mermaid
+  action: export
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_mermaid: true
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 1000
+- name: query_build_call_subgraph_rust
+  description: Build on-demand call subgraph around helper
+  tool: build_call_subgraph
+  action: subgraph
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    symbol_name: helper
+    depth: 2
+  ground_truth:
+    has_subgraph: true
+    symbols_min: 2
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 1000
+- name: query_per_file_graph_rust
+  description: Get call graph for a specific file
+  tool: get_per_file_graph
+  action: extract
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    file_path: src/main.rs
+  ground_truth:
+    has_graph: true
+    symbols_min: 1
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 1000
+- name: query_project_insights_rust
+  description: Get project-level insights
+  tool: project_insights
+  action: complexity
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_insights: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_project_overview_rust
+  description: Get project overview
+  tool: project_overview
+  action: overview
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_overview: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_smart_search_rust
+  description: Smart semantic search
+  tool: smart_search
+  action: search
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    query: helper function that computes values
+    max_results: 10
+  ground_truth:
+    has_results: true
+    result_count_min: 1
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+- name: query_graph_analyze_rust
+  description: Deep graph analysis (SCC)
+  tool: graph_analyze
+  action: analyze
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    mode: scc
+  ground_truth:
+    has_analysis: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+  pre_steps:
+  - build_graph
+- name: query_export_callflow_rust
+  description: Export call flow visualization
+  tool: export_callflow
+  action: export
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    format: code
+  ground_truth:
+    has_flow: true
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 1000
+  pre_steps:
+  - build_graph
+- name: query_codebase_map_rust
+  description: Generate codebase map
+  tool: codebase_map
+  action: map
+  workspace: sandbox/fixtures/rust-callgraph
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    format: compact
+  ground_truth:
+    has_map: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 3000
+  pre_steps:
+  - build_graph
