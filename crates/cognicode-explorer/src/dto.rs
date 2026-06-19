@@ -749,6 +749,40 @@ pub struct RationaleViewPayload {
 }
 
 // ============================================================================
+// Landing Page — E4 ADR-039
+// ============================================================================
+
+/// Response payload for `GET /api/workspaces/:id/landing`.
+/// Bundles everything the landing page needs in a single round-trip.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LandingPayload {
+    /// The workspace summary (always present once workspace is open).
+    pub workspace: WorkspaceSummary,
+    /// Root-level graph nodes (entry points + hot + god nodes).
+    pub nodes: Vec<GraphNode>,
+    /// Edges connecting the root-level nodes.
+    pub edges: Vec<GraphEdge>,
+    /// Top-level entry points for this workspace.
+    pub entry_points: Vec<InspectableObjectSummary>,
+    /// Hot paths for this workspace.
+    pub hot_paths: Vec<InspectableObjectSummary>,
+    /// God nodes (high PageRank symbols).
+    pub god_nodes: Vec<GodNodeEntry>,
+    /// Suggested questions for the ask panel.
+    pub suggested_questions: Vec<String>,
+    /// Current graph status (even when missing/indexing).
+    pub graph_status: GraphStatus,
+}
+
+/// A god node entry — a high PageRank symbol with its score.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GodNodeEntry {
+    pub id: String,
+    pub label: String,
+    pub score: f64,
+}
+
+// ============================================================================
 // Contextual Graph — visualization-stack Phase 2 (Contextual Views)
 // ============================================================================
 //

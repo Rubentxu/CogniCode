@@ -11,8 +11,8 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::dto::{
-    GenerateArtifactRequest, OpenWorkspaceRequest, SaveExplorationRequest,
-    SaveExplorationSessionRequest,
+    GenerateArtifactRequest, GodNodeEntry, LandingPayload, OpenWorkspaceRequest,
+    SaveExplorationRequest, SaveExplorationSessionRequest,
 };
 use crate::error::ExplorerError;
 use crate::facades::{
@@ -435,6 +435,7 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/api/workspaces/:workspace_id/spotter", get(spotter))
         .route("/api/workspaces/:workspace_id/scan", post(index_workspace))
         .route("/api/workspaces/:workspace_id/graph/stats", get(graph_stats_handler))
+        .route("/api/workspaces/:workspace_id/landing", get(landing_handler))
         .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
         .route("/api/objects/:object_id/views", get(available_views))
@@ -475,6 +476,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/workspaces/:workspace_id/spotter", get(spotter))
         .route("/api/workspaces/:workspace_id/scan", post(index_workspace))
         .route("/api/workspaces/:workspace_id/graph/stats", get(graph_stats_handler))
+        .route("/api/workspaces/:workspace_id/landing", get(landing_handler))
         .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
         .route("/api/objects/:object_id/views", get(available_views))
@@ -601,6 +603,63 @@ async fn graph_stats_handler(
 
     let stats = ingest.graph_stats(&workspace_id).await;
     Ok(Json(stats).into_response())
+}
+
+/// Handler for `GET /api/workspaces/:workspace_id/landing`.
+///
+/// Returns a `LandingPayload` with workspace summary, graph nodes/edges,
+/// entry points, hot paths, god nodes, and suggested questions.
+///
+/// The endpoint always returns 200 with `graph_status` populated — even
+/// when the graph is missing or still indexing (no 503).
+async fn landing_handler(
+    State(state): State<ApiState>,
+    Path(workspace_id): Path<String>,
+) -> Result<Response, ApiError> {
+    // Get workspace summary
+    let workspace = state
+        .workspace
+        .current_workspace()
+        .map_err(ApiError)?;
+
+    // Get graph stats from ingest controller
+    let (symbol_count, relation_count, graph_status) = if let Some(ingest) = &state.ingest {
+        let stats = ingest.graph_stats(&workspace_id).await;
+        (
+            stats.symbol_count,
+            stats.edge_count,
+            if stats.symbol_count > 0 {
+                crate::dto::GraphStatus::Ready
+            } else {
+                crate::dto::GraphStatus::Missing
+            },
+        )
+    } else {
+        (0, 0, crate::dto::GraphStatus::Missing)
+    };
+
+    // Build the landing payload with empty stubs for now.
+    // TODO: Wire get_entry_points, get_hot_paths, graph_insights from the
+    // analysis service once those methods are available on a facade.
+    let payload = LandingPayload {
+        workspace: crate::dto::WorkspaceSummary {
+            id: workspace.id.clone(),
+            root_path: workspace.root_path.clone(),
+            graph_status,
+            indexed_at: None,
+            symbol_count,
+            relation_count,
+        },
+        nodes: Vec::new(),
+        edges: Vec::new(),
+        entry_points: Vec::new(),
+        hot_paths: Vec::new(),
+        god_nodes: Vec::new(),
+        suggested_questions: Vec::new(),
+        graph_status,
+    };
+
+    Ok(Json(payload).into_response())
 }
 
 #[derive(Debug, Deserialize)]
