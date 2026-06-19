@@ -14,7 +14,7 @@
 
 # ─── Variables ────────────────────────────────────────────────────────────────
 
-set dotenv-load := true
+set dotenv-load
 set positional-arguments := false
 
 EXPLORER_UI_DIR := "apps/explorer-ui"
@@ -43,7 +43,7 @@ build-server:
 # Build only the Explorer frontend
 build-wasm:
     @echo "🔨 Building Explorer frontend..."
-    cd {{EXPLORER_UI_DIR}} && npm ci && npm run build
+    cd {{ EXPLORER_UI_DIR }} && npm ci && npm run build
 
 # Build in release mode
 build-release: build-server
@@ -52,38 +52,38 @@ build-release: build-server
 clean:
     @echo "🧹 Cleaning..."
     cargo clean
-    rm -rf {{EXPLORER_UI_DIR}}/dist
+    rm -rf {{ EXPLORER_UI_DIR }}/dist
     echo "Cleaned"
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
 
 # Build and start the Explorer API server
 run: stop build-release
-    @echo "🚀 Starting Explorer API on http://localhost:{{PORT}}"
-    @if curl -s --max-time 1 http://localhost:{{PORT}}/health > /dev/null 2>&1; then \
-        echo "❌ Port {{PORT}} still in use. Try: just stop && just run"; exit 1; \
+    @echo "🚀 Starting Explorer API on http://localhost:{{ PORT }}"
+    @if curl -s --max-time 1 http://localhost:{{ PORT }}/health > /dev/null 2>&1; then \
+        echo "❌ Port {{ PORT }} still in use. Try: just stop && just run"; exit 1; \
     fi
     DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
-        ./{{EXPLORER_API_RELEASE}} --listen 127.0.0.1:{{PORT}}
+        ./{{ EXPLORER_API_RELEASE }} --listen 127.0.0.1:{{ PORT }}
 
 # Start server (without rebuilding)
 start: stop
     @echo "🚀 Starting Explorer API (no rebuild)..."
-    @if curl -s --max-time 1 http://localhost:{{PORT}}/health > /dev/null 2>&1; then \
-        echo "❌ Port {{PORT}} still in use. Try: just stop"; exit 1; \
+    @if curl -s --max-time 1 http://localhost:{{ PORT }}/health > /dev/null 2>&1; then \
+        echo "❌ Port {{ PORT }} still in use. Try: just stop"; exit 1; \
     fi
     DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
-        ./{{EXPLORER_API_RELEASE}} --listen 127.0.0.1:{{PORT}}
+        ./{{ EXPLORER_API_RELEASE }} --listen 127.0.0.1:{{ PORT }}
 
 # Run in dev mode — one command to start everything: PG + API + Frontend
 dev:
     #!/usr/bin/env bash
     set -euo pipefail
-    ROOT="$(cd "$(dirname "{{justfile()}}")" && pwd)"
-    API_BIN="$ROOT/{{EXPLORER_API_RELEASE}}"
-    UI_DIR="$ROOT/{{EXPLORER_UI_DIR}}"
-    API_PORT="{{EXPLORER_API_PORT}}"
-    UI_PORT="{{EXPLORER_PORT}}"
+    ROOT="$(cd "$(dirname "{{ justfile() }}")" && pwd)"
+    API_BIN="$ROOT/{{ EXPLORER_API_RELEASE }}"
+    UI_DIR="$ROOT/{{ EXPLORER_UI_DIR }}"
+    API_PORT="{{ EXPLORER_API_PORT }}"
+    UI_PORT="{{ EXPLORER_PORT }}"
 
     echo "═══════════════════════════════════════════════════════"
     echo "  CogniCode — Dev Mode"
@@ -180,24 +180,24 @@ test: test-unit test-e2e
 
 # Run all unit tests
 test-unit:
-	@echo "🧪 Running unit tests..."
-	cargo test --workspace --no-fail-fast
+    @echo "🧪 Running unit tests..."
+    cargo test --workspace --no-fail-fast
 
 # Run unit tests with PostgreSQL backend
 test-pg:
-	@echo "🧪 Running unit tests (with PG)..."
-	TEST_DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode_TEST \
-		cargo test --workspace --no-fail-fast --features postgres
+    @echo "🧪 Running unit tests (with PG)..."
+    TEST_DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode_TEST \
+    	cargo test --workspace --no-fail-fast --features postgres
 
 # Run ignored tests (flaky, slow, requires external tools)
 test-ignored:
-	@echo "🧪 Running ignored tests (single-threaded)..."
-	cargo test --workspace -- --include-ignored --test-threads=1 || \
-	cargo test --workspace -- --ignored --test-threads=1
+    @echo "🧪 Running ignored tests (single-threaded)..."
+    cargo test --workspace -- --include-ignored --test-threads=1 || \
+    cargo test --workspace -- --ignored --test-threads=1
 
 # Run unit tests for a specific crate
 test-crate crate:
-	cargo test -p {{crate}} --no-fail-fast
+    cargo test -p {{ crate }} --no-fail-fast
 
 # Run end-to-end tests with Playwright
 test-e2e: start-server
@@ -211,12 +211,12 @@ test-e2e-quick:
 
 # Start server for tests
 start-server:
-    @if curl -s --max-time 2 http://localhost:{{PORT}}/health > /dev/null 2>&1; then \
+    @if curl -s --max-time 2 http://localhost:{{ PORT }}/health > /dev/null 2>&1; then \
         echo "🔄 Server already running"; \
     else \
         echo "🔄 Starting server..."; \
         DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
-            nohup ./{{EXPLORER_API_RELEASE}} --listen 127.0.0.1:{{PORT}} > /tmp/cognicode-server.log 2>&1 & \
+            nohup ./{{ EXPLORER_API_RELEASE }} --listen 127.0.0.1:{{ PORT }} > /tmp/cognicode-server.log 2>&1 & \
         sleep 2; \
         echo "Server started"; \
     fi
@@ -241,37 +241,37 @@ test-report:
 
 # Test API health endpoint
 api-health:
-    @curl -s http://localhost:{{PORT}}/health
+    @curl -s http://localhost:{{ PORT }}/health
 
 # Register a project via API
 api-register project_path project_name="":
     @echo "📋 Registering project..."
-    @test -n "{{project_name}}" && NAME="{{project_name}}" || NAME="$$(basename {{project_path}})"
-    curl -s -X POST http://localhost:{{PORT}}/api/projects/register \
+    @test -n "{{ project_name }}" && NAME="{{ project_name }}" || NAME="$$(basename {{ project_path }})"
+    curl -s -X POST http://localhost:{{ PORT }}/api/projects/register \
         -H "Content-Type: application/json" \
-        -d "{\"name\": \"$$NAME\", \"path\": \"{{project_path}}\"}" | python3 -m json.tool
+        -d "{\"name\": \"$$NAME\", \"path\": \"{{ project_path }}\"}" | python3 -m json.tool
 
 # List projects via API
 api-projects:
-    @curl -s http://localhost:{{PORT}}/api/projects | python3 -m json.tool
+    @curl -s http://localhost:{{ PORT }}/api/projects | python3 -m json.tool
 
 # Run analysis via API
 api-analyze project_path:
     @echo "🔍 Running analysis..."
-    curl -s -X POST http://localhost:{{PORT}}/api/analysis \
+    curl -s -X POST http://localhost:{{ PORT }}/api/analysis \
         -H "Content-Type: application/json" \
-        -d "{\"project_path\": \"{{project_path}}\", \"quick\": true, \"changed_only\": true}" | python3 -m json.tool
+        -d "{\"project_path\": \"{{ project_path }}\", \"quick\": true, \"changed_only\": true}" | python3 -m json.tool
 
 # Validate project path
 api-validate project_path:
-    curl -s -X POST http://localhost:{{PORT}}/api/validate-path \
+    curl -s -X POST http://localhost:{{ PORT }}/api/validate-path \
         -H "Content-Type: application/json" \
-        -d "{\"project_path\": \"{{project_path}}\"}" | python3 -m json.tool
+        -d "{\"project_path\": \"{{ project_path }}\"}" | python3 -m json.tool
 
 # Get project history
 api-history project_path:
-    @ENCODED=$$(echo -n "{{project_path}}" | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=''))") && \
-     curl -s "http://localhost:{{PORT}}/api/projects/$$ENCODED/history" | python3 -m json.tool
+    @ENCODED=$$(echo -n "{{ project_path }}" | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=''))") && \
+     curl -s "http://localhost:{{ PORT }}/api/projects/$$ENCODED/history" | python3 -m json.tool
 
 # ─── Docs ──────────────────────────────────────────────────────────────────────
 
@@ -296,7 +296,7 @@ docker-build:
 # Run Docker container
 docker-run:
     @echo "🐳 Running Docker container..."
-    docker run -p {{PORT}}:{{PORT}} cognicode-explorer
+    docker run -p {{ PORT }}:{{ PORT }} cognicode-explorer
 
 # ─── Git ───────────────────────────────────────────────────────────────────────
 
@@ -304,7 +304,7 @@ docker-run:
 commit msg:
     @echo "💾 Committing..."
     git add -A
-    git commit -m "{{msg}}"
+    git commit -m "{{ msg }}"
     git push
 
 # Push current branch
@@ -317,18 +317,18 @@ push:
 status:
     @echo "📊 Project Status"
     @echo "================"
-    @echo "Explorer:   http://localhost:{{EXPLORER_PORT}}"
-    @echo "API:        http://localhost:{{PORT}}"
-    @echo "Health:     http://localhost:{{PORT}}/health"
+    @echo "Explorer:   http://localhost:{{ EXPLORER_PORT }}"
+    @echo "API:        http://localhost:{{ PORT }}"
+    @echo "Health:     http://localhost:{{ PORT }}/health"
     @echo "Server PID: $$(pgrep -f explorer-api | head -1 || echo 'not running')"
     @echo ""
 
 # Stop the server
 stop:
     @echo "🛑 Stopping server..."
-    @fuser -k {{PORT}}/tcp 2>/dev/null || true
+    @fuser -k {{ PORT }}/tcp 2>/dev/null || true
     @sleep 1
-    @echo "✅ Port {{PORT}} freed"
+    @echo "✅ Port {{ PORT }} freed"
 
 # Install dependencies
 install:
@@ -345,15 +345,15 @@ watch-server:
 # Open dashboard in browser
 open:
     @echo "🌐 Opening Explorer..."
-    @xdg-open http://localhost:{{EXPLORER_PORT}} 2>/dev/null || \
-     open http://localhost:{{EXPLORER_PORT}} 2>/dev/null || \
-     echo "Open http://localhost:{{EXPLORER_PORT}} in your browser"
+    @xdg-open http://localhost:{{ EXPLORER_PORT }} 2>/dev/null || \
+     open http://localhost:{{ EXPLORER_PORT }} 2>/dev/null || \
+     echo "Open http://localhost:{{ EXPLORER_PORT }} in your browser"
 
 # Full setup from scratch
 setup: install build
     @echo "✅ Setup complete!"
     @echo "Run 'just run' to start the Explorer API."
-    @echo "Then visit http://localhost:{{EXPLORER_PORT}}"
+    @echo "Then visit http://localhost:{{ EXPLORER_PORT }}"
 
 # ============================================================================
 # Explorer UI (React + TypeScript)
@@ -367,19 +367,19 @@ explorer-local:
 # Quick start with mock data (no PG, no API needed)
 explorer-mock:
     @echo "🚀 Starting Explorer UI with mock data (no backend)..."
-    cd {{EXPLORER_UI_DIR}} && npm run dev:mock
+    cd {{ EXPLORER_UI_DIR }} && npm run dev:mock
 
 # Stop all Explorer processes
 explorer-stop:
     @echo "🛑 Stopping Explorer..."
-    @fuser -k {{EXPLORER_API_PORT}}/tcp 2>/dev/null || true
-    @fuser -k {{EXPLORER_PORT}}/tcp 2>/dev/null || true
+    @fuser -k {{ EXPLORER_API_PORT }}/tcp 2>/dev/null || true
+    @fuser -k {{ EXPLORER_PORT }}/tcp 2>/dev/null || true
     @echo "✅ Explorer stopped"
 
 # Dev mode: frontend with MSW mocks (no backend needed)
 explorer-dev:
     @echo "🚀 Starting Explorer UI with mock data..."
-    cd {{EXPLORER_UI_DIR}} && npm run dev:mock
+    cd {{ EXPLORER_UI_DIR }} && npm run dev:mock
 
 # Dev mode: frontend + API server (requires built binary)
 explorer-full:
@@ -388,38 +388,38 @@ explorer-full:
     @echo "    just explorer-api"
     @echo ""
     @echo "  Terminal 2 (Frontend with live API):"
-    @echo "    cd {{EXPLORER_UI_DIR}} && npm run dev -- --host 127.0.0.1 --port {{EXPLORER_PORT}}"
+    @echo "    cd {{ EXPLORER_UI_DIR }} && npm run dev -- --host 127.0.0.1 --port {{ EXPLORER_PORT }}"
     @echo ""
-    @echo "  Frontend: http://127.0.0.1:{{EXPLORER_PORT}}"
-    @echo "  API:      http://127.0.0.1:{{EXPLORER_API_PORT}}"
+    @echo "  Frontend: http://127.0.0.1:{{ EXPLORER_PORT }}"
+    @echo "  API:      http://127.0.0.1:{{ EXPLORER_API_PORT }}"
 
 # Build and start the Explorer API server
 explorer-api:
     @echo "🔨 Building Explorer API..."
     cargo build -p cognicode-runtime --bin explorer-api --release
-    @echo "🚀 Starting Explorer API on http://127.0.0.1:{{EXPLORER_API_PORT}}..."
+    @echo "🚀 Starting Explorer API on http://127.0.0.1:{{ EXPLORER_API_PORT }}..."
     DATABASE_URL=postgres://cognicode:cognicode@localhost:5432/cognicode \
-        cargo run -p cognicode-runtime --bin explorer-api --release -- --listen 127.0.0.1:{{EXPLORER_API_PORT}}
+        cargo run -p cognicode-runtime --bin explorer-api --release -- --listen 127.0.0.1:{{ EXPLORER_API_PORT }}
 
 # Build Explorer frontend for production
 explorer-build:
     @echo "📦 Building Explorer UI..."
-    cd {{EXPLORER_UI_DIR}} && npm ci && npm run build
+    cd {{ EXPLORER_UI_DIR }} && npm ci && npm run build
 
 # Run Explorer unit tests
 explorer-test:
     @echo "🧪 Running Explorer UI tests..."
-    cd {{EXPLORER_UI_DIR}} && npm test
+    cd {{ EXPLORER_UI_DIR }} && npm test
 
 # Run Explorer E2E tests
 explorer-e2e:
     @echo "🎭 Running Explorer E2E tests..."
-    cd {{EXPLORER_UI_DIR}} && npm run test:e2e
+    cd {{ EXPLORER_UI_DIR }} && npm run test:e2e
 
 # Run Explorer lint
 explorer-lint:
     @echo "🔍 Linting Explorer UI..."
-    cd {{EXPLORER_UI_DIR}} && npm run lint
+    cd {{ EXPLORER_UI_DIR }} && npm run lint
 
 # Explorer: run all checks (lint + unit + e2e)
 explorer-check: explorer-lint explorer-test explorer-e2e
@@ -560,8 +560,8 @@ sandbox-run manifests:
     #!/usr/bin/env bash
     set -e
     export DATABASE_URL="postgres://cognicode:cognicode@localhost:5432/cognicode"
-    echo "=== Running sandbox: {{manifests}} ==="
-    cargo run -p cognicode-sandbox -- run {{manifests}}
+    echo "=== Running sandbox: {{ manifests }} ==="
+    cargo run -p cognicode-sandbox -- run {{ manifests }}
 
 # Generate HTML smoke test report from the latest per-run campaign
 # Falls back to the historical aggregate if no campaign exists
@@ -576,25 +576,25 @@ sandbox-report-html output="/tmp/cognicode-smoke-report.html":
         RESULTS_DIR="sandbox/results"
         echo "📊 No campaign found, using historical aggregate from sandbox/results/"
     fi
-    python3 sandbox/scripts/generate_html_report.py --results-dir "$RESULTS_DIR" --output "{{output}}"
-    echo "✅ Report: {{output}}"
-    xdg-open "{{output}}" 2>/dev/null || open "{{output}}" 2>/dev/null || echo "Open: {{output}}"
+    python3 sandbox/scripts/generate_html_report.py --results-dir "$RESULTS_DIR" --output "{{ output }}"
+    echo "✅ Report: {{ output }}"
+    xdg-open "{{ output }}" 2>/dev/null || open "{{ output }}" 2>/dev/null || echo "Open: {{ output }}"
 
 # Run a per-run campaign: isolated results dir + per-run report
 # Each invocation gets a unique run-id under sandbox/results-runs/
 sandbox-run-campaign manifests:
     #!/usr/bin/env bash
-    bash sandbox/scripts/run_campaign.sh {{manifests}}
+    bash sandbox/scripts/run_campaign.sh {{ manifests }}
 
 # Run stability / repeat testing: executes the same manifests N times and produces
 # stability.json with flakiness analysis.
 # Usage: just sandbox-stability <manifest-path> [repeat-count]
 # Example: just sandbox-stability sandbox/manifests/tier_c_lua.yaml 3
-sandbox-stability manifests repeat=3:
+sandbox-stability manifests repeat="3":
     #!/usr/bin/env bash
     set -euo pipefail
-    echo "=== Stability run: {{manifests}} x {{repeat}} repeats ==="
-    bash sandbox/scripts/run_campaign.sh --repeat {{repeat}} {{manifests}}
+    echo "=== Stability run: {{ manifests }} x {{ repeat }} repeats ==="
+    bash sandbox/scripts/run_campaign.sh --repeat {{ repeat }} {{ manifests }}
     echo "✅ Stability analysis complete"
     echo "   Report: sandbox/results-runs/<run-id>/report.html"
     echo "   Stability: sandbox/results-runs/<run-id>/stability.json"
@@ -603,8 +603,8 @@ sandbox-stability manifests repeat=3:
 sandbox-plan manifests:
     #!/usr/bin/env bash
     export DATABASE_URL="postgres://cognicode:cognicode@localhost:5432/cognicode"
-    echo "=== Sandbox plan: {{manifests}} ==="
-    cargo run -p cognicode-sandbox -- run {{manifests}} --dry-run 2>&1 | head -50
+    echo "=== Sandbox plan: {{ manifests }} ==="
+    cargo run -p cognicode-sandbox -- run {{ manifests }} --dry-run 2>&1 | head -50
 
 # Show sandbox results summary
 sandbox-results:
@@ -624,4 +624,3 @@ sandbox-results:
     else
         echo "No results found"
     fi
-
