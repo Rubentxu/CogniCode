@@ -2,12 +2,16 @@
 # run_campaign.sh — Ejecutar una corrida per-run con reporte HTML aislado
 #
 # Uso:
-#   bash sandbox/scripts/run_campaign.sh [-j N] <manifest-path>...
+#   bash sandbox/scripts/run_campaign.sh [-j N] [--repeat N] <manifest-path>...
 #
 # -j N: ejecuta N manifests en paralelo (default: 1)
+# --repeat N: ejecuta N veces la misma campaign y genera stability.json (default: 1)
 #
-# Crea un directorio sandbox/results-runs/<run-id>/ con los resultados
+# Sin --repeat: crea un directorio sandbox/results-runs/<run-id>/ con los resultados
 # y el reporte HTML. No contamina sandbox/results/ con corridas nuevas.
+#
+# Con --repeat N (N > 1): ejecuta N repeticiones en sandbox/results-runs/<run-id>/run-{1..N}/
+# y genera stability.json en el directorio padre.
 
 set -euo pipefail
 
@@ -160,134 +164,232 @@ JSON
     # Lua
 fi
 
-# Parse parallel flag
+# ── Parse flags ──
 JOBS=1
+REPEAT=1
 MANIFESTS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         -j) JOBS="$2"; shift 2 ;;
         -j?*) JOBS="${1#-j}"; shift ;;
+        --repeat) REPEAT="$2"; shift 2 ;;
+        --repeat=*) REPEAT="${1#--repeat=}"; shift ;;
         *) MANIFESTS+=("$1"); shift ;;
     esac
 done
 
 # Validate
 if [ ${#MANIFESTS[@]} -eq 0 ]; then
-    echo "Uso: $0 [-j N] <manifest-path>..."
+    echo "Uso: $0 [-j N] [--repeat N] <manifest-path>..."
     echo ""
     echo "Ejemplo:"
     echo "  $0 -j 4 sandbox/manifests/tier_b_*.yaml"
+    echo "  $0 --repeat 3 sandbox/manifests/tier_c_lua.yaml"
     exit 1
 fi
 
 if [ "$JOBS" -lt 1 ]; then
     JOBS=1
 fi
+if [ "$REPEAT" -lt 1 ]; then
+    REPEAT=1
+fi
 
 # Run ID = timestamp UTC
 RUN_ID="$(date -u +%Y%m%dT%H%M%S)"
 RUN_DIR="$SANDBOX/results-runs/$RUN_ID"
-mkdir -p "$RUN_DIR"
 
 echo "════════════════════════════════════════════════════════════"
 echo "  Sandbox run: $RUN_ID"
 echo "  Output dir:  $RUN_DIR"
 echo "  Manifests:   ${#MANIFESTS[@]} files"
 echo "  Parallel:    $JOBS workers"
+echo "  Repeat:      $REPEAT"
 echo "════════════════════════════════════════════════════════════"
 
 cd "$ROOT"
 
-# ── Distribute manifests across N workers ──
-# Each worker gets roughly equal manifests
-WORKER_COUNT=$JOBS
-MANIFEST_COUNT=${#MANIFESTS[@]}
-MANIFESTS_PER_WORKER=$(( (MANIFEST_COUNT + WORKER_COUNT - 1) / WORKER_COUNT ))
+# ── Single-repeat path (backward compatible) ──
+if [ "$REPEAT" -eq 1 ]; then
+    mkdir -p "$RUN_DIR"
+    _run_campaign "$RUN_DIR" "$RUN_DIR"
+    exit 0
+fi
 
-PIDS=()
-WORKER_IDS=()
+# ── Multi-repeat path: stability/repeat testing ──
+mkdir -p "$RUN_DIR"
 
-for ((w=0; w<WORKER_COUNT; w++)); do
-    START=$(( w * MANIFESTS_PER_WORKER ))
-    if [ "$START" -ge "$MANIFEST_COUNT" ]; then
-        break
-    fi
-    END=$(( START + MANIFESTS_PER_WORKER ))
-    if [ "$END" -gt "$MANIFEST_COUNT" ]; then
-        END=$MANIFEST_COUNT
-    fi
-    
-    # Build the manifest slice for this worker
-    WORKER_MANIFESTS=("${MANIFESTS[@]:START:END-START}")
-    
-    (
-        # Each worker gets its own subdirectory to avoid mixing
-        WORKER_RUN_DIR="$RUN_DIR/worker-$w"
-        mkdir -p "$WORKER_RUN_DIR"
-        
-        DATABASE_URL="${DATABASE_URL:-postgres://cognicode:cognicode@localhost:5432/cognicode}" \
-        RUST_LOG="${RUST_LOG:-error}" \
-        nice -n 19 \
-        "$ROOT/target/debug/sandbox-orchestrator" run \
-            --results-dir "$WORKER_RUN_DIR" \
-            "${WORKER_MANIFESTS[@]}" \
-            2>&1 | sed "s/^/[worker $w] /"
-    ) &
-    PIDS+=($!)
-    WORKER_IDS+=($w)
-    echo "  Worker $w started: ${WORKER_MANIFESTS[*]}"
+for ((i=1; i<=REPEAT; i++)); do
+    REPEAT_RUN_DIR="$RUN_DIR/run-$i"
+    mkdir -p "$REPEAT_RUN_DIR"
+    echo ""
+    echo "─── Repeat $i of $REPEAT ───"
+    _run_campaign "$REPEAT_RUN_DIR" "$REPEAT_RUN_DIR"
 done
 
+# ── Stability analysis ──
 echo ""
-echo "⏳ Waiting for all workers to complete..."
+echo "─── Stability analysis ──"
+if python3 "$SANDBOX/scripts/analyze_stability.py" "$RUN_DIR"; then
+    echo "  ✅ stability.json written to $RUN_DIR"
+else
+    echo "  ⚠️  stability analysis failed (non-fatal)"
+fi
 
-# Wait for all workers and collect exit codes
-FAILURES=0
-for pid in "${PIDS[@]}"; do
-    wait "$pid" || FAILURES=$((FAILURES + 1))
-done
-
-# ── Merge results: copy worker results into main run dir ──
-# The sandbox stores results as: {scenario_id}/{run_id}/result.json
-# We need to merge them into the root results dir
-for w in "${WORKER_IDS[@]}"; do
-    WORKER_DIR="$RUN_DIR/worker-$w"
-    if [ -d "$WORKER_DIR" ]; then
-        # Move scenario dirs up one level
-        for scenario_dir in "$WORKER_DIR"/*; do
-            if [ -d "$scenario_dir" ]; then
-                scenario_name=$(basename "$scenario_dir")
-                # Skip summary files
-                [ "$scenario_name" = "summary.json" ] && continue
-                [ "$scenario_name" = "run.jsonl" ] && continue
-                # Move into main results dir
-                mkdir -p "$RUN_DIR/$scenario_name"
-                for run_dir in "$scenario_dir"/*/; do
-                    if [ -d "$run_dir" ]; then
-                        cp -r "$run_dir" "$RUN_DIR/$scenario_name/"
-                    fi
-                done
-            fi
-        done
-    fi
-done
-
-# ── Generate a merged summary ──
-cd "$ROOT"
-# Use the parallel-safe sandbox report command to aggregate
-# (this reads all result.json files from the merged dir)
-python3 "$SANDBOX/scripts/generate_html_report.py" \
-    --results-dir "$RUN_DIR" \
-    --output "$RUN_DIR/report.html"
+# ── Append one entry to history ──
+if [ -f "$RUN_DIR/stability.json" ]; then
+    _append_history "$RUN_DIR" "$REPEAT"
+fi
 
 echo ""
 echo "════════════════════════════════════════════════════════════"
 echo "  Campaign complete ($([ $FAILURES -eq 0 ] && echo 'ALL PASS' || echo "$FAILURES WORKER(S) FAILED"))"
 echo "  Report: $RUN_DIR/report.html"
-echo "  Total:  $(find "$RUN_DIR" -name 'result.json' | wc -l) scenarios"
+echo "  Stability: $RUN_DIR/stability.json"
+echo "  Total:  $(find "$RUN_DIR" -name 'result.json' | wc -l) scenarios across $REPEAT repeats"
 echo "════════════════════════════════════════════════════════════"
 
-# Cleanup worker dirs
-for w in "${WORKER_IDS[@]}"; do
-    rm -rf "$RUN_DIR/worker-$w"
-done
+# ─────────────────────────────────────────────────────────────────
+# Internal: run one campaign iteration
+# Arguments:
+#   $1 = results dir passed to orchestrator
+#   $2 = directory whose result.json files feed into the report
+# ─────────────────────────────────────────────────────────────────
+_run_campaign() {
+    local RESULTS_DIR="$1"
+    local REPORT_SOURCE_DIR="$2"
+
+    local WORKER_COUNT=$JOBS
+    local MANIFEST_COUNT=${#MANIFESTS[@]}
+    local MANIFESTS_PER_WORKER=$(( (MANIFEST_COUNT + WORKER_COUNT - 1) / WORKER_COUNT ))
+
+    local PIDS=()
+    local WORKER_IDS=()
+
+    for ((w=0; w<WORKER_COUNT; w++)); do
+        local START=$(( w * MANIFESTS_PER_WORKER ))
+        if [ "$START" -ge "$MANIFEST_COUNT" ]; then
+            break
+        fi
+        local END=$(( START + MANIFESTS_PER_WORKER ))
+        if [ "$END" -gt "$MANIFEST_COUNT" ]; then
+            END=$MANIFEST_COUNT
+        fi
+
+        # Build the manifest slice for this worker
+        local WORKER_MANIFESTS=("${MANIFESTS[@]:START:END-START}")
+
+        (
+            # Each worker gets its own subdirectory to avoid mixing
+            local WORKER_RUN_DIR="$RESULTS_DIR/worker-$w"
+            mkdir -p "$WORKER_RUN_DIR"
+
+            DATABASE_URL="${DATABASE_URL:-postgres://cognicode:cognicode@localhost:5432/cognicode}" \
+            RUST_LOG="${RUST_LOG:-error}" \
+            nice -n 19 \
+            "$ROOT/target/debug/sandbox-orchestrator" run \
+                --results-dir "$WORKER_RUN_DIR" \
+                "${WORKER_MANIFESTS[@]}" \
+                2>&1 | sed "s/^/[worker $w] /"
+        ) &
+        PIDS+=($!)
+        WORKER_IDS+=($w)
+        echo "  Worker $w started: ${WORKER_MANIFESTS[*]}"
+    done
+
+    echo ""
+    echo "⏳ Waiting for all workers to complete..."
+
+    # Wait for all workers and collect exit codes
+    local FAILURES=0
+    for pid in "${PIDS[@]}"; do
+        wait "$pid" || FAILURES=$((FAILURES + 1))
+    done
+
+    # Merge results: copy worker results into main run dir
+    for w in "${WORKER_IDS[@]}"; do
+        local WORKER_DIR="$RESULTS_DIR/worker-$w"
+        if [ -d "$WORKER_DIR" ]; then
+            for scenario_dir in "$WORKER_DIR"/*; do
+                if [ -d "$scenario_dir" ]; then
+                    local scenario_name=$(basename "$scenario_dir")
+                    # Skip summary files
+                    [ "$scenario_name" = "summary.json" ] && continue
+                    [ "$scenario_name" = "run.jsonl" ] && continue
+                    mkdir -p "$RESULTS_DIR/$scenario_name"
+                    for run_dir in "$scenario_dir"/*/; do
+                        if [ -d "$run_dir" ]; then
+                            cp -r "$run_dir" "$RESULTS_DIR/$scenario_name/"
+                        fi
+                    done
+                fi
+            done
+        fi
+    done
+
+    # Generate merged summary (reads from REPORT_SOURCE_DIR)
+    cd "$ROOT"
+    python3 "$SANDBOX/scripts/generate_html_report.py" \
+        --results-dir "$REPORT_SOURCE_DIR" \
+        --output "$RESULTS_DIR/report.html"
+
+    # Cleanup worker dirs
+    for w in "${WORKER_IDS[@]}"; do
+        rm -rf "$RESULTS_DIR/worker-$w"
+    done
+}
+
+# ─────────────────────────────────────────────────────────────────
+# Internal: append one entry to history/runs.jsonl for multi-repeat runs
+# Arguments:
+#   $1 = parent run dir (contains stability.json)
+#   $2 = repeat count
+# ─────────────────────────────────────────────────────────────────
+_append_history() {
+    local RUN_PARENT="$1"
+    local REPEAT_COUNT="$2"
+    local HISTORY_FILE="$SANDBOX/history/runs.jsonl"
+
+    local STABILITY_FILE="$RUN_PARENT/stability.json"
+
+    if [ ! -f "$STABILITY_FILE" ]; then
+        echo "  ⚠️  No stability.json, skipping history append"
+        return
+    fi
+
+    # Extract values from stability.json
+    local TOTAL_SCENARIOS=$(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(d.get('total_scenarios', 0))")
+    local FLAKY_COUNT=$(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(len(d.get('flaky_scenarios', [])))")
+    local AVG_HEALTH=$(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(d.get('health_score', 0))")
+    local AVG_PASS_RATE=$(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(d.get('pass_rate', 0))")
+    local TIMING_P50=$(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(d.get('timing_p50_ms', 0))")
+    local TIMING_P95=$(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(d.get('timing_p95_ms', 0))")
+
+    local TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    python3 -c "
+import json, sys
+entry = {
+    'timestamp': '$TIMESTAMP',
+    'repeat_count': $REPEAT_COUNT,
+    'flaky_scenarios': $FLAKY_COUNT,
+    'health_score': $AVG_HEALTH,
+    'pass_rate': $AVG_PASS_RATE,
+    'total_scenarios': $TOTAL_SCENARIOS,
+    'passed_scenarios': $(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(int(d.get('pass_rate', 0) / 100 * d.get('total_scenarios', 0)))"),
+    'dimensions': {
+        'correctitud': $(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(d.get('by_language', {}))"),
+        'latencia': $TIMING_P50,
+        'escalabilidad': $TIMING_P95,
+        'consistencia': $(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(round(d.get('timing_cv', 1.0) * 100, 2))"),
+        'robustez': $AVG_HEALTH
+    },
+    'timing_p50_ms': $TIMING_P50,
+    'timing_p95_ms': $TIMING_P95,
+    'run_id': '$RUN_ID'
+}
+with open('$HISTORY_FILE', 'a') as f:
+    f.write(json.dumps(entry) + '\n')
+print('  ✅ History entry appended')
+"
+}
