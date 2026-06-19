@@ -207,6 +207,12 @@ echo "  Parallel:    $JOBS workers"
 echo "  Repeat:      $REPEAT"
 echo "════════════════════════════════════════════════════════════"
 
+# ─────────────────────────────────────────────────────────────────
+# Internal: run one campaign iteration
+# Arguments:
+#   $1 = results dir passed to orchestrator
+#   $2 = directory whose result.json files feed into the report
+# ─────────────────────────────────────────────────────────────────
 _run_campaign() {
     local RESULTS_DIR="$1"
     local REPORT_SOURCE_DIR="$2"
@@ -291,6 +297,12 @@ _run_campaign() {
     done
 }
 
+# ─────────────────────────────────────────────────────────────────
+# Internal: append one entry to history/runs.jsonl for multi-repeat runs
+# Arguments:
+#   $1 = parent run dir (contains stability.json)
+#   $2 = repeat count
+# ─────────────────────────────────────────────────────────────────
 _append_history() {
     local RUN_PARENT="$1"
     local REPEAT_COUNT="$2"
@@ -340,6 +352,13 @@ entry = {
     "timing_p95_ms": st.get("timing_p95_ms", 0),
     "run_id": run_id,
     "orchestrator_version": "0.5.0"
+}
+
+with open(history_path, "a") as f:
+    f.write(json.dumps(entry) + "\n")
+
+print("  ✅ History entry appended")
+PYEOF
 }
 
 cd "$ROOT"
@@ -396,24 +415,3 @@ echo "  Report: $RUN_DIR/report.html"
 echo "  Stability: $RUN_DIR/stability.json"
 echo "  Total:  $(find "$RUN_DIR" -name 'result.json' | wc -l) scenarios across $REPEAT repeats"
 echo "════════════════════════════════════════════════════════════"
-
-# ─────────────────────────────────────────────────────────────────
-# Internal: run one campaign iteration
-# Arguments:
-#   $1 = results dir passed to orchestrator
-#   $2 = directory whose result.json files feed into the report
-# ─────────────────────────────────────────────────────────────────
-
-# ─────────────────────────────────────────────────────────────────
-# Internal: append one entry to history/runs.jsonl for multi-repeat runs
-# Arguments:
-#   $1 = parent run dir (contains stability.json)
-#   $2 = repeat count
-# ─────────────────────────────────────────────────────────────────
-
-with open(history_path, "a") as f:
-    f.write(json.dumps(entry) + "\n")
-
-print("  ✅ History entry appended")
-PYEOF
-}
