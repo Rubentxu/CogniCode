@@ -76,6 +76,37 @@ The Explorer follows gtoolkit's philosophy: objects are inspected through
 multiple moldable views, navigation is lateral (not hierarchical), and the user
 builds understanding by composing perspectives — not by navigating a file tree.
 
+### 7. Root node display follows Graphify's visual density model
+
+The graph landing does not dump 500 root nodes as a flat list. It uses smart
+visual density: clustering, progressive disclosure, and visual hierarchy to
+reveal structure without overwhelming. The full set of root nodes is available
+but visually managed — the user sees the shape of the system first, then drills
+into specific areas.
+
+### 8. C4 inference uses heuristics from cognicode-core's existing features
+
+C4 structure is inferred automatically from what the backend already parses:
+- **Containers**: from `Cargo.toml`, `package.json`, `pyproject.toml` (already
+  parsed by tree-sitter + config parsers)
+- **Components**: from directory structure and module boundaries (already
+  available via `GraphQueryPort`)
+- **Code elements**: from symbols and edges (already in `CallGraph`)
+
+No separate declarative architecture file is required. The inference pipeline
+uses heuristics over existing data, not manual configuration.
+
+### 9. Node click shows navigability preview before opening full pane
+
+Clicking a node in the graph does **not** immediately open a full pane-stack
+entry. Instead, a small navigability interface appears (mini-preview showing
+the node's links, callers, callees, and available views). From that preview,
+the user can choose to expand into a full pane-stack pane.
+
+This follows gtoolkit's pattern: hover/preview first, commit to a full
+inspection pane second. It prevents accidental pane proliferation and gives
+the user a lightweight way to decide whether a node is worth a deeper dive.
+
 ## Evolution order
 
 1. Consolidate view model — `rendererRegistry` becomes the real render pipeline
