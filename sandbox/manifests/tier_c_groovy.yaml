@@ -1,0 +1,39 @@
+version: '1.0'
+language: groovy
+tier: C
+description: Tier C parser smoke tests for groovy
+timeout_seconds: 60
+validation:
+  failure_is_regression: false
+  stages: []
+scenarios:
+- name: tierc_groovy_build_graph
+  description: Build graph from groovy fixture (Tier C)
+  tool: build_graph
+  action: build
+  workspace: /var/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/tier-c
+  language: groovy
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    directory: .
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 15000
+- name: tierc_groovy_file_symbols
+  description: Extract symbols from groovy file
+  tool: get_file_symbols
+  action: extract
+  workspace: /var/home/rubentxu/Proyectos/rust/CogniCode/sandbox/fixtures/tier-c
+  language: groovy
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    file_path: Main.groovy
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 5000
