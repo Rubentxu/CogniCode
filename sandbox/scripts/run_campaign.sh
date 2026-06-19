@@ -21,37 +21,143 @@ TIERC_DIR="$SANDBOX/fixtures/tierc"
 if [ ! -f "$TIERC_DIR/main.lua" ]; then
     echo "  [SETUP] Creating Tier C synthetic fixtures..."
     mkdir -p "$TIERC_DIR"
-    # Lua
-    printf '-- Lua test fixture\nfunction greet(name)\n    return "Hello, " .. name\nend\nlocal function compute(x)\n    return x * 2\nend\nfunction main()\n    local result = compute(42)\n    print(greet("world"))\n    return result\nend\nmain()\n' > "$TIERC_DIR/main.lua"
-    # Zig
-    printf '// Zig test fixture\nconst std = @import("std");\n\nfn compute(x: i32) i32 {\n    return x * 2;\n}\n\nfn greet(name: []const u8) !void {\n    const stdout = std.io.getStdOut().writer();\n    try stdout.print("Hello, {s}\\n", .{name});\n}\n\npub fn main() !void {\n    const result = compute(42);\n    try greet("world");\n    _ = result;\n}\n' > "$TIERC_DIR/main.zig"
-    # Dart
-    printf '// Dart test fixture\nint compute(int x) {\n  return x * 2;\n}\n\nvoid greet(String name) {\n  print("Hello, $name");\n}\n\nvoid main() {\n  var result = compute(42);\n  greet("world");\n  print(result);\n}\n' > "$TIERC_DIR/main.dart"
-    # Haskell
-    printf '-- Haskell test fixture\nmodule Main where\n\ncompute :: Int -> Int\ncompute x = x * 2\n\ngreet :: String -> IO ()\ngreet name = putStrLn ("Hello, " ++ name)\n\nmain :: IO ()\nmain = do\n    let result = compute 42\n    greet "world"\n    print result\n' > "$TIERC_DIR/Main.hs"
-    # Julia
-    printf '# Julia test fixture\nfunction compute(x)\n    return x * 2\nend\n\nfunction greet(name)\n    println("Hello, ", name)\nend\n\nfunction main()\n    result = compute(42)\n    greet("world")\n    println(result)\nend\n\nmain()\n' > "$TIERC_DIR/main.jl"
-    # Scala
-    printf '// Scala test fixture\nobject Main {\n  def compute(x: Int): Int = x * 2\n\n  def greet(name: String): Unit = println(s"Hello, $name")\n\n  def main(args: Array[String]): Unit = {\n    val result = compute(42)\n    greet("world")\n    println(result)\n  }\n}\n' > "$TIERC_DIR/Main.scala"
-    # Groovy
-    printf '// Groovy test fixture\ndef compute(x) {\n    x * 2\n}\n\ndef greet(name) {\n    println "Hello, $name"\n}\n\ndef main() {\n    def result = compute(42)\n    greet("world")\n    println result\n}\n\nmain()\n' > "$TIERC_DIR/Main.groovy"
-    # Erlang
-    printf '%% Erlang test fixture\n-module(main).\n-export([main/0]).\n\ncompute(X) -> X * 2.\n\ngreet(Name) -> io:format("Hello, ~s~n", [Name]).\n\nmain() ->\n    Result = compute(42),\n    greet("world"),\n    io:format("~p~n", [Result]).\n' > "$TIERC_DIR/main.erl"
-    # Bash
-    printf '#!/usr/bin/env bash\n# Bash test fixture\n\ncompute() {\n    echo $(( $1 * 2 ))\n}\n\ngreet() {\n    echo "Hello, $1"\n}\n\nmain() {\n    local result\n    result=$(compute 42)\n    greet "world"\n    echo "$result"\n}\n\nmain\n' > "$TIERC_DIR/script.sh"
-    # R
-    printf '# R test fixture\ncompute <- function(x) { x * 2 }\ngreet <- function(name) { cat("Hello, ", name, "\\n") }\nmain <- function() { result <- compute(42); greet("world"); cat(result, "\\n") }\nmain()\n' > "$TIERC_DIR/main.R"
-    # PowerShell
-    printf '# PowerShell test fixture\nfunction Compute($x) { return $x * 2 }\nfunction Greet($name) { Write-Output "Hello, $name" }\n$result = Compute(42)\nGreet("world")\nWrite-Output $result\n' > "$TIERC_DIR/script.ps1"
-    # Fortran
-    printf '! Fortran test fixture\nprogram main\n    implicit none\n    integer :: result\n    result = compute(42)\n    call greet("world")\n    print *, result\ncontains\n    integer function compute(x)\n        integer, intent(in) :: x\n        compute = x * 2\n    end function compute\n    subroutine greet(name)\n        character(len=*), intent(in) :: name\n        print *, "Hello, ", name\n    end subroutine greet\nend program main\n' > "$TIERC_DIR/main.f90"
-    # Verilog
-    printf '// Verilog test fixture\nmodule main;\n    integer result;\n\n    function integer compute;\n        input integer x;\n        begin\n            compute = x * 2;\n        end\n    endfunction\n\n    initial begin\n        result = compute(42);\n        $display("Result: %0d", result);\n    end\nendmodule\n' > "$TIERC_DIR/main.v"
-    # SystemVerilog
-    printf '// SystemVerilog test fixture\nmodule main;\n    int result;\n\n    function int compute(int x);\n        return x * 2;\n    endfunction\n\n    initial begin\n        result = compute(42);\n        $display("Result: %0d", result);\n    end\nendmodule\n' > "$TIERC_DIR/main.sv"
-    # JSON
-    printf '{\n  "name": "test",\n  "version": "1.0",\n  "dependencies": {\n    "compute": 42\n  }\n}\n' > "$TIERC_DIR/data.json"
+    cat > "$TIERC_DIR/main.lua" << 'LUA'
+-- Lua test fixture
+function greet(name)
+    return "Hello, " .. name
+end
+local function compute(x)
+    return x * 2
+end
+function main()
+    local result = compute(42)
+    print(greet("world"))
+    return result
+end
+main()
+LUA
+    cat > "$TIERC_DIR/main.zig" << 'ZIG'
+// Zig test fixture
+const std = @import("std");
+fn compute(x: i32) i32 { return x * 2; }
+fn greet(name: []const u8) !void {
+    const stdout = std.io.getStdOut().writer();
+    try stdout.print("Hello, {s}\n", .{name});
+}
+pub fn main() !void {
+    const result = compute(42);
+    try greet("world");
+    _ = result;
+}
+ZIG
+    cat > "$TIERC_DIR/main.dart" << 'DART'
+// Dart test fixture
+int compute(int x) { return x * 2; }
+void greet(String name) { print("Hello, $name"); }
+void main() { var result = compute(42); greet("world"); print(result); }
+DART
+    cat > "$TIERC_DIR/Main.hs" << 'HASKELL'
+-- Haskell test fixture
+module Main where
+compute :: Int -> Int
+compute x = x * 2
+greet :: String -> IO ()
+greet name = putStrLn ("Hello, " ++ name)
+main :: IO ()
+main = do let result = compute 42; greet "world"; print result
+HASKELL
+    cat > "$TIERC_DIR/main.jl" << 'JULIA'
+# Julia test fixture
+function compute(x) return x * 2 end
+function greet(name) println("Hello, ", name) end
+function main() result = compute(42); greet("world"); println(result) end
+main()
+JULIA
+    cat > "$TIERC_DIR/Main.scala" << 'SCALA'
+// Scala test fixture
+object Main {
+  def compute(x: Int): Int = x * 2
+  def greet(name: String): Unit = println(s"Hello, $name")
+  def main(args: Array[String]): Unit = { val result = compute(42); greet("world"); println(result) }
+}
+SCALA
+    cat > "$TIERC_DIR/Main.groovy" << 'GROOVY'
+// Groovy test fixture
+def compute(x) { x * 2 }
+def greet(name) { println "Hello, $name" }
+def main() { def result = compute(42); greet("world"); println result }
+main()
+GROOVY
+    cat > "$TIERC_DIR/main.erl" << 'ERLANG'
+%% Erlang test fixture
+-module(main).
+-export([main/0]).
+compute(X) -> X * 2.
+greet(Name) -> io:format("Hello, ~s~n", [Name]).
+main() -> Result = compute(42), greet("world"), io:format("~p~n", [Result]).
+ERLANG
+    cat > "$TIERC_DIR/script.sh" << 'BASH'
+#!/usr/bin/env bash
+compute() { echo $(( $1 * 2 )); }
+greet() { echo "Hello, $1"; }
+main() { local result; result=$(compute 42); greet "world"; echo "$result"; }
+main
+BASH
+    cat > "$TIERC_DIR/main.R" << 'RSCRIPT'
+# R test fixture
+compute <- function(x) x * 2
+greet <- function(name) cat("Hello, ", name, "\n")
+main <- function() { result <- compute(42); greet("world"); cat(result, "\n") }
+main()
+RSCRIPT
+    cat > "$TIERC_DIR/script.ps1" << 'PS'
+# PowerShell test fixture
+$result = 42 * 2
+Write-Output "Hello, world"
+Write-Output $result
+PS
+    cat > "$TIERC_DIR/main.f90" << 'F90'
+! Fortran test fixture
+program main
+integer :: result
+result = compute(42)
+call greet("world")
+print *, result
+contains
+integer function compute(x)
+integer, intent(in) :: x
+compute = x * 2
+end function compute
+subroutine greet(name)
+character(len=*), intent(in) :: name
+print *, "Hello, ", name
+end subroutine greet
+end program main
+F90
+    cat > "$TIERC_DIR/main.v" << 'VERILOG'
+// Verilog test fixture
+module main;
+integer result;
+function integer compute;
+input integer x;
+begin compute = x * 2; end
+endfunction
+initial begin result = compute(42); $display("Result: %0d", result); end
+endmodule
+VERILOG
+    cat > "$TIERC_DIR/main.sv" << 'SYSV'
+// SystemVerilog test fixture
+module main;
+int result;
+function int compute(int x); return x * 2; endfunction
+initial begin result = compute(42); $display("Result: %0d", result); end
+endmodule
+SYSV
+    cat > "$TIERC_DIR/data.json" << 'JSON'
+{"name": "test", "version": "1.0", "dependencies": {"compute": 42}}
+JSON
     echo "  [SETUP] Created 15 Tier C fixtures in $TIERC_DIR"
+    # Lua
 fi
 
 # Parse parallel flag
