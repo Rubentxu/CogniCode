@@ -22,9 +22,6 @@ CREATE TABLE IF NOT EXISTS symbols (
     complexity  INTEGER
 );
 
-CREATE INDEX IF NOT EXISTS idx_pg_symbols_name ON symbols(name);
-CREATE INDEX IF NOT EXISTS idx_pg_symbols_file ON symbols(file_path);
-
 -- Call edges between symbols. Column-for-column parity with the
 -- SQLite v2 `call_edges` table: `caller_id`, `caller_name`,
 -- `callee_id`, `callee_name`, `dependency_type`, `provenance`,
@@ -45,8 +42,6 @@ CREATE TABLE IF NOT EXISTS call_edges (
     confidence      REAL NOT NULL DEFAULT 1.0
 );
 
-CREATE INDEX IF NOT EXISTS idx_pg_call_edges_caller ON call_edges(caller_id);
-CREATE INDEX IF NOT EXISTS idx_pg_call_edges_callee ON call_edges(callee_id);
 
 -- Named views: user-saved projections of the graph, addressed by
 -- `(workspace_id, owner, name)`. The unique index prevents two
