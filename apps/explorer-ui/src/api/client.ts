@@ -523,3 +523,20 @@ export async function fetchLanding(
     schemas.landingPayloadSchema,
   );
 }
+
+// Architecture View — E5 ADR-039 (Perspective Toggle Graph ↔ C4)
+// ============================================================================
+
+/**
+ * Fetch the C4 component architecture for a workspace.
+ * Returns a SubgraphResponse with component nodes (directories) and
+ * part_of edges reflecting directory hierarchy.
+ */
+export async function fetchArchitecture(
+  workspaceId: string,
+): Promise<import("./types").ArchitecturePayload> {
+  return apiGet(
+    `/workspaces/${encodeURIComponent(workspaceId)}/architecture`,
+    schemas.architecturePayloadSchema,
+  );
+}

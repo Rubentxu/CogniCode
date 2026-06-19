@@ -197,4 +197,63 @@ impl GraphService for GraphServiceImpl {
             corroboration_scores: HashMap::new(),
         })
     }
+
+    async fn build_architecture(&self) -> ExplorerResult<SubgraphResponse> {
+        use std::collections::HashMap;
+
+        let modules = self.symbol_repo.module_list();
+
+        // Each directory becomes a node-component.
+        // Edges: if path is "a/b/c", parent is "a/b".
+        let mut nodes: Vec<GraphNode> = Vec::with_capacity(modules.len());
+        let mut edges: Vec<GraphEdge> = Vec::new();
+
+        // Build parent map for edge creation
+        let parent_of: HashMap<String, Option<String>> = modules
+            .iter()
+            .cloned()
+            .map(|path| {
+                let parent = std::path::Path::new(&path)
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string());
+                (path, parent)
+            })
+            .collect();
+
+        for path in &modules {
+            let label = std::path::Path::new(path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.clone());
+
+            nodes.push(GraphNode {
+                id: format!("component:{}", path),
+                label,
+                kind: "component".to_string(),
+                file: None,
+                line: None,
+                style_class: "node-component".to_string(),
+            });
+
+            if let Some(ref parent) = parent_of[path] {
+                if modules.contains(parent) {
+                    edges.push(GraphEdge {
+                        source: format!("component:{}", path),
+                        target: format!("component:{}", parent),
+                        relation: "part_of".to_string(),
+                        style_class: "edge-part-of".to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(SubgraphResponse {
+            root: "architecture".to_string(),
+            nodes,
+            edges,
+            truncated: false,
+            truncated_reason: None,
+            corroboration_scores: HashMap::new(),
+        })
+    }
 }

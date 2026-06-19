@@ -27,6 +27,7 @@ import {
   rationaleSubgraphFixture,
   smallSubgraphFixture,
 } from "./subgraphFixtures";
+import { architectureFixture } from "./architectureFixtures";
 
 const LATENCY_MS = 8;
 
@@ -318,6 +319,20 @@ export const handlers = [
         ...landingFixture.workspace,
         id: workspaceId,
       },
+    });
+  }),
+
+  // -----------------------------------------------------------------------
+  // Architecture View — E5 ADR-039 (Perspective Toggle Graph ↔ C4)
+  // -----------------------------------------------------------------------
+  http.get("/api/workspaces/:workspace_id/architecture", async ({ params }) => {
+    await delay(LATENCY_MS);
+    const workspaceId = params["workspace_id"] as string | undefined;
+    if (!workspaceId) {
+      return HttpResponse.json({ error: "workspace_id required" }, { status: 400 });
+    }
+    return HttpResponse.json({
+      ...architectureFixture,
     });
   }),
 ];

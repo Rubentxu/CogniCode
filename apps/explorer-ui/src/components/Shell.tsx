@@ -18,6 +18,7 @@ import { useAppDispatch, useAppState } from "../state/context";
 import { HealthProbe } from "./HealthProbe";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { SkipLink } from "./SkipLink";
+import { PerspectiveToggle } from "./PerspectiveToggle";
 import { ScanBar } from "./ScanBar";
 import { Spotter } from "./Spotter";
 import { ShareExplorationButton } from "./ShareExplorationButton";
@@ -124,6 +125,7 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
           </h1>
           <HealthProbe showFullScreenOnError={false} />
           <ScanBar />
+          <PerspectiveToggle />
         </div>
         <div className="flex items-center gap-2">
           <ShareExplorationButton />

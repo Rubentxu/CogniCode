@@ -51,6 +51,11 @@ export type AppState = {
   activeView: ContextualView | null;
   /** Saved explorations the user has minted during the session. */
   explorations: ExplorationPath[];
+  /**
+   * Landing page perspective — graph (entry points) or c4 (component directories).
+   * Toggle only applies when no object is selected (landing view).
+   */
+  perspective: "graph" | "c4";
 };
 
 /**
@@ -88,6 +93,7 @@ export function initialStateWithFocus(
     spotterOpen: false,
     activeView: null,
     explorations: [],
+    perspective: "graph",
   };
 }
 
@@ -114,7 +120,8 @@ export type Action =
   | { type: "TOGGLE_SPOTTER" }
   | { type: "SET_SPOTTER"; payload: { open: boolean } }
   | { type: "ADD_EXPLORATION"; payload: ExplorationPath }
-  | { type: "RESET" };
+  | { type: "RESET" }
+  | { type: "SET_PERSPECTIVE"; payload: "graph" | "c4" };
 
 // ============================================================================
 // Reducer
@@ -132,6 +139,7 @@ export const initialState: AppState = {
   spotterOpen: false,
   activeView: null,
   explorations: [],
+  perspective: "graph",
 };
 
 /**
@@ -169,6 +177,9 @@ export function appReducer(state: AppState, action: Action): AppState {
 
     case "RESET":
       return initialState;
+
+    case "SET_PERSPECTIVE":
+      return { ...state, perspective: action.payload };
 
     default: {
       const _exhaustive: never = action;

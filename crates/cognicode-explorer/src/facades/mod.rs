@@ -69,6 +69,10 @@ pub trait GraphService: Send + Sync {
         direction: SubgraphDirection,
         max_nodes: u32,
     ) -> ExplorerResult<SubgraphResponse>;
+
+    /// Build an architecture view synthesised from `module_list()`.
+    /// C3 components are directories; edges reflect parent-child relationships.
+    async fn build_architecture(&self) -> ExplorerResult<SubgraphResponse>;
 }
 
 // ============================================================================

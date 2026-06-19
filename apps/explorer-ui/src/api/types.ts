@@ -89,6 +89,8 @@ export type {
   // ---- Landing Page (E4 ADR-039) ----
   GodNodeEntry,
   LandingPayload,
+  // ---- Architecture View — E5 ADR-039 ----
+  ArchitecturePayload,
 } from "./schemas";
 
 export {
@@ -145,4 +147,6 @@ export {
   // ---- Landing Page (E4 ADR-039) ----
   godNodeEntrySchema,
   landingPayloadSchema,
+  // ---- Architecture View — E5 ADR-039 ----
+  architecturePayloadSchema,
 } from "./schemas";

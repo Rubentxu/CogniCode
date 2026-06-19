@@ -1196,6 +1196,18 @@ export const landingPayloadSchema = z.object({
 export type LandingPayload = z.infer<typeof landingPayloadSchema>;
 
 // ============================================================================
+// Architecture View — E5 ADR-039 (Perspective Toggle Graph ↔ C4)
+// ============================================================================
+
+/**
+ * Response payload for `GET /api/workspaces/:id/architecture`.
+ * Reuses `SubgraphResponse` — nodes use `kind = "component"` and
+ * `style_class = "node-component"`, edges use `relation = "part_of"`.
+ */
+export const architecturePayloadSchema = subgraphResponseSchema;
+export type ArchitecturePayload = z.infer<typeof architecturePayloadSchema>;
+
+// ============================================================================
 // Convenience aliases
 // ============================================================================
 

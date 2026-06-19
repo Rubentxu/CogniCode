@@ -7,14 +7,18 @@
  * - hot → style_class="hot" (amber)
  * - god → style_class="god" (purple)
  *
+ * When `perspective === "c4"`, uses `useArchitecture()` to display C4 component
+ * nodes (directories) with `part_of` edges instead.
+ *
  * Clicking a node dispatches `SELECT_OBJECT { objectId, viewId: "overview" }`
  * which opens the pane stack.
  */
 import { useEffect, useRef, lazy, Suspense } from "react";
 import cytoscape, { type Core } from "cytoscape";
 
-import { useAppDispatch } from "../../state/context";
+import { useAppDispatch, useAppState } from "../../state/context";
 import { useLanding } from "../../hooks/useLanding";
+import { useArchitecture } from "../../hooks/useArchitecture";
 import { toCytoscapeElements } from "../InteractiveGraph/adapter";
 import { buildStylesheet, resolveNodeStyleClass } from "../InteractiveGraph/stylesheet";
 
@@ -28,36 +32,52 @@ const LandingHeader = lazy(() =>
 
 export function GraphLanding({ workspaceId }: { workspaceId: string }) {
   const dispatch = useAppDispatch();
+  const { perspective } = useAppState();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
-  const { data, isLoading, error } = useLanding(workspaceId);
+
+  // Choose data source based on perspective
+  const isGraph = perspective === "graph";
+  const { data: landingData, isLoading: isLandingLoading, error: landingError } = useLanding(
+    isGraph ? workspaceId : null,
+  );
+  const { data: archData, isLoading: isArchLoading, error: archError } = useArchitecture(
+    !isGraph ? workspaceId : null,
+  );
+
+  const data = isGraph ? landingData : archData;
+  const isLoading = isGraph ? isLandingLoading : isArchLoading;
+  const error = isGraph ? landingError : archError;
 
   // Mount cytoscape when data arrives
   useEffect(() => {
     if (!data || !containerRef.current) return;
     if (data.nodes.length === 0) return;
 
-    // Apply style classes for landing page node types
-    const nodesWithLandingStyle = data.nodes.map((n) => {
-      // Check if this node is an entry point
-      const isEntryPoint = data.entry_points.some((ep) => ep.id === n.id);
-      // Check if this node is a hot path
-      const isHot = data.hot_paths.some((hp) => hp.id === n.id);
-      // Check if this node is a god node
-      const isGod = data.god_nodes.some((g) => g.id === n.id);
+    let nodesWithStyle = data.nodes;
+    // Only apply landing-specific styling when in graph perspective
+    if (isGraph && landingData) {
+      nodesWithStyle = data.nodes.map((n) => {
+        // Check if this node is an entry point
+        const isEntryPoint = landingData.entry_points.some((ep) => ep.id === n.id);
+        // Check if this node is a hot path
+        const isHot = landingData.hot_paths.some((hp) => hp.id === n.id);
+        // Check if this node is a god node
+        const isGod = landingData.god_nodes.some((g) => g.id === n.id);
 
-      const style_class = isEntryPoint
-        ? "entry-point"
-        : isHot
-          ? "hot"
-          : isGod
-            ? "god"
-            : resolveNodeStyleClass(n.style_class);
+        const style_class = isEntryPoint
+          ? "entry-point"
+          : isHot
+            ? "hot"
+            : isGod
+              ? "god"
+              : resolveNodeStyleClass(n.style_class);
 
-      return { ...n, style_class };
-    });
+        return { ...n, style_class };
+      });
+    }
 
-    const elements = toCytoscapeElements(nodesWithLandingStyle, data.edges);
+    const elements = toCytoscapeElements(nodesWithStyle, data.edges);
 
     const cy = cytoscape({
       container: containerRef.current,
@@ -92,7 +112,7 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
       cy.destroy();
       cyRef.current = null;
     };
-  }, [data, dispatch]);
+  }, [data, dispatch, isGraph, landingData]);
 
   if (isLoading) {
     return (
@@ -130,15 +150,21 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
     );
   }
 
+  // For C4 perspective, use a minimal header since we don't have workspace info
+  const showC4Header = !isGraph;
+
   return (
     <div
       data-testid="graph-landing"
+      data-perspective={perspective}
       style={{ height: "100%", width: "100%", display: "flex", flexDirection: "column" }}
     >
-      {/* Header */}
-      <Suspense fallback={<div style={{ height: 48 }} />}>
-        <LandingHeader workspace={data.workspace} />
-      </Suspense>
+      {/* Header — only for graph perspective (C4 has no workspace data yet) */}
+      {!showC4Header && (
+        <Suspense fallback={<div style={{ height: 48 }} />}>
+          <LandingHeader workspace={landingData!.workspace} />
+        </Suspense>
+      )}
 
       {/* Graph canvas */}
       <div
@@ -147,16 +173,18 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
         style={{ flex: "1 1 auto", minHeight: 0 }}
       />
 
-      {/* Suggestion strip */}
-      <Suspense fallback={null}>
-        <LandingSuggestionStrip
-          suggestedQuestions={data.suggested_questions}
-          onAsk={() => {
-            // Dispatch ask action — the Ask panel will handle the question
-            dispatch({ type: "SET_SPOTTER", payload: { open: true } });
-          }}
-        />
-      </Suspense>
+      {/* Suggestion strip — only for graph perspective */}
+      {!showC4Header && landingData && (
+        <Suspense fallback={null}>
+          <LandingSuggestionStrip
+            suggestedQuestions={landingData.suggested_questions}
+            onAsk={() => {
+              // Dispatch ask action — the Ask panel will handle the question
+              dispatch({ type: "SET_SPOTTER", payload: { open: true } });
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

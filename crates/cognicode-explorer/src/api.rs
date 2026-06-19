@@ -436,6 +436,7 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/api/workspaces/:workspace_id/scan", post(index_workspace))
         .route("/api/workspaces/:workspace_id/graph/stats", get(graph_stats_handler))
         .route("/api/workspaces/:workspace_id/landing", get(landing_handler))
+        .route("/api/workspaces/:workspace_id/architecture", get(architecture_handler))
         .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
         .route("/api/objects/:object_id/views", get(available_views))
@@ -477,6 +478,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/workspaces/:workspace_id/scan", post(index_workspace))
         .route("/api/workspaces/:workspace_id/graph/stats", get(graph_stats_handler))
         .route("/api/workspaces/:workspace_id/landing", get(landing_handler))
+        .route("/api/workspaces/:workspace_id/architecture", get(architecture_handler))
         .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
         .route("/api/objects/:object_id/views", get(available_views))
@@ -660,6 +662,19 @@ async fn landing_handler(
     };
 
     Ok(Json(payload).into_response())
+}
+
+/// Handler for `GET /api/workspaces/:workspace_id/architecture`.
+///
+/// Synthesises a C4 component graph from `module_list()` (directories as
+/// components with `part_of` edges reflecting directory hierarchy).
+/// Returns a `SubgraphResponse` whose nodes use `style_class = "node-component"`.
+async fn architecture_handler(
+    State(state): State<ApiState>,
+    Path(_workspace_id): Path<String>,
+) -> Result<Response, ApiError> {
+    let response = state.graph.build_architecture().await?;
+    Ok(Json(response).into_response())
 }
 
 #[derive(Debug, Deserialize)]

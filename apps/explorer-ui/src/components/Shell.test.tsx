@@ -5,7 +5,7 @@
  *   InteractiveGraph (left) | PaneStackView (right)
  * Small viewport: graph full-width, PaneStackView as bottom sheet.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { useReducer } from "react";
 
@@ -213,5 +213,71 @@ describe("SkipLink", () => {
     render(<SkipLink targetId="app-main" />);
     const link = screen.getByTestId("skip-link");
     expect(link).toHaveAttribute("href", "#app-main");
+  });
+});
+
+describe("PerspectiveToggle", () => {
+  it("renders the toggle with Graph and C4 Components labels", async () => {
+    render(<ShellHarness viewport="desktop" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("perspective-toggle")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("perspective-graph")).toHaveTextContent("Graph");
+    expect(screen.getByTestId("perspective-c4")).toHaveTextContent("C4 Components");
+  });
+
+  it('dispatches SET_PERSPECTIVE with "c4" when C4 button is clicked', async () => {
+    const dispatch = vi.fn();
+    render(
+      <AppContext.Provider value={{ state: initialState, dispatch }}>
+        <Shell viewport="desktop" />
+      </AppContext.Provider>,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("perspective-c4")).toBeInTheDocument();
+    });
+    dispatch.mockClear();
+    screen.getByTestId("perspective-c4").click();
+    expect(dispatch).toHaveBeenCalledWith({ type: "SET_PERSPECTIVE", payload: "c4" });
+  });
+
+  it('dispatches SET_PERSPECTIVE with "graph" when Graph button is clicked', async () => {
+    const dispatch = vi.fn();
+    const stateWithC4 = { ...initialState, perspective: "c4" as const };
+    render(
+      <AppContext.Provider value={{ state: stateWithC4, dispatch }}>
+        <Shell viewport="desktop" />
+      </AppContext.Provider>,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("perspective-graph")).toBeInTheDocument();
+    });
+    dispatch.mockClear();
+    screen.getByTestId("perspective-graph").click();
+    expect(dispatch).toHaveBeenCalledWith({ type: "SET_PERSPECTIVE", payload: "graph" });
+  });
+
+  it('graph button is aria-pressed when perspective is "graph"', async () => {
+    render(<ShellHarness viewport="desktop" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("perspective-graph")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("perspective-graph")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("perspective-c4")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it('c4 button is aria-pressed when perspective is "c4"', async () => {
+    const stateWithC4 = { ...initialState, perspective: "c4" as const };
+    const dispatch = vi.fn();
+    render(
+      <AppContext.Provider value={{ state: stateWithC4, dispatch }}>
+        <Shell viewport="desktop" />
+      </AppContext.Provider>,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("perspective-c4")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("perspective-c4")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("perspective-graph")).toHaveAttribute("aria-pressed", "false");
   });
 });
