@@ -417,13 +417,22 @@ fn execute_scenario(
     let use_fixture = !use_repo && fixture_path.is_dir();
 
     if use_repo {
-        // Use real repo directly - no temp workspace needed
-        temp_workspace_dir_ = None;
-        workspace_path = if scenario.workspace.is_empty() || scenario.workspace == "." {
+        // A1 (ADR-038): never run against the source cache directly.
+        // Always copy the OSS repo into a fresh temp workspace so each
+        // scenario starts from a pristine state, isolated from other
+        // scenarios and from any host-side edits.
+        let temp_dir = TempDir::new().expect("temp workspace for repo");
+        let temp_workspace = temp_dir.path().to_path_buf();
+        let source = if scenario.workspace.is_empty() || scenario.workspace == "." {
             repo_path.clone()
         } else {
             repo_path.join(&scenario.workspace)
         };
+        if let Err(e) = copy_dir_recursive(&source, &temp_workspace) {
+            eprintln!("  [WARN] Failed to copy repo {} → temp: {}", source.display(), e);
+        }
+        temp_workspace_dir_ = Some(temp_dir);
+        workspace_path = temp_workspace;
     } else if use_fixture {
         // Use fixture - copy to temp workspace to avoid corrupting original fixture files.
         // This ensures each scenario run sees a pristine copy and doesn't contaminate
@@ -432,48 +441,6 @@ fn execute_scenario(
         let temp_workspace = temp_dir.path().to_path_buf();
 
         // Copy fixture contents to temp workspace
-        // Simple recursive copy that preserves directory structure
-        fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
-            if src.is_dir() {
-                fs::create_dir_all(dst)?;
-                for entry in fs::read_dir(src)? {
-                    let entry = entry?;
-                    let entry_path = entry.path();
-                    let dst_path = dst.join(entry.file_name());
-                    if entry_path.is_dir() {
-                        copy_dir_recursive(&entry_path, &dst_path)?;
-                    } else if entry_path.is_symlink() {
-                        // Symlink: read the target and recreate the symlink
-                        match fs::read_link(&entry_path) {
-                            Ok(target) => {
-                                #[cfg(unix)]
-                                {
-                                    std::os::unix::fs::symlink(&target, &dst_path)?;
-                                }
-                                #[cfg(not(unix))]
-                                {
-                                    // On non-Unix, copy the file as fallback
-                                    fs::copy(&entry_path, &dst_path)?;
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!(
-                                    "  [WARN] Failed to read symlink {}: {}",
-                                    entry_path.display(),
-                                    e
-                                );
-                                // Fall back to copying as file
-                                fs::copy(&entry_path, &dst_path)?;
-                            }
-                        }
-                    } else {
-                        fs::copy(&entry_path, &dst_path)?;
-                    }
-                }
-            }
-            Ok(())
-        }
-
         if let Err(e) = copy_dir_recursive(&fixture_path, &temp_workspace) {
             eprintln!("  [WARN] Failed to copy fixture: {}", e);
         }
@@ -613,8 +580,20 @@ fn execute_scenario(
                 }
             }
 
-            // Determine spawn mode: container (preferred for isolation) or host (fallback)
-            let use_container = container_config.is_some() && scenario.scenario_class != "mutation";
+            // Determine spawn mode:
+            // - Container mode is opt-in via SANDBOX_USE_CONTAINER=1
+            //   because the host MCP binary may have a newer glibc than the
+            //   container image (Fedora host + Debian slim containers).
+            //   Container mode is safe for mutation scenarios (temp workspace
+            //   mounted rw) and when the binary is statically linked.
+            // - Host mode is the default and works for all languages.
+            let force_container = std::env::var("SANDBOX_USE_CONTAINER")
+                .ok()
+                .map(|v| v == "1" || v == "true")
+                .unwrap_or(false);
+            let use_container = force_container
+                && container_config.is_some()
+                && scenario.scenario_class != "mutation";
             let read_only = scenario.scenario_class != "mutation";
             let db_url = std::env::var("DATABASE_URL").ok();
             let mut extra: Vec<String> = Vec::new();
@@ -2366,10 +2345,30 @@ fn spawn_mcp_in_container(
 
     match cmd.spawn() {
         Ok(mut child) => {
-            let stdin = child.stdin.take().expect("no stdin");
-            let stdout = child.stdout.take().expect("no stdout");
-            let stderr = child.stderr.take();
-            Some(McpServer::from_child(child, stdin, stdout, stderr))
+            // Liveness check: if the child dies within 200ms (e.g. GLIBC mismatch
+            // or missing binary), return None so the host fallback kicks in.
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            match child.try_wait() {
+                Ok(Some(_status)) => {
+                    // Container child exited. Read stderr (before taking) for debugging.
+                    let mut stderr_buf = String::new();
+                    if let Some(mut s) = child.stderr.take() {
+                        use std::io::Read;
+                        let _ = s.read_to_string(&mut stderr_buf);
+                    }
+                    eprintln!(
+                        "  [WARN] Container child exited immediately. Stderr: {}",
+                        stderr_buf.chars().take(200).collect::<String>()
+                    );
+                    None
+                }
+                _ => {
+                    let stdin = child.stdin.take().expect("no stdin");
+                    let stdout = child.stdout.take().expect("no stdout");
+                    let stderr = child.stderr.take();
+                    Some(McpServer::from_child(child, stdin, stdout, stderr))
+                }
+            }
         }
         Err(e) => {
             eprintln!("  [WARN] podman run failed: {e}");
@@ -2425,6 +2424,50 @@ fn reset_git_repo(workspace_path: &Path) -> Result<(), String> {
         }
     }
 
+    Ok(())
+}
+
+/// Recursively copy a directory tree. Preserves symlinks on Unix.
+/// Used to create ephemeral per-scenario workspaces from either fixtures or
+/// OSS repos, so the source cache is never mutated by execution (ADR-038).
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if src.is_dir() {
+        fs::create_dir_all(dst)?;
+        for entry in fs::read_dir(src)? {
+            let entry = entry?;
+            let entry_path = entry.path();
+            let dst_path = dst.join(entry.file_name());
+            if entry_path.is_dir() {
+                copy_dir_recursive(&entry_path, &dst_path)?;
+            } else if entry_path.is_symlink() {
+                // Symlink: read the target and recreate the symlink
+                match fs::read_link(&entry_path) {
+                    Ok(target) => {
+                        #[cfg(unix)]
+                        {
+                            std::os::unix::fs::symlink(&target, &dst_path)?;
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            // On non-Unix, copy the file as fallback
+                            fs::copy(&entry_path, &dst_path)?;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "  [WARN] Failed to read symlink {}: {}",
+                            entry_path.display(),
+                            e
+                        );
+                        // Fall back to copying as file
+                        fs::copy(&entry_path, &dst_path)?;
+                    }
+                }
+            } else {
+                fs::copy(&entry_path, &dst_path)?;
+            }
+        }
+    }
     Ok(())
 }
 
