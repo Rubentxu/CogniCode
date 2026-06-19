@@ -207,67 +207,6 @@ echo "  Parallel:    $JOBS workers"
 echo "  Repeat:      $REPEAT"
 echo "════════════════════════════════════════════════════════════"
 
-cd "$ROOT"
-
-# ── Single-repeat path (backward compatible) ──
-if [ "$REPEAT" -eq 1 ]; then
-    mkdir -p "$RUN_DIR"
-    _run_campaign "$RUN_DIR" "$RUN_DIR"
-    exit 0
-fi
-
-# ── Multi-repeat path: stability/repeat testing ──
-mkdir -p "$RUN_DIR"
-MULTI_FAILURES=0
-
-for ((i=1; i<=REPEAT; i++)); do
-    REPEAT_RUN_DIR="$RUN_DIR/run-$i"
-    mkdir -p "$REPEAT_RUN_DIR"
-    echo ""
-    echo "─── Repeat $i of $REPEAT ───"
-    _run_campaign "$REPEAT_RUN_DIR" "$REPEAT_RUN_DIR"
-    MULTI_FAILURES=$((MULTI_FAILURES + FAILURES))
-done
-FAILURES=$MULTI_FAILURES
-
-# ── Stability analysis ──
-echo ""
-echo "─── Stability analysis ──"
-if python3 "$SANDBOX/scripts/analyze_stability.py" "$RUN_DIR"; then
-    echo "  ✅ stability.json written to $RUN_DIR"
-else
-    echo "  ⚠️  stability analysis failed (non-fatal)"
-fi
-
-# ── Combined report at parent level ──
-# This aggregates all repeat subdirs (via recursive glob) and shows stability section
-if [ -f "$RUN_DIR/stability.json" ]; then
-    cd "$ROOT"
-    python3 "$SANDBOX/scripts/generate_html_report.py" \
-        --results-dir "$RUN_DIR" \
-        --output "$RUN_DIR/report.html"
-    echo "  ✅ combined report: $RUN_DIR/report.html"
-fi
-
-# ── Append one entry to history ──
-if [ -f "$RUN_DIR/stability.json" ]; then
-    _append_history "$RUN_DIR" "$REPEAT"
-fi
-
-echo ""
-echo "════════════════════════════════════════════════════════════"
-echo "  Campaign complete ($([ $FAILURES -eq 0 ] && echo 'ALL PASS' || echo "$FAILURES WORKER(S) FAILED"))"
-echo "  Report: $RUN_DIR/report.html"
-echo "  Stability: $RUN_DIR/stability.json"
-echo "  Total:  $(find "$RUN_DIR" -name 'result.json' | wc -l) scenarios across $REPEAT repeats"
-echo "════════════════════════════════════════════════════════════"
-
-# ─────────────────────────────────────────────────────────────────
-# Internal: run one campaign iteration
-# Arguments:
-#   $1 = results dir passed to orchestrator
-#   $2 = directory whose result.json files feed into the report
-# ─────────────────────────────────────────────────────────────────
 _run_campaign() {
     local RESULTS_DIR="$1"
     local REPORT_SOURCE_DIR="$2"
@@ -352,12 +291,6 @@ _run_campaign() {
     done
 }
 
-# ─────────────────────────────────────────────────────────────────
-# Internal: append one entry to history/runs.jsonl for multi-repeat runs
-# Arguments:
-#   $1 = parent run dir (contains stability.json)
-#   $2 = repeat count
-# ─────────────────────────────────────────────────────────────────
 _append_history() {
     local RUN_PARENT="$1"
     local REPEAT_COUNT="$2"
@@ -408,6 +341,75 @@ entry = {
     "run_id": run_id,
     "orchestrator_version": "0.5.0"
 }
+
+cd "$ROOT"
+
+# ── Single-repeat path (backward compatible) ──
+if [ "$REPEAT" -eq 1 ]; then
+    mkdir -p "$RUN_DIR"
+    _run_campaign "$RUN_DIR" "$RUN_DIR"
+    exit 0
+fi
+
+# ── Multi-repeat path: stability/repeat testing ──
+mkdir -p "$RUN_DIR"
+MULTI_FAILURES=0
+
+for ((i=1; i<=REPEAT; i++)); do
+    REPEAT_RUN_DIR="$RUN_DIR/run-$i"
+    mkdir -p "$REPEAT_RUN_DIR"
+    echo ""
+    echo "─── Repeat $i of $REPEAT ───"
+    _run_campaign "$REPEAT_RUN_DIR" "$REPEAT_RUN_DIR"
+    MULTI_FAILURES=$((MULTI_FAILURES + FAILURES))
+done
+FAILURES=$MULTI_FAILURES
+
+# ── Stability analysis ──
+echo ""
+echo "─── Stability analysis ──"
+if python3 "$SANDBOX/scripts/analyze_stability.py" "$RUN_DIR"; then
+    echo "  ✅ stability.json written to $RUN_DIR"
+else
+    echo "  ⚠️  stability analysis failed (non-fatal)"
+fi
+
+# ── Combined report at parent level ──
+# This aggregates all repeat subdirs (via recursive glob) and shows stability section
+if [ -f "$RUN_DIR/stability.json" ]; then
+    cd "$ROOT"
+    python3 "$SANDBOX/scripts/generate_html_report.py" \
+        --results-dir "$RUN_DIR" \
+        --output "$RUN_DIR/report.html"
+    echo "  ✅ combined report: $RUN_DIR/report.html"
+fi
+
+# ── Append one entry to history ──
+if [ -f "$RUN_DIR/stability.json" ]; then
+    _append_history "$RUN_DIR" "$REPEAT"
+fi
+
+echo ""
+echo "════════════════════════════════════════════════════════════"
+echo "  Campaign complete ($([ $FAILURES -eq 0 ] && echo 'ALL PASS' || echo "$FAILURES WORKER(S) FAILED"))"
+echo "  Report: $RUN_DIR/report.html"
+echo "  Stability: $RUN_DIR/stability.json"
+echo "  Total:  $(find "$RUN_DIR" -name 'result.json' | wc -l) scenarios across $REPEAT repeats"
+echo "════════════════════════════════════════════════════════════"
+
+# ─────────────────────────────────────────────────────────────────
+# Internal: run one campaign iteration
+# Arguments:
+#   $1 = results dir passed to orchestrator
+#   $2 = directory whose result.json files feed into the report
+# ─────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────
+# Internal: append one entry to history/runs.jsonl for multi-repeat runs
+# Arguments:
+#   $1 = parent run dir (contains stability.json)
+#   $2 = repeat count
+# ─────────────────────────────────────────────────────────────────
 
 with open(history_path, "a") as f:
     f.write(json.dumps(entry) + "\n")
