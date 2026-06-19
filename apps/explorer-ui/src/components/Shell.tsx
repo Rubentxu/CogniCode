@@ -25,6 +25,7 @@ import { PaneStackView } from "./PaneStackView";
 import { detectViewport, type ShellViewport } from "./viewport";
 import { useRestoreExploration } from "../hooks/useRestoreExploration";
 import { useSubgraph } from "../hooks/useSubgraph";
+import { GraphLanding } from "./GraphLanding";
 
 // `React.lazy` keeps the cytoscape + elkjs chunk out of the
 // initial bundle.
@@ -182,7 +183,11 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
                   </div>
                 }
               >
-                <InteractiveGraphPanel rootId={rootId} />
+                {rootId === null && appState.workspace ? (
+                  <GraphLanding workspaceId={appState.workspace.id} />
+                ) : (
+                  <InteractiveGraphPanel rootId={rootId} />
+                )}
               </Suspense>
             </ErrorBoundary>
             {/* Bottom sheet — PaneStackView slides up from bottom */}
@@ -227,7 +232,11 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
                   </div>
                 }
               >
-                <InteractiveGraphPanel rootId={rootId} />
+                {rootId === null && appState.workspace ? (
+                  <GraphLanding workspaceId={appState.workspace.id} />
+                ) : (
+                  <InteractiveGraphPanel rootId={rootId} />
+                )}
               </Suspense>
             </ErrorBoundary>
             {/* Right — PaneStackView (secondary) */}

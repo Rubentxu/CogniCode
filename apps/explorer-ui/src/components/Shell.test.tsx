@@ -101,14 +101,22 @@ describe("Shell", () => {
     render(<ShellHarness viewport="small" />);
     // Bottom sheet should be present
     expect(screen.getByTestId("bottom-sheet")).toBeInTheDocument();
-    // Graph should still be rendered
-    const hasGraph =
-      document.querySelector('[data-testid="interactive-graph"]') !== null;
-    const hasEmpty =
-      document.querySelector('[data-testid="interactive-graph-empty"]') !== null;
-    const hasLoading =
-      document.querySelector('[data-testid="interactive-graph-loading"]') !== null;
-    expect(hasGraph || hasEmpty || hasLoading).toBe(true);
+    // Graph/landing zone should eventually render (InteractiveGraph or GraphLanding via Suspense)
+    await waitFor(() => {
+      const hasGraph =
+        document.querySelector('[data-testid="interactive-graph"]') !== null;
+      const hasEmpty =
+        document.querySelector('[data-testid="interactive-graph-empty"]') !== null;
+      const hasLoading =
+        document.querySelector('[data-testid="interactive-graph-loading"]') !== null;
+      const hasLanding =
+        document.querySelector('[data-testid="graph-landing"]') !== null;
+      const hasLandingLoading =
+        document.querySelector('[data-testid="graph-landing-loading"]') !== null;
+      expect(
+        hasGraph || hasEmpty || hasLoading || hasLanding || hasLandingLoading,
+      ).toBe(true);
+    });
   });
 
   it("tablet viewport renders graph + pane-stack (2-zone grid)", async () => {
@@ -116,13 +124,22 @@ describe("Shell", () => {
     await waitFor(() => {
       expect(screen.getByTestId("pane-stack-empty")).toBeInTheDocument();
     });
-    const hasGraph =
-      document.querySelector('[data-testid="interactive-graph"]') !== null;
-    const hasEmpty =
-      document.querySelector('[data-testid="interactive-graph-empty"]') !== null;
-    const hasLoading =
-      document.querySelector('[data-testid="interactive-graph-loading"]') !== null;
-    expect(hasGraph || hasEmpty || hasLoading).toBe(true);
+    // Graph/landing zone should eventually render
+    await waitFor(() => {
+      const hasGraph =
+        document.querySelector('[data-testid="interactive-graph"]') !== null;
+      const hasEmpty =
+        document.querySelector('[data-testid="interactive-graph-empty"]') !== null;
+      const hasLoading =
+        document.querySelector('[data-testid="interactive-graph-loading"]') !== null;
+      const hasLanding =
+        document.querySelector('[data-testid="graph-landing"]') !== null;
+      const hasLandingLoading =
+        document.querySelector('[data-testid="graph-landing-loading"]') !== null;
+      expect(
+        hasGraph || hasEmpty || hasLoading || hasLanding || hasLandingLoading,
+      ).toBe(true);
+    });
   });
 
   it("ultrawide viewport renders 2-zone grid (same as desktop)", async () => {
@@ -130,13 +147,22 @@ describe("Shell", () => {
     await waitFor(() => {
       expect(screen.getByTestId("pane-stack-empty")).toBeInTheDocument();
     });
-    const hasGraph =
-      document.querySelector('[data-testid="interactive-graph"]') !== null;
-    const hasEmpty =
-      document.querySelector('[data-testid="interactive-graph-empty"]') !== null;
-    const hasLoading =
-      document.querySelector('[data-testid="interactive-graph-loading"]') !== null;
-    expect(hasGraph || hasEmpty || hasLoading).toBe(true);
+    // Graph/landing zone should eventually render
+    await waitFor(() => {
+      const hasGraph =
+        document.querySelector('[data-testid="interactive-graph"]') !== null;
+      const hasEmpty =
+        document.querySelector('[data-testid="interactive-graph-empty"]') !== null;
+      const hasLoading =
+        document.querySelector('[data-testid="interactive-graph-loading"]') !== null;
+      const hasLanding =
+        document.querySelector('[data-testid="graph-landing"]') !== null;
+      const hasLandingLoading =
+        document.querySelector('[data-testid="graph-landing-loading"]') !== null;
+      expect(
+        hasGraph || hasEmpty || hasLoading || hasLanding || hasLandingLoading,
+      ).toBe(true);
+    });
   });
 
   it("data-viewport attribute reflects the active viewport", () => {

@@ -51,6 +51,10 @@ export const KNOWN_NODE_CLASSES = new Set([
   "node-component",
   "node-container",
   "node-system",
+  // ---- Landing Page (E4 ADR-039) ----
+  "entry-point",
+  "hot",
+  "god",
 ]);
 export const KNOWN_EDGE_CLASSES = new Set([
   "edge.calls",
@@ -329,6 +333,31 @@ export function buildStylesheet(): (StylesheetStyle | StylesheetCSS)[] {
         opacity: 0.25,
       } as unknown as StylesheetStyle["style"],
     },
+    // ---- Landing Page (E4 ADR-039) — special node types ----
+    {
+      selector: 'node[style_class = "entry-point"]',
+      style: {
+        "background-color": "#10b981",
+        "border-color": "#047857",
+        shape: "round-rectangle",
+      } as unknown as StylesheetStyle["style"],
+    },
+    {
+      selector: 'node[style_class = "hot"]',
+      style: {
+        "background-color": "#f59e0b",
+        "border-color": "#b45309",
+        shape: "diamond",
+      } as unknown as StylesheetStyle["style"],
+    },
+    {
+      selector: 'node[style_class = "god"]',
+      style: {
+        "background-color": "#a855f7",
+        "border-color": "#7e22ce",
+        shape: "ellipse",
+      } as unknown as StylesheetStyle["style"],
+    },
   ];
 }
 
@@ -355,7 +384,11 @@ export type ResolvedNodeStyleClass =
   | "node-evidence"
   | "node-component"
   | "node-container"
-  | "node-system";
+  | "node-system"
+  // ---- Landing Page (E4 ADR-039) ----
+  | "entry-point"
+  | "hot"
+  | "god";
 
 const warnedBuckets = new Set<string>();
 export function resolveNodeStyleClass(raw: string | undefined): ResolvedNodeStyleClass {

@@ -916,6 +916,10 @@ export const graphNodeStyleClassSchema = z.enum([
   "node-component",
   "node-container",
   "node-system",
+  // ---- Landing Page (E4 ADR-039) ----
+  "entry-point",
+  "hot",
+  "god",
 ]);
 export type GraphNodeStyleClass = z.infer<typeof graphNodeStyleClassSchema>;
 
