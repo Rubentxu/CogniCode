@@ -58,3 +58,60 @@ scenarios:
     latency:
       target_ms: 300
       max_ms: 3000
+- name: ruby_leaf_functions_sinatra
+  description: Find leaf functions in ruby (sinatra)
+  tool: get_leaf_functions
+  action: find
+  repo: ruby/sinatra
+  language: ruby
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments: {}
+  ground_truth:
+    has_leaf_functions: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: ruby_call_hierarchy_outgoing_sinatra
+  description: Find callees of Sinatra::Application in ruby (sinatra)
+  tool: get_call_hierarchy
+  action: callees
+  repo: ruby/sinatra
+  language: ruby
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    symbol_name: Sinatra::Application
+    direction: outgoing
+    depth: 1
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: ruby_analyze_impact_sinatra
+  description: Analyze impact of changing Sinatra::Application in ruby (sinatra)
+  tool: analyze_impact
+  action: analyze
+  repo: ruby/sinatra
+  language: ruby
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    symbol_name: Sinatra::Application
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000

@@ -58,3 +58,60 @@ scenarios:
     latency:
       target_ms: 300
       max_ms: 3000
+- name: php_leaf_functions_slim
+  description: Find leaf functions in php (slim)
+  tool: get_leaf_functions
+  action: find
+  repo: php/slim
+  language: php
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: expected_fail
+  pre_steps:
+  - build_graph
+  arguments: {}
+  ground_truth:
+    has_leaf_functions: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: php_call_hierarchy_outgoing_slim
+  description: Find callees of Slim\App in php (slim)
+  tool: get_call_hierarchy
+  action: callees
+  repo: php/slim
+  language: php
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    symbol_name: Slim\App
+    direction: outgoing
+    depth: 1
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: php_analyze_impact_slim
+  description: Analyze impact of changing Slim\App in php (slim)
+  tool: analyze_impact
+  action: analyze
+  repo: php/slim
+  language: php
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    symbol_name: Slim\App
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000

@@ -58,3 +58,60 @@ scenarios:
     latency:
       target_ms: 300
       max_ms: 3000
+- name: swift_leaf_functions_argument-parser
+  description: Find leaf functions in swift (argument-parser)
+  tool: get_leaf_functions
+  action: find
+  repo: swift/argument-parser
+  language: swift
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments: {}
+  ground_truth:
+    has_leaf_functions: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: swift_call_hierarchy_outgoing_argument-parser
+  description: Find callees of ArgumentParser in swift (argument-parser)
+  tool: get_call_hierarchy
+  action: callees
+  repo: swift/argument-parser
+  language: swift
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    symbol_name: ArgumentParser
+    direction: outgoing
+    depth: 1
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: swift_analyze_impact_argument-parser
+  description: Analyze impact of changing ArgumentParser in swift (argument-parser)
+  tool: analyze_impact
+  action: analyze
+  repo: swift/argument-parser
+  language: swift
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    symbol_name: ArgumentParser
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000

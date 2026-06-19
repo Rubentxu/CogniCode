@@ -58,3 +58,60 @@ scenarios:
     latency:
       target_ms: 300
       max_ms: 3000
+- name: elixir_leaf_functions_elixir
+  description: Find leaf functions in elixir (elixir)
+  tool: get_leaf_functions
+  action: find
+  repo: elixir/elixir
+  language: elixir
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: expected_fail
+  pre_steps:
+  - build_graph
+  arguments: {}
+  ground_truth:
+    has_leaf_functions: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: elixir_call_hierarchy_outgoing_elixir
+  description: Find callees of Enum in elixir (elixir)
+  tool: get_call_hierarchy
+  action: callees
+  repo: elixir/elixir
+  language: elixir
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    symbol_name: Enum
+    direction: outgoing
+    depth: 1
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: elixir_analyze_impact_elixir
+  description: Analyze impact of changing Enum in elixir (elixir)
+  tool: analyze_impact
+  action: analyze
+  repo: elixir/elixir
+  language: elixir
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    symbol_name: Enum
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000

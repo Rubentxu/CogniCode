@@ -58,3 +58,60 @@ scenarios:
     latency:
       target_ms: 200
       max_ms: 2000
+- name: c_leaf_functions_hiredis
+  description: Find leaf functions in c (hiredis)
+  tool: get_leaf_functions
+  action: find
+  repo: c/hiredis
+  language: c
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments: {}
+  ground_truth:
+    has_leaf_functions: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: c_call_hierarchy_outgoing_hiredis
+  description: Find callees of redisConnect in c (hiredis)
+  tool: get_call_hierarchy
+  action: callees
+  repo: c/hiredis
+  language: c
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    symbol_name: redisConnect
+    direction: outgoing
+    depth: 1
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: c_analyze_impact_hiredis
+  description: Analyze impact of changing redisConnect in c (hiredis)
+  tool: analyze_impact
+  action: analyze
+  repo: c/hiredis
+  language: c
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    symbol_name: redisConnect
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000

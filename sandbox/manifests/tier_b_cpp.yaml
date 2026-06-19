@@ -58,3 +58,60 @@ scenarios:
     latency:
       target_ms: 500
       max_ms: 5000
+- name: cpp_leaf_functions_json
+  description: Find leaf functions in cpp (json)
+  tool: get_leaf_functions
+  action: find
+  repo: cpp/json
+  language: cpp
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments: {}
+  ground_truth:
+    has_leaf_functions: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: cpp_call_hierarchy_outgoing_json
+  description: Find callees of basic_json::parse in cpp (json)
+  tool: get_call_hierarchy
+  action: callees
+  repo: cpp/json
+  language: cpp
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    symbol_name: basic_json::parse
+    direction: outgoing
+    depth: 1
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: cpp_analyze_impact_json
+  description: Analyze impact of changing basic_json::parse in cpp (json)
+  tool: analyze_impact
+  action: analyze
+  repo: cpp/json
+  language: cpp
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    symbol_name: basic_json::parse
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
