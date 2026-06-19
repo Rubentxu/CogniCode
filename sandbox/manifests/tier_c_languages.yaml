@@ -1,5 +1,5 @@
 version: '1.0'
-language: rust
+language: tierc
 tier: C
 description: Tier C parser smoke tests for remaining 15 languages
 timeout_seconds: 60
@@ -11,10 +11,10 @@ scenarios:
   description: Build graph from lua fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: lua
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -26,10 +26,10 @@ scenarios:
   description: Extract symbols from lua file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: lua
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: main.lua
   ground_truth: {}
@@ -41,10 +41,10 @@ scenarios:
   description: Build graph from zig fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: zig
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -56,10 +56,10 @@ scenarios:
   description: Extract symbols from zig file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: zig
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: main.zig
   ground_truth: {}
@@ -71,10 +71,10 @@ scenarios:
   description: Build graph from dart fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: dart
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -86,10 +86,10 @@ scenarios:
   description: Extract symbols from dart file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: dart
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: main.dart
   ground_truth: {}
@@ -101,10 +101,10 @@ scenarios:
   description: Build graph from haskell fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: haskell
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -116,10 +116,10 @@ scenarios:
   description: Extract symbols from haskell file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: haskell
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: Main.hs
   ground_truth: {}
@@ -131,10 +131,10 @@ scenarios:
   description: Build graph from julia fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: julia
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -146,10 +146,10 @@ scenarios:
   description: Extract symbols from julia file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: julia
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: main.jl
   ground_truth: {}
@@ -161,10 +161,10 @@ scenarios:
   description: Build graph from scala fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: scala
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -176,10 +176,10 @@ scenarios:
   description: Extract symbols from scala file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: scala
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: Main.scala
   ground_truth: {}
@@ -191,10 +191,10 @@ scenarios:
   description: Build graph from groovy fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: groovy
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -206,10 +206,10 @@ scenarios:
   description: Extract symbols from groovy file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: groovy
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: Main.groovy
   ground_truth: {}
@@ -221,10 +221,10 @@ scenarios:
   description: Build graph from erlang fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: erlang
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -236,10 +236,10 @@ scenarios:
   description: Extract symbols from erlang file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: erlang
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: main.erl
   ground_truth: {}
@@ -251,10 +251,10 @@ scenarios:
   description: Build graph from bash fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: bash
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -266,10 +266,10 @@ scenarios:
   description: Extract symbols from bash file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: bash
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: script.sh
   ground_truth: {}
@@ -281,10 +281,10 @@ scenarios:
   description: Build graph from r fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: r
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -296,10 +296,10 @@ scenarios:
   description: Extract symbols from r file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: r
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: main.R
   ground_truth: {}
@@ -311,10 +311,10 @@ scenarios:
   description: Build graph from powershell fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: powershell
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -326,10 +326,10 @@ scenarios:
   description: Extract symbols from powershell file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: powershell
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: script.ps1
   ground_truth: {}
@@ -341,10 +341,10 @@ scenarios:
   description: Build graph from fortran fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: fortran
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -356,10 +356,10 @@ scenarios:
   description: Extract symbols from fortran file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: fortran
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: main.f90
   ground_truth: {}
@@ -371,10 +371,10 @@ scenarios:
   description: Build graph from verilog fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: verilog
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -386,10 +386,10 @@ scenarios:
   description: Extract symbols from verilog file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: verilog
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: main.v
   ground_truth: {}
@@ -401,10 +401,10 @@ scenarios:
   description: Build graph from systemverilog fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: systemverilog
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -416,10 +416,10 @@ scenarios:
   description: Extract symbols from systemverilog file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: systemverilog
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: main.sv
   ground_truth: {}
@@ -431,10 +431,10 @@ scenarios:
   description: Build graph from json fixture (Tier C)
   tool: build_graph
   action: build
-  workspace: fixtures/tier-c
+  workspace: .
   language: json
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     directory: .
   ground_truth: {}
@@ -446,10 +446,10 @@ scenarios:
   description: Extract symbols from json file
   tool: get_file_symbols
   action: extract
-  workspace: fixtures/tier-c
+  workspace: .
   language: json
   scenario_class: read_only
-  expected_outcome: expected_fail
+  expected_outcome: pass
   arguments:
     file_path: data.json
   ground_truth: {}

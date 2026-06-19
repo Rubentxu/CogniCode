@@ -306,6 +306,13 @@ impl ContainerConfig {
                 network: "container:cognicode-csharp-net".into(),
                 workdir: "/workspace".into(),
             }),
+            // Tier C: multi-language fixture workspace — any image works
+            "tierc" => Some(ContainerConfig {
+                image: "docker.io/library/alpine:latest".into(),
+                name: "cognicode-tierc".into(),
+                network: "container:cognicode-tierc-net".into(),
+                workdir: "/workspace".into(),
+            }),
             _ => None, // Unsupported languages return None
         }
     }
@@ -619,6 +626,7 @@ fn execute_scenario(
             || lang == "swift"
             || lang == "elixir"
             || lang == "csharp"
+            || lang == "tierc"
         {
             // Try to spawn server directly (for now, using host binary)
             // Collect environment variables to forward to the MCP server child process
