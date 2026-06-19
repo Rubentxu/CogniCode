@@ -102,3 +102,17 @@ rust-clippy/
 .atl/
 specs/
 autoresearch/
+
+# Sandbox fixtures: node_modules and build artifacts (not code)
+sandbox/fixtures/**/node_modules/
+sandbox/fixtures/**/target/
+sandbox/fixtures/**/__pycache__/
+sandbox/fixtures/**/.venv/
+sandbox/fixtures/**/venv/
+sandbox/fixtures/**/*.lock
+sandbox/fixtures/**/package-lock.json
+sandbox/fixtures/**/Cargo.lock
+
+# Tier C fixtures are synthetic test data, not source code
+sandbox/fixtures/tierc
+sandbox/fixtures/tier-c/
