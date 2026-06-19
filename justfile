@@ -505,3 +505,95 @@ perf:
 perf-bench:
     cargo bench -p cognicode-core --bench graph_benchmarks -- --output-format bencher
 
+# ─── Sandbox ─────────────────────────────────────────────────────────────────
+
+# Reset PG sandbox schema (drops legacy tables, applies new pipeline schema)
+sandbox-pg-reset:
+    #!/usr/bin/env bash
+    set -e
+    DB_NAME="${1:-cognicode}"
+    DB_USER="${2:-cognicode}"
+    CONTAINER_NAME="${3:-cognicode-postgres}"
+    SCRIPT_DIR="$(cd "$(dirname "$(which just)")/../lib" && pwd)"
+    SCHEMA_FILE="crates/cognicode-core/src/infrastructure/persistence/m0010_pipeline_schema.sql"
+    echo "=== Resetting PG sandbox ==="
+    echo "Database: $DB_NAME, User: $DB_USER, Container: $CONTAINER_NAME"
+    echo "--- Dropping tables ---"
+    env -u LD_LIBRARY_PATH podman exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -t -c "
+    DROP TABLE IF EXISTS call_edges CASCADE;
+    DROP TABLE IF EXISTS symbols CASCADE;
+    DROP TABLE IF EXISTS graph_edges CASCADE;
+    DROP TABLE IF EXISTS graph_nodes CASCADE;
+    DROP TABLE IF EXISTS scan_manifest CASCADE;
+    DROP TABLE IF EXISTS graph_reports CASCADE;
+    DROP VIEW IF EXISTS call_edges CASCADE;
+    DROP VIEW IF EXISTS symbols CASCADE;
+    DROP TRIGGER IF EXISTS graph_nodes_notify ON graph_nodes;
+    DROP FUNCTION IF EXISTS notify_graph_change();
+    " 2>&1 || true
+    echo "--- Applying new schema ---"
+    env -u LD_LIBRARY_PATH podman exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$SCHEMA_FILE" 2>&1
+    echo "--- Verifying ---"
+    env -u LD_LIBRARY_PATH podman exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -c '\dt' 2>&1
+    echo "=== Schema reset complete ==="
+
+# Run sandbox IaC tests (Terraform + Ansible — requires PG)
+sandbox-iac:
+    #!/usr/bin/env bash
+    set -e
+    export DATABASE_URL="postgres://cognicode:cognicode@localhost:5432/cognicode"
+    echo "=== Running IaC sandbox tests ==="
+    echo "DATABASE_URL=$DATABASE_URL"
+    cargo run -p cognicode-sandbox -- run sandbox/manifests/iac/
+
+# Run full sandbox baseline (all manifests — requires PG)
+sandbox-all:
+    #!/usr/bin/env bash
+    set -e
+    export DATABASE_URL="postgres://cognicode:cognicode@localhost:5432/cognicode"
+    echo "=== Running full sandbox baseline ==="
+    echo "DATABASE_URL=$DATABASE_URL"
+    cargo run -p cognicode-sandbox -- run sandbox/manifests/
+
+# Run sandbox with specific manifest path
+sandbox-run manifests:
+    #!/usr/bin/env bash
+    set -e
+    export DATABASE_URL="postgres://cognicode:cognicode@localhost:5432/cognicode"
+    echo "=== Running sandbox: {{manifests}} ==="
+    cargo run -p cognicode-sandbox -- run {{manifests}}
+
+# Generate HTML smoke test report from sandbox results
+sandbox-report-html output="/tmp/cognicode-smoke-report.html":
+    #!/usr/bin/env bash
+    echo "📊 Generating HTML report..."
+    python3 sandbox/scripts/generate_html_report.py --output "{{output}}"
+    echo "✅ Report: {{output}}"
+    xdg-open "{{output}}" 2>/dev/null || open "{{output}}" 2>/dev/null || echo "Open: {{output}}"
+
+# Run sandbox in dry-run mode (list scenarios without executing)
+sandbox-plan manifests:
+    #!/usr/bin/env bash
+    export DATABASE_URL="postgres://cognicode:cognicode@localhost:5432/cognicode"
+    echo "=== Sandbox plan: {{manifests}} ==="
+    cargo run -p cognicode-sandbox -- run {{manifests}} --dry-run 2>&1 | head -50
+
+# Show sandbox results summary
+sandbox-results:
+    #!/usr/bin/env bash
+    set -e
+    RESULTS_DIR="${1:-sandbox/results}"
+    if [ ! -d "$RESULTS_DIR" ]; then
+        echo "No results directory: $RESULTS_DIR"
+        exit 1
+    fi
+    echo "=== Sandbox Results ==="
+    # Show latest run
+    LATEST=$(ls -t "$RESULTS_DIR"/*.jsonl 2>/dev/null | head -1)
+    if [ -n "$LATEST" ]; then
+        echo "Latest: $LATEST"
+        wc -l < "$LATEST"
+    else
+        echo "No results found"
+    fi
+
