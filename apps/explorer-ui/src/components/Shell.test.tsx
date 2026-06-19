@@ -1,11 +1,9 @@
 /**
- * `Shell` tests — viewport behaviour, health chip, skip link,
- * offline gate integration.
+ * `Shell` tests — viewport behaviour, health chip, skip link.
  *
- * The Shell renders the three panels (Miller Columns, Object
- * Inspector, Lens Panel) which all consume `useApp()`. The test
- * harness therefore provides a real `AppContext` so the panels
- * mount without crashing.
+ * Post E3 (ADR-039): Shell renders a 2-zone layout:
+ *   InteractiveGraph (left) | PaneStackView (right)
+ * Small viewport: graph full-width, PaneStackView as bottom sheet.
  */
 import { describe, it, expect } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -24,14 +22,14 @@ import {
 } from "../state/context";
 
 /**
- * Minimal harness that provides a live AppContext. We use a real
- * useReducer (not a mock) so the panels see a consistent state
- * shape and dispatching works during the test.
+ * Minimal harness that provides a live AppContext.
  */
-function ShellHarness({ viewport }: { viewport?: "small" | "tablet" | "desktop" | "ultrawide" }) {
+function ShellHarness({
+  viewport,
+}: {
+  viewport?: "small" | "tablet" | "desktop" | "ultrawide";
+}) {
   const [state, dispatch] = useReducer(appReducer, initialState);
-  // Provide a tiny app context value. The dispatch type is the
-  // `Action` union from the reducer.
   const value: { state: AppState; dispatch: React.Dispatch<Action> } = {
     state,
     dispatch,
@@ -83,24 +81,62 @@ describe("Shell", () => {
     expect(main).toHaveAttribute("aria-label", "Explorer panels");
   });
 
-  it("desktop viewport shows all three panel empty states", () => {
+  it("desktop viewport renders graph + pane-stack zones", async () => {
     render(<ShellHarness viewport="desktop" />);
-    expect(screen.getByTestId("miller-columns-empty")).toBeInTheDocument();
-    expect(screen.getByTestId("object-inspector-empty")).toBeInTheDocument();
-    expect(screen.getByTestId("lens-panel-empty")).toBeInTheDocument();
+    // PaneStackView empty state should be present in the right zone
+    await waitFor(() => {
+      expect(screen.getByTestId("pane-stack-empty")).toBeInTheDocument();
+    });
+    // Graph loading / empty / resolved should be present in the left zone
+    const hasGraph =
+      document.querySelector('[data-testid="interactive-graph"]') !== null;
+    const hasEmpty =
+      document.querySelector('[data-testid="interactive-graph-empty"]') !== null;
+    const hasLoading =
+      document.querySelector('[data-testid="interactive-graph-loading"]') !== null;
+    expect(hasGraph || hasEmpty || hasLoading).toBe(true);
   });
 
-  it("tablet viewport shows the lens toggle button", () => {
-    render(<ShellHarness viewport="tablet" />);
-    expect(
-      screen.getByRole("button", { name: /open lens panel/i }),
-    ).toBeInTheDocument();
-  });
-
-  it("small viewport hides the lens panel", () => {
+  it("small viewport renders graph full-width with bottom-sheet overlay", async () => {
     render(<ShellHarness viewport="small" />);
-    expect(screen.queryByTestId("lens-panel")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("lens-panel-empty")).not.toBeInTheDocument();
+    // Bottom sheet should be present
+    expect(screen.getByTestId("bottom-sheet")).toBeInTheDocument();
+    // Graph should still be rendered
+    const hasGraph =
+      document.querySelector('[data-testid="interactive-graph"]') !== null;
+    const hasEmpty =
+      document.querySelector('[data-testid="interactive-graph-empty"]') !== null;
+    const hasLoading =
+      document.querySelector('[data-testid="interactive-graph-loading"]') !== null;
+    expect(hasGraph || hasEmpty || hasLoading).toBe(true);
+  });
+
+  it("tablet viewport renders graph + pane-stack (2-zone grid)", async () => {
+    render(<ShellHarness viewport="tablet" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("pane-stack-empty")).toBeInTheDocument();
+    });
+    const hasGraph =
+      document.querySelector('[data-testid="interactive-graph"]') !== null;
+    const hasEmpty =
+      document.querySelector('[data-testid="interactive-graph-empty"]') !== null;
+    const hasLoading =
+      document.querySelector('[data-testid="interactive-graph-loading"]') !== null;
+    expect(hasGraph || hasEmpty || hasLoading).toBe(true);
+  });
+
+  it("ultrawide viewport renders 2-zone grid (same as desktop)", async () => {
+    render(<ShellHarness viewport="ultrawide" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("pane-stack-empty")).toBeInTheDocument();
+    });
+    const hasGraph =
+      document.querySelector('[data-testid="interactive-graph"]') !== null;
+    const hasEmpty =
+      document.querySelector('[data-testid="interactive-graph-empty"]') !== null;
+    const hasLoading =
+      document.querySelector('[data-testid="interactive-graph-loading"]') !== null;
+    expect(hasGraph || hasEmpty || hasLoading).toBe(true);
   });
 
   it("data-viewport attribute reflects the active viewport", () => {
@@ -119,37 +155,11 @@ describe("Shell", () => {
       "data-viewport",
       "small",
     );
-  });
-
-  it("ultrawide viewport (>=1440) renders the InteractiveGraph 4th column", async () => {
-    render(<ShellHarness viewport="ultrawide" />);
-    // The InteractiveGraph chunk is `React.lazy`-imported and wrapped
-    // in `<Suspense>`. We accept either the resolved graph, the empty
-    // state, or the Suspense fallback as proof the 4th column is wired.
-    await waitFor(() => {
-      const hasGraph =
-        document.querySelector('[data-testid="interactive-graph"]') !== null;
-      const hasEmpty =
-        document.querySelector('[data-testid="interactive-graph-empty"]') !== null;
-      const hasLoading =
-        document.querySelector('[data-testid="interactive-graph-loading"]') !== null;
-      expect(hasGraph || hasEmpty || hasLoading).toBe(true);
-    });
-  });
-
-  it("desktop viewport does NOT render the 4th column (3-column layout kept)", () => {
-    render(<ShellHarness viewport="desktop" />);
-    expect(screen.queryByTestId("interactive-graph")).not.toBeInTheDocument();
-  });
-
-  it("tablet viewport does NOT render the 4th column", () => {
-    render(<ShellHarness viewport="tablet" />);
-    expect(screen.queryByTestId("interactive-graph")).not.toBeInTheDocument();
-  });
-
-  it("small viewport does NOT render InteractiveGraph", () => {
-    render(<ShellHarness viewport="small" />);
-    expect(screen.queryByTestId("interactive-graph")).not.toBeInTheDocument();
+    rerender(<ShellHarness viewport="ultrawide" />);
+    expect(screen.getByTestId("shell")).toHaveAttribute(
+      "data-viewport",
+      "ultrawide",
+    );
   });
 });
 

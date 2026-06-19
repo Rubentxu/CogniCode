@@ -418,7 +418,7 @@ describe("ObjectInspector — container", () => {
     // matching navigation state. Use `initialStateWithFocus` so the
     // adapter's focus() agrees with what the test asserts.
     const seeded = initial?.activeObjectId
-      ? { ...initialStateWithFocus(initial.activeObjectId, "column", initial.activeViewId ?? null), ...initial }
+      ? { ...initialStateWithFocus(initial.activeObjectId, initial.activeViewId ?? null), ...initial }
       : { ...initialState, ...initial };
     const [state, dispatch] = useReducer(appReducer, seeded);
     return (

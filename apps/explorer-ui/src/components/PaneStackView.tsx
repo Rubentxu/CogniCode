@@ -68,7 +68,7 @@ export function PaneStackView() {
             No panes open
           </p>
           <p className="mt-1 text-xs">
-            Select an object from the Miller Columns or Spotter to open a pane.
+            Pick an object from the graph or open the Spotter (⌘K) to open a pane.
           </p>
         </div>
       </div>
