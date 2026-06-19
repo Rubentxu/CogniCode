@@ -571,6 +571,12 @@ sandbox-report-html output="/tmp/cognicode-smoke-report.html":
     echo "✅ Report: {{output}}"
     xdg-open "{{output}}" 2>/dev/null || open "{{output}}" 2>/dev/null || echo "Open: {{output}}"
 
+# Run a per-run campaign: isolated results dir + per-run report
+# Each invocation gets a unique run-id under sandbox/results-runs/
+sandbox-run-campaign manifests:
+    #!/usr/bin/env bash
+    bash sandbox/scripts/run_campaign.sh {{manifests}}
+
 # Run sandbox in dry-run mode (list scenarios without executing)
 sandbox-plan manifests:
     #!/usr/bin/env bash

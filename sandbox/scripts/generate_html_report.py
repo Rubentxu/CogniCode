@@ -131,6 +131,63 @@ def compute_stats(results: list[dict]) -> dict:
     }
 
 
+def _build_coverage_matrix(stats: dict, results: list[dict]) -> str:
+    """Build coverage matrix HTML: tool × language with pass/total cells."""
+    tools = sorted(stats.get('by_tool', {}).keys())
+    langs = sorted(stats.get('by_language', {}).keys())
+    if not tools or not langs:
+        return '<p class="text-sm text-slate-500">No data available</p>'
+
+    # Pre-compute cells
+    cells = {(t, l): {"pass": 0, "total": 0} for t in tools for l in langs}
+    for r in results:
+        t = r.get('tool')
+        l = r.get('language')
+        if t in tools and l in langs:
+            cells[(t, l)]["total"] += 1
+            if r.get('outcome') in ('pass', 'expected_fail', 'capability_missing'):
+                cells[(t, l)]["pass"] += 1
+
+    # Header
+    html = '<table class="min-w-full text-xs"><thead><tr class="bg-slate-100"><th class="py-2 px-2 text-left font-medium text-slate-600 sticky left-0 bg-slate-100">Tool / Lang</th>'
+    for lang in langs:
+        html += f'<th class="py-2 px-2 text-center font-medium text-slate-600">{lang}</th>'
+    html += '<th class="py-2 px-2 text-center font-medium text-slate-600 bg-slate-200">Total</th></tr></thead><tbody>'
+
+    # Body
+    for tool in tools:
+        row_pass = 0
+        row_total = 0
+        html += f'<tr class="border-b border-slate-100"><td class="py-1 px-2 font-mono sticky left-0 bg-white">{tool}</td>'
+        for lang in langs:
+            c = cells.get((tool, lang), {"pass": 0, "total": 0})
+            row_pass += c['pass']
+            row_total += c['total']
+            if c['total'] == 0:
+                html += '<td class="py-1 px-2 text-center text-slate-300">·</td>'
+            else:
+                rate = c['pass'] / c['total'] * 100
+                if rate == 100:
+                    color = 'emerald'
+                elif rate >= 50:
+                    color = 'amber'
+                else:
+                    color = 'red'
+                html += f'<td class="py-1 px-2 text-center text-{color}-600 font-semibold">{c["pass"]}/{c["total"]}</td>'
+        # Row total
+        if row_total == 0:
+            row_color = 'slate'
+            row_str = '·'
+        else:
+            row_rate = row_pass / row_total * 100
+            row_color = 'emerald' if row_rate == 100 else ('amber' if row_rate >= 50 else 'red')
+            row_str = f'{row_pass}/{row_total}'
+        html += f'<td class="py-1 px-2 text-center text-{row_color}-700 font-semibold bg-slate-50">{row_str}</td></tr>'
+
+    html += '</tbody></table>'
+    return html
+
+
 def render_html(stats: dict, results: list[dict], summary: dict | None = None) -> str:
     """Renderiza el reporte HTML completo."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -213,7 +270,9 @@ def render_html(stats: dict, results: list[dict], summary: dict | None = None) -
             <td class="py-2 px-4 text-xs text-slate-500">{p95}ms</td>
         </tr>'''
 
-    # ── Failure rows ──
+    # ── Coverage Matrix (tool × language) ──
+    coverage_matrix_html = _build_coverage_matrix(stats, results)
+        # ── Failure rows ──
     failure_rows = ""
     for name, count in sorted(stats["failures"].items(), key=lambda x: x[1], reverse=True):
         failure_rows += f'''
@@ -355,6 +414,13 @@ def render_html(stats: dict, results: list[dict], summary: dict | None = None) -
             <h2 class="text-lg font-semibold text-slate-700 mb-4">📈 Distribución de Latencia</h2>
             <div class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
                 <pre class="mermaid">{mermaid_chart}</pre>
+            </div>
+        <!-- Coverage Matrix -->
+        <section>
+            <h2 class="text-lg font-semibold text-slate-700 mb-4">🧮 Coverage Matrix (tool × language)</h2>
+            <div class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm overflow-x-auto">
+                <p class="text-xs text-slate-500 mb-3">Pass/total per (tool × language) — includes expected_fail and capability_missing.</p>
+                {coverage_matrix_html}
             </div>
         </section>
 
