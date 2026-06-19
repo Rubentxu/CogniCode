@@ -569,7 +569,7 @@ sandbox-report-html output="/tmp/cognicode-smoke-report.html":
     #!/usr/bin/env bash
     set -euo pipefail
     LATEST_RUN=$(ls -t sandbox/results-runs 2>/dev/null | head -1)
-    if [ -n "$LATEST_RUN" ] && [ -f "sandbox/results-runs/$LATEST_RUN/summary.json" ]; then
+    if [ -n "$LATEST_RUN" ] && [ -f "sandbox/results-runs/$LATEST_RUN/report.html" ]; then
         RESULTS_DIR="sandbox/results-runs/$LATEST_RUN"
         echo "📊 Using latest per-run campaign: $LATEST_RUN"
     else
