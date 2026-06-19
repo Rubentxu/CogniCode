@@ -199,7 +199,7 @@ def _build_coverage_matrix(stats: dict, results: list[dict]) -> str:
     return html
 
 
-def render_html(stats: dict, results: list[dict], summary: dict | None = None) -> str:
+def render_html(stats: dict, results: list[dict], summary: dict | None, results_dir: str) -> str:
     """Renderiza el reporte HTML completo."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -632,7 +632,7 @@ def main():
     print(f"   📊 Pass Rate: {stats['pass_rate']:.1f}% | 🏥 Health: {stats['health_score']:.0f}/100")
     print(f"   ⚡ Latencia: p50={stats['p50']}ms p95={stats['p95']}ms p99={stats['p99']}ms")
 
-    html = render_html(stats, results, summary)
+    html = render_html(stats, results, summary, results_dir)
 
     if not output_path:
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
