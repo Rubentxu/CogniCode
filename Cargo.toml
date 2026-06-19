@@ -156,6 +156,9 @@ process-wrap = "9.1"
 # Rig-core (optional)
 rig-core = { version = "0.35", default-features = false, features = ["rustls"] }
 
+# TOML parsing for C4 architecture inference (E6 ADR-039)
+toml = "0.8"
+
 # Dev deps
 tokio-test = "0.4"
 mockall = "0.11"

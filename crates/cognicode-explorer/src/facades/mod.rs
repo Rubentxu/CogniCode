@@ -72,7 +72,8 @@ pub trait GraphService: Send + Sync {
 
     /// Build an architecture view synthesised from `module_list()`.
     /// C3 components are directories; edges reflect parent-child relationships.
-    async fn build_architecture(&self) -> ExplorerResult<SubgraphResponse>;
+    /// `root_path` is the workspace root directory for parsing Cargo.toml and package.json.
+    async fn build_architecture(&self, root_path: &str) -> ExplorerResult<SubgraphResponse>;
 }
 
 // ============================================================================

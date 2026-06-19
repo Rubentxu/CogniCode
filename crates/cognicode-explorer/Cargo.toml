@@ -54,6 +54,8 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 # Optional dependencies — only pulled in when the `postgres` feature
 # is enabled. Keeps the default build sqlx-free.
 sqlx = { workspace = true, optional = true }
+# TOML parsing for C4 architecture inference (E6 ADR-039)
+toml.workspace = true
 # `async-trait` is always needed — the facade traits use `#[async_trait]`.
 # It is NOT optional because the proc macro must always be available.
 async-trait.workspace = true

@@ -574,6 +574,13 @@ fn style_class_system() {
     assert_eq!(crate::api::style_class_for("system"), "node-system");
 }
 
+/// `code` (a C4-model code symbol — leaf entity inside a component)
+/// maps to `"node-code"`.
+#[test]
+fn style_class_code() {
+    assert_eq!(crate::api::style_class_for("code"), "node-code");
+}
+
 /// `cites` (a doc → code reference) maps to `"edge-cites"`.
 #[test]
 fn edge_style_cites() {

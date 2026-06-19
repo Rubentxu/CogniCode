@@ -51,6 +51,7 @@ export const KNOWN_NODE_CLASSES = new Set([
   "node-component",
   "node-container",
   "node-system",
+  "node-code",
   // ---- Landing Page (E4 ADR-039) ----
   "entry-point",
   "hot",
@@ -218,6 +219,18 @@ export function buildStylesheet(): (StylesheetStyle | StylesheetCSS)[] {
         height: 96,
       } as unknown as StylesheetStyle["style"],
     },
+    // ---- C4 Code (E6 ADR-039) — leaf symbols inside components ----
+    {
+      selector: 'node[style_class = "node-code"]',
+      style: {
+        "background-color": "#d1d5db",
+        "border-color": "#6b7280",
+        shape: "ellipse",
+        // Smallest; code symbols are leaf-level entities
+        width: 64,
+        height: 28,
+      } as unknown as StylesheetStyle["style"],
+    },
     {
       selector: "edge",
       style: EDGE_BASE as unknown as StylesheetStyle["style"],
@@ -373,6 +386,8 @@ export function buildStylesheet(): (StylesheetStyle | StylesheetCSS)[] {
  *
  * T-Phase-1 (C4 architecture) — adds the 3 C4 node classes
  * (`node-component`, `node-container`, `node-system`).
+ *
+ * E6 (ADR-039) — adds `node-code` for C4 code symbols.
  */
 export type ResolvedNodeStyleClass =
   | "function"
@@ -385,6 +400,7 @@ export type ResolvedNodeStyleClass =
   | "node-component"
   | "node-container"
   | "node-system"
+  | "node-code"
   // ---- Landing Page (E4 ADR-039) ----
   | "entry-point"
   | "hot"

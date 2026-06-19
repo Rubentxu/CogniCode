@@ -61,6 +61,8 @@ pub fn style_class_for(kind: &str) -> &'static str {
         "component" => "node-component",
         "container" => "node-container",
         "system" => "node-system",
+        // ---- C4 Code (E6 ADR-039) ----
+        "code" => "node-code",
         _ => "function",
     }
 }
@@ -673,7 +675,11 @@ async fn architecture_handler(
     State(state): State<ApiState>,
     Path(_workspace_id): Path<String>,
 ) -> Result<Response, ApiError> {
-    let response = state.graph.build_architecture().await?;
+    let workspace = state.workspace.current_workspace().map_err(ApiError)?;
+    let response = state
+        .graph
+        .build_architecture(&workspace.root_path)
+        .await?;
     Ok(Json(response).into_response())
 }
 
