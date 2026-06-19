@@ -21,6 +21,7 @@ pub use cached_graph_store::CachedGraphStore;
 // are absent from the dep graph entirely.
 #[cfg(feature = "postgres")]
 pub mod postgres_repository;
+#[cfg(feature = "postgres")] pub mod postgres_iac_repository;
 
 #[cfg(feature = "postgres")]
 pub use postgres_repository::{NamedViewRow, PostgresRepository, ScanManifestRow, ViewSpecRow};

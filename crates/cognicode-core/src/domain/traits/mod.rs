@@ -12,6 +12,7 @@ pub mod parser;
 pub mod refactor_strategy;
 pub mod repository;
 pub mod search_provider;
+pub mod iac_repository;
 #[cfg(feature = "multimodal")]
 pub mod source_extractor;
 
