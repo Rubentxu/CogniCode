@@ -15,7 +15,7 @@ import { PaneStackView } from "./PaneStackView";
 
 describe("PaneStackView", () => {
   it("renders empty state when no panes", () => {
-    const s = initialStateWithFocus("a", "pane-stack", "overview", "symbol");
+    const s = initialStateWithFocus("a", "overview", "symbol");
     const firstPaneId = s.navigation.panes[0]?.id ?? "";
     const state: AppState = appReducer(s, {
       type: "CLOSE_PANE",
