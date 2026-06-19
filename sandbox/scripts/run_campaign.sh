@@ -218,6 +218,7 @@ fi
 
 # ── Multi-repeat path: stability/repeat testing ──
 mkdir -p "$RUN_DIR"
+MULTI_FAILURES=0
 
 for ((i=1; i<=REPEAT; i++)); do
     REPEAT_RUN_DIR="$RUN_DIR/run-$i"
@@ -225,7 +226,9 @@ for ((i=1; i<=REPEAT; i++)); do
     echo ""
     echo "─── Repeat $i of $REPEAT ───"
     _run_campaign "$REPEAT_RUN_DIR" "$REPEAT_RUN_DIR"
+    MULTI_FAILURES=$((MULTI_FAILURES + FAILURES))
 done
+FAILURES=$MULTI_FAILURES
 
 # ── Stability analysis ──
 echo ""
@@ -234,6 +237,16 @@ if python3 "$SANDBOX/scripts/analyze_stability.py" "$RUN_DIR"; then
     echo "  ✅ stability.json written to $RUN_DIR"
 else
     echo "  ⚠️  stability analysis failed (non-fatal)"
+fi
+
+# ── Combined report at parent level ──
+# This aggregates all repeat subdirs (via recursive glob) and shows stability section
+if [ -f "$RUN_DIR/stability.json" ]; then
+    cd "$ROOT"
+    python3 "$SANDBOX/scripts/generate_html_report.py" \
+        --results-dir "$RUN_DIR" \
+        --output "$RUN_DIR/report.html"
+    echo "  ✅ combined report: $RUN_DIR/report.html"
 fi
 
 # ── Append one entry to history ──
@@ -301,7 +314,7 @@ _run_campaign() {
     echo "⏳ Waiting for all workers to complete..."
 
     # Wait for all workers and collect exit codes
-    local FAILURES=0
+    FAILURES=0
     for pid in "${PIDS[@]}"; do
         wait "$pid" || FAILURES=$((FAILURES + 1))
     done
@@ -349,7 +362,6 @@ _append_history() {
     local RUN_PARENT="$1"
     local REPEAT_COUNT="$2"
     local HISTORY_FILE="$SANDBOX/history/runs.jsonl"
-
     local STABILITY_FILE="$RUN_PARENT/stability.json"
 
     if [ ! -f "$STABILITY_FILE" ]; then
@@ -357,39 +369,49 @@ _append_history() {
         return
     fi
 
-    # Extract values from stability.json
-    local TOTAL_SCENARIOS=$(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(d.get('total_scenarios', 0))")
-    local FLAKY_COUNT=$(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(len(d.get('flaky_scenarios', [])))")
-    local AVG_HEALTH=$(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(d.get('health_score', 0))")
-    local AVG_PASS_RATE=$(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(d.get('pass_rate', 0))")
-    local TIMING_P50=$(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(d.get('timing_p50_ms', 0))")
-    local TIMING_P95=$(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(d.get('timing_p95_ms', 0))")
-
     local TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-    python3 -c "
+    python3 /dev/stdin "$STABILITY_FILE" "$HISTORY_FILE" "$TIMESTAMP" "$RUN_ID" "$REPEAT_COUNT" << 'PYEOF'
 import json, sys
+
+stability_path = sys.argv[1]
+history_path = sys.argv[2]
+timestamp = sys.argv[3]
+run_id = sys.argv[4]
+repeat_count = int(sys.argv[5])
+
+with open(stability_path) as f:
+    st = json.load(f)
+
+total = st.get("total_scenarios", 0)
+pass_rate = st.get("pass_rate", 0)
+flaky_count = len(st.get("flaky_scenarios", []))
+passed = int(pass_rate / 100 * total)
+
 entry = {
-    'timestamp': '$TIMESTAMP',
-    'repeat_count': $REPEAT_COUNT,
-    'flaky_scenarios': $FLAKY_COUNT,
-    'health_score': $AVG_HEALTH,
-    'pass_rate': $AVG_PASS_RATE,
-    'total_scenarios': $TOTAL_SCENARIOS,
-    'passed_scenarios': $(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(int(d.get('pass_rate', 0) / 100 * d.get('total_scenarios', 0)))"),
-    'dimensions': {
-        'correctitud': $(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(d.get('by_language', {}))"),
-        'latencia': $TIMING_P50,
-        'escalabilidad': $TIMING_P95,
-        'consistencia': $(python3 -c "import json; d=json.load(open('$STABILITY_FILE')); print(round(d.get('timing_cv', 1.0) * 100, 2))"),
-        'robustez': $AVG_HEALTH
+    "timestamp": timestamp,
+    "repeat_count": repeat_count,
+    "flaky_scenarios": flaky_count,
+    "health_score": round(st.get("health_score", 0), 2),
+    "pass_rate": pass_rate / 100,
+    "total_scenarios": total,
+    "passed_scenarios": passed,
+    "dimensions": {
+        "correctitud": 0,
+        "latencia": st.get("timing_p50_ms", 0),
+        "escalabilidad": st.get("timing_p95_ms", 0),
+        "consistencia": 0,
+        "robustez": st.get("health_score", 0)
     },
-    'timing_p50_ms': $TIMING_P50,
-    'timing_p95_ms': $TIMING_P95,
-    'run_id': '$RUN_ID'
+    "timing_p50_ms": st.get("timing_p50_ms", 0),
+    "timing_p95_ms": st.get("timing_p95_ms", 0),
+    "run_id": run_id,
+    "orchestrator_version": "0.5.0"
 }
-with open('$HISTORY_FILE', 'a') as f:
-    f.write(json.dumps(entry) + '\n')
-print('  ✅ History entry appended')
-"
+
+with open(history_path, "a") as f:
+    f.write(json.dumps(entry) + "\n")
+
+print("  ✅ History entry appended")
+PYEOF
 }
