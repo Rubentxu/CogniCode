@@ -175,6 +175,16 @@ impl CogniCodeHandler {
         })
     }
 
+    /// Fallback `with_pg` for builds without the `postgres` feature.
+    /// Mirrors the pattern used by `with_iac_repo`: callers can reference
+    /// `CogniCodeHandler::with_pg(...)` unconditionally, but the build
+    /// without `postgres` will short-circuit with a clear error message
+    /// at runtime instead of failing at link time.
+    #[cfg(not(feature = "postgres"))]
+    pub async fn with_pg(_project_root: PathBuf, _pg_url: &str) -> Result<Self, String> {
+        Err("with_pg requires the `postgres` feature on cognicode-core".to_string())
+    }
+
     fn build_ctx(project_root: PathBuf) -> HandlerContext {
         let canonical_root =
             std::fs::canonicalize(&project_root).unwrap_or_else(|_| project_root.clone());

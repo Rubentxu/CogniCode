@@ -649,7 +649,7 @@ pub async fn handle_iac_query(
             })?;
 
         let dependencies = iac_repo
-            .get_dependencies(&input.resource_id, input.depth)
+            .get_dependencies(&input.resource_id, Some(input.depth as u32))
             .await
             .map_err(|e| HandlerError::Internal(e.to_string()))?
             .into_iter()
@@ -659,13 +659,13 @@ pub async fn handle_iac_query(
                     name: edge.target.as_ref().map(|t| t.name.clone()).unwrap_or_default(),
                     kind: edge.target.as_ref().map(|t| t.resource_type.clone()).unwrap_or_default(),
                     edge_type: edge.edge_type,
-                    confidence: edge.confidence,
+                    confidence: edge.confidence.map(|c| c as f64).unwrap_or(0.0),
                 }
             })
             .collect();
 
         let dependents = iac_repo
-            .get_dependents(&input.resource_id, input.depth)
+            .get_dependents(&input.resource_id, Some(input.depth as u32))
             .await
             .map_err(|e| HandlerError::Internal(e.to_string()))?
             .into_iter()
@@ -675,7 +675,7 @@ pub async fn handle_iac_query(
                     name: edge.target.as_ref().map(|t| t.name.clone()).unwrap_or_default(),
                     kind: edge.target.as_ref().map(|t| t.resource_type.clone()).unwrap_or_default(),
                     edge_type: edge.edge_type,
-                    confidence: edge.confidence,
+                    confidence: edge.confidence.map(|c| c as f64).unwrap_or(0.0),
                 }
             })
             .collect();

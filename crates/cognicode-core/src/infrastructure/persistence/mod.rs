@@ -26,5 +26,13 @@ pub mod postgres_repository;
 #[cfg(feature = "postgres")]
 pub use postgres_repository::{NamedViewRow, PostgresRepository, ScanManifestRow, ViewSpecRow};
 
+// IaC repository stub — re-export the concrete PG-backed implementation
+// alongside the trait so callers can `use ...::persistence::PostgresIacRepository`
+// without reaching through the submodule path. Feature-gated for parity
+// with `postgres_repository` (the `IacRepository` trait itself is always
+// available; only the PG implementation is gated).
+#[cfg(feature = "postgres")]
+pub use postgres_iac_repository::PostgresIacRepository;
+
 #[cfg(test)]
 mod store_contract_tests;

@@ -1998,7 +1998,7 @@ fn find_function_metrics(
 
     // Recurse into children
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32) {
+        if let Some(child) = node.child(i) {
             find_function_metrics(
                 child,
                 source,
@@ -2018,7 +2018,7 @@ fn find_function_metrics(
 /// Finds an identifier in a node
 fn find_identifier_in_node(node: tree_sitter::Node, source: &str) -> Option<String> {
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32) {
+        if let Some(child) = node.child(i) {
             if child.kind() == "identifier" || child.kind() == "type_identifier" {
                 return Some(child.utf8_text(source.as_bytes()).unwrap_or("").to_string());
             }
@@ -2035,11 +2035,11 @@ fn find_identifier_in_node(node: tree_sitter::Node, source: &str) -> Option<Stri
 fn count_parameters(node: tree_sitter::Node, _source: &str) -> u32 {
     let mut count = 0u32;
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32) {
+        if let Some(child) = node.child(i) {
             // Handle Python parameters (within parentheses after function name)
             if child.kind() == "parameters" {
                 for j in 0..child.child_count() {
-                    if let Some(param) = child.child(j as u32)
+                    if let Some(param) = child.child(j)
                         && param.kind() == "identifier"
                     {
                         count += 1;
@@ -2128,7 +2128,7 @@ fn process_decision_points(
     };
 
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32) {
+        if let Some(child) = node.child(i) {
             process_decision_points(child, source, max_nesting, decision_points, child_nesting);
         }
     }
