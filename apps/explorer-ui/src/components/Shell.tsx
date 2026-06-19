@@ -247,6 +247,9 @@ function renderPanels(
       </ErrorBoundary>
     ) : (
       <ErrorBoundary label="ObjectInspector">
+        <ObjectInspector />
+      </ErrorBoundary>
+    );
 
   if (viewport === "small") {
     return (

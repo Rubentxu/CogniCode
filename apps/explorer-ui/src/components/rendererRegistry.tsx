@@ -7,18 +7,18 @@
  * `composite`) map to React components via this registry. The backend sends
  * ViewSpecs and data; the frontend chooses the concrete renderer via this map.
  *
- * Design notes:
- * - Phase 3 scope: skeleton only — registry is created, built-in renderers
- *   are registered with safe fallbacks, and the registry is plumbed into the
- *   existing component tree WITHOUT breaking the current ViewBlock switch.
- * - Phase 4 (ViewSpec authoring wizard) will wire ViewSpec-driven rendering
- *   through this registry.
- * - The `getOrJson` fallback ensures unknown renderer ids degrade to raw JSON
- *   rather than crashing — this is the forward-compatibility contract.
+ * Sprint E1: E1.1 wires `graph` to the real `InteractiveGraph` component
+ * (previously was placeholder). E1.2-E1.5 will wire the remaining renderers.
  */
-import type { ReactNode } from "react";
+import { Suspense, lazy, type ReactNode } from "react";
 
 import type { RendererKind } from "../api/schemas";
+import type { SubgraphResponse } from "../api/types";
+
+// Lazy-load the graph renderer — keeps cytoscape out of the initial bundle
+const InteractiveGraph = lazy(() =>
+  import("./InteractiveGraph").then((m) => ({ default: m.InteractiveGraph })),
+);
 
 // ============================================================================
 // Renderer id type — first-class catalog from ADR-008
@@ -225,21 +225,50 @@ export const rendererRegistry = new RendererRegistry();
 // wired components (InteractiveGraph, etc.).
 
 function GraphRenderer({ body }: { body: unknown }) {
+  // `body` is the graph data from a ViewBlock: { nodes: GraphNode[], edges: GraphEdge[], rootId?: string }
+  const b = body as { nodes?: unknown[]; edges?: unknown[]; rootId?: string } | null;
+  const root = b?.rootId ?? "graph";
+  const nodes = b?.nodes ?? [];
+  const edges = b?.edges ?? [];
+
+  // Build SubgraphResponse shape expected by InteractiveGraph
+  const data: SubgraphResponse = {
+    nodes: nodes.map((n: unknown) => {
+      const node = n as Record<string, unknown>;
+      return {
+        id: String(node.id ?? node.label ?? "?"),
+        label: String(node.label ?? node.id ?? "?"),
+        kind: String(node.kind ?? "symbol"),
+        file: (node.file as string | null) ?? null,
+        line: (node.line as number | null) ?? null,
+        style_class: (node.style_class as string | null) ?? null,
+      };
+    }),
+    edges: edges.map((e: unknown) => {
+      const edge = e as Record<string, unknown>;
+      return {
+        source: String(edge.source ?? edge.from ?? "?"),
+        target: String(edge.target ?? edge.to ?? "?"),
+        relation: String(edge.relation ?? edge.type ?? "calls"),
+        style_class: (edge.style_class as string | null) ?? null,
+      };
+    }),
+  };
+
   return (
-    <div
-      data-testid="renderer-graph"
-      className="rounded-md p-4"
-      style={{
-        backgroundColor: "var(--color-surface-overlay)",
-        color: "var(--color-text-muted)",
-        border: "1px dashed var(--color-border)",
-      }}
-    >
-      <p className="text-xs">Graph renderer — InteractiveGraph wiring in Phase 4</p>
-      <pre className="mt-2 overflow-x-auto font-mono text-xs">
-        {JSON.stringify(body, null, 2).slice(0, 500)}
-      </pre>
-    </div>
+    <Suspense fallback={
+      <div className="flex h-full items-center justify-center text-sm" style={{color:"var(--color-text-muted)"}}>
+        Loading graph…
+      </div>
+    }>
+      <InteractiveGraph
+        root={root}
+        data={data}
+        selectedId={null}
+        onSelectObject={() => {}}
+        className="h-full w-full"
+      />
+    </Suspense>
   );
 }
 
