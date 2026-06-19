@@ -115,3 +115,39 @@ scenarios:
     latency:
       target_ms: 200
       max_ms: 3000
+- name: swift_edit_file_comment_argument-parser
+  description: Edit a comment in Sources/ArgumentParser/Completions/BashCompletionsGenerator.swift (argument-parser) — safe
+    mutation
+  tool: edit_file
+  action: apply
+  repo: swift/argument-parser
+  language: swift
+  workspace: .
+  scenario_class: mutation
+  expected_outcome: pass
+  arguments:
+    path: Sources/ArgumentParser/Completions/BashCompletionsGenerator.swift
+    old_text: //===----------------------------------------------------------------------===//
+    new_text: //===----------------------------------------------------------*- swift -*-===//
+  metrics:
+    latency:
+      target_ms: 1000
+      max_ms: 10000
+- name: swift_write_file_new_argument-parser
+  description: Create a new file in argument-parser — write_file
+  tool: write_file
+  action: create
+  repo: swift/argument-parser
+  language: swift
+  workspace: .
+  scenario_class: mutation
+  expected_outcome: pass
+  arguments:
+    path: .cognicode-test.txt
+    content: 'CogniCode sandbox test — auto-generated, safe to delete
+
+      '
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000

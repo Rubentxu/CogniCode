@@ -115,3 +115,38 @@ scenarios:
     latency:
       target_ms: 200
       max_ms: 3000
+- name: ruby_edit_file_comment_sinatra
+  description: Edit a comment in lib/sinatra.rb (sinatra) — safe mutation
+  tool: edit_file
+  action: apply
+  repo: ruby/sinatra
+  language: ruby
+  workspace: .
+  scenario_class: mutation
+  expected_outcome: pass
+  arguments:
+    path: lib/sinatra.rb
+    old_text: enable :inline_templates
+    new_text: 'enable :inline_templates  # CogniCode sandbox'
+  metrics:
+    latency:
+      target_ms: 1000
+      max_ms: 10000
+- name: ruby_write_file_new_sinatra
+  description: Create a new file in sinatra — write_file
+  tool: write_file
+  action: create
+  repo: ruby/sinatra
+  language: ruby
+  workspace: .
+  scenario_class: mutation
+  expected_outcome: pass
+  arguments:
+    path: .cognicode-test.txt
+    content: 'CogniCode sandbox test — auto-generated, safe to delete
+
+      '
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000

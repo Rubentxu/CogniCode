@@ -115,3 +115,39 @@ scenarios:
     latency:
       target_ms: 200
       max_ms: 3000
+- name: c_edit_file_comment_hiredis
+  description: Edit a comment in alloc.c (hiredis) — safe mutation
+  tool: edit_file
+  action: apply
+  repo: c/hiredis
+  language: c
+  workspace: .
+  scenario_class: mutation
+  expected_outcome: pass
+  arguments:
+    path: README.md
+    old_text: '[![Build Status](https://github.com/redis/hiredis/actions/workflows/build.yml/badge.svg)](https://github.com/redis/hiredis/actions/workflows/build.yml)'
+    new_text: '[![Build Status](https://github.com/redis/hiredis/actions/workflows/build.yml/badge.svg)](https://github.com/redis/hiredis/actions/workflows/build.yml)
+      — sandbox'
+  metrics:
+    latency:
+      target_ms: 1000
+      max_ms: 10000
+- name: c_write_file_new_hiredis
+  description: Create a new file in hiredis — write_file
+  tool: write_file
+  action: create
+  repo: c/hiredis
+  language: c
+  workspace: .
+  scenario_class: mutation
+  expected_outcome: pass
+  arguments:
+    path: .cognicode-test.txt
+    content: 'CogniCode sandbox test — auto-generated, safe to delete
+
+      '
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000

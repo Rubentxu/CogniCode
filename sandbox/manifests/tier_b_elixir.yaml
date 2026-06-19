@@ -115,3 +115,38 @@ scenarios:
     latency:
       target_ms: 200
       max_ms: 3000
+- name: elixir_edit_file_comment_elixir
+  description: Edit a comment in lib/eex/lib/eex.ex (elixir) — safe mutation
+  tool: edit_file
+  action: apply
+  repo: elixir/elixir
+  language: elixir
+  workspace: .
+  scenario_class: mutation
+  expected_outcome: pass
+  arguments:
+    path: lib/eex/lib/eex.ex
+    old_text: defmodule EEx do
+    new_text: 'defmodule EEx do # CogniCode sandbox'
+  metrics:
+    latency:
+      target_ms: 1000
+      max_ms: 10000
+- name: elixir_write_file_new_elixir
+  description: Create a new file in elixir — write_file
+  tool: write_file
+  action: create
+  repo: elixir/elixir
+  language: elixir
+  workspace: .
+  scenario_class: mutation
+  expected_outcome: pass
+  arguments:
+    path: .cognicode-test.txt
+    content: 'CogniCode sandbox test — auto-generated, safe to delete
+
+      '
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000
