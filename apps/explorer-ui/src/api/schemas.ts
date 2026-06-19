@@ -1160,6 +1160,38 @@ export type ContextualGraphResponse = z.infer<
 >;
 
 // ============================================================================
+// Landing Page — E4 ADR-039
+// ============================================================================
+
+/**
+ * A god node entry — a high PageRank symbol with its score.
+ * Mirrors `cognicode_explorer::dto::GodNodeEntry`.
+ */
+export const godNodeEntrySchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  score: z.number(),
+});
+export type GodNodeEntry = z.infer<typeof godNodeEntrySchema>;
+
+/**
+ * Response payload for `GET /api/workspaces/:id/landing`.
+ * Bundles everything the landing page needs in a single round-trip.
+ * Mirrors `cognicode_explorer::dto::LandingPayload`.
+ */
+export const landingPayloadSchema = z.object({
+  workspace: workspaceSummarySchema,
+  nodes: z.array(graphNodeSchema),
+  edges: z.array(graphEdgeSchema),
+  entry_points: z.array(inspectableObjectSummarySchema),
+  hot_paths: z.array(inspectableObjectSummarySchema),
+  god_nodes: z.array(godNodeEntrySchema),
+  suggested_questions: z.array(z.string()),
+  graph_status: graphStatusSchema,
+});
+export type LandingPayload = z.infer<typeof landingPayloadSchema>;
+
+// ============================================================================
 // Convenience aliases
 // ============================================================================
 

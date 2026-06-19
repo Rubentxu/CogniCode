@@ -505,3 +505,21 @@ export async function executeViewSpec(
     schemas.contextualViewSchema,
   );
 }
+
+// ============================================================================
+// Landing Page — E4 ADR-039
+// ============================================================================
+
+/**
+ * Fetch the landing page payload for a workspace.
+ * Returns workspace summary, graph nodes/edges, entry points, hot paths,
+ * god nodes, and suggested questions.
+ */
+export async function fetchLanding(
+  workspaceId: string,
+): Promise<import("./types").LandingPayload> {
+  return apiGet(
+    `/workspaces/${encodeURIComponent(workspaceId)}/landing`,
+    schemas.landingPayloadSchema,
+  );
+}

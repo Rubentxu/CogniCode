@@ -86,6 +86,9 @@ export type {
   MultimodalEdge,
   GraphSearchResult,
   GraphSearchResponse,
+  // ---- Landing Page (E4 ADR-039) ----
+  GodNodeEntry,
+  LandingPayload,
 } from "./schemas";
 
 export {
@@ -139,4 +142,7 @@ export {
   multimodalEdgeSchema,
   graphSearchResultSchema,
   graphSearchResponseSchema,
+  // ---- Landing Page (E4 ADR-039) ----
+  godNodeEntrySchema,
+  landingPayloadSchema,
 } from "./schemas";

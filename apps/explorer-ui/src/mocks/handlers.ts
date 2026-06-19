@@ -301,4 +301,23 @@ export const handlers = [
       truncationReason: truncated ? "max_nodes_exceeded" : null,
     });
   }),
+
+  // -----------------------------------------------------------------------
+  // Landing Page (E4 ADR-039)
+  // -----------------------------------------------------------------------
+  http.get("/api/workspaces/:workspace_id/landing", async ({ params }) => {
+    await delay(LATENCY_MS);
+    const workspaceId = params["workspace_id"] as string | undefined;
+    if (!workspaceId) {
+      return HttpResponse.json({ error: "workspace_id required" }, { status: 400 });
+    }
+    const { landingFixture } = await import("./landingFixtures");
+    return HttpResponse.json({
+      ...landingFixture,
+      workspace: {
+        ...landingFixture.workspace,
+        id: workspaceId,
+      },
+    });
+  }),
 ];
