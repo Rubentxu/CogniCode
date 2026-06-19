@@ -563,11 +563,20 @@ sandbox-run manifests:
     echo "=== Running sandbox: {{manifests}} ==="
     cargo run -p cognicode-sandbox -- run {{manifests}}
 
-# Generate HTML smoke test report from sandbox results
+# Generate HTML smoke test report from the latest per-run campaign
+# Falls back to the historical aggregate if no campaign exists
 sandbox-report-html output="/tmp/cognicode-smoke-report.html":
     #!/usr/bin/env bash
-    echo "📊 Generating HTML report..."
-    python3 sandbox/scripts/generate_html_report.py --output "{{output}}"
+    set -euo pipefail
+    LATEST_RUN=$(ls -t sandbox/results-runs 2>/dev/null | head -1)
+    if [ -n "$LATEST_RUN" ] && [ -f "sandbox/results-runs/$LATEST_RUN/summary.json" ]; then
+        RESULTS_DIR="sandbox/results-runs/$LATEST_RUN"
+        echo "📊 Using latest per-run campaign: $LATEST_RUN"
+    else
+        RESULTS_DIR="sandbox/results"
+        echo "📊 No campaign found, using historical aggregate from sandbox/results/"
+    fi
+    python3 sandbox/scripts/generate_html_report.py --results-dir "$RESULTS_DIR" --output "{{output}}"
     echo "✅ Report: {{output}}"
     xdg-open "{{output}}" 2>/dev/null || open "{{output}}" 2>/dev/null || echo "Open: {{output}}"
 
