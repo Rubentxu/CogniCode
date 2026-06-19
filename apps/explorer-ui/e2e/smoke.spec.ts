@@ -3,7 +3,7 @@
  *
  * Full flow:
  *  1. Open the app — connection gate resolves to the Shell.
- *  2. Miller Columns + Object Inspector + Lens Panel visible.
+ *  2. Shell mounts with the 2-zone layout (nav + inspector).
  *  3. Spotter opens via Cmd+K, types a query, and shows results.
  *  4. Selecting a result closes the palette and inspects the object.
  *  5. View tabs render for the new object; clicking one updates the body.
@@ -16,42 +16,37 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Explorer smoke flow", () => {
-  test("boots, lists columns, opens Spotter, and inspects an object", async ({
+  test("boots, opens Spotter, and inspects an object", async ({
     page,
   }) => {
     await page.goto("/");
 
-    // 1. App boots — title + 3-panel layout visible.
+    // 1. App boots — title + Shell visible.
     await expect(
       page.getByRole("heading", { name: /CogniCode Explorer/i, level: 1 }),
     ).toBeVisible();
     const shell = page.getByTestId("shell");
     await expect(shell).toBeVisible();
 
-    // 2. The 3 panels are mounted (LensPanel renders the empty state
-    //    until the user picks an object — that's fine, the testid is
-    //    on the wrapper).
-    await expect(page.getByTestId("miller-columns-empty")).toBeVisible();
-
-    // 3. Open the Spotter via Cmd+K.
+    // 2. Open the Spotter via Cmd+K.
     await page.keyboard.press("Meta+k");
     const spotter = page.getByTestId("spotter");
     await expect(spotter).toBeVisible();
     const input = page.getByTestId("spotter-input");
     await input.fill("build");
 
-    // 4. The first fixture result becomes available.
+    // 3. The first fixture result becomes available.
     const firstResult = page
       .getByTestId("spotter-results")
       .getByTestId(/^spotter-item-/);
     await expect(firstResult.first()).toBeVisible({ timeout: 5_000 });
 
-    // 5. Click the first result, palette closes, inspector renders.
+    // 4. Click the first result, palette closes, inspector renders.
     await firstResult.first().click();
     await expect(spotter).toBeHidden();
     await expect(page.getByTestId("object-inspector")).toBeVisible();
 
-    // 6. At least one view tab is rendered for the new object.
+    // 5. At least one view tab is rendered for the new object.
     const tablist = page.getByRole("tablist", { name: /Available views/i });
     await expect(tablist).toBeVisible();
     const tabs = tablist.getByRole("tab");

@@ -6,9 +6,9 @@
  * exposes the resolved viewport through `data-viewport` so we can
  * assert on it without measuring pixels.
  *
- * The Spotter + the inspector + the column navigation must keep
- * working at every viewport (no overlap, no horizontal scroll on
- * the body, no clipped buttons).
+ * The Spotter + the inspector + the lens panel must keep working
+ * at every viewport (no overlap, no horizontal scroll on the body,
+ * no clipped buttons).
  */
 import { test, expect, type Page } from "@playwright/test";
 
@@ -21,21 +21,19 @@ const BREAKPOINTS = [
 async function primeApp(page: Page) {
   await page.goto("/");
   await expect(page.getByTestId("shell")).toBeVisible();
-  // Drive the app into a state that exercises all three panels.
+  // Drive the app into a state that exercises both zones.
   await page.keyboard.press("Meta+k");
   await page.getByTestId("spotter-input").fill("build");
   const firstResult = page
     .getByTestId("spotter-results")
     .getByTestId(/^spotter-item-/);
   await firstResult.first().click();
-  // The ObjectInspector is only present at desktop/tablet. At
-  // small viewport the Miller Columns take the full pane — so
-  // the presence of the inspector is breakpoint-dependent. The
-  // column-list is always present.
+  // At small viewport the bottom-sheet takes the inspector pane;
+  // at desktop/tablet the object-inspector is in the right zone.
   await expect(
     page
-      .getByTestId("miller-columns")
-      .or(page.getByTestId("object-inspector")),
+      .getByTestId("object-inspector")
+      .or(page.getByTestId("bottom-sheet")),
   ).toBeVisible();
 }
 
@@ -53,14 +51,13 @@ for (const bp of BREAKPOINTS) {
     test("the main flow holds at this viewport", async ({ page }) => {
       await primeApp(page);
       // At desktop + tablet the inspector is in the right pane;
-      // at small the columns take the full pane and the inspector
-      // is a drill-down (not present in the DOM until navigated).
+      // at small the bottom-sheet is used for the inspector pane.
       if (bp.expectedViewport !== "small") {
         await expect(page.getByTestId("object-inspector-body")).toBeVisible();
       } else {
-        // Small viewport — assert the columns are populated and
+        // Small viewport — assert the bottom-sheet is present and
         // no horizontal overflow happens (asserted in the next test).
-        await expect(page.getByTestId("miller-columns")).toBeVisible();
+        await expect(page.getByTestId("bottom-sheet")).toBeVisible();
       }
       // At desktop the lens panel is always on; at tablet it is
       // togglable; at small it is hidden behind the toggle. We
