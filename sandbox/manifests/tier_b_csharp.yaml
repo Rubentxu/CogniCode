@@ -1,0 +1,152 @@
+version: '1.0'
+language: csharp
+tier: B
+description: Tier B smoke tests for csharp using spectre-console
+timeout_seconds: 120
+validation:
+  failure_is_regression: false
+  stages: []
+scenarios:
+- name: csharp_build_graph_spectre
+  description: Build call graph for C# (spectre-console)
+  tool: build_graph
+  action: build
+  repo: csharp/spectre-console
+  language: csharp
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    directory: src
+  ground_truth:
+    symbols_min: 5
+  metrics:
+    latency:
+      target_ms: 2000
+      max_ms: 30000
+- name: csharp_entry_points_spectre
+  description: Find entry points in C# (spectre-console)
+  tool: get_entry_points
+  action: find
+  repo: csharp/spectre-console
+  language: csharp
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_entry_points: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 1000
+      max_ms: 10000
+- name: csharp_file_symbols_spectre
+  description: Extract symbols from C# file (src/Spectre.Console/AnsiConsole.cs)
+  tool: get_file_symbols
+  action: extract
+  repo: csharp/spectre-console
+  language: csharp
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    file_path: src/Spectre.Console/AnsiConsole.cs
+  ground_truth:
+    has_symbols: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 5000
+- name: csharp_leaf_functions_spectre
+  description: Find leaf functions in C# (spectre-console)
+  tool: get_leaf_functions
+  action: find
+  repo: csharp/spectre-console
+  language: csharp
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments: {}
+  ground_truth:
+    has_leaf_functions: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: csharp_call_hierarchy_spectre
+  description: Find callees of AnsiConsole in C#
+  tool: get_call_hierarchy
+  action: callees
+  repo: csharp/spectre-console
+  language: csharp
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    symbol_name: AnsiConsole
+    direction: outgoing
+    depth: 1
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: csharp_analyze_impact_spectre
+  description: Analyze impact of AnsiConsole in C#
+  tool: analyze_impact
+  action: analyze
+  repo: csharp/spectre-console
+  language: csharp
+  workspace: .
+  scenario_class: read_only
+  expected_outcome: pass
+  pre_steps:
+  - build_graph
+  arguments:
+    symbol_name: AnsiConsole
+  ground_truth: {}
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: csharp_edit_file_comment_spectre
+  description: Edit a comment in C# (src/Spectre.Console/AnsiConsole.cs)
+  tool: edit_file
+  action: apply
+  repo: csharp/spectre-console
+  language: csharp
+  workspace: .
+  scenario_class: mutation
+  expected_outcome: pass
+  arguments:
+    path: src/Spectre.Console/AnsiConsole.cs
+    old_text: namespace Spectre.Console
+    new_text: namespace Spectre.Console /* CogniCode sandbox */
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 5000
+- name: csharp_write_file_spectre
+  description: Create a new file in C# project
+  tool: write_file
+  action: create
+  repo: csharp/spectre-console
+  language: csharp
+  workspace: .
+  scenario_class: mutation
+  expected_outcome: pass
+  arguments:
+    path: .cognicode-test.cs
+    content: '// CogniCode sandbox test
+
+      '
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000

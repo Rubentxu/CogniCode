@@ -280,3 +280,11 @@ ls -la "$REPO_DIR/"
 echo ""
 echo "Note: Digest pins in container files must be updated separately when images change."
 echo "JS/TS real repos (chalk, commander) need: npm ci --frozen-lockfile"
+
+# ─── C#: spectreconsole/spectre.console ──────────────────────────────────────
+# Pinned at main — compact .NET library (~5K LOC, 12MB shallow)
+pin_repo \
+    "csharp/spectre-console" \
+    "https://github.com/spectreconsole/spectre.console.git" \
+    "main" \
+    ""

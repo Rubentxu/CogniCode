@@ -300,6 +300,12 @@ impl ContainerConfig {
                 network: "container:cognicode-elixir-net".into(),
                 workdir: "/workspace".into(),
             }),
+            "csharp" => Some(ContainerConfig {
+                image: "mcr.microsoft.com/dotnet/sdk:8.0".into(),
+                name: "cognicode-csharp".into(),
+                network: "container:cognicode-csharp-net".into(),
+                workdir: "/workspace".into(),
+            }),
             _ => None, // Unsupported languages return None
         }
     }
@@ -612,6 +618,7 @@ fn execute_scenario(
             || lang == "cpp"
             || lang == "swift"
             || lang == "elixir"
+            || lang == "csharp"
         {
             // Try to spawn server directly (for now, using host binary)
             // Collect environment variables to forward to the MCP server child process
