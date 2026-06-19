@@ -59,6 +59,22 @@ type ChildStdout = std::process::ChildStdout;
 type ChildStderr = std::process::ChildStderr;
 
 impl McpServer {
+    /// Construct from an already-spawned child process (used by sandbox container spawn).
+    pub fn from_child(
+        child: Child,
+        stdin: std::process::ChildStdin,
+        stdout: ChildStdout,
+        stderr: Option<ChildStderr>,
+    ) -> Self {
+        Self {
+            child,
+            stdout: BufReader::new(stdout),
+            stdin,
+            stderr,
+            request_id: 0,
+        }
+    }
+
     /// Spawn a new MCP server process.
     ///
     /// - `server_path`: path to the cognicode-mcp binary

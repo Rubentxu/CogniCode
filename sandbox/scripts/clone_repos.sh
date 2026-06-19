@@ -210,6 +210,62 @@ pin_repo \
     "v3.24.1" \
     ""
 
+# ─── Ruby: sinatra/sinatra ─────────────────────────────────────────────────────
+# Pinned at v4.1.0 — lightweight Ruby web framework (~2K LOC)
+pin_repo \
+    "ruby/sinatra" \
+    "https://github.com/sinatra/sinatra.git" \
+    "v4.1.0" \
+    ""
+
+# ─── PHP: slimphp/Slim ─────────────────────────────────────────────────────────
+# Pinned at 4.14.0 — PHP micro-framework (~4K LOC)
+pin_repo \
+    "php/slim" \
+    "https://github.com/slimphp/Slim.git" \
+    "4.14.0" \
+    ""
+
+# ─── C: redis/hiredis ──────────────────────────────────────────────────────────
+# Pinned at v1.2.0 — minimal C Redis client (~3K LOC)
+pin_repo \
+    "c/hiredis" \
+    "https://github.com/redis/hiredis.git" \
+    "v1.2.0" \
+    ""
+
+# ─── C++: nlohmann/json ────────────────────────────────────────────────────────
+# Pinned at v3.11.3 — single-header JSON library (~25K LOC but one file)
+pin_repo \
+    "cpp/json" \
+    "https://github.com/nlohmann/json.git" \
+    "v3.11.3" \
+    ""
+
+# ─── Swift: apple/swift-argument-parser ────────────────────────────────────────
+# Pinned at 1.5.0 — Swift CLI argument parser (~3K LOC)
+pin_repo \
+    "swift/argument-parser" \
+    "https://github.com/apple/swift-argument-parser.git" \
+    "1.5.0" \
+    ""
+
+# ─── Elixir: elixir-lang/elixir ────────────────────────────────────────────────
+# Pinned at v1.18.2 — Elixir standard library (small core)
+pin_repo \
+    "elixir/elixir" \
+    "https://github.com/elixir-lang/elixir.git" \
+    "v1.18.2" \
+    ""
+
+# ─── C#: dotnet/roslyn ─────────────────────────────────────────────────────────
+# Pinned at a stable tag — C# compiler
+pin_repo \
+    "csharp/roslyn" \
+    "https://github.com/dotnet/roslyn.git" \
+    "Visual-Studio-2022-version-17.13" \
+    ""
+
 # ─── Java: java-sample (Maven project from fixtures) ─────────────────────────
 # Already provisioned at sandbox/fixtures/java-sample
 # This is a minimal Maven project for Phase 3 capability probes

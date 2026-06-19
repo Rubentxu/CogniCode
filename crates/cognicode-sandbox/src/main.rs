@@ -613,40 +613,33 @@ fn execute_scenario(
                 }
             }
 
-            // If DATABASE_URL is set, forward --postgres to enable PG-backed IaC queries
-            let mut extra_args: Vec<&str> = Vec::new();
-            let spawned_server = if let Ok(db_url) = std::env::var("DATABASE_URL") {
-                match McpServer::spawn_with_env(
-                    &server_binary,
-                    &workspace_path,
-                    &server_env,
-                    &["--postgres", &db_url],
-                ) {
-                    Ok(s) => Some(s),
-                    Err(e) => {
-                        eprintln!("  [WARN] Could not spawn MCP server with PG: {e}");
-                        None
-                    }
-                }
-            } else if !server_env.is_empty() {
-                match McpServer::spawn_with_env(
-                    &server_binary,
-                    &workspace_path,
-                    &server_env,
-                    &[],
-                ) {
-                    Ok(s) => Some(s),
-                    Err(e) => {
-                        eprintln!("  [WARN] Could not spawn MCP server: {e}");
-                        None
-                    }
-                }
+            // Determine spawn mode: container (preferred for isolation) or host (fallback)
+            let use_container = container_config.is_some() && scenario.scenario_class != "mutation";
+            let read_only = scenario.scenario_class != "mutation";
+            let db_url = std::env::var("DATABASE_URL").ok();
+            let mut extra: Vec<String> = Vec::new();
+            if let Some(ref url) = db_url {
+                extra.push("--postgres".into());
+                extra.push(url.clone());
+            }
+
+            let spawned: Option<McpServer> = if use_container {
+                let img = container_config.as_ref().unwrap().podman_image();
+                spawn_mcp_in_container(&server_binary, &workspace_path, &img, read_only, &server_env, &extra)
             } else {
                 None
             };
 
-            server = spawned_server.or_else(|| {
-                McpServer::spawn(server_binary, &workspace_path).ok()
+            // Fallback chain: container → spawn_with_env → spawn
+            server = spawned.or_else(|| {
+                if !extra.is_empty() {
+                    let extra_refs: Vec<&str> = extra.iter().map(|s| s.as_str()).collect();
+                    McpServer::spawn_with_env(&server_binary, &workspace_path, &server_env, &extra_refs).ok()
+                } else if !server_env.is_empty() {
+                    McpServer::spawn_with_env(&server_binary, &workspace_path, &server_env, &[]).ok()
+                } else {
+                    McpServer::spawn(&server_binary, &workspace_path).ok()
+                }
             });
 
             if let Some(ref mut s) = server {
@@ -2324,6 +2317,65 @@ fn log_autoresearch_result(
     ).map_err(|e| format!("Failed to write row: {e}"))?;
 
     Ok(())
+}
+
+/// Spawn MCP server inside a Podman container for sandbox isolation.
+///
+/// Mounts the workspace and MCP binary into the container, disables network,
+/// and applies memory/CPU limits. Falls back to host spawn on failure.
+fn spawn_mcp_in_container(
+    server_binary: &PathBuf,
+    workspace_path: &PathBuf,
+    container_image: &str,
+    read_only: bool,
+    env: &[(String, String)],
+    extra_args: &[String],
+) -> Option<McpServer> {
+    use std::process::Command;
+
+    let workspace_abs = std::fs::canonicalize(workspace_path).unwrap_or_else(|_| workspace_path.clone());
+    let server_abs = std::fs::canonicalize(server_binary).unwrap_or_else(|_| server_binary.clone());
+
+    let ro_flag = if read_only { "ro" } else { "rw" };
+    let workspace_mount = format!("{}:/workspace:{},Z", workspace_abs.display(), ro_flag);
+    let server_mount = format!("{}:/usr/local/bin/cognicode-mcp:ro,Z", server_abs.display());
+
+    let mut podman_args: Vec<String> = vec![
+        "run".into(), "--rm".into(), "-i".into(),
+        "--network=none".into(),
+        "--memory=512m".into(), "--cpus=1".into(), "--pids-limit=50".into(),
+        "-v".into(), workspace_mount,
+        "-v".into(), server_mount,
+        "--workdir".into(), "/workspace".into(),
+        "--entrypoint".into(), "/usr/local/bin/cognicode-mcp".into(),
+        container_image.into(),
+        "--cwd".into(), "/workspace".into(),
+    ];
+    for arg in extra_args {
+        podman_args.push(arg.clone());
+    }
+
+    let mut cmd = Command::new("podman");
+    cmd.args(&podman_args);
+    cmd.stdin(std::process::Stdio::piped());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+
+    match cmd.spawn() {
+        Ok(mut child) => {
+            let stdin = child.stdin.take().expect("no stdin");
+            let stdout = child.stdout.take().expect("no stdout");
+            let stderr = child.stderr.take();
+            Some(McpServer::from_child(child, stdin, stdout, stderr))
+        }
+        Err(e) => {
+            eprintln!("  [WARN] podman run failed: {e}");
+            None
+        }
+    }
 }
 
 /// Reset a git repo by checking out clean files and removing untracked files.
