@@ -11,10 +11,12 @@ resultados del sandbox.
 import json
 import glob
 import os
+import re
 import sys
 import time
 from collections import defaultdict
 from datetime import datetime
+from pathlib import Path
 
 
 def load_results(results_dir: str) -> list[dict]:
@@ -29,6 +31,15 @@ def load_results(results_dir: str) -> list[dict]:
         except Exception:
             pass
     return results
+
+
+def load_stability(results_dir: str) -> dict | None:
+    """Load stability.json if it exists."""
+    path = os.path.join(results_dir, "stability.json")
+    if os.path.exists(path):
+        with open(path) as f:
+            return json.load(f)
+    return None
 
 
 def load_summary(results_dir: str) -> dict | None:
@@ -282,6 +293,141 @@ def render_html(stats: dict, results: list[dict], summary: dict | None = None) -
             <td class="py-2 px-4 text-sm text-slate-500">—</td>
         </tr>'''
 
+    # ── Stability section ──
+    # For repeat-run directories (run-N), look in the parent for stability.json
+    _parent_for_stability = results_dir
+    if re.search(r"/run-\d+$", results_dir):
+        _parent_for_stability = str(Path(results_dir).parent)
+    stability = load_stability(_parent_for_stability)
+    stability_html = ""
+    if stability and stability.get("repeat_count", 0) >= 2:
+        flk = stability.get("flaky_scenarios", [])
+        top_flaky = stability.get("top_flaky_scenarios", [])
+        top_cv = stability.get("top_high_variance_scenarios", [])
+        by_lang = stability.get("by_language", {})
+
+        # Flaky rows
+        flaky_rows = ""
+        for s in top_flaky:
+            rate = s.get("pass_rate", 0)
+            runs = s.get("runs", 0)
+            lang = s.get("language", "")
+            color = "red" if rate < 0.5 else ("amber" if rate < 0.9 else "emerald")
+            flaky_rows += f'''
+            <tr class="border-b border-slate-100">
+                <td class="py-2 px-4 font-mono text-xs">{s.get("scenario_id", "unknown")}</td>
+                <td class="py-2 px-4 text-sm">{lang}</td>
+                <td class="py-2 px-4">{runs}</td>
+                <td class="py-2 px-4 text-{color}-600 font-semibold">{rate*100:.0f}%</td>
+                <td class="py-2 px-4 text-sm text-slate-500">
+                    {", ".join(f"{k}: {v}" for k, v in (s.get("outcome_distribution") or {}).items())}
+                </td>
+            </tr>'''
+
+        # CV rows
+        cv_rows = ""
+        for item in top_cv:
+            cv_val = item.get("cv", 0)
+            sid = item.get("scenario_id", "unknown")
+            # Find full stats
+            full = next((s for s in stability.get("scenario_stats", []) if s["scenario_id"] == sid), {})
+            timing = full.get("timing", {}) if full else {}
+            mean = timing.get("mean", 0)
+            std = timing.get("std_dev", 0)
+            cv_rows += f'''
+            <tr class="border-b border-slate-100">
+                <td class="py-2 px-4 font-mono text-xs">{sid}</td>
+                <td class="py-2 px-4 text-sm">{full.get("language", "")}</td>
+                <td class="py-2 px-4 text-red-600 font-semibold">{cv_val*100:.1f}%</td>
+                <td class="py-2 px-4 text-sm text-slate-500">{mean:.0f}ms</td>
+                <td class="py-2 px-4 text-sm text-slate-500">±{std:.0f}ms</td>
+            </tr>'''
+
+        # Language stability rows
+        lang_rows = ""
+        for lang, data in sorted(by_lang.items(), key=lambda x: x[1]["flaky"], reverse=True):
+            flk_c = data["flaky"]
+            total = data["total"]
+            rate = data.get("flaky_rate", 0)
+            color = "red" if rate > 20 else ("amber" if rate > 5 else "emerald")
+            lang_rows += f'''
+            <tr class="border-b border-slate-100 hover:bg-slate-50">
+                <td class="py-2 px-4 font-medium">{lang}</td>
+                <td class="py-2 px-4">{total}</td>
+                <td class="py-2 px-4 text-red-600">{flk_c}</td>
+                <td class="py-2 px-4 text-{color}-600 font-semibold">{rate:.1f}%</td>
+                <td class="py-2 px-4 text-sm text-slate-500">{total - flk_c} stable</td>
+            </tr>'''
+
+        stability_html = f'''
+        <!-- Stability Analysis -->
+        <section>
+            <h2 class="text-lg font-semibold text-slate-700 mb-4">🔁 Stability Analysis <span class="text-xs font-normal text-slate-400">({stability["repeat_count"]} repeats)</span></h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                {kpi_card("Total Escenarios", str(stability["total_scenarios"]), f"{stability['total_runs']} total runs", "slate", "📋")}
+                {kpi_card("Flaky", f"{stability["flaky_count"]}", f"{stability["flaky_percentage"]:.1f}% of scenarios", "red" if stability["flaky_percentage"] > 10 else "amber", "🔀")}
+                {kpi_card("Stable", f"{stability["stable_count"]}", f"{100 - stability["flaky_percentage"]:.1f}% of scenarios", "emerald", "✅")}
+                {kpi_card("Pass Rate", f"{stability["pass_rate"]:.1f}%", "Across all repeats", "violet", "🎯")}
+            </div>
+
+            <!-- Top Flakiest Scenarios -->
+            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm mb-6">
+                <div class="px-4 py-3 bg-red-50 border-b border-slate-200">
+                    <h3 class="text-sm font-semibold text-red-700">⚠️ Top Flakiest Scenarios</h3>
+                </div>
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">Scenario</th>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">Lang</th>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">Runs</th>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">Pass Rate</th>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">Outcomes</th>
+                        </tr>
+                    </thead>
+                    <tbody>{flaky_rows if flaky_rows else "<tr><td colspan='5' class='py-3 px-4 text-sm text-slate-400'>No flaky scenarios detected</td></tr>"}</tbody>
+                </table>
+            </div>
+
+            <!-- Top High-Variance Scenarios -->
+            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm mb-6">
+                <div class="px-4 py-3 bg-amber-50 border-b border-slate-200">
+                    <h3 class="text-sm font-semibold text-amber-700">📊 Top High-Variance Scenarios (by CV)</h3>
+                </div>
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">Scenario</th>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">Lang</th>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">CV</th>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">Mean</th>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">Std Dev</th>
+                        </tr>
+                    </thead>
+                    <tbody>{cv_rows if cv_rows else "<tr><td colspan='5' class='py-3 px-4 text-sm text-slate-400'>No high-variance scenarios</td></tr>"}</tbody>
+                </table>
+            </div>
+
+            <!-- Per-Language Stability -->
+            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                <div class="px-4 py-3 bg-slate-100 border-b border-slate-200">
+                    <h3 class="text-sm font-semibold text-slate-700">🌍 Per-Language Stability Summary</h3>
+                </div>
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">Language</th>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">Total</th>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">Flaky</th>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">Flaky Rate</th>
+                            <th class="py-2 px-4 text-left font-medium text-slate-600">Stable</th>
+                        </tr>
+                    </thead>
+                    <tbody>{lang_rows if lang_rows else "<tr><td colspan='5' class='py-3 px-4 text-sm text-slate-400'>No language data</td></tr>"}</tbody>
+                </table>
+            </div>
+        </section>'''
+
     # ── Dimension gauges ──
     dim_colors = {"correctitud": "violet", "latencia": "emerald", "escalabilidad": "blue", "consistencia": "amber", "robustez": "red"}
     dim_gauges = ""
@@ -441,6 +587,8 @@ def render_html(stats: dict, results: list[dict], summary: dict | None = None) -
             </div>
             {f'<div class="mt-2 text-sm text-slate-500">Total fallos: {stats["failed"]} de {stats["total"]} escenarios</div>' if stats["failed"] > 0 else '<div class="mt-2 text-sm text-emerald-600 font-medium">✨ Ningún fallo real — todos los escenarios pasan o son expected_fail</div>'}
         </section>
+
+        {stability_html}
 
         <!-- Legend & Footer -->
         <footer class="text-center text-xs text-slate-400 py-4 border-t border-slate-200">
