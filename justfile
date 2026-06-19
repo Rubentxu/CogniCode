@@ -586,6 +586,19 @@ sandbox-run-campaign manifests:
     #!/usr/bin/env bash
     bash sandbox/scripts/run_campaign.sh {{manifests}}
 
+# Run stability / repeat testing: executes the same manifests N times and produces
+# stability.json with flakiness analysis.
+# Usage: just sandbox-stability <manifest-path> [repeat-count]
+# Example: just sandbox-stability sandbox/manifests/tier_c_lua.yaml 3
+sandbox-stability manifests repeat=3:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "=== Stability run: {{manifests}} x {{repeat}} repeats ==="
+    bash sandbox/scripts/run_campaign.sh --repeat {{repeat}} {{manifests}}
+    echo "✅ Stability analysis complete"
+    echo "   Report: sandbox/results-runs/<run-id>/report.html"
+    echo "   Stability: sandbox/results-runs/<run-id>/stability.json"
+
 # Run sandbox in dry-run mode (list scenarios without executing)
 sandbox-plan manifests:
     #!/usr/bin/env bash
