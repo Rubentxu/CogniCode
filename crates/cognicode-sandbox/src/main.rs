@@ -260,6 +260,46 @@ impl ContainerConfig {
                 network: "container:cognicode-java-net".into(),
                 workdir: "/workspace".into(),
             }),
+            // Phase 4: Tier B language expansion (ADR-038 Workstream B).
+            // Alpine-based images; toolchains installed at runtime.
+            // Note: container mode may hit GLIBC mismatch with host binary.
+            // Host fallback is the reliable path until static linking.
+            "ruby" => Some(ContainerConfig {
+                image: "docker.io/library/ruby:3.3-slim".into(),
+                name: "cognicode-ruby".into(),
+                network: "container:cognicode-ruby-net".into(),
+                workdir: "/workspace".into(),
+            }),
+            "php" => Some(ContainerConfig {
+                image: "docker.io/library/php:8.3-cli".into(),
+                name: "cognicode-php".into(),
+                network: "container:cognicode-php-net".into(),
+                workdir: "/workspace".into(),
+            }),
+            "c" => Some(ContainerConfig {
+                image: "docker.io/library/gcc:14-bookworm".into(),
+                name: "cognicode-c".into(),
+                network: "container:cognicode-c-net".into(),
+                workdir: "/workspace".into(),
+            }),
+            "cpp" => Some(ContainerConfig {
+                image: "docker.io/library/gcc:14-bookworm".into(),
+                name: "cognicode-cpp".into(),
+                network: "container:cognicode-cpp-net".into(),
+                workdir: "/workspace".into(),
+            }),
+            "swift" => Some(ContainerConfig {
+                image: "docker.io/library/swift:6.0-jammy".into(),
+                name: "cognicode-swift".into(),
+                network: "container:cognicode-swift-net".into(),
+                workdir: "/workspace".into(),
+            }),
+            "elixir" => Some(ContainerConfig {
+                image: "docker.io/library/elixir:1.17-otp-27".into(),
+                name: "cognicode-elixir".into(),
+                network: "container:cognicode-elixir-net".into(),
+                workdir: "/workspace".into(),
+            }),
             _ => None, // Unsupported languages return None
         }
     }
@@ -554,21 +594,24 @@ fn execute_scenario(
     if let Some(ref cfg) = container_config {
         // Start MCP server for all languages that have a ContainerConfig.
         // The cognicode-mcp binary provides file-system tools (read_file, search_content,
-        // list_files, edit_file) that work across Rust, Python, JavaScript, TypeScript.
-        // For capability_missing probes (go.yaml, java.yaml), MCP should NOT start.
-        // For real repos (go_repos.yaml, java_repos.yaml), MCP SHOULD start.
-        // We use scenario.repo.is_some() to distinguish: real repos have repo: go/cobra, etc.
-        // while capability probes have no repo field.
-        if cfg.name.contains("rust")
-            || cfg.name.contains("python")
-            || cfg.name.contains("javascript")
-            || cfg.name.contains("typescript")
-            || cfg.name.contains("js")
-            || cfg.name.contains("ts")
-            || cfg.name.contains("go")
-            || cfg.name.contains("java")
-            || cfg.name.contains("terraform")
-            || cfg.name.contains("ansible")
+        // list_files, edit_file) that work across all supported languages.
+        // We use exact language match to avoid substring collisions
+        // (e.g. "c" matching "javascript" via contains).
+        let lang = scenario.language.as_str();
+        if lang == "rust"
+            || lang == "python"
+            || lang == "javascript"
+            || lang == "typescript"
+            || lang == "go"
+            || lang == "java"
+            || lang == "terraform"
+            || lang == "ansible"
+            || lang == "ruby"
+            || lang == "php"
+            || lang == "c"
+            || lang == "cpp"
+            || lang == "swift"
+            || lang == "elixir"
         {
             // Try to spawn server directly (for now, using host binary)
             // Collect environment variables to forward to the MCP server child process

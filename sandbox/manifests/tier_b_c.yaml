@@ -1,0 +1,60 @@
+version: '1.0'
+language: c
+tier: B
+description: Tier B smoke tests for c using real OSS repo
+timeout_seconds: 120
+validation:
+  failure_is_regression: false
+  stages: []
+scenarios:
+- name: c_build_graph_hiredis
+  description: Build call graph for C (hiredis) — parser + edge extraction
+  workspace: .
+  tool: build_graph
+  action: build
+  repo: c/hiredis
+  language: c
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    directory: .
+  ground_truth:
+    symbols_min: 5
+  metrics:
+    latency:
+      target_ms: 300
+      max_ms: 5000
+- name: c_entry_points_hiredis
+  description: Find entry points in C (hiredis) — top-level functions
+  workspace: .
+  tool: get_entry_points
+  action: find
+  repo: c/hiredis
+  language: c
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_entry_points: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000
+- name: c_file_symbols_hiredis
+  description: Extract symbols from a C file (alloc.c)
+  workspace: .
+  tool: get_file_symbols
+  action: extract
+  repo: c/hiredis
+  language: c
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    file_path: alloc.c
+  ground_truth:
+    has_symbols: true
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000

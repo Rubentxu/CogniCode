@@ -1,0 +1,60 @@
+version: '1.0'
+language: cpp
+tier: B
+description: Tier B smoke tests for cpp using real OSS repo
+timeout_seconds: 120
+validation:
+  failure_is_regression: false
+  stages: []
+scenarios:
+- name: cpp_build_graph_json
+  description: Build call graph for C++ (nlohmann/json) — parser + edge extraction
+  workspace: .
+  tool: build_graph
+  action: build
+  repo: cpp/json
+  language: cpp
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    directory: single_include
+  ground_truth:
+    symbols_min: 5
+  metrics:
+    latency:
+      target_ms: 1000
+      max_ms: 30000
+- name: cpp_entry_points_json
+  description: Find entry points in C++ (nlohmann/json) — class methods
+  workspace: .
+  tool: get_entry_points
+  action: find
+  repo: cpp/json
+  language: cpp
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_entry_points: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 5000
+- name: cpp_file_symbols_json
+  description: Extract symbols from C++ header (json_fwd.hpp)
+  workspace: .
+  tool: get_file_symbols
+  action: extract
+  repo: cpp/json
+  language: cpp
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    file_path: single_include/nlohmann/json_fwd.hpp
+  ground_truth:
+    has_symbols: true
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 5000

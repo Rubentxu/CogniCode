@@ -1,0 +1,60 @@
+version: '1.0'
+language: elixir
+tier: B
+description: Tier B smoke tests for elixir using real OSS repo
+timeout_seconds: 120
+validation:
+  failure_is_regression: false
+  stages: []
+scenarios:
+- name: elixir_build_graph_elixir
+  description: Build call graph for Elixir (elixir stdlib) — parser + edge extraction
+  workspace: .
+  tool: build_graph
+  action: build
+  repo: elixir/elixir
+  language: elixir
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    directory: lib
+  ground_truth:
+    symbols_min: 5
+  metrics:
+    latency:
+      target_ms: 1000
+      max_ms: 30000
+- name: elixir_entry_points_elixir
+  description: Find entry points in Elixir (elixir stdlib) — top-level defs
+  workspace: .
+  tool: get_entry_points
+  action: find
+  repo: elixir/elixir
+  language: elixir
+  scenario_class: read_only
+  expected_outcome: expected_fail
+  arguments: {}
+  ground_truth:
+    has_entry_points: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 5000
+- name: elixir_file_symbols_elixir
+  description: Extract symbols from an Elixir file
+  workspace: .
+  tool: get_file_symbols
+  action: extract
+  repo: elixir/elixir
+  language: elixir
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    file_path: lib/eex/lib/eex.ex
+  ground_truth:
+    has_symbols: true
+  metrics:
+    latency:
+      target_ms: 300
+      max_ms: 3000

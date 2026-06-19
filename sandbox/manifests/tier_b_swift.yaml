@@ -1,0 +1,60 @@
+version: '1.0'
+language: swift
+tier: B
+description: Tier B smoke tests for swift using real OSS repo
+timeout_seconds: 120
+validation:
+  failure_is_regression: false
+  stages: []
+scenarios:
+- name: swift_build_graph_argparser
+  description: Build call graph for Swift (argument-parser) — parser + edge extraction
+  workspace: .
+  tool: build_graph
+  action: build
+  repo: swift/argument-parser
+  language: swift
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    directory: Sources
+  ground_truth:
+    symbols_min: 5
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 10000
+- name: swift_entry_points_argparser
+  description: Find entry points in Swift (argument-parser) — top-level types
+  workspace: .
+  tool: get_entry_points
+  action: find
+  repo: swift/argument-parser
+  language: swift
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_entry_points: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 3000
+- name: swift_file_symbols_argparser
+  description: Extract symbols from a Swift file (ArgumentParser.swift)
+  workspace: .
+  tool: get_file_symbols
+  action: extract
+  repo: swift/argument-parser
+  language: swift
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    file_path: Sources/ArgumentParser/Completions/BashCompletionsGenerator.swift
+  ground_truth:
+    has_symbols: true
+  metrics:
+    latency:
+      target_ms: 300
+      max_ms: 3000

@@ -1,0 +1,60 @@
+version: '1.0'
+language: ruby
+tier: B
+description: Tier B smoke tests for ruby using real OSS repo
+timeout_seconds: 120
+validation:
+  failure_is_regression: false
+  stages: []
+scenarios:
+- name: ruby_build_graph_sinatra
+  description: Build call graph for Ruby (sinatra) — parser + edge extraction
+  workspace: .
+  tool: build_graph
+  action: build
+  repo: ruby/sinatra
+  language: ruby
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    directory: lib
+  ground_truth:
+    symbols_min: 5
+  metrics:
+    latency:
+      target_ms: 500
+      max_ms: 10000
+- name: ruby_entry_points_sinatra
+  description: Find entry points in Ruby (sinatra) — top-level defines
+  workspace: .
+  tool: get_entry_points
+  action: find
+  repo: ruby/sinatra
+  language: ruby
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments: {}
+  ground_truth:
+    has_entry_points: true
+    total_min: 1
+  metrics:
+    latency:
+      target_ms: 200
+      max_ms: 2000
+- name: ruby_file_symbols_sinatra
+  description: Extract symbols from a Ruby file (sinatra.rb)
+  workspace: .
+  tool: get_file_symbols
+  action: extract
+  repo: ruby/sinatra
+  language: ruby
+  scenario_class: read_only
+  expected_outcome: pass
+  arguments:
+    file_path: lib/sinatra.rb
+  ground_truth:
+    has_symbols: true
+  metrics:
+    latency:
+      target_ms: 300
+      max_ms: 3000
