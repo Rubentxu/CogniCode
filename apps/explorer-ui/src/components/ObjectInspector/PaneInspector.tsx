@@ -18,6 +18,18 @@ import { SuggestionStrip } from "./SuggestionStrip";
 import { Blocks } from "./ViewBlock";
 import { ViewSpecWizard } from "./ViewSpecWizard";
 import { multimodalLabelForObjectType } from "./multimodal";
+import { GraphViewRenderer } from "../GraphView/GraphViewRenderer";
+
+// Graph-shaped ViewKinds that route to GraphViewRenderer
+function isGraphViewKind(kind: string | undefined): boolean {
+  return (
+    kind === "call_graph" ||
+    kind === "dependency_graph" ||
+    kind === "data_flow" ||
+    kind === "impact_radius" ||
+    kind === "seam_map"
+  );
+}
 
 type PaneInspectorProps = {
   objectId: string;
@@ -223,15 +235,23 @@ export function PaneInspector({
             onScroll={handleScroll}
           >
             {display ? (
-              <Blocks
-                view={display}
-                onSelectObject={(objId) =>
-                  dispatch({
-                    type: "SELECT_OBJECT",
-                    payload: { objectId: objId, viewId: "overview" },
-                  })
-                }
-              />
+              isGraphViewKind(display.view_kind) ? (
+                <GraphViewRenderer
+                  view={display}
+                  objectId={objectId}
+                  onClose={onClose}
+                />
+              ) : (
+                <Blocks
+                  view={display}
+                  onSelectObject={(objId) =>
+                    dispatch({
+                      type: "SELECT_OBJECT",
+                      payload: { objectId: objId, viewId: "overview" },
+                    })
+                  }
+                />
+              )
             ) : (
               <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
                 No view loaded.

@@ -10,6 +10,8 @@
  *  - P3.7  View tabs render for inspected object
  *  - P3.8  Switch view updates inspector body
  *
+ * VISUAL VALIDATION: All tests capture screenshots for regression testing.
+ *
  * The MSW browser worker provides deterministic fixtures:
  * - Spotter results: "build_overview" + "build_callgraph" (two distinct symbols)
  * - Each symbol has 4 views: overview, call-graph, source, quality
@@ -17,6 +19,8 @@
 import { test, expect } from "@playwright/test";
 
 async function openSpotterAndSelect(page: import("@playwright/test").Page, query: string, resultIndex = 0) {
+  // Wait 1500ms for keyboard listener to mount
+  await page.waitForTimeout(1500);
   await page.keyboard.press("Meta+k");
   const input = page.getByTestId("spotter-input");
   await input.fill(query);
@@ -32,6 +36,8 @@ const FIRST_RESULT_INDEX = 0;
 const SECOND_RESULT_INDEX = 1;
 
 test.describe("Explorer pane-stack flows", () => {
+  test.use({ screenshot: "on" });
+
   test("P3.1 — first pane renders object inspector", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible();
@@ -44,6 +50,12 @@ test.describe("Explorer pane-stack flows", () => {
     await expect(inspectorHeader).toBeVisible();
     // The label may be "(loading)" briefly before the object resolves
     await expect(inspectorHeader).not.toHaveText("(loading)");
+
+    // VISUAL VALIDATION: Capture first pane rendering
+    await expect(page.getByTestId("shell")).toHaveScreenshot("panestack-first-pane.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
   });
 
   test("P3.2 — second pane creates a second tab", async ({ page }) => {
@@ -59,6 +71,12 @@ test.describe("Explorer pane-stack flows", () => {
     // Should now have 2 pane tabs
     const tabs = page.locator("[data-testid^='pane-tab-']");
     await expect(tabs).toHaveCount(2);
+
+    // VISUAL VALIDATION: Capture two-pane layout
+    await expect(page.getByTestId("shell")).toHaveScreenshot("panestack-two-panes.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
   });
 
   test("P3.3 — click tab switches active pane", async ({ page }) => {
@@ -89,6 +107,12 @@ test.describe("Explorer pane-stack flows", () => {
     // After switching, the active pane's body should still be visible
     // Use .last() since the previously-active (second) pane is still in DOM
     await expect(page.getByTestId("object-inspector-body").last()).toBeVisible();
+
+    // VISUAL VALIDATION: Capture tab switching
+    await expect(page.getByTestId("shell")).toHaveScreenshot("panestack-tab-switching.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
   });
 
   test("P3.4 — close pane removes it", async ({ page }) => {
@@ -111,6 +135,12 @@ test.describe("Explorer pane-stack flows", () => {
     await expect(tabs).toHaveCount(1);
     // Inspector should still be visible (first pane is still active)
     await expect(page.getByTestId("object-inspector")).toBeVisible();
+
+    // VISUAL VALIDATION: Capture after pane close
+    await expect(page.getByTestId("shell")).toHaveScreenshot("panestack-after-close.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
   });
 
   test("P3.5 — close last pane shows empty state", async ({ page }) => {
@@ -131,6 +161,12 @@ test.describe("Explorer pane-stack flows", () => {
     const emptyState = page.getByTestId("pane-stack-empty");
     await expect(emptyState).toBeVisible();
     await expect(emptyState).toContainText("No panes open");
+
+    // VISUAL VALIDATION: Capture empty state
+    await expect(page.getByTestId("shell")).toHaveScreenshot("panestack-empty-state.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
   });
 
   test("P3.7 + P3.8 — view tabs render and switching updates body", async ({ page }) => {
@@ -150,6 +186,12 @@ test.describe("Explorer pane-stack flows", () => {
     // Inspector body is visible
     const body = page.getByTestId("object-inspector-body");
     await expect(body).toBeVisible();
+
+    // VISUAL VALIDATION: Capture view tabs
+    await expect(page.getByTestId("shell")).toHaveScreenshot("panestack-view-tabs.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
 
     // Click the "Call graph" tab if available
     const callGraphTab = page.getByTestId("view-tab-call-graph");
@@ -179,6 +221,12 @@ test.describe("Explorer pane-stack flows", () => {
     await expect(tabs).toHaveCount(1);
     // Tab title is the truncated objectId; "build_overview:16" last segment is "16"
     await expect(tabs.first()).toContainText("16");
+
+    // VISUAL VALIDATION: Capture tab with object label
+    await expect(page.getByTestId("shell")).toHaveScreenshot("panestack-object-label-in-tab.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
   });
 
   test("P3.2 variant — opening same object twice activates existing pane (not duplicate)", async ({ page }) => {
@@ -194,5 +242,11 @@ test.describe("Explorer pane-stack flows", () => {
     // Should still be exactly 1 tab (re-uses existing pane, does not duplicate)
     const tabs = page.locator("[data-testid^='pane-tab-']");
     await expect(tabs).toHaveCount(1);
+
+    // VISUAL VALIDATION: Capture deduplication behavior
+    await expect(page.getByTestId("shell")).toHaveScreenshot("panestack-no-duplicate-panes.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
   });
 });

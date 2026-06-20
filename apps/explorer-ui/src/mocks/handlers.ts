@@ -31,6 +31,26 @@ import { architectureFixture } from "./architectureFixtures";
 
 const LATENCY_MS = 8;
 
+/**
+ * Maps a viewId to its ViewKind and RendererKind.
+ * Mirrors the backend stamping in `contextual_view()` (AD-2).
+ */
+function viewIdToKinds(viewId: string): { viewKind: string; rendererKind: string } {
+  switch (viewId) {
+    case "call-graph":
+      return { viewKind: "call_graph", rendererKind: "graph" };
+    case "dependency-graph":
+      return { viewKind: "dependency_graph", rendererKind: "graph" };
+    case "source":
+      return { viewKind: "source_view", rendererKind: "code" };
+    case "quality":
+      return { viewKind: "quality_hotspots", rendererKind: "json" };
+    case "overview":
+    default:
+      return { viewKind: "vertical_slice", rendererKind: "composite" };
+  }
+}
+
 export const handlers = [
   // -----------------------------------------------------------------------
   // 1. Health
@@ -122,10 +142,13 @@ export const handlers = [
     await delay(LATENCY_MS);
     const objectId = params["object_id"] as string;
     const viewId = params["view_id"] as string;
+    const { viewKind, rendererKind } = viewIdToKinds(viewId);
     return HttpResponse.json({
       ...contextualViewFixture,
       object_id: objectId,
       view_id: viewId,
+      view_kind: viewKind,
+      renderer_kind: rendererKind,
     });
   }),
 

@@ -24,6 +24,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, WheelEvent } from "react";
 
 import type { LayoutResult } from "../../mocks/layoutMock";
+import type { ViewportState } from "../../state/navigation/types";
 import { GraphNode } from "./GraphNode";
 import { GraphEdge } from "./GraphEdge";
 
@@ -33,6 +34,8 @@ export interface SvgGraphProps {
   selectedId?: string | null;
   /** Dispatched when the user picks a node. */
   onSelectObject?: (id: string) => void;
+  /** Called when the viewport changes after a pan or zoom gesture ends. */
+  onViewportChange?: (viewport: ViewportState) => void;
   /** Accessible label for the graph region. */
   ariaLabel?: string;
   /** Optional className passthrough. */
@@ -101,6 +104,7 @@ export function SvgGraph({
   layout,
   selectedId = null,
   onSelectObject,
+  onViewportChange,
   ariaLabel,
   className,
 }: SvgGraphProps) {
@@ -116,6 +120,7 @@ export function SvgGraph({
       layout={layout}
       selectedId={selectedId}
       onSelectObject={onSelectObject}
+      onViewportChange={onViewportChange}
       ariaLabel={ariaLabel}
       className={className}
     />
@@ -132,12 +137,21 @@ function SvgGraphInner({
   layout,
   selectedId = null,
   onSelectObject,
+  onViewportChange,
   ariaLabel,
   className,
 }: SvgGraphInnerProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [view, setView] = useState<Viewport>({ x: 0, y: 0, scale: 1 });
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+  // Callback to notify parent of viewport changes (for snapshot persistence)
+  const handleViewChange = useCallback(
+    (newView: Viewport) => {
+      onViewportChange?.({ x: newView.x, y: newView.y, scale: newView.scale });
+    },
+    [onViewportChange],
+  );
   // Pan state. We use refs for the high-frequency values (start
   // positions) and a state flag for the visual cursor change so
   // we don't have to read the ref during render.
@@ -216,9 +230,10 @@ function SvgGraphInner({
         }
         dragRef.current = null;
         setIsDragging(false);
+        handleViewChange(view);
       }
     },
-    [],
+    [handleViewChange, view],
   );
 
   const onWheel = useCallback(
@@ -239,9 +254,13 @@ function SvgGraphInner({
         x: view.x + cursor.x * view.scale,
         y: view.y + cursor.y * view.scale,
       };
-      setView((prev) => zoomAt(prev, transformed, factor));
+      setView((prev) => {
+        const next = zoomAt(prev, transformed, factor);
+        handleViewChange(next);
+        return next;
+      });
     },
-    [layout.viewBox, view.x, view.y, view.scale],
+    [layout.viewBox, view.x, view.y, view.scale, handleViewChange],
   );
 
   // -----------------------------------------------------------------
@@ -292,13 +311,15 @@ function SvgGraphInner({
               selectedId === edge.to ||
               hoveredId === edge.from ||
               hoveredId === edge.to;
+            // Per T12 (Grill Decision 6): labels only on highlighted edges
+            const label = highlighted ? edge.label : undefined;
             return (
               <GraphEdge
                 key={`e-${edge.from}-${edge.to}-${idx}`}
                 from={from}
                 to={to}
                 highlighted={highlighted}
-                {...(edge.label !== undefined ? { label: edge.label } : {})}
+                {...(label !== undefined ? { label } : {})}
                 testId={`graph-edge-${edge.from}-${edge.to}`}
               />
             );

@@ -136,6 +136,48 @@ Examples:
 | `data_flow` | `graph` |
 | `impact_radius` | `graph` + `table` |
 
+#### ViewKind-Aware Rendering
+
+ViewKinds whose primary rendering surface is **structural** (graph-based) do
+NOT render as a list of blocks. Instead, they route to a dedicated
+**GraphViewRenderer** that consumes the full `ContextualView` and renders an
+interactive `SvgGraph`.
+
+**Routing rule**: A `ContextualView` with `kind === "call_graph"` (or any other
+graph-shaped ViewKind) bypasses the `Blocks` component and dispatches to
+`GraphViewRenderer`. The early-return lives in `PaneInspector`, immediately
+after computing `display = view ?? _activeView`.
+
+This separation exists because graph-shaped views need:
+
+- A `LayoutResult` (positions for every node/edge) computed from the view's
+  blocks (`callers`, `callees`, etc.) via `layoutFromContextualView`.
+- A monospace canvas with pan/zoom, not a vertical block list.
+- Direct node-click → pane navigation (see Moldable Navigation below).
+
+GraphViewRenderer is **generic** across graph ViewKinds. The ViewKind drives
+which layout function runs (`layoutFromContextualView`, `layoutFromDependencyGraph`),
+but the renderer surface is the same `SvgGraph` component.
+
+#### Moldable Navigation (Pane Stack)
+
+Graph views implement the **Moldable Development** click-to-explore pattern
+borrowed from GToolkit's GtPager:
+
+- **Click on a node** in any graph (call graph, dependency graph, seam map)
+  dispatches `SELECT_OBJECT` with the clicked `objectId`, reusing the current
+  `viewId` (e.g., staying in "call_graph" when drilling between symbols).
+- This **opens a new pane to the right** in the Inspector Pane Stack. The
+  previous pane stays alive as a tab — its history is preserved.
+- The new pane becomes the active tab. Clicking a tab switches the active
+  pane back to it; clicking the `✕` button on the active pane closes it.
+- **Deduplication**: Selecting the same `objectId` already in the stack
+  activates the existing pane instead of creating a duplicate (see
+  P3.2-variant in `pane-stack.spec.ts`).
+
+The pane stack is the user's **exploration narrative**. Drilling through a
+call graph should never destroy the path that led the user there.
+
 First-class ViewKind catalog:
 
 **Architecture views**

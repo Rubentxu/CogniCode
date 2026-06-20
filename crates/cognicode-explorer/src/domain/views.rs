@@ -1483,6 +1483,7 @@ impl ViewExecutor for EvidenceExecutor {
                     object_id: format!("symbol:{}:{}:{}", resolved.file, resolved.name, resolved.line),
                     view_id: "evidence".into(),
                     title: "Evidence".into(),
+                    view_kind: ViewKind::EvidenceView,
                     blocks,
                     relations: Vec::new(),
                     evidence,

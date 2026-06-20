@@ -8,6 +8,15 @@ import type { ContextualView, ExplorationColumn } from "../../api/types";
 // ============================================================================
 
 /**
+ * Viewport state for graph pan/zoom capture (ADR-040 Wave 3).
+ */
+export interface ViewportState {
+  x: number;
+  y: number;
+  scale: number;
+}
+
+/**
  * Focus = what the Object Inspector is currently showing.
  */
 export type Focus = {
@@ -38,6 +47,7 @@ export type Pane = {
   kind: string;
   activeView: ContextualView | null;
   scrollY: number;
+  viewport?: ViewportState;
   localFilters: Record<string, unknown>;
 };
 
@@ -73,6 +83,7 @@ export type NavigationAction =
   | { type: "ACTIVATE_PANE"; payload: { paneId: string } }
   | { type: "REORDER_PANE"; payload: { fromIndex: number; toIndex: number } }
   | { type: "SET_PANE_SCROLL"; payload: { paneId: string; scrollY: number } }
+  | { type: "UPDATE_PANE_VIEWPORT"; payload: { paneId: string; viewport: ViewportState } }
   | { type: "RESET" };
 
 // ============================================================================

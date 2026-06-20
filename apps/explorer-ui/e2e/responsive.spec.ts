@@ -10,6 +10,8 @@
  * at every viewport (no overlap, no horizontal scroll on the body,
  * no clipped buttons).
  *
+ * VISUAL VALIDATION: All tests capture screenshots for regression testing.
+ *
  * Part C additions:
  *  - Small viewport: bottom-sheet is present and usable
  *  - Keyboard navigation: Spotter via Cmd+K, Enter to select
@@ -26,6 +28,8 @@ const BREAKPOINTS = [
 async function primeApp(page: Page) {
   await page.goto("/");
   await expect(page.getByTestId("shell")).toBeVisible();
+  // Wait 1500ms for keyboard listener to mount
+  await page.waitForTimeout(1500);
   // Drive the app into a state that exercises both zones.
   await page.keyboard.press("Meta+k");
   await page.getByTestId("spotter-input").fill("build");
@@ -44,13 +48,22 @@ async function primeApp(page: Page) {
 
 for (const bp of BREAKPOINTS) {
   test.describe(`viewport: ${bp.name} (${bp.width}x${bp.height})`, () => {
-    test.use({ viewport: { width: bp.width, height: bp.height } });
+    test.use({
+      viewport: { width: bp.width, height: bp.height },
+      screenshot: "on",
+    });
 
     test(`Shell resolves to ${bp.expectedViewport}`, async ({ page }) => {
       await page.goto("/");
       const shell = page.getByTestId("shell");
       await expect(shell).toBeVisible();
       await expect(shell).toHaveAttribute("data-viewport", bp.expectedViewport);
+
+      // VISUAL VALIDATION: Capture shell at this viewport
+      await expect(page).toHaveScreenshot(`responsive-shell-${bp.name}.png`, {
+        animations: "disabled",
+        fullPage: true,
+      });
     });
 
     test("the main flow holds at this viewport", async ({ page }) => {
@@ -64,6 +77,12 @@ for (const bp of BREAKPOINTS) {
         // no horizontal overflow happens (asserted in the next test).
         await expect(page.getByTestId("bottom-sheet")).toBeVisible();
       }
+
+      // VISUAL VALIDATION: Capture main flow at this viewport
+      await expect(page).toHaveScreenshot(`responsive-mainflow-${bp.name}.png`, {
+        animations: "disabled",
+        fullPage: true,
+      });
     });
 
     test("no horizontal overflow on the body", async ({ page }) => {
@@ -77,6 +96,12 @@ for (const bp of BREAKPOINTS) {
         () => document.documentElement.clientWidth,
       );
       expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
+
+      // VISUAL VALIDATION: Capture full page to verify no overflow
+      await expect(page).toHaveScreenshot(`responsive-nooverflow-${bp.name}.png`, {
+        animations: "disabled",
+        fullPage: true,
+      });
     });
   });
 }
@@ -86,6 +111,8 @@ for (const bp of BREAKPOINTS) {
 // =============================================================================
 
 test.describe("Part C — keyboard navigation & small viewport", () => {
+  test.use({ screenshot: "on" });
+
   test("P6.3 — small viewport bottom-sheet is present and usable", async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 900 });
 
@@ -105,11 +132,20 @@ test.describe("Part C — keyboard navigation & small viewport", () => {
     await expect(page.getByTestId("bottom-sheet")).toBeVisible();
     // And the object inspector should be inside the bottom sheet
     await expect(page.getByTestId("object-inspector")).toBeVisible();
+
+    // VISUAL VALIDATION: Capture bottom sheet at small viewport
+    await expect(page).toHaveScreenshot("responsive-bottomsheet-small.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
   });
 
   test("P6.5 — keyboard flow: Cmd+K opens Spotter, Enter selects result, inspector opens", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible();
+
+    // Wait 1500ms for keyboard listener to mount
+    await page.waitForTimeout(1500);
 
     // Focus is anywhere — Cmd+K opens Spotter
     await page.keyboard.press("Meta+k");
@@ -124,6 +160,12 @@ test.describe("Part C — keyboard navigation & small viewport", () => {
     const results = page.getByTestId("spotter-results").getByTestId(/^spotter-item-/);
     await expect(results.first()).toBeVisible({ timeout: 5_000 });
 
+    // VISUAL VALIDATION: Capture Spotter with results
+    await expect(page).toHaveScreenshot("keyboard-spotter-with-results.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
+
     // Press Enter to select the first result
     await page.keyboard.press("Enter");
 
@@ -132,6 +174,12 @@ test.describe("Part C — keyboard navigation & small viewport", () => {
 
     // Inspector should open
     await expect(page.getByTestId("object-inspector")).toBeVisible();
+
+    // VISUAL VALIDATION: Capture inspector after keyboard selection
+    await expect(page).toHaveScreenshot("keyboard-inspector-after-enter.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
   });
 
   test("P2.6 — perspective toggle is keyboard accessible (Tab + Enter)", async ({ page }) => {
@@ -167,11 +215,20 @@ test.describe("Part C — keyboard navigation & small viewport", () => {
     await page.keyboard.press("Enter");
     await expect(c4Btn).toHaveAttribute("aria-pressed", "true");
     await expect(graphBtn).toHaveAttribute("aria-pressed", "false");
+
+    // VISUAL VALIDATION: Capture perspective toggle after keyboard interaction
+    await expect(page).toHaveScreenshot("keyboard-perspective-toggle.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
   });
 
   test("keyboard navigation: Escape closes Spotter", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible();
+
+    // Wait 1500ms for keyboard listener to mount
+    await page.waitForTimeout(1500);
 
     await page.keyboard.press("Meta+k");
     const spotter = page.getByTestId("spotter");
@@ -182,11 +239,20 @@ test.describe("Part C — keyboard navigation & small viewport", () => {
 
     await page.keyboard.press("Escape");
     await expect(spotter).toBeHidden();
+
+    // VISUAL VALIDATION: Capture UI after Spotter closed via Escape
+    await expect(page).toHaveScreenshot("keyboard-spotter-closed-by-escape.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
   });
 
   test("keyboard navigation: Arrow keys navigate Spotter results", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible();
+
+    // Wait 1500ms for keyboard listener to mount
+    await page.waitForTimeout(1500);
 
     await page.keyboard.press("Meta+k");
     const spotter = page.getByTestId("spotter");
@@ -205,9 +271,21 @@ test.describe("Part C — keyboard navigation & small viewport", () => {
     // ArrowUp to move back
     await page.keyboard.press("ArrowUp");
 
+    // VISUAL VALIDATION: Capture Spotter with keyboard navigation
+    await expect(page).toHaveScreenshot("keyboard-spotter-arrow-navigation.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
+
     // Enter to select
     await page.keyboard.press("Enter");
     await expect(spotter).toBeHidden();
     await expect(page.getByTestId("object-inspector")).toBeVisible();
+
+    // VISUAL VALIDATION: Capture inspector after keyboard selection
+    await expect(page).toHaveScreenshot("keyboard-inspector-after-arrow-select.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
   });
 });

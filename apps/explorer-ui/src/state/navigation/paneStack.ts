@@ -113,6 +113,16 @@ export function apply(state: NavigationState, action: NavigationAction): Navigat
       return { ...state, panes };
     }
 
+    case "UPDATE_PANE_VIEWPORT": {
+      const { paneId, viewport } = action.payload;
+      return {
+        ...state,
+        panes: state.panes.map((pane) =>
+          pane.id === paneId ? { ...pane, viewport } : pane
+        ),
+      };
+    }
+
     case "SELECT_OBJECT": {
       const { objectId, viewId, kind } = action.payload;
       const existing = state.panes.find((p) => p.objectId === objectId);

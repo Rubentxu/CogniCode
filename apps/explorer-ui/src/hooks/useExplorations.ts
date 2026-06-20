@@ -8,12 +8,14 @@
  * The list endpoint is a derived SWR key — we cache the most recent
  * save so the UI can render without a follow-up fetch.
  */
+import { useEffect } from "react";
 import useSWR, { mutate } from "swr";
 import { z } from "zod";
 
 import {
   decisionArtifactSummarySchema,
   explorationPathSchema,
+  explorationSessionSchema,
   generateArtifactRequestSchema,
   saveExplorationRequestSchema,
 } from "../api/schemas";
@@ -25,13 +27,49 @@ import {
 import type {
   DecisionArtifactSummary,
   ExplorationPath,
+  ExplorationSessionDto,
 } from "../api/types";
+import type { ViewportState } from "../state/navigation/types";
 
 const explorationsListSchema = z.array(explorationPathSchema);
 type ExplorationsList = z.infer<typeof explorationsListSchema>;
 
 const explorationsListFetcher = makeSwrFetcher(explorationsListSchema);
 const artifactFetcher = makeSwrFetcher(decisionArtifactSummarySchema);
+
+/**
+ * Persists the current pane snapshots to localStorage as an immediate
+ * cache (ADR-040 Wave 3). Written on every pane/viewport change so a
+ * page refresh can restore the last state before the next server save.
+ */
+export function useSnapshotCache(
+  workspaceId: string | null,
+  sessionId: string,
+  panes: ReadonlyArray<{
+    id: string;
+    objectId: string;
+    activeViewId: string | null;
+    viewport?: ViewportState;
+    scrollY: number;
+  }>,
+) {
+  useEffect(() => {
+    if (!workspaceId || panes.length === 0) return;
+    const key = `cognicode.exploration.snapshot.${workspaceId}.${sessionId}`;
+    try {
+      const snapshot = panes.map((pane) => ({
+        pane_id: pane.id,
+        object_id: pane.objectId,
+        view_id: pane.activeViewId ?? "overview",
+        scroll_y: pane.scrollY,
+        viewport: pane.viewport,
+      }));
+      localStorage.setItem(key, JSON.stringify(snapshot));
+    } catch {
+      // quota exceeded — silent
+    }
+  }, [workspaceId, sessionId, panes]);
+}
 
 /**
  * List the saved explorations for the current workspace.
@@ -74,6 +112,48 @@ export async function saveExploration(
     return [...current, path];
   }, false);
   return path;
+}
+
+/**
+ * Save an exploration session with pane snapshots including viewport state
+ * (ADR-040 Wave 3). Posts to `/api/exploration-sessions`.
+ */
+export async function saveExplorationSession(
+  workspaceId: string,
+  events: Array<{
+    object_id: string;
+    view_id: string | null;
+    query: string | null;
+    ts: string;
+  }>,
+  panes: ReadonlyArray<{
+    id: string;
+    objectId: string;
+    activeViewId: string | null;
+    scrollY: number;
+    viewport?: ViewportState;
+  }>,
+): Promise<ExplorationSessionDto> {
+  const panesSnapshot = panes.map((pane) => ({
+    pane_id: pane.id,
+    object_id: pane.objectId,
+    view_id: pane.activeViewId ?? "overview",
+    scroll_y: pane.scrollY,
+    viewport: pane.viewport ?? null,
+  }));
+
+  const body = {
+    workspace_id: workspaceId,
+    events,
+    navigation_mode: "pane-stack",
+    panes: panesSnapshot,
+  };
+
+  return apiPost(
+    "/exploration-sessions",
+    body,
+    explorationSessionSchema,
+  );
 }
 
 /**
