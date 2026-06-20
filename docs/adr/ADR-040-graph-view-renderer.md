@@ -2,7 +2,7 @@
 
 ## Estado
 
-Propuesto — 2026-06-20
+**Implementado** — 2026-06-20
 
 ## Contexto
 
