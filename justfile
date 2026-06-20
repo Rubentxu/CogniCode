@@ -416,6 +416,19 @@ explorer-e2e:
     @echo "🎭 Running Explorer E2E tests..."
     cd {{ EXPLORER_UI_DIR }} && npm run test:e2e
 
+# Run Explorer E2E N times with flakiness report (default: 3 repeats)
+# Usage: just explorer-e2e-stability 3
+explorer-e2e-stability repeat="3":
+    @echo "🔁 Explorer E2E stability run ({{ repeat }} repeats)..."
+    bash {{ EXPLORER_UI_DIR }}/scripts/run_e2e_campaign.sh {{ repeat }}
+
+# Generate HTML report from the latest Explorer E2E campaign
+# Usage: just explorer-e2e-report [/path/to/output.html]
+explorer-e2e-report output="{{ EXPLORER_UI_DIR }}/e2e-runs/latest/report.html":
+    @echo "📊 Generating Explorer E2E HTML report..."
+    python3 {{ EXPLORER_UI_DIR }}/scripts/generate_e2e_report.py --output {{ output }}
+    @echo "✅ Report: {{ output }}"
+
 # Run Explorer lint
 explorer-lint:
     @echo "🔍 Linting Explorer UI..."

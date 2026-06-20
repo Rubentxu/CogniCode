@@ -35,3 +35,6 @@ node_modules/
 
 # TypeScript
 *.tsbuildinfo
+
+# Explorer E2E campaign artifacts
+e2e-runs/
