@@ -21,6 +21,7 @@ import {
   makeInitialNavigationState,
   type NavigationAction,
   type NavigationState,
+  type ViewportState,
 } from "./navigation";
 
 // ============================================================================
@@ -117,6 +118,7 @@ export type Action =
   | { type: "ACTIVATE_PANE"; payload: { paneId: string } }
   | { type: "REORDER_PANE"; payload: { fromIndex: number; toIndex: number } }
   | { type: "SET_PANE_SCROLL"; payload: { paneId: string; scrollY: number } }
+  | { type: "UPDATE_PANE_VIEWPORT"; payload: { paneId: string; viewport: ViewportState } }
   | { type: "TOGGLE_SPOTTER" }
   | { type: "SET_SPOTTER"; payload: { open: boolean } }
   | { type: "ADD_EXPLORATION"; payload: ExplorationPath }
@@ -205,6 +207,7 @@ function isNavigationAction(action: Action): action is Extract<Action,
   | { type: "ACTIVATE_PANE" }
   | { type: "REORDER_PANE" }
   | { type: "SET_PANE_SCROLL" }
+  | { type: "UPDATE_PANE_VIEWPORT" }
 > {
   return (
     action.type === "SELECT_OBJECT" ||
@@ -214,7 +217,8 @@ function isNavigationAction(action: Action): action is Extract<Action,
     action.type === "CLOSE_PANE" ||
     action.type === "ACTIVATE_PANE" ||
     action.type === "REORDER_PANE" ||
-    action.type === "SET_PANE_SCROLL"
+    action.type === "SET_PANE_SCROLL" ||
+    action.type === "UPDATE_PANE_VIEWPORT"
   );
 }
 
@@ -230,6 +234,7 @@ function toNavigationAction(action: Extract<Action,
   | { type: "ACTIVATE_PANE" }
   | { type: "REORDER_PANE" }
   | { type: "SET_PANE_SCROLL" }
+  | { type: "UPDATE_PANE_VIEWPORT" }
 >): NavigationAction {
   switch (action.type) {
     case "SELECT_OBJECT":
@@ -248,6 +253,8 @@ function toNavigationAction(action: Extract<Action,
       return { type: "REORDER_PANE", payload: action.payload };
     case "SET_PANE_SCROLL":
       return { type: "SET_PANE_SCROLL", payload: action.payload };
+    case "UPDATE_PANE_VIEWPORT":
+      return { type: "UPDATE_PANE_VIEWPORT", payload: action.payload };
   }
 }
 

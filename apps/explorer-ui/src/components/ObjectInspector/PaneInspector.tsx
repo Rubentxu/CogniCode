@@ -247,7 +247,9 @@ export function PaneInspector({
                   onSelectObject={(objId) =>
                     dispatch({
                       type: "SELECT_OBJECT",
-                      payload: { objectId: objId, viewId: "overview" },
+                      // H5: preserve current viewId for drill-down consistency
+                      // (graph and lists now navigate to the same viewKind).
+                      payload: { objectId: objId, viewId: viewId ?? display.view_id },
                     })
                   }
                 />

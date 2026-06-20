@@ -21,9 +21,12 @@ import type { ExplorationColumn } from "../../api/types";
 /**
  * Cap to bound memory + DOM cost. gtoolkit's GtPager has no hard
  * cap; we impose one to avoid pathological cases (a 200-pane stack
- * would freeze the renderer). 8 is enough for most comparisons.
+ * would freeze the renderer). 12 supports richer side-by-side
+ * comparisons (e.g., call-graph + dependency-graph + seam-map +
+ * source + quality + 7 drill-downs). Bumped from 8 to 12 in v0.8.2
+ * (H8 audit fix).
  */
-export const MAX_PANES = 8;
+export const MAX_PANES = 12;
 
 /**
  * Mirror the active pane's drill-down history as a `chain`.

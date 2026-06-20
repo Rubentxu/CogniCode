@@ -41,6 +41,10 @@ const artifactFetcher = makeSwrFetcher(decisionArtifactSummarySchema);
  * Persists the current pane snapshots to localStorage as an immediate
  * cache (ADR-040 Wave 3). Written on every pane/viewport change so a
  * page refresh can restore the last state before the next server save.
+ *
+ * H11 (audit fix): when localStorage quota is exceeded, dispatches a
+ * CustomEvent `cognicode:storage-quota-exceeded` so the Shell can
+ * surface a toast warning instead of silently dropping data.
  */
 export function useSnapshotCache(
   workspaceId: string | null,
@@ -65,8 +69,18 @@ export function useSnapshotCache(
         viewport: pane.viewport,
       }));
       localStorage.setItem(key, JSON.stringify(snapshot));
-    } catch {
-      // quota exceeded — silent
+    } catch (err) {
+      // H11: emit event so Shell can show "Snapshot cache full" toast.
+      // Silent failure would lose user exploration data without notice.
+      const isQuota =
+        err instanceof DOMException &&
+        (err.name === "QuotaExceededError" ||
+          err.name === "NS_ERROR_DOM_QUOTA_REACHED");
+      window.dispatchEvent(
+        new CustomEvent("cognicode:storage-quota-exceeded", {
+          detail: { key, quotaExceeded: isQuota },
+        }),
+      );
     }
   }, [workspaceId, sessionId, panes]);
 }
