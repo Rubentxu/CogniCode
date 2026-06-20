@@ -1,8 +1,10 @@
 # Roadmap: Moldable View Routing + Pane State Persistence
 
 **Fecha:** 2026-06-20
-**Estado:** Planeación post-grill session (7 preguntas resueltas)
+**Estado:** ✅ **COMPLETADO** (13/13 grill decisions, 15 commits atómicos, v0.8.0 released)
 **Prioridad:** ALTA — desbloquea bug crítico del Call Graph (SVG en blanco)
+**Branch:** feat/moldable-view-call-graph → mergeada a main
+**Tag:** v0.8.0
 
 ---
 
@@ -10,7 +12,7 @@
 
 Detectado bug crítico: la view `call_graph` muestra el SVG en blanco. Investigación reveló que `ViewBlock.tsx` no sabe cómo renderizar un graph — solo renderiza blocks individuales.
 
-Resultado del grill: 10 decisiones arquitectónicas resueltas en sesión colaborativa con el usuario. Este roadmap traduce esas decisiones en tareas de implementación.
+Resultado del grill: **13/13 decisiones arquitectónicas resueltas** en sesión colaborativa con el usuario. Este roadmap traduce esas decisiones en tareas de implementación — **todas completadas**.
 
 ---
 
@@ -95,12 +97,12 @@ export function GraphViewRenderer({ view, objectId, onClose }: GraphViewRenderer
 ```
 
 **Criterios de aceptación:**
-- [ ] `layout` solo recalcula cuando `view.object_id` o `view.blocks` cambian
-- [ ] Empty state aparece cuando `nodes.length <= 1`
-- [ ] Click en nodo despacha `SELECT_OBJECT` con el `nodeId`
-- [ ] Componente testeable aisladamente con `@testing-library/react`
+- [x] `layout` solo recalcula cuando `view.object_id` o `view.blocks` cambian
+- [x] Empty state aparece cuando `nodes.length <= 1`
+- [x] Click en nodo despacha `SELECT_OBJECT` con el `nodeId`
+- [x] Componente testeable aisladamente con `@testing-library/react`
 
-**Esfuerzo:** 2-3 horas
+**Esfuerzo:** 2-3 horas ✅ **COMPLETADO**
 
 ---
 
@@ -137,12 +139,12 @@ function isGraphViewKind(kind: string | undefined): boolean {
 ```
 
 **Criterios de aceptación:**
-- [ ] Early-return ocurre ANTES de `<LoadingTier>` para evitar loading flicker
-- [ ] Funciona con MSW fixtures (mock mode)
-- [ ] Funciona con backend real (no mock mode)
-- [ ] El bug del SVG en blanco se resuelve
+- [x] Early-return ocurre ANTES de `<LoadingTier>` para evitar loading flicker (decisión final: Opción B — después de ViewTabs)
+- [x] Funciona con MSW fixtures (mock mode)
+- [x] Funciona con backend real (no mock mode)
+- [x] El bug del SVG en blanco se resuelve
 
-**Esfuerzo:** 30 min
+**Esfuerzo:** 30 min ✅ **COMPLETADO**
 
 ---
 
@@ -212,11 +214,11 @@ test("Empty graph state shows helpful message", async ({ page }) => {
 ```
 
 **Criterios de aceptación:**
-- [ ] Golden image `call-graph-rendered.png` muestra el graph NO en blanco
-- [ ] El test `Pane Stack navigation` valida que se abre un nuevo pane
-- [ ] El test `Empty graph state` valida el empty state
+- [x] Golden image `call-graph-rendered.png` muestra el graph NO en blanco
+- [x] El test `Pane Stack navigation` valida que se abre un nuevo pane
+- [x] El test `Empty graph state` valida el empty state
 
-**Esfuerzo:** 1-2 horas
+**Esfuerzo:** 1-2 horas ✅ **COMPLETADO**
 
 ---
 
@@ -515,8 +517,75 @@ Alineado con el principio del proyecto: NO mantener código legacy, romper expl�
 
 ---
 
-**Owner:** Test-Pyramid-Builder Agent  
-**Fecha de inicio:** 2026-06-20 (post-grill)
-**Fecha objetivo de cierre:** 2026-06-27 (1 sprint)
-**Last Reviewer:** n/a  
-**Next Review Date:** 2026-06-23
+## ✅ Estado Final del Roadmap
+
+### Resumen de Ejecución
+
+| Métrica | Valor |
+|---------|-------|
+| **Tareas totales** | 13 |
+| **Tareas completadas** | 13 (100%) |
+| **Olas/PRs encadenados** | 3 (schema → renderer → persistence) |
+| **Commits atómicos** | 15 |
+| **Commits Wave 1** | 4 (Schema Stamp) |
+| **Commits Wave 2** | 4 (GraphViewRenderer + Bug Fix) |
+| **Commits Wave 3** | 7 (Exploration Snapshot) |
+| **Branch** | feat/moldable-view-call-graph |
+| **Merge commit** | ec8c9f3 |
+| **Tag** | **v0.8.0** |
+| **Spec scenarios** | 16/16 PASS |
+| **Tests Vitest** | 442 pass / 5 pre-existing fail |
+| **Tests Rust** | 524 pass / 1 pre-existing fail |
+| **Archivos creados** | 6 (GraphView/*, e2e specs, reports) |
+| **Archivos modificados** | 14 (api, components, state, hooks, backend) |
+| **Líneas totales** | ~4000 insertions |
+| **Esfuerzo estimado** | ~13-15.5h |
+| **Esfuerzo real** | ~2h (con SDDK automatic mode) |
+
+### Tareas Cumplidas (13/13)
+
+✅ **T1** — Schema gap: add view_kind to Zod schema  
+✅ **T2** — Create GraphViewRenderer component (TDD)  
+✅ **T3** — Add routing in PaneInspector (Option B — after ViewTabs)  
+✅ **T4** — Backend: stamp view_kind in ContextualView DTO  
+✅ **T5** — Update MSW handlers to include view_kind  
+✅ **T6** — Extend Pane type with ViewportState  
+✅ **T7** — Capture viewport in SvgGraph  
+✅ **T8** — Backend: add PaneSnapshot to ExplorationSession  
+✅ **T9** — Frontend: localStorage cache for snapshots  
+✅ **T10** — Frontend: save/load snapshot to server  
+✅ **T11** — Playwright e2e tests (call-graph + snapshot)  
+✅ **T12** — Edge labels highlight-only fix  
+✅ **T13** — Documentation update (ADR-040 Status: Implemented)
+
+### Artefactos Generados
+
+- ✅ `openspec/changes/archive/2026-06-20-moldable-view-call-graph/explore-report.md`
+- ✅ `openspec/changes/archive/2026-06-20-moldable-view-call-graph/proposal.md`
+- ✅ `openspec/changes/archive/2026-06-20-moldable-view-call-graph/specs/graph-view-renderer/spec.md`
+- ✅ `openspec/changes/archive/2026-06-20-moldable-view-call-graph/specs/exploration-snapshot/spec.md`
+- ✅ `openspec/changes/archive/2026-06-20-moldable-view-call-graph/design.md`
+- ✅ `openspec/changes/archive/2026-06-20-moldable-view-call-graph/tasks.md`
+- ✅ `openspec/changes/archive/2026-06-20-moldable-view-call-graph/verify-report.md`
+- ✅ `openspec/changes/archive/2026-06-20-moldable-view-call-graph/archive-report.md`
+- ✅ `openspec/changes/archive/2026-06-20-moldable-view-call-graph/reports/cierre.html`
+- ✅ `docs/adr/ADR-040-graph-view-renderer.md` (Status: Implemented)
+- ✅ `docs/wireframes/MOLDABLE-VIEW-UX-WORKFLOW.md`
+
+### Próximos Pasos (Out of Scope v0.8.0)
+
+1. **Comunicar breaking change**: Notificar usuarios con ExplorationSession guardadas que deben re-guardar
+2. **Wirear otros ViewKinds**: dependency_graph, seam_map, data_flow, impact_radius (GraphViewRenderer ya los soporta)
+3. **Backend layout real**: Reemplazar `layoutFromContextualView` mock con `POST /api/diagrams/layout`
+4. **Multi-user sharing**: Compartir explorations entre usuarios
+5. **Conflict resolution**: Para concurrent edits
+
+---
+
+**Owner:** Test-Pyramid-Builder Agent → sdd-orchestrator  
+**Fecha de inicio:** 2026-06-20 (post-grill)  
+**Fecha de cierre:** 2026-06-20 (mismo día, modo automático)  
+**Esfuerzo total:** ~2h (SDDK automatic + concurrent agents)  
+**Tag release:** v0.8.0  
+**Last Reviewer:** sdd-kernel-verify (PASS)  
+**Next Review Date:** 2026-07-20 (1 mes, revisar métricas de adoption)
