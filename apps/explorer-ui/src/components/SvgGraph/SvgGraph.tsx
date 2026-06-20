@@ -292,13 +292,15 @@ function SvgGraphInner({
               selectedId === edge.to ||
               hoveredId === edge.from ||
               hoveredId === edge.to;
+            // Per T12 (Grill Decision 6): labels only on highlighted edges
+            const label = highlighted ? edge.label : undefined;
             return (
               <GraphEdge
                 key={`e-${edge.from}-${edge.to}-${idx}`}
                 from={from}
                 to={to}
                 highlighted={highlighted}
-                {...(edge.label !== undefined ? { label: edge.label } : {})}
+                {...(label !== undefined ? { label } : {})}
                 testId={`graph-edge-${edge.from}-${edge.to}`}
               />
             );
