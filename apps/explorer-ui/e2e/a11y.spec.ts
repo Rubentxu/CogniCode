@@ -36,6 +36,12 @@ test.describe("a11y — @axe-core/playwright", () => {
     // Wait for the connection gate to resolve.
     await expect(page.getByTestId("shell")).toBeVisible();
     await expectNoCriticalViolations(new AxeBuilder({ page }));
+
+    // Golden image del Shell (después de validación a11y)
+    await expect(page).toHaveScreenshot("a11y-shell.png", {
+      fullPage: true,
+      animations: "disabled",
+    });
   });
 
   test("the Object Inspector has no critical violations after selecting an object", async ({
@@ -64,6 +70,12 @@ test.describe("a11y — @axe-core/playwright", () => {
     await expectNoCriticalViolations(
       new AxeBuilder({ page }).disableRules(["color-contrast"]),
     );
+
+    // Golden image del Object Inspector (después de validación a11y)
+    await expect(page).toHaveScreenshot("a11y-object-inspector.png", {
+      fullPage: true,
+      animations: "disabled",
+    });
   });
 
   test("the Spotter dialog has no critical violations when open", async ({
@@ -87,5 +99,10 @@ test.describe("a11y — @axe-core/playwright", () => {
     await expectNoCriticalViolations(
       new AxeBuilder({ page }).disableRules(["aria-required-children"]),
     );
+
+    // Golden image del Spotter (después de validación a11y)
+    await expect(page.getByTestId("spotter")).toHaveScreenshot("a11y-spotter.png", {
+      animations: "disabled",
+    });
   });
 });

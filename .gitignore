@@ -107,6 +107,8 @@ autoresearch/
 sandbox/fixtures/**/node_modules/
 sandbox/fixtures/**/target/
 sandbox/fixtures/**/__pycache__/
+sandbox/scripts/__pycache__/
+*.log
 sandbox/fixtures/**/.venv/
 sandbox/fixtures/**/venv/
 sandbox/fixtures/**/*.lock
@@ -116,3 +118,16 @@ sandbox/fixtures/**/Cargo.lock
 # Tier C fixtures are synthetic test data, not source code
 sandbox/fixtures/tierc
 sandbox/fixtures/tier-c/
+
+# Playwright test artifacts (screenshots, traces, videos from test runs)
+# These are generated each test run and should NOT be committed
+tests/e2e/report/screenshots/
+tests/e2e/report/html/
+apps/explorer-ui/test-results/screenshots/
+apps/explorer-ui/test-results/traces/
+apps/explorer-ui/test-results/videos/
+apps/explorer-ui/playwright-report/
+
+# Golden images SHOULD be committed (in __snapshots__/), but temp screenshots not
+**/test-results/*.png
+**/playwright-report/**/*.png
