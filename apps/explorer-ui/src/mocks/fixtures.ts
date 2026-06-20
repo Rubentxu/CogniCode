@@ -87,6 +87,7 @@ export const contextualViewFixture: ContextualView = {
   object_id: SYMBOL_ID,
   view_id: "overview",
   title: "Overview",
+  view_kind: "vertical_slice",
   renderer_kind: "composite",
   blocks: [
     {
