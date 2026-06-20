@@ -8,9 +8,10 @@
  *
  * Routing happens in PaneInspector (early-return after ViewTabs).
  */
-import { useMemo } from "react";
-import { useAppDispatch } from "../../state/context";
+import { useCallback, useMemo } from "react";
+import { useApp, useAppDispatch } from "../../state/context";
 import type { ContextualView } from "../../api/types";
+import type { ViewportState } from "../../state/navigation/types";
 import { SvgGraph } from "../SvgGraph/SvgGraph";
 import { layoutFromContextualView } from "../../mocks/layoutMock";
 import { GraphEmptyState } from "./GraphEmptyState";
@@ -18,15 +19,32 @@ import { GraphEmptyState } from "./GraphEmptyState";
 interface Props {
   view: ContextualView;
   objectId: string;
+  /** Pane ID for viewport snapshot dispatch. Uses activePaneId from state if omitted. */
+  paneId?: string;
   onClose?: () => void;
 }
 
-export function GraphViewRenderer({ view, objectId, onClose }: Props) {
+export function GraphViewRenderer({ view, objectId, paneId, onClose }: Props) {
   const dispatch = useAppDispatch();
+  const { state } = useApp();
+  const activePaneId = state.navigation.activePaneId;
+  const effectivePaneId = paneId ?? activePaneId;
 
   const layout = useMemo(
     () => layoutFromContextualView(view),
     [view.object_id, view.blocks]
+  );
+
+  const handleViewportChange = useCallback(
+    (viewport: ViewportState) => {
+      if (effectivePaneId) {
+        dispatch({
+          type: "UPDATE_PANE_VIEWPORT",
+          payload: { paneId: effectivePaneId, viewport },
+        });
+      }
+    },
+    [dispatch, effectivePaneId],
   );
 
   if (layout.nodes.length <= 1) {
@@ -60,6 +78,7 @@ export function GraphViewRenderer({ view, objectId, onClose }: Props) {
             payload: { objectId: nodeId, viewId: view.view_id },
           });
         }}
+        onViewportChange={handleViewportChange}
       />
     </div>
   );
