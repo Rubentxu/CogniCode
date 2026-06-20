@@ -785,6 +785,13 @@ export const contextualViewSchema = z.object({
   object_id: z.string(),
   view_id: z.string(),
   title: z.string(),
+  /**
+   * Semantic intent of this view (ADR-008 §ViewKind). Required for routing
+   * in PaneInspector — determines whether to render via GraphViewRenderer
+   * or Blocks. Backend stamps this from ViewDescriptor after build().
+   * Undefined for legacy payloads that predate this field.
+   */
+  view_kind: viewKindSchema.optional(),
   blocks: z.array(viewBlockAnySchema),
   relations: z.array(typedRelationSchema),
   evidence: z.array(evidenceBlockSchema),
