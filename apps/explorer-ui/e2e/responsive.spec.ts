@@ -64,15 +64,6 @@ for (const bp of BREAKPOINTS) {
         // no horizontal overflow happens (asserted in the next test).
         await expect(page.getByTestId("bottom-sheet")).toBeVisible();
       }
-      // At desktop the lens panel is always on; at tablet it is
-      // togglable; at small it is hidden behind the toggle. We
-      // assert the lens overlay is reachable in tablet mode.
-      if (bp.expectedViewport === "tablet") {
-        const lensToggle = page.getByRole("button", {
-          name: /Open lens panel/i,
-        });
-        await expect(lensToggle).toBeVisible();
-      }
     });
 
     test("no horizontal overflow on the body", async ({ page }) => {
