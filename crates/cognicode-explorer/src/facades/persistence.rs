@@ -222,6 +222,7 @@ impl PersistenceService for PersistenceServiceImpl {
             workspace_id: request.workspace_id,
             events: request.events,
             navigation_mode: request.navigation_mode,
+            panes: request.panes,
             created_at,
         };
 
