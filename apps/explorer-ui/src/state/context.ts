@@ -23,6 +23,7 @@ import {
   type NavigationState,
   type ViewportState,
 } from "./navigation";
+import { rootReducer } from "./slices";
 
 // ============================================================================
 // State
@@ -145,117 +146,10 @@ export const initialState: AppState = {
 };
 
 /**
- * Pure reducer. Navigation actions are handled inline; non-navigation
- * actions are handled inline as well.
+ * Pure reducer — delegates to domain slices via rootReducer.
  */
 export function appReducer(state: AppState, action: Action): AppState {
-  // Handle navigation actions directly
-  if (isNavigationAction(action)) {
-    const navAction = toNavigationAction(action);
-    const navigation = apply(state.navigation, navAction);
-    const focus = getActiveFocus(navigation);
-    return {
-      ...state,
-      navigation,
-      activeObjectId: focus.objectId,
-      activeViewId: focus.viewId,
-      activeLensId: focus.lensId,
-      activeView: focus.view,
-    };
-  }
-
-  switch (action.type) {
-    case "SET_WORKSPACE":
-      return { ...state, workspace: action.payload };
-
-    case "TOGGLE_SPOTTER":
-      return { ...state, spotterOpen: !state.spotterOpen };
-
-    case "SET_SPOTTER":
-      return { ...state, spotterOpen: action.payload.open };
-
-    case "ADD_EXPLORATION":
-      return { ...state, explorations: [...state.explorations, action.payload] };
-
-    case "RESET":
-      return initialState;
-
-    case "SET_PERSPECTIVE":
-      return { ...state, perspective: action.payload };
-
-    default: {
-      const _exhaustive: never = action;
-      void _exhaustive;
-      return state;
-    }
-  }
-}
-
-// ============================================================================
-// Action routing
-// ============================================================================
-
-/**
- * Type guard: does this Action belong to the navigation vocabulary?
- */
-function isNavigationAction(action: Action): action is Extract<Action,
-  | { type: "SELECT_OBJECT" }
-  | { type: "SET_ACTIVE_VIEW" }
-  | { type: "SET_ACTIVE_LENS" }
-  | { type: "PUSH_PANE" }
-  | { type: "CLOSE_PANE" }
-  | { type: "ACTIVATE_PANE" }
-  | { type: "REORDER_PANE" }
-  | { type: "SET_PANE_SCROLL" }
-  | { type: "UPDATE_PANE_VIEWPORT" }
-> {
-  return (
-    action.type === "SELECT_OBJECT" ||
-    action.type === "SET_ACTIVE_VIEW" ||
-    action.type === "SET_ACTIVE_LENS" ||
-    action.type === "PUSH_PANE" ||
-    action.type === "CLOSE_PANE" ||
-    action.type === "ACTIVATE_PANE" ||
-    action.type === "REORDER_PANE" ||
-    action.type === "SET_PANE_SCROLL" ||
-    action.type === "UPDATE_PANE_VIEWPORT"
-  );
-}
-
-/**
- * Translate the public Action into the internal NavigationAction.
- */
-function toNavigationAction(action: Extract<Action,
-  | { type: "SELECT_OBJECT" }
-  | { type: "SET_ACTIVE_VIEW" }
-  | { type: "SET_ACTIVE_LENS" }
-  | { type: "PUSH_PANE" }
-  | { type: "CLOSE_PANE" }
-  | { type: "ACTIVATE_PANE" }
-  | { type: "REORDER_PANE" }
-  | { type: "SET_PANE_SCROLL" }
-  | { type: "UPDATE_PANE_VIEWPORT" }
->): NavigationAction {
-  switch (action.type) {
-    case "SELECT_OBJECT":
-      return { type: "SELECT_OBJECT", payload: action.payload };
-    case "SET_ACTIVE_VIEW":
-      return { type: "SET_ACTIVE_VIEW", payload: action.payload };
-    case "SET_ACTIVE_LENS":
-      return { type: "SET_ACTIVE_LENS", payload: action.payload };
-    case "PUSH_PANE":
-      return { type: "PUSH_PANE", payload: action.payload };
-    case "CLOSE_PANE":
-      return { type: "CLOSE_PANE", payload: action.payload };
-    case "ACTIVATE_PANE":
-      return { type: "ACTIVATE_PANE", payload: action.payload };
-    case "REORDER_PANE":
-      return { type: "REORDER_PANE", payload: action.payload };
-    case "SET_PANE_SCROLL":
-      return { type: "SET_PANE_SCROLL", payload: action.payload };
-    case "UPDATE_PANE_VIEWPORT":
-      return { type: "UPDATE_PANE_VIEWPORT", payload: action.payload };
-  }
+  return rootReducer(state, action);
 }
 
 // ============================================================================

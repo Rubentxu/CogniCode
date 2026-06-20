@@ -18,7 +18,7 @@ import { SuggestionStrip } from "./SuggestionStrip";
 import { Blocks } from "./ViewBlock";
 import { ViewSpecWizard } from "./ViewSpecWizard";
 import { multimodalLabelForObjectType } from "./multimodal";
-import { GraphViewRenderer } from "../GraphView/GraphViewRenderer";
+import { GraphView } from "../GraphView/GraphView";
 
 // Graph-shaped ViewKinds that route to GraphViewRenderer
 function isGraphViewKind(kind: string | undefined): boolean {
@@ -236,7 +236,7 @@ export function PaneInspector({
           >
             {display ? (
               isGraphViewKind(display.view_kind) ? (
-                <GraphViewRenderer
+                <GraphView
                   view={display}
                   objectId={objectId}
                   onClose={onClose}
