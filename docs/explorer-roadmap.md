@@ -150,3 +150,20 @@ workspace's crates and modules.
 - [ADR-039](../adr/ADR-039-explorer-navigation-model.md) — This roadmap's ADR
 - [ADR-038](../adr/ADR-038-sandbox-hardening-and-coverage.md) — Sandbox hardening
 - [ADR-034](../adr/ADR-034-mcp-production-readiness.md) — MCP production readiness
+
+---
+
+## Sprint F1-F4 — E2E Test Battery (38 scenarios)
+
+**Goal:** Comprehensive E2E coverage for all Explorer navigation flows.
+
+See [explorer-e2e-test-plan.md](explorer-e2e-test-plan.md) for the detailed plan.
+
+| Sprint | Phase | Scenarios | Est |
+|--------|-------|-----------|-----|
+| F1 | Prerequisites: wire `useBootstrapWorkspace`, fix MSW coverage | — | 2-3h |
+| F2 | Landing page + Perspective toggle | 14 | 3-4h |
+| F3 | Pane-stack + Spotter interactions | 13 | 3-4h |
+| F4 | Error handling + Responsive + Accessibility | 11 | 3-4h |
+
+**Total:** 38 tests, 12-15h
