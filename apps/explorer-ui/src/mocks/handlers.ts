@@ -51,6 +51,10 @@ function viewIdToKinds(viewId: string): { viewKind: string; rendererKind: string
   }
 }
 
+// In-memory store for exploration sessions (ADR-040 Wave 3 H4 fix).
+// Tests rely on this to validate session save/restore round-trip.
+export const explorationSessionStore = new Map<string, Record<string, unknown>>();
+
 export const handlers = [
   // -----------------------------------------------------------------------
   // 1. Health
@@ -182,6 +186,38 @@ export const handlers = [
       ...explorationPathFixture,
       workspace_id: body.workspace_id,
     });
+  }),
+
+  // -----------------------------------------------------------------------
+  // 10b. Save exploration session (ADR-040 Wave 3 — Exploration Snapshot)
+  // -----------------------------------------------------------------------
+  // Persists the full pane-stack exploration including viewport state.
+  // Returns a session id used for ?exploration=<id> restore URLs.
+
+  http.post("/api/exploration-sessions", async ({ request }) => {
+    await delay(LATENCY_MS);
+    const body = (await request.json()) as Record<string, unknown>;
+    const id = `session-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const session = {
+      id,
+      workspace_id: body["workspace_id"],
+      events: body["events"] ?? [],
+      navigation_mode: body["navigation_mode"] ?? "pane-stack",
+      panes: body["panes"] ?? [],
+      created_at: new Date().toISOString(),
+    };
+    explorationSessionStore.set(id, session);
+    return HttpResponse.json(session);
+  }),
+
+  http.get("/api/exploration-sessions/:id", async ({ params }) => {
+    await delay(LATENCY_MS);
+    const id = String(params["id"] ?? "");
+    const session = explorationSessionStore.get(id);
+    if (!session) {
+      return HttpResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    return HttpResponse.json(session);
   }),
 
   // -----------------------------------------------------------------------

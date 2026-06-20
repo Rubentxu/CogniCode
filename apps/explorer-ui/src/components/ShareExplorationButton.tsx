@@ -3,22 +3,28 @@
  * a shareable URL to clipboard.
  *
  * Flow:
- * 1. Collect navigation state (panes)
- * 2. POST to /api/exploration-sessions
+ * 1. Collect navigation state (panes + viewport)
+ * 2. POST to /api/exploration-sessions (via saveExplorationSession — ADR-040 Wave 3)
  * 3. Copy URL with ?exploration=<session_id> to clipboard
+ * 4. Show feedback: "Saving..." → "✓ Copied!" or "Failed"
  */
 import { useState, useCallback } from "react";
 import { useAppState } from "../state/context";
-import type { Pane } from "../state/navigation";
+import { saveExplorationSession } from "../hooks/useExplorations";
+
+type SaveStatus = "idle" | "saving" | "saved" | "failed";
 
 export function ShareExplorationButton() {
-  const { navigation } = useAppState();
-  const [copied, setCopied] = useState(false);
+  const appState = useAppState();
+  const { navigation, workspace } = appState;
+  const [status, setStatus] = useState<SaveStatus>("idle");
 
   const handleShare = useCallback(async () => {
+    setStatus("saving");
+
     // Build exploration events from current state.
     // Each pane becomes an event (active pane first).
-    const events = navigation.panes.map((pane: Pane) => ({
+    const events = navigation.panes.map((pane) => ({
       object_id: pane.objectId,
       view_id: pane.activeViewId,
       query: null as string | null,
@@ -26,25 +32,31 @@ export function ShareExplorationButton() {
     }));
 
     try {
-      const resp = await fetch("/api/exploration-sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workspace_id: "default",
-          events,
-          navigation_mode: "pane-stack",
-        }),
-      });
-      if (!resp.ok) return;
-      const session: { id: string } = await resp.json();
+      const session = await saveExplorationSession(
+        workspace?.id ?? "default",
+        events,
+        navigation.panes,
+      );
+
       const url = `${window.location.origin}${window.location.pathname}?exploration=${session.id}`;
       await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setStatus("saved");
+      setTimeout(() => setStatus("idle"), 2000);
     } catch {
-      // clipboard or network error — silently fail
+      // clipboard or network error
+      setStatus("failed");
+      setTimeout(() => setStatus("idle"), 3000);
     }
-  }, [navigation]);
+  }, [navigation, workspace]);
+
+  const label =
+    status === "saving"
+      ? "Saving..."
+      : status === "saved"
+        ? "✓ Copied!"
+        : status === "failed"
+          ? "Failed"
+          : "Share";
 
   return (
     <button
@@ -55,11 +67,16 @@ export function ShareExplorationButton() {
       className="rounded-md px-2 py-1 text-xs"
       style={{
         backgroundColor: "var(--color-surface-overlay)",
-        color: copied ? "var(--color-primary)" : "var(--color-text-secondary)",
+        color:
+          status === "saved"
+            ? "var(--color-primary)"
+            : status === "failed"
+              ? "var(--color-error, #dc2626)"
+              : "var(--color-text-secondary)",
         border: "1px solid var(--color-border)",
       }}
     >
-      {copied ? "✓ Copied!" : "Share"}
+      {label}
     </button>
   );
 }

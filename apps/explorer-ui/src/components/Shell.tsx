@@ -27,6 +27,7 @@ import { detectViewport, type ShellViewport } from "./viewport";
 import { useRestoreExploration } from "../hooks/useRestoreExploration";
 import { useSubgraph } from "../hooks/useSubgraph";
 import { useWorkspaceList } from "../hooks/useWorkspace";
+import { useSnapshotCache } from "../hooks/useExplorations";
 import { GraphLanding } from "./GraphLanding";
 
 // `React.lazy` keeps the cytoscape + elkjs chunk out of the
@@ -82,6 +83,14 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
 
   // Restore exploration from ?exploration=<id> on mount (ADR-016 Fase 4).
   useRestoreExploration();
+
+  // Cache exploration snapshot to localStorage on every pane change (ADR-040 Wave 3).
+  // Wirear aquí garantiza que cualquier cambio (pan/zoom, drill, close) se persiste
+  // antes de cualquier acción del usuario (refresh, navegar a otra URL).
+  // El sessionId se genera por mount para evitar colisiones entre sesiones.
+  const sessionId = "current"; // Single-session cache per workspace
+  const workspaceId = appState.workspace?.id ?? null;
+  useSnapshotCache(workspaceId, sessionId, appState.navigation.panes);
 
   // F1: Bootstrap workspace — auto-select first workspace from list
   // so GraphLanding renders (without this, workspace stays null).
