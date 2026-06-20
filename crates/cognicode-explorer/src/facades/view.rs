@@ -294,7 +294,11 @@ impl ViewService for ViewServiceImpl {
             graph_query: self.graph_query.as_ref().map(|g| g.as_ref()),
         };
 
-        executor.build(&ctx).await
+        // AD-2: stamp descriptor metadata onto DTO at single seam
+        let mut view = executor.build(&ctx).await?;
+        view.view_kind = executor.view_kind();
+        view.renderer_kind = executor.renderer_kind();
+        Ok(view)
     }
 
     async fn build_contextual_graph(

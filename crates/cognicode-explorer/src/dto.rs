@@ -191,11 +191,18 @@ pub struct LineRange {
     pub end: u32,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextualView {
     pub object_id: String,
     pub view_id: String,
     pub title: String,
+    /// Semantic intent (ADR-008 §ViewKind). Required for routing by
+    /// PaneInspector — determines whether to render via GraphViewRenderer
+    /// or Blocks. Stamped from ViewDescriptor after build() in
+    /// contextual_view(). `#[serde(default)]` uses Custom("unknown") so
+    /// legacy payloads that don't carry it fall through to Blocks.
+    #[serde(default = "default_view_kind")]
+    pub view_kind: ViewKind,
     pub blocks: Vec<ViewBlock>,
     pub relations: Vec<TypedRelation>,
     pub evidence: Vec<EvidenceBlock>,
@@ -210,6 +217,26 @@ pub struct ContextualView {
     /// deserialize with `RendererKind::Json`, the most common fallback.
     #[serde(default)]
     pub renderer_kind: RendererKind,
+}
+
+fn default_view_kind() -> ViewKind {
+    ViewKind::Custom("unknown".to_string())
+}
+
+impl Default for ContextualView {
+    fn default() -> Self {
+        Self {
+            object_id: String::new(),
+            view_id: String::new(),
+            title: String::new(),
+            view_kind: ViewKind::Custom("unknown".to_string()),
+            blocks: Vec::new(),
+            relations: Vec::new(),
+            evidence: Vec::new(),
+            findings: Vec::new(),
+            renderer_kind: RendererKind::Json,
+        }
+    }
 }
 
 // ============================================================================
