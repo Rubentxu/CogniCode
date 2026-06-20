@@ -137,63 +137,68 @@ export function ViewTabs({
 
   return (
     <div
-      ref={containerRef}
-      role="tablist"
-      id={TABS_ID}
-      aria-label="Available views"
-      data-testid="view-tabs"
-      onKeyDown={onKeyDown}
       className={
         "flex items-center gap-1 overflow-x-auto px-2 py-1.5 " +
         (className ?? "")
       }
       style={{ borderBottom: "1px solid var(--color-border)" }}
     >
-      {views.map((view) => {
-        const isActive = view.id === activeViewId;
-        return (
-          <button
-            key={view.id}
-            type="button"
-            role="tab"
-            aria-selected={isActive}
-            aria-controls={`view-tab-panel-${cssEscape(view.id)}`}
-            tabIndex={isActive ? 0 : -1}
-            data-testid={`view-tab-${view.id}`}
-            data-view-id={view.id}
-            data-active={isActive ? "true" : "false"}
-            data-source={view.is_builtin === false ? "runtime" : undefined}
-            onClick={() => onChange(view.id)}
-            className="rounded-md px-2 py-1 text-xs font-medium transition-colors"
-            style={{
-              backgroundColor: isActive
-                ? "var(--color-primary)"
-                : "var(--color-surface-overlay)",
-              color: isActive
-                ? "var(--color-primary-foreground)"
-                : "var(--color-text-secondary)",
-            }}
-          >
-            {view.title}
-            {/* "custom" badge for runtime (user-defined) views */}
-            {view.is_builtin === false && (
-              <span
-                aria-label="Custom view"
-                className="ml-1 rounded bg-blue-100 px-1 py-0.5 text-[10px] font-normal text-blue-700"
-              >
-                custom
-              </span>
-            )}
-            {isLoading && isActive && (
-              <span
-                aria-hidden="true"
-                className="ml-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full"
-                style={{ backgroundColor: "currentColor" }}
-              />
-            )}
-          </button>
-        );
-      })}
+      {/* tablist — only contains tab role=tab children */}
+      <div
+        ref={containerRef}
+        role="tablist"
+        id={TABS_ID}
+        aria-label="Available views"
+        data-testid="view-tabs"
+        onKeyDown={onKeyDown}
+        className="flex items-center gap-1 overflow-x-auto"
+      >
+        {views.map((view) => {
+          const isActive = view.id === activeViewId;
+          return (
+            <button
+              key={view.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              aria-controls={`view-tab-panel-${cssEscape(view.id)}`}
+              tabIndex={isActive ? 0 : -1}
+              data-testid={`view-tab-${view.id}`}
+              data-view-id={view.id}
+              data-active={isActive ? "true" : "false"}
+              data-source={view.is_builtin === false ? "runtime" : undefined}
+              onClick={() => onChange(view.id)}
+              className="rounded-md px-2 py-1 text-xs font-medium transition-colors"
+              style={{
+                backgroundColor: isActive
+                  ? "var(--color-primary)"
+                  : "var(--color-surface-overlay)",
+                color: isActive
+                  ? "var(--color-primary-foreground)"
+                  : "var(--color-text-secondary)",
+              }}
+            >
+              {view.title}
+              {/* "custom" badge for runtime (user-defined) views */}
+              {view.is_builtin === false && (
+                <span
+                  aria-label="Custom view"
+                  className="ml-1 rounded bg-blue-100 px-1 py-0.5 text-[10px] font-normal text-blue-700"
+                >
+                  custom
+                </span>
+              )}
+              {isLoading && isActive && (
+                <span
+                  aria-hidden="true"
+                  className="ml-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full"
+                  style={{ backgroundColor: "currentColor" }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
       {/* Overflow menu — "Create custom view" opens the ViewSpecWizard */}
       {onOpenWizard && objectId && objectType && objectLabel && (
         <button
