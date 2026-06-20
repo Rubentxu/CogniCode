@@ -823,6 +823,53 @@ export const explorationPathSchema = z.object({
 });
 export type ExplorationPath = z.infer<typeof explorationPathSchema>;
 
+// ViewportState for graph pan/zoom capture (ADR-040 Wave 3)
+const viewportStateSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  scale: z.number(),
+});
+export type ViewportStateDto = z.infer<typeof viewportStateSchema>;
+
+// PaneSnapshot for session restore (ADR-040 Wave 3)
+const paneSnapshotSchema = z.object({
+  pane_id: z.string(),
+  object_id: z.string(),
+  view_id: z.string(),
+  scroll_y: z.number(),
+  viewport: viewportStateSchema.nullable(),
+});
+export type PaneSnapshotDto = z.infer<typeof paneSnapshotSchema>;
+
+// ExplorationEvent for session
+const explorationEventSchema = z.object({
+  object_id: z.string(),
+  view_id: z.string().nullable(),
+  query: z.string().nullable(),
+  ts: z.string(),
+});
+export type ExplorationEventDto = z.infer<typeof explorationEventSchema>;
+
+// ExplorationSession for session restore (ADR-040 Wave 3)
+export const explorationSessionSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  events: z.array(explorationEventSchema),
+  navigation_mode: z.string(),
+  panes: z.array(paneSnapshotSchema),
+  created_at: z.string(),
+});
+export type ExplorationSessionDto = z.infer<typeof explorationSessionSchema>;
+
+// SaveExplorationSessionRequest (ADR-040 Wave 3)
+const saveExplorationSessionRequestSchema = z.object({
+  workspace_id: z.string(),
+  events: z.array(explorationEventSchema),
+  navigation_mode: z.string(),
+  panes: z.array(paneSnapshotSchema),
+});
+export type SaveExplorationSessionRequestDto = z.infer<typeof saveExplorationSessionRequestSchema>;
+
 export const openWorkspaceRequestSchema = z.object({
   root_path: z.string(),
 });

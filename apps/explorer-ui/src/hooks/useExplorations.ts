@@ -15,6 +15,7 @@ import { z } from "zod";
 import {
   decisionArtifactSummarySchema,
   explorationPathSchema,
+  explorationSessionSchema,
   generateArtifactRequestSchema,
   saveExplorationRequestSchema,
 } from "../api/schemas";
@@ -26,6 +27,7 @@ import {
 import type {
   DecisionArtifactSummary,
   ExplorationPath,
+  ExplorationSessionDto,
 } from "../api/types";
 import type { ViewportState } from "../state/navigation/types";
 
@@ -110,6 +112,48 @@ export async function saveExploration(
     return [...current, path];
   }, false);
   return path;
+}
+
+/**
+ * Save an exploration session with pane snapshots including viewport state
+ * (ADR-040 Wave 3). Posts to `/api/exploration-sessions`.
+ */
+export async function saveExplorationSession(
+  workspaceId: string,
+  events: Array<{
+    object_id: string;
+    view_id: string | null;
+    query: string | null;
+    ts: string;
+  }>,
+  panes: ReadonlyArray<{
+    id: string;
+    objectId: string;
+    activeViewId: string | null;
+    scrollY: number;
+    viewport?: ViewportState;
+  }>,
+): Promise<ExplorationSessionDto> {
+  const panesSnapshot = panes.map((pane) => ({
+    pane_id: pane.id,
+    object_id: pane.objectId,
+    view_id: pane.activeViewId ?? "overview",
+    scroll_y: pane.scrollY,
+    viewport: pane.viewport ?? null,
+  }));
+
+  const body = {
+    workspace_id: workspaceId,
+    events,
+    navigation_mode: "pane-stack",
+    panes: panesSnapshot,
+  };
+
+  return apiPost(
+    "/exploration-sessions",
+    body,
+    explorationSessionSchema,
+  );
 }
 
 /**
