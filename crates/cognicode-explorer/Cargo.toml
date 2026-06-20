@@ -56,6 +56,8 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 sqlx = { workspace = true, optional = true }
 # TOML parsing for C4 architecture inference (E6 ADR-039)
 toml.workspace = true
+# YAML parsing for expected-architecture.yaml drift detection
+serde_yaml.workspace = true
 # `async-trait` is always needed — the facade traits use `#[async_trait]`.
 # It is NOT optional because the proc macro must always be available.
 async-trait.workspace = true

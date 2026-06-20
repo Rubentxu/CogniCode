@@ -439,6 +439,7 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/api/workspaces/:workspace_id/graph/stats", get(graph_stats_handler))
         .route("/api/workspaces/:workspace_id/landing", get(landing_handler))
         .route("/api/workspaces/:workspace_id/architecture", get(architecture_handler))
+        .route("/api/workspaces/:workspace_id/drift", get(drift_handler))
         .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
         .route("/api/objects/:object_id/views", get(available_views))
@@ -481,6 +482,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/workspaces/:workspace_id/graph/stats", get(graph_stats_handler))
         .route("/api/workspaces/:workspace_id/landing", get(landing_handler))
         .route("/api/workspaces/:workspace_id/architecture", get(architecture_handler))
+        .route("/api/workspaces/:workspace_id/drift", get(drift_handler))
         .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
         .route("/api/objects/:object_id/views", get(available_views))
@@ -681,6 +683,22 @@ async fn architecture_handler(
         .build_architecture(&workspace.root_path)
         .await?;
     Ok(Json(response).into_response())
+}
+
+/// Handler for `GET /api/workspaces/:workspace_id/drift`.
+///
+/// Compares the inferred C4 architecture against `.cognicode/expected-architecture.yaml`.
+/// Returns a `DriftReport` with missing containers, extra containers, and wrong sub_kind findings.
+async fn drift_handler(
+    State(state): State<ApiState>,
+    Path(_workspace_id): Path<String>,
+) -> Result<Response, ApiError> {
+    let workspace = state.workspace.current_workspace().map_err(ApiError)?;
+    let report = state
+        .graph
+        .compare_architecture(&workspace.root_path)
+        .await?;
+    Ok(Json(report).into_response())
 }
 
 #[derive(Debug, Deserialize)]

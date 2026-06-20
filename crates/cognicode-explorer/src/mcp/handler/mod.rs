@@ -17,6 +17,7 @@ use std::collections::HashMap;
 
 // Declare handler submodules. Each file implements one tool family.
 mod ask;
+mod drift;
 mod graph;
 mod impact;
 mod ingest;
@@ -140,6 +141,7 @@ fn unknown_tool_error(name: &str) -> CallToolResult {
 
 // Re-export registration functions from submodules for ergonomic external use.
 pub use ask::register_ask_handlers;
+pub use drift::register_drift_handlers;
 pub use graph::register_graph_handlers;
 pub use impact::register_impact_handlers;
 pub use ingest::register_ingest_handlers;

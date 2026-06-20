@@ -28,7 +28,7 @@ use async_trait::async_trait;
 use cognicode_core::domain::traits::GraphQueryPort;
 
 use crate::dto::{
-    ContextualGraphResponse, ContextualView, DecisionArtifactSummary, GraphNode,
+    ContextualGraphResponse, ContextualView, DecisionArtifactSummary, DriftReport, GraphNode,
     ExplorationPath, GenerateArtifactRequest, InspectableObjectSummary, LensDescriptor,
     LensResult, SpotterResult, SpotterSearchResult, SubgraphResponse, ViewDescriptor, ViewSpec,
     WorkspaceSummary,
@@ -74,6 +74,10 @@ pub trait GraphService: Send + Sync {
     /// C3 components are directories; edges reflect parent-child relationships.
     /// `root_path` is the workspace root directory for parsing Cargo.toml and package.json.
     async fn build_architecture(&self, root_path: &str) -> ExplorerResult<SubgraphResponse>;
+
+    /// Compare the inferred architecture against `.cognicode/expected-architecture.yaml`.
+    /// Returns a drift report if the file exists; empty report otherwise.
+    async fn compare_architecture(&self, root_path: &str) -> ExplorerResult<DriftReport>;
 }
 
 // ============================================================================

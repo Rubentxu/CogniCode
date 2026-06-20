@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use cognicode_core::domain::aggregates::SymbolId;
 use cognicode_core::domain::traits::GraphQueryPort;
 
-use crate::dto::{GraphEdge, GraphNode, SubgraphResponse};
+use crate::dto::{DriftKind, DriftFinding, DriftReport, ExpectedArchitecture, ExpectedContainer, GraphEdge, GraphNode, SubgraphResponse};
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::GraphService;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
@@ -414,6 +414,134 @@ impl GraphService for GraphServiceImpl {
             truncated_reason: None,
             corroboration_scores: HashMap::new(),
         })
+    }
+
+    async fn compare_architecture(&self, root_path: &str) -> ExplorerResult<DriftReport> {
+        use std::collections::HashMap;
+        use std::path::Path;
+
+        // Parse expected architecture file if it exists
+        let expected_file = Path::new(root_path).join(".cognicode/expected-architecture.yaml");
+        let expected_arch: ExpectedArchitecture = if expected_file.exists() {
+            let content = std::fs::read_to_string(&expected_file)
+                .map_err(|e| ExplorerError::InvalidInput(format!(
+                    "Failed to read expected-architecture.yaml: {}", e)))?;
+            serde_yaml::from_str(&content)
+                .map_err(|e| ExplorerError::InvalidInput(format!(
+                    "Failed to parse expected-architecture.yaml: {}", e)))?
+        } else {
+            // Graceful degradation: no expected architecture file
+            return Ok(DriftReport::default());
+        };
+
+        // Build the inferred architecture to get container names and sub_kinds
+        let inferred = self.build_architecture(root_path).await?;
+
+        // Collect inferred containers: { name -> sub_kind }
+        let mut inferred_containers: HashMap<String, String> = HashMap::new();
+        for node in &inferred.nodes {
+            if node.kind == "container" {
+                // Extract container name from id (format: "container:<name>")
+                let name = node.id.strip_prefix("container:").unwrap_or(&node.id);
+                // Infer sub_kind from the file path in the node's file field
+                let sub_kind = infer_sub_kind(node.file.as_deref());
+                inferred_containers.insert(name.to_string(), sub_kind);
+            }
+        }
+
+        // Compare expected vs inferred
+        let expected_names: HashSet<String> = expected_arch.containers.iter()
+            .map(|c| c.name.clone())
+            .collect();
+        let inferred_names: HashSet<String> = inferred_containers.keys().cloned().collect();
+
+        let mut findings = Vec::new();
+
+        // Missing containers: in expected but not in inferred
+        for container in &expected_arch.containers {
+            if !inferred_names.contains(&container.name) {
+                findings.push(DriftFinding {
+                    kind: DriftKind::MissingContainer,
+                    expected: container.name.clone(),
+                    actual: "—".to_string(),
+                    severity: "warning".to_string(),
+                    detail: format!(
+                        "Expected container '{}' (sub_kind: {}) is not present in the inferred architecture",
+                        container.name, container.sub_kind
+                    ),
+                });
+            }
+        }
+
+        // Extra containers: in inferred but not in expected
+        for name in &inferred_names {
+            if !expected_names.contains(name) {
+                let actual_sub_kind = inferred_containers.get(name).cloned().unwrap_or_default();
+                findings.push(DriftFinding {
+                    kind: DriftKind::ExtraContainer,
+                    expected: "—".to_string(),
+                    actual: name.clone(),
+                    severity: "warning".to_string(),
+                    detail: format!(
+                        "Container '{}' (sub_kind: {}) is present but not in expected architecture",
+                        name, actual_sub_kind
+                    ),
+                });
+            }
+        }
+
+        // Wrong sub_kind: name matches but sub_kind differs
+        for expected in &expected_arch.containers {
+            if let Some(actual_sub_kind) = inferred_containers.get(&expected.name) {
+                if actual_sub_kind != &expected.sub_kind {
+                    findings.push(DriftFinding {
+                        kind: DriftKind::WrongSubKind,
+                        expected: format!("{} ({})", expected.name, expected.sub_kind),
+                        actual: format!("{} ({})", expected.name, actual_sub_kind),
+                        severity: "info".to_string(),
+                        detail: format!(
+                            "Container '{}' has sub_kind '{}' in expected but '{}' in inferred",
+                            expected.name, expected.sub_kind, actual_sub_kind
+                        ),
+                    });
+                }
+            }
+        }
+
+        let missing_containers = findings.iter().filter(|f| f.kind == DriftKind::MissingContainer).count();
+        let extra_containers = findings.iter().filter(|f| f.kind == DriftKind::ExtraContainer).count();
+        let wrong_sub_kinds = findings.iter().filter(|f| f.kind == DriftKind::WrongSubKind).count();
+
+        let summary = if findings.is_empty() {
+            "No architecture drift detected".to_string()
+        } else {
+            format!(
+                "Architecture drift: {} missing, {} extra, {} wrong sub_kind",
+                missing_containers, extra_containers, wrong_sub_kinds
+            )
+        };
+
+        Ok(DriftReport {
+            findings,
+            summary,
+            missing_containers,
+            extra_containers,
+            wrong_sub_kinds,
+        })
+    }
+}
+
+/// Infer the sub_kind of a container from its file path.
+fn infer_sub_kind(file: Option<&str>) -> String {
+    match file {
+        Some(f) => {
+            if f.contains("/bin/") || f.ends_with("-bin") {
+                "binary".to_string()
+            } else {
+                "library".to_string()
+            }
+        }
+        None => "library".to_string(),
     }
 }
 

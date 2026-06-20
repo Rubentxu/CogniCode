@@ -108,6 +108,9 @@ pub const TOOL_GRAPH_CLUSTER: &str = "graph_cluster";
 /// `graph_explain` — explain the lowest-cost path between two symbols.
 pub const TOOL_GRAPH_EXPLAIN: &str = "graph_explain";
 
+/// `detect_architecture_drift` — compare inferred C4 architecture against expected.
+pub const TOOL_DETECT_ARCHITECTURE_DRIFT: &str = "detect_architecture_drift";
+
 /// `cognicode_ask` — natural-language front-end that classifies a question.
 pub const TOOL_ASK: &str = "cognicode_ask";
 
@@ -340,11 +343,13 @@ impl ExplorerMcpHandler {
             .with_view(view.clone())
             .with_moldql(moldql.clone())
             .with_persistence(persistence)
+            .with_graph_service(graph_facade.clone())
             .build();
 
         // Build registry and register all handlers.
         let mut registry = ToolHandlerRegistry::new();
         crate::mcp::handler::register_ask_handlers(&mut registry);
+        crate::mcp::handler::register_drift_handlers(&mut registry);
         crate::mcp::handler::register_graph_handlers(&mut registry);
         crate::mcp::handler::register_impact_handlers(&mut registry);
         crate::mcp::handler::register_ingest_handlers(&mut registry);
@@ -447,6 +452,7 @@ pub fn tool_names() -> Vec<&'static str> {
         TOOL_GRAPH_SUBGRAPH,
         TOOL_GRAPH_CLUSTER,
         TOOL_GRAPH_EXPLAIN,
+        TOOL_DETECT_ARCHITECTURE_DRIFT,
         TOOL_ASK,
         TOOL_BRAIN_OPEN,
         TOOL_BRAIN_ATTACH,
@@ -481,6 +487,7 @@ pub const TOOL_NAMES: &[&str] = &[
     TOOL_GRAPH_SUBGRAPH,
     TOOL_GRAPH_CLUSTER,
     TOOL_GRAPH_EXPLAIN,
+    TOOL_DETECT_ARCHITECTURE_DRIFT,
     TOOL_ASK,
     TOOL_BRAIN_OPEN,
     TOOL_BRAIN_ATTACH,

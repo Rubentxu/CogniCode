@@ -14,7 +14,7 @@ use std::sync::Arc;
 use cognicode_core::domain::aggregates::CallGraph;
 use cognicode_core::domain::traits::GraphQueryPort;
 
-use crate::facades::{MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService};
+use crate::facades::{GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService};
 use crate::session::SessionRegistry;
 
 /// Optional Generic Graph Layer port for multimodal queries.
@@ -52,6 +52,8 @@ pub struct McpContext {
     pub persistence: Option<Arc<dyn PersistenceService>>,
     /// Graph query port for Phase 4 graph traversal queries.
     pub graph_query: Option<Arc<dyn GraphQueryPort>>,
+    /// Graph service facade — provides build_architecture and compare_architecture.
+    pub graph_service: Option<Arc<dyn GraphService>>,
 }
 
 impl McpContext {
@@ -71,6 +73,7 @@ impl McpContext {
             moldql: None,
             persistence: None,
             graph_query: None,
+            graph_service: None,
         }
     }
 
@@ -127,6 +130,7 @@ pub struct McpContextBuilder {
     moldql: Option<Arc<dyn MoldQLService>>,
     persistence: Option<Arc<dyn PersistenceService>>,
     graph_query: Option<Arc<dyn GraphQueryPort>>,
+    graph_service: Option<Arc<dyn GraphService>>,
     #[cfg(feature = "multimodal")]
     graph_repo: Option<Option<Arc<dyn crate::ports::graph_repository::GraphRepository>>>,
 }
@@ -142,6 +146,7 @@ impl McpContextBuilder {
             moldql: None,
             persistence: None,
             graph_query: None,
+            graph_service: None,
             #[cfg(feature = "multimodal")]
             graph_repo: Some(None),
         }
@@ -195,6 +200,12 @@ impl McpContextBuilder {
         self
     }
 
+    /// Wire a `GraphService` facade into the context.
+    pub fn with_graph_service(mut self, graph_service: Arc<dyn GraphService>) -> Self {
+        self.graph_service = Some(graph_service);
+        self
+    }
+
     /// Wire an optional `GraphQueryPort` into the context (Phase 4).
     /// Passes through `None` when `graph_query` is `None`.
     pub fn with_optional_graph_query(mut self, graph_query: Option<Arc<dyn GraphQueryPort>>) -> Self {
@@ -224,6 +235,7 @@ impl McpContextBuilder {
             moldql: self.moldql,
             persistence: self.persistence,
             graph_query: self.graph_query,
+            graph_service: self.graph_service,
         }
     }
 }

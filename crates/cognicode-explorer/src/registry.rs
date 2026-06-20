@@ -355,6 +355,7 @@ impl ViewRegistry {
                 ("symbols", &crate::domain::views::SYMBOLS_EXECUTOR as &dyn crate::domain::views::ViewExecutor),
                 ("dependencies", &crate::domain::views::DEPENDENCIES_EXECUTOR as &dyn crate::domain::views::ViewExecutor),
                 ("hotspots", &crate::domain::views::HOTSPOTS_EXECUTOR as &dyn crate::domain::views::ViewExecutor),
+                ("architecture-drift", &crate::domain::views::ARCHITECTURE_DRIFT_EXECUTOR as &dyn crate::domain::views::ViewExecutor),
             ])
         });
         real.get(id).copied().or_else(|| {

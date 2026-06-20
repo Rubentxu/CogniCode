@@ -1602,6 +1602,36 @@ pub static EVIDENCE_EXECUTOR: EvidenceExecutor = EvidenceExecutor;
 pub static SYMBOLS_EXECUTOR: SymbolsExecutor = SymbolsExecutor;
 pub static DEPENDENCIES_EXECUTOR: DependenciesExecutor = DependenciesExecutor;
 pub static HOTSPOTS_EXECUTOR: HotspotsExecutor = HotspotsExecutor;
+pub static ARCHITECTURE_DRIFT_EXECUTOR: ArchitectureDriftExecutor = ArchitectureDriftExecutor;
+
+/// Architecture drift capability — applies to Workspace.
+///
+/// Note: Architecture drift detection primarily uses the dedicated
+/// `GET /api/workspaces/:workspace_id/drift` endpoint. This executor
+/// exists for completeness and for potential future integration
+/// through the views API.
+pub struct ArchitectureDriftExecutor;
+impl ViewDescriptor for ArchitectureDriftExecutor {
+    fn id(&self) -> &'static str { "architecture-drift" }
+    fn title(&self) -> &'static str { "Architecture Drift" }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Workspace]
+    }
+    fn view_kind(&self) -> ViewKind { ViewKind::ArchitectureDrift }
+    fn renderer_kind(&self) -> RendererKind { RendererKind::Table }
+}
+
+#[async_trait]
+impl ViewExecutor for ArchitectureDriftExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        // Architecture drift detection requires workspace-level context
+        // (root path) which is not available through InspectionTarget.
+        // The dedicated drift endpoint should be used instead.
+        Err(crate::error::ExplorerError::NotImplemented(
+            "Architecture drift requires the /api/workspaces/{id}/drift endpoint".into(),
+        ))
+    }
+}
 
 #[cfg(test)]
 mod tests {

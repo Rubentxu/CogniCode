@@ -1468,6 +1468,79 @@ fn is_valid_uuid_format(s: &str) -> bool {
 }
 
 // ============================================================================
+// C4 Architecture Drift Detection (E6)
+// ============================================================================
+
+/// Kind of architecture drift detected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DriftKind {
+    /// Container exists in expected architecture but not in inferred.
+    MissingContainer,
+    /// Container exists in inferred architecture but not in expected.
+    ExtraContainer,
+    /// Container exists in both but sub_kind differs.
+    WrongSubKind,
+}
+
+/// One drift finding comparing expected vs inferred C4 architecture.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriftFinding {
+    /// Kind of drift detected.
+    pub kind: DriftKind,
+    /// Container name in the expected architecture (or "—" if not expected).
+    pub expected: String,
+    /// Container name in the inferred architecture (or "—" if not inferred).
+    pub actual: String,
+    /// Severity: "warning" for Missing/Extra, "info" for WrongSubKind.
+    pub severity: String,
+    /// Human-readable explanation.
+    pub detail: String,
+}
+
+/// Report comparing expected C4 architecture against inferred architecture.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriftReport {
+    /// All drift findings.
+    pub findings: Vec<DriftFinding>,
+    /// Human-readable summary.
+    pub summary: String,
+    /// Count of missing containers.
+    pub missing_containers: usize,
+    /// Count of extra containers.
+    pub extra_containers: usize,
+    /// Count of wrong sub_kind findings.
+    pub wrong_sub_kinds: usize,
+}
+
+impl Default for DriftReport {
+    fn default() -> Self {
+        Self {
+            findings: Vec::new(),
+            summary: "No architecture drift detected".to_string(),
+            missing_containers: 0,
+            extra_containers: 0,
+            wrong_sub_kinds: 0,
+        }
+    }
+}
+
+/// One container entry from `.cognicode/expected-architecture.yaml`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExpectedContainer {
+    pub name: String,
+    pub sub_kind: String,
+    #[serde(default)]
+    pub purpose: String,
+}
+
+/// Parsed form of `.cognicode/expected-architecture.yaml`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExpectedArchitecture {
+    pub containers: Vec<ExpectedContainer>,
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
