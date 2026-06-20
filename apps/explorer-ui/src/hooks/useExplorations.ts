@@ -8,6 +8,7 @@
  * The list endpoint is a derived SWR key — we cache the most recent
  * save so the UI can render without a follow-up fetch.
  */
+import { useEffect } from "react";
 import useSWR, { mutate } from "swr";
 import { z } from "zod";
 
@@ -26,12 +27,47 @@ import type {
   DecisionArtifactSummary,
   ExplorationPath,
 } from "../api/types";
+import type { ViewportState } from "../state/navigation/types";
 
 const explorationsListSchema = z.array(explorationPathSchema);
 type ExplorationsList = z.infer<typeof explorationsListSchema>;
 
 const explorationsListFetcher = makeSwrFetcher(explorationsListSchema);
 const artifactFetcher = makeSwrFetcher(decisionArtifactSummarySchema);
+
+/**
+ * Persists the current pane snapshots to localStorage as an immediate
+ * cache (ADR-040 Wave 3). Written on every pane/viewport change so a
+ * page refresh can restore the last state before the next server save.
+ */
+export function useSnapshotCache(
+  workspaceId: string | null,
+  sessionId: string,
+  panes: ReadonlyArray<{
+    id: string;
+    objectId: string;
+    activeViewId: string | null;
+    viewport?: ViewportState;
+    scrollY: number;
+  }>,
+) {
+  useEffect(() => {
+    if (!workspaceId || panes.length === 0) return;
+    const key = `cognicode.exploration.snapshot.${workspaceId}.${sessionId}`;
+    try {
+      const snapshot = panes.map((pane) => ({
+        pane_id: pane.id,
+        object_id: pane.objectId,
+        view_id: pane.activeViewId ?? "overview",
+        scroll_y: pane.scrollY,
+        viewport: pane.viewport,
+      }));
+      localStorage.setItem(key, JSON.stringify(snapshot));
+    } catch {
+      // quota exceeded — silent
+    }
+  }, [workspaceId, sessionId, panes]);
+}
 
 /**
  * List the saved explorations for the current workspace.
