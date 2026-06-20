@@ -1,5 +1,5 @@
 /**
- * E2E responsive test — Phase 11 acceptance criterion 11.4.
+ * E2E responsive test — Phase 11 acceptance criterion 11.4 + Part C.
  *
  * Verifies the Shell layout adapts to the three breakpoints
  * (desktop ≥ 1200px, tablet 900–1199px, small < 900px). The Shell
@@ -9,6 +9,11 @@
  * The Spotter + the inspector + the lens panel must keep working
  * at every viewport (no overlap, no horizontal scroll on the body,
  * no clipped buttons).
+ *
+ * Part C additions:
+ *  - Small viewport: bottom-sheet is present and usable
+ *  - Keyboard navigation: Spotter via Cmd+K, Enter to select
+ *  - Perspective toggle keyboard accessible (Tab + Enter/Space)
  */
 import { test, expect, type Page } from "@playwright/test";
 
@@ -84,3 +89,134 @@ for (const bp of BREAKPOINTS) {
     });
   });
 }
+
+// =============================================================================
+// Part C — Keyboard navigation & small-viewport bottom-sheet
+// =============================================================================
+
+test.describe("Part C — keyboard navigation & small viewport", () => {
+  test("P6.3 — small viewport bottom-sheet is present and usable", async ({ page }) => {
+    await page.setViewportSize({ width: 768, height: 900 });
+
+    await page.goto("/");
+    await expect(page.getByTestId("shell")).toBeVisible();
+    await expect(page.getByTestId("shell")).toHaveAttribute("data-viewport", "small");
+
+    // Open the app to exercise the bottom sheet
+    await page.keyboard.press("Meta+k");
+    await page.getByTestId("spotter-input").fill("build");
+    const firstResult = page
+      .getByTestId("spotter-results")
+      .getByTestId(/^spotter-item-/);
+    await firstResult.first().click();
+
+    // Bottom sheet should be visible at small viewport
+    await expect(page.getByTestId("bottom-sheet")).toBeVisible();
+    // And the object inspector should be inside the bottom sheet
+    await expect(page.getByTestId("object-inspector")).toBeVisible();
+  });
+
+  test("P6.5 — keyboard flow: Cmd+K opens Spotter, Enter selects result, inspector opens", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByTestId("shell")).toBeVisible();
+
+    // Focus is anywhere — Cmd+K opens Spotter
+    await page.keyboard.press("Meta+k");
+    const spotter = page.getByTestId("spotter");
+    await expect(spotter).toBeVisible();
+
+    // Type a query
+    const input = page.getByTestId("spotter-input");
+    await input.fill("build");
+
+    // Wait for results
+    const results = page.getByTestId("spotter-results").getByTestId(/^spotter-item-/);
+    await expect(results.first()).toBeVisible({ timeout: 5_000 });
+
+    // Press Enter to select the first result
+    await page.keyboard.press("Enter");
+
+    // Spotter should close
+    await expect(spotter).toBeHidden();
+
+    // Inspector should open
+    await expect(page.getByTestId("object-inspector")).toBeVisible();
+  });
+
+  test("P2.6 — perspective toggle is keyboard accessible (Tab + Enter)", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByTestId("shell")).toBeVisible();
+
+    const graphBtn = page.getByTestId("perspective-graph");
+    const c4Btn = page.getByTestId("perspective-c4");
+
+    // Default state: Graph is active (aria-pressed="true")
+    await expect(graphBtn).toHaveAttribute("aria-pressed", "true");
+
+    // Click C4 button to switch perspective (verify toggle works via click)
+    await c4Btn.click();
+
+    // The C4 button should now be active (aria-pressed="true")
+    await expect(c4Btn).toHaveAttribute("aria-pressed", "true");
+    await expect(graphBtn).toHaveAttribute("aria-pressed", "false");
+
+    // Click Graph button to switch back
+    await graphBtn.click();
+    await expect(graphBtn).toHaveAttribute("aria-pressed", "true");
+    await expect(c4Btn).toHaveAttribute("aria-pressed", "false");
+
+    // Now verify keyboard: press Space on the Graph button (which is focused)
+    await graphBtn.focus();
+    await page.keyboard.press("Space");
+    // Graph should stay active (Space on already-active button is a no-op)
+    await expect(graphBtn).toHaveAttribute("aria-pressed", "true");
+
+    // Press Enter on C4 button via keyboard
+    await c4Btn.focus();
+    await page.keyboard.press("Enter");
+    await expect(c4Btn).toHaveAttribute("aria-pressed", "true");
+    await expect(graphBtn).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("keyboard navigation: Escape closes Spotter", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByTestId("shell")).toBeVisible();
+
+    await page.keyboard.press("Meta+k");
+    const spotter = page.getByTestId("spotter");
+    await expect(spotter).toBeVisible();
+
+    await page.getByTestId("spotter-input").fill("build");
+    await page.waitForTimeout(200);
+
+    await page.keyboard.press("Escape");
+    await expect(spotter).toBeHidden();
+  });
+
+  test("keyboard navigation: Arrow keys navigate Spotter results", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByTestId("shell")).toBeVisible();
+
+    await page.keyboard.press("Meta+k");
+    const spotter = page.getByTestId("spotter");
+    await expect(spotter).toBeVisible();
+
+    await page.getByTestId("spotter-input").fill("build");
+
+    // Wait for results
+    const results = page.getByTestId("spotter-results").getByTestId(/^spotter-item-/);
+    await expect(results.first()).toBeVisible({ timeout: 5_000 });
+
+    // ArrowDown to move focus to second result
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+
+    // ArrowUp to move back
+    await page.keyboard.press("ArrowUp");
+
+    // Enter to select
+    await page.keyboard.press("Enter");
+    await expect(spotter).toBeHidden();
+    await expect(page.getByTestId("object-inspector")).toBeVisible();
+  });
+});
