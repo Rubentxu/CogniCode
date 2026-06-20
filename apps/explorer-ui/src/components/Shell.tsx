@@ -26,6 +26,7 @@ import { PaneStackView } from "./PaneStackView";
 import { detectViewport, type ShellViewport } from "./viewport";
 import { useRestoreExploration } from "../hooks/useRestoreExploration";
 import { useSubgraph } from "../hooks/useSubgraph";
+import { useWorkspaceList } from "../hooks/useWorkspace";
 import { GraphLanding } from "./GraphLanding";
 
 // `React.lazy` keeps the cytoscape + elkjs chunk out of the
@@ -81,6 +82,15 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
 
   // Restore exploration from ?exploration=<id> on mount (ADR-016 Fase 4).
   useRestoreExploration();
+
+  // F1: Bootstrap workspace — auto-select first workspace from list
+  // so GraphLanding renders (without this, workspace stays null).
+  const { data: workspaceList } = useWorkspaceList();
+  useEffect(() => {
+    if (!appState.workspace && workspaceList?.[0]) {
+      dispatch({ type: "SET_WORKSPACE", payload: workspaceList[0] });
+    }
+  }, [workspaceList, appState.workspace, dispatch]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
