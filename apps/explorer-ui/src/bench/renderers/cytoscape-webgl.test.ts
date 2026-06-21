@@ -7,7 +7,6 @@ import {
 } from "vitest";
 
 vi.mock("cytoscape", () => {
-  // Capture the registry via closure so it survives the mock factory.
   const registry = new Map<string, { id: string; incident: number }>();
   const selections = new Set<string>();
 
@@ -52,9 +51,7 @@ vi.mock("cytoscape", () => {
   };
 });
 
-import {
-  CytoscapeCanvasAdapter,
-} from "./cytoscape-canvas";
+import { CytoscapeWebglAdapter } from "./cytoscape-webgl";
 import { loadFixture } from "../fixtures";
 import { DEFAULT_BENCH_CONFIG } from "./types";
 import type { RendererController } from "./types";
@@ -92,28 +89,33 @@ function seedMock(
   }
 }
 
-describe("CytoscapeCanvasAdapter", () => {
+describe("CytoscapeWebglAdapter", () => {
   it("reports the canonical id", () => {
-    const adapter = new CytoscapeCanvasAdapter();
-    expect(adapter.id).toBe("cytoscape-canvas");
+    const adapter = new CytoscapeWebglAdapter();
+    expect(adapter.id).toBe("cytoscape-webgl");
   });
 
   it("always reports itself as enabled", () => {
-    const adapter = new CytoscapeCanvasAdapter();
+    const adapter = new CytoscapeWebglAdapter();
     expect(adapter.isEnabled(DEFAULT_BENCH_CONFIG)).toBe(true);
   });
 
   it("pins the cytoscape version", () => {
-    const adapter = new CytoscapeCanvasAdapter();
+    const adapter = new CytoscapeWebglAdapter();
     expect(adapter.version).toMatch(/^\d+\.\d+/);
+  });
+
+  it("differs from the canvas adapter id", () => {
+    const adapter = new CytoscapeWebglAdapter();
+    expect(adapter.id).not.toBe("cytoscape-canvas");
   });
 });
 
-describe("CytoscapeCanvasAdapter.mount", () => {
-  let adapter: CytoscapeCanvasAdapter;
+describe("CytoscapeWebglAdapter.mount", () => {
+  let adapter: CytoscapeWebglAdapter;
 
   beforeEach(() => {
-    adapter = new CytoscapeCanvasAdapter();
+    adapter = new CytoscapeWebglAdapter();
     resetMock();
   });
 
@@ -135,7 +137,6 @@ describe("CytoscapeCanvasAdapter.mount", () => {
     seedMock(fixture.nodes, fixture.edges);
 
     const controller = await adapter.mount(fixture, {});
-
     expect(await controller.relayout()).toBeGreaterThanOrEqual(0);
     expect(await controller.pan(10, 10)).toBeGreaterThanOrEqual(0);
     expect(await controller.zoom(1.1)).toBeGreaterThanOrEqual(0);
@@ -149,7 +150,6 @@ describe("CytoscapeCanvasAdapter.mount", () => {
     seedMock(fixture.nodes, fixture.edges);
 
     const controller = await adapter.mount(fixture, {});
-
     const result = await controller.select("does-not-exist");
     expect(result.selection_works).toBe(false);
     expect(result.edge_highlight_works).toBe(false);

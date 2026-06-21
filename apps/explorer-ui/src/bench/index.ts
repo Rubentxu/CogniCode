@@ -53,5 +53,8 @@ export { generateFixture } from "./fixtures/generator";
 
 export {
   CytoscapeCanvasAdapter,
-  CYTOSCAPE_VERSION,
 } from "./renderers/cytoscape-canvas";
+
+export { CytoscapeWebglAdapter } from "./renderers/cytoscape-webgl";
+
+export { CYTOSCAPE_VERSION } from "./renderers/cytoscape-shared";
