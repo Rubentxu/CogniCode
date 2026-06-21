@@ -57,4 +57,10 @@ export {
 
 export { CytoscapeWebglAdapter } from "./renderers/cytoscape-webgl";
 
+export {
+  SigmaPocAdapter,
+  seedSigmaMock,
+  resetSigmaMock,
+} from "./renderers/sigma-poc";
+
 export { CYTOSCAPE_VERSION } from "./renderers/cytoscape-shared";
