@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
+    "bench:renderer": "node --experimental-strip-types src/bench/entry.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:visual": "playwright test e2e/visual-regression.spec.ts",

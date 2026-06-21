@@ -72,3 +72,10 @@ export {
   type WriteReportArgs,
   type WriteReportResult,
 } from "./report";
+
+export {
+  parseCli,
+  printCliUsage,
+  runCli,
+  type ParsedCli,
+} from "./cli";
