@@ -1,7 +1,15 @@
 # ADR-041: Explorer renderer scale evaluation (E7)
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** June 21, 2026
+**Accepted on:** June 21, 2026 — E7 bench harness shipped behind the
+`feat/e7-renderer-scale-evaluation` branch. The harness produces
+`apps/explorer-ui/artifacts/e7-renderer-bench/{results.json,report.md}`
+on every run. A real-browser pass is required to evaluate Cytoscape
+WebGL and the Sigma proof-of-concept against the baseline; the
+artifacts in the repository today are the structural baseline run
+under node (where Cytoscape fails because jsdom is unavailable and
+Sigma passes because the POC adapter does not need a DOM).
 **Source:** ADR-039 follow-up after code audit, documentation sync, and web
 research on browser graph renderers
 

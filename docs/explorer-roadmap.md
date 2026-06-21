@@ -155,6 +155,7 @@ workspace's crates and modules.
 
 - [ADR-039](../adr/ADR-039-explorer-navigation-model.md) — This roadmap's ADR
 - [ADR-041](../adr/ADR-041-explorer-renderer-scale-evaluation.md) — E7 renderer scale evaluation path
+- [ADR-042](../adr/ADR-042-renderer-decision.md) — Renderer decision outcome placeholder
 - [ADR-038](../adr/ADR-038-sandbox-hardening-and-coverage.md) — Sandbox hardening
 - [ADR-034](../adr/ADR-034-mcp-production-readiness.md) — MCP production readiness
 
