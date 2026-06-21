@@ -1,0 +1,43 @@
+{
+  "fixture_id": "dependency-graph-small",
+  "kind": "dependency_graph",
+  "size_band": "small",
+  "node_count": 14,
+  "edge_count": 18,
+  "nodes": [
+    { "id": "c-api",         "label": "cognicode-api",            "kind": "crate",   "style_class": "node-component" },
+    { "id": "c-core",        "label": "cognicode-core",           "kind": "crate",   "style_class": "node-component" },
+    { "id": "c-explorer",    "label": "cognicode-explorer",       "kind": "crate",   "style_class": "node-component" },
+    { "id": "c-mock",        "label": "cognicode-core-mock",      "kind": "crate",   "style_class": "node-component" },
+    { "id": "c-runtime",     "label": "cognicode-runtime",        "kind": "crate",   "style_class": "node-component" },
+    { "id": "c-axiom",       "label": "cognicode-axiom",          "kind": "crate",   "style_class": "node-component" },
+    { "id": "m-domain",      "label": "domain",                   "kind": "module",  "style_class": "node-module" },
+    { "id": "m-app",         "label": "application",              "kind": "module",  "style_class": "node-module" },
+    { "id": "m-infra",       "label": "infrastructure",           "kind": "module",  "style_class": "node-module" },
+    { "id": "m-iface",       "label": "interface",                "kind": "module",  "style_class": "node-module" },
+    { "id": "m-ingest",      "label": "application::ingest",      "kind": "module",  "style_class": "node-module" },
+    { "id": "m-parser",      "label": "infrastructure::parser",   "kind": "module",  "style_class": "node-module" },
+    { "id": "m-graph",       "label": "application::graph",       "kind": "module",  "style_class": "node-module" },
+    { "id": "m-mcp",         "label": "interface::mcp",           "kind": "module",  "style_class": "node-module" }
+  ],
+  "edges": [
+    { "id": "d0",  "source": "c-api",      "target": "c-core",      "relation": "depends_on", "style_class": "edge-dependency" },
+    { "id": "d1",  "source": "c-api",      "target": "c-explorer",  "relation": "depends_on", "style_class": "edge-dependency" },
+    { "id": "d2",  "source": "c-explorer", "target": "c-runtime",   "relation": "depends_on", "style_class": "edge-dependency" },
+    { "id": "d3",  "source": "c-core",     "target": "c-runtime",   "relation": "depends_on", "style_class": "edge-dependency" },
+    { "id": "d4",  "source": "c-core",     "target": "c-axiom",     "relation": "depends_on", "style_class": "edge-dependency" },
+    { "id": "d5",  "source": "c-runtime",  "target": "c-mock",      "relation": "depends_on", "style_class": "edge-dependency" },
+    { "id": "d6",  "source": "c-core",     "target": "m-domain",    "relation": "part_of",    "style_class": "edge-part-of" },
+    { "id": "d7",  "source": "c-core",     "target": "m-app",       "relation": "part_of",    "style_class": "edge-part-of" },
+    { "id": "d8",  "source": "c-core",     "target": "m-infra",     "relation": "part_of",    "style_class": "edge-part-of" },
+    { "id": "d9",  "source": "c-core",     "target": "m-iface",     "relation": "part_of",    "style_class": "edge-part-of" },
+    { "id": "d10", "source": "m-app",      "target": "m-ingest",    "relation": "part_of",    "style_class": "edge-part-of" },
+    { "id": "d11", "source": "m-infra",    "target": "m-parser",    "relation": "part_of",    "style_class": "edge-part-of" },
+    { "id": "d12", "source": "m-app",      "target": "m-graph",     "relation": "part_of",    "style_class": "edge-part-of" },
+    { "id": "d13", "source": "m-iface",    "target": "m-mcp",       "relation": "part_of",    "style_class": "edge-part-of" },
+    { "id": "d14", "source": "m-ingest",   "target": "m-parser",    "relation": "depends_on", "style_class": "edge-dependency" },
+    { "id": "d15", "source": "m-mcp",      "target": "m-graph",     "relation": "depends_on", "style_class": "edge-dependency" },
+    { "id": "d16", "source": "m-graph",    "target": "m-domain",    "relation": "depends_on", "style_class": "edge-dependency" },
+    { "id": "d17", "source": "m-parser",   "target": "m-domain",    "relation": "depends_on", "style_class": "edge-dependency" }
+  ]
+}

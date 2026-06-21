@@ -42,3 +42,11 @@ export {
   DEFAULT_BENCH_CONFIG,
   makeRendererInfo,
 } from "./renderers/types";
+
+export {
+  loadFixture,
+  loadAllFixtures,
+  FIXTURE_IDS,
+} from "./fixtures/index";
+
+export { generateFixture } from "./fixtures/generator";

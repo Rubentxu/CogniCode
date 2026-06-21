@@ -1,0 +1,34 @@
+{
+  "fixture_id": "call-graph-small",
+  "kind": "call_graph",
+  "size_band": "small",
+  "node_count": 12,
+  "edge_count": 11,
+  "nodes": [
+    { "id": "n0",  "label": "main",                  "kind": "function", "style_class": "node-function" },
+    { "id": "n1",  "label": "init",                  "kind": "function", "style_class": "node-function" },
+    { "id": "n2",  "label": "load_config",           "kind": "function", "style_class": "node-function" },
+    { "id": "n3",  "label": "parse_args",            "kind": "function", "style_class": "node-function" },
+    { "id": "n4",  "label": "build_runtime",         "kind": "function", "style_class": "node-function" },
+    { "id": "n5",  "label": "open_database",         "kind": "function", "style_class": "node-function" },
+    { "id": "n6",  "label": "run_query",             "kind": "function", "style_class": "node-function" },
+    { "id": "n7",  "label": "format_results",        "kind": "function", "style_class": "node-function" },
+    { "id": "n8",  "label": "render_output",         "kind": "function", "style_class": "node-function" },
+    { "id": "n9",  "label": "shutdown",              "kind": "function", "style_class": "node-function" },
+    { "id": "n10", "label": "log_diagnostic",        "kind": "function", "style_class": "node-function" },
+    { "id": "n11", "label": "telemetry",             "kind": "function", "style_class": "node-function" }
+  ],
+  "edges": [
+    { "id": "e0",  "source": "n0",  "target": "n1",  "relation": "calls",   "style_class": "edge-calls" },
+    { "id": "e1",  "source": "n0",  "target": "n2",  "relation": "calls",   "style_class": "edge-calls" },
+    { "id": "e2",  "source": "n0",  "target": "n3",  "relation": "calls",   "style_class": "edge-calls" },
+    { "id": "e3",  "source": "n0",  "target": "n4",  "relation": "calls",   "style_class": "edge-calls" },
+    { "id": "e4",  "source": "n4",  "target": "n5",  "relation": "calls",   "style_class": "edge-calls" },
+    { "id": "e5",  "source": "n4",  "target": "n6",  "relation": "calls",   "style_class": "edge-calls" },
+    { "id": "e6",  "source": "n6",  "target": "n7",  "relation": "calls",   "style_class": "edge-calls" },
+    { "id": "e7",  "source": "n7",  "target": "n8",  "relation": "calls",   "style_class": "edge-calls" },
+    { "id": "e8",  "source": "n0",  "target": "n9",  "relation": "calls",   "style_class": "edge-calls" },
+    { "id": "e9",  "source": "n4",  "target": "n10", "relation": "calls",   "style_class": "edge-calls" },
+    { "id": "e10", "source": "n10", "target": "n11", "relation": "calls",   "style_class": "edge-calls" }
+  ]
+}
