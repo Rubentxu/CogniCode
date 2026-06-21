@@ -50,3 +50,8 @@ export {
 } from "./fixtures/index";
 
 export { generateFixture } from "./fixtures/generator";
+
+export {
+  CytoscapeCanvasAdapter,
+  CYTOSCAPE_VERSION,
+} from "./renderers/cytoscape-canvas";
