@@ -64,3 +64,11 @@ export {
 } from "./renderers/sigma-poc";
 
 export { CYTOSCAPE_VERSION } from "./renderers/cytoscape-shared";
+
+export {
+  writeReport,
+  renderMarkdown,
+  type ReportFilesystem,
+  type WriteReportArgs,
+  type WriteReportResult,
+} from "./report";
