@@ -3,7 +3,8 @@
  *
  * The barrel exposes the public surface of `apps/explorer-ui/src/bench/`.
  * Renderer adapters, the runner, and the report writer are added in
- * later tasks (T4–T8). This task ships only the schemas.
+ * later tasks (T4–T8). This task ships the schemas plus the adapter
+ * contract.
  */
 
 export {
@@ -30,3 +31,14 @@ export {
   makeMetricsRecord,
   isBehaviorValid,
 } from "./metrics";
+
+export {
+  type BenchConfig,
+  type MountHooks,
+  type RendererController,
+  type RendererAdapter,
+  type AdapterReportInput,
+  RendererMountError,
+  DEFAULT_BENCH_CONFIG,
+  makeRendererInfo,
+} from "./renderers/types";
