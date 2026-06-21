@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>E7 Renderer Benchmark Host</title>
+    <style>
+      body {
+        font-family: ui-monospace, "SFMono-Regular", "Menlo", "Monaco",
+          "Consolas", monospace;
+        margin: 0;
+        padding: 1rem;
+        background: #0f172a;
+        color: #e2e8f0;
+      }
+      #status {
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>E7 Renderer Benchmark Host</h1>
+    <p id="status">waiting...</p>
+    <script>
+      (function () {
+        const status = document.getElementById("status");
+        const t = window.setTimeout(function () {
+          status.textContent =
+            "timeout: window.cytoscape is " +
+            (typeof window.cytoscape) +
+            " after 2s";
+          status.dataset.ready = "0";
+        }, 2000);
+        function check() {
+          if (typeof window.cytoscape !== "undefined") {
+            window.clearTimeout(t);
+            status.textContent =
+              "ready: window.cytoscape = " + typeof window.cytoscape;
+            status.dataset.ready = "1";
+          } else {
+            window.setTimeout(check, 50);
+          }
+        }
+        check();
+      })();
+    </script>
+  </body>
+</html>
