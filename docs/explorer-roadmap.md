@@ -11,9 +11,9 @@
 | Component | Status | Notes |
 |-----------|--------|-------|
 | `PaneStackView` | ✅ Implemented | GtPager-style lateral panes, max 8 |
-| `InteractiveGraph` (Cytoscape) | ✅ Implemented | Uses `preset` layout — ELK worker not wired |
-| `layout.worker.ts` (ELK.js) | ✅ Exists | `layered`, `force`, `radial` algorithms — NOT integrated |
-| `rendererRegistry` | ⚠️ Skeleton | 8 renderers registered, but `graph` is placeholder |
+| `InteractiveGraph` (Cytoscape) | ✅ Implemented | ELK worker integrated; supports `layered`, `force`, and `radial` layouts with progress, cancellation, and size guard |
+| `layout.worker.ts` (ELK.js) | ✅ Implemented | Wired into `InteractiveGraph`; computes async layouts and falls back gracefully on failure |
+| `rendererRegistry` | ⚠️ Partial | `graph` is wired to the real `InteractiveGraph`; remaining renderers still need consolidation |
 | `Spotter` (cmdk) | ✅ Implemented | Server-side fuzzy search, kind filters |
 | `ViewSpecWizard` | ✅ Implemented | 5-step authoring, localStorage drafts |
 | `ContextualPanel` | ✅ Implemented | Focus + parent + children + neighbor minigraph |
@@ -47,9 +47,11 @@ can be added without touching component code.
 
 ---
 
-## Sprint E2 — Integrate ELK Layout Worker
+## Sprint E2 — Integrate ELK layout worker
 
 **Goal:** `InteractiveGraph` uses dynamic layout (not `preset`).
+
+**Status:** ✅ Implemented in the current codebase.
 
 | ID | Task | Files | Est |
 |----|------|-------|-----|
@@ -61,6 +63,10 @@ can be added without touching component code.
 
 **Deliverable:** Graph renders with dynamic layout, animated transitions, and
 graceful degradation for large graphs.
+
+**Implementation note:** The current implementation lives in
+`apps/explorer-ui/src/components/InteractiveGraph/InteractiveGraph.tsx` and
+`apps/explorer-ui/src/components/InteractiveGraph/layout.worker.ts`.
 
 ---
 
@@ -136,7 +142,7 @@ workspace's crates and modules.
 
 | Milestone | Description |
 |-----------|-------------|
-| WebGL / Sigma.js evaluation | When graph scale exceeds Cytoscape comfort (>5K nodes visible) |
+| E7 renderer scale evaluation | Benchmark Cytoscape canvas vs Cytoscape WebGL preview, and escalate to Sigma.js only if thresholds fail |
 | WASM graph transforms | Rust layout/clustering compiled to WASM for client-side compute |
 | C4 drift detection | Compare inferred C4 vs documented architecture (ADRs, CONTEXT.md) |
 | Dynamic view authoring | ViewSpec wizard as primary view creation (not just runtime extras) |
@@ -148,6 +154,7 @@ workspace's crates and modules.
 ## ADRs Referenced
 
 - [ADR-039](../adr/ADR-039-explorer-navigation-model.md) — This roadmap's ADR
+- [ADR-041](../adr/ADR-041-explorer-renderer-scale-evaluation.md) — E7 renderer scale evaluation path
 - [ADR-038](../adr/ADR-038-sandbox-hardening-and-coverage.md) — Sandbox hardening
 - [ADR-034](../adr/ADR-034-mcp-production-readiness.md) — MCP production readiness
 

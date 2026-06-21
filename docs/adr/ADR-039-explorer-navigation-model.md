@@ -62,13 +62,13 @@ entry modes. Spotter (Cmd+K) is an overlay on top of the canvas, not a page.
 └──────────────────────────────────┴──────────────────┘
 ```
 
-### 5. Cytoscape is the renderer base; WebGL is future evolution
+### 5. Cytoscape is the renderer base; WebGL evaluation stays deferred
 
 The current Cytoscape integration is retained as the rendering base. The
 existing ELK.js layout worker (`layout.worker.ts`) is integrated into the main
-renderer (replacing `preset` layout). WebGL / Sigma.js is registered as a
-**future evolutionary path** when graph scale or interaction fluidity demands
-GPU acceleration — but not before the view model is consolidated.
+renderer (replacing `preset` layout). WebGL evaluation remains a **future
+evolutionary path** when graph scale or interaction fluidity demands GPU
+acceleration — but not before the view model is consolidated.
 
 ### 6. gtoolkit is the design inspiration rector
 
@@ -114,6 +114,10 @@ the user a lightweight way to decide whether a node is worth a deeper dive.
 3. Ship perspective toggle (`Graph ↔ C4`) on the graph canvas
 4. Eliminate `column` navigation mode (hard cut)
 5. Evaluate WebGL / Sigma.js when scale demands it
+
+> **Implementation status (June 2026):** Item 2 is implemented in
+> `InteractiveGraph.tsx` + `layout.worker.ts`. The remaining items stay in the
+> roadmap as follow-on work.
 
 ## Consequences
 
