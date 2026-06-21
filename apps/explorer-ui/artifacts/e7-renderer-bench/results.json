@@ -1,0 +1,2905 @@
+{
+  "schema_version": "e7.0",
+  "generated_at": "2026-06-21T18:10:32.410Z",
+  "record_count": 63,
+  "records": [
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-small",
+        "kind": "call_graph",
+        "size_band": "small",
+        "node_count": 12,
+        "edge_count": 11
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-small",
+        "kind": "call_graph",
+        "size_band": "small",
+        "node_count": 12,
+        "edge_count": 11
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-small",
+        "kind": "call_graph",
+        "size_band": "small",
+        "node_count": 12,
+        "edge_count": 11
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-small",
+        "kind": "call_graph",
+        "size_band": "small",
+        "node_count": 12,
+        "edge_count": 11
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-small",
+        "kind": "call_graph",
+        "size_band": "small",
+        "node_count": 12,
+        "edge_count": 11
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-small",
+        "kind": "call_graph",
+        "size_band": "small",
+        "node_count": 12,
+        "edge_count": 11
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-small",
+        "kind": "call_graph",
+        "size_band": "small",
+        "node_count": 12,
+        "edge_count": 11
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0.3060859999999934,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0037039999999706197,
+        "zoom": 0.004729999999995016,
+        "select": 0.10277899999999818,
+        "relayout": 0.0005659999999920728
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-small",
+        "kind": "call_graph",
+        "size_band": "small",
+        "node_count": 12,
+        "edge_count": 11
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0.0599730000000136,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.000922000000002754,
+        "zoom": 0.0007679999999936626,
+        "select": 0.007059000000026572,
+        "relayout": 0.00044400000001587614
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-small",
+        "kind": "call_graph",
+        "size_band": "small",
+        "node_count": 12,
+        "edge_count": 11
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0.03537399999999025,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0008670000000279288,
+        "zoom": 0.0007170000000087384,
+        "select": 0.006149999999990996,
+        "relayout": 0.00045599999998557905
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-small",
+        "kind": "dependency_graph",
+        "size_band": "small",
+        "node_count": 14,
+        "edge_count": 18
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-small",
+        "kind": "dependency_graph",
+        "size_band": "small",
+        "node_count": 14,
+        "edge_count": 18
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-small",
+        "kind": "dependency_graph",
+        "size_band": "small",
+        "node_count": 14,
+        "edge_count": 18
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-small",
+        "kind": "dependency_graph",
+        "size_band": "small",
+        "node_count": 14,
+        "edge_count": 18
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-small",
+        "kind": "dependency_graph",
+        "size_band": "small",
+        "node_count": 14,
+        "edge_count": 18
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-small",
+        "kind": "dependency_graph",
+        "size_band": "small",
+        "node_count": 14,
+        "edge_count": 18
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-small",
+        "kind": "dependency_graph",
+        "size_band": "small",
+        "node_count": 14,
+        "edge_count": 18
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0.05713500000001659,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0014029999999820575,
+        "zoom": 0.0007429999999999382,
+        "select": 0.012888000000032207,
+        "relayout": 0.00044900000000325235
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-small",
+        "kind": "dependency_graph",
+        "size_band": "small",
+        "node_count": 14,
+        "edge_count": 18
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0.031108000000017455,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.000968000000000302,
+        "zoom": 0.0006889999999657448,
+        "select": 0.006018999999980679,
+        "relayout": 0.00041899999996530823
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-small",
+        "kind": "dependency_graph",
+        "size_band": "small",
+        "node_count": 14,
+        "edge_count": 18
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0.04700700000000779,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0008750000000077307,
+        "zoom": 0.0006319999999959691,
+        "select": 0.006876999999974487,
+        "relayout": 0.00041900000002215165
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "architecture-c4-medium",
+        "kind": "architecture_c4",
+        "size_band": "medium",
+        "node_count": 10,
+        "edge_count": 9
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "architecture-c4-medium",
+        "kind": "architecture_c4",
+        "size_band": "medium",
+        "node_count": 10,
+        "edge_count": 9
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "architecture-c4-medium",
+        "kind": "architecture_c4",
+        "size_band": "medium",
+        "node_count": 10,
+        "edge_count": 9
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "architecture-c4-medium",
+        "kind": "architecture_c4",
+        "size_band": "medium",
+        "node_count": 10,
+        "edge_count": 9
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "architecture-c4-medium",
+        "kind": "architecture_c4",
+        "size_band": "medium",
+        "node_count": 10,
+        "edge_count": 9
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "architecture-c4-medium",
+        "kind": "architecture_c4",
+        "size_band": "medium",
+        "node_count": 10,
+        "edge_count": 9
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "architecture-c4-medium",
+        "kind": "architecture_c4",
+        "size_band": "medium",
+        "node_count": 10,
+        "edge_count": 9
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0.021289000000024316,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0009430000000065775,
+        "zoom": 0.0007040000000415603,
+        "select": 0.006467999999983931,
+        "relayout": 0.00039400000002842717
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "architecture-c4-medium",
+        "kind": "architecture_c4",
+        "size_band": "medium",
+        "node_count": 10,
+        "edge_count": 9
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0.017430999999987762,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0008359999999925094,
+        "zoom": 0.0006649999999694955,
+        "select": 0.005478999999979806,
+        "relayout": 0.0003899999999816828
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "architecture-c4-medium",
+        "kind": "architecture_c4",
+        "size_band": "medium",
+        "node_count": 10,
+        "edge_count": 9
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0.025688000000002376,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0008270000000152322,
+        "zoom": 0.0006250000000136424,
+        "select": 0.007381000000009408,
+        "relayout": 0.0004020000000082291
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "landing-overview-medium",
+        "kind": "landing_overview",
+        "size_band": "medium",
+        "node_count": 16,
+        "edge_count": 15
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "landing-overview-medium",
+        "kind": "landing_overview",
+        "size_band": "medium",
+        "node_count": 16,
+        "edge_count": 15
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "landing-overview-medium",
+        "kind": "landing_overview",
+        "size_band": "medium",
+        "node_count": 16,
+        "edge_count": 15
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "landing-overview-medium",
+        "kind": "landing_overview",
+        "size_band": "medium",
+        "node_count": 16,
+        "edge_count": 15
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "landing-overview-medium",
+        "kind": "landing_overview",
+        "size_band": "medium",
+        "node_count": 16,
+        "edge_count": 15
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "landing-overview-medium",
+        "kind": "landing_overview",
+        "size_band": "medium",
+        "node_count": 16,
+        "edge_count": 15
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "landing-overview-medium",
+        "kind": "landing_overview",
+        "size_band": "medium",
+        "node_count": 16,
+        "edge_count": 15
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0.04786300000000665,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0031740000000013424,
+        "zoom": 0.0013879999999630854,
+        "select": 0.012138999999990574,
+        "relayout": 0.0006359999999858701
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "landing-overview-medium",
+        "kind": "landing_overview",
+        "size_band": "medium",
+        "node_count": 16,
+        "edge_count": 15
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0.030371999999999844,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0005929999999807478,
+        "zoom": 0.0032160000000089894,
+        "select": 0.0044309999999541105,
+        "relayout": 0.00043999999996913175
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "landing-overview-medium",
+        "kind": "landing_overview",
+        "size_band": "medium",
+        "node_count": 16,
+        "edge_count": 15
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0.018243999999981497,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.00035000000002582965,
+        "zoom": 0.0006480000000124164,
+        "select": 0.002300999999988562,
+        "relayout": 0.00021700000002056186
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-medium",
+        "kind": "call_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-medium",
+        "kind": "call_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-medium",
+        "kind": "call_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-medium",
+        "kind": "call_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-medium",
+        "kind": "call_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-medium",
+        "kind": "call_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-medium",
+        "kind": "call_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 74.701259,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0006370000000401888,
+        "zoom": 0.001449000000036449,
+        "select": 0.007754999999974643,
+        "relayout": 0.0002139999999712927
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-medium",
+        "kind": "call_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 73.44335000000001,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0006579999999303254,
+        "zoom": 0.0015959999999495267,
+        "select": 0.0063640000000759755,
+        "relayout": 0.00020800000004328467
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-medium",
+        "kind": "call_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 72.47117000000003,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0007909999999355932,
+        "zoom": 0.0014300000000275759,
+        "select": 0.007932999999979984,
+        "relayout": 0.00021900000001551234
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-medium",
+        "kind": "dependency_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-medium",
+        "kind": "dependency_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-medium",
+        "kind": "dependency_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-medium",
+        "kind": "dependency_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-medium",
+        "kind": "dependency_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-medium",
+        "kind": "dependency_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-medium",
+        "kind": "dependency_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 69.14871299999993,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0006300000000010186,
+        "zoom": 0.0016910000000507353,
+        "select": 0.007545000000050095,
+        "relayout": 0.0002160000000230866
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-medium",
+        "kind": "dependency_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 69.32466699999998,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0007010000000491345,
+        "zoom": 0.0014909999999872525,
+        "select": 0.006859999999960564,
+        "relayout": 0.00021200000003318564
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "dependency-graph-medium",
+        "kind": "dependency_graph",
+        "size_band": "medium",
+        "node_count": 1000,
+        "edge_count": 2994
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 69.00512800000001,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0007279999999809661,
+        "zoom": 0.0019329999998944913,
+        "select": 0.007240000000024338,
+        "relayout": 0.00028099999997266423
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-large",
+        "kind": "call_graph",
+        "size_band": "large",
+        "node_count": 5000,
+        "edge_count": 14994
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-large",
+        "kind": "call_graph",
+        "size_band": "large",
+        "node_count": 5000,
+        "edge_count": 14994
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-large",
+        "kind": "call_graph",
+        "size_band": "large",
+        "node_count": 5000,
+        "edge_count": 14994
+      },
+      "renderer": {
+        "id": "cytoscape-canvas",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape canvas: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape canvas: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-large",
+        "kind": "call_graph",
+        "size_band": "large",
+        "node_count": 5000,
+        "edge_count": 14994
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-large",
+        "kind": "call_graph",
+        "size_band": "large",
+        "node_count": 5000,
+        "edge_count": 14994
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-large",
+        "kind": "call_graph",
+        "size_band": "large",
+        "node_count": 5000,
+        "edge_count": 14994
+      },
+      "renderer": {
+        "id": "cytoscape-webgl",
+        "version": "3.34.0",
+        "config": {
+          "name": "canvas",
+          "webgl": true,
+          "webglTexSize": 4096,
+          "webglTexRows": 24,
+          "webglBatchSize": 2048,
+          "webglTexPerBatch": 16
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 0,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0,
+        "zoom": 0,
+        "select": 0,
+        "relayout": 0
+      },
+      "behavior": {
+        "selection_works": false,
+        "edge_highlight_works": false,
+        "layout_completed": false,
+        "regressions": [
+          "mount threw: failed to mount cytoscape webgl: document is not defined"
+        ]
+      },
+      "notes": "mount failed: failed to mount cytoscape webgl: document is not defined"
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-large",
+        "kind": "call_graph",
+        "size_band": "large",
+        "node_count": 5000,
+        "edge_count": 14994
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "cold",
+        "index": 0
+      },
+      "timings_ms": {
+        "load": 1631.0311480000003,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.000762000000122498,
+        "zoom": 0.0020719999997709238,
+        "select": 0.008002999999916938,
+        "relayout": 0.00023199999986900366
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-large",
+        "kind": "call_graph",
+        "size_band": "large",
+        "node_count": 5000,
+        "edge_count": 14994
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 1
+      },
+      "timings_ms": {
+        "load": 1606.1559279999997,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0007240000004458125,
+        "zoom": 0.00171299999965413,
+        "select": 0.007985000000189757,
+        "relayout": 0.00021699999979318818
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    },
+    {
+      "schema_version": "e7.0",
+      "runner": {
+        "browser": "unknown",
+        "browser_version": "unknown",
+        "os": "unknown",
+        "machine_profile": "dev"
+      },
+      "fixture": {
+        "fixture_id": "call-graph-large",
+        "kind": "call_graph",
+        "size_band": "large",
+        "node_count": 5000,
+        "edge_count": 14994
+      },
+      "renderer": {
+        "id": "sigma-poc",
+        "version": "0.x-poc",
+        "config": {
+          "renderer": "webgl"
+        }
+      },
+      "run": {
+        "mode": "warm",
+        "index": 2
+      },
+      "timings_ms": {
+        "load": 1656.1364520000006,
+        "first_render": 0,
+        "fit": 0,
+        "pan": 0.0006970000004002941,
+        "zoom": 0.0017680000000837026,
+        "select": 0.007421999999678519,
+        "relayout": 0.000210000000151922
+      },
+      "behavior": {
+        "selection_works": true,
+        "edge_highlight_works": true,
+        "layout_completed": true,
+        "regressions": []
+      },
+      "notes": ""
+    }
+  ]
+}
