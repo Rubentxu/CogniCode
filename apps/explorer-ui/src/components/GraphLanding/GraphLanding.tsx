@@ -26,6 +26,10 @@ const LandingSuggestionStrip = lazy(() =>
   import("./LandingSuggestionStrip").then((m) => ({ default: m.LandingSuggestionStrip })),
 );
 
+const RecentExplorationsStrip = lazy(() =>
+  import("./RecentExplorationsStrip").then((m) => ({ default: m.RecentExplorationsStrip })),
+);
+
 const LandingHeader = lazy(() =>
   import("./LandingHeader").then((m) => ({ default: m.LandingHeader })),
 );
@@ -181,6 +185,28 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
             onAsk={() => {
               // Dispatch ask action — the Ask panel will handle the question
               dispatch({ type: "SET_SPOTTER", payload: { open: true } });
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* Recent explorations strip — only for graph perspective */}
+      {!showC4Header && (
+        <Suspense fallback={null}>
+          <RecentExplorationsStrip
+            workspaceId={workspaceId}
+            onExplorationClick={(exploration) => {
+              // Navigate to the first object in the exploration
+              const firstColumn = exploration.columns[0];
+              if (firstColumn) {
+                dispatch({
+                  type: "SELECT_OBJECT",
+                  payload: {
+                    objectId: firstColumn.object_id,
+                    viewId: firstColumn.active_view ?? "overview",
+                  },
+                });
+              }
             }}
           />
         </Suspense>
