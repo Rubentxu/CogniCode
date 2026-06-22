@@ -1,10 +1,11 @@
 # ADR-008: Moldable View Runtime
 
 **Fecha:** 2026-06-12  
-**Estado:** PROPOSED  
+**Estado:** PROPOSED (implementation partly complete; promotion blocked on Validation gap)  
 **Decisión:** Hybrid backend/frontend runtime for moldable view discovery and custom view authoring  
 **Fuente:** grill-with-docs + gtoolkit research + repository fit analysis  
 **Confianza:** alta  
+**Última revisión de implementación:** 2026-06-22 — 4/6 Validation checkboxes satisfied, 1 partial, 1 gap (MCP ViewSpec tooling missing). See **Implementation status** section below.
 
 ---
 
@@ -244,9 +245,82 @@ saved as a ViewSpec, or opened as inspector panes.
 
 ## Validation
 
-- [ ] Built-in views are discoverable without central hardcoded match arms.
-- [ ] A user can create a ViewSpec in the Explorer and see it immediately without backend recompilation.
-- [ ] The same object lists both built-in views and persisted runtime ViewSpecs.
-- [ ] Unknown renderer ids degrade to raw JSON or a clear unsupported-renderer message.
-- [ ] MCP can list/read ViewSpecs even when it cannot render them visually.
-- [ ] JSONata transforms are sandboxed and bounded by execution limits.
+- [x] **Built-in views are discoverable without central hardcoded match arms.**
+  Satisfied in commit `b1cb450` (Sprint E1.4 — block renderer registry).
+  `apps/explorer-ui/src/components/ObjectInspector/ViewBlock.tsx` no longer
+  contains a `case "..."` switch; dispatch goes through
+  `blockRendererRegistry.get(block.id)`. 29 block renderers are registered
+  at module load.
+
+- [x] **A user can create a ViewSpec in the Explorer and see it immediately without backend recompilation.**
+  `apps/explorer-ui/src/components/ObjectInspector/ViewSpecWizard.tsx`
+  exists with a 5-step authoring flow backed by `useWizardDraft.ts` and
+  `TransformStep.tsx` (JSONata preview via `useJsonataPreview`).
+
+- [x] **The same object lists both built-in views and persisted runtime ViewSpecs.**
+  `apps/explorer-ui/src/api/schemas.ts:141` defines `available_views:
+  z.array(viewDescriptorSchema)` on object summaries. `ViewTabs.tsx`
+  consumes this list directly. Built-in descriptors come from the
+  backend's `ViewDescriptor::is_builtin = true` flag
+  (`crates/cognicode-explorer/src/dto.rs`); runtime ViewSpecs come from
+  the persistence layer. The Inspector merges them.
+
+- [x] **Unknown renderer ids degrade to raw JSON or a clear unsupported-renderer message.**
+  `apps/explorer-ui/src/components/rendererRegistry.tsx:127` exposes
+  `getOrJson(id)` which falls back to `#getJsonRenderer()` (label
+  "JSON (fallback)") for any unknown renderer id. The registry's
+  `render(id, body)` (line 141) is a convenience wrapper that always
+  uses `getOrJson` internally.
+
+- [ ] **MCP can list/read ViewSpecs even when it cannot render them visually.** ⚠️ **GAP**
+  Current MCP surface (see
+  `crates/cognicode-core/src/interface/mcp/handlers/consolidated_handlers.rs`):
+  `handle_smart_search`, `handle_graph_analyze`, `handle_project_overview`,
+  `handle_compare_graph`, `handle_codebase_map`, `handle_project_insights`,
+  `handle_review_pr`, `handle_iac_query`, `handle_graph_diff`,
+  `handle_ingest`, `handle_graph_timeline`, `handle_graph_checkpoint`.
+  **No `list_view_specs` / `read_view_spec` tool exists yet.** This is
+  the load-bearing gap blocking promotion of this ADR to ACCEPTED.
+  Follow-up: implement MCP ViewSpec tooling as a separate SDDK cycle.
+
+- [x] **JSONata transforms are sandboxed and bounded by execution limits.**
+  `apps/explorer-ui/src/workers/jsonata.worker.ts:8` documents the
+  enforcement: "100ms evaluation timeout via `setTimeout` +
+  `worker.terminate()`". `useJsonataPreview.ts:51,62,76,87,95` wires
+  the timeout into the preview hook with structured error reporting.
+  The worker is lazy-loaded (no bundle impact until used).
+
+## Implementation status
+
+As of 2026-06-22 (post-v0.11.0):
+
+| Validation checkbox | Status | Evidence |
+|---------------------|--------|----------|
+| Built-in views discoverable without match arms | ✅ Satisfied | Sprint E1.4 (v0.10.0) |
+| ViewSpec creation in Explorer | ✅ Satisfied | `ViewSpecWizard.tsx`, `TransformStep.tsx` |
+| Same listing for built-in + runtime | ✅ Satisfied | `available_views` schema, `ViewTabs.tsx` |
+| Unknown renderer fallback | ✅ Satisfied | `getOrJson` in `rendererRegistry.tsx` |
+| MCP ViewSpec tooling | ❌ Gap | No `list_view_specs` / `read_view_spec` handler |
+| JSONata sandbox + limits | ✅ Satisfied | 100ms timeout via worker termination |
+
+**5 of 6 satisfied.** The single gap (MCP ViewSpec tooling) blocks
+promotion to ACCEPTED. This is intentional and documented as a
+follow-up.
+
+## Promotion criteria
+
+This ADR will be promoted from PROPOSED to ACCEPTED when:
+
+1. `list_view_specs` MCP tool exists and lists both built-in and
+   persisted runtime ViewSpecs.
+2. `read_view_spec` MCP tool exists and returns the full ViewSpec
+   JSON (id, title, applies_to, view_kind, data_source, transform,
+   renderer_kind, props) for any spec by id.
+3. MCP tool schemas are registered in `rmcp_adapter.rs` alongside
+   the other consolidated handlers.
+4. Integration tests cover: list returns ≥1 built-in, list returns
+   runtime spec after creation, read returns valid spec JSON.
+
+A separate SDDK cycle (proposed name: `sddk/MCP-view-spec-tools`)
+should implement these four items. Estimated effort: M (3-5 commits,
+single PR).
