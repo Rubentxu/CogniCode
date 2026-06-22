@@ -2,6 +2,7 @@
  * Call-related block renderers: CallListView, CallListItemRow,
  * CallMetricsView, SignatureView.
  */
+import { useMemo } from "react";
 import type {
   CallListBlockBody,
   RelationItem,
@@ -9,6 +10,12 @@ import type {
   SourceSliceBlockBody,
   ViewBlock,
 } from "../../../api/types";
+import { detectLanguage } from "../../../utils/languageDetect";
+import {
+  tokenizePrism,
+  splitTokensByNewline,
+} from "../../../utils/highlight-core";
+import { renderTokens } from "../../../utils/highlight";
 import { BlockShell, Stat } from "./shared";
 import type { CallListProps } from "./types";
 import {
@@ -176,6 +183,24 @@ export function SourceView({
   block: ViewBlock & { body: SourceSliceBlockBody };
 }) {
   const b = block.body;
+
+  // Join all lines once, then tokenize and split per line.
+  // This correctly handles multiline tokens (e.g. /* block comments */)
+  // while preserving the original text content for getByText() survival.
+  const joinedText = useMemo(
+    () => b.lines.map((l: SourceLine) => l.text).join("\n"),
+    [b.lines],
+  );
+  const detectedLang = detectLanguage(b.file) ?? undefined;
+  const { tokens } = useMemo(
+    () => tokenizePrism(joinedText, detectedLang),
+    [joinedText, detectedLang],
+  );
+  const perLineTokens = useMemo(
+    () => splitTokensByNewline(tokens, b.lines.length),
+    [tokens, b.lines.length],
+  );
+
   return (
     <BlockShell id={block.id} title={block.title}>
       <p
@@ -193,28 +218,33 @@ export function SourceView({
           overflow: "hidden",
         }}
       >
-        {b.lines.map((ln: SourceLine) => (
-          <li
-            key={ln.line}
-            data-testid={`source-line-${ln.line}`}
-            className="flex"
-          >
-            <span
-              aria-hidden="true"
-              className="select-none px-2 py-0.5 text-right"
-              style={{
-                width: "3.5rem",
-                color: "var(--color-text-muted)",
-                borderRight: "1px solid var(--color-border)",
-              }}
+        {b.lines.map((ln: SourceLine, idx: number) => {
+          const lineTokens = perLineTokens[idx];
+          return (
+            <li
+              key={ln.line}
+              data-testid={`source-line-${ln.line}`}
+              className="flex"
             >
-              {ln.line}
-            </span>
-            <span className="flex-1 whitespace-pre px-2 py-0.5">
-              {ln.text || " "}
-            </span>
-          </li>
-        ))}
+              <span
+                aria-hidden="true"
+                className="select-none px-2 py-0.5 text-right"
+                style={{
+                  width: "3.5rem",
+                  color: "var(--color-text-muted)",
+                  borderRight: "1px solid var(--color-border)",
+                }}
+              >
+                {ln.line}
+              </span>
+              <span className="flex-1 whitespace-pre px-2 py-0.5">
+                {lineTokens && lineTokens.length > 0
+                  ? renderTokens(lineTokens, `src-${ln.line}-`)
+                  : ln.text || " "}
+              </span>
+            </li>
+          );
+        })}
       </ol>
     </BlockShell>
   );

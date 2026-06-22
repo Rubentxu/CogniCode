@@ -83,7 +83,10 @@ describe("ViewBlock — union routing", () => {
     expect(screen.getByTestId("view-block-source_slice")).toBeInTheDocument();
     expect(screen.getByTestId("source-line-10")).toBeInTheDocument();
     expect(screen.getByTestId("source-line-11")).toBeInTheDocument();
-    expect(screen.getByText("fn build_overview() {")).toBeInTheDocument();
+    // getByText no longer works here because syntax highlighting wraps the
+    // line text in <span className="token token-*" /> elements.
+    // Fallback: verify textContent via data-testid (T2.1 fallback per tasks.md Q1).
+    expect(screen.getByTestId("source-line-10").textContent).toContain("fn build_overview() {");
   });
 
   it("renders the file_quality_gate block with the rating chip", () => {
