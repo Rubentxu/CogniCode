@@ -1,0 +1,30 @@
+{
+  "fixture_id": "architecture-c4-medium",
+  "kind": "architecture_c4",
+  "size_band": "medium",
+  "node_count": 10,
+  "edge_count": 9,
+  "nodes": [
+    { "id": "sys-cognicode",  "label": "CogniCode",                  "kind": "system",    "style_class": "node-system" },
+    { "id": "ctr-runtime",    "label": "cognicode-runtime",         "kind": "container", "style_class": "node-container" },
+    { "id": "ctr-api",        "label": "cognicode-api",             "kind": "container", "style_class": "node-container" },
+    { "id": "ctr-explorer",   "label": "cognicode-explorer",        "kind": "container", "style_class": "node-container" },
+    { "id": "ctr-mcp",        "label": "cognicode-mcp",             "kind": "container", "style_class": "node-container" },
+    { "id": "ctr-cli",        "label": "cognicode-cli",             "kind": "container", "style_class": "node-container" },
+    { "id": "cmp-ingest",     "label": "ingest-pipeline",           "kind": "component", "style_class": "node-component" },
+    { "id": "cmp-graph",      "label": "graph-store",               "kind": "component", "style_class": "node-component" },
+    { "id": "cmp-views",      "label": "view-runtime",              "kind": "component", "style_class": "node-component" },
+    { "id": "db-postgres",    "label": "PostgreSQL",                "kind": "datastore", "style_class": "node-system" }
+  ],
+  "edges": [
+    { "id": "c0", "source": "sys-cognicode", "target": "ctr-runtime",  "relation": "in_system", "style_class": "edge-in-system" },
+    { "id": "c1", "source": "sys-cognicode", "target": "ctr-api",      "relation": "in_system", "style_class": "edge-in-system" },
+    { "id": "c2", "source": "sys-cognicode", "target": "ctr-explorer", "relation": "in_system", "style_class": "edge-in-system" },
+    { "id": "c3", "source": "sys-cognicode", "target": "ctr-mcp",      "relation": "in_system", "style_class": "edge-in-system" },
+    { "id": "c4", "source": "sys-cognicode", "target": "ctr-cli",      "relation": "in_system", "style_class": "edge-in-system" },
+    { "id": "c5", "source": "ctr-runtime",   "target": "cmp-ingest",   "relation": "part_of",    "style_class": "edge-part-of" },
+    { "id": "c6", "source": "ctr-runtime",   "target": "cmp-graph",    "relation": "part_of",    "style_class": "edge-part-of" },
+    { "id": "c7", "source": "ctr-explorer",  "target": "cmp-views",    "relation": "part_of",    "style_class": "edge-part-of" },
+    { "id": "c8", "source": "cmp-graph",     "target": "db-postgres",  "relation": "deployed_as","style_class": "edge-deployed-as" }
+  ]
+}

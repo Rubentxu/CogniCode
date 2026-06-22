@@ -1,0 +1,42 @@
+{
+  "fixture_id": "landing-overview-medium",
+  "kind": "landing_overview",
+  "size_band": "medium",
+  "node_count": 16,
+  "edge_count": 15,
+  "nodes": [
+    { "id": "ep-main",            "label": "POST /api/workspaces",       "kind": "entry_point", "style_class": "node-decision" },
+    { "id": "ep-analyze",         "label": "POST /api/analyze",          "kind": "entry_point", "style_class": "node-decision" },
+    { "id": "ep-ingest",          "label": "POST /api/ingest",           "kind": "entry_point", "style_class": "node-decision" },
+    { "id": "ep-graph",           "label": "GET /api/graph/:id",         "kind": "entry_point", "style_class": "node-decision" },
+    { "id": "hp-ingest-svc",      "label": "ingest::service",            "kind": "hot_path",    "style_class": "node-function" },
+    { "id": "hp-graph-svc",       "label": "graph::service",             "kind": "hot_path",    "style_class": "node-function" },
+    { "id": "hp-analyzer",        "label": "analyzer::run",              "kind": "hot_path",    "style_class": "node-function" },
+    { "id": "hp-pagerank",        "label": "pagerank::compute",          "kind": "hot_path",    "style_class": "node-function" },
+    { "id": "hp-mcp-router",      "label": "mcp::router",                "kind": "hot_path",    "style_class": "node-function" },
+    { "id": "gn-graph-store",     "label": "GraphStore (god node)",      "kind": "god_node",    "style_class": "node-decision" },
+    { "id": "gn-checkpoint",      "label": "GraphCheckpoint (god)",      "kind": "god_node",    "style_class": "node-decision" },
+    { "id": "gn-mcp-handler",     "label": "MCPHandler (god)",           "kind": "god_node",    "style_class": "node-decision" },
+    { "id": "cm-cluster-a",       "label": "Community A (ingest+graph)", "kind": "community",   "style_class": "node-module" },
+    { "id": "cm-cluster-b",       "label": "Community B (mcp+views)",    "kind": "community",   "style_class": "node-module" },
+    { "id": "cm-cluster-c",       "label": "Community C (parser)",       "kind": "community",   "style_class": "node-module" },
+    { "id": "sq-first-question",  "label": "What connects X to Y?",     "kind": "suggestion",  "style_class": "node-decision" }
+  ],
+  "edges": [
+    { "id": "l0",  "source": "ep-main",        "target": "hp-ingest-svc",   "relation": "calls",        "style_class": "edge-calls" },
+    { "id": "l1",  "source": "ep-main",        "target": "hp-graph-svc",    "relation": "calls",        "style_class": "edge-calls" },
+    { "id": "l2",  "source": "ep-analyze",     "target": "hp-analyzer",     "relation": "calls",        "style_class": "edge-calls" },
+    { "id": "l3",  "source": "ep-ingest",      "target": "hp-ingest-svc",   "relation": "calls",        "style_class": "edge-calls" },
+    { "id": "l4",  "source": "ep-graph",       "target": "hp-graph-svc",    "relation": "calls",        "style_class": "edge-calls" },
+    { "id": "l5",  "source": "hp-analyzer",    "target": "hp-pagerank",     "relation": "calls",        "style_class": "edge-calls" },
+    { "id": "l6",  "source": "hp-mcp-router",  "target": "gn-mcp-handler",  "relation": "resolves",     "style_class": "edge-dependency" },
+    { "id": "l7",  "source": "hp-graph-svc",   "target": "gn-graph-store",  "relation": "resolves",     "style_class": "edge-dependency" },
+    { "id": "l8",  "source": "hp-ingest-svc",  "target": "gn-checkpoint",   "relation": "resolves",     "style_class": "edge-dependency" },
+    { "id": "l9",  "source": "gn-graph-store", "target": "cm-cluster-a",    "relation": "part_of",      "style_class": "edge-part-of" },
+    { "id": "l10", "source": "gn-checkpoint",  "target": "cm-cluster-a",    "relation": "part_of",      "style_class": "edge-part-of" },
+    { "id": "l11", "source": "gn-mcp-handler", "target": "cm-cluster-b",    "relation": "part_of",      "style_class": "edge-part-of" },
+    { "id": "l12", "source": "hp-pagerank",    "target": "cm-cluster-c",    "relation": "part_of",      "style_class": "edge-part-of" },
+    { "id": "l13", "source": "sq-first-question","target": "ep-graph",      "relation": "cites",        "style_class": "edge-dependency" },
+    { "id": "l14", "source": "sq-first-question","target": "ep-analyze",    "relation": "cites",        "style_class": "edge-dependency" }
+  ]
+}
