@@ -7,8 +7,11 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
 
   /**
-   * Dev server proxies all `/api/*` traffic to the cognicode-explorer
-   * axum backend (port 8080 by convention).
+   * Dev server proxies all `/api/*` traffic to the `explorer-api` axum
+   * binary (see `crates/cognicode-runtime/src/bin/api.rs`). The default
+   * listen port for that binary is `127.0.0.1:8010`; override with the
+   * `EXPLORER_API_TARGET` env var when running the backend on a
+   * different host/port (e.g. behind docker-compose or in CI).
    *
    * See: crates/cognicode-explorer (Rust) — 11 REST endpoints under /api/*.
    */
@@ -17,7 +20,8 @@ export default defineConfig({
     strictPort: false,
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:3456",
+        target:
+          process.env.EXPLORER_API_TARGET ?? "http://127.0.0.1:8010",
         changeOrigin: true,
         secure: false,
       },

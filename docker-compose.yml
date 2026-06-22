@@ -1,5 +1,3 @@
-version: "3.9"
-
 # CogniCode — local development stack (PR 3 of postgres-default-config).
 #
 # Starts a single PostgreSQL 16 instance for local dev. To bring up:
@@ -10,6 +8,11 @@ version: "3.9"
 # The container exposes 5432 on the host, persists data in a named
 # volume (`cognicode_pg_data`), and runs a pg_isready healthcheck so
 # the explorer binaries (or tests) can wait until the DB is ready.
+#
+# Pair with `docker compose run --rm explorer-api` (or run
+# `cargo run -p cognicode-runtime --bin api` from the host with
+# DATABASE_URL pointing at this container) to serve the explorer
+# HTTP API on 127.0.0.1:8010.
 #
 # The credentials here are intentionally simple for local dev only.
 # Production setups must use secrets (e.g. via Docker secrets or a

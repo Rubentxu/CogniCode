@@ -48,15 +48,11 @@ jobs:
       - name: Check
         run: cargo check --workspace --all-targets
       - name: Test
-        # Default build (postgres-first). SQLite opt-in tests are not
-        # compiled. The explorer binary's --sqlite path is exercised
-        # separately with `cargo test -p cognicode-explorer --features sqlite`.
+        # Default build (postgres-first). The workspace test suite
+        # gates PG-only assertions on TEST_DATABASE_URL (the service
+        # container above), and the sqlite feature was removed from
+        # the explorer crate in the Graph Intelligence v2 cleanup.
         run: cargo test --workspace
-      - name: Test (sqlite opt-in)
-        # Run the SQLite-only tests (integration.rs +
-        # explorer_graph_foundation.rs) which are gated behind
-        # `#[cfg(feature = "sqlite")]` on the explorer.
-        run: cargo test -p cognicode-explorer --features sqlite --tests
       - name: Build
         run: cargo build --release
 
