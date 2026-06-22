@@ -9,10 +9,10 @@ honor its STOP conditions, and update your row when done.
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 001 | Add pre_steps field to ExpandedScenario | P1 | S | — | DONE |
-| 002 | Fail explicitly when McpServer spawn fails | P1 | M | 001 | REJECTED — plan assumes Result return type but execute_scenario returns (ScenarioResult, Option<CapturedCall>); needs redesign |
+| 002 | Fail explicitly when McpServer spawn fails | P1 | M | 001 | REJECTED — requires changing ScenarioResult struct + callers + serialization; too large for this session |
 | 003 | Handle JoinHandle from scan task in controller | P2 | M | — | DONE |
 | 004 | Replace expect with proper error handling in mcp_core.rs | P2 | S | — | DONE |
-| 005 | Introduce CommonError base enum | P2 | M | — | REJECTED — #[from] on String variants conflicts with manual From<CommonError> impl (E0119); semantic mismatch between error types |
+| 005 | Introduce CommonError base enum | P2 | M | — | DONE — CommonError enum with From<AppError> impl; NotFound→SymbolNotFound, InvalidInput→InvalidParameter, Internal→InternalError |
 | 006 | Break up catalog.rs into per-rule files | P3 | L | — | REJECTED — cognicode-axiom is PARKED (commented in Cargo.toml), cannot compile |
 | 007 | Break up sandbox orchestrator main.rs | P3 | L | 001 | DONE — reporting module extracted (332 lines), production call paths use reporting:: |
 | 008 | Remove duplicate ensure_graph_built | P3 | M | — | DONE |
