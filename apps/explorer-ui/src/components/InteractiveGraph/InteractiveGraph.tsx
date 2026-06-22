@@ -23,7 +23,7 @@
  * - fallback table `role="complementary"`, with `aria-label="Graph nodes"`
  * - rows are activatable with Enter or Space
  */
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import cytoscape, { type Core, type ElementsDefinition } from "cytoscape";
 
 import type { SubgraphResponse } from "../../api/types";
@@ -40,6 +40,8 @@ export type { LayoutAlgorithm };
 
 /** Max nodes for animated layout. Beyond this, animation is skipped. */
 const MAX_ANIMATED_NODES = 500;
+/** Above this node count WebGL is faster than canvas (ADR-042 / E7 bench). */
+const WEBGL_NODE_THRESHOLD = 500;
 
 export interface InteractiveGraphProps {
   /** Root id echoed in `aria-label` and used as the cytoscape key. */
@@ -64,6 +66,14 @@ export interface InteractiveGraphProps {
    * "radial" uses ELK's radial layout.
    */
   layoutAlgorithm?: LayoutAlgorithm;
+  /**
+   * Whether to use WebGL renderer for large graphs.
+   * - `true` (default): WebGL when `data.nodes.length >= 500`, canvas otherwise.
+   *   Based on E7 benchmark evidence (ADR-042): WebGL is ~20% faster for
+   *   call-graph-medium (1,000 nodes) but ~15-25% slower for small fixtures.
+   * - `false`: always use canvas (no WebGL, useful if GPU issues appear).
+   */
+  preferWebgl?: boolean;
 }
 
 export function InteractiveGraph({
@@ -74,6 +84,7 @@ export function InteractiveGraph({
   onCyReady,
   className,
   layoutAlgorithm: layoutAlgorithmProp = "layered",
+  preferWebgl = true,
 }: InteractiveGraphProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
@@ -95,6 +106,9 @@ export function InteractiveGraph({
     }));
     const elements = toCytoscapeElements(safeNodes, data.edges);
 
+    const nodeCount = data.nodes.length;
+    const useWebgl = preferWebgl && nodeCount >= WEBGL_NODE_THRESHOLD;
+
     const cy = cytoscape({
       container: containerRef.current,
       elements: elements as unknown as cytoscape.ElementDefinition[],
@@ -103,6 +117,10 @@ export function InteractiveGraph({
       // positions asynchronously and update them.
       layout: { name: "preset" },
       wheelSensitivity: 0.25,
+      // E7 (ADR-042): enable WebGL selectively based on node count.
+      // Bench evidence: WebGL ~20% faster at 1,000 nodes, ~5% at 5,000;
+      // canvas ~15-25% faster for small fixtures (< 16 nodes).
+      renderer: { name: "canvas", webgl: useWebgl },
     });
 
     // Wire node selection
@@ -121,7 +139,6 @@ export function InteractiveGraph({
     }
 
     // ── E2: ELK layout worker ──────────────────────────────
-    const nodeCount = data.nodes.length;
     const animate = nodeCount <= MAX_ANIMATED_NODES;
     const worker = createLayoutWorker();
     workerRef.current = worker;
