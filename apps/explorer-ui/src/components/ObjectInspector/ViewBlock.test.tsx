@@ -182,10 +182,12 @@ describe("ViewBlock — union routing", () => {
       body: { signature: "fn build_overview() -> ContextualView" },
     };
     render(<ViewBlock block={block} />);
-    expect(screen.getByTestId("view-block-signature")).toBeInTheDocument();
-    expect(
-      screen.getByText("fn build_overview() -> ContextualView"),
-    ).toBeInTheDocument();
+    const shell = screen.getByTestId("view-block-signature");
+    expect(shell).toBeInTheDocument();
+    // getByText no longer works here because syntax highlighting wraps the
+    // signature text in <span className="token token-*" /> elements.
+    // Fallback: verify textContent includes the signature.
+    expect(shell.textContent ?? "").toContain("fn build_overview() -> ContextualView");
   });
 
   it("renders the cross_scope block as a 3-col table", () => {

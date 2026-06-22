@@ -4,7 +4,7 @@
  * Public surface:
  * - tokenizePrism(code, language?)    — pure, no React (in highlight-core.ts)
  * - splitTokensByNewline(tokens, n)   — pure, no React (in highlight-core.ts)
- * - renderTokens(tokens, keyPrefix?)   — React elements, NO dangerouslySetInnerHTML
+ * - renderTokens(tokens, keyPrefix?)  — React elements, NO dangerouslySetInnerHTML
  * - highlightCode(code, language?)    — convenience wrapper (React)
  *
  * Rules:
@@ -17,7 +17,6 @@ import {
   type TokenNode,
   type PrismLanguage,
   tokenizePrism,
-  splitTokensByNewline,
   isPrismLanguage,
 } from "./highlight-core";
 
@@ -27,13 +26,7 @@ export { type PrismLanguage };
 // React rendering
 // ============================================================================
 
-/**
- * Render a token tree as React span elements.
- *
- * Emits span.token.token-{type} for each token node.
- * Nested children are rendered recursively.
- * NO dangerouslySetInnerHTML — all content is set via React props.
- */
+// eslint-disable-next-line react-refresh/only-export-components
 export function renderTokens(
   tokens: TokenNode[],
   keyPrefix = "",
@@ -61,12 +54,7 @@ export function renderTokens(
   });
 }
 
-/**
- * Convenience wrapper: tokenize + render as React nodes.
- * Use this when you don't need the intermediate token tree.
- *
- * Returns null for empty code; renders as plaintext for unknown language.
- */
+// eslint-disable-next-line react-refresh/only-export-components
 export function highlightCode(
   code: string,
   language?: string,

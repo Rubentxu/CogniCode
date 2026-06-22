@@ -143,8 +143,9 @@ export function splitTokensByNewline(
   let lineIdx = 0;
 
   function push(token: TokenNode) {
-    if (lineIdx < lines.length) {
-      lines[lineIdx].push(token);
+    const line = lines[lineIdx];
+    if (line) {
+      line.push(token);
     }
   }
 
