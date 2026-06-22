@@ -48,11 +48,15 @@ export function CallMetricsView({
 // SignatureView
 // ============================================================================
 
+// file prop used in T3.2 for language detection via detectLanguage
 export function SignatureView({
   block,
+  file: _file,
 }: {
   block: ViewBlock & { body: { signature: string } };
+  file?: string;
 }) {
+  void _file; // T3.2: will use file for detectLanguage call
   return (
     <BlockShell id={block.id} title={block.title}>
       <pre
@@ -286,10 +290,13 @@ function CallMetricsViewAdapter({ block }: BlockRendererProps) {
   );
 }
 
-function SignatureViewAdapter({ block }: BlockRendererProps) {
+type SignatureExtra = { file?: string; onSelectObject?: (id: string) => void };
+
+function SignatureViewAdapter({ block, extra }: BlockRendererProps<SignatureExtra>) {
   return (
     <SignatureView
       block={block as ViewBlock & { body: { signature: string } }}
+      file={extra?.file}
     />
   );
 }
