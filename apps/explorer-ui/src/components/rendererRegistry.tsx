@@ -10,15 +10,11 @@
  * Sprint E1: E1.1 wires `graph` to the real `InteractiveGraph` component
  * (previously was placeholder). E1.2-E1.5 will wire the remaining renderers.
  */
-import { Suspense, lazy, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import type { RendererKind } from "../api/schemas";
-import type { ContextualView, SubgraphResponse } from "../api/types";
-
-// Lazy-load the graph renderer — keeps cytoscape out of the initial bundle
-const InteractiveGraph = lazy(() =>
-  import("./InteractiveGraph").then((m) => ({ default: m.InteractiveGraph })),
-);
+import type { ContextualView } from "../api/types";
+import { GraphView } from "./GraphView/GraphView";
 
 // ============================================================================
 // Renderer id type — first-class catalog from ADR-008
@@ -148,11 +144,23 @@ class RendererRegistry {
   // --------------------------------------------------------------------------
 
   #registerBuiltin() {
-    // `graph` — delegates to the existing InteractiveGraph component.
-    // Props accepted: `{ nodes, edges, rootId }`.
+    // `graph` — delegates to the canonical GraphView component (E1.5).
+    // GraphView gets dispatch from useAppDispatch() internally.
+    // extra.view is required (the full ContextualView); objectId, paneId,
+    // onClose are optional.
     this.register("graph", {
       label: "Graph",
-      render: (body) => <GraphRenderer body={body} />,
+      render: (body, extra) => {
+        const view = body as ContextualView;
+        return (
+          <GraphView
+            view={view}
+            objectId={extra?.objectId ?? ""}
+            paneId={extra?.paneId}
+            onClose={extra?.onClose}
+          />
+        );
+      },
     });
 
     // `table` — delegates to a simple table renderer.
@@ -253,57 +261,9 @@ export const rendererRegistry = new RendererRegistry();
 // Built-in renderer components
 // ============================================================================
 
-// These are forward-declared here to avoid a circular dependency with the
-// existing component tree. In Phase 4 they will be replaced with the actual
-// wired components (InteractiveGraph, etc.).
-
-function GraphRenderer({ body }: { body: unknown }) {
-  // `body` is the graph data from a ViewBlock: { nodes: GraphNode[], edges: GraphEdge[], rootId?: string }
-  const b = body as { nodes?: unknown[]; edges?: unknown[]; rootId?: string } | null;
-  const root = b?.rootId ?? "graph";
-  const nodes = b?.nodes ?? [];
-  const edges = b?.edges ?? [];
-
-  // Build SubgraphResponse shape expected by InteractiveGraph
-  const data: SubgraphResponse = {
-    nodes: nodes.map((n: unknown) => {
-      const node = n as Record<string, unknown>;
-      return {
-        id: String(node.id ?? node.label ?? "?"),
-        label: String(node.label ?? node.id ?? "?"),
-        kind: String(node.kind ?? "symbol"),
-        file: (node.file as string | null) ?? null,
-        line: (node.line as number | null) ?? null,
-        style_class: (node.style_class as string | null) ?? null,
-      };
-    }),
-    edges: edges.map((e: unknown) => {
-      const edge = e as Record<string, unknown>;
-      return {
-        source: String(edge.source ?? edge.from ?? "?"),
-        target: String(edge.target ?? edge.to ?? "?"),
-        relation: String(edge.relation ?? edge.type ?? "calls"),
-        style_class: (edge.style_class as string | null) ?? null,
-      };
-    }),
-  };
-
-  return (
-    <Suspense fallback={
-      <div className="flex h-full items-center justify-center text-sm" style={{color:"var(--color-text-muted)"}}>
-        Loading graph…
-      </div>
-    }>
-      <InteractiveGraph
-        root={root}
-        data={data}
-        selectedId={null}
-        onSelectObject={() => {}}
-        className="h-full w-full"
-      />
-    </Suspense>
-  );
-}
+// The `graph` entry is now the canonical GraphView (E1.5). The remaining
+// entries (table, tree, code, json, markdown, vega_lite, composite) are
+// built-in renderers for their respective RendererKind strings.
 
 function TableRenderer({ body }: { body: unknown }) {
   const b = body as { columns?: string[]; rows?: Record<string, unknown>[] } | null;
