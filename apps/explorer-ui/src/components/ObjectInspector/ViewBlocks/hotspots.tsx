@@ -3,6 +3,28 @@
  */
 import type { HotspotsBlockBody, ViewBlock } from "../../../api/types";
 import { BlockShell } from "./shared";
+import {
+  type BlockRendererEntry,
+  type BlockRendererProps,
+  registerBlockRenderer,
+} from "../blockRendererRegistry";
+
+// Extra type for interactive blocks that need onSelectObject
+type InteractiveExtra = { onSelectObject?: (id: string) => void };
+
+function HotspotsViewAdapter({ block, extra }: BlockRendererProps<InteractiveExtra>) {
+  return (
+    <HotspotsView
+      block={block as ViewBlock & { body: HotspotsBlockBody }}
+      onSelectObject={extra?.onSelectObject}
+    />
+  );
+}
+
+registerBlockRenderer("hotspots", {
+  component: HotspotsViewAdapter,
+  displayName: "HotspotsView",
+} as BlockRendererEntry);
 
 export function HotspotsView({
   block,

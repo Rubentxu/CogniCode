@@ -125,7 +125,7 @@ the user a lightweight way to decide whether a node is worth a deeper dive.
 
 | Sprint | Status | Notes |
 |--------|--------|-------|
-| E1 — Consolidate View Model | ⚠️ Partial | E1.1✅ E1.2⚠️ E1.3✅ E1.4❌ E1.5❌ — `rendererRegistry` is dead code in production; `PaneInspector` short-circuits to `GraphView` directly |
+| E1 — Consolidate View Model | ✅ Complete | E1.1✅ E1.2⚠️ E1.3✅ E1.4✅ E1.5✅ — `rendererRegistry` is now the authoritative pipeline; `PaneInspector` routes all rendering through `resolveRenderStrategy` |
 | E2 — ELK layout worker | ✅ Complete | `InteractiveGraph` + `layout.worker.ts` fully integrated |
 | E3 — Hard cut column nav | ✅ Complete | `column` mode removed; `MillerColumns` deleted; state is pane-stack only |
 | E4 — Graph Landing Page | ~70% | E4.1✅ E4.2⚠️(hook renamed) E4.3✅ E4.4✅ E4.5⚠️(hook exists, UI strip missing) |
@@ -134,8 +134,8 @@ the user a lightweight way to decide whether a node is worth a deeper dive.
 | E7 — Renderer evaluation | ✅ Complete | ADR-041/ADR-042 Accepted; WebGL adopted selectively (≥500 nodes) |
 
 **Open architectural gaps:**
-- `rendererRegistry` (E1.4/E1.5) is the primary dead-code risk — `PaneInspector` bypasses it
-- `ViewBlock.tsx` is a 27-case `switch` that should route through `rendererRegistry`
+- `rendererRegistry` (E1.4/E1.5) is now resolved — `PaneInspector` routes all rendering through `resolveRenderStrategy`
+- `ViewBlock.tsx` 27-case `switch` is resolved — all blocks now registered in `blockRendererRegistry`
 - Perspective toggle (E5) needs wiring into `InteractiveGraphPanel` to work after object selection
 
 ## Consequences
@@ -144,10 +144,9 @@ the user a lightweight way to decide whether a node is worth a deeper dive.
   layout logic, and the `NavigationAdapter` contract. Tests referencing Miller
   columns are updated or removed. Minor residue: `useRovingFocus` hook is dead
   code (no importers).
-- **`rendererRegistry` must become authoritative** — all view rendering passes
-  through it, not through ad-hoc component switches. **Status (2026-06-22): NOT
-  YET DONE — `PaneInspector` routes graph kinds to `GraphView` directly;
-  `ViewBlock.tsx` remains a 27-case `switch`.**
+- **`rendererRegistry` is now authoritative** — all view rendering passes
+  through it via `resolveRenderStrategy` and `blockRendererRegistry`. **`PaneInspector`
+  no longer imports `GraphView` directly.**
 - **ELK worker integration** changes `InteractiveGraph` from static-preset to
   dynamic layout with animation and cancellation. **Done (E2).**
 - **C4 backend support** is needed for the perspective toggle to show real C4

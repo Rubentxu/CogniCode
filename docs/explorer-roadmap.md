@@ -13,7 +13,7 @@
 | `PaneStackView` | ✅ Implemented | GtPager-style lateral panes, max 8 |
 | `InteractiveGraph` (Cytoscape) | ✅ Implemented | ELK worker + WebGL selective (≥500 nodes); supports `layered`, `force`, and `radial` layouts with progress, cancellation, and size guard |
 | `layout.worker.ts` (ELK.js) | ✅ Implemented | Wired into `InteractiveGraph`; computes async layouts and falls back gracefully on failure |
-| `rendererRegistry` | ⚠️ Dead code | `graph` wired but never reached in production; `PaneInspector` short-circuits to `GraphView` directly |
+| `rendererRegistry` | ✅ Live | `rendererRegistry` + `blockRendererRegistry` are the authoritative pipeline; all rendering routes through `resolveRenderStrategy` |
 | `Spotter` (cmdk) | ✅ Implemented | Server-side fuzzy search, kind filters |
 | `ViewSpecWizard` | ✅ Implemented | 5-step authoring, localStorage drafts |
 | `ContextualPanel` | ✅ Implemented | Focus + parent + children + neighbor minigraph |
@@ -34,18 +34,15 @@
 **Goal:** `rendererRegistry` becomes the authoritative render pipeline. No
 ad-hoc rendering paths.
 
-**Status (2026-06-22): ⚠️ Partial — 2.5/5 done. E1.4 and E1.5 are the primary gap.**
+**Status (2026-06-22): ✅ Complete — 5/5 done. E1.4 and E1.5 are now live.**
 
 | ID | Task | Status | Notes |
 |----|------|--------|-------|
 | E1.1 | Wire `rendererRegistry["graph"]` to real `InteractiveGraph` (not placeholder) | ✅ Done | `rendererRegistry.tsx:227-273` maps `graph` kind to `GraphRenderer` → `<InteractiveGraph>` |
 | E1.2 | Wire `rendererRegistry["code"]` to a real code renderer (syntax highlight) | ⚠️ Partial | `CodeRenderer` is a bare `<pre><code>` — no syntax highlighting library |
 | E1.3 | Wire `rendererRegistry["tree"]` to a real tree component | ✅ Done | `TreeRenderer` with recursive `TreeNode` + expand/collapse |
-| E1.4 | Make `ViewBlock` rendering go through `rendererRegistry` exclusively | ❌ Not done | `ViewBlock.tsx` is a 27-case `switch`; zero use of `rendererRegistry` |
-| E1.5 | Remove parallel rendering paths (ad-hoc switches in components) | ❌ Not done | `PaneInspector.tsx:237-256` short-circuits graph kinds to `<GraphView>` bypassing the registry entirely |
-
-**Dead code:** `rendererRegistry` and `GraphRenderer` exist but are never reached
-in the live rendering path. `PaneInspector` imports `GraphView` directly.
+| E1.4 | Make `ViewBlock` rendering go through `rendererRegistry` exclusively | ✅ Done | `blockRendererRegistry` created with all 29 blocks registered; 27-case `switch` removed (`b1cb450`) |
+| E1.5 | Remove parallel rendering paths (ad-hoc switches in components) | ✅ Done | `PaneInspector` now routes all rendering through `resolveRenderStrategy`; `isGraphViewKind` short-circuit removed (`daa9300`) |
 
 **Deliverable:** Every view block renders through the registry. New renderers
 can be added without touching component code.

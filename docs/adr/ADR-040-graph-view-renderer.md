@@ -23,24 +23,17 @@ Además, queremos llevar el CogniCode Explorer a una experiencia de exploración
 
 ### 1. Routing
 
-Crear un componente genérico **`GraphViewRenderer`** que consume el `ContextualView` completo y renderiza un `SvgGraph` interactivo. El routing ocurre en `PaneInspector` con un early-return:
+Crear un componente genérico **`GraphViewRenderer`** que consume el `ContextualView` completo y renderiza un `SvgGraph` interactivo. El routing ocurre en `PaneInspector` via `resolveRenderStrategy`:
 
 ```typescript
 const display = view ?? _activeView;
 
-// Moldable Dev: Graph views bypass the Blocks renderer
-if (display && isGraphViewKind(display.kind)) {
-  return (
-    <GraphViewRenderer
-      view={display}
-      objectId={objectId}
-      onClose={onClose}
-    />
-  );
-}
+// All rendering now routes through the registry
+const strategy = resolveRenderStrategy(display);
+return <strategy.renderer view={display} objectId={objectId} onClose={onClose} />;
 ```
 
-`isGraphViewKind` retorna `true` para: `call_graph`, `dependency_graph`, `data_flow`, `impact_radius`, `seam_map`.
+`resolveRenderStrategy` dispatchs a `RendererEntry` for: `call_graph`, `dependency_graph`, `data_flow`, `impact_radius`, `seam_map`, and all other ViewKinds.
 
 ### 2. Layout
 

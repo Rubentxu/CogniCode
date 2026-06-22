@@ -20,6 +20,11 @@ import type {
   ViewBlock,
 } from "../../../api/types";
 import { BlockShell, SeverityChip, Stat, formatLastRun, ratingColor, severityTextColor } from "./shared";
+import {
+  type BlockRendererEntry,
+  type BlockRendererProps,
+  registerBlockRenderer,
+} from "../blockRendererRegistry";
 
 // ============================================================================
 // Quality identity views
@@ -462,3 +467,178 @@ export function QualityIssueDetailView({
     </BlockShell>
   );
 }
+
+// ============================================================================
+// Registry adapter for quality_issue_detail (interactive — needs onSelectObject)
+// ============================================================================
+
+type InteractiveExtra = { onSelectObject?: (id: string) => void };
+
+function QualityIssueDetailViewAdapter({
+  block,
+  extra,
+}: BlockRendererProps<InteractiveExtra>) {
+  return (
+    <QualityIssueDetailView
+      block={block as ViewBlock & { body: QualityIssueDetailBlockBody }}
+      onSelectObject={extra?.onSelectObject}
+    />
+  );
+}
+
+registerBlockRenderer("quality_issue_detail", {
+  component: QualityIssueDetailViewAdapter,
+  displayName: "QualityIssueDetailView",
+} as BlockRendererEntry);
+
+// Non-interactive adapters — all take a typed block prop, no extra needed
+function SymbolQualityIdentityViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <SymbolQualityIdentityView
+      block={block as ViewBlock & { body: SymbolQualityIdentityBlockBody }}
+    />
+  );
+}
+
+function FileQualityIdentityViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <FileQualityIdentityView
+      block={block as ViewBlock & { body: FileQualityIdentityBlockBody }}
+    />
+  );
+}
+
+function ScopeQualityIdentityViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <ScopeQualityIdentityView
+      block={block as ViewBlock & { body: ScopeQualityIdentityBlockBody }}
+    />
+  );
+}
+
+function QualityGateViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <QualityGateView
+      block={block as ViewBlock & { body: QualityGateBlockBody }}
+    />
+  );
+}
+
+function QualitySummaryViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <QualitySummaryView
+      block={block as ViewBlock & { body: QualitySummaryBlockBody }}
+    />
+  );
+}
+
+// IssuesListView handles multiple block ids with structurally identical bodies
+function IssuesListViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <IssuesListView
+      block={block as ViewBlock & { body: IssuesListBlockBody }}
+    />
+  );
+}
+
+function IssueIdentityViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <IssueIdentityView
+      block={block as ViewBlock & { body: IssueIdentityBlockBody }}
+    />
+  );
+}
+
+function IssueLocationViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <IssueLocationView
+      block={block as ViewBlock & { body: IssueLocationBlockBody }}
+    />
+  );
+}
+
+function IssueMessageViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <IssueMessageView
+      block={block as ViewBlock & { body: IssueMessageBlockBody }}
+    />
+  );
+}
+
+function RuleIdentityViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <RuleIdentityView
+      block={block as ViewBlock & { body: RuleIdentityBlockBody }}
+    />
+  );
+}
+
+registerBlockRenderer("symbol_quality_identity", {
+  component: SymbolQualityIdentityViewAdapter,
+  displayName: "SymbolQualityIdentityView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("symbol_quality_issues", {
+  component: IssuesListViewAdapter,
+  displayName: "IssuesListView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("file_quality_identity", {
+  component: FileQualityIdentityViewAdapter,
+  displayName: "FileQualityIdentityView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("file_quality_gate", {
+  component: QualityGateViewAdapter,
+  displayName: "QualityGateView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("file_quality_issues", {
+  component: IssuesListViewAdapter,
+  displayName: "IssuesListView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("scope_quality_identity", {
+  component: ScopeQualityIdentityViewAdapter,
+  displayName: "ScopeQualityIdentityView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("scope_quality_gate", {
+  component: QualityGateViewAdapter,
+  displayName: "QualityGateView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("scope_quality_issues", {
+  component: IssuesListViewAdapter,
+  displayName: "IssuesListView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("issue_identity", {
+  component: IssueIdentityViewAdapter,
+  displayName: "IssueIdentityView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("issue_location", {
+  component: IssueLocationViewAdapter,
+  displayName: "IssueLocationView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("issue_message", {
+  component: IssueMessageViewAdapter,
+  displayName: "IssueMessageView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("rule_identity", {
+  component: RuleIdentityViewAdapter,
+  displayName: "RuleIdentityView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("rule_related", {
+  component: IssuesListViewAdapter,
+  displayName: "IssuesListView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("quality_summary", {
+  component: QualitySummaryViewAdapter,
+  displayName: "QualitySummaryView",
+} as BlockRendererEntry);
