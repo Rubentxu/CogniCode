@@ -190,7 +190,7 @@ pub async fn handle_project_overview(
     input: ProjectOverviewInput,
 ) -> HandlerResult<ProjectOverviewOutput> {
     // Ensure graph is built (auto-build if empty)
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = super::ensure_graph_built(ctx)?;
 
     let graph = ctx.analysis_service.get_project_graph();
     let stats = ctx.analysis_service.get_graph_stats();
@@ -256,21 +256,6 @@ pub async fn handle_project_overview(
             symbol_count, edge_count
         )),
     })
-}
-
-/// Ensures the project graph is built, building it on-demand if empty.
-/// This prevents empty callgraph results from being returned as "success with no data".
-fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<()> {
-    let graph = ctx.analysis_service.get_project_graph();
-    let count = graph.symbols().count();
-    if count > 0 {
-        return Ok(());
-    }
-    // Auto-build the graph
-    ctx.analysis_service
-        .build_project_graph(&ctx.working_dir)
-        .map_err(HandlerError::App)?;
-    Ok(())
 }
 
 // ── compare_graph ────────────────────────────────────────────────────────────
