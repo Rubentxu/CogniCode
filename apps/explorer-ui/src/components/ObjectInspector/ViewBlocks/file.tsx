@@ -8,6 +8,11 @@ import type {
   ViewBlock,
 } from "../../../api/types";
 import { BlockShell, Stat } from "./shared";
+import {
+  type BlockRendererEntry,
+  type BlockRendererProps,
+  registerBlockRenderer,
+} from "../blockRendererRegistry";
 
 // ============================================================================
 // FileIdentityView
@@ -117,3 +122,51 @@ export function FileSymbolsView({
     </BlockShell>
   );
 }
+
+// ============================================================================
+// Registry adapters
+// ============================================================================
+
+function FileIdentityViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <FileIdentityView
+      block={block as ViewBlock & { body: FileIdentityBlockBody }}
+    />
+  );
+}
+
+function FileSymbolsViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <FileSymbolsView
+      block={block as ViewBlock & { body: FileSymbolsBlockBody }}
+    />
+  );
+}
+
+function KindsViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <KindsView
+      block={block as ViewBlock & { body: KindsBreakdownBlockBody }}
+    />
+  );
+}
+
+registerBlockRenderer("file_identity", {
+  component: FileIdentityViewAdapter,
+  displayName: "FileIdentityView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("symbols", {
+  component: FileSymbolsViewAdapter,
+  displayName: "FileSymbolsView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("kinds", {
+  component: KindsViewAdapter,
+  displayName: "KindsView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("scope_kinds", {
+  component: KindsViewAdapter,
+  displayName: "KindsView",
+} as BlockRendererEntry);

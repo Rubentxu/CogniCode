@@ -8,6 +8,11 @@ import type {
   ViewBlock,
 } from "../../../api/types";
 import { BlockShell, Stat } from "./shared";
+import {
+  type BlockRendererEntry,
+  type BlockRendererProps,
+  registerBlockRenderer,
+} from "../blockRendererRegistry";
 
 // ============================================================================
 // ScopeIdentityView
@@ -141,3 +146,46 @@ export function CrossScopeView({
     </BlockShell>
   );
 }
+
+// ============================================================================
+// Registry adapters
+// ============================================================================
+
+function ScopeIdentityViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <ScopeIdentityView
+      block={block as ViewBlock & { body: ScopeIdentityBlockBody }}
+    />
+  );
+}
+
+function ScopeFilesViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <ScopeFilesView
+      block={block as ViewBlock & { body: ScopeFilesBlockBody }}
+    />
+  );
+}
+
+function CrossScopeViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <CrossScopeView
+      block={block as ViewBlock & { body: CrossScopeBlockBody }}
+    />
+  );
+}
+
+registerBlockRenderer("scope_identity", {
+  component: ScopeIdentityViewAdapter,
+  displayName: "ScopeIdentityView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("scope_files", {
+  component: ScopeFilesViewAdapter,
+  displayName: "ScopeFilesView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("cross_scope", {
+  component: CrossScopeViewAdapter,
+  displayName: "CrossScopeView",
+} as BlockRendererEntry);

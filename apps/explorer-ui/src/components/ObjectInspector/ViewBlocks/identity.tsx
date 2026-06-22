@@ -3,6 +3,11 @@
  */
 import type { IdentityBlockBody, ViewBlock } from "../../../api/types";
 import { BlockShell } from "./shared";
+import {
+  type BlockRendererEntry,
+  type BlockRendererProps,
+  registerBlockRenderer,
+} from "../blockRendererRegistry";
 
 export function IdentityView({ block }: { block: ViewBlock & { body: IdentityBlockBody } }) {
   const b = block.body;
@@ -21,3 +26,12 @@ export function IdentityView({ block }: { block: ViewBlock & { body: IdentityBlo
     </BlockShell>
   );
 }
+
+function IdentityViewAdapter({ block }: BlockRendererProps) {
+  return <IdentityView block={block as ViewBlock & { body: IdentityBlockBody }} />;
+}
+
+registerBlockRenderer("identity", {
+  component: IdentityViewAdapter,
+  displayName: "IdentityView",
+} as BlockRendererEntry);

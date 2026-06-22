@@ -11,6 +11,11 @@ import type {
 } from "../../../api/types";
 import { BlockShell, Stat } from "./shared";
 import type { CallListProps } from "./types";
+import {
+  type BlockRendererEntry,
+  type BlockRendererProps,
+  registerBlockRenderer,
+} from "../blockRendererRegistry";
 
 // ============================================================================
 // CallMetricsView
@@ -214,3 +219,70 @@ export function SourceView({
     </BlockShell>
   );
 }
+
+// ============================================================================
+// Registry adapters — interactive blocks need onSelectObject from extra
+// ============================================================================
+
+// Extra type for interactive blocks that need onSelectObject
+type InteractiveExtra = { onSelectObject?: (id: string) => void };
+
+function CallListViewAdapter({ block, extra }: BlockRendererProps<InteractiveExtra>) {
+  return (
+    <CallListView
+      block={block as ViewBlock & { body: CallListBlockBody }}
+      onSelectObject={extra?.onSelectObject}
+    />
+  );
+}
+
+// Register callers and callees (both use CallListView)
+registerBlockRenderer("callers", {
+  component: CallListViewAdapter,
+  displayName: "CallListView (callers)",
+} as BlockRendererEntry);
+
+registerBlockRenderer("callees", {
+  component: CallListViewAdapter,
+  displayName: "CallListView (callees)",
+} as BlockRendererEntry);
+
+// Non-interactive adapters
+function CallMetricsViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <CallMetricsView
+      block={block as ViewBlock & { body: { fan_in: number; fan_out: number } }}
+    />
+  );
+}
+
+function SignatureViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <SignatureView
+      block={block as ViewBlock & { body: { signature: string } }}
+    />
+  );
+}
+
+function SourceViewAdapter({ block }: BlockRendererProps) {
+  return (
+    <SourceView
+      block={block as ViewBlock & { body: SourceSliceBlockBody }}
+    />
+  );
+}
+
+registerBlockRenderer("call_metrics", {
+  component: CallMetricsViewAdapter,
+  displayName: "CallMetricsView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("signature", {
+  component: SignatureViewAdapter,
+  displayName: "SignatureView",
+} as BlockRendererEntry);
+
+registerBlockRenderer("source_slice", {
+  component: SourceViewAdapter,
+  displayName: "SourceView",
+} as BlockRendererEntry);
