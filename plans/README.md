@@ -12,10 +12,10 @@ honor its STOP conditions, and update your row when done.
 | 002 | Fail explicitly when McpServer spawn fails | P1 | M | 001 | REJECTED — plan assumes Result return type but execute_scenario returns (ScenarioResult, Option<CapturedCall>); needs redesign |
 | 003 | Handle JoinHandle from scan task in controller | P2 | M | — | DONE |
 | 004 | Replace expect with proper error handling in mcp_core.rs | P2 | S | — | DONE |
-| 005 | Introduce CommonError base enum | P2 | M | — | TODO |
-| 006 | Break up catalog.rs into per-rule files | P3 | L | — | TODO |
-| 007 | Break up sandbox orchestrator main.rs | P3 | L | 001 | TODO |
-| 008 | Remove duplicate ensure_graph_built | P3 | M | — | TODO |
+| 005 | Introduce CommonError base enum | P2 | M | — | REJECTED — #[from] on String variants conflicts with manual From<CommonError> impl (E0119); semantic mismatch between error types |
+| 006 | Break up catalog.rs into per-rule files | P3 | L | — | REJECTED — cognicode-axiom is PARKED (commented in Cargo.toml), cannot compile |
+| 007 | Break up sandbox orchestrator main.rs | P3 | L | 001 | DONE — reporting module extracted (332 lines), production call paths use reporting:: |
+| 008 | Remove duplicate ensure_graph_built | P3 | M | — | DONE |
 | 009 | Audit Mutex::lock().expect() usage | P3 | L | — | DONE |
 | 010 | Log IP parse failures instead of silently suppressing | P2 | S | — | DONE |
 | 011 | Remove #![allow(unused_variables)] from catalog.rs | P3 | S | 006 | DONE |
