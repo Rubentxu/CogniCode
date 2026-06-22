@@ -57,8 +57,16 @@ export type RenderStrategy =
  *
  * Resolution order:
  * 1. If `view_kind` is a known graph ViewKind → registry path with `"graph"`
- * 2. If `renderer_kind` is set and not `"json"` → registry path with that kind
- * 3. Otherwise → blocks path
+ * 2. Built-in views that have `blocks` → always blocks path (these are
+ *    rendered by the Blocks component; renderer_kind applies to the outer
+ *    ViewSpec shell, not to the built-in view's block list)
+ * 3. ViewSpec body (no blocks, has explicit renderer_kind ≠ "json") → registry
+ * 4. Default (no blocks, no explicit renderer_kind) → blocks
+ *
+ * Built-in executors (call_graph, vertical_slice, etc.) produce ContextualViews
+ * with `blocks` — these must route to Blocks regardless of renderer_kind.
+ * ViewSpec-driven views have no `blocks` and use renderer_kind for the outer
+ * container rendering.
  *
  * This exists because `ContextualView.renderer_kind` defaults to `"json"`
  * (schemas.ts L805), NOT `undefined`. A naive `renderer_kind` dispatch would
@@ -70,11 +78,16 @@ export function resolveRenderStrategy(view: ContextualView): RenderStrategy {
     return { kind: "registry", rendererKind: "graph" };
   }
 
-  // 2. Explicit renderer_kind (not "json" which is the default/fallback)
+  // 2. Built-in views with blocks → always blocks path
+  if (view.blocks && view.blocks.length > 0) {
+    return { kind: "blocks" };
+  }
+
+  // 3. ViewSpec with explicit renderer_kind (not "json") → registry path
   if (view.renderer_kind != null && view.renderer_kind !== "json") {
     return { kind: "registry", rendererKind: view.renderer_kind };
   }
 
-  // 3. Default: render blocks
+  // 4. Default: render blocks
   return { kind: "blocks" };
 }

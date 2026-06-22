@@ -25,6 +25,18 @@ import {
 } from "./blockRendererRegistry";
 
 // ============================================================================
+// Side-effect imports — trigger block registrations at module load
+// These MUST come AFTER the blockRendererRegistry import so that
+// registerBlockRenderer is available when they execute.
+// ============================================================================
+import "./ViewBlocks/call";
+import "./ViewBlocks/file";
+import "./ViewBlocks/hotspots";
+import "./ViewBlocks/identity";
+import "./ViewBlocks/quality";
+import "./ViewBlocks/scope";
+
+// ============================================================================
 // Extra context type (subset of RuntimeContext — only what blocks need)
 // ============================================================================
 

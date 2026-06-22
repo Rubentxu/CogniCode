@@ -1,5 +1,5 @@
 /**
- * `blockRendererRegistry.ts` — block-id-keyed renderer registry.
+ * `blockRendererRegistry.tsx` — block-id-keyed renderer registry.
  *
  * Replaces the 29-case switch in ViewBlock.tsx with a self-registering
  * Map<BlockId, BlockRendererEntry>. Each block component registers itself
