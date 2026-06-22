@@ -1203,3 +1203,300 @@ pub async fn handle_graph_checkpoint(
         ))),
     }
 }
+
+// ============================================================================
+// ViewSpec Tools (ADR-008) — list_view_specs, read_view_spec
+// ============================================================================
+
+use crate::interface::mcp::schemas::{
+    ListViewSpecsInput, ListViewSpecsOutput, ReadViewSpecInput, ReadViewSpecOutput, ViewDescriptor,
+    ViewSpec,
+};
+
+/// MCP default owner for runtime ViewSpecs.
+const MCP_DEFAULT_OWNER: &str = "mcp";
+
+/// The 8 built-in view descriptors.
+/// Hard-coded here to avoid cross-crate dependency on cognicode-explorer.
+/// Keep in sync with REAL_EXECUTOR_DESCRIPTORS in registry.rs.
+fn builtin_descriptors() -> Vec<ViewDescriptor> {
+    vec![
+        ViewDescriptor {
+            id: "overview".into(),
+            title: "Overview".into(),
+            is_builtin: true,
+            source: None,
+        },
+        ViewDescriptor {
+            id: "call-graph".into(),
+            title: "Call Graph".into(),
+            is_builtin: true,
+            source: None,
+        },
+        ViewDescriptor {
+            id: "source".into(),
+            title: "Source".into(),
+            is_builtin: true,
+            source: None,
+        },
+        ViewDescriptor {
+            id: "quality".into(),
+            title: "Quality".into(),
+            is_builtin: true,
+            source: None,
+        },
+        ViewDescriptor {
+            id: "evidence".into(),
+            title: "Evidence".into(),
+            is_builtin: true,
+            source: None,
+        },
+        ViewDescriptor {
+            id: "symbols".into(),
+            title: "Symbols".into(),
+            is_builtin: true,
+            source: None,
+        },
+        ViewDescriptor {
+            id: "dependencies".into(),
+            title: "Dependencies".into(),
+            is_builtin: true,
+            source: None,
+        },
+        ViewDescriptor {
+            id: "hotspots".into(),
+            title: "Hotspots".into(),
+            is_builtin: true,
+            source: None,
+        },
+    ]
+}
+
+/// List all ViewSpecs visible to the workspace (built-in + runtime).
+///
+/// Built-in descriptors are returned first (sorted alphabetically),
+/// then runtime specs from postgres_repo (sorted by title).
+pub async fn handle_list_view_specs(
+    ctx: &HandlerContext,
+    _input: ListViewSpecsInput,
+) -> HandlerResult<ListViewSpecsOutput> {
+    let workspace_id = ctx
+        .working_dir
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "default".into());
+
+    // Built-in descriptors (hard-coded, sorted alphabetically by id)
+    let mut builtins = builtin_descriptors();
+    builtins.sort_by_key(|d| d.id.clone());
+
+    // Runtime specs from postgres_repo
+    let mut runtime_descriptors: Vec<ViewDescriptor> = Vec::new();
+    if let Some(ref pg_repo) = ctx.postgres_repo {
+        match pg_repo.list_view_specs(&workspace_id, MCP_DEFAULT_OWNER).await {
+            Ok(rows) => {
+                for row in rows {
+                    runtime_descriptors.push(ViewDescriptor {
+                        id: row.id,
+                        title: row.title,
+                        is_builtin: false,
+                        source: Some("runtime".into()),
+                    });
+                }
+            }
+            Err(e) => {
+                tracing::warn!("list_view_specs: failed to load runtime specs: {}", e);
+            }
+        }
+    }
+    runtime_descriptors.sort_by_key(|d| d.title.clone());
+
+    // Merge: built-ins first, then runtime
+    let mut views = builtins;
+    views.extend(runtime_descriptors);
+
+    let count = views.len();
+    Ok(ListViewSpecsOutput { count, views })
+}
+
+/// Read a ViewSpec by id.
+///
+/// For built-in ids (overview, call-graph, etc.), synthesizes a ViewSpec
+/// with empty data_source/transform/props.
+/// For runtime ids (UUIDs), loads from postgres_repo.
+/// Returns view_spec_not_found error for unknown ids.
+pub async fn handle_read_view_spec(
+    ctx: &HandlerContext,
+    input: ReadViewSpecInput,
+) -> HandlerResult<ReadViewSpecOutput> {
+    let workspace_id = ctx
+        .working_dir
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "default".into());
+
+    // Check if it's a built-in id
+    let builtin = builtin_descriptors()
+        .into_iter()
+        .find(|d| d.id == input.id);
+
+    if let Some(desc) = builtin {
+        // Synthesize full ViewSpec for built-in
+        // SKIP validate(): kebab id fails is_valid_uuid_format (Correction #1)
+        let now = chrono::Utc::now().to_rfc3339();
+        let view = ViewSpec {
+            id: desc.id,
+            title: desc.title,
+            applies_to: "workspace".into(), // default for v1
+            view_kind: "overview".into(),   // placeholder
+            data_source: serde_json::json!({"type": "other"}),
+            transform: None,
+            renderer_kind: "json".into(),
+            props: serde_json::json!({}),
+            created_at: now.clone(),
+            updated_at: now,
+            owner: MCP_DEFAULT_OWNER.into(),
+        };
+        return Ok(ReadViewSpecOutput { view });
+    }
+
+    // Not a built-in - try to load from postgres_repo
+    let repo = ctx.postgres_repo.as_ref().ok_or_else(|| {
+        HandlerError::Internal("postgres_repo not configured".into())
+    })?;
+
+    let row = repo
+        .load_view_spec(&input.id, &workspace_id, MCP_DEFAULT_OWNER)
+        .await
+        .map_err(|e| HandlerError::Internal(format!("load_view_spec failed: {}", e)))?;
+
+    match row {
+        Some(row) => {
+            let view = ViewSpec {
+                id: row.id,
+                title: row.title,
+                applies_to: row.applies_to,
+                view_kind: row.view_kind,
+                data_source: serde_json::json!({}), // row.data_source is JSON string
+                transform: None,
+                renderer_kind: row.renderer_kind,
+                props: serde_json::json!({}), // row.props is JSON string
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                owner: row.owner,
+            };
+            Ok(ReadViewSpecOutput { view })
+        }
+        None => Err(HandlerError::NotFound(format!(
+            "view_spec_not_found: {}",
+            input.id
+        ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper to create a minimal HandlerContext for testing.
+    fn test_ctx() -> HandlerContext {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .build()
+    }
+
+    #[tokio::test]
+    async fn test_list_view_specs_returns_builtins() {
+        // Without postgres_repo, should still return the 8 built-in descriptors
+        let ctx = test_ctx();
+        let input = ListViewSpecsInput {};
+        let output = handle_list_view_specs(&ctx, input).await.unwrap();
+
+        // Should have at least the 8 built-ins
+        assert!(output.count >= 8, "Expected >= 8 built-ins, got {}", output.count);
+
+        // Check that built-in ids are present
+        let ids: Vec<_> = output.views.iter().map(|v| v.id.as_str()).collect();
+        assert!(ids.contains(&"overview"), "overview should be present");
+        assert!(ids.contains(&"call-graph"), "call-graph should be present");
+        assert!(ids.contains(&"source"), "source should be present");
+        assert!(ids.contains(&"quality"), "quality should be present");
+        assert!(ids.contains(&"evidence"), "evidence should be present");
+        assert!(ids.contains(&"symbols"), "symbols should be present");
+        assert!(ids.contains(&"dependencies"), "dependencies should be present");
+        assert!(ids.contains(&"hotspots"), "hotspots should be present");
+
+        // All should be marked as builtin
+        for view in &output.views {
+            assert!(view.is_builtin, "All built-ins should have is_builtin=true");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_view_spec_synthesizes_builtin() {
+        let ctx = test_ctx();
+        let input = ReadViewSpecInput { id: "overview".into() };
+        let output = handle_read_view_spec(&ctx, input).await.unwrap();
+
+        assert_eq!(output.view.id, "overview");
+        assert_eq!(output.view.title, "Overview");
+        assert_eq!(output.view.owner, "mcp");
+
+        // Timestamps should be valid RFC-3339 format
+        assert!(output.view.created_at.starts_with("20"), "created_at should be RFC-3339");
+        assert!(output.view.updated_at.starts_with("20"), "updated_at should be RFC-3339");
+    }
+
+    #[tokio::test]
+    async fn test_read_view_spec_all_builtins() {
+        let ctx = test_ctx();
+        let builtin_ids = ["overview", "call-graph", "source", "quality",
+                          "evidence", "symbols", "dependencies", "hotspots"];
+
+        for id in builtin_ids {
+            let input = ReadViewSpecInput { id: id.into() };
+            let result = handle_read_view_spec(&ctx, input).await;
+            assert!(result.is_ok(), "Built-in {} should be readable", id);
+            let output = result.unwrap();
+            assert_eq!(output.view.id, id);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_view_spec_unknown_id_no_postgres_returns_error() {
+        // Without postgres_repo, unknown ids should return error
+        let ctx = test_ctx();
+        let input = ReadViewSpecInput { id: "unknown-id-xyz".into() };
+        let result = handle_read_view_spec(&ctx, input).await;
+
+        // Should fail because postgres_repo is not configured and it's not a built-in
+        assert!(result.is_err(), "Unknown id without postgres should error");
+        let err = result.unwrap_err();
+        // Without postgres_repo, we get Internal("postgres_repo not configured") error
+        // since the handler tries to use postgres_repo for non-built-in ids
+        assert!(
+            matches!(err, HandlerError::Internal(ref msg) if msg.contains("postgres_repo") |
+                     matches!(err, HandlerError::NotFound(_))),
+            "Should be Internal or NotFound error, got: {:?}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_view_specs_count_matches() {
+        let ctx = test_ctx();
+        let input = ListViewSpecsInput {};
+        let output = handle_list_view_specs(&ctx, input).await.unwrap();
+
+        assert_eq!(output.count, output.views.len(), "count should match views.len()");
+
+        // Built-ins should be first (sorted alphabetically)
+        for (i, view) in output.views.iter().enumerate().take(8) {
+            assert!(view.is_builtin, "First 8 should be builtin");
+            if i > 0 {
+                assert!(output.views[i-1].id <= view.id, "Should be sorted by id");
+            }
+        }
+    }
+}

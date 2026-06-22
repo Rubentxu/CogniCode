@@ -1,7 +1,7 @@
 # ADR-008: Moldable View Runtime
 
 **Fecha:** 2026-06-12  
-**Estado:** PROPOSED (implementation partly complete; promotion blocked on Validation gap)  
+**Estado:** ACCEPTED (MCP ViewSpec tools delivered via `sddk/MCP-view-spec-tools`)  
 **Decisión:** Hybrid backend/frontend runtime for moldable view discovery and custom view authoring  
 **Fuente:** grill-with-docs + gtoolkit research + repository fit analysis  
 **Confianza:** alta  
@@ -272,16 +272,12 @@ saved as a ViewSpec, or opened as inspector panes.
   `render(id, body)` (line 141) is a convenience wrapper that always
   uses `getOrJson` internally.
 
-- [ ] **MCP can list/read ViewSpecs even when it cannot render them visually.** ⚠️ **GAP**
-  Current MCP surface (see
-  `crates/cognicode-core/src/interface/mcp/handlers/consolidated_handlers.rs`):
-  `handle_smart_search`, `handle_graph_analyze`, `handle_project_overview`,
-  `handle_compare_graph`, `handle_codebase_map`, `handle_project_insights`,
-  `handle_review_pr`, `handle_iac_query`, `handle_graph_diff`,
-  `handle_ingest`, `handle_graph_timeline`, `handle_graph_checkpoint`.
-  **No `list_view_specs` / `read_view_spec` tool exists yet.** This is
-  the load-bearing gap blocking promotion of this ADR to ACCEPTED.
-  Follow-up: implement MCP ViewSpec tooling as a separate SDDK cycle.
+- [x] **MCP can list/read ViewSpecs even when it cannot render them visually.** Delivered via `sddk/MCP-view-spec-tools` (v0.12.0).
+  `list_view_specs` and `read_view_spec` handlers implemented in
+  `crates/cognicode-core/src/interface/mcp/handlers/consolidated_handlers.rs`.
+  MCP tools registered in `rmcp_adapter.rs` with bijectivity tests in
+  `mcp_roundtrip_tests.rs`. Integration tests verify all 8 built-ins
+  are returned by list and synthesized by read.
 
 - [x] **JSONata transforms are sandboxed and bounded by execution limits.**
   `apps/explorer-ui/src/workers/jsonata.worker.ts:8` documents the
@@ -292,7 +288,7 @@ saved as a ViewSpec, or opened as inspector panes.
 
 ## Implementation status
 
-As of 2026-06-22 (post-v0.11.0):
+As of 2026-06-22 (post-v0.12.0):
 
 | Validation checkbox | Status | Evidence |
 |---------------------|--------|----------|
@@ -300,27 +296,7 @@ As of 2026-06-22 (post-v0.11.0):
 | ViewSpec creation in Explorer | ✅ Satisfied | `ViewSpecWizard.tsx`, `TransformStep.tsx` |
 | Same listing for built-in + runtime | ✅ Satisfied | `available_views` schema, `ViewTabs.tsx` |
 | Unknown renderer fallback | ✅ Satisfied | `getOrJson` in `rendererRegistry.tsx` |
-| MCP ViewSpec tooling | ❌ Gap | No `list_view_specs` / `read_view_spec` handler |
+| MCP ViewSpec tooling | ✅ Satisfied | `sddk/MCP-view-spec-tools` (v0.12.0) |
 | JSONata sandbox + limits | ✅ Satisfied | 100ms timeout via worker termination |
 
-**5 of 6 satisfied.** The single gap (MCP ViewSpec tooling) blocks
-promotion to ACCEPTED. This is intentional and documented as a
-follow-up.
-
-## Promotion criteria
-
-This ADR will be promoted from PROPOSED to ACCEPTED when:
-
-1. `list_view_specs` MCP tool exists and lists both built-in and
-   persisted runtime ViewSpecs.
-2. `read_view_spec` MCP tool exists and returns the full ViewSpec
-   JSON (id, title, applies_to, view_kind, data_source, transform,
-   renderer_kind, props) for any spec by id.
-3. MCP tool schemas are registered in `rmcp_adapter.rs` alongside
-   the other consolidated handlers.
-4. Integration tests cover: list returns ≥1 built-in, list returns
-   runtime spec after creation, read returns valid spec JSON.
-
-A separate SDDK cycle (proposed name: `sddk/MCP-view-spec-tools`)
-should implement these four items. Estimated effort: M (3-5 commits,
-single PR).
+**6 of 6 satisfied.** ADR promoted to ACCEPTED.

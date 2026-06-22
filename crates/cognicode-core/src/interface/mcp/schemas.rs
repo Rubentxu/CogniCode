@@ -2444,3 +2444,64 @@ pub struct SolidReport {
     pub summary: String,
 }
 
+// ============================================================================
+// ViewSpec Tools (ADR-008)
+// ============================================================================
+
+/// Lightweight view descriptor used in list responses.
+/// Mirrors cognicode_explorer::dto::ViewDescriptor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ViewDescriptor {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub is_builtin: bool,
+    /// Source tag: "runtime" for persisted specs, None for built-ins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+/// Full ViewSpec with all 10 fields.
+/// Mirrors cognicode_explorer::dto::ViewSpec (with String timestamps).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ViewSpec {
+    pub id: String,
+    pub title: String,
+    pub applies_to: String,
+    pub view_kind: String,
+    pub data_source: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<serde_json::Value>,
+    pub renderer_kind: String,
+    #[serde(default)]
+    pub props: serde_json::Value,
+    /// ISO-8601 UTC timestamp.
+    pub created_at: String,
+    /// ISO-8601 UTC timestamp.
+    pub updated_at: String,
+    pub owner: String,
+}
+
+/// Input for list_view_specs (empty for v1).
+#[derive(Debug, Default, Deserialize)]
+pub struct ListViewSpecsInput {}
+
+/// Output for list_view_specs.
+#[derive(Debug, Serialize)]
+pub struct ListViewSpecsOutput {
+    pub count: usize,
+    pub views: Vec<ViewDescriptor>,
+}
+
+/// Input for read_view_spec.
+#[derive(Debug, Deserialize)]
+pub struct ReadViewSpecInput {
+    pub id: String,
+}
+
+/// Output for read_view_spec.
+#[derive(Debug, Serialize)]
+pub struct ReadViewSpecOutput {
+    pub view: ViewSpec,
+}
+

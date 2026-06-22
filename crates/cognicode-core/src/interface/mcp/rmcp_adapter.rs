@@ -1232,6 +1232,27 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                         Arc::new(serde_json::json!({"type":"object","properties":{"files":{"type":"array","items":{"type":"string"},"description":"Changed file paths"}},"required":["files"]}).as_object().cloned().unwrap()),
                     )
                     .with_meta(cognicode_meta("stable", "composite", false, false, 2000)),
+                    Tool::new(
+                        "list_view_specs",
+                        "List all ViewSpecs visible to the current workspace (built-in + persisted runtime). Returns descriptors (id, title, is_builtin, source). Use read_view_spec to fetch the full 10-field JSON for any spec.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {}
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("stable", "view", false, false, 100)),
+                    Tool::new(
+                        "read_view_spec",
+                        "Read a full ViewSpec by id (built-in kebab id like 'overview', 'call-graph'; or runtime UUID). Returns the complete 10-field ViewSpec JSON. Built-in specs synthesize with empty data_source/transform/props — use list_view_specs for discovery.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "string", "description": "ViewSpec id (built-in kebab id or UUID)" }
+                            },
+                            "required": ["id"]
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("stable", "view", false, false, 100)),
 
     ]
 }
@@ -2038,6 +2059,27 @@ async fn call_tool_handler(
                 )
                 .await?;
             Ok(serde_json::to_string_pretty(&output)?)
+        }
+        // ViewSpec tools (ADR-008)
+        "list_view_specs" => {
+            let input: crate::interface::mcp::schemas::ListViewSpecsInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::consolidated_handlers::handle_list_view_specs(
+                    ctx, input,
+                )
+                .await?;
+            Ok(serde_json::to_string(&output)?)
+        }
+        "read_view_spec" => {
+            let input: crate::interface::mcp::schemas::ReadViewSpecInput =
+                serde_json::from_value(arguments.into())?;
+            let output =
+                crate::interface::mcp::handlers::consolidated_handlers::handle_read_view_spec(
+                    ctx, input,
+                )
+                .await?;
+            Ok(serde_json::to_string(&output)?)
         }
 
         _ => return Err(InterfaceError::ToolNotFound(tool_name.to_string())),
