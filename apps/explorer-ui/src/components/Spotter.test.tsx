@@ -30,7 +30,7 @@ import { inspectableObjectFixture } from "../mocks/fixtures";
 /**
  * Harness — real `appReducer` + a callback that captures the latest
  * state after each render. Mirrors the pattern used by the
- * MillerColumns / Shell tests so we can assert on dispatched
+ * Shell tests so we can assert on dispatched
  * actions via the resulting state shape.
  */
 function Harness({
