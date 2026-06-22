@@ -41,6 +41,24 @@
   --color-severity-medium: #d29922;
   --color-severity-low: #aab1ba;
 
+  /* ── Syntax highlighting tokens (dark theme) ─────────────────────────── */
+  --color-syntax-keyword: #ff7b72;     /* fn, let, const, if, else, return... */
+  --color-syntax-string: #a5d6ff;       /* "hello", 'world', `template` */
+  --color-syntax-comment: #8b949e;      /* // comment, /* block */ */
+  --color-syntax-function: #d2a8ff;    /* functionName, method calls */
+  --color-syntax-number: #79c0ff;      /* 42, 3.14, 0xFF */
+  --color-syntax-operator: #ff7b72;     /* +, -, *, /, =, ==, => */
+  --color-syntax-punctuation: #e6edf3;  /* (), {}, [], ;, , */
+  --color-syntax-variable: #ffa657;     /* variable names */
+  --color-syntax-tag: #7ee787;          /* HTML/XML tag names */
+  --color-syntax-attr-name: #79c0ff;   /* attribute names in tags */
+  --color-syntax-attr-value: #a5d6ff;  /* attribute values */
+  --color-syntax-builtin: #ff7b72;     /* built-in types/classes */
+  --color-syntax-class-name: #f0883e;   /* class names, types */
+  --color-syntax-regex: #7ee787;        /* /regex/ patterns */
+  --color-syntax-symbol: #79c0ff;       /* symbols, constants */
+  --color-syntax-deleted: #ff7b72;     /* deleted code markers */
+
   /* ── Spacing tokens (Explorer-specific) ─────────────────────────────── */
   --spacing-panel-gap: 1px;          /* Hairline gap between panels */
   --spacing-column-min-width: 12rem; /* Miller Columns minimum width */
@@ -102,4 +120,72 @@
 [role="listbox"]:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: -2px;
+}
+
+/* =============================================================================
+   Syntax highlighting token classes — dark theme
+   Each class maps a Prism token type to the corresponding CSS variable.
+   ============================================================================= */
+.token {
+  /* Base token — inherits color from parent unless overridden */
+}
+
+.token.token-keyword {
+  color: var(--color-syntax-keyword);
+}
+.token.token-string {
+  color: var(--color-syntax-string);
+}
+.token.token-comment {
+  color: var(--color-syntax-comment);
+  font-style: italic;
+}
+.token.token-function,
+.token.token-method {
+  color: var(--color-syntax-function);
+}
+.token.token-number,
+.token.token.operator {
+  color: var(--color-syntax-number);
+}
+.token.token-operator {
+  color: var(--color-syntax-operator);
+}
+.token.token-punctuation {
+  color: var(--color-syntax-punctuation);
+}
+.token.token-variable,
+.token.token.variable-name {
+  color: var(--color-syntax-variable);
+}
+.token.token-tag {
+  color: var(--color-syntax-tag);
+}
+.token.token-attr-name {
+  color: var(--color-syntax-attr-name);
+}
+.token.token-attr-value {
+  color: var(--color-syntax-attr-value);
+}
+.token.token-builtin {
+  color: var(--color-syntax-builtin);
+}
+.token.token-class-name,
+.token.token.type {
+  color: var(--color-syntax-class-name);
+}
+.token.token-regex {
+  color: var(--color-syntax-regex);
+}
+.token.token-symbol,
+.token.token.constant {
+  color: var(--color-syntax-symbol);
+}
+.token.token-deleted {
+  color: var(--color-syntax-deleted);
+  text-decoration: line-through;
+}
+.token.token-plaintext,
+.token.token-plain {
+  color: inherit;
 }
