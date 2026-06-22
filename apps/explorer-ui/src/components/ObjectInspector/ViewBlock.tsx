@@ -25,6 +25,19 @@ import {
 } from "./blockRendererRegistry";
 
 // ============================================================================
+// Extra context type (subset of RuntimeContext — only what blocks need)
+// ============================================================================
+
+/**
+ * The subset of RuntimeContext that block renderers care about.
+ * Interactive blocks (callers, callees, hotspots, quality_issue_detail)
+ * use `onSelectObject`. The rest ignore extra entirely.
+ */
+export interface BlockExtra {
+  onSelectObject?: (objectId: string) => void;
+}
+
+// ============================================================================
 // Public component
 // ============================================================================
 
@@ -71,6 +84,13 @@ export function ViewBlock({ block, onSelectObject }: ViewBlockProps) {
 
 export interface BlocksProps {
   view: ContextualView;
+  /**
+   * Optional navigation callback. When provided, interactive block items
+   * become clickable.
+   *
+   * E1.5 (PaneInspector): passed via `extra.onSelectObject` from runtimeContext.
+   * Legacy / tests: passed directly as the `onSelectObject` prop.
+   */
   onSelectObject?: (objectId: string) => void;
 }
 
