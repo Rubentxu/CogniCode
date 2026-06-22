@@ -129,3 +129,65 @@ describe("detectLanguage", () => {
     expect(detectLanguage("file.")).toBe(undefined);
   });
 });
+
+// ============================================================================
+// resolveSignatureLanguage — content heuristic (T3.2)
+// ============================================================================
+
+import { resolveSignatureLanguage } from "./languageDetect";
+
+describe("resolveSignatureLanguage", () => {
+  it('detects "rust" from fn signature', () => {
+    expect(resolveSignatureLanguage("fn build_overview() {")).toBe("rust");
+  });
+
+  it('detects "rust" from pub fn signature', () => {
+    expect(resolveSignatureLanguage("pub fn main() {")).toBe("rust");
+  });
+
+  it('detects "rust" from impl block', () => {
+    expect(resolveSignatureLanguage("impl Display for Error {")).toBe("rust");
+  });
+
+  it('detects "rust" from struct definition', () => {
+    expect(resolveSignatureLanguage("struct MyStruct {")).toBe("rust");
+  });
+
+  it('detects "python" from def signature', () => {
+    expect(resolveSignatureLanguage("def hello(name):")).toBe("python");
+  });
+
+  it('detects "python" from def signature', () => {
+    expect(resolveSignatureLanguage("def hello(name):")).toBe("python");
+  });
+
+  it('detects "python" from import statement', () => {
+    expect(resolveSignatureLanguage("import os")).toBe("python");
+    expect(resolveSignatureLanguage("from typing import List")).toBe("python");
+  });
+
+  it('detects "go" from func signature', () => {
+    expect(resolveSignatureLanguage("func main() {")).toBe("go");
+  });
+
+  it('detects "go" from type declaration', () => {
+    expect(resolveSignatureLanguage("type Result struct {")).toBe("go");
+  });
+
+  it('detects "typescript" from function keyword', () => {
+    expect(resolveSignatureLanguage("function handleRequest() {")).toBe("typescript");
+  });
+
+  it('detects "typescript" from const/let/var', () => {
+    expect(resolveSignatureLanguage("const x: number = 1;")).toBe("typescript");
+    expect(resolveSignatureLanguage("let name: string = \"\";")).toBe("typescript");
+  });
+
+  it("returns undefined for unrecognized signature", () => {
+    expect(resolveSignatureLanguage("some random text")).toBeUndefined();
+  });
+
+  it("returns undefined for empty string", () => {
+    expect(resolveSignatureLanguage("")).toBeUndefined();
+  });
+});

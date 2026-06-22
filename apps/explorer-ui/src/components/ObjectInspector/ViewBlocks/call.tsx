@@ -10,12 +10,12 @@ import type {
   SourceSliceBlockBody,
   ViewBlock,
 } from "../../../api/types";
-import { detectLanguage } from "../../../utils/languageDetect";
+import { detectLanguage, resolveSignatureLanguage } from "../../../utils/languageDetect";
 import {
   tokenizePrism,
   splitTokensByNewline,
 } from "../../../utils/highlight-core";
-import { renderTokens } from "../../../utils/highlight";
+import { renderTokens, highlightCode } from "../../../utils/highlight";
 import { BlockShell, Stat } from "./shared";
 import type { CallListProps } from "./types";
 import {
@@ -48,15 +48,17 @@ export function CallMetricsView({
 // SignatureView
 // ============================================================================
 
-// file prop used in T3.2 for language detection via detectLanguage
 export function SignatureView({
   block,
-  file: _file,
+  file,
 }: {
   block: ViewBlock & { body: { signature: string } };
   file?: string;
 }) {
-  void _file; // T3.2: will use file for detectLanguage call
+  // Primary: detect from file extension. Fallback: content heuristic.
+  const language =
+    detectLanguage(file ?? "") ?? resolveSignatureLanguage(block.body.signature);
+
   return (
     <BlockShell id={block.id} title={block.title}>
       <pre
@@ -67,7 +69,7 @@ export function SignatureView({
           color: "var(--color-text-primary)",
         }}
       >
-        <code>{block.body.signature}</code>
+        <code>{highlightCode(block.body.signature, language)}</code>
       </pre>
     </BlockShell>
   );

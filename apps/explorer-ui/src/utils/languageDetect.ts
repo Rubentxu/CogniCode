@@ -75,3 +75,34 @@ export function detectLanguage(filePath: string): PrismLanguage | undefined {
   const ext = lastSegment.slice(lastDotIndex);
   return EXT_TO_LANG[ext];
 }
+
+// ============================================================================
+// Signature content heuristic (fallback when no file path available)
+// ============================================================================
+
+/**
+ * Heuristic language detection from code signature content.
+ * Used as fallback when the file path is unavailable (T3.2).
+ *
+ * @param signature - the signature/block body text (e.g. "fn main() {")
+ */
+export function resolveSignatureLanguage(signature: string): PrismLanguage | undefined {
+  if (!signature) return undefined;
+
+  const leading = signature.trimStart();
+
+  if (/^\s*(fn|pub\s+fn|impl|struct|enum|trait)\b/.test(leading)) {
+    return "rust";
+  }
+  if (/^\s*(def|class|import|from)\b/.test(leading)) {
+    return "python";
+  }
+  if (/^\s*(func|package|type)\b/.test(leading)) {
+    return "go";
+  }
+  if (/^\s*(function|const|let|var|interface|type)\b/.test(leading)) {
+    return "typescript";
+  }
+
+  return undefined;
+}
