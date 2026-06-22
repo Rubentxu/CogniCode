@@ -34,12 +34,12 @@
 **Goal:** `rendererRegistry` becomes the authoritative render pipeline. No
 ad-hoc rendering paths.
 
-**Status (2026-06-22): ✅ Complete — 5/5 done. E1.4 and E1.5 are now live.**
+**Status (2026-06-22): ✅ Complete — 5/5 done. E1.2 syntax highlighting now live via PrismJS (v0.11.0).**
 
 | ID | Task | Status | Notes |
 |----|------|--------|-------|
 | E1.1 | Wire `rendererRegistry["graph"]` to real `InteractiveGraph` (not placeholder) | ✅ Done | `rendererRegistry.tsx:227-273` maps `graph` kind to `GraphRenderer` → `<InteractiveGraph>` |
-| E1.2 | Wire `rendererRegistry["code"]` to a real code renderer (syntax highlight) | ⚠️ Partial | `CodeRenderer` is a bare `<pre><code>` — no syntax highlighting library |
+| E1.2 | Wire `rendererRegistry["code"]` to a real code renderer (syntax highlight) | ✅ Done | PrismJS + selective language imports (16 grammars); `detectLanguage`, `highlight`, `splitTokensByNewline` primitives; applied to `SourceView`, `SignatureView`, `CodeRenderer`; `getByText` → `textContent` fallback pattern documented (`4443a1b..49b54ba`) |
 | E1.3 | Wire `rendererRegistry["tree"]` to a real tree component | ✅ Done | `TreeRenderer` with recursive `TreeNode` + expand/collapse |
 | E1.4 | Make `ViewBlock` rendering go through `rendererRegistry` exclusively | ✅ Done | `blockRendererRegistry` created with all 29 blocks registered; 27-case `switch` removed (`b1cb450`) |
 | E1.5 | Remove parallel rendering paths (ad-hoc switches in components) | ✅ Done | `PaneInspector` now routes all rendering through `resolveRenderStrategy`; `isGraphViewKind` short-circuit removed (`daa9300`) |
