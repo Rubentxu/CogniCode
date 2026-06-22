@@ -12,6 +12,8 @@
  */
 import type { ReactNode } from "react";
 
+import { detectLanguage } from "../utils/languageDetect";
+import { highlightCode } from "../utils/highlight";
 import type { RendererKind } from "../api/schemas";
 import type { ContextualView } from "../api/types";
 import { GraphView } from "./GraphView/GraphView";
@@ -363,8 +365,9 @@ function TreeNode({
 const React = require("react") as typeof import("react");
 
 function CodeRenderer({ body }: { body: unknown }) {
-  const b = body as { code?: string; language?: string } | null;
+  const b = body as { code?: string; language?: string; file?: string } | null;
   const code = b?.code ?? JSON.stringify(body, null, 2);
+  const language = b?.language ?? detectLanguage(b?.file ?? "");
   return (
     <div data-testid="renderer-code">
       <pre
@@ -375,7 +378,7 @@ function CodeRenderer({ body }: { body: unknown }) {
           color: "var(--color-text-primary)",
         }}
       >
-        <code>{code}</code>
+        <code>{highlightCode(code, language)}</code>
       </pre>
     </div>
   );

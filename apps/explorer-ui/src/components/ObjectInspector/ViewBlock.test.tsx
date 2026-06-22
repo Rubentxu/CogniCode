@@ -83,7 +83,10 @@ describe("ViewBlock — union routing", () => {
     expect(screen.getByTestId("view-block-source_slice")).toBeInTheDocument();
     expect(screen.getByTestId("source-line-10")).toBeInTheDocument();
     expect(screen.getByTestId("source-line-11")).toBeInTheDocument();
-    expect(screen.getByText("fn build_overview() {")).toBeInTheDocument();
+    // getByText no longer works here because syntax highlighting wraps the
+    // line text in <span className="token token-*" /> elements.
+    // Fallback: verify textContent via data-testid (T2.1 fallback per tasks.md Q1).
+    expect(screen.getByTestId("source-line-10").textContent).toContain("fn build_overview() {");
   });
 
   it("renders the file_quality_gate block with the rating chip", () => {
@@ -179,10 +182,12 @@ describe("ViewBlock — union routing", () => {
       body: { signature: "fn build_overview() -> ContextualView" },
     };
     render(<ViewBlock block={block} />);
-    expect(screen.getByTestId("view-block-signature")).toBeInTheDocument();
-    expect(
-      screen.getByText("fn build_overview() -> ContextualView"),
-    ).toBeInTheDocument();
+    const shell = screen.getByTestId("view-block-signature");
+    expect(shell).toBeInTheDocument();
+    // getByText no longer works here because syntax highlighting wraps the
+    // signature text in <span className="token token-*" /> elements.
+    // Fallback: verify textContent includes the signature.
+    expect(shell.textContent ?? "").toContain("fn build_overview() -> ContextualView");
   });
 
   it("renders the cross_scope block as a 3-col table", () => {
