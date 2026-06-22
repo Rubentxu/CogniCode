@@ -36,8 +36,6 @@ const FIRST_RESULT_INDEX = 0;
 const SECOND_RESULT_INDEX = 1;
 
 test.describe("Explorer pane-stack flows", () => {
-  test.use({ screenshot: "on" });
-
   test("P3.1 — first pane renders object inspector", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible();

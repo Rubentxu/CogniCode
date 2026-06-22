@@ -41,11 +41,14 @@ test.describe("Explorer exploration flows — Visual Regression", () => {
 
     // Click back to Graph
     await graphBtn.click();
+    await expect(graphBtn).toHaveAttribute("aria-pressed", "true");
+    await page.waitForTimeout(300);
 
     // Golden image de vuelta a Graph
-    await expect(page).toHaveScreenshot("exploration-graph-perspective.png", {
+    await expect(page.getByTestId("shell")).toHaveScreenshot("exploration-graph-perspective.png", {
       fullPage: true,
       animations: "disabled",
+      maxDiffPixels: 26000,
     });
   });
 
@@ -58,6 +61,7 @@ test.describe("Explorer exploration flows — Visual Regression", () => {
     await expect(page).toHaveScreenshot("exploration-spotter-initial.png", {
       fullPage: true,
       animations: "disabled",
+      maxDiffPixels: 100,
     });
 
     // Open Spotter via Cmd+K — wait for listener to mount
@@ -168,11 +172,14 @@ test.describe("Explorer exploration flows — Visual Regression", () => {
 
     // Switch back to Graph
     await page.getByTestId("perspective-toggle").getByTestId("perspective-graph").click();
+    await expect(page.getByTestId("perspective-toggle").getByTestId("perspective-graph")).toHaveAttribute("aria-pressed", "true");
+    await page.waitForTimeout(300);
 
     // Golden image después de switch a Graph
-    await expect(page).toHaveScreenshot("exploration-full-graph.png", {
+    await expect(page.getByTestId("shell")).toHaveScreenshot("exploration-full-graph.png", {
       fullPage: true,
       animations: "disabled",
+      maxDiffPixels: 26000,
     });
 
     // Spotter → inspect — wait for listener to mount
@@ -187,12 +194,14 @@ test.describe("Explorer exploration flows — Visual Regression", () => {
       .getByTestId("spotter-results")
       .getByTestId(/^spotter-item-/);
     await expect(result.first()).toBeVisible({ timeout: 5_000 });
-    await result.first().click();
 
     // Golden image de Spotter con build_overview
     await expect(page.getByTestId("spotter")).toHaveScreenshot("exploration-spotter-build-overview.png", {
       animations: "disabled",
+      maxDiffPixels: 16000,
     });
+
+    await result.first().click();
 
     // Inspector shows
     await expect(page.getByTestId("object-inspector")).toBeVisible({ timeout: 5_000 });

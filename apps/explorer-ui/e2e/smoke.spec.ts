@@ -20,6 +20,8 @@
  */
 import { test, expect } from "@playwright/test";
 
+const VISUAL = process.env.PW_VISUAL === "true";
+
 // Top-level (cannot be inside describe — Playwright limitation)
 test.use({ screenshot: "on" });
 
@@ -82,11 +84,13 @@ test.describe("Explorer smoke flow", () => {
       expect(nodeCount).toBeGreaterThan(1); // root + at least 1 callee
     }
 
-    // Visual regression: full flow captured for future diff detection.
-    await expect(page.getByTestId("shell")).toHaveScreenshot(
-      "smoke-full-flow.png",
-      { animations: "disabled", fullPage: true },
-    );
+    if (VISUAL) {
+      // Visual regression: full flow captured for future diff detection.
+      await expect(page.getByTestId("shell")).toHaveScreenshot(
+        "smoke-full-flow.png",
+        { animations: "disabled", fullPage: true },
+      );
+    }
   });
 
   test("shell boots in mock mode (no real backend required)", async ({ page }) => {

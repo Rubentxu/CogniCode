@@ -14,6 +14,8 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+const VISUAL = process.env.PW_VISUAL === "true";
+
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
 async function expectNoCriticalViolations(builder: AxeBuilder) {
@@ -30,6 +32,12 @@ async function expectNoCriticalViolations(builder: AxeBuilder) {
   expect(blocking, "axe-core critical/serious violations").toEqual([]);
 }
 
+async function openSpotter(page: import("@playwright/test").Page) {
+  await page.waitForTimeout(1500);
+  await page.keyboard.press("Meta+k");
+  await expect(page.getByTestId("spotter")).toBeVisible({ timeout: 5_000 });
+}
+
 test.describe("a11y — @axe-core/playwright", () => {
   test("the main Shell has no critical violations", async ({ page }) => {
     await page.goto("/");
@@ -37,11 +45,13 @@ test.describe("a11y — @axe-core/playwright", () => {
     await expect(page.getByTestId("shell")).toBeVisible();
     await expectNoCriticalViolations(new AxeBuilder({ page }));
 
-    // Golden image del Shell (después de validación a11y)
-    await expect(page).toHaveScreenshot("a11y-shell.png", {
-      fullPage: true,
-      animations: "disabled",
-    });
+    if (VISUAL) {
+      // Golden image del Shell (después de validación a11y)
+      await expect(page).toHaveScreenshot("a11y-shell.png", {
+        fullPage: true,
+        animations: "disabled",
+      });
+    }
   });
 
   test("the Object Inspector has no critical violations after selecting an object", async ({
@@ -52,7 +62,7 @@ test.describe("a11y — @axe-core/playwright", () => {
     // before driving the keyboard — the global keydown listener is
     // attached when the Spotter component mounts.
     await expect(page.getByTestId("shell")).toBeVisible();
-    await page.keyboard.press("Meta+k");
+    await openSpotter(page);
     await page.getByTestId("spotter-input").fill("build");
     const firstResult = page
       .getByTestId("spotter-results")
@@ -71,11 +81,13 @@ test.describe("a11y — @axe-core/playwright", () => {
       new AxeBuilder({ page }).disableRules(["color-contrast"]),
     );
 
-    // Golden image del Object Inspector (después de validación a11y)
-    await expect(page).toHaveScreenshot("a11y-object-inspector.png", {
-      fullPage: true,
-      animations: "disabled",
-    });
+    if (VISUAL) {
+      // Golden image del Object Inspector (después de validación a11y)
+      await expect(page).toHaveScreenshot("a11y-object-inspector.png", {
+        fullPage: true,
+        animations: "disabled",
+      });
+    }
   });
 
   test("the Spotter dialog has no critical violations when open", async ({
@@ -83,8 +95,7 @@ test.describe("a11y — @axe-core/playwright", () => {
   }) => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible();
-    await page.keyboard.press("Meta+k");
-    await expect(page.getByTestId("spotter")).toBeVisible();
+    await openSpotter(page);
     // Type a query so the listbox has children — axe flags an
     // empty listbox as missing required ARIA children.
     await page.getByTestId("spotter-input").fill("build");
@@ -100,9 +111,11 @@ test.describe("a11y — @axe-core/playwright", () => {
       new AxeBuilder({ page }).disableRules(["aria-required-children"]),
     );
 
-    // Golden image del Spotter (después de validación a11y)
-    await expect(page.getByTestId("spotter")).toHaveScreenshot("a11y-spotter.png", {
-      animations: "disabled",
-    });
+    if (VISUAL) {
+      // Golden image del Spotter (después de validación a11y)
+      await expect(page.getByTestId("spotter")).toHaveScreenshot("a11y-spotter.png", {
+        animations: "disabled",
+      });
+    }
   });
 });

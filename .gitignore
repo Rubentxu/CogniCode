@@ -43,6 +43,8 @@ AGENTS.md
 .qwen/
 node_modules/
 *.png
+!apps/explorer-ui/e2e/*.ts-snapshots/*.png
+!tests/e2e/__snapshots__/*.png
 # Criticas y análisis (no comittear)
 critica-constructiva*.md
 

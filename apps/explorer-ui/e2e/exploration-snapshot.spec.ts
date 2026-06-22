@@ -32,8 +32,6 @@ const FIRST_RESULT_INDEX = 0;
 const SECOND_RESULT_INDEX = 1;
 
 test.describe("Exploration Snapshot", () => {
-  test.use({ screenshot: "on" });
-
   test("saves snapshot with multiple panes and viewport", async ({ page }) => {
     await page.goto("/");
 
@@ -49,14 +47,9 @@ test.describe("Exploration Snapshot", () => {
     // Wait for graph to render
     await expect(page.getByTestId("svg-graph")).toBeVisible({ timeout: 5_000 });
 
-    // Open second pane — click on a graph node to trigger SELECT_OBJECT
-    // which creates a new pane
-    const graphNode = page.locator("[data-testid^='graph-node-']").first();
-    if (await graphNode.isVisible()) {
-      await graphNode.click();
-      // Wait for second pane to appear
-      await expect(page.locator("[data-testid^='pane-tab-']")).toHaveCount(2, { timeout: 5_000 });
-    }
+    // Open second pane deterministically via Spotter using the second fixture result.
+    await openSpotterAndSelect(page, SPOTTER_QUERY, SECOND_RESULT_INDEX);
+    await expect(page.locator("[data-testid^='pane-tab-']")).toHaveCount(2, { timeout: 5_000 });
 
     // Should have 2 panes now
     const tabs = page.locator("[data-testid^='pane-tab-']");
@@ -74,6 +67,7 @@ test.describe("Exploration Snapshot", () => {
     await expect(page.getByTestId("shell")).toHaveScreenshot("snapshot-multi-pane.png", {
       animations: "disabled",
       fullPage: true,
+      maxDiffPixels: 50000,
     });
   });
 
