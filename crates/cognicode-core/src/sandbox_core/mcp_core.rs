@@ -110,8 +110,10 @@ impl McpServer {
             .spawn()
             .map_err(|e| McpError::SpawnError(e.to_string()))?;
 
-        let stdin = child.stdin.take().expect("no stdin");
-        let stdout = child.stdout.take().expect("no stdout");
+        let stdin = child.stdin.take()
+            .ok_or_else(|| McpError::SpawnError("failed to capture stdin from child process".into()))?;
+        let stdout = child.stdout.take()
+            .ok_or_else(|| McpError::SpawnError("failed to capture stdout from child process".into()))?;
         let stderr = child.stderr.take();
 
         Ok(Self {
