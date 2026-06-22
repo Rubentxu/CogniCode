@@ -25,7 +25,7 @@
 | C4 backend inference | ❌ Not implemented | `cognicode-diagram` crate planned in docs/planes/ |
 | Perspective toggle | ❌ Not implemented | `Graph ↔ C4` canvas morph |
 | Landing page | ❌ Not implemented | Graph overview with root nodes |
-| WebGL / Sigma.js | ❌ Future | Registered as evolution path |
+| WebGL / Sigma.js | ✅ Adopted (selective) | WebGL enabled for graphs ≥ 500 nodes; Sigma kept behind `BENCH_ENABLE_SIGMA=1` as exploration path |
 
 ---
 
@@ -142,7 +142,7 @@ workspace's crates and modules.
 
 | Milestone | Description |
 |-----------|-------------|
-| E7 renderer scale evaluation | Benchmark Cytoscape canvas vs Cytoscape WebGL preview, and escalate to Sigma.js only if thresholds fail |
+| E7 renderer scale evaluation | ✅ COMPLETED (ADR-041 Accepted, ADR-042 Accepted) — WebGL adopted selectively via PR #4 |
 | WASM graph transforms | Rust layout/clustering compiled to WASM for client-side compute |
 | C4 drift detection | Compare inferred C4 vs documented architecture (ADRs, CONTEXT.md) |
 | Dynamic view authoring | ViewSpec wizard as primary view creation (not just runtime extras) |
@@ -155,7 +155,7 @@ workspace's crates and modules.
 
 - [ADR-039](../adr/ADR-039-explorer-navigation-model.md) — This roadmap's ADR
 - [ADR-041](../adr/ADR-041-explorer-renderer-scale-evaluation.md) — E7 renderer scale evaluation path
-- [ADR-042](../adr/ADR-042-renderer-decision.md) — Renderer decision outcome placeholder
+- [ADR-042](../adr/ADR-042-renderer-decision.md) — Renderer decision: adopt Cytoscape WebGL selectively (≥500 nodes)
 - [ADR-038](../adr/ADR-038-sandbox-hardening-and-coverage.md) — Sandbox hardening
 - [ADR-034](../adr/ADR-034-mcp-production-readiness.md) — MCP production readiness
 
