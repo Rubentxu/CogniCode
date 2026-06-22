@@ -3,11 +3,11 @@
  * renderTokens, highlightCode.
  *
  * .tsx because renderTokens and highlightCode produce React nodes.
- * Prism grammars are loaded via the side-effect import in highlight.ts.
+ * Prism grammars are loaded via the side-effect import in highlight-core.ts.
  */
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import React from "react";
+
 import {
   tokenizePrism,
   splitTokensByNewline,
@@ -151,9 +151,9 @@ line three */`;
     const { tokens } = tokenizePrism(code, "rust");
     const result = splitTokensByNewline(tokens, 3);
     // Verify we get content on each line (block comment spans all lines)
-    expect(result[0].length).toBeGreaterThan(0);
-    expect(result[1].length).toBeGreaterThan(0);
-    expect(result[2].length).toBeGreaterThan(0);
+    expect(result[0]?.length ?? 0).toBeGreaterThan(0);
+    expect(result[1]?.length ?? 0).toBeGreaterThan(0);
+    expect(result[2]?.length ?? 0).toBeGreaterThan(0);
   });
 
   it("handles Python triple-quoted string spanning 2 lines", () => {
@@ -161,8 +161,8 @@ line three */`;
 world"""`;
     const { tokens } = tokenizePrism(code, "python");
     const result = splitTokensByNewline(tokens, 2);
-    expect(result[0].length).toBeGreaterThan(0);
-    expect(result[1].length).toBeGreaterThan(0);
+    expect(result[0]?.length ?? 0).toBeGreaterThan(0);
+    expect(result[1]?.length ?? 0).toBeGreaterThan(0);
   });
 
   it("returns empty array for lineCount 0", () => {
@@ -189,6 +189,49 @@ world"""`;
     const result = splitTokensByNewline(tokens, 3);
     // All parts after line 2 should go into the last line
     expect(result.length).toBe(3);
+  });
+
+  // --- T2.2: boundary tests for multiline tokens ---
+
+  it("multiline Rust block comment spans all 3 lines via token content", () => {
+    // Simulate: /* line1\nline2\nline3 */ as a single comment token
+    const tokens = [
+      { type: "comment", content: "/* line1\nline2\nline3 */" },
+    ];
+    const result = splitTokensByNewline(tokens, 3);
+    expect(result[0]?.length ?? 0).toBeGreaterThan(0);
+    expect(result[1]?.length ?? 0).toBeGreaterThan(0);
+    expect(result[2]?.length ?? 0).toBeGreaterThan(0);
+    // Each line should have the comment type
+    expect(result[0]?.[0]?.type).toBe("comment");
+    expect(result[1]?.[0]?.type).toBe("comment");
+    expect(result[2]?.[0]?.type).toBe("comment");
+  });
+
+  it("Python triple-quoted string preserves token continuity across 2 lines", () => {
+    const code = `"""hello
+world"""`;
+    const { tokens } = tokenizePrism(code, "python");
+    const result = splitTokensByNewline(tokens, 2);
+    expect(result[0]?.length ?? 0).toBeGreaterThan(0);
+    expect(result[1]?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("token with literal \\n in content splits across lines", () => {
+    const tokens = [{ type: "plaintext", content: "line1\nline2\nline3" }];
+    const result = splitTokensByNewline(tokens, 3);
+    expect(result[0]?.[0]?.content).toBe("line1");
+    expect(result[1]?.[0]?.content).toBe("line2");
+    expect(result[2]?.[0]?.content).toBe("line3");
+  });
+
+  it("line count mismatch (more lines than \\n boundaries) returns trailing empty arrays", () => {
+    const tokens = [{ type: "keyword", content: "fn main();" }];
+    const result = splitTokensByNewline(tokens, 5);
+    expect(result.length).toBe(5);
+    expect(result[0]?.[0]?.content).toBe("fn main();");
+    expect(result[1]).toEqual([]);
+    expect(result[2]).toEqual([]);
   });
 });
 
