@@ -334,6 +334,69 @@ impl ViewRegistry {
         descriptors
     }
 
+/// Returns all 8 built-in view descriptors without filtering by `applies_to`.
+///
+/// This is used by the MCP `list_view_specs` handler which must return
+/// all built-ins regardless of what object type is being inspected.
+/// Reuses `REAL_EXECUTOR_DESCRIPTORS` to avoid duplication.
+pub fn list_all_builtin_descriptors() -> Vec<ViewDescriptor> {
+    static REAL_EXECUTOR_DESCRIPTORS: OnceLock<Vec<ViewDescriptor>> = OnceLock::new();
+    REAL_EXECUTOR_DESCRIPTORS
+        .get_or_init(|| {
+            vec![
+                ViewDescriptor {
+                    id: "overview".into(),
+                    title: "Overview".into(),
+                    is_builtin: true,
+                    source: None,
+                },
+                ViewDescriptor {
+                    id: "call-graph".into(),
+                    title: "Call Graph".into(),
+                    is_builtin: true,
+                    source: None,
+                },
+                ViewDescriptor {
+                    id: "source".into(),
+                    title: "Source".into(),
+                    is_builtin: true,
+                    source: None,
+                },
+                ViewDescriptor {
+                    id: "quality".into(),
+                    title: "Quality".into(),
+                    is_builtin: true,
+                    source: None,
+                },
+                ViewDescriptor {
+                    id: "evidence".into(),
+                    title: "Evidence".into(),
+                    is_builtin: true,
+                    source: None,
+                },
+                ViewDescriptor {
+                    id: "symbols".into(),
+                    title: "Symbols".into(),
+                    is_builtin: true,
+                    source: None,
+                },
+                ViewDescriptor {
+                    id: "dependencies".into(),
+                    title: "Dependencies".into(),
+                    is_builtin: true,
+                    source: None,
+                },
+                ViewDescriptor {
+                    id: "hotspots".into(),
+                    title: "Hotspots".into(),
+                    is_builtin: true,
+                    source: None,
+                },
+            ]
+        })
+        .clone()
+}
+
     /// Look up a single view executor by id.
     ///
     /// Returns `None` when no capability with that id is registered.
