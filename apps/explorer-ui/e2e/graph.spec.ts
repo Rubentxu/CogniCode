@@ -17,8 +17,10 @@ test.describe("Explorer call-graph view", () => {
     await expect(page.getByTestId("shell")).toBeVisible();
 
     // Pick an object via the Spotter.
+    await page.waitForTimeout(1500);
     await page.keyboard.press("Meta+k");
     const input = page.getByTestId("spotter-input");
+    await expect(input).toBeVisible({ timeout: 5_000 });
     await input.fill("build");
     const firstResult = page
       .getByTestId("spotter-results")
@@ -31,13 +33,11 @@ test.describe("Explorer call-graph view", () => {
     await expect(graphTab).toBeVisible();
     await graphTab.click();
 
-    // The callers / callees block(s) are populated by the fixture.
-    // The hotspots block also surfaces the graph-y data.
-    // We assert the inspector body has at least one view block.
-    const body = page.getByTestId("object-inspector-body");
-    await expect(body).toBeVisible();
-    const blocks = body.getByTestId(/^view-block-/);
-    await expect(blocks.first()).toBeVisible();
+    const graphView = page.getByTestId("graph-view-renderer");
+    await expect(graphView).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId("svg-graph-canvas")).toBeVisible();
+    const nodes = page.locator("[data-testid^='graph-node-']");
+    await expect(nodes.first()).toBeVisible({ timeout: 3_000 });
   });
 
   test("clicking a hotspot navigates to the target object", async ({
@@ -45,7 +45,9 @@ test.describe("Explorer call-graph view", () => {
   }) => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible();
+    await page.waitForTimeout(1500);
     await page.keyboard.press("Meta+k");
+    await expect(page.getByTestId("spotter-input")).toBeVisible({ timeout: 5_000 });
     await page.getByTestId("spotter-input").fill("build");
     const firstResult = page
       .getByTestId("spotter-results")

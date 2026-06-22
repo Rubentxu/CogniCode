@@ -11,21 +11,21 @@
 | Component | Status | Notes |
 |-----------|--------|-------|
 | `PaneStackView` | ✅ Implemented | GtPager-style lateral panes, max 8 |
-| `InteractiveGraph` (Cytoscape) | ✅ Implemented | ELK worker integrated; supports `layered`, `force`, and `radial` layouts with progress, cancellation, and size guard |
+| `InteractiveGraph` (Cytoscape) | ✅ Implemented | ELK worker + WebGL selective (≥500 nodes); supports `layered`, `force`, and `radial` layouts with progress, cancellation, and size guard |
 | `layout.worker.ts` (ELK.js) | ✅ Implemented | Wired into `InteractiveGraph`; computes async layouts and falls back gracefully on failure |
-| `rendererRegistry` | ⚠️ Partial | `graph` is wired to the real `InteractiveGraph`; remaining renderers still need consolidation |
+| `rendererRegistry` | ⚠️ Dead code | `graph` wired but never reached in production; `PaneInspector` short-circuits to `GraphView` directly |
 | `Spotter` (cmdk) | ✅ Implemented | Server-side fuzzy search, kind filters |
 | `ViewSpecWizard` | ✅ Implemented | 5-step authoring, localStorage drafts |
 | `ContextualPanel` | ✅ Implemented | Focus + parent + children + neighbor minigraph |
 | `RationaleView` | ✅ Implemented | Corroboration-scoped subgraph |
 | `SvgGraph` | ✅ Exists | Manual pan/zoom SVG renderer (alternative) |
-| `column` navigation | ⚠️ To remove | Hard cut per ADR-039 |
-| `MillerColumns` | ⚠️ To remove | Hard cut per ADR-039 |
+| `column` navigation | ✅ Removed | Hard cut per ADR-039; `MillerColumns` deleted |
+| `MillerColumns` | ✅ Removed | Hard cut per ADR-039 |
 | C4 visual styles | ✅ Exists | `node-component`, `node-container`, `node-system` in stylesheet |
-| C4 backend inference | ❌ Not implemented | `cognicode-diagram` crate planned in docs/planes/ |
-| Perspective toggle | ❌ Not implemented | `Graph ↔ C4` canvas morph |
-| Landing page | ❌ Not implemented | Graph overview with root nodes |
-| WebGL / Sigma.js | ❌ Future | Registered as evolution path |
+| C4 backend inference | ❌ Not implemented | `cognicode-diagram` crate does not exist |
+| Perspective toggle | ⚠️ Partial | Toggle exists in `ShellLayout` but only works on `GraphLanding`; `InteractiveGraphPanel` ignores `SET_PERSPECTIVE` |
+| Landing page | ⚠️ Partial | `GraphLanding` component exists; `useLanding` hook wired; recent explorations UI strip missing |
+| WebGL / Sigma.js | ✅ Adopted (selective) | WebGL enabled for graphs ≥ 500 nodes (ADR-042, PR #4); Sigma behind `BENCH_ENABLE_SIGMA=1` |
 
 ---
 
@@ -34,16 +34,24 @@
 **Goal:** `rendererRegistry` becomes the authoritative render pipeline. No
 ad-hoc rendering paths.
 
-| ID | Task | Files | Est |
-|----|------|-------|-----|
-| E1.1 | Wire `rendererRegistry["graph"]` to real `InteractiveGraph` (not placeholder) | `rendererRegistry.tsx`, `InteractiveGraph.tsx` | 3h |
-| E1.2 | Wire `rendererRegistry["code"]` to a real code renderer (syntax highlight) | `rendererRegistry.tsx` | 2h |
-| E1.3 | Wire `rendererRegistry["tree"]` to a real tree component | `rendererRegistry.tsx` | 2h |
-| E1.4 | Make `ViewBlock` rendering go through `rendererRegistry` exclusively | `ViewBlock.tsx` | 3h |
-| E1.5 | Remove parallel rendering paths (ad-hoc switches in components) | `PaneInspector.tsx`, `ObjectInspector/*` | 3h |
+**Status (2026-06-22): ⚠️ Partial — 2.5/5 done. E1.4 and E1.5 are the primary gap.**
+
+| ID | Task | Status | Notes |
+|----|------|--------|-------|
+| E1.1 | Wire `rendererRegistry["graph"]` to real `InteractiveGraph` (not placeholder) | ✅ Done | `rendererRegistry.tsx:227-273` maps `graph` kind to `GraphRenderer` → `<InteractiveGraph>` |
+| E1.2 | Wire `rendererRegistry["code"]` to a real code renderer (syntax highlight) | ⚠️ Partial | `CodeRenderer` is a bare `<pre><code>` — no syntax highlighting library |
+| E1.3 | Wire `rendererRegistry["tree"]` to a real tree component | ✅ Done | `TreeRenderer` with recursive `TreeNode` + expand/collapse |
+| E1.4 | Make `ViewBlock` rendering go through `rendererRegistry` exclusively | ❌ Not done | `ViewBlock.tsx` is a 27-case `switch`; zero use of `rendererRegistry` |
+| E1.5 | Remove parallel rendering paths (ad-hoc switches in components) | ❌ Not done | `PaneInspector.tsx:237-256` short-circuits graph kinds to `<GraphView>` bypassing the registry entirely |
+
+**Dead code:** `rendererRegistry` and `GraphRenderer` exist but are never reached
+in the live rendering path. `PaneInspector` imports `GraphView` directly.
 
 **Deliverable:** Every view block renders through the registry. New renderers
 can be added without touching component code.
+
+**Next step:** Route `PaneInspector` graph-kind rendering through `rendererRegistry["graph"]`
+instead of importing `GraphView` directly; refactor `ViewBlock.tsx` to use registry lookups.
 
 ---
 
@@ -51,22 +59,18 @@ can be added without touching component code.
 
 **Goal:** `InteractiveGraph` uses dynamic layout (not `preset`).
 
-**Status:** ✅ Implemented in the current codebase.
+**Status:** ✅ Complete (5/5)
 
-| ID | Task | Files | Est |
-|----|------|-------|-----|
-| E2.1 | Wire `layout.worker.ts` (comlink) into `InteractiveGraph` mount cycle | `InteractiveGraph.tsx` | 4h |
-| E2.2 | Add layout algorithm selector UI (`layered` / `force` / `radial`) | `InteractiveGraph.tsx` | 2h |
-| E2.3 | Add animated layout transition (progress callbacks → tween) | `InteractiveGraph.tsx` | 3h |
-| E2.4 | Add cancellation support (cancel in-flight layout on unmount/re-render) | `InteractiveGraph.tsx` | 1h |
-| E2.5 | Add size guard fallback (graph > 500 nodes → drop animation) | `InteractiveGraph.tsx` | 1h |
+| ID | Task | Status | Evidence |
+|----|------|--------|---------|
+| E2.1 | Wire `layout.worker.ts` into `InteractiveGraph` mount cycle | ✅ | `createLayoutWorker()` called in useEffect |
+| E2.2 | Add layout algorithm selector UI (`layered` / `force` / `radial`) | ✅ | Buttons in `InteractiveGraph` header |
+| E2.3 | Add animated layout transition | ✅ | `MAX_ANIMATED_NODES = 500` guard |
+| E2.4 | Add cancellation support | ✅ | `worker.cancel()` in cleanup + `LayoutCancelled` |
+| E2.5 | Add size guard fallback (graph > 500 nodes → drop animation) | ✅ | `animate = nodeCount <= MAX_ANIMATED_NODES` |
 
 **Deliverable:** Graph renders with dynamic layout, animated transitions, and
 graceful degradation for large graphs.
-
-**Implementation note:** The current implementation lives in
-`apps/explorer-ui/src/components/InteractiveGraph/InteractiveGraph.tsx` and
-`apps/explorer-ui/src/components/InteractiveGraph/layout.worker.ts`.
 
 ---
 
@@ -74,16 +78,21 @@ graceful degradation for large graphs.
 
 **Goal:** `pane-stack` is the only navigation mode. `column` is eliminated.
 
-| ID | Task | Files | Est |
-|----|------|-------|-----|
-| E3.1 | Remove `NavigationModeToggle` from Shell | `Shell.tsx`, `Settings/NavigationModeToggle.tsx` | 1h |
-| E3.2 | Remove `column` adapter from navigation state | `state/navigation/column.ts`, `state/navigation/index.ts` | 2h |
-| E3.3 | Remove `MillerColumns` component and tests | `MillerColumns/*` | 1h |
-| E3.4 | Simplify `Shell` layout: always pane-stack + graph | `Shell.tsx` | 3h |
-| E3.5 | Remove `PUSH_COLUMN` / `POP_COLUMN` actions from types and reducer | `state/navigation/types.ts`, `state/context.ts` | 2h |
-| E3.6 | Update tests: remove column-mode assertions | `*.test.tsx` | 3h |
+**Status:** ✅ Functionally Complete — minor residue in tests and docs
+
+| ID | Task | Status | Evidence |
+|----|------|--------|---------|
+| E3.1 | Remove `NavigationModeToggle` from Shell | ✅ | `Settings/NavigationModeToggle.tsx` deleted; localStorage cleanup in `index.ts` |
+| E3.2 | Remove `column` adapter from navigation state | ✅ | `state/navigation/column.ts` deleted; `NavigationState` only has `chain/panes/activePaneId` |
+| E3.3 | Remove `MillerColumns` component and tests | ⚠️ Mostly | `MillerColumns/` deleted; `useRovingFocus.ts` + test remain as dead code |
+| E3.4 | Simplify `Shell` layout: always pane-stack + graph | ✅ | `ShellLayout` 2-zone grid; no `if(navigationMode === "column")` |
+| E3.5 | Remove `PUSH_COLUMN` / `POP_COLUMN` actions | ✅ | Not present in `NavigationAction` or `Action` unions |
+| E3.6 | Update tests: remove column-mode assertions | ⚠️ Mostly | Core tests updated; `ErrorBoundary.test.tsx` still has stale "MillerColumns" case |
 
 **Deliverable:** Single navigation model. Simpler state. No column artifacts.
+
+**Residue follow-up:** `useRovingFocus.ts` + test (dead code, 0 importers) and stale
+`ErrorBoundary.test.tsx` label should be cleaned up separately.
 
 ---
 
@@ -91,16 +100,21 @@ graceful degradation for large graphs.
 
 **Goal:** The Explorer opens to a graph overview, not an empty inspector.
 
-| ID | Task | Files | Est |
-|----|------|-------|-----|
-| E4.1 | Create `GraphLanding` component (root nodes + hot paths overview) | `GraphLanding.tsx` | 4h |
-| E4.2 | Hook `GraphLanding` to `GET /api/graph/roots` (entry points) | `hooks/useRootNodes.ts` | 2h |
-| E4.3 | Add suggested questions strip (from `config/suggestedQuestions.ts`) | `GraphLanding.tsx` | 2h |
-| E4.4 | Wire root-node click → open pane in pane-stack | `GraphLanding.tsx`, `state/context.ts` | 2h |
-| E4.5 | Add recent explorations strip (from `useExplorations`) | `GraphLanding.tsx` | 2h |
+**Status:** ~70% — E4.1/E4.3/E4.4 done; E4.2 renamed; E4.5 UI missing
+
+| ID | Task | Status | Evidence |
+|----|------|--------|---------|
+| E4.1 | Create `GraphLanding` component (root nodes + hot paths overview) | ✅ | `GraphLanding/GraphLanding.tsx` exists with cytoscape + `useLanding()` data |
+| E4.2 | Hook `GraphLanding` to `GET /api/graph/roots` (entry points) | ⚠️ Renamed | Hook is `useLanding` (not `useRootNodes`); endpoint is `GET /workspaces/:id/landing` (not `/api/graph/roots`) |
+| E4.3 | Add suggested questions strip (from `config/suggestedQuestions.ts`) | ✅ | `SUGGESTED_QUESTIONS` map + `LandingSuggestionStrip.tsx` |
+| E4.4 | Wire root-node click → open pane in pane-stack | ✅ | `SELECT_OBJECT` → `PUSH_PANE` via `paneStack.ts` reducer |
+| E4.5 | Add recent explorations strip (from `useExplorations`) | ⚠️ Hook done, UI missing | `useExplorations` hook exists and is wired to `localStorage` cache; no visible `RecentExplorationsStrip` component in `GraphLanding` |
 
 **Deliverable:** Landing shows graph roots, suggested questions, and recent
 explorations. Clicking a root opens the pane-stack workflow.
+
+**Next step:** Add `RecentExplorationsStrip` component to `GraphLanding` consuming
+`useExplorations()`.
 
 ---
 
@@ -108,16 +122,22 @@ explorations. Clicking a root opens the pane-stack workflow.
 
 **Goal:** The graph canvas morphs between call-graph and C4 perspectives.
 
-| ID | Task | Files | Est |
-|----|------|-------|-----|
-| E5.1 | Add perspective toggle UI (`[Context | Graph]`) in Shell header | `Shell.tsx` | 2h |
-| E5.2 | Create `useC4Context` hook (calls backend C4 inference) | `hooks/useC4Context.ts` | 3h |
-| E5.3 | Wire toggle → swap data source between `useSubgraph` and `useC4Context` | `InteractiveGraph.tsx` | 3h |
-| E5.4 | Apply C4 stylesheet classes when in C4 perspective | `InteractiveGraph.tsx`, `stylesheet.ts` | 2h |
-| E5.5 | Add smooth transition between perspectives (data swap + re-layout) | `InteractiveGraph.tsx` | 3h |
+**Status:** ⚠️ Partial — toggle works on landing page only; not wired into `InteractiveGraphPanel`
+
+| ID | Task | Status | Evidence |
+|----|------|--------|---------|
+| E5.1 | Add perspective toggle UI (`[Context | Graph]`) in Shell header | ✅ | `PerspectiveToggle.tsx` in `ShellLayout.tsx:77`; dispatches `SET_PERSPECTIVE` |
+| E5.2 | Create `useC4Context` hook (calls backend C4 inference) | ⚠️ Renamed | Hook is `useArchitecture` (not `useC4Context`); functional |
+| E5.3 | Wire toggle → swap data source between `useSubgraph` and `useC4Context` | ❌ Gap | Perspective swap works on `GraphLanding` only; `InteractiveGraphPanel` always uses `useSubgraph` — toggle has no effect after object selection |
+| E5.4 | Apply C4 stylesheet classes when in C4 perspective | ✅ | All C4 classes in `stylesheet.ts`; applied via `style_class` attribute |
+| E5.5 | Add smooth transition between perspectives (data swap + re-layout) | ❌ Not done | No crossfade; cytoscape instance is destroyed and remounted on perspective change |
 
 **Deliverable:** User can toggle between Graph and C4 perspectives on the same
 canvas. C4 shows system/container/component nodes with proper styling.
+
+**Critical gap:** E5.3 requires wiring `SET_PERSPECTIVE` into `InteractiveGraphPanel` so that
+`useSubgraph` is conditionally replaced by `useArchitecture` when `perspective === "c4"`.
+Without this, the toggle only affects the landing page.
 
 ---
 
@@ -125,16 +145,22 @@ canvas. C4 shows system/container/component nodes with proper styling.
 
 **Goal:** Backend extracts C4 structure from code for the Explorer to consume.
 
-| ID | Task | Files | Est |
-|----|------|-------|-----|
-| E6.1 | Create `cognicode-diagram` crate skeleton | `crates/cognicode-diagram/` | 2h |
-| E6.2 | Implement container inference (Cargo.toml / package.json → containers) | `inference/container_inference.rs` | 4h |
-| E6.3 | Implement component inference (directory structure → components) | `inference/component_inference.rs` | 4h |
-| E6.4 | Add `GET /api/graph/c4` endpoint returning C4 nodes + edges | `api.rs`, `facades/` | 3h |
-| E6.5 | Register C4 nodes in the graph with proper `NodeKind` / `EdgeKind` | `domain/` | 2h |
+**Status:** ❌ Not started — `cognicode-diagram` crate does not exist
+
+| ID | Task | Status | Evidence |
+|----|------|--------|---------|
+| E6.1 | Create `cognicode-diagram` crate skeleton | ❌ | Crate does not exist |
+| E6.2 | Implement container inference (Cargo.toml / package.json → containers) | ❌ | — |
+| E6.3 | Implement component inference (directory structure → components) | ❌ | — |
+| E6.4 | Add `GET /api/graph/c4` endpoint returning C4 nodes + edges | ❌ | — |
+| E6.5 | Register C4 nodes in the graph with proper `NodeKind` / `EdgeKind` | ❌ | C4 kinds exist in domain but no inference engine |
 
 **Deliverable:** Explorer can show real C4 structure inferred from the
 workspace's crates and modules.
+
+**Note:** `ViewKind::C4Context`, `C4Container`, `C4Component`, `C4Code` and
+`HierarchyKind::C4Hierarchy` are defined in `dto.rs`. C4 stylesheet classes exist.
+The frontend is ready; the backend inference is the missing piece.
 
 ---
 
@@ -142,7 +168,7 @@ workspace's crates and modules.
 
 | Milestone | Description |
 |-----------|-------------|
-| E7 renderer scale evaluation | Benchmark Cytoscape canvas vs Cytoscape WebGL preview, and escalate to Sigma.js only if thresholds fail |
+| E7 renderer scale evaluation | ✅ COMPLETED (ADR-041 Accepted, ADR-042 Accepted) — WebGL adopted selectively via PR #4 |
 | WASM graph transforms | Rust layout/clustering compiled to WASM for client-side compute |
 | C4 drift detection | Compare inferred C4 vs documented architecture (ADRs, CONTEXT.md) |
 | Dynamic view authoring | ViewSpec wizard as primary view creation (not just runtime extras) |
@@ -155,7 +181,7 @@ workspace's crates and modules.
 
 - [ADR-039](../adr/ADR-039-explorer-navigation-model.md) — This roadmap's ADR
 - [ADR-041](../adr/ADR-041-explorer-renderer-scale-evaluation.md) — E7 renderer scale evaluation path
-- [ADR-042](../adr/ADR-042-renderer-decision.md) — Renderer decision outcome placeholder
+- [ADR-042](../adr/ADR-042-renderer-decision.md) — Renderer decision: adopt Cytoscape WebGL selectively (≥500 nodes)
 - [ADR-038](../adr/ADR-038-sandbox-hardening-and-coverage.md) — Sandbox hardening
 - [ADR-034](../adr/ADR-034-mcp-production-readiness.md) — MCP production readiness
 
@@ -164,6 +190,8 @@ workspace's crates and modules.
 ## Sprint F1-F4 — E2E Test Battery (38 scenarios)
 
 **Goal:** Comprehensive E2E coverage for all Explorer navigation flows.
+
+**Status:** Not started
 
 See [explorer-e2e-test-plan.md](explorer-e2e-test-plan.md) for the detailed plan.
 
@@ -175,3 +203,6 @@ See [explorer-e2e-test-plan.md](explorer-e2e-test-plan.md) for the detailed plan
 | F4 | Error handling + Responsive + Accessibility | 11 | 3-4h |
 
 **Total:** 38 tests, 12-15h
+
+**Note:** Some E2E specs have pre-existing lint errors unrelated to current sprints
+(`error-states.spec.ts`, `visual-regression.spec.ts`).

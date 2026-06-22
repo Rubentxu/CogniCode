@@ -210,6 +210,7 @@ impl Manifest {
                 repo,         // Inherits from manifest top-level if not set in scenario
                 commit: None, // Set by orchestrator
                 container_image: None,
+                pre_steps: None,
             };
             scenarios.push(scenario);
         }
@@ -247,6 +248,9 @@ pub struct ExpandedScenario {
     pub repo: Option<String>,
     pub commit: Option<String>,
     pub container_image: Option<String>,
+    /// Explicit pre-requisite tools listed in the scenario manifest.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pre_steps: Option<Vec<String>>,
 }
 
 #[derive(Debug, thiserror::Error)]

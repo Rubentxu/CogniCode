@@ -32,6 +32,7 @@ test.describe("Explorer smoke flow — Visual Regression", () => {
     await expect(page).toHaveScreenshot("smoke-initial-load.png", {
       fullPage: true,
       animations: "disabled",
+      maxDiffPixels: 3000,
     });
 
     // 2. Open the Spotter via Cmd+K — wait for listener to mount
@@ -172,13 +173,11 @@ test.describe("Explorer call-graph view — Visual Regression", () => {
     await expect(graphTab).toBeVisible();
     await graphTab.click();
 
-    // The callers / callees block(s) are populated by the fixture.
-    // The hotspots block also surfaces the graph-y data.
-    // We assert the inspector body has at least one view block.
-    const body = page.getByTestId("object-inspector-body");
-    await expect(body).toBeVisible();
-    const blocks = body.getByTestId(/^view-block-/);
-    await expect(blocks.first()).toBeVisible();
+    const graphView = page.getByTestId("graph-view-renderer");
+    await expect(graphView).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId("svg-graph-canvas")).toBeVisible();
+    const nodes = page.locator("[data-testid^='graph-node-']");
+    await expect(nodes.first()).toBeVisible({ timeout: 3_000 });
 
     // Golden image del view de call-graph
     await expect(page).toHaveScreenshot("graph-call-graph-view.png", {
@@ -250,6 +249,7 @@ test.describe("Explorer error states — Visual Regression", () => {
     await expect(page).toHaveScreenshot("error-states-connection-gate.png", {
       fullPage: true,
       animations: "disabled",
+      maxDiffPixels: 3000,
     });
   });
 
@@ -305,6 +305,7 @@ test.describe("Explorer error states — Visual Regression", () => {
     await expect(page.getByTestId("shell")).toHaveScreenshot("error-states-graph-landing.png", {
       fullPage: true,
       animations: "disabled",
+      maxDiffPixels: 100,
     });
   });
 

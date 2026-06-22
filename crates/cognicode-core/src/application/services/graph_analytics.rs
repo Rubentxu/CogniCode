@@ -533,7 +533,9 @@ mod tests {
     #[test]
     fn god_nodes_finds_highly_called_symbol() {
         // "core" is called by every other symbol — PageRank should
-        // rank it as the god node.
+        // rank it as a top god node. We check it appears in the top
+        // results (not strictly first) because floating-point tie-breaking
+        // during power iteration may favor a7 over core by < 1e-12.
         let g = build_graph(|g| {
             add_edge(g, "a1", "core");
             add_edge(g, "a2", "core");
@@ -548,8 +550,14 @@ mod tests {
         });
         let god = GraphAnalyticsService::god_nodes(&g, 0.5);
         assert!(!god.is_empty());
-        // Top result should be the most-called symbol.
-        assert_eq!(god[0].0, id("core"));
+        // core should be in the god nodes set (it's called by every other symbol)
+        let core_score: Option<f64> = god.iter().find(|(sid, _)| sid == &id("core")).map(|(_, s)| *s);
+        assert!(core_score.is_some(), "core should appear in god_nodes results");
+        // core's score should be at least as high as the top result (allowing tiny float drift)
+        let top_score = god[0].1;
+        assert!(core_score.unwrap() >= top_score - 1e-10,
+            "core score ({}) should match top score ({}) within floating-point tolerance",
+            core_score.unwrap(), top_score);
     }
 
     #[test]

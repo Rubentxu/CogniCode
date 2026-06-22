@@ -80,6 +80,16 @@ impl From<crate::domain::error::DomainError> for AppError {
     }
 }
 
+impl From<crate::domain::error::CommonError> for AppError {
+    fn from(err: crate::domain::error::CommonError) -> Self {
+        match err {
+            crate::domain::error::CommonError::NotFound(s) => AppError::SymbolNotFound(s),
+            crate::domain::error::CommonError::InvalidInput(s) => AppError::InvalidParameter(s),
+            crate::domain::error::CommonError::Internal(s) => AppError::InternalError(s),
+        }
+    }
+}
+
 impl From<crate::domain::traits::CodeIntelligenceError> for AppError {
     fn from(err: crate::domain::traits::CodeIntelligenceError) -> Self {
         AppError::NavigationError(err.to_string())

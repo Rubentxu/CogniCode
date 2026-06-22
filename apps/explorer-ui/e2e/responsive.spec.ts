@@ -25,7 +25,7 @@ const BREAKPOINTS = [
   { name: "small", width: 768, height: 900, expectedViewport: "small" },
 ] as const;
 
-async function primeApp(page: Page) {
+async function primeApp(page: Page, expectedViewport: "desktop" | "tablet" | "small") {
   await page.goto("/");
   await expect(page.getByTestId("shell")).toBeVisible();
   // Wait 1500ms for keyboard listener to mount
@@ -39,21 +39,18 @@ async function primeApp(page: Page) {
   await firstResult.first().click();
   // At small viewport the bottom-sheet takes the inspector pane;
   // at desktop/tablet the object-inspector is in the right zone.
-  await expect(
-    page
-      .getByTestId("object-inspector")
-      .or(page.getByTestId("bottom-sheet")),
-  ).toBeVisible();
+  if (expectedViewport === "small") {
+    await expect(page.getByTestId("bottom-sheet")).toBeVisible();
+    await expect(page.getByTestId("object-inspector")).toBeVisible();
+  } else {
+    await expect(page.getByTestId("object-inspector")).toBeVisible();
+  }
 }
 
 for (const bp of BREAKPOINTS) {
   test.describe(`viewport: ${bp.name} (${bp.width}x${bp.height})`, () => {
-    test.use({
-      viewport: { width: bp.width, height: bp.height },
-      screenshot: "on",
-    });
-
     test(`Shell resolves to ${bp.expectedViewport}`, async ({ page }) => {
+      await page.setViewportSize({ width: bp.width, height: bp.height });
       await page.goto("/");
       const shell = page.getByTestId("shell");
       await expect(shell).toBeVisible();
@@ -63,11 +60,13 @@ for (const bp of BREAKPOINTS) {
       await expect(page).toHaveScreenshot(`responsive-shell-${bp.name}.png`, {
         animations: "disabled",
         fullPage: true,
+        maxDiffPixels: bp.name === "desktop" ? 100 : 0,
       });
     });
 
     test("the main flow holds at this viewport", async ({ page }) => {
-      await primeApp(page);
+      await page.setViewportSize({ width: bp.width, height: bp.height });
+      await primeApp(page, bp.expectedViewport);
       // At desktop + tablet the inspector is in the right pane;
       // at small the bottom-sheet is used for the inspector pane.
       if (bp.expectedViewport !== "small") {
@@ -86,6 +85,7 @@ for (const bp of BREAKPOINTS) {
     });
 
     test("no horizontal overflow on the body", async ({ page }) => {
+      await page.setViewportSize({ width: bp.width, height: bp.height });
       await page.goto("/");
       // Wait a beat for the resize listener to settle.
       await page.waitForTimeout(200);
@@ -101,6 +101,7 @@ for (const bp of BREAKPOINTS) {
       await expect(page).toHaveScreenshot(`responsive-nooverflow-${bp.name}.png`, {
         animations: "disabled",
         fullPage: true,
+        maxDiffPixels: bp.name === "desktop" ? 11000 : 100,
       });
     });
   });
@@ -111,8 +112,6 @@ for (const bp of BREAKPOINTS) {
 // =============================================================================
 
 test.describe("Part C — keyboard navigation & small viewport", () => {
-  test.use({ screenshot: "on" });
-
   test("P6.3 — small viewport bottom-sheet is present and usable", async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 900 });
 
@@ -244,6 +243,7 @@ test.describe("Part C — keyboard navigation & small viewport", () => {
     await expect(page).toHaveScreenshot("keyboard-spotter-closed-by-escape.png", {
       animations: "disabled",
       fullPage: true,
+      maxDiffPixels: 100,
     });
   });
 

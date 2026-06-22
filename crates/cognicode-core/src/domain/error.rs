@@ -29,5 +29,19 @@ pub enum DomainError {
     InvalidRange(String),
 }
 
+/// Common error variants shared across all layers.
+/// Use as a base enum that other error types convert from via `?`.
+#[derive(Error, Debug, Clone)]
+pub enum CommonError {
+    #[error("not found: {0}")]
+    NotFound(String),
+
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
+
+    #[error("internal error: {0}")]
+    Internal(String),
+}
+
 // Note: DomainError already implements std::error::Error via thiserror,
 // so it can be converted to anyhow::Error via the blanket impl.

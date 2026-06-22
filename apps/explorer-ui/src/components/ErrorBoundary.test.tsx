@@ -35,11 +35,11 @@ describe("ErrorBoundary", () => {
 
   it("renders default fallback when a child throws", () => {
     render(
-      <ErrorBoundary label="MillerColumns">
+      <ErrorBoundary label="TestComponent">
         <Bomb shouldThrow={true} />
       </ErrorBoundary>,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent(/MillerColumns crashed/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/TestComponent crashed/i);
     expect(screen.getByRole("alert")).toHaveTextContent("kaboom");
   });
 

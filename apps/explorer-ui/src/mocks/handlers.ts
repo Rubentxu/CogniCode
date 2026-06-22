@@ -81,6 +81,20 @@ export const handlers = [
   }),
 
   // -----------------------------------------------------------------------
+  // 2c. Graph stats
+  // -----------------------------------------------------------------------
+  http.get("/api/workspaces/:workspace_id/graph/stats", async ({ params }) => {
+    await delay(LATENCY_MS);
+    const workspaceId = params["workspace_id"] as string | undefined;
+    return HttpResponse.json({
+      workspace_id: workspaceId ?? workspaceSummaryFixture.id,
+      symbol_count: 128,
+      edge_count: 256,
+      last_scan_at: workspaceSummaryFixture.last_scan_at ?? new Date().toISOString(),
+    });
+  }),
+
+  // -----------------------------------------------------------------------
   // 3. Index workspace — backend returns 501 today
   // -----------------------------------------------------------------------
   http.post("/api/workspaces/:workspace_id/index", async () => {
@@ -188,6 +202,17 @@ export const handlers = [
     });
   }),
 
+  http.get("/api/workspaces/:workspace_id/explorations", async ({ params }) => {
+    await delay(LATENCY_MS);
+    const workspaceId = params["workspace_id"] as string | undefined;
+    return HttpResponse.json([
+      {
+        ...explorationPathFixture,
+        workspace_id: workspaceId ?? explorationPathFixture.workspace_id,
+      },
+    ]);
+  }),
+
   // -----------------------------------------------------------------------
   // 10b. Save exploration session (ADR-040 Wave 3 — Exploration Snapshot)
   // -----------------------------------------------------------------------
@@ -230,6 +255,14 @@ export const handlers = [
       ...decisionArtifactFixture,
       format: body.format,
     });
+  }),
+
+  // -----------------------------------------------------------------------
+  // 11b. Runtime ViewSpecs
+  // -----------------------------------------------------------------------
+  http.get("/api/viewspecs", async () => {
+    await delay(LATENCY_MS);
+    return HttpResponse.json([]);
   }),
 
   // -----------------------------------------------------------------------

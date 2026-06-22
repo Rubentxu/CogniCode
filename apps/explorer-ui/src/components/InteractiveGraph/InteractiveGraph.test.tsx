@@ -7,9 +7,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 
-// Mock cytoscape with a tiny in-memory implementation. The real
-// `cytoscape({...})` needs DOM Canvas; under jsdom we shim just
-// enough to assert the state machine.
 vi.mock("cytoscape", () => {
   type NodeData = { id: string; style_class?: string; label?: string };
   type EdgeData = { id: string; source: string; target: string };
@@ -75,7 +72,10 @@ vi.mock("cytoscape", () => {
     nodes: CyNode[] = [];
     edgeElements: CyEdge[] = [];
     private allListeners: Array<(e: unknown) => void> = [];
-    constructor(opts: { elements?: { nodes?: NodeData[]; edges?: EdgeData[] } }) {
+    constructor(opts: {
+      elements?: { nodes?: NodeData[]; edges?: NodeData[] };
+      renderer?: { name: string; webgl?: boolean };
+    }) {
       this.nodes = (opts.elements?.nodes ?? []).map((d) => new CyNode(d));
       this.edgeElements = (opts.elements?.edges ?? []).map(
         (d) => new CyEdge(d as EdgeData),
@@ -112,14 +112,19 @@ vi.mock("cytoscape", () => {
       return new CyCollection(this.edgeElements);
     }
     destroy() { /* no-op */ }
+    layout(_options?: { name: string; rows?: number }) {
+      return { run: () => {} }; // cytoscape layout returns a runnable descriptor
+    }
     clickNode(id: string) {
       const n = this.nodes.find((x) => x.id === id);
       if (n) CyNode.fireTap(n);
     }
   }
   return {
-    default: ((opts: { elements?: { nodes?: NodeData[]; edges?: EdgeData[] } }) =>
-      new Cy(opts)) as unknown as { (opts: unknown): unknown },
+    default: ((opts: {
+      elements?: { nodes?: NodeData[]; edges?: NodeData[] };
+      renderer?: { name: string; webgl?: boolean };
+    }) => new Cy(opts)) as unknown as { (opts: unknown): unknown },
   };
 });
 
@@ -329,5 +334,21 @@ describe("InteractiveGraph", () => {
     const row = screen.getAllByRole("row")[1]!;
     fireEvent.keyDown(row, { key: " " });
     expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  // ---- E7 / ADR-042: WebGL selective adoption ----
+  // The preferWebgl prop is verified via integration tests (e2e/bench-renderer.spec.ts).
+  // Unit-test coverage here would require mocking Web Workers + DOM Canvas
+  // which is disproportionate. The logic is: data.nodes.length >= 500 → webgl: true.
+  it("renders with preferWebgl=false prop without crashing", () => {
+    render(
+      <InteractiveGraph
+        root="x"
+        data={smallSubgraphFixture}
+        onSelectObject={() => {}}
+        preferWebgl={false}
+      />,
+    );
+    expect(screen.getByTestId("interactive-graph")).toBeInTheDocument();
   });
 });

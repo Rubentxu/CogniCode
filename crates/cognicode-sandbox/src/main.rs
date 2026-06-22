@@ -41,6 +41,8 @@ use cognicode_core::interface::mcp::rmcp_adapter::lookup_tool_deps;
 const ORCHESTRATOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 const MCP_PROTOCOL_VERSION: &str = "2025-03-26";
 
+mod reporting;
+
 #[derive(Parser, Debug, Clone)]
 #[command(
     name = "sandbox-orchestrator",
@@ -2600,7 +2602,7 @@ fn run(args: RunArgs, verbose: bool) -> Result<i32, String> {
     }
 
     // Aggregate and compute scores
-    let mut summary = aggregate_summary(&results);
+    let mut summary = reporting::aggregate_summary(&results);
 
     // Compute dimension averages from all scenario results (same logic as report())
     let dimension_scores_list: Vec<Option<DimensionScores>> =
@@ -2612,7 +2614,7 @@ fn run(args: RunArgs, verbose: bool) -> Result<i32, String> {
     summary.health_score = health_score;
     summary.dimension_scores = dimension_averages;
 
-    write_summary(&summary, &args.results_dir).map_err(|e| e.to_string())?;
+    reporting::write_summary(&summary, &args.results_dir).map_err(|e| e.to_string())?;
 
     // Write JSONL output if requested (one JSON object per line)
     if args.jsonl {
@@ -2634,7 +2636,7 @@ fn run(args: RunArgs, verbose: bool) -> Result<i32, String> {
     }
 
     // Write Markdown summary
-    let md = generate_markdown_summary(&results, &summary);
+    let md = reporting::generate_markdown_summary(&results, &summary);
     let md_path = args
         .results_dir
         .join(format!("summary_{}.md", timestamp_now()));
@@ -2702,13 +2704,13 @@ fn autoresearch(args: AutoresearchArgs, verbose: bool) -> Result<i32, String> {
             let total = results.len();
             sandbox_passed = format!("{}/{}", passed, total);
 
-            let summary = aggregate_summary(&results);
+            let summary = reporting::aggregate_summary(&results);
             health_score = summary.health_score;
 
             // Write sandbox results
             let exp_dir = &args.results_dir;
             std::fs::create_dir_all(exp_dir).ok();
-            write_summary(&summary, exp_dir).ok();
+            reporting::write_summary(&summary, exp_dir).ok();
         }
     } else {
         eprintln!("[autoresearch] Skipping sandbox (tests failed)");
@@ -2986,9 +2988,9 @@ fn report(args: ReportArgs) -> Result<i32, String> {
     // Load baseline and compute regressions if provided
     if let Some(baseline_path) = &args.baseline {
         if baseline_path.exists() {
-            match load_baseline_summary(baseline_path) {
+            match reporting::load_baseline_summary(baseline_path) {
                 Ok(baseline) => {
-                    summary.regressions_vs_baseline = compute_regressions(&results, &baseline);
+                    summary.regressions_vs_baseline = reporting::compute_regressions(&results, &baseline);
                     if !summary.regressions_vs_baseline.is_empty() {
                         eprintln!(
                             "⚠️  Found {} regression(s) vs baseline",

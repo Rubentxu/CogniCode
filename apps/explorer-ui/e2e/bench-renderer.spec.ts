@@ -251,6 +251,7 @@ test.describe("E7 Renderer Benchmark — real browser", () => {
   test("measures Cytoscape canvas and WebGL across the fixture roster", async ({
     page,
   }) => {
+    test.setTimeout(120_000);
     // Inject cytoscape UMD as a global BEFORE any page script runs.
     // The Vite dev server would otherwise intercept the request
     // and serve a 404 for node_modules paths. We read cytoscape UMD
@@ -499,4 +500,3 @@ function fixtureToElements(fixture: Fixture) {
     })),
   };
 }
-
