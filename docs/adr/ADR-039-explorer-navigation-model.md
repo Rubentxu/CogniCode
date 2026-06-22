@@ -2,14 +2,15 @@
 
 **Status:** Accepted
 **Date:** 2026-06-19
+**Last updated:** 2026-06-22
 **Source:** grill-with-docs session on Explorer evolution, apps/explorer-ui audit
 
 ## Context
 
 The CogniCode Explorer (`apps/explorer-ui`) has a React 19 + Vite + Cytoscape
-frontend with substantial implementation: pane-stack navigation, Miller columns,
-Spotter search, renderer registry, ViewSpec wizard, interactive graph, and C4
-stylesheet classes. However, the product direction was not locked.
+frontend with substantial implementation: pane-stack navigation, Spotter search,
+renderer registry, ViewSpec wizard, interactive graph with ELK layout, and C4
+stylesheet classes. Miller columns were removed (E3 complete).
 
 This ADR records the decisions made during a structured grill-with-docs session
 that resolved the navigation model, entry points, renderer strategy, and UX
@@ -62,13 +63,18 @@ entry modes. Spotter (Cmd+K) is an overlay on top of the canvas, not a page.
 └──────────────────────────────────┴──────────────────┘
 ```
 
-### 5. Cytoscape is the renderer base; WebGL evaluation stays deferred
+### 5. Cytoscape is the renderer base; WebGL adopted selectively
 
 The current Cytoscape integration is retained as the rendering base. The
 existing ELK.js layout worker (`layout.worker.ts`) is integrated into the main
-renderer (replacing `preset` layout). WebGL evaluation remains a **future
-evolutionary path** when graph scale or interaction fluidity demands GPU
-acceleration — but not before the view model is consolidated.
+renderer (replacing `preset` layout).
+
+**Update (June 22, 2026 — ADR-041/ADR-042):** WebGL is now **adopted
+selectively**. Evidence from real-browser benchmarks showed WebGL is ~20%
+faster for graphs ≥ 500 nodes, but canvas is ~15-25% faster for small
+fixtures (< 16 nodes). The implementation uses `renderer: { name: "canvas",
+webgl: <bool> }` with `useWebgl = preferWebgl && nodeCount >= 500`. Sigma.js
+remains behind `BENCH_ENABLE_SIGMA=1` as a future exploration path.
 
 ### 6. gtoolkit is the design inspiration rector
 
@@ -109,29 +115,45 @@ the user a lightweight way to decide whether a node is worth a deeper dive.
 
 ## Evolution order
 
-1. Consolidate view model — `rendererRegistry` becomes the real render pipeline
-2. Integrate ELK layout worker into `InteractiveGraph` (replace `preset`)
-3. Ship perspective toggle (`Graph ↔ C4`) on the graph canvas
-4. Eliminate `column` navigation mode (hard cut)
-5. Evaluate WebGL / Sigma.js when scale demands it
+1. Consolidate view model — `rendererRegistry` becomes the real render pipeline (**E1 — incomplete**)
+2. Integrate ELK layout worker into `InteractiveGraph` (replace `preset`) (**E2 — complete**)
+3. Ship perspective toggle (`Graph ↔ C4`) on the graph canvas (**E5 — partial; toggle works on landing only, not in InteractiveGraph**)
+4. Eliminate `column` navigation mode (hard cut) (**E3 — complete**)
+5. ~~Evaluate WebGL / Sigma.js when scale demands it~~ — **E7 complete; WebGL adopted selectively** (ADR-042)
 
-> **Implementation status (June 2026):** Item 2 is implemented in
-> `InteractiveGraph.tsx` + `layout.worker.ts`. The remaining items stay in the
-> roadmap as follow-on work.
+## Implementation status (June 22, 2026)
+
+| Sprint | Status | Notes |
+|--------|--------|-------|
+| E1 — Consolidate View Model | ⚠️ Partial | E1.1✅ E1.2⚠️ E1.3✅ E1.4❌ E1.5❌ — `rendererRegistry` is dead code in production; `PaneInspector` short-circuits to `GraphView` directly |
+| E2 — ELK layout worker | ✅ Complete | `InteractiveGraph` + `layout.worker.ts` fully integrated |
+| E3 — Hard cut column nav | ✅ Complete | `column` mode removed; `MillerColumns` deleted; state is pane-stack only |
+| E4 — Graph Landing Page | ~70% | E4.1✅ E4.2⚠️(hook renamed) E4.3✅ E4.4✅ E4.5⚠️(hook exists, UI strip missing) |
+| E5 — Perspective toggle | ⚠️ Partial | Toggle exists in `ShellLayout`; dispatches `SET_PERSPECTIVE`; but only affects `GraphLanding` — `InteractiveGraphPanel` ignores it (always uses `useSubgraph`) |
+| E6 — C4 Backend Inference | ❌ Not started | `cognicode-diagram` crate does not exist |
+| E7 — Renderer evaluation | ✅ Complete | ADR-041/ADR-042 Accepted; WebGL adopted selectively (≥500 nodes) |
+
+**Open architectural gaps:**
+- `rendererRegistry` (E1.4/E1.5) is the primary dead-code risk — `PaneInspector` bypasses it
+- `ViewBlock.tsx` is a 27-case `switch` that should route through `rendererRegistry`
+- Perspective toggle (E5) needs wiring into `InteractiveGraphPanel` to work after object selection
 
 ## Consequences
 
 - **`column` mode removal** simplifies the navigation state machine, the Shell
   layout logic, and the `NavigationAdapter` contract. Tests referencing Miller
-  columns are updated or removed.
+  columns are updated or removed. Minor residue: `useRovingFocus` hook is dead
+  code (no importers).
 - **`rendererRegistry` must become authoritative** — all view rendering passes
-  through it, not through ad-hoc component switches.
+  through it, not through ad-hoc component switches. **Status (2026-06-22): NOT
+  YET DONE — `PaneInspector` routes graph kinds to `GraphView` directly;
+  `ViewBlock.tsx` remains a 27-case `switch`.**
 - **ELK worker integration** changes `InteractiveGraph` from static-preset to
-  dynamic layout with animation and cancellation.
+  dynamic layout with animation and cancellation. **Done (E2).**
 - **C4 backend support** is needed for the perspective toggle to show real C4
-  nodes. The `cognicode-diagram` crate (planned in `docs/planes/`) provides the
-  inference pipeline.
-- **WebGL evaluation** is deferred but not forgotten — tracked in roadmap.
+  nodes. **Status: NOT YET DONE — `cognicode-diagram` crate does not exist.**
+- **WebGL evaluation** is now complete (ADR-041/ADR-042). WebGL adopted
+  selectively for graphs ≥ 500 nodes.
 
 ## Related ADRs
 
@@ -141,11 +163,14 @@ the user a lightweight way to decide whether a node is worth a deeper dive.
 
 ## References
 
-- `apps/explorer-ui/src/state/navigation/types.ts` — NavigationAdapter contract
+- `apps/explorer-ui/src/state/navigation/types.ts` — Pane-stack state types
 - `apps/explorer-ui/src/state/navigation/paneStack.ts` — Pane-stack reducer
 - `apps/explorer-ui/src/components/InteractiveGraph/*` — Graph renderer + ELK worker
-- `apps/explorer-ui/src/components/rendererRegistry.tsx` — Renderer registry (skeleton)
+- `apps/explorer-ui/src/components/rendererRegistry.tsx` — Renderer registry (dead code in prod; bypassed by PaneInspector)
+- `apps/explorer-ui/src/components/GraphView/*` — Live graph rendering path (bypasses registry)
 - `apps/explorer-ui/src/components/PaneStackView.tsx` — Pane-stack view
+- `apps/explorer-ui/src/components/GraphLanding/GraphLanding.tsx` — Landing page
 - `apps/explorer-ui/src/components/Spotter.tsx` — Spotter search palette
 - `apps/explorer-ui/src/components/ObjectInspector/ViewSpecWizard.tsx` — ViewSpec authoring
-- `docs/planes/cognicode-diagram/` — C4 inference architecture (planned crate)
+- `docs/adr/ADR-041-explorer-renderer-scale-evaluation.md` — E7 benchmark protocol
+- `docs/adr/ADR-042-renderer-decision.md` — WebGL selective adoption decision
