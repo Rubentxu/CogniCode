@@ -13,7 +13,7 @@
 import { Suspense, lazy, type ReactNode } from "react";
 
 import type { RendererKind } from "../api/schemas";
-import type { SubgraphResponse } from "../api/types";
+import type { ContextualView, SubgraphResponse } from "../api/types";
 
 // Lazy-load the graph renderer — keeps cytoscape out of the initial bundle
 const InteractiveGraph = lazy(() =>
@@ -32,6 +32,39 @@ const InteractiveGraph = lazy(() =>
 export type RendererId = RendererKind;
 
 // ============================================================================
+// RuntimeContext — typed union of what graph and block renderers need
+// ============================================================================
+
+/**
+ * Context passed through the renderer call chain.
+ *
+ * All fields are optional — callers provide only what the renderer needs.
+ * This is a backward-compatible additive extension of the original
+ * `render(body, extra?: Record<string, unknown>)` signature.
+ *
+ * For the graph renderer: `view` is required; `objectId`, `paneId`,
+ * `onClose` are optional.
+ * For block renderers: none are required.
+ */
+export interface RuntimeContext {
+  /** The full ContextualView — used by the graph renderer entry. */
+  view?: ContextualView;
+  /** The object being inspected. */
+  objectId?: string;
+  /** Pane ID for viewport-snapshot dispatch. */
+  paneId?: string;
+  /** View ID for SELECT_OBJECT payload. */
+  viewId?: string;
+  /** Close callback — used by graph renderer for pane close button. */
+  onClose?: () => void;
+  /**
+   * Navigate to a related object. Used by interactive block renderers
+   * (callers, callees, hotspots, quality_issue_detail).
+   */
+  onSelectObject?: (objectId: string, viewId?: string) => void;
+}
+
+// ============================================================================
 // Registry entry
 // ============================================================================
 
@@ -40,10 +73,10 @@ export interface RendererEntry {
   label: string;
   /**
    * Render function. Receives the `body` (opaque JSON from the block or
-   * ViewSpec `props`) and any extra `props` from the registry entry.
+   * ViewSpec `props`) and optional `RuntimeContext`.
    * Returns a React node — caller is responsible for error boundaries.
    */
-  render: (body: unknown, extra?: Record<string, unknown>) => ReactNode;
+  render: (body: unknown, extra?: RuntimeContext) => ReactNode;
 }
 
 // ============================================================================
