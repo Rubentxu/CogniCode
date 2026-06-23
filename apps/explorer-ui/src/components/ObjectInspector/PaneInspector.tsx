@@ -127,13 +127,13 @@ export function PaneInspector({
   const runtimeContext: RuntimeContext = {
     objectId,
     paneId: undefined, // PaneInspector doesn't know its own paneId here
-    viewId: viewId ?? display?.view_id ?? null,
+    viewId: viewId ?? display?.view_id ?? undefined,
     onClose,
     onSelectObject: (objId: string) =>
       dispatch({
         type: "SELECT_OBJECT",
         // H5: preserve current viewId for drill-down consistency
-        payload: { objectId: objId, viewId: viewId ?? display?.view_id ?? null },
+        payload: { objectId: objId, viewId: viewId ?? display?.view_id ?? undefined },
       }),
   };
 

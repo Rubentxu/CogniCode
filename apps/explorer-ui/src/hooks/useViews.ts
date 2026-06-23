@@ -30,7 +30,7 @@ import type { ViewSpec } from "../api/schemas";
 // Extended ViewDescriptor with runtime metadata
 export interface ViewDescriptorPlus extends z.infer<typeof viewDescriptorSchema> {
   is_builtin: boolean;
-  source: "runtime" | null;
+  source: string | null;
 }
 
 const viewListSchema = z.array(viewDescriptorSchema);
@@ -75,7 +75,7 @@ export function useAvailableViews(
   );
 
   // Merge built-ins with runtime entries
-  const merged = mergeAvailableViews(builtins, runtimeSpecs);
+  const merged = mergeAvailableViews(builtins, runtimeSpecs ?? undefined);
 
   return { data: merged };
 }
