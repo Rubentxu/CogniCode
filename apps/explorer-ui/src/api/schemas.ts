@@ -119,6 +119,7 @@ export const workspaceSummarySchema = z.object({
   indexed_at: z.string().nullable(),
   symbol_count: z.number().int().nonnegative(),
   relation_count: z.number().int().nonnegative(),
+  last_scan_at: z.string().nullable(),
 });
 export type WorkspaceSummary = z.infer<typeof workspaceSummarySchema>;
 
