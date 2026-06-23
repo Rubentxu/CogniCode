@@ -807,23 +807,6 @@ export const contextualViewSchema = z.object({
 });
 export type ContextualView = z.infer<typeof contextualViewSchema>;
 
-export const explorationColumnSchema = z.object({
-  object_id: z.string(),
-  active_view: z.string().nullable(),
-  kind: z.string().default("symbol"),
-});
-export type ExplorationColumn = z.infer<typeof explorationColumnSchema>;
-
-export const explorationPathSchema = z.object({
-  id: z.string(),
-  workspace_id: z.string(),
-  columns: z.array(explorationColumnSchema),
-  objects: z.array(objectIdentityEntrySchema).default([]),
-  lens: z.string().nullable(),
-  created_at: z.string(),
-});
-export type ExplorationPath = z.infer<typeof explorationPathSchema>;
-
 // ViewportState for graph pan/zoom capture (ADR-040 Wave 3)
 const viewportStateSchema = z.object({
   x: z.number(),
@@ -880,15 +863,6 @@ export const indexWorkspaceRequestSchema = z.object({
   strategy: z.string().nullable().optional(),
 });
 export type IndexWorkspaceRequest = z.infer<typeof indexWorkspaceRequestSchema>;
-
-export const saveExplorationRequestSchema = z.object({
-  workspace_id: z.string(),
-  columns: z.array(explorationColumnSchema),
-  lens: z.string().nullable(),
-});
-export type SaveExplorationRequest = z.infer<
-  typeof saveExplorationRequestSchema
->;
 
 export const generateArtifactRequestSchema = z.object({
   format: artifactFormatSchema,

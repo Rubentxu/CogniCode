@@ -1,12 +1,11 @@
 /**
- * `useExplorations` — save and list saved explorations.
+ * `useExplorations` — list saved exploration sessions.
  *
  * The backend exposes:
- * - `POST /api/explorations` — save the current path
- *   (request: `SaveExplorationRequest`, response: `ExplorationPath`)
+ * - `GET /api/workspaces/:workspace_id/explorations` — list sessions
+ *   (response: `ExplorationSessionDto[]`)
  *
- * The list endpoint is a derived SWR key — we cache the most recent
- * save so the UI can render without a follow-up fetch.
+ * The list endpoint is a derived SWR key.
  */
 import { useEffect } from "react";
 import useSWR, { mutate } from "swr";
@@ -14,10 +13,8 @@ import { z } from "zod";
 
 import {
   decisionArtifactSummarySchema,
-  explorationPathSchema,
   explorationSessionSchema,
   generateArtifactRequestSchema,
-  saveExplorationRequestSchema,
 } from "../api/schemas";
 import {
   ApiError,
@@ -26,12 +23,11 @@ import {
 } from "../api/client";
 import type {
   DecisionArtifactSummary,
-  ExplorationPath,
   ExplorationSessionDto,
 } from "../api/types";
 import type { ViewportState } from "../state/navigation/types";
 
-const explorationsListSchema = z.array(explorationPathSchema);
+const explorationsListSchema = z.array(explorationSessionSchema);
 type ExplorationsList = z.infer<typeof explorationsListSchema>;
 
 const explorationsListFetcher = makeSwrFetcher(explorationsListSchema);
@@ -104,28 +100,6 @@ export function useExplorations(
       revalidateOnFocus: false,
     },
   );
-}
-
-/**
- * Save the current exploration. The request is validated locally
- * before hitting the network, and the returned path is merged into
- * the cached list so `useExplorations` re-renders without a refetch.
- */
-export async function saveExploration(
-  request: unknown,
-): Promise<ExplorationPath> {
-  const parsedRequest = saveExplorationRequestSchema.parse(request);
-  const path = await apiPost(
-    "/explorations",
-    parsedRequest,
-    explorationPathSchema,
-  );
-  const listKey = `/workspaces/${encodeURIComponent(parsedRequest.workspace_id)}/explorations`;
-  await mutate(listKey, (current: ExplorationsList | undefined) => {
-    if (!current) return [path];
-    return [...current, path];
-  }, false);
-  return path;
 }
 
 /**

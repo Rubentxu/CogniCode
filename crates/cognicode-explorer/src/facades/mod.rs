@@ -29,7 +29,7 @@ use cognicode_core::domain::traits::GraphQueryPort;
 
 use crate::dto::{
     ContextualGraphResponse, ContextualView, DecisionArtifactSummary, DriftReport, GraphNode,
-    ExplorationPath, GenerateArtifactRequest, InspectableObjectSummary, LensDescriptor,
+    ExplorationSession, GenerateArtifactRequest, InspectableObjectSummary, LensDescriptor,
     LensResult, SpotterResult, SpotterSearchResult, SubgraphResponse, ViewDescriptor, ViewSpec,
     WorkspaceSummary,
 };
@@ -170,15 +170,9 @@ pub trait ViewService: Send + Sync {
 // PersistenceService
 // ============================================================================
 
-/// Exploration paths, artifacts, and ViewSpec CRUD.
+/// Exploration sessions, artifacts, and ViewSpec CRUD (ADR-045 Phase 1).
 #[async_trait]
 pub trait PersistenceService: Send + Sync {
-    /// Save an exploration path and return the persisted record.
-    async fn save_exploration(
-        &self,
-        request: crate::dto::SaveExplorationRequest,
-    ) -> ExplorerResult<ExplorationPath>;
-
     /// Save an exploration session (semantic navigation history, ADR-016 Fase 3).
     async fn save_exploration_session(
         &self,
@@ -191,7 +185,7 @@ pub trait PersistenceService: Send + Sync {
         session_id: &str,
     ) -> ExplorerResult<Option<crate::dto::ExplorationSession>>;
 
-    /// Generate a decision artifact from a saved exploration.
+    /// Generate a decision artifact from a saved exploration session.
     async fn generate_artifact(
         &self,
         exploration_id: &str,
@@ -225,19 +219,17 @@ pub trait PersistenceService: Send + Sync {
         owner: &str,
     ) -> ExplorerResult<bool>;
 
-    /// List all saved explorations for a workspace, sorted by creation time.
+    /// List all saved exploration sessions for a workspace, sorted by creation time.
     ///
-    /// ## KNOWN-DEBT
+    /// ## KNOWN-DEBT (ADR-045 Phase 1 — resolved)
     ///
-    /// - `get_exploration` (api.rs:768) calls `load_exploration_session` despite doc
-    ///   saying "path" — pre-existing mis-wire, tracked separately.
-    /// - `ExplorationPath` vs `ExplorationSession` dual model — model unification is
-    ///   deferred to ADR-045.
-    /// - In-memory store lifetime (lost on restart) — backend limitation, not addressed here.
+    /// - Debt 1 ✅: Orphaned `GET /api/explorations/:id` route removed.
+    /// - Debt 2 ✅: Dual model unified onto `ExplorationSession` (ADR-040 Wave 3 aligned).
+    /// - Debt 3 ⚠️: In-memory store lifetime — Postgres persistence deferred to Phase 2.
     async fn list_explorations(
         &self,
         workspace_id: &str,
-    ) -> ExplorerResult<Vec<crate::dto::ExplorationPath>>;
+    ) -> ExplorerResult<Vec<ExplorationSession>>;
 }
 
 // ============================================================================

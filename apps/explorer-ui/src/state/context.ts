@@ -12,7 +12,6 @@
 import { createContext, useContext, useReducer } from "react";
 import type {
   ContextualView,
-  ExplorationPath,
   WorkspaceSummary,
 } from "../api/types";
 import {
@@ -51,8 +50,6 @@ export type AppState = {
    * re-render instantly while SWR revalidates in the background.
    */
   activeView: ContextualView | null;
-  /** Saved explorations the user has minted during the session. */
-  explorations: ExplorationPath[];
   /**
    * Active canvas perspective — graph (symbol neighbourhood via useSubgraph)
    * or c4 (workspace-wide components via useArchitecture).
@@ -95,7 +92,6 @@ export function initialStateWithFocus(
     activeLensId: focus.lensId,
     spotterOpen: false,
     activeView: null,
-    explorations: [],
     perspective: "graph",
   };
 }
@@ -123,7 +119,6 @@ export type Action =
   | { type: "UPDATE_PANE_VIEWPORT"; payload: { paneId: string; viewport: ViewportState } }
   | { type: "TOGGLE_SPOTTER" }
   | { type: "SET_SPOTTER"; payload: { open: boolean } }
-  | { type: "ADD_EXPLORATION"; payload: ExplorationPath }
   | { type: "RESET" }
   | { type: "SET_PERSPECTIVE"; payload: "graph" | "c4" };
 
@@ -142,7 +137,6 @@ export const initialState: AppState = {
   activeLensId: null,
   spotterOpen: false,
   activeView: null,
-  explorations: [],
   perspective: "graph",
 };
 

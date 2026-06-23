@@ -201,9 +201,6 @@ impl ViewService for MockViewService {
 struct MockPersistenceService;
 #[async_trait]
 impl PersistenceService for MockPersistenceService {
-    async fn save_exploration(&self, _request: crate::dto::SaveExplorationRequest) -> crate::ExplorerResult<crate::dto::ExplorationPath> {
-        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
-    }
     async fn generate_artifact(&self, _exploration_id: &str, _request: crate::dto::GenerateArtifactRequest) -> crate::ExplorerResult<crate::dto::DecisionArtifactSummary> {
         Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
     }
@@ -237,7 +234,7 @@ impl PersistenceService for MockPersistenceService {
     async fn list_explorations(
         &self,
         _workspace_id: &str,
-    ) -> crate::ExplorerResult<Vec<crate::dto::ExplorationPath>> {
+    ) -> crate::ExplorerResult<Vec<crate::dto::ExplorationSession>> {
         Ok(vec![])
     }
 }

@@ -12,7 +12,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::dto::{
     GenerateArtifactRequest, GodNodeEntry, LandingPayload, OpenWorkspaceRequest,
-    SaveExplorationRequest, SaveExplorationSessionRequest,
+    SaveExplorationSessionRequest,
 };
 use crate::error::ExplorerError;
 use crate::facades::{
@@ -449,15 +449,6 @@ pub fn router_with_state(state: ApiState) -> Router {
         )
         .route("/api/objects/:object_id/lenses", get(available_lenses))
         .route("/api/objects/:object_id/lenses/:lens_id", get(apply_lens))
-        .route("/api/explorations", post(save_exploration))
-        .route(
-            "/api/explorations/:exploration_id/artifacts",
-            post(generate_artifact),
-        )
-        .route(
-            "/api/explorations/:exploration_id",
-            get(get_exploration),
-        )
         .route("/api/exploration-sessions", post(save_exploration_session))
         .route(
             "/api/exploration-sessions/:session_id",
@@ -496,15 +487,6 @@ pub fn router(state: ApiState) -> Router {
         )
         .route("/api/objects/:object_id/lenses", get(available_lenses))
         .route("/api/objects/:object_id/lenses/:lens_id", get(apply_lens))
-        .route("/api/explorations", post(save_exploration))
-        .route(
-            "/api/explorations/:exploration_id/artifacts",
-            post(generate_artifact),
-        )
-        .route(
-            "/api/explorations/:exploration_id",
-            get(get_exploration),
-        )
         .route("/api/exploration-sessions", post(save_exploration_session))
         .route(
             "/api/exploration-sessions/:session_id",
@@ -756,35 +738,6 @@ async fn apply_lens(
     Path((object_id, lens_id)): Path<(String, String)>,
 ) -> Result<Response, ApiError> {
     Ok(Json(state.view.apply_lens(&object_id, &lens_id).await?).into_response())
-}
-
-async fn save_exploration(
-    State(state): State<ApiState>,
-    Json(request): Json<SaveExplorationRequest>,
-) -> Result<Response, ApiError> {
-    Ok(Json(state.persistence.save_exploration(request).await?).into_response())
-}
-
-async fn generate_artifact(
-    State(state): State<ApiState>,
-    Path(exploration_id): Path<String>,
-    Json(request): Json<GenerateArtifactRequest>,
-) -> Result<Response, ApiError> {
-    Ok(Json(state.persistence.generate_artifact(&exploration_id, request).await?).into_response())
-}
-
-/// GET /api/explorations/:id — return a previously saved exploration path.
-async fn get_exploration(
-    State(state): State<ApiState>,
-    Path(exploration_id): Path<String>,
-) -> Result<Response, ApiError> {
-    let session = state.persistence.load_exploration_session(&exploration_id).await?;
-    match session {
-        Some(s) => Ok(Json(s).into_response()),
-        None => Err(ApiError(ExplorerError::NotFound(format!(
-            "exploration session {exploration_id} not found"
-        )))),
-    }
 }
 
 /// GET /api/workspaces/:workspace_id/explorations — list saved explorations for a workspace.

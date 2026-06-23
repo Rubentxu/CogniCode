@@ -14,7 +14,7 @@ import { http, HttpResponse, delay } from "msw";
 import {
   contextualViewFixture,
   decisionArtifactFixture,
-  explorationPathFixture,
+  explorationSessionFixture,
   inspectableObjectFixture,
   lensDescriptorsFixture,
   lensResultFixture,
@@ -191,24 +191,15 @@ export const handlers = [
   }),
 
   // -----------------------------------------------------------------------
-  // 10. Save exploration
+  // 10. List exploration sessions
   // -----------------------------------------------------------------------
-  http.post("/api/explorations", async ({ request }) => {
-    await delay(LATENCY_MS);
-    const body = (await request.json()) as { workspace_id: string };
-    return HttpResponse.json({
-      ...explorationPathFixture,
-      workspace_id: body.workspace_id,
-    });
-  }),
-
   http.get("/api/workspaces/:workspace_id/explorations", async ({ params }) => {
     await delay(LATENCY_MS);
     const workspaceId = params["workspace_id"] as string | undefined;
     return HttpResponse.json([
       {
-        ...explorationPathFixture,
-        workspace_id: workspaceId ?? explorationPathFixture.workspace_id,
+        ...explorationSessionFixture,
+        workspace_id: workspaceId ?? explorationSessionFixture.workspace_id,
       },
     ]);
   }),

@@ -13,17 +13,17 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 import { RecentExplorationsStrip } from "./RecentExplorationsStrip";
-import type { ExplorationPath } from "../../api/types";
-import { explorationPathFixture } from "../../mocks/fixtures";
+import type { ExplorationSessionDto } from "../../api/types";
+import { explorationSessionFixture } from "../../mocks/fixtures";
 
 // Mock useExplorations at the module level
 vi.mock("../../hooks/useExplorations", () => ({
   useExplorations: vi.fn(),
 }));
 
-function makeExploration(overrides: Partial<ExplorationPath>): ExplorationPath {
+function makeExploration(overrides: Partial<ExplorationSessionDto>): ExplorationSessionDto {
   return {
-    ...explorationPathFixture,
+    ...explorationSessionFixture,
     id: `exploration-${Math.random().toString(36).slice(2)}`,
     created_at: new Date().toISOString(),
     ...overrides,
@@ -40,7 +40,7 @@ describe("RecentExplorationsStrip", () => {
   it("renders cards when explorations exist", async () => {
     const { useExplorations } = await import("../../hooks/useExplorations");
     vi.mocked(useExplorations).mockReturnValue({
-      data: [makeExploration({ id: "exp-1", columns: [{ object_id: "obj-1", active_view: "overview", kind: "symbol" }] })],
+      data: [makeExploration({ id: "exp-1", panes: [{ pane_id: "pane-1", object_id: "obj-1", view_id: "overview", scroll_y: 0, viewport: null }] })],
       isLoading: false,
       error: null,
     } as ReturnType<typeof useExplorations>);
@@ -142,7 +142,7 @@ describe("RecentExplorationsStrip", () => {
   it("clicking a card dispatches onExplorationClick with the exploration", async () => {
     const exploration = makeExploration({
       id: "exp-click-test",
-      columns: [{ object_id: "obj-click", active_view: "overview", kind: "symbol" }],
+      panes: [{ pane_id: "pane-1", object_id: "obj-click", view_id: "overview", scroll_y: 0, viewport: null }],
     });
 
     const { useExplorations } = await import("../../hooks/useExplorations");

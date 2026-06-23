@@ -5,23 +5,24 @@
  * clicking to navigate to the first object in that exploration.
  */
 import { useExplorations } from "../../hooks/useExplorations";
-import type { ExplorationPath } from "../../api/types";
+import type { ExplorationSessionDto } from "../../api/types";
 
 export interface RecentExplorationsStripProps {
   workspaceId: string;
-  onExplorationClick: (exploration: ExplorationPath) => void;
+  onExplorationClick: (exploration: ExplorationSessionDto) => void;
 }
 
 function ExplorationCard({
   exploration,
   onClick,
 }: {
-  exploration: ExplorationPath;
+  exploration: ExplorationSessionDto;
   onClick: () => void;
 }) {
-  // Use the first column's object as the title, or fall back to the ID
-  const firstColumn = exploration.columns[0];
-  const title = firstColumn?.object_id ?? exploration.id;
+  // Use the first pane's object as the title, or fall back to events[0] or id
+  const firstPane = exploration.panes[0];
+  const firstEvent = exploration.events[0];
+  const title = firstPane?.object_id ?? firstEvent?.object_id ?? exploration.id;
   const timestamp = new Date(exploration.created_at).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -71,7 +72,7 @@ function ExplorationCard({
           color: "var(--color-text-muted)",
         }}
       >
-        {timestamp} · {exploration.columns.length} pane{exploration.columns.length !== 1 ? "s" : ""}
+        {timestamp} · {exploration.panes.length} pane{exploration.panes.length !== 1 ? "s" : ""}
       </div>
     </button>
   );

@@ -1,6 +1,6 @@
 //! [`PersistenceService`] implementation.
 //!
-//! Provides exploration path persistence and ViewSpec CRUD.
+//! Provides exploration session persistence and ViewSpec CRUD (ADR-045 Phase 1).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -13,18 +13,13 @@ use serde_json::json;
 use cognicode_core::infrastructure::persistence::PostgresRepository;
 
 use crate::dto::{
-    DecisionArtifactSummary, ExplorationPath, ExplorationSession,
-    GenerateArtifactRequest, ObjectIdentityEntry,
-    SaveExplorationRequest, SaveExplorationSessionRequest, ViewSpec,
+    DecisionArtifactSummary, ExplorationSession,
+    GenerateArtifactRequest,
+    SaveExplorationSessionRequest, ViewSpec,
 };
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::PersistenceService;
-use crate::domain::object_identity::ObjectIdentity;
 use crate::registry::ViewSpecStore;
-
-/// In-memory store for exploration paths, keyed by exploration id.
-/// Phase 1C: process-lifetime only — paths do not survive a restart.
-type ExplorationPathStore = Mutex<HashMap<String, ExplorationPath>>;
 
 /// In-memory store for exploration sessions (ADR-016 Fase 3).
 type ExplorationSessionStore = Mutex<HashMap<String, ExplorationSession>>;
@@ -34,13 +29,11 @@ type ExplorationSessionStore = Mutex<HashMap<String, ExplorationSession>>;
 /// Holds:
 /// - `view_spec_store` — optional ViewSpec persistence backend
 /// - `postgres_repo` — optional PostgreSQL repository for named views
-/// - `paths` — in-memory exploration path store
 /// - `sessions` — in-memory exploration session store (ADR-016 Fase 3)
 pub struct PersistenceServiceImpl {
     view_spec_store: Option<Arc<dyn ViewSpecStore>>,
     #[cfg(feature = "postgres")]
     postgres_repo: Option<Arc<PostgresRepository>>,
-    paths: Arc<ExplorationPathStore>,
     sessions: Arc<ExplorationSessionStore>,
 }
 
@@ -54,7 +47,6 @@ impl PersistenceServiceImpl {
             view_spec_store,
             #[cfg(feature = "postgres")]
             postgres_repo,
-            paths: Arc::new(Mutex::new(HashMap::new())),
             sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -62,65 +54,22 @@ impl PersistenceServiceImpl {
 
 #[async_trait]
 impl PersistenceService for PersistenceServiceImpl {
-    async fn save_exploration(
-        &self,
-        request: SaveExplorationRequest,
-    ) -> ExplorerResult<ExplorationPath> {
-        if request.columns.is_empty() {
-            return Err(ExplorerError::ResolutionFailed(
-                "exploration path requires at least one column".to_string(),
-            ));
-        }
-
-        // Validate every column id is well-formed before we persist anything.
-        let created_at = Utc::now().to_rfc3339();
-        let mut seen: HashMap<String, ObjectIdentityEntry> = HashMap::new();
-        for column in &request.columns {
-            let identity = ObjectIdentity::parse_mvp_id(&column.object_id)?;
-            let entry = ObjectIdentityEntry {
-                id: identity.to_mvp_id(),
-                object_type: identity.object_type(),
-                natural_key: identity.natural_key(),
-                first_seen: created_at.clone(),
-            };
-            seen.entry(entry.id.clone()).or_insert(entry);
-        }
-        let objects: Vec<ObjectIdentityEntry> = seen.into_values().collect();
-
-        let path = ExplorationPath {
-            id: format!("exploration:{}", Utc::now().timestamp_millis()),
-            workspace_id: request.workspace_id,
-            columns: request.columns,
-            objects,
-            lens: request.lens,
-            created_at,
-            navigation_mode: request.navigation_mode,
-        };
-
-        self.paths
-            .lock()
-            .map_err(|_| ExplorerError::Anyhow(anyhow::anyhow!("exploration path store poisoned")))?
-            .insert(path.id.clone(), path.clone());
-
-        Ok(path)
-    }
-
     async fn generate_artifact(
         &self,
         exploration_id: &str,
         request: GenerateArtifactRequest,
     ) -> ExplorerResult<DecisionArtifactSummary> {
-        let path = self
-            .paths
+        let session = self
+            .sessions
             .lock()
-            .map_err(|_| ExplorerError::Anyhow(anyhow::anyhow!("path store poisoned")))?
+            .map_err(|_| ExplorerError::Anyhow(anyhow::anyhow!("session store poisoned")))?
             .get(exploration_id)
             .cloned();
 
         match request.format {
             crate::dto::ArtifactFormat::JsonReplay => {
-                let body = match path.as_ref() {
-                    Some(p) => render_replay_json(p),
+                let body = match session.as_ref() {
+                    Some(s) => render_replay_json(s),
                     None => render_replay_json_unknown(exploration_id),
                 };
                 Ok(DecisionArtifactSummary {
@@ -131,8 +80,8 @@ impl PersistenceService for PersistenceServiceImpl {
                 })
             }
             crate::dto::ArtifactFormat::Markdown | crate::dto::ArtifactFormat::Html => {
-                let body = match path.as_ref() {
-                    Some(p) => render_replay_markdown(p),
+                let body = match session.as_ref() {
+                    Some(s) => render_replay_markdown(s),
                     None => render_replay_markdown_unknown(exploration_id),
                 };
                 Ok(DecisionArtifactSummary {
@@ -204,34 +153,23 @@ impl PersistenceService for PersistenceServiceImpl {
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("delete_view_spec: {e}")))
     }
 
-    /// List all saved `ExplorationPath` records for a workspace.
+    /// List all saved `ExplorationSession` records for a workspace.
     ///
-    /// ## KNOWN-DEBT:
+    /// ## KNOWN-DEBT (ADR-045 Phase 1 — resolved)
     ///
-    /// - KNOWN-DEBT: `get_exploration` (`api.rs:777-789`) is mis-wired — its
-    ///   doc says "return a previously saved exploration path" but it calls
-    ///   `load_exploration_session` and returns an `ExplorationSession`. This
-    ///   is a pre-existing inconsistency surfaced by adding this LIST route.
-    ///   See ADR-045 for the disposition.
-    /// - KNOWN-DEBT: `ExplorationPath` (legacy `columns` model) vs
-    ///   `ExplorationSession` (pane-stack model per ADR-040 Wave 3) are two
-    ///   parallel save/list/restore paths. This LIST endpoint returns
-    ///   `ExplorationPath` because the frontend schema
-    ///   (`z.array(explorationPathSchema)`) expects that shape. Model
-    ///   unification is future work. See ADR-045 for the disposition.
-    /// - KNOWN-DEBT: the in-memory `paths` HashMap is process-lifetime only —
-    ///   server restart loses all rows. Postgres-backed exploration
-    ///   persistence is future work. See ADR-045 for the disposition.
+    /// - Debt 1 ✅: Orphaned `GET /api/explorations/:id` route removed.
+    /// - Debt 2 ✅: Dual model unified onto `ExplorationSession` (ADR-040 Wave 3 aligned).
+    /// - Debt 3 ⚠️: In-memory store lifetime — Postgres persistence deferred to Phase 2.
     async fn list_explorations(
         &self,
         workspace_id: &str,
-    ) -> ExplorerResult<Vec<crate::dto::ExplorationPath>> {
-        let paths = self.paths.lock().map_err(|_| {
-            ExplorerError::Anyhow(anyhow::anyhow!("exploration path store poisoned"))
+    ) -> ExplorerResult<Vec<ExplorationSession>> {
+        let sessions = self.sessions.lock().map_err(|_| {
+            ExplorerError::Anyhow(anyhow::anyhow!("exploration session store poisoned"))
         })?;
-        Ok(paths
+        Ok(sessions
             .values()
-            .filter(|p| p.workspace_id == workspace_id)
+            .filter(|s| s.workspace_id == workspace_id)
             .cloned()
             .collect())
     }
@@ -279,14 +217,15 @@ impl PersistenceService for PersistenceServiceImpl {
 }
 
 // ---------------------------------------------------------------------------
-// Exploration path artifact rendering
+// Exploration session artifact rendering (ADR-045 Phase 1)
 // ---------------------------------------------------------------------------
 
-fn render_replay_json(path: &ExplorationPath) -> String {
+fn render_replay_json(session: &ExplorationSession) -> String {
     let body = json!({
-        "exploration_id": path.id,
+        "exploration_id": session.id,
         "version": 1,
-        "objects": path.objects,
+        "events": session.events,
+        "panes": session.panes,
     });
     serde_json::to_string_pretty(&body).unwrap_or_else(|_| body.to_string())
 }
@@ -295,22 +234,25 @@ fn render_replay_json_unknown(exploration_id: &str) -> String {
     let body = json!({
         "exploration_id": exploration_id,
         "version": 1,
-        "objects": [],
-        "warning": "exploration path not found in session store — no resolved objects available",
+        "events": [],
+        "panes": [],
+        "warning": "exploration session not found in session store — no data available",
     });
     serde_json::to_string_pretty(&body).unwrap_or_else(|_| body.to_string())
 }
 
-fn render_replay_markdown(path: &ExplorationPath) -> String {
+fn render_replay_markdown(session: &ExplorationSession) -> String {
     let mut out = String::new();
     out.push_str("# Symbol exploration report\n\n");
-    out.push_str(&format!("Exploration: `{}`\n\n", path.id));
-    out.push_str(&format!("Created: `{}`\n\n", path.created_at));
-    out.push_str(&format!("Objects ({}):\n\n", path.objects.len()));
-    for obj in &path.objects {
+    out.push_str(&format!("Exploration: `{}`\n\n", session.id));
+    out.push_str(&format!("Created: `{}`\n\n", session.created_at));
+    out.push_str(&format!("Events ({}):\n\n", session.events.len()));
+    for event in &session.events {
         out.push_str(&format!(
-            "- `{}` — type=`{}` natural_key=`{}` first_seen=`{}`\n",
-            obj.id, obj.object_type, obj.natural_key, obj.first_seen
+            "- `{}` — view=`{}` ts=`{}`\n",
+            event.object_id,
+            event.view_id.as_deref().unwrap_or("none"),
+            event.ts
         ));
     }
     out
@@ -318,6 +260,6 @@ fn render_replay_markdown(path: &ExplorationPath) -> String {
 
 fn render_replay_markdown_unknown(exploration_id: &str) -> String {
     format!(
-        "# Symbol exploration report\n\nExploration: `{exploration_id}`\n\n_No path data found in session store — the exploration may have been created in another process._\n"
+        "# Symbol exploration report\n\nExploration: `{exploration_id}`\n\n_No session data found in store — the exploration may have been created in another process._\n"
     )
 }
