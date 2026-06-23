@@ -1212,65 +1212,10 @@ use crate::interface::mcp::schemas::{
     ListViewSpecsInput, ListViewSpecsOutput, ReadViewSpecInput, ReadViewSpecOutput, ViewDescriptor,
     ViewSpec,
 };
+use crate::schemas::builtin_descriptors;
 
 /// MCP default owner for runtime ViewSpecs.
 const MCP_DEFAULT_OWNER: &str = "mcp";
-
-/// The 8 built-in view descriptors.
-/// Hard-coded here to avoid cross-crate dependency on cognicode-explorer.
-/// Keep in sync with REAL_EXECUTOR_DESCRIPTORS in registry.rs.
-fn builtin_descriptors() -> Vec<ViewDescriptor> {
-    vec![
-        ViewDescriptor {
-            id: "overview".into(),
-            title: "Overview".into(),
-            is_builtin: true,
-            source: None,
-        },
-        ViewDescriptor {
-            id: "call-graph".into(),
-            title: "Call Graph".into(),
-            is_builtin: true,
-            source: None,
-        },
-        ViewDescriptor {
-            id: "source".into(),
-            title: "Source".into(),
-            is_builtin: true,
-            source: None,
-        },
-        ViewDescriptor {
-            id: "quality".into(),
-            title: "Quality".into(),
-            is_builtin: true,
-            source: None,
-        },
-        ViewDescriptor {
-            id: "evidence".into(),
-            title: "Evidence".into(),
-            is_builtin: true,
-            source: None,
-        },
-        ViewDescriptor {
-            id: "symbols".into(),
-            title: "Symbols".into(),
-            is_builtin: true,
-            source: None,
-        },
-        ViewDescriptor {
-            id: "dependencies".into(),
-            title: "Dependencies".into(),
-            is_builtin: true,
-            source: None,
-        },
-        ViewDescriptor {
-            id: "hotspots".into(),
-            title: "Hotspots".into(),
-            is_builtin: true,
-            source: None,
-        },
-    ]
-}
 
 /// List all ViewSpecs visible to the workspace (built-in + runtime).
 ///

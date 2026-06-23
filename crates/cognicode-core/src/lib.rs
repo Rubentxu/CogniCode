@@ -5,6 +5,7 @@ pub mod domain;
 pub mod infrastructure;
 pub mod interface;
 pub mod sandbox_core;
+pub mod schemas;
 
 // Re-export the main facade
 pub use application::dto;
