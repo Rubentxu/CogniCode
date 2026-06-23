@@ -21,7 +21,7 @@ vi.mock("cytoscape", () => {
     data: NodeData;
     classes: Set<string> = new Set();
     private listeners = new Map<string, Array<(e: unknown) => void>>();
-    private edgeListeners = new Set<CyEdge>();
+    private edgeListeners: Set<CyEdge> = new Set();
     constructor(d: NodeData) {
       this.id = String(d.id);
       this.data = d;
@@ -75,15 +75,15 @@ vi.mock("cytoscape", () => {
     length = 0;
   }
   class Cy {
-    nodes: CyNode[] = [];
-    edgeElements: CyEdge[] = [];
+    private _nodes: CyNode[] = [];
+    private _edgeElements: CyEdge[] = [];
     private allListeners: Array<(e: unknown) => void> = [];
     constructor(opts: { elements?: { nodes?: NodeData[]; edges?: EdgeData[] } }) {
-      this.nodes = (opts.elements?.nodes ?? []).map((d) => new CyNode(d));
-      this.edgeElements = (opts.elements?.edges ?? []).map((d) => new CyEdge(d as EdgeData));
-      for (const e of this.edgeElements) {
-        const src = this.nodes.find((n) => n.id === String(e.data.source));
-        const tgt = this.nodes.find((n) => n.id === String(e.data.target));
+      this._nodes = (opts.elements?.nodes ?? []).map((d) => new CyNode(d));
+      this._edgeElements = (opts.elements?.edges ?? []).map((d) => new CyEdge(d as EdgeData));
+      for (const e of this._edgeElements) {
+        const src = this._nodes.find((n) => n.id === String(e.data.source));
+        const tgt = this._nodes.find((n) => n.id === String(e.data.target));
         if (src) (src as unknown as { edgeListeners: Set<CyEdge> }).edgeListeners.add(e);
         if (tgt) (tgt as unknown as { edgeListeners: Set<CyEdge> }).edgeListeners.add(e);
       }
@@ -92,22 +92,25 @@ vi.mock("cytoscape", () => {
       if (typeof selector === "function") {
         this.allListeners.push(selector);
       } else if (fn && selector === "node") {
-        for (const n of this.nodes) n.on("tap", fn);
+        for (const n of this._nodes) n.on("tap", fn);
       }
     }
     off(_evt: string, fn: (e: unknown) => void) {
-      for (const n of this.nodes) n.off("tap", fn);
+      for (const n of this._nodes) n.off("tap", fn);
     }
     elements(): CyCollection {
-      return new CyCollection([...this.nodes, ...this.edgeElements]);
+      return new CyCollection([...this._nodes, ...this._edgeElements]);
+    }
+    nodes(): CyCollection {
+      return new CyCollection(this._nodes);
     }
     getElementById(id: string): CyCollection {
-      const all = [...this.nodes, ...this.edgeElements];
+      const all = [...this._nodes, ...this._edgeElements];
       return new CyCollection(all.filter((i) => i.id === String(id)));
     }
     destroy() { /* no-op */ }
     edges(_selector?: string) {
-      return new CyCollection(this.edgeElements);
+      return new CyCollection(this._edgeElements);
     }
   }
   return {
