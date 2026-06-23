@@ -224,6 +224,20 @@ pub trait PersistenceService: Send + Sync {
         workspace_id: &str,
         owner: &str,
     ) -> ExplorerResult<bool>;
+
+    /// List all saved explorations for a workspace, sorted by creation time.
+    ///
+    /// ## KNOWN-DEBT
+    ///
+    /// - `get_exploration` (api.rs:768) calls `load_exploration_session` despite doc
+    ///   saying "path" — pre-existing mis-wire, tracked separately.
+    /// - `ExplorationPath` vs `ExplorationSession` dual model — model unification is
+    ///   deferred to ADR-045.
+    /// - In-memory store lifetime (lost on restart) — backend limitation, not addressed here.
+    async fn list_explorations(
+        &self,
+        workspace_id: &str,
+    ) -> ExplorerResult<Vec<crate::dto::ExplorationPath>>;
 }
 
 // ============================================================================

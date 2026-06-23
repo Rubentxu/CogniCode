@@ -204,6 +204,20 @@ impl PersistenceService for PersistenceServiceImpl {
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("delete_view_spec: {e}")))
     }
 
+    async fn list_explorations(
+        &self,
+        workspace_id: &str,
+    ) -> ExplorerResult<Vec<crate::dto::ExplorationPath>> {
+        let paths = self.paths.lock().map_err(|_| {
+            ExplorerError::Anyhow(anyhow::anyhow!("exploration path store poisoned"))
+        })?;
+        Ok(paths
+            .values()
+            .filter(|p| p.workspace_id == workspace_id)
+            .cloned()
+            .collect())
+    }
+
     // --- Exploration Session (ADR-016 Fase 3) ---
 
     async fn save_exploration_session(

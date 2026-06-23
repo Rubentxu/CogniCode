@@ -463,6 +463,10 @@ pub fn router_with_state(state: ApiState) -> Router {
             "/api/exploration-sessions/:session_id",
             get(get_exploration_session),
         )
+        .route(
+            "/api/workspaces/:workspace_id/explorations",
+            get(list_explorations),
+        )
         .route("/api/graph/:id/subgraph", get(subgraph_handler))
         .route("/api/graph/:id/contextual", get(contextual_handler))
         .route("/api/graph/:id/rationale", get(rationale_handler))
@@ -505,6 +509,10 @@ pub fn router(state: ApiState) -> Router {
         .route(
             "/api/exploration-sessions/:session_id",
             get(get_exploration_session),
+        )
+        .route(
+            "/api/workspaces/:workspace_id/explorations",
+            get(list_explorations),
         )
         .route("/api/graph/:id/subgraph", get(subgraph_handler))
         .route("/api/graph/:id/contextual", get(contextual_handler))
@@ -777,6 +785,14 @@ async fn get_exploration(
             "exploration session {exploration_id} not found"
         )))),
     }
+}
+
+/// GET /api/workspaces/:workspace_id/explorations — list saved explorations for a workspace.
+async fn list_explorations(
+    State(state): State<ApiState>,
+    Path(workspace_id): Path<String>,
+) -> Result<Response, ApiError> {
+    Ok(Json(state.persistence.list_explorations(&workspace_id).await?).into_response())
 }
 
 /// POST /api/exploration-sessions — save an exploration session.
