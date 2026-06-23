@@ -395,7 +395,7 @@ impl GraphService for GraphServiceImpl {
                 nodes.push(GraphNode {
                     id: code_id.clone(),
                     label: symbol.name.clone(),
-                    kind: format!("{:?}", symbol.kind).to_lowercase(),
+                    kind: "code".to_string(),
                     file: Some(symbol.file.clone()),
                     line: Some(symbol.line),
                     style_class: "node-code".to_string(),
@@ -843,5 +843,49 @@ members = ["crates/test-crate"]
         assert_eq!(system_nodes[0].id, format!("system:{}", workspace_name.to_lowercase()));
         assert_eq!(system_nodes[0].label, workspace_name);
         assert_ne!(system_nodes[0].id, "system:cognicode");
+    }
+
+    /// Regression test: C4 code nodes (leaf symbols inside a component)
+    /// must have `kind: "code"`, NOT `format!("{:?}", symbol.kind).to_lowercase()`
+    /// which would produce e.g. `"function"` instead of `"code"`.
+    /// ADR-039 §C4-code-node-kind governs this invariant.
+    #[tokio::test]
+    async fn build_architecture_emits_code_kind_for_c4_code_nodes() {
+        let tmp = TempDir::new().unwrap();
+        let workspace_toml = tmp.path().join("Cargo.toml");
+        std::fs::write(&workspace_toml, "").unwrap();
+
+        // Create a crate whose src/ directory maps to a C4 component
+        let crate_dir = tmp.path().join("crates/my-crate");
+        std::fs::create_dir_all(&crate_dir.join("src")).unwrap();
+        std::fs::write(crate_dir.join("Cargo.toml"), "[lib]").unwrap();
+
+        // One function symbol — its kind is Function but inside a C4 component
+        // it must surface as kind="code"
+        let symbols = vec![sym("my_func", "crates/my-crate/src/lib.rs", 10)];
+        let repo = make_mock_repo(
+            vec!["crates/my-crate/src".to_string()],
+            symbols,
+        );
+        let service = GraphServiceImpl::new(repo, None);
+
+        let result = service.build_architecture(tmp.path().to_str().unwrap()).await.unwrap();
+
+        // There should be exactly one code node (the my_func symbol)
+        let code_nodes: Vec<_> = result.nodes.iter()
+            .filter(|n| n.kind == "code")
+            .collect();
+        assert_eq!(code_nodes.len(), 1, "expected exactly one code node, got: {:#?}", result.nodes);
+        assert_eq!(code_nodes[0].label, "my_func");
+
+        // Ensure it is NOT emitted as kind="function"
+        let function_kind_nodes: Vec<_> = result.nodes.iter()
+            .filter(|n| n.kind == "function")
+            .collect();
+        assert!(
+            function_kind_nodes.is_empty(),
+            "C4 code nodes must not have kind='function'; found: {:#?}",
+            function_kind_nodes
+        );
     }
 }

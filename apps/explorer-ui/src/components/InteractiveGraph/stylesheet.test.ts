@@ -202,8 +202,9 @@ describe("KNOWN_NODE_CLASSES — Phase 1 adds the 3 C4 node classes", () => {
     }
   });
 
-  it("total node class count is 13 (3 legacy + 4 multimodal + 3 C4 + 3 landing E4)", () => {
-    expect(KNOWN_NODE_CLASSES.size).toBe(13);
+  // 4 C4 = component + container + system + code (code is ADR-039 C4 leaf)
+  it("total node class count is 14 (3 legacy + 4 multimodal + 4 C4 + 3 landing E4)", () => {
+    expect(KNOWN_NODE_CLASSES.size).toBe(14);
   });
 });
 
