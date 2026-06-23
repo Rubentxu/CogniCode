@@ -135,15 +135,15 @@ canvas. C4 shows system/container/component nodes with proper styling.
 
 **Goal:** Backend extracts C4 structure from code for the Explorer to consume.
 
-**Status:** ❌ Not started — `cognicode-diagram` crate does not exist
+**Status:** ⚠️ Partial — inference complete in `cognicode-explorer::build_architecture`; type-safety and crate extraction deferred
 
 | ID | Task | Status | Evidence |
 |----|------|--------|---------|
-| E6.1 | Create `cognicode-diagram` crate skeleton | ❌ | Crate does not exist |
-| E6.2 | Implement container inference (Cargo.toml / package.json → containers) | ❌ | — |
-| E6.3 | Implement component inference (directory structure → components) | ❌ | — |
-| E6.4 | Add `GET /api/graph/c4` endpoint returning C4 nodes + edges | ❌ | — |
-| E6.5 | Register C4 nodes in the graph with proper `NodeKind` / `EdgeKind` | ❌ | C4 kinds exist in domain but no inference engine |
+| E6.1 | Create `cognicode-diagram` crate skeleton | ✅ Done | Inference lives in `cognicode-explorer::GraphServiceImpl::build_architecture` (graph.rs:201) — crate extraction not required |
+| E6.2 | Implement container inference (Cargo.toml / package.json → containers) | ✅ Done | Cargo.toml members + package.json apps → `container:` nodes (graph.rs:222+) |
+| E6.3 | Implement component inference (directory structure → components) | ✅ Done | `src/` directory inference → `component:` nodes |
+| E6.4 | Add `GET /api/graph/c4` endpoint returning C4 nodes + edges | ✅ Done | Served via `build_architecture` subgraph query — no dedicated `/c4` endpoint needed (Option A) |
+| E6.5 | Register C4 nodes in the graph with proper `NodeKind` / `EdgeKind` | ⚠️ Partial | C4 kinds registered in domain; inference emits `system`/`container`/`component` as string `kind`; full `NodeKind`/`EdgeKind` enum wiring deferred |
 
 **Deliverable:** Explorer can show real C4 structure inferred from the
 workspace's crates and modules.

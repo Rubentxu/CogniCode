@@ -202,13 +202,20 @@ impl GraphService for GraphServiceImpl {
         use std::collections::HashMap;
         use std::path::Path;
 
+        let root = Path::new(root_path);
+        let workspace_name = root
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "system".to_string());
+        let system_id = format!("system:{}", workspace_name.to_lowercase());
+        let system_label = workspace_name;
+
         // =========================================================================
         // C1 — System node
         // =========================================================================
-        let system_id = "system:cognicode";
         let mut nodes = vec![GraphNode {
-            id: system_id.to_string(),
-            label: "CogniCode".to_string(),
+            id: system_id.clone(),
+            label: system_label,
             kind: "system".to_string(),
             file: None,
             line: None,
@@ -219,7 +226,6 @@ impl GraphService for GraphServiceImpl {
         // =========================================================================
         // C2 — Containers
         // =========================================================================
-        let root = Path::new(root_path);
         let workspace_toml = root.join("Cargo.toml");
 
         // Track container IDs for later edge creation
@@ -610,6 +616,8 @@ mod tests {
         let service = GraphServiceImpl::new(repo, None);
 
         let tmp = TempDir::new().unwrap();
+        let workspace_name = tmp.path().file_name().unwrap().to_string_lossy().to_string();
+        let expected_system_id = format!("system:{}", workspace_name.to_lowercase());
         let result = service.build_architecture(tmp.path().to_str().unwrap()).await.unwrap();
 
         // Should have exactly one system node
@@ -617,7 +625,7 @@ mod tests {
             .filter(|n| n.kind == "system")
             .collect();
         assert_eq!(system_nodes.len(), 1);
-        assert_eq!(system_nodes[0].id, "system:cognicode");
+        assert_eq!(system_nodes[0].id, expected_system_id.as_str());
         assert_eq!(system_nodes[0].style_class, "node-system");
     }
 
@@ -625,6 +633,8 @@ mod tests {
     async fn build_architecture_includes_workspace_containers() {
         // Create a temp workspace with Cargo.toml containing members
         let tmp = TempDir::new().unwrap();
+        let workspace_name = tmp.path().file_name().unwrap().to_string_lossy().to_string();
+        let expected_system_id = format!("system:{}", workspace_name.to_lowercase());
         let workspace_toml = tmp.path().join("Cargo.toml");
         std::fs::write(&workspace_toml, r#"
 [workspace]
@@ -662,7 +672,7 @@ path = "lib.rs"
 
         // Should have part_of edge from container to system
         let container_to_system: Vec<_> = result.edges.iter()
-            .filter(|e| e.source == "container:crates/test-crate" && e.target == "system:cognicode")
+            .filter(|e| e.source == "container:crates/test-crate" && e.target == expected_system_id.as_str())
             .collect();
         assert_eq!(container_to_system.len(), 1);
         assert_eq!(container_to_system[0].relation, "part_of");
@@ -772,6 +782,8 @@ version = "0.1.0"
     #[tokio::test]
     async fn build_architecture_creates_part_of_edges() {
         let tmp = TempDir::new().unwrap();
+        let workspace_name = tmp.path().file_name().unwrap().to_string_lossy().to_string();
+        let expected_system_id = format!("system:{}", workspace_name.to_lowercase());
         let workspace_toml = tmp.path().join("Cargo.toml");
         std::fs::write(&workspace_toml, r#"
 [workspace]
@@ -801,6 +813,35 @@ members = ["crates/test-crate"]
         let sources: Vec<_> = part_of_edges.iter().map(|e| e.source.as_str()).collect();
         let targets: Vec<_> = part_of_edges.iter().map(|e| e.target.as_str()).collect();
         assert!(sources.contains(&"container:crates/test-crate"));
-        assert!(targets.contains(&"system:cognicode"));
+        assert!(targets.contains(&expected_system_id.as_str()));
+    }
+
+    #[tokio::test]
+    async fn build_architecture_derives_system_name_from_workspace() {
+        let tmp = tempfile::Builder::new().prefix("my-app").tempdir().unwrap();
+        let repo = make_mock_repo(vec![], vec![]);
+        let service = GraphServiceImpl::new(repo, None);
+
+        let response = service
+            .build_architecture(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
+
+        let system_nodes: Vec<_> = response
+            .nodes
+            .iter()
+            .filter(|n| n.kind == "system")
+            .collect();
+        assert_eq!(system_nodes.len(), 1);
+
+        let workspace_name = tmp
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        assert_eq!(system_nodes[0].id, format!("system:{}", workspace_name.to_lowercase()));
+        assert_eq!(system_nodes[0].label, workspace_name);
+        assert_ne!(system_nodes[0].id, "system:cognicode");
     }
 }
