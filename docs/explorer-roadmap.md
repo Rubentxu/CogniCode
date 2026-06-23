@@ -116,22 +116,18 @@ explorations. Clicking a root opens the pane-stack workflow.
 
 **Goal:** The graph canvas morphs between call-graph and C4 perspectives.
 
-**Status:** ⚠️ Partial — toggle works on landing page only; not wired into `InteractiveGraphPanel`
+**Status:** ✅ Complete — toggle is wired into `InteractiveGraphPanel`; both landing and drilled-in canvas morph between perspectives
 
 | ID | Task | Status | Evidence |
 |----|------|--------|---------|
 | E5.1 | Add perspective toggle UI (`[Context | Graph]`) in Shell header | ✅ | `PerspectiveToggle.tsx` in `ShellLayout.tsx:77`; dispatches `SET_PERSPECTIVE` |
 | E5.2 | Create `useC4Context` hook (calls backend C4 inference) | ⚠️ Renamed | Hook is `useArchitecture` (not `useC4Context`); functional |
-| E5.3 | Wire toggle → swap data source between `useSubgraph` and `useC4Context` | ❌ Gap | Perspective swap works on `GraphLanding` only; `InteractiveGraphPanel` always uses `useSubgraph` — toggle has no effect after object selection |
+| E5.3 | Wire toggle → swap data source between `useSubgraph` and `useC4Context` | ✅ Done | `Shell.tsx:45-88` rewrites `InteractiveGraphPanel` to call both hooks; perspective selects data source |
 | E5.4 | Apply C4 stylesheet classes when in C4 perspective | ✅ | All C4 classes in `stylesheet.ts`; applied via `style_class` attribute |
-| E5.5 | Add smooth transition between perspectives (data swap + re-layout) | ❌ Not done | No crossfade; cytoscape instance is destroyed and remounted on perspective change |
+| E5.5 | Add smooth transition between perspectives (data swap + re-layout) | ⚠️ Partial | Data swap now works; crossfade still ❌ — cytoscape instance is destroyed and remounted on perspective change |
 
 **Deliverable:** User can toggle between Graph and C4 perspectives on the same
 canvas. C4 shows system/container/component nodes with proper styling.
-
-**Critical gap:** E5.3 requires wiring `SET_PERSPECTIVE` into `InteractiveGraphPanel` so that
-`useSubgraph` is conditionally replaced by `useArchitecture` when `perspective === "c4"`.
-Without this, the toggle only affects the landing page.
 
 ---
 
