@@ -20,15 +20,15 @@ import type { ContextualView } from "../../api/types";
  * First-class graph-shaped ViewKinds that route to `GraphViewRenderer`
  * via the `rendererRegistry["graph"]` entry.
  */
-export const GRAPH_KINDS = new Set([
+const GRAPH_KIND_ARRAY = [
   "call_graph",
   "dependency_graph",
   "data_flow",
   "impact_radius",
   "seam_map",
-] as const);
-
-export type GraphViewKind = (typeof GRAPH_KINDS)[number];
+] as const;
+export type GraphViewKind = (typeof GRAPH_KIND_ARRAY)[number];
+export const GRAPH_KINDS = new Set<GraphViewKind>(GRAPH_KIND_ARRAY);
 
 /**
  * Returns true when `kind` is a graph-shaped ViewKind.
