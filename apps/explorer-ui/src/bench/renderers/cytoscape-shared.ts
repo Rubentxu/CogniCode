@@ -175,7 +175,7 @@ export function mountCytoscape(
     elements: [...elements.nodes, ...elements.edges],
     style: buildStylesheet(),
     layout: { name: "preset" },
-    renderer: rendererConfig,
+    ...({ renderer: rendererConfig } as cytoscape.CytoscapeOptions),
   });
 
   cy.fit(undefined, 20);
