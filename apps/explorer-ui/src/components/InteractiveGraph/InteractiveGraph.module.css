@@ -1,0 +1,29 @@
+/* InteractiveGraph canvas fade transition.
+ *
+ * Provides a 200ms opacity crossfade between graph/C4 perspectives
+ * when the cytoscape data changes.  The transition is CSS-driven so
+ * `prefers-reduced-motion: reduce` can short-circuit it without
+ * JavaScript branching.
+ */
+
+.igCanvas {
+  flex: 1 1 auto;
+  min-height: 0;
+  opacity: 1;
+  transition: opacity 200ms ease-in-out;
+}
+
+.igCanvasFading {
+  flex: 1 1 auto;
+  min-height: 0;
+  opacity: 0;
+  transition: opacity 200ms ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .igCanvas,
+  .igCanvasFading {
+    opacity: 1;
+    transition: none;
+  }
+}
