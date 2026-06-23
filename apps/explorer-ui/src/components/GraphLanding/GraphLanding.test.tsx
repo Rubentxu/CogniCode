@@ -29,7 +29,7 @@ function GraphLandingWithState({
   workspaceId?: string;
 }) {
   const [state, dispatch] = useReducer(
-    (s: AppState, a: Action): AppState => s,
+    (s: AppState, _a: Action): AppState => s,
     {
       ...initialState,
       workspace: { ...workspaceSummaryFixture, id: workspaceId },
