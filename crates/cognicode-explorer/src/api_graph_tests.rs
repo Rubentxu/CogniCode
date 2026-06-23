@@ -196,6 +196,13 @@ impl PersistenceService for MockPersistenceService {
     ) -> crate::ExplorerResult<Option<crate::dto::ExplorationSession>> {
         Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
     }
+
+    async fn list_explorations(
+        &self,
+        _workspace_id: &str,
+    ) -> crate::ExplorerResult<Vec<crate::dto::ExplorationPath>> {
+        Ok(vec![])
+    }
 }
 
 #[derive(Clone)]
