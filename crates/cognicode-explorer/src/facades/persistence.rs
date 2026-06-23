@@ -212,16 +212,16 @@ impl PersistenceService for PersistenceServiceImpl {
     ///   doc says "return a previously saved exploration path" but it calls
     ///   `load_exploration_session` and returns an `ExplorationSession`. This
     ///   is a pre-existing inconsistency surfaced by adding this LIST route.
-    ///   Future ADR-045 will reconcile it.
+    ///   See ADR-045 for the disposition.
     /// - KNOWN-DEBT: `ExplorationPath` (legacy `columns` model) vs
     ///   `ExplorationSession` (pane-stack model per ADR-040 Wave 3) are two
     ///   parallel save/list/restore paths. This LIST endpoint returns
     ///   `ExplorationPath` because the frontend schema
     ///   (`z.array(explorationPathSchema)`) expects that shape. Model
-    ///   unification is future work.
+    ///   unification is future work. See ADR-045 for the disposition.
     /// - KNOWN-DEBT: the in-memory `paths` HashMap is process-lifetime only —
     ///   server restart loses all rows. Postgres-backed exploration
-    ///   persistence is future work.
+    ///   persistence is future work. See ADR-045 for the disposition.
     async fn list_explorations(
         &self,
         workspace_id: &str,
