@@ -1372,15 +1372,23 @@ pub async fn handle_read_view_spec(
 
     match row {
         Some(row) => {
+            let data_source = serde_json::from_str(&row.data_source)
+                .unwrap_or_else(|_| serde_json::json!({}));
+            let transform = row
+                .transform
+                .as_ref()
+                .and_then(|s| serde_json::from_str(s).ok());
+            let props = serde_json::from_str(&row.props)
+                .unwrap_or_else(|_| serde_json::json!({}));
             let view = ViewSpec {
                 id: row.id,
                 title: row.title,
                 applies_to: row.applies_to,
                 view_kind: row.view_kind,
-                data_source: serde_json::json!({}), // row.data_source is JSON string
-                transform: None,
+                data_source,
+                transform,
                 renderer_kind: row.renderer_kind,
-                props: serde_json::json!({}), // row.props is JSON string
+                props,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
                 owner: row.owner,
