@@ -31,6 +31,19 @@ use async_trait::async_trait;
 
 use crate::dto::{InspectableObjectType, RendererKind, ViewDescriptor, ViewKind, ViewSpec};
 
+/// Import raw built-in descriptor data from core to avoid duplication.
+use cognicode_core::schemas::BUILTIN_DESCRIPTORS_RAW;
+
+/// Convert raw built-in descriptor to dto::ViewDescriptor.
+fn raw_to_view_descriptor(raw: &cognicode_core::schemas::BuiltinDescriptorRaw) -> ViewDescriptor {
+    ViewDescriptor {
+        id: raw.id.to_string(),
+        title: raw.title.to_string(),
+        is_builtin: true,
+        source: None,
+    }
+}
+
 /// Error returned by [`ViewSpecStore`] operations.
 #[derive(Debug, Clone)]
 pub enum ViewSpecStoreError {
@@ -259,58 +272,13 @@ impl ViewRegistry {
         }
 
         // Add from REAL_EXECUTORS that aren't already in providers (Phase 3 executors)
+        // Uses shared BUILTIN_DESCRIPTORS_RAW from core to avoid duplication
         static REAL_EXECUTOR_DESCRIPTORS: OnceLock<Vec<ViewDescriptor>> = OnceLock::new();
         let real_descriptors = REAL_EXECUTOR_DESCRIPTORS.get_or_init(|| {
-            vec![
-                ViewDescriptor {
-                    id: "overview".into(),
-                    title: "Overview".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-                ViewDescriptor {
-                    id: "call-graph".into(),
-                    title: "Call Graph".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-                ViewDescriptor {
-                    id: "source".into(),
-                    title: "Source".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-                ViewDescriptor {
-                    id: "quality".into(),
-                    title: "Quality".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-                ViewDescriptor {
-                    id: "evidence".into(),
-                    title: "Evidence".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-                ViewDescriptor {
-                    id: "symbols".into(),
-                    title: "Symbols".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-                ViewDescriptor {
-                    id: "dependencies".into(),
-                    title: "Dependencies".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-                ViewDescriptor {
-                    id: "hotspots".into(),
-                    title: "Hotspots".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-            ]
+            BUILTIN_DESCRIPTORS_RAW
+                .iter()
+                .map(raw_to_view_descriptor)
+                .collect()
         });
 
         // Add Phase 3 executors that apply to this object type and aren't duplicates
@@ -338,61 +306,15 @@ impl ViewRegistry {
 ///
 /// This is used by the MCP `list_view_specs` handler which must return
 /// all built-ins regardless of what object type is being inspected.
-/// Reuses `REAL_EXECUTOR_DESCRIPTORS` to avoid duplication.
+/// Uses shared BUILTIN_DESCRIPTORS_RAW from core to avoid duplication.
 pub fn list_all_builtin_descriptors() -> Vec<ViewDescriptor> {
     static REAL_EXECUTOR_DESCRIPTORS: OnceLock<Vec<ViewDescriptor>> = OnceLock::new();
     REAL_EXECUTOR_DESCRIPTORS
         .get_or_init(|| {
-            vec![
-                ViewDescriptor {
-                    id: "overview".into(),
-                    title: "Overview".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-                ViewDescriptor {
-                    id: "call-graph".into(),
-                    title: "Call Graph".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-                ViewDescriptor {
-                    id: "source".into(),
-                    title: "Source".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-                ViewDescriptor {
-                    id: "quality".into(),
-                    title: "Quality".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-                ViewDescriptor {
-                    id: "evidence".into(),
-                    title: "Evidence".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-                ViewDescriptor {
-                    id: "symbols".into(),
-                    title: "Symbols".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-                ViewDescriptor {
-                    id: "dependencies".into(),
-                    title: "Dependencies".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-                ViewDescriptor {
-                    id: "hotspots".into(),
-                    title: "Hotspots".into(),
-                    is_builtin: true,
-                    source: None,
-                },
-            ]
+            BUILTIN_DESCRIPTORS_RAW
+                .iter()
+                .map(raw_to_view_descriptor)
+                .collect()
         })
         .clone()
 }
