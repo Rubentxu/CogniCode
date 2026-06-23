@@ -129,7 +129,7 @@ export async function runOnce(
   adapter: RendererAdapter,
   mode: "cold" | "warm",
   runIndex: number,
-  config: BenchConfig,
+  _config: BenchConfig,
   hooks?: BenchHooks,
 ): Promise<MetricsRecord> {
   const rendererInfo = {
@@ -262,7 +262,7 @@ function detectRunnerInfo(): MetricsRecord["runner"] {
 
 function extractVersion(ua: string): string {
   const match = ua.match(/(?:Chrome|Firefox|Safari)\/(\d+(?:\.\d+)*)/);
-  return match ? match[1] : "unknown";
+  return match && match[1] ? match[1] : "unknown";
 }
 
 function detectOs(ua: string): string {

@@ -167,8 +167,8 @@ describe("writeReport", () => {
     expect(result.json_path).toBe("artifacts/e7-renderer-bench/results.json");
     expect(result.markdown_path).toBe("artifacts/e7-renderer-bench/report.md");
     expect(files).toHaveLength(2);
-    expect(files[0].path).toBe(result.json_path);
-    expect(files[1].path).toBe(result.markdown_path);
+    expect(files[0]!.path).toBe(result.json_path);
+    expect(files[1]!.path).toBe(result.markdown_path);
   });
 
   it("json payload includes schema version and record_count", async () => {
@@ -186,11 +186,11 @@ describe("writeReport", () => {
       timestamp: "2026-06-21T00:00:00.000Z",
     });
 
-    const json = JSON.parse(files[0].content);
+    const json = JSON.parse(files[0]!.content);
     expect(json.schema_version).toBe("e7.0");
     expect(json.record_count).toBe(1);
     expect(json.records).toHaveLength(1);
-    expect(json.records[0].renderer.id).toBe("cytoscape-canvas");
+    expect(json.records[0]!.renderer.id).toBe("cytoscape-canvas");
   });
 
   it("handles trailing slashes in the output directory", async () => {
