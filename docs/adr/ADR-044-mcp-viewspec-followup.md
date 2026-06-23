@@ -2,7 +2,7 @@
 
 ## Status
 
-PROPOSED
+ACCEPTED
 
 ## Date
 
@@ -62,6 +62,17 @@ let _props: Option<serde_json::Value> =
 - **Positive**: v1 ships with functional MCP tools. Users can list and read built-in ViewSpecs.
 - **Negative**: The 4 quality warnings represent technical debt that will accumulate if not addressed.
 - **Bounded**: All 4 warnings are well-scoped refactorings. None require architectural rethink.
+
+## Resolution (2026-06-23)
+
+All 4 warnings have been addressed in `sddk/MCP-viewspec-followup`:
+
+| Warning | Resolution | Commit |
+|---------|-----------|--------|
+| OCP Violation — Hard-coded Built-in IDs | Created `schemas/builtin_descriptors.rs` with shared `BUILTIN_DESCRIPTORS_RAW` const and `builtin_descriptors()` fn. Collapsed duplicate copies in `registry.rs` L262 and L343. | 6453572 |
+| DIP Violation — Concrete PostgresRepository Coupling | Added `ViewSpecRepository` trait in `handlers/mod.rs`. Implemented for `HandlerContext` and `PostgresRepository`. Updated handlers to use DIP port. | a0b8715, a36ae7e |
+| Data Loss — data_source and props Discarded | Updated `handle_read_view_spec` to parse and return `data_source`, `transform`, and `props` from JSON in the row. | 6bcfbcd |
+| No Mock Integration Test for Runtime Path | Added `MockViewSpecRepository` (#[cfg(test)]) with 2 integration tests verifying DIP wiring works through handlers. | a36ae7e |
 
 ## See Also
 
