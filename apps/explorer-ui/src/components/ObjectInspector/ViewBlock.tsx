@@ -83,7 +83,7 @@ export function ViewBlock({ block, onSelectObject }: ViewBlockProps) {
 
   return (
     <entry.component
-      block={block}
+      block={block as ViewBlock}
       objectId=""
       extra={onSelectObject ? { onSelectObject } : undefined}
     />
