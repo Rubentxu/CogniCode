@@ -970,6 +970,7 @@ export const graphNodeStyleClassSchema = z.enum([
   "node-component",
   "node-container",
   "node-system",
+  "node-code",
   // ---- Landing Page (E4 ADR-039) ----
   "entry-point",
   "hot",
@@ -992,6 +993,9 @@ export const graphEdgeStyleClassSchema = z.enum([
   "edge-justifies",
   "edge-resolves",
   "edge-corroborated",
+  "edge-part-of",
+  "edge-deployed-as",
+  "edge-in-system",
 ]);
 export type GraphEdgeStyleClass = z.infer<typeof graphEdgeStyleClassSchema>;
 

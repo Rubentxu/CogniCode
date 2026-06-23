@@ -433,6 +433,16 @@ describe("graphNodeStyleClassSchema — T17 multimodal", () => {
       expect(graphNodeStyleClassSchema.parse(c)).toBe(c);
     }
   });
+
+  it("accepts node-code (C4 code node — ADR-039)", () => {
+    expect(graphNodeStyleClassSchema.parse("node-code")).toBe("node-code");
+  });
+
+  it("accepts all landing-page kinds (entry-point, hot, god)", () => {
+    for (const c of ["entry-point", "hot", "god"] as const) {
+      expect(graphNodeStyleClassSchema.parse(c)).toBe(c);
+    }
+  });
 });
 
 describe("graphEdgeStyleClassSchema — T17 multimodal", () => {
@@ -458,6 +468,12 @@ describe("graphEdgeStyleClassSchema — T17 multimodal", () => {
   it("the legacy 3 buckets still parse (regression)", () => {
     for (const c of ["edge.calls", "edge.implements", "edge.uses"] as const) {
       expect(graphEdgeStyleClassSchema.parse(c)).toBe(c);
+    }
+  });
+
+  it("accepts C4 edge variants (edge-part-of, edge-deployed-as, edge-in-system)", () => {
+    for (const e of ["edge-part-of", "edge-deployed-as", "edge-in-system"] as const) {
+      expect(graphEdgeStyleClassSchema.parse(e)).toBe(e);
     }
   });
 });

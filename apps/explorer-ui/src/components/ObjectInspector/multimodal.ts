@@ -49,7 +49,7 @@ export interface MultimodalSuggestion {
  * return of [`recognizeMultimodalKind`] before accessing the map.
  */
 export const MULTIMODAL_KIND_INFO: Readonly<
-  Record<Exclude<GraphNodeStyleClass, "function" | "module" | "external">, MultimodalKindInfo>
+  Record<Exclude<GraphNodeStyleClass, "function" | "module" | "external" | "node-code">, MultimodalKindInfo>
 > = {
   "node-decision": {
     styleClass: "node-decision",
@@ -118,6 +118,30 @@ export const MULTIMODAL_KIND_INFO: Readonly<
       { id: "sys-context", label: "System context", question: "what is the context of this system?" },
     ],
   },
+  "entry-point": {
+    styleClass: "entry-point",
+    badgeLabel: "Entry Point",
+    palette: { background: "#f59e0b", foreground: "#78350f" },
+    suggestions: [
+      { id: "ep-explore", label: "Explore entry point", question: "show all callers of this entry point" },
+    ],
+  },
+  hot: {
+    styleClass: "hot",
+    badgeLabel: "Hot",
+    palette: { background: "#ef4444", foreground: "#450a0a" },
+    suggestions: [
+      { id: "hot-analyze", label: "Analyze hotspot", question: "show metrics for this hot symbol" },
+    ],
+  },
+  god: {
+    styleClass: "god",
+    badgeLabel: "God Node",
+    palette: { background: "#a855f7", foreground: "#3b0764" },
+    suggestions: [
+      { id: "god-fanout", label: "Analyze fan-out", question: "show all dependencies of this god node" },
+    ],
+  },
 };
 
 /**
@@ -131,7 +155,7 @@ export function recognizeMultimodalKind(
   if (!styleClass) return null;
   if (styleClass in MULTIMODAL_KIND_INFO) {
     return MULTIMODAL_KIND_INFO[
-      styleClass as Exclude<GraphNodeStyleClass, "function" | "module" | "external">
+      styleClass as Exclude<GraphNodeStyleClass, "function" | "module" | "external" | "node-code">
     ];
   }
   return null;
