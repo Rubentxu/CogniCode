@@ -5,7 +5,9 @@
  * via `useAppDispatch`. Pass a custom adapter when testing or when
  * the component is used outside the Explorer shell.
  */
+import type { Dispatch } from "redux";
 import type { ViewportState } from "../../state/navigation/types";
+import type { Action } from "../../state/context";
 
 export interface RoutingAdapter {
   onSelectObject(nodeId: string): void;
@@ -13,7 +15,7 @@ export interface RoutingAdapter {
 }
 
 export function createDispatchRouting(
-  dispatch: (action: { type: string; payload: unknown }) => void,
+  dispatch: Dispatch<Action>,
   paneId: string | null,
   viewId: string | null,
 ): RoutingAdapter {
