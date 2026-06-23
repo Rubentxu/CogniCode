@@ -10,11 +10,10 @@
  *   `MAX_PANES`). Pane id is supplied by the reducer (not generated
  *   here, to keep the adapter pure).
  * - `activePaneId` selects which pane the inspector renders.
- * - `chain` mirrors the active pane's history for drill-down.
  * - Closing the active pane moves focus to the previous one
  *   (or null if none).
  */
-import type { ChainEntry, Focus, NavigationAction, NavigationState, Pane } from "./types";
+import type { Focus, NavigationAction, NavigationState, Pane } from "./types";
 import { makeInitialNavigationState } from "./types";
 
 /**
@@ -26,21 +25,6 @@ import { makeInitialNavigationState } from "./types";
  * (H8 audit fix).
  */
 export const MAX_PANES = 12;
-
-/**
- * Mirror the active pane's drill-down history as a `chain`.
- */
-function chainFromActivePane(state: NavigationState): ChainEntry[] {
-  const pane = state.panes.find((p) => p.id === state.activePaneId);
-  if (!pane) return [];
-  return [
-    {
-      object_id: pane.objectId,
-      active_view: pane.activeViewId,
-      kind: pane.kind,
-    },
-  ];
-}
 
 /**
  * Apply a navigation action and return the new state.
@@ -63,7 +47,7 @@ export function apply(state: NavigationState, action: NavigationAction): Navigat
       const panes = state.panes.length >= MAX_PANES
         ? [...state.panes.slice(1), pane]
         : [...state.panes, pane];
-      return { ...state, panes, activePaneId: pane.id, chain: chainFromActivePane({ ...state, panes, activePaneId: pane.id }) };
+      return { ...state, panes, activePaneId: pane.id };
     }
 
     case "CLOSE_PANE": {
@@ -81,12 +65,12 @@ export function apply(state: NavigationState, action: NavigationAction): Navigat
           activePaneId = neighbour ? neighbour.id : null;
         }
       }
-      return { ...state, panes, activePaneId, chain: chainFromActivePane({ ...state, panes, activePaneId }) };
+      return { ...state, panes, activePaneId };
     }
 
     case "ACTIVATE_PANE": {
       if (!state.panes.some((p) => p.id === action.payload.paneId)) return state;
-      return { ...state, activePaneId: action.payload.paneId, chain: chainFromActivePane({ ...state, activePaneId: action.payload.paneId }) };
+      return { ...state, activePaneId: action.payload.paneId };
     }
 
     case "REORDER_PANE": {
@@ -148,7 +132,7 @@ export function apply(state: NavigationState, action: NavigationAction): Navigat
           ? { ...p, activeViewId: action.payload.view_id, activeView: action.payload }
           : p,
       );
-      return { ...state, panes, chain: chainFromActivePane({ ...state, panes }) };
+      return { ...state, panes };
     }
 
     case "SET_ACTIVE_LENS": {

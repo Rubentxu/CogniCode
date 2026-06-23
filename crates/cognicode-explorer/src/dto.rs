@@ -397,8 +397,7 @@ pub struct PaneSnapshot {
 }
 
 /// Ordered log of exploration events. The `navigation_mode` field
-/// records whether the user was in column or pane-stack mode when
-/// the session was saved.
+/// is always `"pane-stack"` (column mode was removed in ADR-039).
 ///
 /// `ExplorationSession` models the raw sequence of object
 /// inspections. A pane-stack navigation can be reconstructed from
@@ -409,9 +408,9 @@ pub struct ExplorationSession {
     pub id: String,
     pub workspace_id: String,
     pub events: Vec<ExplorationEvent>,
-    /// Mode for reconstruction: "column" or "pane-stack".
-    /// `#[serde(default)]` so v1 sessions without this field are
-    /// treated as column mode.
+    /// Mode for reconstruction: always "pane-stack" (column removed).
+    /// `#[serde(default)]` so older sessions without this field are
+    /// treated as pane-stack mode.
     #[serde(default = "default_pane_stack_navigation")]
     pub navigation_mode: String,
     /// Pane snapshots for pane-stack restore (ADR-040 Wave 3).
@@ -1972,7 +1971,7 @@ mod exploration_session_tests {
         let request = SaveExplorationSessionRequest {
             workspace_id: "ws1".into(),
             events: vec![],
-            navigation_mode: "column".into(),
+            navigation_mode: "pane-stack".into(),
             panes: vec![],
         };
         assert!(request.events.is_empty());

@@ -59,13 +59,6 @@ export type AppState = {
 };
 
 /**
- * Selector for the column chain. Returns `state.navigation.chain`.
- */
-export function selectChain(state: AppState): NavigationState["chain"] {
-  return state.navigation.chain;
-}
-
-/**
  * Build an initial AppState focused on a given object. Used by
  * tests that want to skip the navigation setup and jump straight
  * to "object is selected, inspector is showing it".

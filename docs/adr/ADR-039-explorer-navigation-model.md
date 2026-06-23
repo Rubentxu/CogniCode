@@ -28,6 +28,24 @@ Rationale: maintaining two navigation models dilutes product identity, increases
 state complexity, and anchors the UX to traditional IDE patterns. If the goal is
 a gtoolkit-inspired tool, the navigation must commit to that model.
 
+#### Reconciliation (v0.12.2)
+
+This section records the hard-cut removal of `chain`-based navigation state
+completed in v0.12.2, closing the final residue of the column era:
+
+- **`NavigationState.chain`** field removed from `types.ts` — zero `.tsx` consumers
+- **`chainFromActivePane()`** helper removed from `paneStack.ts`
+- **`selectChain()`** selector removed from `context.ts`
+- Four reducer branches in `paneStack.ts` no longer write to `chain`
+- `makeInitialNavigationState()` factory no longer initializes `chain: []`
+- `navigation_mode` in `ExplorationSession` is now always `"pane-stack"`; the
+  `#[serde(default)]` fallback means older sessions without the field are also
+  treated as pane-stack mode
+
+The pane-stack model is now the sole navigation model. `navigation_mode`
+remains as a vestigial marker field for session-serialization compatibility
+(ADR-045 Phase 1); it is always `"pane-stack"` in newly saved sessions.
+
 ### 2. Graph is the primary visual landing
 
 The Explorer's first screen is a **graph overview**, not a file tree, not a
