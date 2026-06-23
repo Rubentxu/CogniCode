@@ -110,9 +110,6 @@ graceful degradation for large graphs.
 **Deliverable:** Landing shows graph roots, suggested questions, and recent
 explorations. Clicking a root opens the pane-stack workflow.
 
-**Next step:** Add `RecentExplorationsStrip` component to `GraphLanding` consuming
-`useExplorations()`.
-
 ---
 
 ## Sprint E5 — Perspective Toggle (Graph ↔ C4)
