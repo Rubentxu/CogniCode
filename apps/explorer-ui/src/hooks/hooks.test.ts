@@ -20,11 +20,10 @@ import { useLensResult } from "./useLensResult";
 import { useObject } from "./useObject";
 import { useSpotter } from "./useSpotter";
 import { useAvailableViews, useViews } from "./useViews";
-import { useExplorations, saveExploration, generateArtifact } from "./useExplorations";
+import { useExplorations, generateArtifact } from "./useExplorations";
 import {
   contextualViewFixture,
   decisionArtifactFixture,
-  explorationPathFixture,
   inspectableObjectFixture,
   lensDescriptorsFixture,
   lensResultFixture,
@@ -323,29 +322,6 @@ describe("useExplorations", () => {
       expect(result.current.data).toBeDefined();
     });
     expect(result.current.data).toEqual([]);
-  });
-});
-
-describe("saveExploration", () => {
-  it("posts the request and merges the result into the cache", async () => {
-    server.use(
-      http.post("/api/explorations", async ({ request }) => {
-        fetchCount += 1;
-        const body = (await request.json()) as { workspace_id: string };
-        return HttpResponse.json({
-          ...explorationPathFixture,
-          workspace_id: body.workspace_id,
-        });
-      }),
-    );
-
-    const result = await saveExploration({
-      workspace_id: "ws-1",
-      columns: [{ object_id: "x", active_view: "overview" }],
-      lens: null,
-    });
-    expect(result.workspace_id).toBe("ws-1");
-    expect(fetchCount).toBe(1);
   });
 });
 

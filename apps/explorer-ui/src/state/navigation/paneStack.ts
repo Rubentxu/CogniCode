@@ -14,9 +14,8 @@
  * - Closing the active pane moves focus to the previous one
  *   (or null if none).
  */
-import type { Focus, NavigationAction, NavigationState, Pane } from "./types";
+import type { ChainEntry, Focus, NavigationAction, NavigationState, Pane } from "./types";
 import { makeInitialNavigationState } from "./types";
-import type { ExplorationColumn } from "../../api/types";
 
 /**
  * Cap to bound memory + DOM cost. gtoolkit's GtPager has no hard
@@ -31,7 +30,7 @@ export const MAX_PANES = 12;
 /**
  * Mirror the active pane's drill-down history as a `chain`.
  */
-function chainFromActivePane(state: NavigationState): ExplorationColumn[] {
+function chainFromActivePane(state: NavigationState): ChainEntry[] {
   const pane = state.panes.find((p) => p.id === state.activePaneId);
   if (!pane) return [];
   return [

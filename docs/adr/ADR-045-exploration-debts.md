@@ -4,6 +4,27 @@
 
 ACCEPTED
 
+## Resolution Summary
+
+**Debt 1** (`get_exploration` Mis-wire) and **Debt 2** (Dual Model) were resolved
+in **Phase 1** (sddk/ADR-045-phase1-debt1-debt2, commit `2f65940` base).
+
+- **Debt 1**: Orphaned `GET /api/explorations/:id` route + three handlers unregistered.
+  No consumers exist — route was confirmed dead code.
+- **Debt 2**: `ExplorationPath` model removed entirely; all production and test code
+  unified onto `ExplorationSession`. `ExplorationColumn`, `SaveExplorationRequest` also
+  removed. Frontend `useExplorations` no longer exposes `saveExploration`.
+
+**Debt 3** (In-Memory Store Lifetime) remains **Deferred** — blocked on Postgres
+persistence work (separate ADR).
+
+## Resolution Evidence
+
+- Branch: `sddk/ADR-045-phase1-debt1-debt2`
+- Route removal: `crates/cognicode-explorer/src/api.rs` (T1.4)
+- DTO cleanup: `crates/cognicode-explorer/src/dto.rs` (T1.1–T1.3)
+- Frontend cleanup: `apps/explorer-ui/src/` (T2.1–T2.7, T3.1–T3.2, T4.1–T4.3)
+
 ## Date
 
 2026-06-23
@@ -36,9 +57,9 @@ behaviour exists (see below).
 the codebase. The frontend does not call `GET /api/explorations/:id` directly; it uses
 `GET /explorations/:id/artifacts` or works from in-hand LIST data.
 
-**Disposition**: **Defer + plan.** Recommend **remove the orphaned route** entirely rather
-than implementing `load_exploration_path`, which would entrench the legacy `ExplorationPath`
-shape. The implementation ADR for this debt must confirm the removal before any code lands.
+**Disposition**: **✅ RESOLVED — Phase 1.** Orphaned `GET /api/explorations/:id` route
+removed (T1.4). Three handlers unregistered: `save_exploration`, `get_exploration`,
+`generate_artifact`. Zero prod consumers confirmed — route was dead code.
 
 **Rationale**: Latent only — no live consumer has been observed. Adding the missing
 `load_exploration_path` path would re-entrench the legacy model.
@@ -54,8 +75,10 @@ Wave 3); approximately 8 frontend files in `apps/explorer-ui/` that use `Explora
 returns `ExplorationPath` because the frontend schema (`z.array(explorationPathSchema)`)
 still expects that shape.
 
-**Disposition**: **Defer + timeline.** Unify onto `ExplorationSession` (ADR-039-aligned).
-The unified model must be established before Debt 3 is addressed.
+**Disposition**: **✅ RESOLVED — Phase 1.** `ExplorationPath`, `ExplorationColumn`,
+`SaveExplorationRequest` removed from `dto.rs` (T1.1). All production and test code
+unified onto `ExplorationSession`. Frontend SWR hook no longer exposes `saveExploration`
+(T2.3). `generate_artifact` repointed to session store (T1.3).
 
 **Rationale**: Persisting the legacy shape in a new SQL table (Debt 3) would entrench it
 irreversibly. Debt 2 must precede Debt 3.
@@ -77,19 +100,15 @@ model in a new SQL table.
 
 ## ADR-039 Contradiction
 
-> **This section surfaces but does not amend ADR-039.**
+> **This section is retained for historical record — the contradiction is now resolved.**
 
 ADR-039 Decision 1 mandates a hard cut from column-based navigation to pane-stack
-navigation. However, the backend still writes `columns` on `ExplorationPath` (the legacy
-shape returned by the LIST endpoint) and `default_navigation_mode()` returns `"column"`
-(`dto.rs:447`):
+navigation. Previously, `default_navigation_mode()` returned `"column"` (`dto.rs:447`),
+contradicting the pane-stack mandate.
 
-```rust
-fn default_navigation_mode() -> String { "column".to_string() }
-```
-
-Reconciliation of this contradiction is **out of scope for this ADR**. A separate future ADR
-must address the contradiction resolution.
+**Resolution**: `default_navigation_mode()` was removed entirely in Phase 1 (T1.1).
+`ExplorationPath` (the only type that used `"column"`) has been removed. The ADR-039
+contradiction is resolved.
 
 ## Ordering Constraint: Debt 2 → Debt 3
 
@@ -100,13 +119,5 @@ persistence work begins for exploration data.
 
 ## Open Question — Debt 1 Final Fix Shape
 
-Debt 1 has two possible resolution paths:
-
-1. **Remove orphaned route** (recommended, zero consumers verified): Delete
-   `GET /api/explorations/:id` entirely. The route's documented behaviour has no
-   corresponding implementation and no consumers.
-2. **Add `load_exploration_path` trait method**: Implement the doc-claimed behaviour,
-   preserving the route for potential future use.
-
-The implementation ADR for Debt 1 must confirm which path is taken before any code lands.
-This ADR does not prejudge the outcome.
+**Resolved (Phase 1)**: Path 1 chosen — orphaned `GET /api/explorations/:id` route
+removed entirely. Zero consumers verified; no future use anticipated.

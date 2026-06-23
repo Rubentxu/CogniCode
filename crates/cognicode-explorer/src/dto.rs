@@ -170,7 +170,7 @@ pub struct EvidenceBlock {
     pub provenance: Option<String>,
 }
 
-/// One resolved inspectable object, as captured in an [`ExplorationPath`].
+/// One resolved inspectable object, as captured in an [`ExplorationSession`].
 ///
 /// `id` is the canonical MVP id (`symbol:{file}:{name}:{line}`).
 /// `natural_key` is the equivalent `SymbolId` form (`{file}:{name}:{line}`) —
@@ -358,30 +358,7 @@ pub struct ViewBlock {
     pub body: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExplorationPath {
-    pub id: String,
-    pub workspace_id: String,
-    pub columns: Vec<ExplorationColumn>,
-    /// Resolved objects the user touched in this path. The field is
-    /// `#[serde(default)]` so persisted/legacy paths without it still
-    /// deserialize cleanly — they get an empty `Vec`.
-    #[serde(default)]
-    pub objects: Vec<ObjectIdentityEntry>,
-    pub lens: Option<String>,
-    pub created_at: String,
-    /// Navigation mode for reconstruction (added jun-15, ADR-016).
-    /// `#[serde(default)]` so paths saved before this field existed
-    /// are treated as column mode.
-    #[serde(default = "default_navigation_mode")]
-    pub navigation_mode: String,
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExplorationColumn {
-    pub object_id: String,
-    pub active_view: Option<String>,
-}
 
 // ============================================================================
 // ExplorationSession — semantic exploration history (ADR-016 Fase 3)
@@ -423,7 +400,6 @@ pub struct PaneSnapshot {
 /// records whether the user was in column or pane-stack mode when
 /// the session was saved.
 ///
-/// Unlike `ExplorationPath` (which models a linear drill-down),
 /// `ExplorationSession` models the raw sequence of object
 /// inspections. A pane-stack navigation can be reconstructed from
 /// the session by grouping consecutive events with the same
@@ -436,7 +412,7 @@ pub struct ExplorationSession {
     /// Mode for reconstruction: "column" or "pane-stack".
     /// `#[serde(default)]` so v1 sessions without this field are
     /// treated as column mode.
-    #[serde(default = "default_navigation_mode")]
+    #[serde(default = "default_pane_stack_navigation")]
     pub navigation_mode: String,
     /// Pane snapshots for pane-stack restore (ADR-040 Wave 3).
     /// NO #[serde(default)] — this is a breaking change (Decision 13).
@@ -444,7 +420,7 @@ pub struct ExplorationSession {
     pub created_at: String,
 }
 
-fn default_navigation_mode() -> String { "column".to_string() }
+fn default_pane_stack_navigation() -> String { "pane-stack".to_string() }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SaveExplorationSessionRequest {
@@ -463,17 +439,6 @@ pub struct OpenWorkspaceRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexWorkspaceRequest {
     pub strategy: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SaveExplorationRequest {
-    pub workspace_id: String,
-    pub columns: Vec<ExplorationColumn>,
-    pub lens: Option<String>,
-    /// Navigation mode for reconstruction (added jun-15, ADR-016).
-    /// Defaults to "column" when omitted by old clients.
-    #[serde(default = "default_navigation_mode")]
-    pub navigation_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2000,20 +1965,6 @@ mod exploration_session_tests {
         let vp = deser.panes[0].viewport.as_ref().unwrap();
         assert_eq!(vp.x, 10.0);
         assert_eq!(vp.scale, 1.5);
-    }
-
-    #[test]
-    fn exploration_path_old_format_no_navigation_mode() {
-        // Old JSON from before ADR-016: no navigation_mode field.
-        let json = r#"{
-            "id": "exploration:1",
-            "workspace_id": "ws1",
-            "columns": [{"object_id": "symbol:a", "active_view": "overview"}],
-            "lens": null,
-            "created_at": "2026-06-15T00:00:00Z"
-        }"#;
-        let path: ExplorationPath = serde_json::from_str(json).unwrap();
-        assert_eq!(path.navigation_mode, "column"); // default
     }
 
     #[test]

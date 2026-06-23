@@ -12,7 +12,6 @@ import { navigationReducer } from "./navigation";
 import { spotterReducer } from "./spotter";
 import { workspaceReducer } from "./workspace";
 import { perspectiveReducer } from "./perspective";
-import { explorationsReducer } from "./explorations";
 
 export type RootReducer = (state: AppState, action: import("../context").Action) => AppState;
 
@@ -36,7 +35,6 @@ export function rootReducer(state: AppState, action: import("../context").Action
     activeLensId: navSlice.activeLensId,
     spotterOpen: spotterReducer(state.spotterOpen, action),
     activeView: navSlice.activeView,
-    explorations: explorationsReducer(state.explorations, action),
     perspective: perspectiveReducer(state.perspective, action),
   };
 }
@@ -46,4 +44,3 @@ export type { NavigationSliceAction } from "./navigation";
 export type { SpotterAction } from "./spotter";
 export type { WorkspaceAction } from "./workspace";
 export type { PerspectiveAction } from "./perspective";
-export type { ExplorationsAction } from "./explorations";

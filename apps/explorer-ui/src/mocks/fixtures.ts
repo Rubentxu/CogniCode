@@ -12,7 +12,7 @@ import type {
   ContextualView,
   DecisionArtifactSummary,
   DesignFinding,
-  ExplorationPath,
+  ExplorationSessionDto,
   InspectableObjectSummary,
   LensDescriptor,
   LensResult,
@@ -401,18 +401,20 @@ export const lensResultFixture: LensResult = {
 // Explorations + artifacts
 // ============================================================================
 
-export const explorationPathFixture: ExplorationPath = {
+export const explorationSessionFixture: ExplorationSessionDto = {
   id: "exploration-001",
   workspace_id: WORKSPACE_ID,
-  columns: [
-    { object_id: SCOPE_ID, active_view: "overview", kind: "scope" },
-    { object_id: FILE_ID, active_view: "overview", kind: "file" },
-    { object_id: SYMBOL_ID, active_view: "overview", kind: "symbol" },
+  events: [
+    { object_id: SCOPE_ID, view_id: "overview", query: null, ts: "2026-06-07T12:00:00Z" },
+    { object_id: FILE_ID, view_id: "overview", query: null, ts: "2026-06-07T12:01:00Z" },
+    { object_id: SYMBOL_ID, view_id: "overview", query: null, ts: "2026-06-07T12:02:00Z" },
   ],
-  objects: [
-    { id: SYMBOL_ID, object_type: "symbol", natural_key: "crates/cognicode-explorer/src/lib.rs:build_overview:16", first_seen: "2026-06-07T12:00:00Z" },
+  navigation_mode: "pane-stack",
+  panes: [
+    { pane_id: "pane-1", object_id: SCOPE_ID, view_id: "overview", scroll_y: 0, viewport: null },
+    { pane_id: "pane-2", object_id: FILE_ID, view_id: "overview", scroll_y: 0, viewport: null },
+    { pane_id: "pane-3", object_id: SYMBOL_ID, view_id: "overview", scroll_y: 0, viewport: null },
   ],
-  lens: "lens.hotspots",
   created_at: "2026-06-07T12:00:00Z",
 };
 

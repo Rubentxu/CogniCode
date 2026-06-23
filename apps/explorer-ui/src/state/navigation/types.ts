@@ -1,7 +1,7 @@
 /**
  * Navigation state types — pane-stack only (column mode removed, ADR-039 E3).
  */
-import type { ContextualView, ExplorationColumn } from "../../api/types";
+import type { ContextualView } from "../../api/types";
 
 // ============================================================================
 // Shared types
@@ -52,6 +52,17 @@ export type Pane = {
 };
 
 /**
+ * Local chain entry — drill-down history for a single pane.
+ * Replaces the removed `ExplorationColumn` type from the legacy
+ * `ExplorationPath` model (ADR-045 Phase 1).
+ */
+export type ChainEntry = {
+  object_id: string;
+  active_view: string | null;
+  kind: string;
+};
+
+/**
  * NavigationState — the slice of AppState that owns pane-stack navigation.
  *
  * - `chain` mirrors the active pane's history for drill-down.
@@ -60,7 +71,7 @@ export type Pane = {
  */
 export type NavigationState = {
   /** Linear path of objects — drill-down history. */
-  chain: ExplorationColumn[];
+  chain: ChainEntry[];
   /** Open panes — gtoolkit-style side-by-side. */
   panes: Pane[];
   /** Id of the focused pane (where the inspector renders). */

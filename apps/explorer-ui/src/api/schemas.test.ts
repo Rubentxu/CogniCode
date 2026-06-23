@@ -13,8 +13,6 @@ import {
   contextualViewSchema,
   decisionArtifactSummarySchema,
   designFindingSchema,
-  explorationColumnSchema,
-  explorationPathSchema,
   generateArtifactRequestSchema,
   healthResponseSchema,
   inspectableObjectSummarySchema,
@@ -23,7 +21,6 @@ import {
   lensResultSchema,
   openWorkspaceRequestSchema,
   qualityIssueItemSchema,
-  saveExplorationRequestSchema,
   spotterResultSchema,
   viewBlockAnySchema,
   viewBlockSchema,
@@ -34,7 +31,6 @@ import {
 import {
   contextualViewFixture,
   decisionArtifactFixture,
-  explorationPathFixture,
   inspectableObjectFixture,
   lensDescriptorsFixture,
   lensResultFixture,
@@ -293,44 +289,13 @@ describe("viewBlockSchema — every known block id", () => {
 });
 
 // ============================================================================
-// Explorations + requests
+// Request schemas
 // ============================================================================
-
-describe("explorationColumnSchema", () => {
-  it("accepts a column", () => {
-    expect(() =>
-      explorationColumnSchema.parse({ object_id: "x", active_view: null }),
-    ).not.toThrow();
-  });
-});
-
-describe("explorationPathSchema", () => {
-  it("accepts a path", () => {
-    expect(() => explorationPathSchema.parse(explorationPathFixture)).not.toThrow();
-  });
-
-  it("defaults `objects` to an empty list when missing", () => {
-    const { objects: _objects, ...rest } = explorationPathFixture;
-    void _objects;
-    const parsed = explorationPathSchema.parse(rest);
-    expect(parsed.objects).toEqual([]);
-  });
-});
-
 describe("request schemas", () => {
   it("openWorkspaceRequestSchema accepts a root_path", () => {
     expect(() =>
       openWorkspaceRequestSchema.parse({ root_path: "/tmp" }),
     ).not.toThrow();
-  });
-
-  it("saveExplorationRequestSchema validates columns + lens", () => {
-    const request = {
-      workspace_id: "ws-1",
-      columns: [{ object_id: "x", active_view: "overview" }],
-      lens: null,
-    };
-    expect(() => saveExplorationRequestSchema.parse(request)).not.toThrow();
   });
 
   it("generateArtifactRequestSchema accepts known formats", () => {

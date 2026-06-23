@@ -196,14 +196,15 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
           <RecentExplorationsStrip
             workspaceId={workspaceId}
             onExplorationClick={(exploration) => {
-              // Navigate to the first object in the exploration
-              const firstColumn = exploration.columns[0];
-              if (firstColumn) {
+              // Navigate to the first pane's object in the exploration
+              const firstPane = exploration.panes[0];
+              if (firstPane) {
                 dispatch({
                   type: "SELECT_OBJECT",
                   payload: {
-                    objectId: firstColumn.object_id,
-                    viewId: firstColumn.active_view ?? "overview",
+                    objectId: firstPane.object_id,
+                    viewId: firstPane.view_id ?? "overview",
+                    kind: "symbol",
                   },
                 });
               }
