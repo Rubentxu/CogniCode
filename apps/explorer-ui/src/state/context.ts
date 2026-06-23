@@ -54,8 +54,9 @@ export type AppState = {
   /** Saved explorations the user has minted during the session. */
   explorations: ExplorationPath[];
   /**
-   * Landing page perspective — graph (entry points) or c4 (component directories).
-   * Toggle only applies when no object is selected (landing view).
+   * Active canvas perspective — graph (symbol neighbourhood via useSubgraph)
+   * or c4 (workspace-wide components via useArchitecture).
+   * Perspective morphs the canvas regardless of object selection (ADR-039 §3/§4).
    */
   perspective: "graph" | "c4";
 };

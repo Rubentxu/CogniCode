@@ -21,6 +21,7 @@ import { PaneStackView } from "./PaneStackView";
 import { ShellBootstrap } from "./ShellBootstrap";
 import { ShellLayout } from "./ShellLayout";
 import { useSubgraph } from "../hooks/useSubgraph";
+import { useArchitecture } from "../hooks/useArchitecture";
 import { GraphLanding } from "./GraphLanding";
 import type { ShellViewport } from "./viewport";
 
@@ -42,20 +43,37 @@ export interface ShellProps {
   viewport?: ShellViewport;
 }
 
-function InteractiveGraphPanel({ rootId }: { rootId: string | null }) {
-  const { activeLensId } = useAppState();
-  const { data } = useSubgraph(rootId);
+function InteractiveGraphPanel({
+  rootId,
+  workspaceId,
+}: {
+  rootId: string | null;
+  workspaceId: string | undefined;
+}) {
+  const { activeLensId, perspective } = useAppState();
+
+  // React rules of hooks: both hooks called unconditionally.
+  // Inactive hook receives null → SWR skips fetch.
+  // Pattern proven by GraphLanding.tsx:43-54 (shipping since E4).
+  const isGraph = perspective === "graph";
+  const subgraph = useSubgraph(isGraph ? rootId : null);
+  const architecture = useArchitecture(!isGraph ? (workspaceId ?? null) : null);
 
   if (activeLensId === "rationale" && rootId) {
     return (
       <RationaleView
         focusId={rootId}
         onSelectObject={() => {
-          // Selection is read-only in this column for now.
+          /* read-only in this column */
         }}
       />
     );
   }
+
+  const { data, isLoading, error } = isGraph ? subgraph : architecture;
+
+  if (isLoading) return GRAPH_LOADING;
+  if (error) return GRAPH_ERROR;
 
   return (
     <InteractiveGraph
@@ -63,8 +81,7 @@ function InteractiveGraphPanel({ rootId }: { rootId: string | null }) {
       data={data}
       selectedId={rootId}
       onSelectObject={() => {
-        // Selection is read-only in this column for now — selecting
-        // a node just highlights it; navigation happens via PaneStackView.
+        /* read-only; PaneStackView handles navigation */
       }}
     />
   );
@@ -83,6 +100,22 @@ const GRAPH_LOADING = (
     }}
   >
     Loading graph…
+  </div>
+);
+
+const GRAPH_ERROR = (
+  <div
+    data-testid="interactive-graph-error"
+    style={{
+      height: "100%",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: "var(--color-text-muted)",
+      fontSize: 12,
+    }}
+  >
+    Failed to load graph data.
   </div>
 );
 
@@ -112,7 +145,7 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
                 {rootId === null && workspace ? (
                   <GraphLanding workspaceId={workspace.id} />
                 ) : (
-                  <InteractiveGraphPanel rootId={rootId} />
+                  <InteractiveGraphPanel rootId={rootId} workspaceId={workspace?.id} />
                 )}
               </Suspense>
             </ErrorBoundary>

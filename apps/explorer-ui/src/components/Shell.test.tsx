@@ -5,11 +5,10 @@
  *   InteractiveGraph (left) | PaneStackView (right)
  * Small viewport: graph full-width, PaneStackView as bottom sheet.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { useReducer } from "react";
 
-import { Shell } from "./Shell";
 import { detectViewport } from "./viewport";
 import { HealthProbe } from "./HealthProbe";
 import { SkipLink } from "./SkipLink";
@@ -20,6 +19,53 @@ import {
   type Action,
   type AppState,
 } from "../state/context";
+import { workspaceSummaryFixture } from "../mocks/fixtures";
+import type { SubgraphResponse } from "../api/types";
+
+// ---------------------------------------------------------------------------
+// Hook spies — track calls for E5.3 regression tests
+// ---------------------------------------------------------------------------
+
+const SUBGRAPH_FIXTURE: SubgraphResponse = {
+  root: "sym-123",
+  nodes: [
+    {
+      id: "sym-123",
+      label: "CreateUser",
+      kind: "function",
+      file: "src/users.rs",
+      line: 10,
+      style_class: "function",
+    },
+  ],
+  edges: [],
+  truncated: false,
+  truncated_reason: null,
+  corroboration_scores: {},
+};
+
+// Default spy implementations — overridden per-test via vi.mock
+export const useSubgraphSpy = vi.fn().mockReturnValue({
+  data: SUBGRAPH_FIXTURE,
+  isLoading: false,
+  error: null,
+});
+export const useArchitectureSpy = vi.fn().mockReturnValue({
+  data: null,
+  isLoading: false,
+  error: null,
+});
+
+vi.mock("../hooks/useSubgraph", () => ({
+  useSubgraph: (...args: unknown[]) => useSubgraphSpy(...args),
+}));
+
+vi.mock("../hooks/useArchitecture", () => ({
+  useArchitecture: (...args: unknown[]) => useArchitectureSpy(...args),
+}));
+
+// Import Shell after hooks are mocked
+import { Shell } from "./Shell";
 
 /**
  * Minimal harness that provides a live AppContext.
@@ -279,5 +325,115 @@ describe("PerspectiveToggle", () => {
     });
     expect(screen.getByTestId("perspective-c4")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("perspective-graph")).toHaveAttribute("aria-pressed", "false");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: E5.3 — InteractiveGraphPanel perspective-aware wire-up
+// ---------------------------------------------------------------------------
+// Verifies that InteractiveGraphPanel swaps its data source based on
+// perspective, mirroring the GraphLanding.tsx:43-54 proven pattern.
+
+describe("InteractiveGraphPanel perspective wire-up (E5.3)", () => {
+  beforeEach(() => {
+    useSubgraphSpy.mockClear();
+    useArchitectureSpy.mockClear();
+  });
+
+  // Scenario A: rootId set + perspective "graph" → useSubgraph fetches, useArchitecture idle
+  it("feeds useSubgraph when perspective is graph with a selected symbol", async () => {
+    useSubgraphSpy.mockReturnValue({
+      data: SUBGRAPH_FIXTURE,
+      isLoading: false,
+      error: null,
+    });
+    useArchitectureSpy.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+
+    const stateWithSymbol = {
+      ...initialState,
+      activeObjectId: "sym-123",
+      perspective: "graph" as const,
+      workspace: { ...workspaceSummaryFixture, id: "ws-42" },
+    };
+    const dispatch = vi.fn();
+
+    render(
+      <AppContext.Provider value={{ state: stateWithSymbol, dispatch }}>
+        <Shell viewport="desktop" />
+      </AppContext.Provider>,
+    );
+
+    await waitFor(() => {
+      expect(useSubgraphSpy).toHaveBeenCalledWith("sym-123");
+      expect(useArchitectureSpy).toHaveBeenCalledWith(null);
+    });
+  });
+
+  // Scenario B: rootId set + perspective "c4" → useArchitecture fetches, useSubgraph idle
+  it("feeds useArchitecture when perspective is c4 with a selected symbol", async () => {
+    useSubgraphSpy.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+    useArchitectureSpy.mockReturnValue({
+      data: null,
+      isLoading: true,
+      error: null,
+    });
+
+    const stateWithSymbol = {
+      ...initialState,
+      activeObjectId: "sym-123",
+      perspective: "c4" as const,
+      workspace: { ...workspaceSummaryFixture, id: "ws-42" },
+    };
+    const dispatch = vi.fn();
+
+    render(
+      <AppContext.Provider value={{ state: stateWithSymbol, dispatch }}>
+        <Shell viewport="desktop" />
+      </AppContext.Provider>,
+    );
+
+    await waitFor(() => {
+      expect(useSubgraphSpy).toHaveBeenCalledWith(null);
+      expect(useArchitectureSpy).toHaveBeenCalledWith("ws-42");
+    });
+  });
+
+  // Scenario C: rootId null + perspective "c4" → GraphLanding branch (not InteractiveGraphPanel)
+  it("renders GraphLanding (not InteractiveGraphPanel) when no symbol selected and c4 perspective", async () => {
+    const stateNoSymbol = {
+      ...initialState,
+      activeObjectId: null,
+      perspective: "c4" as const,
+      workspace: { ...workspaceSummaryFixture, id: "ws-42" },
+    };
+    const dispatch = vi.fn();
+
+    render(
+      <AppContext.Provider value={{ state: stateNoSymbol, dispatch }}>
+        <Shell viewport="desktop" />
+      </AppContext.Provider>,
+    );
+
+    // GraphLanding should be mounted (or loading while MSW resolves), not InteractiveGraphPanel
+    await waitFor(() => {
+      // Either the resolved landing or the loading state is acceptable
+      const hasLanding =
+        screen.queryByTestId("graph-landing") !== null;
+      const hasLandingLoading =
+        screen.queryByTestId("graph-landing-loading") !== null;
+      expect(hasLanding || hasLandingLoading).toBe(true);
+    });
+    // useSubgraph and useArchitecture are NOT called because
+    // GraphLanding uses useLanding + useArchitecture (different hooks)
+    // and InteractiveGraphPanel is not mounted when rootId is null
+    expect(useSubgraphSpy).not.toHaveBeenCalled();
   });
 });
