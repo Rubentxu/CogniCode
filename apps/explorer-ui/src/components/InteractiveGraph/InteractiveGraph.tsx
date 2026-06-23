@@ -29,6 +29,7 @@ import cytoscape, { type Core, type ElementsDefinition } from "cytoscape";
 import type { SubgraphResponse } from "../../api/types";
 import { buildStylesheet, resolveNodeStyleClass } from "./stylesheet";
 import { toCytoscapeElements } from "./adapter";
+import styles from "./InteractiveGraph.module.css";
 import {
   createLayoutWorker,
   type LayoutAlgorithm,
@@ -89,10 +90,13 @@ export function InteractiveGraph({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
   const workerRef = useRef<LayoutWorker | null>(null);
+  const prevDataRef = useRef<SubgraphResponse | null>(null);
   const [mounted, setMounted] = useState(false);
   const [layoutProgress, setLayoutProgress] = useState<number | null>(null);
   // E2: local layout algorithm state (synced from prop, changeable via selector)
   const [layoutAlgorithm, setLayoutAlgorithm] = useState<LayoutAlgorithm>(layoutAlgorithmProp);
+  // E5.5: fade state — true while opacity=0 during data swap crossfade
+  const [canvasFading, setCanvasFading] = useState(false);
 
   // ---- Mount cytoscape when we have data + a container ----
   useEffect(() => {
@@ -194,6 +198,21 @@ export function InteractiveGraph({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root, data, layoutAlgorithm]);
+
+  // E5.5: opacity crossfade when data identity changes (perspective toggle / warm-cache swap)
+  useEffect(() => {
+    if (prevDataRef.current === data) return;
+    if (prevDataRef.current !== null && data !== null) {
+      // Data identity changed — trigger fade-out → fade-in
+      setCanvasFading(true);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setCanvasFading(false);
+        });
+      });
+    }
+    prevDataRef.current = data;
+  }, [data]);
 
   // ── E2: re-layout when algorithm changes (no cytoscape remount) ──
   // Separate effect so we don't destroy/recreate the cy instance.
@@ -354,6 +373,7 @@ export function InteractiveGraph({
       <div
         ref={containerRef}
         data-testid="interactive-graph-canvas"
+        className={canvasFading ? styles.igCanvasFading : styles.igCanvas}
         style={{ flex: "1 1 auto", minHeight: 0 }}
       />
       <table

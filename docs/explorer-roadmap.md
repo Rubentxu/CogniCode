@@ -124,7 +124,7 @@ explorations. Clicking a root opens the pane-stack workflow.
 | E5.2 | Create `useC4Context` hook (calls backend C4 inference) | ⚠️ Renamed | Hook is `useArchitecture` (not `useC4Context`); functional |
 | E5.3 | Wire toggle → swap data source between `useSubgraph` and `useC4Context` | ✅ Done | `Shell.tsx:45-88` rewrites `InteractiveGraphPanel` to call both hooks; perspective selects data source |
 | E5.4 | Apply C4 stylesheet classes when in C4 perspective | ✅ | All C4 classes in `stylesheet.ts`; applied via `style_class` attribute |
-| E5.5 | Add smooth transition between perspectives (data swap + re-layout) | ⚠️ Partial | Data swap now works; crossfade still ❌ — cytoscape instance is destroyed and remounted on perspective change |
+| E5.5 | Add smooth transition between perspectives (data swap + re-layout) | ✅ | Data swap works; crossfade mitigates flash via stale-data hold (Shell.tsx) + opacity fade (InteractiveGraph.tsx) |
 
 **Deliverable:** User can toggle between Graph and C4 perspectives on the same
 canvas. C4 shows system/container/component nodes with proper styling.

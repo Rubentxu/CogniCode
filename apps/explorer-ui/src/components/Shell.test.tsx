@@ -9,6 +9,122 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { useReducer } from "react";
 
+// ---------------------------------------------------------------------------
+// Mock cytoscape for tests that render InteractiveGraph through Shell
+// ---------------------------------------------------------------------------
+vi.mock("cytoscape", () => {
+  type NodeData = { id: string; style_class?: string; label?: string };
+  type EdgeData = { id: string; source: string; target: string };
+
+  class CyNode {
+    id: string;
+    data: NodeData;
+    classes: Set<string> = new Set();
+    private listeners = new Map<string, Array<(e: unknown) => void>>();
+    private edgeListeners = new Set<CyEdge>();
+    constructor(d: NodeData) {
+      this.id = String(d.id);
+      this.data = d;
+    }
+    addClass(c: string) { this.classes.add(c); }
+    removeClass(c: string) { this.classes.delete(c); }
+    hasClass(c: string) { return this.classes.has(c); }
+    on(evt: string, fn: (e: unknown) => void) {
+      const list = this.listeners.get(evt) ?? [];
+      list.push(fn);
+      this.listeners.set(evt, list);
+    }
+    off(evt: string, fn: (e: unknown) => void) {
+      const list = this.listeners.get(evt) ?? [];
+      this.listeners.set(evt, list.filter((f) => f !== fn));
+    }
+    connectedEdges(): CyEdge[] {
+      return [...this.edgeListeners];
+    }
+    private emit() {
+      for (const fn of this.listeners.get("tap") ?? []) fn({ target: this });
+    }
+    static fireTap(n: CyNode) { n.emit(); }
+  }
+  class CyEdge {
+    id: string;
+    data: EdgeData;
+    classes: Set<string> = new Set();
+    constructor(d: EdgeData) {
+      this.id = String(d.id);
+      this.data = d;
+    }
+    addClass(c: string) { this.classes.add(c); }
+    removeClass(c: string) { this.classes.delete(c); }
+    hasClass(c: string) { return this.classes.has(c); }
+    isNode() { return false; }
+    isEdge() { return true; }
+  }
+  class CyCollection {
+    items: Array<CyNode | CyEdge>;
+    constructor(items: Array<CyNode | CyEdge>) {
+      this.items = items;
+    }
+    addClass(c: string) { for (const i of this.items) i.addClass(c); }
+    removeClass(c: string) { for (const i of this.items) i.removeClass(c); }
+    subtract(other: CyCollection): CyCollection {
+      const ids = new Set(other.items.map((i) => i.id));
+      return new CyCollection(this.items.filter((i) => !ids.has(i.id)));
+    }
+    length = 0;
+  }
+  class Cy {
+    nodes: CyNode[] = [];
+    edgeElements: CyEdge[] = [];
+    constructor(opts: {
+      elements?: { nodes?: NodeData[]; edges?: NodeData[] };
+      renderer?: { name: string; webgl?: boolean };
+    }) {
+      this.nodes = (opts.elements?.nodes ?? []).map((d) => new CyNode(d));
+      this.edgeElements = (opts.elements?.edges ?? []).map(
+        (d) => new CyEdge(d as EdgeData),
+      );
+      for (const e of this.edgeElements) {
+        const src = this.nodes.find((n) => n.id === String(e.data.source));
+        const tgt = this.nodes.find((n) => n.id === String(e.data.target));
+        if (src) (src as unknown as { edgeListeners: Set<CyEdge> }).edgeListeners.add(e);
+        if (tgt) (tgt as unknown as { edgeListeners: Set<CyEdge> }).edgeListeners.add(e);
+      }
+    }
+    on(_evt: string, selector: string | ((e: unknown) => void), fn?: (e: unknown) => void) {
+      if (typeof selector === "function") {
+        this.nodes.forEach((n) => n.on("tap", selector));
+      }
+    }
+    off(_evt: string, fn: (e: unknown) => void) {
+      for (const n of this.nodes) n.off("tap", fn);
+    }
+    elements(): CyCollection {
+      return new CyCollection([...this.nodes, ...this.edgeElements]);
+    }
+    getElementById(id: string): CyCollection {
+      const all = [...this.nodes, ...this.edgeElements];
+      return new CyCollection(all.filter((i) => i.id === String(id)));
+    }
+    edges(_selector?: string) {
+      return new CyCollection(this.edgeElements);
+    }
+    nodes(_selector?: string) {
+      return new CyCollection(this.nodes);
+    }
+    destroy() {}
+    layout(_options?: { name: string; rows?: number }) {
+      return { run: () => {} };
+    }
+  }
+  return {
+    default: ((opts: {
+      elements?: { nodes?: NodeData[]; edges?: NodeData[] };
+      renderer?: { name: string; webgl?: boolean };
+    }) => new Cy(opts)) as unknown as { (opts: unknown): unknown },
+  };
+});
+
 import { detectViewport } from "./viewport";
 import { HealthProbe } from "./HealthProbe";
 import { SkipLink } from "./SkipLink";
@@ -435,5 +551,88 @@ describe("InteractiveGraphPanel perspective wire-up (E5.3)", () => {
     // GraphLanding uses useLanding + useArchitecture (different hooks)
     // and InteractiveGraphPanel is not mounted when rootId is null
     expect(useSubgraphSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E5.5: crossfade — stale-data hold regression tests
+// ---------------------------------------------------------------------------
+
+describe("InteractiveGraphPanel stale-data hold (E5.5)", () => {
+  beforeEach(() => {
+    useSubgraphSpy.mockClear();
+    useArchitectureSpy.mockClear();
+  });
+
+  // T1.4c: stale data suppresses GRAPH_LOADING during revalidation
+  // Verifies that when useSubgraph is revalidating (isLoading=true) with stale data
+  // available, InteractiveGraphPanel does NOT show GRAPH_LOADING — it shows the
+  // stale data instead. This is the stale-data hold behavior.
+  it("does not render GRAPH_LOADING when stale data is available during revalidation", async () => {
+    const stateWithSymbol = {
+      ...initialState,
+      activeObjectId: "sym-123",
+      perspective: "graph" as const,
+      workspace: { ...workspaceSummaryFixture, id: "ws-42" },
+    };
+    const dispatch = vi.fn();
+
+    // Set up mock to return loading state with stale data (simulates SWR revalidation)
+    useSubgraphSpy.mockReturnValue({
+      data: SUBGRAPH_FIXTURE,
+      isLoading: true,
+      error: null,
+    });
+
+    const { rerender } = render(
+      <AppContext.Provider value={{ state: stateWithSymbol, dispatch }}>
+        <Shell viewport="desktop" />
+      </AppContext.Provider>,
+    );
+
+    // Wait for initial render to settle
+    await waitFor(() => {
+      expect(screen.queryByTestId("interactive-graph-loading")).not.toBeInTheDocument();
+    });
+
+    // The key assertion: even with isLoading=true, no GRAPH_LOADING is shown
+    // because stale data is being displayed (stale-data hold)
+    expect(screen.queryByTestId("interactive-graph-loading")).not.toBeInTheDocument();
+    // The graph should still be rendered (stale data is shown, not loading)
+    expect(
+      screen.queryByTestId("interactive-graph") ||
+        screen.queryByTestId("interactive-graph-empty")
+    ).toBeTruthy();
+  });
+
+  // T1.4d: hard error clears stale hold and shows GRAPH_ERROR
+  it("renders GRAPH_ERROR after hard error even when stale data was primed", async () => {
+    const stateWithSymbol = {
+      ...initialState,
+      activeObjectId: "sym-123",
+      perspective: "graph" as const,
+      workspace: { ...workspaceSummaryFixture, id: "ws-42" },
+    };
+    const dispatch = vi.fn();
+
+    // Set up mock to return error state
+    useSubgraphSpy.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: new Error("graph fetch failed"),
+    });
+
+    render(
+      <AppContext.Provider value={{ state: stateWithSymbol, dispatch }}>
+        <Shell viewport="desktop" />
+      </AppContext.Provider>,
+    );
+
+    // GRAPH_ERROR must appear — hard error takes precedence
+    await waitFor(() => {
+      expect(screen.getByTestId("interactive-graph-error")).toBeInTheDocument();
+    });
+    // GRAPH_LOADING must not appear
+    expect(screen.queryByTestId("interactive-graph-loading")).not.toBeInTheDocument();
   });
 });

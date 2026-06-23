@@ -129,7 +129,7 @@ the user a lightweight way to decide whether a node is worth a deeper dive.
 | E2 — ELK layout worker | ✅ Complete | `InteractiveGraph` + `layout.worker.ts` fully integrated |
 | E3 — Hard cut column nav | ✅ Complete | `column` mode removed; `MillerColumns` deleted; state is pane-stack only |
 | E4 — Graph Landing Page | ✅ Complete | E4.1✅ E4.2⚠️(hook renamed) E4.3✅ E4.4✅ E4.5✅ (strip + endpoint) |
-| E5 — Perspective toggle | ✅ Complete | Toggle wired into `InteractiveGraphPanel` (`Shell.tsx:45-88`); canvas morphs between graph (useSubgraph) and C4 (useArchitecture) perspectives after object selection |
+| E5 — Perspective toggle | ✅ Complete | Toggle wired into `InteractiveGraphPanel` (`Shell.tsx:45-88`); canvas morphs between graph (useSubgraph) and C4 (useArchitecture) perspectives after object selection; E5.5 crossfade (sprint 2026-06-23) adds stale-data hold + opacity fade to suppress flash on warm-cache perspective swaps |
 | E6 — C4 Backend Inference | ❌ Not started | `cognicode-diagram` crate does not exist |
 | E7 — Renderer evaluation | ✅ Complete | ADR-041/ADR-042 Accepted; WebGL adopted selectively (≥500 nodes) |
 

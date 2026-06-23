@@ -7,6 +7,9 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 
+// Track destroy calls for E5.5 crossfade regression tests
+let destroyCallCount = 0;
+
 vi.mock("cytoscape", () => {
   type NodeData = { id: string; style_class?: string; label?: string };
   type EdgeData = { id: string; source: string; target: string };
@@ -111,7 +114,10 @@ vi.mock("cytoscape", () => {
     edges(_selector?: string) {
       return new CyCollection(this.edgeElements);
     }
-    destroy() { /* no-op */ }
+    nodes(_selector?: string) {
+      return new CyCollection(this.nodes);
+    }
+    destroy() { destroyCallCount++; }
     layout(_options?: { name: string; rows?: number }) {
       return { run: () => {} }; // cytoscape layout returns a runnable descriptor
     }
@@ -350,5 +356,98 @@ describe("InteractiveGraph", () => {
       />,
     );
     expect(screen.getByTestId("interactive-graph")).toBeInTheDocument();
+  });
+
+  // ---- E5.5: crossfade — warm-cache data swap destroys cytoscape (per design Option C)
+  // The mount effect's [root, data, layoutAlgorithm] dep triggers cleanup → destroy is called.
+  // This is the expected behavior for Option C (stale-data hold + opacity fade, not imperative morph).
+  // The crossfade visual mitigation (opacity fade) makes the remount invisible to the user.
+  it("calls cy.destroy when data changes (Option C: mount effect dep triggers remount)", () => {
+    const { rerender } = render(
+      <InteractiveGraph
+        root="sym:foo::bar"
+        data={smallSubgraphFixture}
+        onSelectObject={() => {}}
+      />,
+    );
+    // Reset after initial mount (destroy fires during unmount if component is torn down)
+    destroyCallCount = 0;
+
+    // Swap to a data object with a different identity (same shape is fine)
+    const differentData = {
+      root: "sym:foo::bar",
+      nodes: [
+        {
+          id: "sym:different",
+          label: "Different",
+          kind: "function",
+          file: "other.rs",
+          line: 99,
+          style_class: "function",
+        },
+      ],
+      edges: [],
+      truncated: false,
+      truncated_reason: null,
+      corroboration_scores: {},
+    };
+    rerender(
+      <InteractiveGraph
+        root="sym:foo::bar"
+        data={differentData}
+        onSelectObject={() => {}}
+      />,
+    );
+    // Mount effect dep [data] triggers cleanup → destroy is called once
+    expect(destroyCallCount).toBe(1);
+  });
+
+  // ---- E5.5: crossfade — canvas fade class toggles on data identity change ----
+  it("canvas wrapper completes fade transition after data identity change", () => {
+    vi.useFakeTimers();
+    const { rerender } = render(
+      <InteractiveGraph
+        root="sym:foo::bar"
+        data={smallSubgraphFixture}
+        onSelectObject={() => {}}
+      />,
+    );
+    const differentData = {
+      root: "sym:foo::bar",
+      nodes: [
+        {
+          id: "sym:other",
+          label: "Other",
+          kind: "function",
+          file: "other.rs",
+          line: 1,
+          style_class: "function",
+        },
+      ],
+      edges: [],
+      truncated: false,
+      truncated_reason: null,
+      corroboration_scores: {},
+    };
+    rerender(
+      <InteractiveGraph
+        root="sym:foo::bar"
+        data={differentData}
+        onSelectObject={() => {}}
+      />,
+    );
+    // Advance timers and flush React state updates in one act() call
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const act = (require("react") as any).act ?? require("react-dom/test-utils").act;
+    act(() => {
+      vi.runAllTimers();
+    });
+    const canvas = screen.getByTestId("interactive-graph-canvas");
+    // After the double-rAF completes, canvas must have non-fading class
+    // (CSS modules generate scoped names like _igCanvas_HASH or _igCanvasFading_HASH)
+    expect(canvas.className).toMatch(/^_(igCanvas|igCanvasFading)_/);
+    // The non-fading state (igCanvas, not igCanvasFading) must be present
+    expect(canvas.className).not.toMatch(/^_igCanvasFading_/);
+    vi.useRealTimers();
   });
 });

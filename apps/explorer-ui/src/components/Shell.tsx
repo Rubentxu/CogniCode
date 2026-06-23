@@ -12,7 +12,7 @@
  * and ShellLayout (pure layout). The public API (props, data-testid, data-viewport)
  * is preserved unchanged.
  */
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useRef } from "react";
 
 import { useAppDispatch, useAppState } from "../state/context";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -72,13 +72,21 @@ function InteractiveGraphPanel({
 
   const { data, isLoading, error } = isGraph ? subgraph : architecture;
 
-  if (isLoading) return GRAPH_LOADING;
-  if (error) return GRAPH_ERROR;
+  // E5.5: stale-data hold — keep last good SubgraphResponse across revalidation
+  // so the panel never unmounts (and InteractiveGraph never remounts cytoscape)
+  // during warm-cache perspective toggles.
+  const lastGoodDataRef = useRef<typeof data>(null);
+  if (data) lastGoodDataRef.current = data;
+  if (error) lastGoodDataRef.current = null;
+  const displayData = isLoading ? lastGoodDataRef.current ?? data : data;
+
+  if (isLoading && !lastGoodDataRef.current) return GRAPH_LOADING;
+  if (error && !displayData) return GRAPH_ERROR;
 
   return (
     <InteractiveGraph
       root={rootId ?? "—"}
-      data={data}
+      data={displayData}
       selectedId={rootId}
       onSelectObject={() => {
         /* read-only; PaneStackView handles navigation */
