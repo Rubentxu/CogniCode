@@ -8,8 +8,7 @@
  * The rootReducer composes all slices into the full AppState shape.
  */
 import type { AppState } from "../context";
-import { makeInitialNavigationState } from "../navigation";
-import { makeInitialNavigationSliceState, navigationReducer } from "./navigation";
+import { navigationReducer } from "./navigation";
 import { spotterReducer } from "./spotter";
 import { workspaceReducer } from "./workspace";
 import { perspectiveReducer } from "./perspective";

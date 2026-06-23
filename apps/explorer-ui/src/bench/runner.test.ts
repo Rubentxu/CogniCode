@@ -101,7 +101,7 @@ describe("runBench gating", () => {
     });
     expect(spy.mounts.length).toBe(1);
     expect(records.length).toBe(1);
-    expect(records[0].renderer.id).toBe("sigma-poc");
+    expect(records[0]!.renderer.id).toBe("sigma-poc");
   });
 
   it("always includes cytoscape adapters when configured", async () => {
@@ -138,8 +138,8 @@ describe("runBench cold/warm runs", () => {
       fixtures: [loadFixture("call-graph-small")],
     });
     expect(records.length).toBe(1);
-    expect(records[0].run.mode).toBe("cold");
-    expect(records[0].run.index).toBe(0);
+    expect(records[0]!.run.mode).toBe("cold");
+    expect(records[0]!.run.index).toBe(0);
   });
 
   it("records N warm runs per cell when warm is enabled", async () => {
@@ -156,8 +156,8 @@ describe("runBench cold/warm runs", () => {
     });
     expect(records.length).toBe(3);
     for (let i = 0; i < 3; i++) {
-      expect(records[i].run.mode).toBe("warm");
-      expect(records[i].run.index).toBe(i + 1);
+      expect(records[i]!.run.mode).toBe("warm");
+      expect(records[i]!.run.index).toBe(i + 1);
     }
   });
 
@@ -174,9 +174,9 @@ describe("runBench cold/warm runs", () => {
       fixtures: [loadFixture("call-graph-small")],
     });
     expect(records.length).toBe(3);
-    expect(records[0].run.mode).toBe("cold");
-    expect(records[1].run.mode).toBe("warm");
-    expect(records[2].run.mode).toBe("warm");
+    expect(records[0]!.run.mode).toBe("cold");
+    expect(records[1]!.run.mode).toBe("warm");
+    expect(records[2]!.run.mode).toBe("warm");
   });
 });
 
@@ -193,8 +193,8 @@ describe("runBench behavior checks", () => {
       adapters: [canvas],
       fixtures: [loadFixture("call-graph-small")],
     });
-    expect(records[0].behavior.selection_works).toBe(false);
-    expect(records[0].behavior.regressions.length).toBeGreaterThan(0);
+    expect(records[0]!.behavior.selection_works).toBe(false);
+    expect(records[0]!.behavior.regressions.length).toBeGreaterThan(0);
   });
 
   it("flags runs with failing layout as invalid", async () => {
@@ -209,8 +209,8 @@ describe("runBench behavior checks", () => {
       adapters: [canvas],
       fixtures: [loadFixture("call-graph-small")],
     });
-    expect(records[0].behavior.layout_completed).toBe(false);
-    expect(records[0].behavior.regressions.length).toBeGreaterThan(0);
+    expect(records[0]!.behavior.layout_completed).toBe(false);
+    expect(records[0]!.behavior.regressions.length).toBeGreaterThan(0);
   });
 
   it("captures mount failures as regressions and notes", async () => {
@@ -225,8 +225,8 @@ describe("runBench behavior checks", () => {
       adapters: [canvas],
       fixtures: [loadFixture("call-graph-small")],
     });
-    expect(records[0].behavior.regressions.length).toBeGreaterThan(0);
-    expect(records[0].notes).toMatch(/mount failed/);
+    expect(records[0]!.behavior.regressions.length).toBeGreaterThan(0);
+    expect(records[0]!.notes).toMatch(/mount failed/);
   });
 });
 
@@ -243,7 +243,7 @@ describe("runBench timing capture", () => {
       adapters: [canvas],
       fixtures: [loadFixture("call-graph-small")],
     });
-    const t = records[0].timings_ms;
+    const t = records[0]!.timings_ms;
     expect(t.load).toBeGreaterThanOrEqual(0);
     expect(t.pan).toBeGreaterThanOrEqual(0);
     expect(t.zoom).toBeGreaterThanOrEqual(0);
@@ -272,7 +272,7 @@ describe("runBench timing capture", () => {
       adapters: [canvas],
       fixtures: [empty],
     });
-    expect(records[0].timings_ms.relayout).toBe(0);
+    expect(records[0]!.timings_ms.relayout).toBe(0);
   });
 });
 

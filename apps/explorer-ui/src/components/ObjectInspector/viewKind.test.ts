@@ -71,6 +71,10 @@ function makeView(partial: Partial<ContextualView>): ContextualView {
     title: "Test View",
     view_kind: "vertical_slice",
     blocks: [],
+    relations: [],
+    evidence: [],
+    findings: [],
+    renderer_kind: "json",
     ...partial,
   };
 }

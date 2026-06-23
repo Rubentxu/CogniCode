@@ -123,7 +123,7 @@ describe("CytoscapeCanvasAdapter.mount", () => {
 
     const controller: RendererController = await adapter.mount(fixture, {});
 
-    const result = await controller.select(fixture.nodes[0].id);
+    const result = await controller.select(fixture.nodes[0]!.id);
     expect(result.selection_works).toBe(true);
     expect(result.edge_highlight_works).toBe(true);
 

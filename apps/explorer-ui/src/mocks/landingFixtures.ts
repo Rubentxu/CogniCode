@@ -14,6 +14,7 @@ export const landingFixture: LandingPayload = {
     indexed_at: "2026-06-07T10:11:12Z",
     symbol_count: 1240,
     relation_count: 4312,
+    last_scan_at: "2026-06-07T10:11:12Z",
   },
   nodes: [
     {

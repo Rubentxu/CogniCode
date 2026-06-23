@@ -8,7 +8,7 @@
  */
 import type { Action } from "../context";
 import { apply, getActiveFocus, makeInitialNavigationState } from "../navigation";
-import type { NavigationAction, NavigationState, ViewportState } from "../navigation/types";
+import type { NavigationAction, NavigationState } from "../navigation/types";
 
 export type NavigationSliceAction = Extract<
   Action,

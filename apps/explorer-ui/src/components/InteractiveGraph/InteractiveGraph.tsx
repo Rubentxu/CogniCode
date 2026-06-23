@@ -120,7 +120,7 @@ export function InteractiveGraph({
       // E7 (ADR-042): enable WebGL selectively based on node count.
       // Bench evidence: WebGL ~20% faster at 1,000 nodes, ~5% at 5,000;
       // canvas ~15-25% faster for small fixtures (< 16 nodes).
-      renderer: { name: "canvas", webgl: useWebgl },
+      ...({ renderer: { name: "canvas", webgl: useWebgl } } as cytoscape.CytoscapeOptions),
     });
 
     // Wire node selection

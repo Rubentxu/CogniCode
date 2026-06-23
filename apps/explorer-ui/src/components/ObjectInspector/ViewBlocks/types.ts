@@ -4,8 +4,7 @@
 import type {
   CallListBlockBody,
   ViewBlock,
-  UnknownViewBlock,
-} from "../../api/types";
+} from "../../../api/types";
 
 // ============================================================================
 // Helpers — exported so ViewBlock.tsx can use them

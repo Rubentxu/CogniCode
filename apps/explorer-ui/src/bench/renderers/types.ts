@@ -153,13 +153,14 @@ export interface RendererAdapter {
  * `behavior.regressions`.
  */
 export class RendererMountError extends Error {
-  constructor(
-    public readonly rendererId: RendererId,
-    message: string,
-    public readonly cause?: unknown,
-  ) {
+  public readonly rendererId: RendererId;
+  override readonly cause?: unknown;
+  override readonly name: string = "RendererMountError";
+
+  constructor(rendererId: RendererId, message: string, cause?: unknown) {
     super(message);
-    this.name = "RendererMountError";
+    this.rendererId = rendererId;
+    this.cause = cause;
   }
 }
 

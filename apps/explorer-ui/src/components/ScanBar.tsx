@@ -10,7 +10,6 @@ import { useState, type ReactNode } from "react";
 
 import { useAppState } from "../state/context";
 import { useJobStatus, useGraphStats, scanWorkspace } from "../hooks/useScanJob";
-import type { JobStatus } from "../hooks/useScanJob";
 
 export function ScanBar(): ReactNode {
   const { workspace } = useAppState();
