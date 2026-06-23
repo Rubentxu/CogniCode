@@ -128,7 +128,7 @@ the user a lightweight way to decide whether a node is worth a deeper dive.
 | E1 — Consolidate View Model | ✅ Complete | E1.1✅ E1.2⚠️ E1.3✅ E1.4✅ E1.5✅ — `rendererRegistry` is now the authoritative pipeline; `PaneInspector` routes all rendering through `resolveRenderStrategy` |
 | E2 — ELK layout worker | ✅ Complete | `InteractiveGraph` + `layout.worker.ts` fully integrated |
 | E3 — Hard cut column nav | ✅ Complete | `column` mode removed; `MillerColumns` deleted; state is pane-stack only |
-| E4 — Graph Landing Page | ~70% | E4.1✅ E4.2⚠️(hook renamed) E4.3✅ E4.4✅ E4.5⚠️(hook exists, UI strip missing) |
+| E4 — Graph Landing Page | ✅ Complete | E4.1✅ E4.2⚠️(hook renamed) E4.3✅ E4.4✅ E4.5✅ (strip + endpoint) |
 | E5 — Perspective toggle | ⚠️ Partial | Toggle exists in `ShellLayout`; dispatches `SET_PERSPECTIVE`; but only affects `GraphLanding` — `InteractiveGraphPanel` ignores it (always uses `useSubgraph`) |
 | E6 — C4 Backend Inference | ❌ Not started | `cognicode-diagram` crate does not exist |
 | E7 — Renderer evaluation | ✅ Complete | ADR-041/ADR-042 Accepted; WebGL adopted selectively (≥500 nodes) |

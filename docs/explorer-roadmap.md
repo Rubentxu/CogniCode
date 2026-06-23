@@ -97,7 +97,7 @@ graceful degradation for large graphs.
 
 **Goal:** The Explorer opens to a graph overview, not an empty inspector.
 
-**Status:** ~70% — E4.1/E4.3/E4.4 done; E4.2 renamed; E4.5 UI missing
+**Status:** ✅ Complete — E4.1/E4.2/E4.3/E4.4/E4.5 all done
 
 | ID | Task | Status | Evidence |
 |----|------|--------|---------|
@@ -105,7 +105,7 @@ graceful degradation for large graphs.
 | E4.2 | Hook `GraphLanding` to `GET /api/graph/roots` (entry points) | ⚠️ Renamed | Hook is `useLanding` (not `useRootNodes`); endpoint is `GET /workspaces/:id/landing` (not `/api/graph/roots`) |
 | E4.3 | Add suggested questions strip (from `config/suggestedQuestions.ts`) | ✅ | `SUGGESTED_QUESTIONS` map + `LandingSuggestionStrip.tsx` |
 | E4.4 | Wire root-node click → open pane in pane-stack | ✅ | `SELECT_OBJECT` → `PUSH_PANE` via `paneStack.ts` reducer |
-| E4.5 | Add recent explorations strip (from `useExplorations`) | ⚠️ Hook done, UI missing | `useExplorations` hook exists and is wired to `localStorage` cache; no visible `RecentExplorationsStrip` component in `GraphLanding` |
+| E4.5 | Add recent explorations strip (from `useExplorations`) | ✅ | `RecentExplorationsStrip` component + `GET /api/workspaces/:id/explorations` endpoint |
 
 **Deliverable:** Landing shows graph roots, suggested questions, and recent
 explorations. Clicking a root opens the pane-stack workflow.
