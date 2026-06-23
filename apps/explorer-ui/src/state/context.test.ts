@@ -30,7 +30,6 @@ describe("initialStateWithFocus", () => {
 
 describe("appReducer — initial state", () => {
   it("has empty navigation with no active pane", () => {
-    expect(initialState.navigation.chain).toEqual([]);
     expect(initialState.navigation.panes).toEqual([]);
     expect(initialState.activeObjectId).toBeNull();
   });

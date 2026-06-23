@@ -65,13 +65,10 @@ export type ChainEntry = {
 /**
  * NavigationState — the slice of AppState that owns pane-stack navigation.
  *
- * - `chain` mirrors the active pane's history for drill-down.
  * - `panes` is the open pane list (gtoolkit-style side-by-side).
  * - `activePaneId` selects which pane the inspector renders.
  */
 export type NavigationState = {
-  /** Linear path of objects — drill-down history. */
-  chain: ChainEntry[];
   /** Open panes — gtoolkit-style side-by-side. */
   panes: Pane[];
   /** Id of the focused pane (where the inspector renders). */
@@ -106,7 +103,6 @@ export type NavigationAction =
  */
 export function makeInitialNavigationState(): NavigationState {
   return {
-    chain: [],
     panes: [],
     activePaneId: null,
   };

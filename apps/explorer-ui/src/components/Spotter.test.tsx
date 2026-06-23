@@ -253,12 +253,13 @@ describe("Spotter (open)", () => {
       const state = captured.current;
       expect(state).not.toBeNull();
       expect(state!.spotterOpen).toBe(false);
-      // The active object is set to the picked one and a column
+      // The active object is set to the picked one and a pane
       // is pushed.
       expect(state!.activeObjectId).toBe(inspectableObjectFixture.id);
-      expect(state!.navigation.chain.at(-1)?.object_id).toBe(
-        inspectableObjectFixture.id,
+      const activePane = state!.navigation.panes.find(
+        (p) => p.id === state!.navigation.activePaneId,
       );
+      expect(activePane?.objectId).toBe(inspectableObjectFixture.id);
       // The first available view id is forwarded.
       expect(state!.activeViewId).toBe(
         inspectableObjectFixture.available_views[0]!.id,
