@@ -701,11 +701,22 @@ impl HandlerContextBuilder {
     /// Sets the PostgresRepository for graph_reports queries.
     ///
     /// If not set, graph_diff and graph_timeline tools will return an error.
+    #[cfg(feature = "postgres")]
     pub fn with_postgres_repo(
         mut self,
         repo: Arc<crate::infrastructure::persistence::PostgresRepository>,
     ) -> Self {
-        self.postgres_repo = Some(repo);
+        self.postgres_repo = Some(repo.clone());
+        // Auto-wire view_spec_repo so handlers can use the DIP port uniformly
+        self.view_spec_repo = Some(repo as Arc<dyn ViewSpecRepository>);
+        self
+    }
+
+    #[cfg(not(feature = "postgres"))]
+    pub fn with_postgres_repo(
+        self,
+        _repo: Arc<crate::infrastructure::persistence::PostgresRepository>,
+    ) -> Self {
         self
     }
 
