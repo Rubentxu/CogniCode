@@ -6,7 +6,7 @@
  * When `onClose` is provided, a close button appears (pane-stack only).
  */
 import { useEffect, useState } from "react";
-import { useApp, useAppDispatch } from "../../state/context";
+import { useAppDispatch } from "../../state/context";
 import { useObject } from "../../hooks/useObject";
 import { useAvailableViews, useViews } from "../../hooks/useViews";
 import { useAsk } from "../../hooks/useAsk";
@@ -244,11 +244,12 @@ export function PaneInspector({
                 const strategy = resolveRenderStrategy(display);
                 if (strategy.kind === "registry") {
                   // E1.5: route through renderer registry
-                  return rendererRegistry.render(
-                    strategy.rendererKind,
-                    display.body ?? display,
-                    runtimeContext,
-                  );
+                  // Use getOrJson().render() to preserve runtimeContext - the 2-arg
+                  // convenience wrapper silently drops the 3rd argument, causing
+                  // GraphView to receive objectId="" and no onClose (functional bug)
+                  return rendererRegistry
+                    .getOrJson(strategy.rendererKind)
+                    .render(display, runtimeContext);
                 }
                 // E1.4: render blocks directly
                 return (
