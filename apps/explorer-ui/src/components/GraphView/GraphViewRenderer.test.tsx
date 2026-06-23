@@ -71,7 +71,7 @@ describe("GraphViewRenderer", () => {
 
   beforeEach(async () => {
     const { layoutFromContextualView } = await import("../../mocks/layoutMock");
-    layoutFromContextualView.mockReturnValue({
+    vi.mocked(layoutFromContextualView).mockReturnValue({
       nodes: [
         { id: "root", label: "root", kind: "function", x: 200, y: 200 },
         { id: "callee", label: "callee", kind: "function", x: 400, y: 200 },
@@ -90,7 +90,7 @@ describe("GraphViewRenderer", () => {
 
   it("renders empty state when layout has <=1 nodes", async () => {
     const { layoutFromContextualView } = await import("../../mocks/layoutMock");
-    layoutFromContextualView.mockReturnValueOnce({
+    vi.mocked(layoutFromContextualView).mockReturnValueOnce({
       nodes: [],
       edges: [],
       viewBox: { x: 0, y: 0, width: 0, height: 0 },
@@ -103,7 +103,7 @@ describe("GraphViewRenderer", () => {
 
   it("renders graph view renderer with single node shows empty state", async () => {
     const { layoutFromContextualView } = await import("../../mocks/layoutMock");
-    layoutFromContextualView.mockReturnValueOnce({
+    vi.mocked(layoutFromContextualView).mockReturnValueOnce({
       nodes: [{ id: "root", label: "root", kind: "function", x: 200, y: 200 }],
       edges: [],
       viewBox: { x: 0, y: 0, width: 400, height: 400 },
