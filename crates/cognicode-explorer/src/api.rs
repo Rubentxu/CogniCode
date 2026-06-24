@@ -19,6 +19,7 @@ use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService,
     SubgraphDirection as FacadeSubgraphDirection, ViewService, WorkspaceService,
 };
+#[cfg(feature = "multimodal")]
 use crate::ports::graph_repository::GraphRepository;
 
 // ============================================================================
