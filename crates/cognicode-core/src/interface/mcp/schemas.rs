@@ -2449,7 +2449,7 @@ pub struct SolidReport {
 // ============================================================================
 
 /// Lightweight view descriptor used in list responses.
-/// Mirrors cognicode_explorer::dto::ViewDescriptor.
+/// Mirrors cognicode_explorer::dto::ViewDescriptorDto.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ViewDescriptor {
     pub id: String,

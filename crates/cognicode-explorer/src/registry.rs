@@ -300,23 +300,6 @@ impl ViewRegistry {
         descriptors
     }
 
-/// Returns all 8 built-in view descriptors without filtering by `applies_to`.
-///
-/// This is used by the MCP `list_view_specs` handler which must return
-/// all built-ins regardless of what object type is being inspected.
-/// Uses shared BUILTIN_DESCRIPTORS_RAW from core to avoid duplication.
-pub fn list_all_builtin_descriptors() -> Vec<ViewDescriptorDto> {
-    static REAL_EXECUTOR_DESCRIPTORS: OnceLock<Vec<ViewDescriptorDto>> = OnceLock::new();
-    REAL_EXECUTOR_DESCRIPTORS
-        .get_or_init(|| {
-            BUILTIN_DESCRIPTORS_RAW
-                .iter()
-                .map(raw_to_view_descriptor)
-                .collect()
-        })
-        .clone()
-}
-
     /// Look up a single view executor by id.
     ///
     /// Returns `None` when no capability with that id is registered.
