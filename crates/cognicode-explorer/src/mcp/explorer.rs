@@ -110,6 +110,30 @@ pub const TOOL_GRAPH_CLUSTER: &str = "graph_cluster";
 /// `graph_explain` — explain the lowest-cost path between two symbols.
 pub const TOOL_GRAPH_EXPLAIN: &str = "graph_explain";
 
+/// `graph_pagerank` — PageRank scores for a subgraph.
+pub const TOOL_GRAPH_PAGERANK: &str = "graph_pagerank";
+
+/// `graph_god_nodes` — find god nodes in a subgraph.
+pub const TOOL_GRAPH_GOD_NODES: &str = "graph_god_nodes";
+
+/// `graph_communities` — detect communities via Label Propagation.
+pub const TOOL_GRAPH_COMMUNITIES: &str = "graph_communities";
+
+/// `graph_community_god_nodes` — find god nodes within each community.
+pub const TOOL_GRAPH_COMMUNITY_GOD_NODES: &str = "graph_community_god_nodes";
+
+/// `graph_surprising_connections` — find cross-community edges.
+pub const TOOL_GRAPH_SURPRISING_CONNECTIONS: &str = "graph_surprising_connections";
+
+/// `graph_transitive_reduction` — minimal edge set preserving reachability.
+pub const TOOL_GRAPH_TRANSITIVE_REDUCTION: &str = "graph_transitive_reduction";
+
+/// `graph_feedback_arc_set` — edges to break all cycles.
+pub const TOOL_GRAPH_FEEDBACK_ARC_SET: &str = "graph_feedback_arc_set";
+
+/// `graph_all_simple_paths` — enumerate simple paths from→to.
+pub const TOOL_GRAPH_ALL_SIMPLE_PATHS: &str = "graph_all_simple_paths";
+
 /// `detect_architecture_drift` — compare inferred C4 architecture against expected.
 pub const TOOL_DETECT_ARCHITECTURE_DRIFT: &str = "detect_architecture_drift";
 
@@ -356,6 +380,7 @@ impl ExplorerMcpHandler {
         crate::mcp::handler::register_ask_handlers(&mut registry);
         crate::mcp::handler::register_drift_handlers(&mut registry);
         crate::mcp::handler::register_graph_handlers(&mut registry);
+        crate::mcp::handler::register_graph_analyze_handlers(&mut registry);
         crate::mcp::handler::register_impact_handlers(&mut registry);
         crate::mcp::handler::register_ingest_handlers(&mut registry);
         crate::mcp::handler::register_named_views_handlers(&mut registry);
@@ -490,6 +515,14 @@ pub const TOOL_NAMES: &[&str] = &[
     TOOL_GRAPH_SUBGRAPH,
     TOOL_GRAPH_CLUSTER,
     TOOL_GRAPH_EXPLAIN,
+    TOOL_GRAPH_PAGERANK,
+    TOOL_GRAPH_GOD_NODES,
+    TOOL_GRAPH_COMMUNITIES,
+    TOOL_GRAPH_COMMUNITY_GOD_NODES,
+    TOOL_GRAPH_SURPRISING_CONNECTIONS,
+    TOOL_GRAPH_TRANSITIVE_REDUCTION,
+    TOOL_GRAPH_FEEDBACK_ARC_SET,
+    TOOL_GRAPH_ALL_SIMPLE_PATHS,
     TOOL_DETECT_ARCHITECTURE_DRIFT,
     TOOL_ASK,
     TOOL_BRAIN_OPEN,

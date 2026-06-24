@@ -19,6 +19,7 @@ use std::collections::HashMap;
 mod ask;
 mod drift;
 mod graph;
+mod graph_analyze;
 mod impact;
 mod ingest;
 mod named_views;
@@ -138,6 +139,7 @@ fn unknown_tool_error(name: &str) -> CallToolResult {
 pub use ask::register_ask_handlers;
 pub use drift::register_drift_handlers;
 pub use graph::register_graph_handlers;
+pub use graph_analyze::register_graph_analyze_handlers;
 pub use impact::register_impact_handlers;
 pub use ingest::register_ingest_handlers;
 pub use named_views::register_named_views_handlers;
