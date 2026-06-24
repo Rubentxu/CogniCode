@@ -94,6 +94,17 @@ adder.go
 openspec/
 sdd/
 
+# SDDK cycle artifacts (workflow state, agent-generated planning data).
+# Per user decision (2026-06-24): these are LOCAL ONLY and must never
+# be committed. They live next to the repo for developer convenience
+# but contain protocol/session state that has no place in git history.
+# ADR files (docs/adr/*.md) are EXPLICITLY EXCLUDED — they remain
+# tracked because they're first-class project documentation, not
+# workflow artifacts.
+sddk/
+.sddk-last-cycle-complete
+.sddk-*
+
 # Proposal documents (agent-generated, not user-requested documentation)
 docs/propuestas/
 rust-intelligence
@@ -104,6 +115,18 @@ rust-clippy/
 .atl/
 specs/
 autoresearch/
+
+# Whole `docs/` directory is LOCAL ONLY per user decision (2026-06-24).
+# The directory remains on disk for developer reference (ADRs, plans,
+# roadmaps, screenshots, etc.) but is not part of the git-tracked
+# source. Pre-existing ADR files remain in git history (commits before
+# this .gitignore entry was added) — only future commits are affected.
+#
+# NOTE: The ADRs in docs/adr/ are first-class documentation that the
+# project relies on. If you need to commit specific subdirectories of
+# docs/ (e.g. ADRs), use `git add -f docs/adr/ADR-NNN-...` to force-add
+# despite this ignore rule.
+docs/
 
 # Sandbox fixtures: node_modules and build artifacts (not code)
 sandbox/fixtures/**/node_modules/
