@@ -59,7 +59,9 @@ use petgraph::algo::{astar, has_path_connecting, tarjan_scc, toposort};
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
 use petgraph::unionfind::UnionFind;
-use petgraph::visit::{EdgeRef, IntoEdgeReferences};
+use petgraph::visit::{EdgeRef, IntoEdgeReferences, NodeIndexable};
+
+use cognicode_graph_algos::GraphBuilder;
 
 use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
 use crate::domain::value_objects::DependencyType;
@@ -586,6 +588,20 @@ impl CallGraphProjection {
             hops,
             total_cost: cost,
         })
+    }
+}
+
+impl GraphBuilder for CallGraphProjection {
+    fn build_adjacency(&self) -> (Vec<Vec<usize>>, Vec<usize>) {
+        let bound = self.graph.node_bound();
+        let mut in_neighbors: Vec<Vec<usize>> = vec![Vec::new(); bound];
+        let mut out_degree: Vec<usize> = vec![0; bound];
+        for ni in self.graph.node_indices() {
+            let row: Vec<usize> = self.graph.edges(ni).map(|e| e.target().index()).collect();
+            in_neighbors[ni.index()] = row;
+            out_degree[ni.index()] = self.graph.edges(ni).count();
+        }
+        (in_neighbors, out_degree)
     }
 }
 
