@@ -591,6 +591,24 @@ impl CallGraphProjection {
     }
 }
 
+impl CallGraphProjection {
+    /// Build outgoing adjacency (each node's targets).
+    ///
+    /// `out_neighbors[u]` lists every `v` with edge `u → v`.
+    /// Used by algorithms that need full adjacency (e.g. transitive
+    /// reduction, all_simple_paths). For pure PageRank-style
+    /// algorithms, `GraphBuilder::build_adjacency()` returns
+    /// `(in_neighbors, out_degree)` which is sufficient.
+    pub fn build_out_neighbors(&self) -> Vec<Vec<usize>> {
+        let bound = self.graph.node_bound();
+        let mut out_neighbors: Vec<Vec<usize>> = vec![Vec::new(); bound];
+        for edge in self.graph.edge_references() {
+            out_neighbors[edge.source().index()].push(edge.target().index());
+        }
+        out_neighbors
+    }
+}
+
 impl GraphBuilder for CallGraphProjection {
     fn build_adjacency(&self) -> (Vec<Vec<usize>>, Vec<usize>) {
         let bound = self.graph.node_bound();
