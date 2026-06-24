@@ -20,11 +20,14 @@ pub mod protocol;
 
 use ::wasm_bindgen::JsValue;
 
-use json_io::{JsonGraph, from_js, from_value, to_value};
+use json_io::{JsonGraph, JsonNode, from_js, from_value, to_value};
 use protocol::{
-    CommunitiesOptions, CommunitiesOutput, Community, CommunityGodNode, CommunityGodNodesOptions,
-    CommunityGodNodesOutput, GodNodeEntry, GodNodesOptions, GodNodesOutput, PageRankOptions,
-    PageRankOutput, SurprisingConnectionsOptions, SurprisingConnectionsOutput, SurprisingEdge,
+    AllSimplePathsOptions, AllSimplePathsOutput, ClusterComponentsOutput, CommunitiesOptions,
+    CommunitiesOutput, Community, CommunityGodNode, CommunityGodNodesOptions,
+    CommunityGodNodesOutput, CondensationOutput, FeedbackArcSetOutput, GodNodeEntry,
+    GodNodesOptions, GodNodesOutput, PageRankOptions, PageRankOutput, SurprisingConnectionsOptions,
+    SurprisingConnectionsOutput, SurprisingEdge, TransitiveReductionEdge,
+    TransitiveReductionOutput,
 };
 
 // =============================================================================
@@ -32,8 +35,11 @@ use protocol::{
 // =============================================================================
 
 use cognicode_graph_algos::{
+    all_simple_paths as inner_all_simple_paths, cluster_components as inner_cluster_components,
     communities as inner_communities, community_god_nodes as inner_community_god_nodes,
+    condensation as inner_condensation, feedback_arc_set as inner_feedback_arc_set,
     page_rank as inner_page_rank, surprising_connections as inner_surprising_connections,
+    transitive_reduction as inner_transitive_reduction,
 };
 
 // =============================================================================
@@ -341,5 +347,217 @@ pub fn surprising_connections(
         .collect();
 
     let output = SurprisingConnectionsOutput { edges: edges_out };
+    to_value(&output).map_err(|e| JsValue::from(e.to_string()))
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+/// Build a map from node ID to index.
+fn build_id_index(nodes: &[JsonNode]) -> std::collections::HashMap<String, usize> {
+    nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.id.clone(), i))
+        .collect()
+}
+
+/// Build out-neighbors vector from edges.
+fn build_out_neighbors_from_edges(graph: &JsonGraph) -> Vec<Vec<usize>> {
+    let n = graph.nodes.len();
+    let id_to_idx = build_id_index(&graph.nodes);
+    let mut out_neighbors: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for edge in &graph.edges {
+        if let (Some(&s), Some(&t)) = (id_to_idx.get(&edge.source), id_to_idx.get(&edge.target)) {
+            out_neighbors[s].push(t);
+        }
+    }
+    out_neighbors
+}
+
+// =============================================================================
+// Condensation (SCC)
+// =============================================================================
+
+/// Condensation — strongly connected components via Tarjan's algorithm.
+///
+/// # Arguments
+///
+/// - `nodes_js`: `Array<{ id: string, label?: string }>`
+/// - `edges_js`: `Array<{ source: string, target: string }>`
+///
+/// # Returns
+///
+/// `{ components: Array<Array<string>> }`
+#[wasm_bindgen_macro::wasm_bindgen]
+pub fn condensation(nodes_js: JsValue, edges_js: JsValue) -> Result<JsValue, JsValue> {
+    let graph: JsonGraph = from_js(nodes_js, edges_js).map_err(|e| JsValue::from(e.to_string()))?;
+    let (_, _, out_neighbors) = graph.build_adjacency();
+    let n = graph.nodes.len();
+    let raw = inner_condensation(&out_neighbors, n);
+    let components: Vec<Vec<String>> = raw
+        .into_iter()
+        .map(|scc| {
+            scc.into_iter()
+                .filter_map(|idx| graph.nodes.get(idx).map(|n| n.id.clone()))
+                .collect()
+        })
+        .collect();
+    let output = CondensationOutput { components };
+    to_value(&output).map_err(|e| JsValue::from(e.to_string()))
+}
+
+// =============================================================================
+// Transitive Reduction
+// =============================================================================
+
+/// Transitive reduction — minimal edge set preserving reachability.
+///
+/// # Arguments
+///
+/// - `nodes_js`: `Array<{ id: string, label?: string }>`
+/// - `edges_js`: `Array<{ source: string, target: string }>`
+///
+/// # Returns
+///
+/// `{ edges: Array<{ source_id: string, target_id: string }> }`
+#[wasm_bindgen_macro::wasm_bindgen]
+pub fn transitive_reduction(nodes_js: JsValue, edges_js: JsValue) -> Result<JsValue, JsValue> {
+    let graph: JsonGraph = from_js(nodes_js, edges_js).map_err(|e| JsValue::from(e.to_string()))?;
+    let (in_neighbors, _, out_neighbors) = graph.build_adjacency();
+    let n = graph.nodes.len();
+    let raw = inner_transitive_reduction(&in_neighbors, &out_neighbors, n);
+    let edges: Vec<TransitiveReductionEdge> = raw
+        .into_iter()
+        .filter_map(|(s, t)| {
+            let source_id = graph.nodes.get(s)?.id.clone();
+            let target_id = graph.nodes.get(t)?.id.clone();
+            Some(TransitiveReductionEdge {
+                source_id,
+                target_id,
+            })
+        })
+        .collect();
+    let output = TransitiveReductionOutput { edges };
+    to_value(&output).map_err(|e| JsValue::from(e.to_string()))
+}
+
+// =============================================================================
+// Feedback Arc Set
+// =============================================================================
+
+/// Feedback arc set — edges whose removal breaks all cycles.
+///
+/// # Arguments
+///
+/// - `nodes_js`: `Array<{ id: string, label?: string }>`
+/// - `edges_js`: `Array<{ source: string, target: string }>`
+///
+/// # Returns
+///
+/// `{ edges: Array<{ source_id: string, target_id: string }> }`
+#[wasm_bindgen_macro::wasm_bindgen]
+pub fn feedback_arc_set(nodes_js: JsValue, edges_js: JsValue) -> Result<JsValue, JsValue> {
+    let graph: JsonGraph = from_js(nodes_js, edges_js).map_err(|e| JsValue::from(e.to_string()))?;
+    let (in_neighbors, _, out_neighbors) = graph.build_adjacency();
+    let n = graph.nodes.len();
+    let raw = inner_feedback_arc_set(&in_neighbors, &out_neighbors, n);
+    let edges: Vec<TransitiveReductionEdge> = raw
+        .into_iter()
+        .filter_map(|(s, t)| {
+            let source_id = graph.nodes.get(s)?.id.clone();
+            let target_id = graph.nodes.get(t)?.id.clone();
+            Some(TransitiveReductionEdge {
+                source_id,
+                target_id,
+            })
+        })
+        .collect();
+    let output = FeedbackArcSetOutput { edges };
+    to_value(&output).map_err(|e| JsValue::from(e.to_string()))
+}
+
+// =============================================================================
+// All Simple Paths
+// =============================================================================
+
+/// All simple paths between two nodes, bounded by max_hops.
+///
+/// # Arguments
+///
+/// - `nodes_js`: `Array<{ id: string, label?: string }>`
+/// - `edges_js`: `Array<{ source: string, target: string }>`
+/// - `from_id_js`: source node ID string
+/// - `to_id_js`: target node ID string
+/// - `options_js`: `{ max_hops?: number }` — defaults to 10
+///
+/// # Returns
+///
+/// `{ paths: Array<Array<string>> }`
+#[wasm_bindgen_macro::wasm_bindgen]
+pub fn all_simple_paths(
+    nodes_js: JsValue,
+    edges_js: JsValue,
+    from_id_js: JsValue,
+    to_id_js: JsValue,
+    options_js: JsValue,
+) -> Result<JsValue, JsValue> {
+    let graph: JsonGraph = from_js(nodes_js, edges_js).map_err(|e| JsValue::from(e.to_string()))?;
+    let options: AllSimplePathsOptions =
+        from_value(options_js).map_err(|e| JsValue::from(e.to_string()))?;
+    let from_id: String = from_value(from_id_js).map_err(|e| JsValue::from(e.to_string()))?;
+    let to_id: String = from_value(to_id_js).map_err(|e| JsValue::from(e.to_string()))?;
+
+    let id_to_idx = build_id_index(&graph.nodes);
+    let (Some(&from_idx), Some(&to_idx)) = (id_to_idx.get(&from_id), id_to_idx.get(&to_id)) else {
+        return to_value(&AllSimplePathsOutput { paths: vec![] })
+            .map_err(|e| JsValue::from(e.to_string()));
+    };
+
+    let out_neighbors = build_out_neighbors_from_edges(&graph);
+    let raw = inner_all_simple_paths(&out_neighbors, from_idx, to_idx, options.max_hops);
+    let paths: Vec<Vec<String>> = raw
+        .into_iter()
+        .map(|path| {
+            path.into_iter()
+                .filter_map(|idx| graph.nodes.get(idx).map(|n| n.id.clone()))
+                .collect()
+        })
+        .collect();
+    let output = AllSimplePathsOutput { paths };
+    to_value(&output).map_err(|e| JsValue::from(e.to_string()))
+}
+
+// =============================================================================
+// Cluster Components
+// =============================================================================
+
+/// Cluster components — SCC + weakly connected components combined.
+///
+/// # Arguments
+///
+/// - `nodes_js`: `Array<{ id: string, label?: string }>`
+/// - `edges_js`: `Array<{ source: string, target: string }>`
+///
+/// # Returns
+///
+/// `{ clusters: Array<Array<string>> }`
+#[wasm_bindgen_macro::wasm_bindgen]
+pub fn cluster_components(nodes_js: JsValue, edges_js: JsValue) -> Result<JsValue, JsValue> {
+    let graph: JsonGraph = from_js(nodes_js, edges_js).map_err(|e| JsValue::from(e.to_string()))?;
+    let (in_neighbors, _, out_neighbors) = graph.build_adjacency();
+    let n = graph.nodes.len();
+    let raw = inner_cluster_components(&in_neighbors, &out_neighbors, n);
+    let clusters: Vec<Vec<String>> = raw
+        .into_iter()
+        .map(|cluster| {
+            cluster
+                .into_iter()
+                .filter_map(|idx| graph.nodes.get(idx).map(|n| n.id.clone()))
+                .collect()
+        })
+        .collect();
+    let output = ClusterComponentsOutput { clusters };
     to_value(&output).map_err(|e| JsValue::from(e.to_string()))
 }
