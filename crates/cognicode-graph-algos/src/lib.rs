@@ -27,6 +27,8 @@ pub mod algorithms;
 pub mod error;
 pub mod graph_builder;
 
-pub use algorithms::{god_nodes, page_rank};
+pub use algorithms::{
+    communities, community_god_nodes, god_nodes, page_rank, surprising_connections,
+};
 pub use error::AnalyticsError;
 pub use graph_builder::GraphBuilder;
