@@ -203,7 +203,7 @@ impl ToolHandler for BrainOpenHandler {
                 use cognicode_core::domain::value_objects::{SpaceId, SpaceKind, Space};
                 if let Ok(session) = ctx.session_registry.get(&session_id) {
                     for spec in space_specs {
-                        if let (Some(ref name), Some(ref k)) = (&spec.space_name, &spec.space_kind) {
+                        if let (Some(name), Some(k)) = (&spec.space_name, &spec.space_kind) {
                             if !name.is_empty() && !k.is_empty() {
                                 let kind = match k.to_lowercase().as_str() {
                                     "repo" => SpaceKind::Repo,

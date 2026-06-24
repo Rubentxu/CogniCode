@@ -199,6 +199,36 @@ impl GraphService for GraphServiceImpl {
     }
 
     async fn build_architecture(&self, root_path: &str) -> ExplorerResult<SubgraphResponse> {
+        #[cfg(feature = "multimodal")]
+        {
+            self.build_architecture_impl(root_path).await
+        }
+        #[cfg(not(feature = "multimodal"))]
+        {
+            Err(ExplorerError::FeatureDisabled(
+                "build_architecture requires multimodal feature".into(),
+            ))
+        }
+    }
+
+    async fn compare_architecture(&self, root_path: &str) -> ExplorerResult<DriftReport> {
+        #[cfg(feature = "multimodal")]
+        {
+            self.compare_architecture_impl(root_path).await
+        }
+        #[cfg(not(feature = "multimodal"))]
+        {
+            Err(ExplorerError::FeatureDisabled(
+                "compare_architecture requires multimodal feature".into(),
+            ))
+        }
+    }
+}
+
+#[cfg(feature = "multimodal")]
+impl GraphServiceImpl {
+    async fn build_architecture_impl(&self, root_path: &str) -> ExplorerResult<SubgraphResponse> {
+        use cognicode_core::domain::value_objects::{edge_kind::EdgeKind, node_kind::NodeKind};
         use std::collections::HashMap;
         use std::path::Path;
 
@@ -216,7 +246,7 @@ impl GraphService for GraphServiceImpl {
         let mut nodes = vec![GraphNode {
             id: system_id.clone(),
             label: system_label,
-            kind: "system".to_string(),
+            kind: NodeKind::System.as_str().to_string(),
             file: None,
             line: None,
             style_class: "node-system".to_string(),
@@ -253,7 +283,7 @@ impl GraphService for GraphServiceImpl {
                                             .map(|b| b.as_array().map(|arr| !arr.is_empty()).unwrap_or(false))
                                             .unwrap_or(false);
 
-                                        let sub_kind = if has_lib { "library" } else if has_bin { "binary" } else { "library" };
+                                        let _sub_kind = if has_lib { "library" } else if has_bin { "binary" } else { "library" };
                                         let container_id = format!("container:{}", member_path);
                                         container_ids.insert(container_id.clone());
 
@@ -263,7 +293,7 @@ impl GraphService for GraphServiceImpl {
                                                 .file_name()
                                                 .map(|n| n.to_string_lossy().to_string())
                                                 .unwrap_or_else(|| member_path.to_string()),
-                                            kind: "container".to_string(),
+                                            kind: NodeKind::Container.as_str().to_string(),
                                             file: Some(member_toml_path.display().to_string()),
                                             line: None,
                                             style_class: "node-container".to_string(),
@@ -273,7 +303,7 @@ impl GraphService for GraphServiceImpl {
                                         edges.push(GraphEdge {
                                             source: container_id,
                                             target: system_id.to_string(),
-                                            relation: "part_of".to_string(),
+                                            relation: EdgeKind::PartOf.as_str().to_string(),
                                             style_class: "edge-part-of".to_string(),
                                         });
                                     }
@@ -305,7 +335,7 @@ impl GraphService for GraphServiceImpl {
                             nodes.push(GraphNode {
                                 id: container_id.clone(),
                                 label: app_name,
-                                kind: "container".to_string(),
+                                kind: NodeKind::Container.as_str().to_string(),
                                 file: Some(package_json.display().to_string()),
                                 line: None,
                                 style_class: "node-container".to_string(),
@@ -315,7 +345,7 @@ impl GraphService for GraphServiceImpl {
                             edges.push(GraphEdge {
                                 source: container_id,
                                 target: system_id.to_string(),
-                                relation: "part_of".to_string(),
+                                relation: EdgeKind::PartOf.as_str().to_string(),
                                 style_class: "edge-part-of".to_string(),
                             });
                         }
@@ -331,7 +361,7 @@ impl GraphService for GraphServiceImpl {
 
         // Build a map of module -> container
         // A module belongs to a container if it's inside that container's path
-        let mut module_to_container: HashMap<String, String> = HashMap::new();
+        let _module_to_container: HashMap<String, String> = HashMap::new();
         let mut component_ids: HashSet<String> = HashSet::new();
 
         for module_path in &modules {
@@ -353,7 +383,7 @@ impl GraphService for GraphServiceImpl {
             nodes.push(GraphNode {
                 id: component_id.clone(),
                 label,
-                kind: "component".to_string(),
+                kind: NodeKind::Component.as_str().to_string(),
                 file: None,
                 line: None,
                 style_class: "node-component".to_string(),
@@ -364,7 +394,7 @@ impl GraphService for GraphServiceImpl {
                 edges.push(GraphEdge {
                     source: component_id,
                     target: container_id,
-                    relation: "part_of".to_string(),
+                    relation: EdgeKind::PartOf.as_str().to_string(),
                     style_class: "edge-part-of".to_string(),
                 });
             }
@@ -392,6 +422,9 @@ impl GraphService for GraphServiceImpl {
             // Check if parent matches a module (C3 component)
             if component_ids.contains(&format!("component:{}", parent_dir)) {
                 let code_id = format!("code:{}", symbol.id.as_str());
+                // "code" is a C4-specific mapping (SymbolKind → "code" when in a C4 component).
+                // It's not part of the global NodeKind enum. See
+                // build_architecture_emits_code_kind_for_c4_code_nodes test.
                 nodes.push(GraphNode {
                     id: code_id.clone(),
                     label: symbol.name.clone(),
@@ -404,7 +437,7 @@ impl GraphService for GraphServiceImpl {
                 edges.push(GraphEdge {
                     source: code_id,
                     target: format!("component:{}", parent_dir),
-                    relation: "part_of".to_string(),
+                    relation: EdgeKind::PartOf.as_str().to_string(),
                     style_class: "edge-part-of".to_string(),
                 });
 
@@ -422,7 +455,7 @@ impl GraphService for GraphServiceImpl {
         })
     }
 
-    async fn compare_architecture(&self, root_path: &str) -> ExplorerResult<DriftReport> {
+    async fn compare_architecture_impl(&self, root_path: &str) -> ExplorerResult<DriftReport> {
         use std::collections::HashMap;
         use std::path::Path;
 
@@ -441,7 +474,7 @@ impl GraphService for GraphServiceImpl {
         };
 
         // Build the inferred architecture to get container names and sub_kinds
-        let inferred = self.build_architecture(root_path).await?;
+        let inferred = self.build_architecture_impl(root_path).await?;
 
         // Collect inferred containers: { name -> sub_kind }
         let mut inferred_containers: HashMap<String, String> = HashMap::new();
@@ -551,7 +584,7 @@ fn infer_sub_kind(file: Option<&str>) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "multimodal"))]
 mod tests {
     use super::*;
     use cognicode_core::domain::aggregates::SymbolId;

@@ -207,8 +207,8 @@ impl ToolHandler for GraphSearchHandler {
                 return err_envelope(TOOL_GRAPH_SEARCH, "invalid_input",
                     &format!("graph_search: `limit` must be a positive integer (got {n})"));
             }
-            Some(n) => (n as usize).min(MAX_GRAPH_SEARCH_LIMIT),
-            None => DEFAULT_GRAPH_SEARCH_LIMIT,
+            Some(n) => (n as usize).min(MAX_GRAPH_SEARCH_LIMIT as usize),
+            None => DEFAULT_GRAPH_SEARCH_LIMIT as usize,
         };
 
         let mut parsed_kinds: Vec<NodeKind> = Vec::new();
