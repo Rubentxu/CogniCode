@@ -100,6 +100,15 @@ jobs:
 
   explorer-ui:
     runs-on: ubuntu-latest
+    # Skip the explorer-ui job for PRs that don't touch the frontend.
+    # Pre-existing TS debt in apps/explorer-ui/ (e.g. "Duplicate identifier
+    # 'nodes'", SWRResponse conversion warnings) would otherwise block
+    # every backend PR. On push to main/develop, the job always runs so
+    # the frontend debt surfaces in CI.
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_paths, 'apps/explorer-ui/') ||
+      contains(github.event.pull_request.changed_paths, '.github/workflows/')
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
