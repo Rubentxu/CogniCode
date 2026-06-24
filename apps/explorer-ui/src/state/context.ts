@@ -22,7 +22,11 @@ import {
   type NavigationState,
   type ViewportState,
 } from "./navigation";
-import { rootReducer } from "./slices";
+import {
+  rootReducer,
+  type LensSidebarAction,
+  type LensSidebarState,
+} from "./slices";
 
 // ============================================================================
 // State
@@ -56,6 +60,10 @@ export type AppState = {
    * Perspective morphs the canvas regardless of object selection (ADR-039 §3/§4).
    */
   perspective: "graph" | "c4";
+  /**
+   * LensPanel sidebar visibility.
+   */
+  lensSidebar: LensSidebarState;
 };
 
 /**
@@ -86,6 +94,7 @@ export function initialStateWithFocus(
     spotterOpen: false,
     activeView: null,
     perspective: "graph",
+    lensSidebar: { open: false },
   };
 }
 
@@ -113,7 +122,9 @@ export type Action =
   | { type: "TOGGLE_SPOTTER" }
   | { type: "SET_SPOTTER"; payload: { open: boolean } }
   | { type: "RESET" }
-  | { type: "SET_PERSPECTIVE"; payload: "graph" | "c4" };
+  | { type: "SET_PERSPECTIVE"; payload: "graph" | "c4" }
+  | { type: "TOGGLE_LENS_SIDEBAR" }
+  | { type: "SET_LENS_SIDEBAR"; payload: { open: boolean } };
 
 // ============================================================================
 // Reducer
@@ -131,6 +142,7 @@ export const initialState: AppState = {
   spotterOpen: false,
   activeView: null,
   perspective: "graph",
+  lensSidebar: { open: false },
 };
 
 /**
