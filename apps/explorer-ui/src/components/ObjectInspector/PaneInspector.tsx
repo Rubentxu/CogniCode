@@ -6,7 +6,7 @@
  * When `onClose` is provided, a close button appears (pane-stack only).
  */
 import { useEffect, useState } from "react";
-import { useAppDispatch } from "../../state/context";
+import { useApp, useAppDispatch } from "../../state/context";
 import { useObject } from "../../hooks/useObject";
 import { useAvailableViews, useViews } from "../../hooks/useViews";
 import { useAsk } from "../../hooks/useAsk";
@@ -18,9 +18,18 @@ import { SuggestionStrip } from "./SuggestionStrip";
 import { Blocks } from "./ViewBlock";
 import { ViewSpecWizard } from "./ViewSpecWizard";
 import { multimodalLabelForObjectType } from "./multimodal";
-import { resolveRenderStrategy } from "./viewKind";
-import { rendererRegistry } from "../rendererRegistry";
-import type { RuntimeContext } from "../rendererRegistry";
+import { GraphView } from "../GraphView/GraphView";
+
+// Graph-shaped ViewKinds that route to GraphViewRenderer
+function isGraphViewKind(kind: string | undefined): boolean {
+  return (
+    kind === "call_graph" ||
+    kind === "dependency_graph" ||
+    kind === "data_flow" ||
+    kind === "impact_radius" ||
+    kind === "seam_map"
+  );
+}
 
 type PaneInspectorProps = {
   objectId: string;
@@ -122,20 +131,6 @@ export function PaneInspector({
   const blockCount = display?.blocks.length ?? 0;
   const showLoadingShell = !display && (isObjectLoading || isViewLoading);
   const error = objectError ?? viewError ?? null;
-
-  // Build RuntimeContext for the renderer call chain
-  const runtimeContext: RuntimeContext = {
-    objectId,
-    paneId: undefined, // PaneInspector doesn't know its own paneId here
-    viewId: viewId ?? display?.view_id ?? undefined,
-    onClose,
-    onSelectObject: (objId: string) =>
-      dispatch({
-        type: "SELECT_OBJECT",
-        // H5: preserve current viewId for drill-down consistency
-        payload: { objectId: objId, viewId: viewId ?? display?.view_id ?? undefined },
-      }),
-  };
 
   return (
     <>
@@ -240,25 +235,25 @@ export function PaneInspector({
             onScroll={handleScroll}
           >
             {display ? (
-              (() => {
-                const strategy = resolveRenderStrategy(display);
-                if (strategy.kind === "registry") {
-                  // E1.5: route through renderer registry
-                  // Use getOrJson().render() to preserve runtimeContext - the 2-arg
-                  // convenience wrapper silently drops the 3rd argument, causing
-                  // GraphView to receive objectId="" and no onClose (functional bug)
-                  return rendererRegistry
-                    .getOrJson(strategy.rendererKind)
-                    .render(display, runtimeContext);
-                }
-                // E1.4: render blocks directly
-                return (
-                  <Blocks
-                    view={display}
-                    onSelectObject={runtimeContext.onSelectObject}
-                  />
-                );
-              })()
+              isGraphViewKind(display.view_kind) ? (
+                <GraphView
+                  view={display}
+                  objectId={objectId}
+                  onClose={onClose}
+                />
+              ) : (
+                <Blocks
+                  view={display}
+                  onSelectObject={(objId) =>
+                    dispatch({
+                      type: "SELECT_OBJECT",
+                      // H5: preserve current viewId for drill-down consistency
+                      // (graph and lists now navigate to the same viewKind).
+                      payload: { objectId: objId, viewId: viewId ?? display.view_id },
+                    })
+                  }
+                />
+              )
             ) : (
               <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
                 No view loaded.

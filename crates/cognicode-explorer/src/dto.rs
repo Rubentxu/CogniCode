@@ -90,8 +90,8 @@ pub enum InspectableObjectType {
 /// DTO for a view descriptor — the wire-compatible shape returned in list responses.
 ///
 /// This type lives in the explorer crate. The MCP/JSON surface uses this type
-/// directly. When crossing the core→explorer boundary, [`crate::boundary::ViewDescriptorDto"]
-/// provides the ACL layer.
+/// directly. When crossing the explorer↔core boundary, the [`crate::boundary`]
+/// module provides the anti-corruption layer (`From` impls).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ViewDescriptorDto {
     pub id: String,
