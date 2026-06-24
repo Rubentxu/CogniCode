@@ -455,6 +455,10 @@ pub fn router_with_state(state: ApiState) -> Router {
             get(get_exploration_session),
         )
         .route(
+            "/api/exploration-sessions/:session_id/artifacts",
+            post(generate_artifact),
+        )
+        .route(
             "/api/workspaces/:workspace_id/explorations",
             get(list_explorations),
         )
@@ -491,6 +495,10 @@ pub fn router(state: ApiState) -> Router {
         .route(
             "/api/exploration-sessions/:session_id",
             get(get_exploration_session),
+        )
+        .route(
+            "/api/exploration-sessions/:session_id/artifacts",
+            post(generate_artifact),
         )
         .route(
             "/api/workspaces/:workspace_id/explorations",
@@ -768,6 +776,20 @@ async fn get_exploration_session(
             "exploration session {session_id} not found"
         )))),
     }
+}
+
+/// POST /api/exploration-sessions/:session_id/artifacts — generate a
+/// decision artifact (markdown / html / json replay) for a saved session.
+async fn generate_artifact(
+    State(state): State<ApiState>,
+    Path(session_id): Path<String>,
+    Json(request): Json<GenerateArtifactRequest>,
+) -> Result<Response, ApiError> {
+    let artifact = state
+        .persistence
+        .generate_artifact(&session_id, request)
+        .await?;
+    Ok(Json(artifact).into_response())
 }
 
 struct ApiError(ExplorerError);

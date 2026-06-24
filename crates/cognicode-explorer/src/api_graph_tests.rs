@@ -14,7 +14,8 @@
 //! Mirrors the spec at
 //! `openspec/changes/visualization-stack/specs/graph-data-endpoint/`.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use axum::body::{to_bytes, Body};
@@ -134,16 +135,37 @@ impl ViewService for MockViewService {
     }
 }
 
+type MockSessionStore = Arc<Mutex<HashMap<String, crate::dto::ExplorationSession>>>;
+
 #[derive(Clone)]
-struct MockPersistenceService;
+struct MockPersistenceService {
+    sessions: MockSessionStore,
+}
+
+impl MockPersistenceService {
+    fn new() -> Self {
+        Self { sessions: Arc::new(Mutex::new(HashMap::new())) }
+    }
+}
+
 #[async_trait]
 impl PersistenceService for MockPersistenceService {
     async fn generate_artifact(
         &self,
-        _exploration_id: &str,
-        _request: crate::dto::GenerateArtifactRequest,
+        exploration_id: &str,
+        request: crate::dto::GenerateArtifactRequest,
     ) -> crate::ExplorerResult<crate::dto::DecisionArtifactSummary> {
-        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        let session = self.sessions.lock().unwrap().get(exploration_id).cloned();
+        let content = match session {
+            Some(s) => format!("# Exploration Report\n\nSession: {}", s.id),
+            None => format!("# Unknown Session: {}", exploration_id),
+        };
+        Ok(crate::dto::DecisionArtifactSummary {
+            id: format!("artifact:{exploration_id}"),
+            format: request.format,
+            title: "Exploration Report".into(),
+            content,
+        })
     }
     async fn save_view_spec(
         &self,
@@ -179,16 +201,26 @@ impl PersistenceService for MockPersistenceService {
 
     async fn save_exploration_session(
         &self,
-        _request: crate::dto::SaveExplorationSessionRequest,
+        request: crate::dto::SaveExplorationSessionRequest,
     ) -> crate::ExplorerResult<crate::dto::ExplorationSession> {
-        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        let id = format!("session-{}", chrono::Utc::now().timestamp_nanos());
+        let session = crate::dto::ExplorationSession {
+            id: id.clone(),
+            workspace_id: request.workspace_id,
+            events: request.events,
+            navigation_mode: request.navigation_mode,
+            panes: request.panes,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+        self.sessions.lock().unwrap().insert(id, session.clone());
+        Ok(session)
     }
 
     async fn load_exploration_session(
         &self,
-        _session_id: &str,
+        session_id: &str,
     ) -> crate::ExplorerResult<Option<crate::dto::ExplorationSession>> {
-        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        Ok(self.sessions.lock().unwrap().get(session_id).cloned())
     }
 
     async fn list_explorations(
@@ -420,7 +452,7 @@ fn make_test_api_state(
         Arc::new(MockWorkspaceService),
         Arc::new(MockSearchService),
         Arc::new(MockViewService),
-        Arc::new(MockPersistenceService),
+        Arc::new(MockPersistenceService::new()),
         Arc::new(MockMoldQLService),
         graph,
     )
@@ -1494,7 +1526,7 @@ fn contextual_app() -> axum::Router {
         Arc::new(MockWorkspaceService),
         Arc::new(MockSearchService),
         Arc::new(view_service),
-        Arc::new(MockPersistenceService),
+        Arc::new(MockPersistenceService::new()),
         Arc::new(MockMoldQLService),
         graph,
     );
@@ -1619,6 +1651,73 @@ async fn contextual_handler_passes_query_params_to_service() {
         .expect("body");
     let json: serde_json::Value = serde_json::from_slice(&body).expect("json");
     assert_eq!(json["level"], "file");
+}
+
+// ============================================================================
+// Exploration-session + generate-artifact integration test
+// ============================================================================
+
+#[tokio::test]
+async fn generate_artifact_returns_decision_artifact_summary() {
+    // Build an app with the mock persistence service (test_app uses
+    // make_test_api_state which wires MockPersistenceService).
+    let app = test_app();
+
+    // Step 1: Save an exploration session.
+    let session_payload = serde_json::json!({
+        "workspace_id": "ws-test",
+        "events": [],
+        "navigation_mode": "pane-stack",
+        "panes": []
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/exploration-sessions")
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&session_payload).unwrap()))
+        .unwrap();
+    let response = app.clone().oneshot(req).await.expect("save response");
+    assert_eq!(response.status(), StatusCode::OK, "save session should succeed");
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("body");
+    let saved: crate::dto::ExplorationSession =
+        serde_json::from_slice(&body).expect("valid ExplorationSession JSON");
+    let session_id = &saved.id;
+
+    // Step 2: Generate an artifact for the saved session.
+    let artifact_payload = serde_json::json!({ "format": "markdown" });
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/exploration-sessions/{session_id}/artifacts"))
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(&artifact_payload).unwrap()))
+        .unwrap();
+    let response = app.clone().oneshot(req).await.expect("artifact response");
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "generate artifact should succeed"
+    );
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("body");
+    let artifact: crate::dto::DecisionArtifactSummary =
+        serde_json::from_slice(&body).expect("valid DecisionArtifactSummary JSON");
+
+    // Step 3: Verify response shape.
+    assert!(
+        artifact.id.starts_with("artifact:"),
+        "artifact.id should be artifact:<session_id>, got: {}",
+        artifact.id
+    );
+    assert!(
+        artifact.content.contains("Exploration Report"),
+        "artifact.content should contain title, got: {}",
+        artifact.content
+    );
+    assert_eq!(artifact.format, crate::dto::ArtifactFormat::Markdown);
+    assert!(!artifact.title.is_empty());
 }
 
 // Suppress unused-import warnings when other tests in the file move
