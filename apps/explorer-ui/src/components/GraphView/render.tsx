@@ -9,7 +9,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, WheelEvent } from "react";
 import type { LayoutResult } from "../../mocks/layoutMock";
-import type { ViewportState } from "../../state/navigation/types";
+import type { ViewportState } from "../../state/slices/navigation/types";
 import { GraphNode } from "../SvgGraph/GraphNode";
 import { GraphEdge } from "../SvgGraph/GraphEdge";
 

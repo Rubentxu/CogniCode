@@ -25,7 +25,7 @@ import type {
   DecisionArtifactSummary,
   ExplorationSessionDto,
 } from "../api/types";
-import type { ViewportState } from "../state/navigation/types";
+import type { ViewportState } from "../state/slices/navigation/types";
 
 const explorationsListSchema = z.array(explorationSessionSchema);
 type ExplorationsList = z.infer<typeof explorationsListSchema>;
