@@ -5,9 +5,11 @@
 //! JsValue boundary.
 
 use cognicode_graph_wasm::protocol::{
-    CommunitiesOptions, CommunitiesOutput, Community, CommunityGodNode, CommunityGodNodesOptions,
-    CommunityGodNodesOutput, GodNodeEntry, GodNodesOptions, GodNodesOutput, PageRankOptions,
+    AllSimplePathsOptions, ClusterComponentsOutput, CommunitiesOptions, CommunitiesOutput,
+    Community, CommunityGodNode, CommunityGodNodesOptions, CommunityGodNodesOutput,
+    CondensationOutput, GodNodeEntry, GodNodesOptions, GodNodesOutput, PageRankOptions,
     PageRankOutput, SurprisingConnectionsOptions, SurprisingConnectionsOutput, SurprisingEdge,
+    TransitiveReductionEdge,
 };
 
 #[test]
@@ -200,4 +202,51 @@ fn surprising_connections_output_round_trip() {
     assert_eq!(parsed.edges.len(), 2);
     assert_eq!(parsed.edges[0].source_id, "A");
     assert_eq!(parsed.edges[1].target_id, "D");
+}
+
+#[test]
+fn condensation_output_round_trip() {
+    let output = CondensationOutput {
+        components: vec![
+            vec!["A".to_string(), "B".to_string()],
+            vec!["C".to_string()],
+        ],
+    };
+    let json_str = serde_json::to_string(&output).unwrap();
+    assert!(json_str.contains(r#""components""#));
+    let parsed: CondensationOutput = serde_json::from_str(&json_str).unwrap();
+    assert_eq!(parsed.components.len(), 2);
+}
+
+#[test]
+fn transitive_reduction_edge_round_trip() {
+    let edge = TransitiveReductionEdge {
+        source_id: "A".to_string(),
+        target_id: "B".to_string(),
+    };
+    let json_str = serde_json::to_string(&edge).unwrap();
+    assert_eq!(json_str, r#"{"source_id":"A","target_id":"B"}"#);
+    let parsed: TransitiveReductionEdge = serde_json::from_str(&json_str).unwrap();
+    assert_eq!(parsed.source_id, "A");
+    assert_eq!(parsed.target_id, "B");
+}
+
+#[test]
+fn all_simple_paths_options_default_max_hops() {
+    let opts: AllSimplePathsOptions = serde_json::from_str("{}").unwrap();
+    assert_eq!(opts.max_hops, 10);
+}
+
+#[test]
+fn cluster_components_output_round_trip() {
+    let output = ClusterComponentsOutput {
+        clusters: vec![
+            vec!["A".to_string()],
+            vec!["B".to_string(), "C".to_string()],
+        ],
+    };
+    let json_str = serde_json::to_string(&output).unwrap();
+    assert!(json_str.contains(r#""clusters""#));
+    let parsed: ClusterComponentsOutput = serde_json::from_str(&json_str).unwrap();
+    assert_eq!(parsed.clusters.len(), 2);
 }
