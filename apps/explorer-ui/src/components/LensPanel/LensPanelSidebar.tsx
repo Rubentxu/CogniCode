@@ -8,12 +8,13 @@
 
 import { useEffect, useState } from "react";
 
-import { useAppSelector } from "../../state/context";
+import { useAppState } from "../../state/context";
 import { detectViewport, type ShellViewport } from "../viewport";
 import { LensPanel } from "../LensPanel";
 
 export function LensPanelSidebar(): JSX.Element | null {
-  const open = useAppSelector((s) => s.lensSidebar.open);
+  const { lensSidebar } = useAppState();
+  const open = lensSidebar.open;
 
   // Determine viewport.
   const [viewport, setViewport] = useState<ShellViewport>(() =>

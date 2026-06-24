@@ -3,14 +3,15 @@
  * Shows a small badge indicating the number of available lenses.
  */
 
-import { useAppDispatch, useAppSelector } from "../state/context";
+import { useAppDispatch, useAppState } from "../state/context";
 import { useLenses } from "../hooks/useLenses";
 
 export function LensSidebarToggle(): JSX.Element {
   const dispatch = useAppDispatch();
-  const open = useAppSelector((s) => s.lensSidebar.open);
-  const activeObjectId = useAppSelector((s) => s.activeObjectId);
+  const { lensSidebar, activeObjectId } = useAppState();
   const { data: lenses } = useLenses(activeObjectId);
+
+  const open = lensSidebar.open;
 
   const count = lenses?.length ?? 0;
 
