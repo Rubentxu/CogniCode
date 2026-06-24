@@ -39,6 +39,7 @@ export interface ShellLayoutProps {
 
 export function ShellLayout({
   viewport: viewportOverride,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally unused
   workspace: _workspace,
   children,
   secondaryContent,

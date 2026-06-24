@@ -846,6 +846,7 @@ export const explorationSessionSchema = z.object({
 export type ExplorationSessionDto = z.infer<typeof explorationSessionSchema>;
 
 // SaveExplorationSessionRequest (ADR-040 Wave 3)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- schema only used for type inference
 const saveExplorationSessionRequestSchema = z.object({
   workspace_id: z.string(),
   events: z.array(explorationEventSchema),

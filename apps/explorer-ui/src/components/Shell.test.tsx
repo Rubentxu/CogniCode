@@ -91,7 +91,8 @@ vi.mock("cytoscape", () => {
         if (tgt) (tgt as unknown as { edgeListeners: Set<CyEdge> }).edgeListeners.add(e);
       }
     }
-    on(_evt: string, selector: string | ((e: unknown) => void), fn?: (e: unknown) => void) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
+    on(_evt: string, selector: string | ((e: unknown) => void), _?: (e: unknown) => void) {
       if (typeof selector === "function") {
         this.nodes.forEach((n) => n.on("tap", selector));
       }
@@ -106,14 +107,17 @@ vi.mock("cytoscape", () => {
       const all = [...this.nodes, ...this.edgeElements];
       return new CyCollection(all.filter((i) => i.id === String(id)));
     }
-    edges(_selector?: string) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
+    edges(_?: string) {
       return new CyCollection(this.edgeElements);
     }
-    nodes(_selector?: string) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
+    nodes(_?: string) {
       return new CyCollection(this.nodes);
     }
     destroy() {}
-    layout(_options?: { name: string; rows?: number }) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
+    layout(_?: { name: string; rows?: number }) {
       return { run: () => {} };
     }
   }
@@ -584,7 +588,7 @@ describe("InteractiveGraphPanel stale-data hold (E5.5)", () => {
       error: null,
     });
 
-    const { rerender } = render(
+    render(
       <AppContext.Provider value={{ state: stateWithSymbol, dispatch }}>
         <Shell viewport="desktop" />
       </AppContext.Provider>,

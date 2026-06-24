@@ -6,6 +6,8 @@
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { act } from "react";
+import { act as domAct } from "react-dom/test-utils";
 
 // Track destroy calls for E5.5 crossfade regression tests
 let destroyCallCount = 0;
@@ -111,14 +113,17 @@ vi.mock("cytoscape", () => {
       const all = [...this.nodes, ...this.edgeElements];
       return new CyCollection(all.filter((i) => i.id === String(id)));
     }
-    edges(_selector?: string) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
+    edges(_?: string) {
       return new CyCollection(this.edgeElements);
     }
-    nodes(_selector?: string) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
+    nodes(_?: string) {
       return new CyCollection(this.nodes);
     }
     destroy() { destroyCallCount++; }
-    layout(_options?: { name: string; rows?: number }) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
+    layout(_?: { name: string; rows?: number }) {
       return { run: () => {} }; // cytoscape layout returns a runnable descriptor
     }
     clickNode(id: string) {
@@ -437,9 +442,7 @@ describe("InteractiveGraph", () => {
       />,
     );
     // Advance timers and flush React state updates in one act() call
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const act = (require("react") as any).act ?? require("react-dom/test-utils").act;
-    act(() => {
+    (act ?? domAct)(() => {
       vi.runAllTimers();
     });
     const canvas = screen.getByTestId("interactive-graph-canvas");

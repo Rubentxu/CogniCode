@@ -267,6 +267,7 @@ export const rendererRegistry = new RendererRegistry();
 // entries (table, tree, code, json, markdown, vega_lite, composite) are
 // built-in renderers for their respective RendererKind strings.
 
+// eslint-disable-next-line react-refresh/only-export-components -- intentional co-location of helpers; refactor deferred
 function TableRenderer({ body }: { body: unknown }) {
   const b = body as { columns?: string[]; rows?: Record<string, unknown>[] } | null;
   if (!b?.columns?.length || !Array.isArray(b.rows)) {
@@ -308,6 +309,7 @@ function TableRenderer({ body }: { body: unknown }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- intentional co-location of helpers; refactor deferred
 function TreeRenderer({ body }: { body: unknown }) {
   const b = body as { label?: string; children?: unknown[] } | null;
   if (!b?.label) {
@@ -320,6 +322,7 @@ function TreeRenderer({ body }: { body: unknown }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- intentional co-location of helpers; refactor deferred
 function TreeNode({
   label,
   children,
@@ -364,6 +367,7 @@ function TreeNode({
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const React = require("react") as typeof import("react");
 
+// eslint-disable-next-line react-refresh/only-export-components -- intentional co-location of helpers; refactor deferred
 function CodeRenderer({ body }: { body: unknown }) {
   const b = body as { code?: string; language?: string; file?: string } | null;
   const code = b?.code ?? JSON.stringify(body, null, 2);
@@ -384,6 +388,7 @@ function CodeRenderer({ body }: { body: unknown }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- intentional co-location of helpers; refactor deferred
 function JsonRenderer({ body }: { body: unknown }) {
   return (
     <div data-testid="renderer-json">
@@ -401,6 +406,7 @@ function JsonRenderer({ body }: { body: unknown }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- intentional co-location of helpers; refactor deferred
 function MarkdownRenderer({ body }: { body: unknown }) {
   const b = body as { source?: string } | null;
   const source = b?.source ?? "";
@@ -421,6 +427,7 @@ function MarkdownRenderer({ body }: { body: unknown }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- intentional co-location of helpers; refactor deferred
 function CompositeRenderer({
   body,
   registry,
