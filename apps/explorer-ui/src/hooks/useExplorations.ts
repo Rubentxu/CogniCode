@@ -155,13 +155,13 @@ export async function generateArtifact(
 ): Promise<DecisionArtifactSummary> {
   const parsed = generateArtifactRequestSchema.parse({ format });
   const artifact = await apiPost(
-    `/explorations/${encodeURIComponent(explorationId)}/artifacts`,
+    `/api/exploration-sessions/${encodeURIComponent(explorationId)}/artifacts`,
     parsed,
     decisionArtifactSummarySchema,
   );
   // Warm the per-exploration cache so a follow-up UI render hits.
   await mutate(
-    `/explorations/${encodeURIComponent(explorationId)}/artifacts/${format}`,
+    `/api/exploration-sessions/${encodeURIComponent(explorationId)}/artifacts/${format}`,
     artifact,
     false,
   );
