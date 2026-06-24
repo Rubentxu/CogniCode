@@ -7,6 +7,28 @@
 
 ---
 
+## Revisión 2026-06-24 (v0.12.6)
+
+**Estado actual:** Aceptada — sigue sin haber beneficiario concreto.
+
+**Verificación empírica (v0.12.6):**
+- Los 10 re-exports siguen en `schemas.rs:11-20`
+- Aparecen en 88+ sitios del MCP layer (`dto_mapping.rs`, `handlers/*.rs`, `file_ops_handlers.rs`, `mcp_roundtrip_tests.rs`)
+- Cero cambios recientes (v0.12.0–v0.12.6) introducen divergencia wire-vs-DTO
+- `mcp_roundtrip_tests.rs` sigue siendo el firewall válido
+
+**Análisis de beneficiario:**
+- v0.12.0 (ADR-045 Phase 1): removió `ExplorationPath`; no afecta los 10 re-exports
+- v0.12.2 (ADR-039 reconcile): removió dead `chain` field; no afecta
+- v0.12.3 (Type divergence): boundary ACL para `ViewDescriptor`/`ViewSpec` (separado de los 10)
+- v0.12.6 (ADR-045 Debt 3): nueva tabla `exploration_sessions`; no toca los 10
+
+**Conclusión:** La deuda sigue válida. ADR-015 reaffirmed. El refactor C4 (extraer los 10 tipos a `schemas.rs` con conversiones explícitas) sigue siendo 1-2 semanas de trabajo arriesgado, sin beneficiario concreto que lo justifique hoy.
+
+**Trigger para reabrir C4:** Si en el futuro un DTO necesita divergir del wire format, ese es el momento natural para implementar C4.
+
+---
+
 ## Context
 
 ADR-001 (jun-11) propuso eliminar la importación de `application::dto` desde `interface::mcp::schemas`, definiendo que el wire format MCP debe ser propiedad de la capa de schemas, no de la capa de aplicación. La violación concreta (jun-15) está en `crates/cognicode-core/src/interface/mcp/schemas.rs` líneas 11-20:
