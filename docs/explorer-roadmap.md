@@ -143,7 +143,7 @@ canvas. C4 shows system/container/component nodes with proper styling.
 | E6.2 | Implement container inference (Cargo.toml / package.json → containers) | ✅ Done | Cargo.toml members + package.json apps → `container:` nodes (graph.rs:222+) |
 | E6.3 | Implement component inference (directory structure → components) | ✅ Done | `src/` directory inference → `component:` nodes |
 | E6.4 | Add `GET /api/graph/c4` endpoint returning C4 nodes + edges | ✅ Done | Served via `build_architecture` subgraph query — no dedicated `/c4` endpoint needed (Option A) |
-| E6.5 | Register C4 nodes in the graph with proper `NodeKind` / `EdgeKind` | ⚠️ Partial | C4 kinds registered in domain; inference emits `system`/`container`/`component` as string `kind`; full `NodeKind`/`EdgeKind` enum wiring deferred |
+| E6.5 | Register C4 nodes in the graph with proper `NodeKind` / `EdgeKind` | ✅ Done (v0.12.11) | `build_architecture` now uses `NodeKind::System.as_str()` etc. for system/container/component; `EdgeKind::PartOf.as_str()` for part_of. `"code"` remains a literal (C4-specific mapping, not in global NodeKind). Pre-existing multimodal build errors also fixed. |
 
 **Deliverable:** Explorer can show real C4 structure inferred from the
 workspace's crates and modules.
