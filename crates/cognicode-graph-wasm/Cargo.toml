@@ -1,0 +1,28 @@
+[package]
+name = "cognicode-graph-wasm"
+description = "wasm-bindgen shim for cognicode-graph-algos — exposes PageRank + god_nodes to JavaScript"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+# `cdylib` is required for WASM targets; `rlib` lets Rust-native consumers
+# (e.g. integration tests) call the shim functions directly. The library
+# is consumed via the JS bindings in production; rlib is for tests only.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The whole point of this crate is to be a thin wrapper. Algorithm logic
+# lives in cognicode-graph-algos and is the single source of truth
+# (per ADR-047 §1 + ADR-048 single-source rule).
+cognicode-graph-algos = { workspace = true }
+serde = { workspace = true }
+
+# WASM-only deps — gated on target_arch to keep native build clean.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+
+# Native-only dev dep for tests.
+[dev-dependencies]
+serde_json = { workspace = true }
