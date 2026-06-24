@@ -24,8 +24,9 @@ import {
 } from "./slices/navigation";
 import {
   rootReducer,
-  type LensSidebarAction,
   type LensSidebarState,
+  type ViewSpecWizardAction,
+  type ViewSpecWizardState,
 } from "./slices";
 
 // ============================================================================
@@ -64,6 +65,12 @@ export type AppState = {
    * LensPanel sidebar visibility.
    */
   lensSidebar: LensSidebarState;
+  /**
+   * ViewSpecWizard open state. The trigger lives in the app header
+   * so it's always reachable, but the wizard itself renders inside
+   * PaneInspector (it needs the resolved object + workspace).
+   */
+  viewSpecWizard: ViewSpecWizardState;
 };
 
 /**
@@ -95,6 +102,7 @@ export function initialStateWithFocus(
     activeView: null,
     perspective: "graph",
     lensSidebar: { open: false },
+    viewSpecWizard: { open: false },
   };
 }
 
@@ -124,7 +132,8 @@ export type Action =
   | { type: "RESET" }
   | { type: "SET_PERSPECTIVE"; payload: "graph" | "c4" }
   | { type: "TOGGLE_LENS_SIDEBAR" }
-  | { type: "SET_LENS_SIDEBAR"; payload: { open: boolean } };
+  | { type: "SET_LENS_SIDEBAR"; payload: { open: boolean } }
+  | ViewSpecWizardAction;
 
 // ============================================================================
 // Reducer
@@ -143,6 +152,7 @@ export const initialState: AppState = {
   activeView: null,
   perspective: "graph",
   lensSidebar: { open: false },
+  viewSpecWizard: { open: false },
 };
 
 /**

@@ -6,7 +6,7 @@
  * When `onClose` is provided, a close button appears (pane-stack only).
  */
 import { useEffect, useState } from "react";
-import { useAppDispatch } from "../../state/context";
+import { useAppDispatch, useAppState } from "../../state/context";
 import { useObject } from "../../hooks/useObject";
 import { useAvailableViews, useViews } from "../../hooks/useViews";
 import { useAsk } from "../../hooks/useAsk";
@@ -53,6 +53,7 @@ export function PaneInspector({
   onScroll,
 }: PaneInspectorProps) {
   const dispatch = useAppDispatch();
+  const { viewSpecWizard } = useAppState();
 
   // Object summary
   const {
@@ -106,7 +107,7 @@ export function PaneInspector({
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  const [wizardOpen, setWizardOpen] = useState(false);
+  const wizardOpen = viewSpecWizard.open;
 
   // Fallback to first view if activeViewId is not in the list
   useEffect(() => {
@@ -220,7 +221,9 @@ export function PaneInspector({
               objectId={object?.id}
               objectType={object?.object_type}
               objectLabel={object?.label}
-              onOpenWizard={() => setWizardOpen(true)}
+              onOpenWizard={() =>
+                dispatch({ type: "OPEN_VIEWSPEC_WIZARD" })
+              }
             />
           )}
           <div
@@ -264,7 +267,7 @@ export function PaneInspector({
       {wizardOpen && object && workspaceId && (
         <ViewSpecWizard
           isOpen={wizardOpen}
-          onClose={() => setWizardOpen(false)}
+          onClose={() => dispatch({ type: "CLOSE_VIEWSPEC_WIZARD" })}
           objectId={object.id}
           objectType={object.object_type}
           objectLabel={object.label}
