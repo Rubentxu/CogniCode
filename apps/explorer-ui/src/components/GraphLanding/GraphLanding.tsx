@@ -32,6 +32,10 @@ const RecentExplorationsStrip = lazy(() =>
   import("./RecentExplorationsStrip").then((m) => ({ default: m.RecentExplorationsStrip })),
 );
 
+const QualityOverview = lazy(() =>
+  import("./QualityOverview").then((m) => ({ default: m.QualityOverview })),
+);
+
 const LandingHeader = lazy(() =>
   import("./LandingHeader").then((m) => ({ default: m.LandingHeader })),
 );
@@ -245,6 +249,13 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
               }
             }}
           />
+        </Suspense>
+      )}
+
+      {/* Workspace quality overview — only for graph perspective */}
+      {!showC4Header && (
+        <Suspense fallback={null}>
+          <QualityOverview workspaceId={workspaceId} />
         </Suspense>
       )}
     </div>
