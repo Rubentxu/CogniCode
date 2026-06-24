@@ -66,7 +66,7 @@ pub struct InspectableObjectSummary {
     pub label: String,
     pub subtitle: String,
     pub properties: Vec<Property>,
-    pub available_views: Vec<ViewDescriptor>,
+    pub available_views: Vec<ViewDescriptorDto>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,8 +87,13 @@ pub enum InspectableObjectType {
     Rule,
 }
 
+/// DTO for a view descriptor — the wire-compatible shape returned in list responses.
+///
+/// This type lives in the explorer crate. The MCP/JSON surface uses this type
+/// directly. When crossing the core→explorer boundary, [`crate::boundary::ViewDescriptorDto"]
+/// provides the ACL layer.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ViewDescriptor {
+pub struct ViewDescriptorDto {
     pub id: String,
     pub title: String,
     /// Whether this is a built-in view (`true`) or a runtime user-defined view (`false`).
