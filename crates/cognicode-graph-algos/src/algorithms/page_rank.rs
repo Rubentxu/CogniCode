@@ -56,7 +56,7 @@ pub fn page_rank(
         // Dangling-node mass: nodes with no outgoing edges contribute rank
         // uniformly to all nodes (avoids "black hole" accumulation).
         let mut dangling_sum = 0.0_f64;
-        for v in 0..n {
+        for (v, _) in ranks.iter().enumerate().take(n) {
             if out_degree[v] == 0 {
                 dangling_sum += ranks[v];
             }
@@ -89,8 +89,8 @@ pub fn page_rank(
     }
 
     let mut out: HashMap<usize, f64> = HashMap::with_capacity(n);
-    for v in 0..n {
-        out.insert(v, ranks[v]);
+    for (v, &rank) in ranks.iter().enumerate().take(n) {
+        out.insert(v, rank);
     }
     out
 }
@@ -168,6 +168,7 @@ mod tests {
 
     /// Star: center C, leaves L1..L5. Center should have highest rank.
     #[test]
+    #[allow(clippy::needless_range_loop)]
     fn star_center_outranks_leaves() {
         // 6 nodes: 0..5. Center=0, leaves=1..5. Edges: leaf → center.
         // (Wait — let me make center have outgoing edges to leaves, so
