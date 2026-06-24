@@ -222,16 +222,21 @@ export function useWizardDraft({
     onRestoreRef.current = onRestore;
   }, [onRestore]);
 
-  // Attempt to restore the draft when the hook mounts or objectId changes.
-  /* eslint-disable react-hooks/set-state-in-effect -- real architectural issue; refactor deferred */
+  // Re-load draft when objectId changes. Uses "set state during render"
+  // pattern (React docs §"storing information from previous renders") to
+  // react to objectId change without an effect.
+  const [prevObjectId, setPrevObjectId] = useState(objectId);
+  if (objectId !== prevObjectId) {
+    setPrevObjectId(objectId);
+    setDraft(loadDraft(objectId));
+  }
+
+  // Fire onRestore as a pure side effect (no setState)
   useEffect(() => {
-    const found = loadDraft(objectId);
-    setDraft(found);
-    if (found) {
-      onRestoreRef.current?.(found.state);
+    if (draft) {
+      onRestoreRef.current?.(draft.state);
     }
-  }, [objectId]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }, [draft]);
 
   /**
    * Persist a draft (debounced 1s).
