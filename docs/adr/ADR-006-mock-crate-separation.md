@@ -1,9 +1,38 @@
 # ADR-006: Mock Crate Separation
 
 **Fecha:** 2026-06-11  
-**Estado:** PROPOSED  
-**Decisión:** Crate separado `cognicode-core-mock` con versionado lockstep  
+**Estado:** PROPOSED (no implementado)  
+**Decisión original:** Crate separado `cognicode-core-mock` con versionado lockstep  
 **Fuente:** auto-grill-loop Q006-P1  
+
+---
+
+## Revisión 2026-06-24 (v0.12.7)
+
+**Estado actual:** PROPOSED, no implementado.
+
+**Por qué no se implementó:** El plan original requería crear `crates/cognicode-core-mock/` con re-exports de `cognicode_core::domain::traits::*` y mock implementations escritas a mano. En la práctica, los mocks permanecieron inline en los archivos de tests:
+
+- `apps/explorer-ui/src/test/cytoscapeMock.ts` (planificado pero no extraído — vitest hoisting issue)
+- `crates/cognicode-explorer/src/api_graph_tests.rs:180-199` (inline `MockPersistenceService`)
+- `crates/cognicode-explorer/src/api_rationale_tests.rs:220-237` (inline mocks)
+
+**Riesgo del refactor propuesto:** Extraer los mocks a un crate separado introduce fricción:
+- Lockstep versionado añade overhead
+- Cambios a traits requieren cambios sincronizados al crate mock
+- Re-exports preservan API pero ocultan la dependencia transitiva
+- La motivación original ("mantener pureza del código de producción") no se materializó como problema concreto
+
+**Estado actual:** Los mocks inline funcionan bien; los tests pasan. No hay presión para extraer.
+
+**Trigger para reabrir:** Si en el futuro el equipo quiere:
+- Publicar mocks a consumidores externos
+- Compartir mocks entre múltiples crates
+- O resolver una fricción concreta con el patrón actual
+
+entonces este ADR es el punto de partida. Por ahora, sigue siendo YAGNI aplicado correctamente.
+
+**Acción recomendada:** Mantener PROPOSED. Reabrir solo si surge beneficiario concreto.  
 
 ---
 
