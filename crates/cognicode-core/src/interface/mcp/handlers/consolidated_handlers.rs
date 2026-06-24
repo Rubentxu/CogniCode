@@ -4,7 +4,9 @@
 //! Phase 5.3: New tools combining Graphify + CogniCode capabilities.
 
 use crate::domain::services::CycleDetector;
-use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult, ViewSpecRepository};
+use crate::interface::mcp::handlers::{
+    HandlerContext, HandlerError, HandlerResult, ViewSpecRepository,
+};
 use crate::interface::mcp::schemas::{
     CompareGraphInput, CompareGraphOutput, MetricDeltas, SmartSearchInput, SmartSearchOutput,
     SmartSearchResult,
@@ -53,28 +55,28 @@ pub async fn handle_smart_search(
 
     if let Ok(sem) = sem {
         for r in sem.results {
-            results.entry(r.name.clone()).or_insert_with(|| {
-                SmartSearchResult {
+            results
+                .entry(r.name.clone())
+                .or_insert_with(|| SmartSearchResult {
                     name: r.name,
                     kind: r.kind,
                     file: Some(r.file),
                     score: r.score as f64,
                     source: "semantic".into(),
-                }
-            });
+                });
         }
     }
     if let Ok(rank) = rank {
         for r in rank.results {
-            results.entry(r.name.clone()).or_insert_with(|| {
-                SmartSearchResult {
+            results
+                .entry(r.name.clone())
+                .or_insert_with(|| SmartSearchResult {
                     name: r.name,
                     kind: r.kind,
                     file: Some(r.file),
                     score: r.relevance_score,
                     source: "ranked".into(),
-                }
-            });
+                });
         }
     }
     if let Ok(idf) = idf {
@@ -85,15 +87,15 @@ pub async fn handle_smart_search(
                     r.get("idf_score").and_then(|v| v.as_f64()),
                 ) {
                     let file = r.get("file").and_then(|v| v.as_str());
-                    results.entry(name.to_string()).or_insert_with(|| {
-                        SmartSearchResult {
+                    results
+                        .entry(name.to_string())
+                        .or_insert_with(|| SmartSearchResult {
                             name: name.to_string(),
                             kind: "symbol".into(),
                             file: file.map(|f| f.to_string()),
                             score,
                             source: "idf".into(),
-                        }
-                    });
+                        });
                 }
             }
         }
@@ -214,7 +216,11 @@ pub async fn handle_project_overview(
         .filter(|(_, fan_in)| *fan_in >= 2)
         .collect();
     hot_paths.sort_by(|a, b| b.1.cmp(&a.1));
-    let hot_paths: Vec<String> = hot_paths.into_iter().take(10).map(|(name, _)| name).collect();
+    let hot_paths: Vec<String> = hot_paths
+        .into_iter()
+        .take(10)
+        .map(|(name, _)| name)
+        .collect();
 
     // Entry point names
     let entry_point_names: Vec<String> = entry_points.iter().map(|ep| ep.name.clone()).collect();
@@ -272,7 +278,7 @@ pub async fn handle_compare_graph(
                 "GATED: compare_graph requires PostgreSQL persistence. \
                  Configure --postgres flag or set DATABASE_URL."
                     .into(),
-            ))
+            ));
         }
     };
 
@@ -297,7 +303,7 @@ pub async fn handle_compare_graph(
                 "No baseline graph_report found. Run build_graph with \
                  --postgres first to create a baseline."
                     .into(),
-            ))
+            ));
         }
     };
 
@@ -317,7 +323,11 @@ pub async fn handle_compare_graph(
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|s| s.get("name").and_then(|v| v.as_str()).map(|n| n.to_string()))
+                .filter_map(|s| {
+                    s.get("name")
+                        .and_then(|v| v.as_str())
+                        .map(|n| n.to_string())
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -348,9 +358,7 @@ pub async fn handle_compare_graph(
         removed_symbols: removed,
         current_symbol_count: current_symbols.len(),
         baseline_symbol_count: report_symbols.len(),
-        metric_deltas: MetricDeltas {
-            health_score_delta,
-        },
+        metric_deltas: MetricDeltas { health_score_delta },
     })
 }
 
@@ -481,7 +489,12 @@ pub async fn handle_project_insights(
         .take(10)
         .map(|(sid, score)| HotPath {
             // SymbolId format: "module:symbol_name", extract just the name
-            symbol_id: sid.as_str().split(':').nth(1).unwrap_or(sid.as_str()).to_string(),
+            symbol_id: sid
+                .as_str()
+                .split(':')
+                .nth(1)
+                .unwrap_or(sid.as_str())
+                .to_string(),
             score: *score,
         })
         .collect();
@@ -638,14 +651,20 @@ pub async fn handle_iac_query(
             .await
             .map_err(|e| HandlerError::Internal(e.to_string()))?
             .into_iter()
-            .map(|edge| {
-                IacRelation {
-                    id: edge.target_id.clone(),
-                    name: edge.target.as_ref().map(|t| t.name.clone()).unwrap_or_default(),
-                    kind: edge.target.as_ref().map(|t| t.resource_type.clone()).unwrap_or_default(),
-                    edge_type: edge.edge_type,
-                    confidence: edge.confidence.map(|c| c as f64).unwrap_or(0.0),
-                }
+            .map(|edge| IacRelation {
+                id: edge.target_id.clone(),
+                name: edge
+                    .target
+                    .as_ref()
+                    .map(|t| t.name.clone())
+                    .unwrap_or_default(),
+                kind: edge
+                    .target
+                    .as_ref()
+                    .map(|t| t.resource_type.clone())
+                    .unwrap_or_default(),
+                edge_type: edge.edge_type,
+                confidence: edge.confidence.map(|c| c as f64).unwrap_or(0.0),
             })
             .collect();
 
@@ -654,14 +673,20 @@ pub async fn handle_iac_query(
             .await
             .map_err(|e| HandlerError::Internal(e.to_string()))?
             .into_iter()
-            .map(|edge| {
-                IacRelation {
-                    id: edge.target_id.clone(),
-                    name: edge.target.as_ref().map(|t| t.name.clone()).unwrap_or_default(),
-                    kind: edge.target.as_ref().map(|t| t.resource_type.clone()).unwrap_or_default(),
-                    edge_type: edge.edge_type,
-                    confidence: edge.confidence.map(|c| c as f64).unwrap_or(0.0),
-                }
+            .map(|edge| IacRelation {
+                id: edge.target_id.clone(),
+                name: edge
+                    .target
+                    .as_ref()
+                    .map(|t| t.name.clone())
+                    .unwrap_or_default(),
+                kind: edge
+                    .target
+                    .as_ref()
+                    .map(|t| t.resource_type.clone())
+                    .unwrap_or_default(),
+                edge_type: edge.edge_type,
+                confidence: edge.confidence.map(|c| c as f64).unwrap_or(0.0),
             })
             .collect();
 
@@ -676,61 +701,83 @@ pub async fn handle_iac_query(
     // Fall back to in-memory graph if IacRepository is not configured
     let graph = match ctx.get_graph_store().load_graph() {
         Ok(Some(g)) => g,
-        _ => return Err(HandlerError::Internal(
-            "No graph available. Run build_graph first.".into(),
-        )),
+        _ => {
+            return Err(HandlerError::Internal(
+                "No graph available. Run build_graph first.".into(),
+            ));
+        }
     };
 
     // Resolve resource_id: canonical (tf:/ansible:) or bare name
-    let resolved_id = if input.resource_id.starts_with("tf:") || input.resource_id.starts_with("ansible:") {
+    let resolved_id = if input.resource_id.starts_with("tf:")
+        || input.resource_id.starts_with("ansible:")
+    {
         // Canonical ID — use as-is
         input.resource_id.clone()
     } else {
         // Bare name — search by name and filter by IaC prefix
         let candidates = graph.find_by_name(&input.resource_id);
-        let iac_candidates: Vec<_> = candidates.into_iter()
-            .filter(|s| s.fully_qualified_name().starts_with("tf:") || s.fully_qualified_name().starts_with("ansible:"))
+        let iac_candidates: Vec<_> = candidates
+            .into_iter()
+            .filter(|s| {
+                s.fully_qualified_name().starts_with("tf:")
+                    || s.fully_qualified_name().starts_with("ansible:")
+            })
             .collect();
         match iac_candidates.first() {
             Some(sym) => sym.fully_qualified_name().to_string(),
-            None => return Err(HandlerError::NotFound(
-                format!("IaC resource '{}' not found. Use canonical ID (tf:file:type.name) or ensure IaC files are scanned.", input.resource_id),
-            )),
+            None => {
+                return Err(HandlerError::NotFound(format!(
+                    "IaC resource '{}' not found. Use canonical ID (tf:file:type.name) or ensure IaC files are scanned.",
+                    input.resource_id
+                )));
+            }
         }
     };
 
     // Get the symbol from the graph
     let symbol_id = crate::domain::aggregates::SymbolId::new(&resolved_id);
-    let symbol = graph.get_symbol(&symbol_id)
-        .ok_or_else(|| HandlerError::NotFound(format!("Resource '{}' not found in graph", resolved_id)))?;
+    let symbol = graph.get_symbol(&symbol_id).ok_or_else(|| {
+        HandlerError::NotFound(format!("Resource '{}' not found in graph", resolved_id))
+    })?;
 
     let resource_type = format!("{:?}", symbol.kind());
 
     // Get dependencies (outgoing edges)
     let deps: Vec<_> = graph.dependencies_with_metadata(&symbol_id).collect();
-    let dependencies: Vec<IacRelation> = deps.iter().take(input.depth * 10).map(|(target_id, dep_type, _prov, confidence)| {
-        let target_sym = graph.get_symbol(target_id);
-        IacRelation {
-            id: target_id.to_string(),
-            name: target_sym.map(|s| s.name().to_string()).unwrap_or_default(),
-            kind: target_sym.map(|s| format!("{:?}", s.kind())).unwrap_or_default(),
-            edge_type: format!("{:?}", dep_type),
-            confidence: *confidence,
-        }
-    }).collect();
+    let dependencies: Vec<IacRelation> = deps
+        .iter()
+        .take(input.depth * 10)
+        .map(|(target_id, dep_type, _prov, confidence)| {
+            let target_sym = graph.get_symbol(target_id);
+            IacRelation {
+                id: target_id.to_string(),
+                name: target_sym.map(|s| s.name().to_string()).unwrap_or_default(),
+                kind: target_sym
+                    .map(|s| format!("{:?}", s.kind()))
+                    .unwrap_or_default(),
+                edge_type: format!("{:?}", dep_type),
+                confidence: *confidence,
+            }
+        })
+        .collect();
 
     // Get dependents (incoming edges)
     let dependent_ids: Vec<_> = graph.dependents(&symbol_id).collect();
-    let dependents: Vec<IacRelation> = dependent_ids.iter().take(input.depth * 10).filter_map(|dep_id| {
-        let dep_sym = graph.get_symbol(dep_id)?;
-        Some(IacRelation {
-            id: dep_id.to_string(),
-            name: dep_sym.name().to_string(),
-            kind: format!("{:?}", dep_sym.kind()),
-            edge_type: "References".to_string(),
-            confidence: 1.0,
+    let dependents: Vec<IacRelation> = dependent_ids
+        .iter()
+        .take(input.depth * 10)
+        .filter_map(|dep_id| {
+            let dep_sym = graph.get_symbol(dep_id)?;
+            Some(IacRelation {
+                id: dep_id.to_string(),
+                name: dep_sym.name().to_string(),
+                kind: format!("{:?}", dep_sym.kind()),
+                edge_type: "References".to_string(),
+                confidence: 1.0,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(IacQueryOutput {
         resource_id: resolved_id,
@@ -914,9 +961,13 @@ pub async fn handle_ingest(
         ));
     };
 
-    let workspace_id = format!("sandbox-{}", directory.file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "default".into()));
+    let workspace_id = format!(
+        "sandbox-{}",
+        directory
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "default".into())
+    );
 
     // Run the full ingest pipeline: scan → extract → pg_upsert → refresh
     let scan_result = run_scan(
@@ -925,7 +976,8 @@ pub async fn handle_ingest(
         &workspace_id,
         &directory,
         None,
-    ).await;
+    )
+    .await;
 
     Ok(IngestOutput {
         workspace_id,
@@ -1160,12 +1212,18 @@ pub async fn handle_graph_checkpoint(
                 checkpoint_id: Some(symbols as u64),
                 symbols,
                 edges: graph.edge_count(),
-                message: format!("Current graph: {} symbols, {} edges", symbols, graph.edge_count()),
+                message: format!(
+                    "Current graph: {} symbols, {} edges",
+                    symbols,
+                    graph.edge_count()
+                ),
             })
         }
         "restore" => {
             let gid = input.checkpoint_id.ok_or_else(|| {
-                HandlerError::InvalidInput("checkpoint_id is required for 'restore' operation".into())
+                HandlerError::InvalidInput(
+                    "checkpoint_id is required for 'restore' operation".into(),
+                )
             })?;
             let graph = ctx.analysis_service.get_project_graph();
             if graph.symbol_count() == 0 {
@@ -1180,7 +1238,9 @@ pub async fn handle_graph_checkpoint(
                 edges: graph.edge_count(),
                 message: format!(
                     "Restored checkpoint {}: {} symbols, {} edges.",
-                    gid, graph.symbol_count(), graph.edge_count()
+                    gid,
+                    graph.symbol_count(),
+                    graph.edge_count()
                 ),
             })
         }
@@ -1193,7 +1253,8 @@ pub async fn handle_graph_checkpoint(
                 edges: graph.edge_count(),
                 message: format!(
                     "Graph checkpoints: 1 active checkpoint with {} symbols, {} edges.",
-                    graph.symbol_count(), graph.edge_count()
+                    graph.symbol_count(),
+                    graph.edge_count()
                 ),
             })
         }
@@ -1238,9 +1299,13 @@ pub async fn handle_list_view_specs(
     // Runtime specs from view_spec_repo (DIP port) or postgres_repo fallback
     let mut runtime_descriptors: Vec<ViewDescriptor> = Vec::new();
     let runtime_specs_result = if let Some(ref vs_repo) = ctx.view_spec_repo {
-        vs_repo.list_view_specs(&workspace_id, MCP_DEFAULT_OWNER).await
+        vs_repo
+            .list_view_specs(&workspace_id, MCP_DEFAULT_OWNER)
+            .await
     } else if let Some(ref pg_repo) = ctx.postgres_repo {
-        pg_repo.list_view_specs(&workspace_id, MCP_DEFAULT_OWNER).await
+        pg_repo
+            .list_view_specs(&workspace_id, MCP_DEFAULT_OWNER)
+            .await
     } else {
         Ok(Vec::new())
     };
@@ -1287,9 +1352,7 @@ pub async fn handle_read_view_spec(
         .unwrap_or_else(|| "default".into());
 
     // Check if it's a built-in id
-    let builtin = builtin_descriptors()
-        .into_iter()
-        .find(|d| d.id == input.id);
+    let builtin = builtin_descriptors().into_iter().find(|d| d.id == input.id);
 
     if let Some(desc) = builtin {
         // Synthesize full ViewSpec for built-in
@@ -1318,7 +1381,9 @@ pub async fn handle_read_view_spec(
         let pg: &crate::infrastructure::persistence::PostgresRepository = &**pg_repo;
         pg as &dyn ViewSpecRepository
     } else {
-        return Err(HandlerError::Internal("view_spec_repo not configured".into()));
+        return Err(HandlerError::Internal(
+            "view_spec_repo not configured".into(),
+        ));
     };
 
     let row = repo
@@ -1328,14 +1393,13 @@ pub async fn handle_read_view_spec(
 
     match row {
         Some(row) => {
-            let data_source = serde_json::from_str(&row.data_source)
-                .unwrap_or_else(|_| serde_json::json!({}));
+            let data_source =
+                serde_json::from_str(&row.data_source).unwrap_or_else(|_| serde_json::json!({}));
             let transform = row
                 .transform
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok());
-            let props = serde_json::from_str(&row.props)
-                .unwrap_or_else(|_| serde_json::json!({}));
+            let props = serde_json::from_str(&row.props).unwrap_or_else(|_| serde_json::json!({}));
             let view = ViewSpec {
                 id: row.id,
                 title: row.title,
@@ -1380,7 +1444,11 @@ mod tests {
         let output = handle_list_view_specs(&ctx, input).await.unwrap();
 
         // Should have at least the 8 built-ins
-        assert!(output.count >= 8, "Expected >= 8 built-ins, got {}", output.count);
+        assert!(
+            output.count >= 8,
+            "Expected >= 8 built-ins, got {}",
+            output.count
+        );
 
         // Check that built-in ids are present
         let ids: Vec<_> = output.views.iter().map(|v| v.id.as_str()).collect();
@@ -1390,7 +1458,10 @@ mod tests {
         assert!(ids.contains(&"quality"), "quality should be present");
         assert!(ids.contains(&"evidence"), "evidence should be present");
         assert!(ids.contains(&"symbols"), "symbols should be present");
-        assert!(ids.contains(&"dependencies"), "dependencies should be present");
+        assert!(
+            ids.contains(&"dependencies"),
+            "dependencies should be present"
+        );
         assert!(ids.contains(&"hotspots"), "hotspots should be present");
 
         // All should be marked as builtin
@@ -1402,7 +1473,9 @@ mod tests {
     #[tokio::test]
     async fn test_read_view_spec_synthesizes_builtin() {
         let ctx = test_ctx();
-        let input = ReadViewSpecInput { id: "overview".into() };
+        let input = ReadViewSpecInput {
+            id: "overview".into(),
+        };
         let output = handle_read_view_spec(&ctx, input).await.unwrap();
 
         assert_eq!(output.view.id, "overview");
@@ -1410,15 +1483,29 @@ mod tests {
         assert_eq!(output.view.owner, "mcp");
 
         // Timestamps should be valid RFC-3339 format
-        assert!(output.view.created_at.starts_with("20"), "created_at should be RFC-3339");
-        assert!(output.view.updated_at.starts_with("20"), "updated_at should be RFC-3339");
+        assert!(
+            output.view.created_at.starts_with("20"),
+            "created_at should be RFC-3339"
+        );
+        assert!(
+            output.view.updated_at.starts_with("20"),
+            "updated_at should be RFC-3339"
+        );
     }
 
     #[tokio::test]
     async fn test_read_view_spec_all_builtins() {
         let ctx = test_ctx();
-        let builtin_ids = ["overview", "call-graph", "source", "quality",
-                          "evidence", "symbols", "dependencies", "hotspots"];
+        let builtin_ids = [
+            "overview",
+            "call-graph",
+            "source",
+            "quality",
+            "evidence",
+            "symbols",
+            "dependencies",
+            "hotspots",
+        ];
 
         for id in builtin_ids {
             let input = ReadViewSpecInput { id: id.into() };
@@ -1433,11 +1520,16 @@ mod tests {
     async fn test_read_view_spec_unknown_id_no_postgres_returns_error() {
         // Without postgres_repo, unknown ids should return error
         let ctx = test_ctx();
-        let input = ReadViewSpecInput { id: "unknown-id-xyz".into() };
+        let input = ReadViewSpecInput {
+            id: "unknown-id-xyz".into(),
+        };
         let result = handle_read_view_spec(&ctx, input).await;
 
         // Should fail because view_spec_repo is not configured and it's not a built-in
-        assert!(result.is_err(), "Unknown id without view_spec_repo should error");
+        assert!(
+            result.is_err(),
+            "Unknown id without view_spec_repo should error"
+        );
         let err = result.unwrap_err();
         // Without view_spec_repo, we get Internal("view_spec_repo not configured") error
         // since the handler checks view_spec_repo first then falls back to postgres_repo
@@ -1455,13 +1547,17 @@ mod tests {
         let input = ListViewSpecsInput {};
         let output = handle_list_view_specs(&ctx, input).await.unwrap();
 
-        assert_eq!(output.count, output.views.len(), "count should match views.len()");
+        assert_eq!(
+            output.count,
+            output.views.len(),
+            "count should match views.len()"
+        );
 
         // Built-ins should be first (sorted alphabetically)
         for (i, view) in output.views.iter().enumerate().take(8) {
             assert!(view.is_builtin, "First 8 should be builtin");
             if i > 0 {
-                assert!(output.views[i-1].id <= view.id, "Should be sorted by id");
+                assert!(output.views[i - 1].id <= view.id, "Should be sorted by id");
             }
         }
     }
@@ -1499,7 +1595,8 @@ mod tests {
             id: &str,
             _workspace_id: &str,
             _owner: &str,
-        ) -> Result<Option<ViewSpecRow>, crate::domain::traits::repository::RepositoryError> {
+        ) -> Result<Option<ViewSpecRow>, crate::domain::traits::repository::RepositoryError>
+        {
             Ok(self.specs.iter().find(|s| s.id == id).cloned())
         }
     }
@@ -1539,13 +1636,20 @@ mod tests {
         let output = handle_list_view_specs(&ctx, input).await.unwrap();
 
         // Should have the 8 built-ins PLUS the mock spec (9 total)
-        assert!(output.count >= 9, "Expected >= 9 views (8 builtins + mock), got {}", output.count);
+        assert!(
+            output.count >= 9,
+            "Expected >= 9 views (8 builtins + mock), got {}",
+            output.count
+        );
 
         // Find the mock spec in the output
         let mock_view = output.views.iter().find(|v| v.id == "my-custom-view");
         assert!(mock_view.is_some(), "Mock spec should appear in list");
         let mock_view = mock_view.unwrap();
-        assert!(!mock_view.is_builtin, "Mock spec should NOT be marked as builtin");
+        assert!(
+            !mock_view.is_builtin,
+            "Mock spec should NOT be marked as builtin"
+        );
         assert_eq!(mock_view.title, "My Custom View");
     }
 
@@ -1569,7 +1673,9 @@ mod tests {
         };
 
         let ctx = test_ctx_with_mock_view_spec_repo(vec![mock_spec.clone()]);
-        let input = ReadViewSpecInput { id: "runtime-view-123".into() };
+        let input = ReadViewSpecInput {
+            id: "runtime-view-123".into(),
+        };
         let output = handle_read_view_spec(&ctx, input).await.unwrap();
 
         // Verify the runtime spec was loaded through the mock

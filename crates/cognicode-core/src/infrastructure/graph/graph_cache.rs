@@ -61,10 +61,10 @@ impl GraphCache {
     /// cache exposes an empty `CallGraph` as head.
     pub fn get(&self) -> Arc<CallGraph> {
         let guard = self.cache.load();
-        let cache = guard.lock().unwrap_or_else(|_| panic!("graph cache poisoned"));
-        cache
-            .head()
-            .unwrap_or_else(|| Arc::new(CallGraph::new()))
+        let cache = guard
+            .lock()
+            .unwrap_or_else(|_| panic!("graph cache poisoned"));
+        cache.head().unwrap_or_else(|| Arc::new(CallGraph::new()))
     }
 
     /// Gets a reference to the underlying graph.
@@ -79,10 +79,10 @@ impl GraphCache {
         // the original (intentionally optimistic) semantics and the
         // public signature.
         let guard = self.cache.load();
-        let cache = guard.lock().unwrap_or_else(|_| panic!("graph cache poisoned"));
-        let arc: Arc<CallGraph> = cache
-            .head()
-            .unwrap_or_else(|| Arc::new(CallGraph::new()));
+        let cache = guard
+            .lock()
+            .unwrap_or_else(|_| panic!("graph cache poisoned"));
+        let arc: Arc<CallGraph> = cache.head().unwrap_or_else(|| Arc::new(CallGraph::new()));
         let ptr = arc.as_ref() as *const CallGraph;
         // Keep the Arc alive: leak the Box so the CallGraph heap
         // allocation is not freed while the returned reference is
@@ -98,7 +98,9 @@ impl GraphCache {
     pub fn set(&self, graph: CallGraph) -> CheckpointId {
         let id = {
             let guard = self.cache.load();
-            let mut cache = guard.lock().unwrap_or_else(|_| panic!("graph cache poisoned"));
+            let mut cache = guard
+                .lock()
+                .unwrap_or_else(|_| panic!("graph cache poisoned"));
             cache.insert(Arc::new(graph))
         };
         let _ = self.event_sender.send(GraphEvent::GraphReplaced);
@@ -134,7 +136,9 @@ impl GraphCache {
     /// the checkpoint has already been evicted.
     pub fn get_at(&self, id: CheckpointId) -> Option<Arc<CallGraph>> {
         let guard = self.cache.load();
-        let cache = guard.lock().unwrap_or_else(|_| panic!("graph cache poisoned"));
+        let cache = guard
+            .lock()
+            .unwrap_or_else(|_| panic!("graph cache poisoned"));
         cache.get_at(id)
     }
 
@@ -142,13 +146,11 @@ impl GraphCache {
     /// no checkpoint has been published yet.
     pub fn current_id(&self) -> Option<CheckpointId> {
         let guard = self.cache.load();
-        let cache = guard.lock().unwrap_or_else(|_| panic!("graph cache poisoned"));
+        let cache = guard
+            .lock()
+            .unwrap_or_else(|_| panic!("graph cache poisoned"));
         let id = cache.head_id();
-        if id.is_valid() {
-            Some(id)
-        } else {
-            None
-        }
+        if id.is_valid() { Some(id) } else { None }
     }
 
     pub fn queue_event(&self, event: GraphEvent) {
@@ -179,10 +181,10 @@ impl GraphCache {
     /// Used by `update` and `apply_events` to clone the head before mutation.
     fn head_or_empty(&self) -> Arc<CallGraph> {
         let guard = self.cache.load();
-        let cache = guard.lock().unwrap_or_else(|_| panic!("graph cache poisoned"));
-        cache
-            .head()
-            .unwrap_or_else(|| Arc::new(CallGraph::new()))
+        let cache = guard
+            .lock()
+            .unwrap_or_else(|_| panic!("graph cache poisoned"));
+        cache.head().unwrap_or_else(|| Arc::new(CallGraph::new()))
     }
 }
 

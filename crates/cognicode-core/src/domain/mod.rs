@@ -41,5 +41,6 @@ pub use ports::{GraphError, GraphRepository, GraphResult, SearchPage};
 #[cfg(feature = "multimodal")]
 pub use federation::{
     FederatedGraphService, FederatedNode, FederatedNodeId, FederatedNodeIdError,
-    FederatedSearchPage, MergeCandidate, MergeDetector, MergeReason, SpaceRegistry, MERGE_THRESHOLD,
+    FederatedSearchPage, MERGE_THRESHOLD, MergeCandidate, MergeDetector, MergeReason,
+    SpaceRegistry,
 };

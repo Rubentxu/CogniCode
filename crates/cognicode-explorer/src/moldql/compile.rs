@@ -39,8 +39,8 @@ use crate::error::ExplorerResult;
 use crate::moldql::MoldQLResult;
 use crate::moldql::MoldQLView;
 use crate::moldql::ast::{
-    BooleanOp, BooleanQuery, ClusterMethod, ClusterQuery, Condition, ExplainQuery, Field, Op,
-    MoldQLQuery, NeighborsQuery, PathQuery, SubgraphQuery, TraversalDirection,
+    BooleanOp, BooleanQuery, ClusterMethod, ClusterQuery, Condition, ExplainQuery, Field,
+    MoldQLQuery, NeighborsQuery, Op, PathQuery, SubgraphQuery, TraversalDirection,
 };
 
 #[cfg(test)]

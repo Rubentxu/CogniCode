@@ -12,7 +12,11 @@ use crate::domain::value_objects::{NodeKind, Provenance, SymbolKind};
 /// Post-process a YAML extraction result to detect Ansible structure.
 /// If the file is an Ansible playbook, adds play/task/module nodes and edges.
 /// If not (plain YAML), returns the result unchanged.
-pub fn interpret_ansible(source_path: &str, source_hash: &str, result: &ExtractionResult) -> ExtractionResult {
+pub fn interpret_ansible(
+    source_path: &str,
+    source_hash: &str,
+    result: &ExtractionResult,
+) -> ExtractionResult {
     // Quick check: does the file look like an Ansible playbook?
     if !is_ansible_playbook(result) {
         return result.clone();
@@ -30,10 +34,13 @@ pub fn interpret_ansible(source_path: &str, source_hash: &str, result: &Extracti
         // Detect play level: "- hosts:" starts a play
         if label.contains("hosts:") || label.contains("hosts ") {
             let play_id = format!("ansible:{}:play:{}", source_path, nodes.len());
-            let play_node = GraphNode::builder(NodeId::new(&play_id), NodeKind::Symbol(SymbolKind::Function))
-                .label("play".to_string())
-                .source_path(std::path::PathBuf::from(source_path))
-                .build();
+            let play_node = GraphNode::builder(
+                NodeId::new(&play_id),
+                NodeKind::Symbol(SymbolKind::Function),
+            )
+            .label("play".to_string())
+            .source_path(std::path::PathBuf::from(source_path))
+            .build();
             edges.push(ExtractionEdge {
                 source: file_node_id.as_str().into(),
                 target_ref: TargetRef::Resolved(play_id.clone()),
@@ -45,13 +52,16 @@ pub fn interpret_ansible(source_path: &str, source_hash: &str, result: &Extracti
             nodes.push(play_node);
         }
 
-        // Detect tasks: "  - name:" or "  tasks:" 
+        // Detect tasks: "  - name:" or "  tasks:"
         if label.contains("tasks:") || label.contains("  - ") {
             let task_id = format!("ansible:{}:task:{}", source_path, nodes.len());
-            let task_node = GraphNode::builder(NodeId::new(&task_id), NodeKind::Symbol(SymbolKind::Function))
-                .label("task".to_string())
-                .source_path(std::path::PathBuf::from(source_path))
-                .build();
+            let task_node = GraphNode::builder(
+                NodeId::new(&task_id),
+                NodeKind::Symbol(SymbolKind::Function),
+            )
+            .label("task".to_string())
+            .source_path(std::path::PathBuf::from(source_path))
+            .build();
             nodes.push(task_node);
 
             // Detect module names: "    apt:", "    file:", "    template:", etc.
@@ -73,16 +83,24 @@ pub fn interpret_ansible(source_path: &str, source_hash: &str, result: &Extracti
         // Detect handlers
         if label.contains("handlers:") {
             let handler_id = format!("ansible:{}:handler:{}", source_path, nodes.len());
-            let handler_node = GraphNode::builder(NodeId::new(&handler_id), NodeKind::Symbol(SymbolKind::Function))
-                .label("handler".to_string())
-                .source_path(std::path::PathBuf::from(source_path))
-                .build();
+            let handler_node = GraphNode::builder(
+                NodeId::new(&handler_id),
+                NodeKind::Symbol(SymbolKind::Function),
+            )
+            .label("handler".to_string())
+            .source_path(std::path::PathBuf::from(source_path))
+            .build();
             nodes.push(handler_node);
         }
 
         // Detect import_playbook / include_tasks
         if label.contains("import_playbook:") || label.contains("include_tasks:") {
-            let import_target = label.split(':').last().unwrap_or("").trim().trim_matches('"');
+            let import_target = label
+                .split(':')
+                .last()
+                .unwrap_or("")
+                .trim()
+                .trim_matches('"');
             if !import_target.is_empty() {
                 edges.push(ExtractionEdge {
                     source: file_node_id.as_str().into(),
@@ -107,7 +125,9 @@ pub fn interpret_ansible(source_path: &str, source_hash: &str, result: &Extracti
 
 /// Check if an extraction result looks like an Ansible playbook.
 fn is_ansible_playbook(result: &ExtractionResult) -> bool {
-    let text = result.nodes.iter()
+    let text = result
+        .nodes
+        .iter()
         .map(|n| n.label.clone())
         .collect::<Vec<_>>()
         .join("\n");
@@ -119,12 +139,40 @@ fn is_ansible_playbook(result: &ExtractionResult) -> bool {
 
 /// Well-known Ansible builtin modules.
 const ANSIBLE_MODULES: &[&str] = &[
-    "apt", "yum", "dnf", "pip", "npm", "gem",
-    "file", "copy", "template", "fetch", "unarchive",
-    "service", "systemd", "cron", "user", "group",
-    "command", "shell", "raw", "script",
-    "docker_container", "docker_image", "kubernetes",
-    "git", "lineinfile", "blockinfile", "replace",
-    "debug", "assert", "fail", "pause", "wait_for",
-    "uri", "get_url", "set_fact", "include_vars",
+    "apt",
+    "yum",
+    "dnf",
+    "pip",
+    "npm",
+    "gem",
+    "file",
+    "copy",
+    "template",
+    "fetch",
+    "unarchive",
+    "service",
+    "systemd",
+    "cron",
+    "user",
+    "group",
+    "command",
+    "shell",
+    "raw",
+    "script",
+    "docker_container",
+    "docker_image",
+    "kubernetes",
+    "git",
+    "lineinfile",
+    "blockinfile",
+    "replace",
+    "debug",
+    "assert",
+    "fail",
+    "pause",
+    "wait_for",
+    "uri",
+    "get_url",
+    "set_fact",
+    "include_vars",
 ];

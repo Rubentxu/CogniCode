@@ -26,8 +26,7 @@ pub async fn run_cluster(
 
     // Detect communities using Label Propagation
     let result = crate::application::services::community_detector::CommunityDetector::detect(
-        &graph,
-        100, // max_iterations
+        &graph, 100, // max_iterations
     );
 
     let communities = result.communities.len();
@@ -63,6 +62,10 @@ pub async fn run_cluster(
     }
 
     let _ = tx.commit().await;
-    tracing::info!(communities = communities, symbols = graph.symbol_count(), "cluster completed");
+    tracing::info!(
+        communities = communities,
+        symbols = graph.symbol_count(),
+        "cluster completed"
+    );
     communities
 }

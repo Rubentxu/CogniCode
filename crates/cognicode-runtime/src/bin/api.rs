@@ -34,7 +34,9 @@ async fn main() -> anyhow::Result<()> {
     let postgres_url = {
         #[cfg(feature = "postgres")]
         {
-            args.postgres.clone().or_else(|| std::env::var("DATABASE_URL").ok())
+            args.postgres
+                .clone()
+                .or_else(|| std::env::var("DATABASE_URL").ok())
         }
         #[cfg(not(feature = "postgres"))]
         {

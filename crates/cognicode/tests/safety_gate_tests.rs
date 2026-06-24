@@ -17,10 +17,12 @@ fn test_path_safety_validator_detects_deletion() {
 
     let result = validator.validate(&operation);
     assert!(!result.is_safe);
-    assert!(result
-        .violations
-        .iter()
-        .any(|v| v.code == ViolationCode::DeletionWithoutBackup));
+    assert!(
+        result
+            .violations
+            .iter()
+            .any(|v| v.code == ViolationCode::DeletionWithoutBackup)
+    );
 }
 
 #[test]
@@ -43,10 +45,12 @@ fn test_dependency_safety_validator_detects_external_deps() {
 
     let result = validator.validate(&operation);
     assert!(result.has_warnings());
-    assert!(result
-        .warnings
-        .iter()
-        .any(|w| w.code == WarningCode::PublicApiChange));
+    assert!(
+        result
+            .warnings
+            .iter()
+            .any(|w| w.code == WarningCode::PublicApiChange)
+    );
 }
 
 #[test]
@@ -59,10 +63,12 @@ fn test_complexity_safety_validator_detects_wide_impact() {
 
     let result = validator.validate(&operation);
     assert!(result.has_warnings());
-    assert!(result
-        .warnings
-        .iter()
-        .any(|w| w.code == WarningCode::WideImpact));
+    assert!(
+        result
+            .warnings
+            .iter()
+            .any(|w| w.code == WarningCode::WideImpact)
+    );
 }
 
 #[test]

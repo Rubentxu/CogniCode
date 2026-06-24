@@ -10,8 +10,8 @@ use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use cognicode_core::domain::aggregates::call_graph::CallGraph;
 use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
 use cognicode_core::infrastructure::graph::{
-    CallGraphProjection, GraphCache, LightweightIndex, OnDemandGraphBuilder,
-    PerFileGraphCache, SubgraphDirection, SymbolIndex, TraversalDirection,
+    CallGraphProjection, GraphCache, LightweightIndex, OnDemandGraphBuilder, PerFileGraphCache,
+    SubgraphDirection, SymbolIndex, TraversalDirection,
 };
 
 /// Generates a Python source file with approximately the given number of lines.
@@ -623,7 +623,11 @@ fn build_graph(n: usize) -> CallGraph {
             let name = format!("sym_{}", i);
             g.find_by_name(&name)
                 .first()
-                .map(|s| cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+                .map(|s| {
+                    cognicode_core::domain::aggregates::call_graph::SymbolId::new(
+                        s.fully_qualified_name(),
+                    )
+                })
                 .unwrap()
         })
         .collect();
@@ -691,7 +695,9 @@ fn benchmark_get_node(c: &mut Criterion) {
     let target = g
         .find_by_name("sym_250")
         .first()
-        .map(|s| cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+        .map(|s| {
+            cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name())
+        })
         .unwrap();
 
     c.bench_function("get_node", |b| {
@@ -743,12 +749,16 @@ fn benchmark_bfs_traversal_100_nodes(c: &mut Criterion) {
     let start = g
         .find_by_name(start_name)
         .first()
-        .map(|s| cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+        .map(|s| {
+            cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name())
+        })
         .unwrap();
     let end = g
         .find_by_name(end_name)
         .first()
-        .map(|s| cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+        .map(|s| {
+            cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name())
+        })
         .unwrap();
 
     c.bench_function("bfs_traversal_100_nodes", |b| {
@@ -764,12 +774,16 @@ fn benchmark_shortest_path(c: &mut Criterion) {
     let start = g
         .find_by_name("sym_0")
         .first()
-        .map(|s| cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+        .map(|s| {
+            cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name())
+        })
         .unwrap();
     let end = g
         .find_by_name("sym_499")
         .first()
-        .map(|s| cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+        .map(|s| {
+            cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name())
+        })
         .unwrap();
 
     c.bench_function("shortest_path", |b| {
@@ -787,7 +801,9 @@ fn benchmark_subgraph_extraction_50_nodes(c: &mut Criterion) {
     let root = g
         .find_by_name(root_name)
         .first()
-        .map(|s| cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name()))
+        .map(|s| {
+            cognicode_core::domain::aggregates::call_graph::SymbolId::new(s.fully_qualified_name())
+        })
         .unwrap();
 
     c.bench_function("subgraph_extraction_50_nodes", |b| {

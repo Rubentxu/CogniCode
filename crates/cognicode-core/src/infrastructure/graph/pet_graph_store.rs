@@ -228,7 +228,8 @@ impl DependencyRepository for PetGraphStore {
     }
 
     fn has_path(&self, source: &SymbolId, target: &SymbolId) -> bool {
-        let (Some(source_idx), Some(target_idx)) = (self.get_index(source), self.get_index(target)) else {
+        let (Some(source_idx), Some(target_idx)) = (self.get_index(source), self.get_index(target))
+        else {
             return false;
         };
         // Delegate to petgraph's BFS-based path probe. This handles cycles

@@ -6,6 +6,7 @@ members = [
     "crates/cognicode-mcp",
     "crates/cognicode-cli",
     "crates/cognicode-sandbox",
+    "crates/cognicode-graph-algos",
 
     "crates/cognicode-macros",
     # "crates/cognicode-axiom",       # PARKED — era agentic rules redesign pending deep review

@@ -19,24 +19,24 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use walkdir::WalkDir;
 
+use cognicode_core::interface::mcp::rmcp_adapter::lookup_tool_deps;
 use cognicode_core::sandbox_core::artifacts::{
     PipelineStageResult, ResourceUsage, ScenarioResult, Summary, Timing, ValidationResult,
 };
 use cognicode_core::sandbox_core::failure::FailureClass;
 use cognicode_core::sandbox_core::ground_truth::GroundTruth;
 use cognicode_core::sandbox_core::history::{
-    append_run, compute_dimension_averages, compute_health_from_averages, compute_trends, RunEntry,
-    TrendDirection,
+    RunEntry, TrendDirection, append_run, compute_dimension_averages, compute_health_from_averages,
+    compute_trends,
 };
 use cognicode_core::sandbox_core::manifest::{ExpandedScenario, Manifest};
 use cognicode_core::sandbox_core::mcp_core::{CapturedCall, McpError, McpServer};
 use cognicode_core::sandbox_core::resource::{compute_delta, take_snapshot};
 use cognicode_core::sandbox_core::scoring::{
-    build_benchmark_result, compute_consistency_score, compute_latency_score,
-    compute_robustness_score, compute_scalability_score, score_scenario, DimensionScores,
-    ExecutionMetadata, MetricsDefinition,
+    DimensionScores, ExecutionMetadata, MetricsDefinition, build_benchmark_result,
+    compute_consistency_score, compute_latency_score, compute_robustness_score,
+    compute_scalability_score, score_scenario,
 };
-use cognicode_core::interface::mcp::rmcp_adapter::lookup_tool_deps;
 
 const ORCHESTRATOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 const MCP_PROTOCOL_VERSION: &str = "2025-03-26";
@@ -360,10 +360,11 @@ fn load_manifests(paths: &[String]) -> Result<Vec<Manifest>, String> {
                 .map_err(|e| format!("invalid glob pattern: {e}"))?
             {
                 if let Ok(entry_path) = entry
-                    && entry_path.is_file() {
-                        let m = Manifest::from_path(&entry_path).map_err(|e| e.to_string())?;
-                        manifests.push(m);
-                    }
+                    && entry_path.is_file()
+                {
+                    let m = Manifest::from_path(&entry_path).map_err(|e| e.to_string())?;
+                    manifests.push(m);
+                }
             }
         } else {
             return Err(format!("manifest path does not exist: {path_pattern}"));
@@ -387,9 +388,10 @@ fn compute_dir_size_kb(path: &Path) -> u64 {
     let mut total_size: u64 = 0;
     for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
         if entry.file_type().is_file()
-            && let Ok(metadata) = entry.metadata() {
-                total_size += metadata.len();
-            }
+            && let Ok(metadata) = entry.metadata()
+        {
+            total_size += metadata.len();
+        }
     }
     // Convert bytes to kilobytes (round up)
     total_size.div_ceil(1024)
@@ -484,7 +486,11 @@ fn execute_scenario(
             repo_path.join(&scenario.workspace)
         };
         if let Err(e) = copy_dir_recursive(&source, &temp_workspace) {
-            eprintln!("  [WARN] Failed to copy repo {} → temp: {}", source.display(), e);
+            eprintln!(
+                "  [WARN] Failed to copy repo {} → temp: {}",
+                source.display(),
+                e
+            );
         }
         temp_workspace_dir_ = Some(temp_dir);
         workspace_path = temp_workspace;
@@ -636,7 +642,10 @@ fn execute_scenario(
             if let Ok(rust_log) = std::env::var("RUST_LOG") {
                 server_env.push(("RUST_LOG".into(), rust_log));
                 if verbose {
-                    eprintln!("  [ENV] Forwarding RUST_LOG={} to MCP server", std::env::var("RUST_LOG").unwrap_or_default());
+                    eprintln!(
+                        "  [ENV] Forwarding RUST_LOG={} to MCP server",
+                        std::env::var("RUST_LOG").unwrap_or_default()
+                    );
                 }
             }
 
@@ -664,7 +673,14 @@ fn execute_scenario(
 
             let spawned: Option<McpServer> = if use_container {
                 let img = container_config.as_ref().unwrap().podman_image();
-                spawn_mcp_in_container(&server_binary, &workspace_path, &img, read_only, &server_env, &extra)
+                spawn_mcp_in_container(
+                    &server_binary,
+                    &workspace_path,
+                    &img,
+                    read_only,
+                    &server_env,
+                    &extra,
+                )
             } else {
                 None
             };
@@ -673,9 +689,16 @@ fn execute_scenario(
             server = spawned.or_else(|| {
                 if !extra.is_empty() {
                     let extra_refs: Vec<&str> = extra.iter().map(|s| s.as_str()).collect();
-                    McpServer::spawn_with_env(&server_binary, &workspace_path, &server_env, &extra_refs).ok()
+                    McpServer::spawn_with_env(
+                        &server_binary,
+                        &workspace_path,
+                        &server_env,
+                        &extra_refs,
+                    )
+                    .ok()
                 } else if !server_env.is_empty() {
-                    McpServer::spawn_with_env(&server_binary, &workspace_path, &server_env, &[]).ok()
+                    McpServer::spawn_with_env(&server_binary, &workspace_path, &server_env, &[])
+                        .ok()
                 } else {
                     McpServer::spawn(&server_binary, &workspace_path).ok()
                 }
@@ -718,8 +741,7 @@ fn execute_scenario(
             if verbose {
                 eprintln!(
                     "  [GRAPH] Implicitly calling build_graph for {} (dependency: {:?})...",
-                    scenario.tool,
-                    needs_graph
+                    scenario.tool, needs_graph
                 );
             }
             match srv.call("tools/call", build_params, 120) {
@@ -735,17 +757,13 @@ fn execute_scenario(
                             scenario.tool
                         );
                     } else if verbose {
-                        eprintln!(
-                            "  [GRAPH] build_graph completed: {} symbols",
-                            symbols
-                        );
+                        eprintln!("  [GRAPH] build_graph completed: {} symbols", symbols);
                     }
                 }
                 Err(e) => {
                     eprintln!(
                         "  [WARN] build_graph failed for {}: {:?}. Main tool may fail.",
-                        scenario.tool,
-                        e
+                        scenario.tool, e
                     );
                 }
             }
@@ -777,8 +795,7 @@ fn execute_scenario(
                     Err(e) => {
                         eprintln!(
                             "  [WARN] Pre-step tool {} failed: {:?}. Continuing with main tool.",
-                            step_tool,
-                            e
+                            step_tool, e
                         );
                     }
                 }
@@ -789,9 +806,10 @@ fn execute_scenario(
     // Phase 1: Reset git repo to pristine state before tool execution
     // This ensures corrupted/unclean repos don't affect scenario results
     if let Err(e) = reset_git_repo(&workspace_path)
-        && verbose {
-            eprintln!("  [WARN] Failed to reset git repo: {}", e);
-        }
+        && verbose
+    {
+        eprintln!("  [WARN] Failed to reset git repo: {}", e);
+    }
 
     // For mutation scenarios, run pre-mutation baseline validation first
     let mut baseline_passed = true;
@@ -805,10 +823,11 @@ fn execute_scenario(
         }
         baseline_result = Some(run_validation_pipeline(scenario, &workspace_path, verbose));
         baseline_passed = baseline_result.as_ref().map(|r| r.passed).unwrap_or(true);
-        if !baseline_passed
-            && verbose {
-                eprintln!("  [BASELINE] Pre-mutation validation FAILED - classifying as preexisting_repo_failure");
-            }
+        if !baseline_passed && verbose {
+            eprintln!(
+                "  [BASELINE] Pre-mutation validation FAILED - classifying as preexisting_repo_failure"
+            );
+        }
     }
 
     // Execute MCP call
@@ -827,49 +846,55 @@ fn execute_scenario(
     call_arguments.insert("action".into(), serde_json::json!(scenario.action));
 
     // For edit_file tool when MCP server is unavailable, apply edit directly
-    if scenario.tool == "edit_file" && server.is_none()
+    if scenario.tool == "edit_file"
+        && server.is_none()
         && let (Some(path), Some(old_text), Some(new_text)) = (
             call_arguments.get("path").and_then(|v| v.as_str()),
             call_arguments.get("old_text").and_then(|v| v.as_str()),
             call_arguments.get("new_text").and_then(|v| v.as_str()),
-        ) {
-            let full_path = workspace_path.join(path);
-            if full_path.exists() {
-                match std::fs::read_to_string(&full_path) {
-                    Ok(content) => {
-                        if content.contains(old_text) {
-                            let new_content = content.replace(old_text, new_text);
-                            if std::fs::write(&full_path, &new_content).is_ok() {
-                                if verbose {
-                                    eprintln!("  [MUTATION] Applied edit via filesystem: {} bytes -> {} bytes", content.len(), new_content.len());
-                                }
-                                tool_response = Some(serde_json::json!({
-                                    "content": [{
-                                        "type": "text",
-                                        "text": serde_json::json!({
-                                            "success": true,
-                                            "edit_applied": true,
-                                            "changes": [{
-                                                "file": path,
-                                                "old_text": old_text,
-                                                "new_text": new_text
-                                            }]
-                                        }).to_string()
-                                    }]
-                                }));
+        )
+    {
+        let full_path = workspace_path.join(path);
+        if full_path.exists() {
+            match std::fs::read_to_string(&full_path) {
+                Ok(content) => {
+                    if content.contains(old_text) {
+                        let new_content = content.replace(old_text, new_text);
+                        if std::fs::write(&full_path, &new_content).is_ok() {
+                            if verbose {
+                                eprintln!(
+                                    "  [MUTATION] Applied edit via filesystem: {} bytes -> {} bytes",
+                                    content.len(),
+                                    new_content.len()
+                                );
                             }
-                        } else if verbose {
-                            eprintln!("  [MUTATION] old_text not found in file, skipping edit");
+                            tool_response = Some(serde_json::json!({
+                                "content": [{
+                                    "type": "text",
+                                    "text": serde_json::json!({
+                                        "success": true,
+                                        "edit_applied": true,
+                                        "changes": [{
+                                            "file": path,
+                                            "old_text": old_text,
+                                            "new_text": new_text
+                                        }]
+                                    }).to_string()
+                                }]
+                            }));
                         }
+                    } else if verbose {
+                        eprintln!("  [MUTATION] old_text not found in file, skipping edit");
                     }
-                    Err(e) => {
-                        if verbose {
-                            eprintln!("  [MUTATION] Failed to read file: {}", e);
-                        }
+                }
+                Err(e) => {
+                    if verbose {
+                        eprintln!("  [MUTATION] Failed to read file: {}", e);
                     }
                 }
             }
         }
+    }
 
     // Phase B: Handle debug_analyze and debug_doctor tools directly (no MCP needed)
     // These tools are handled differently because they don't require file mutation
@@ -889,9 +914,10 @@ fn execute_scenario(
                     .arg("--version")
                     .output();
                 match output {
-                    Ok(out) if out.status.success() => {
-                        (true, Some(String::from_utf8_lossy(&out.stdout).trim().to_string()))
-                    }
+                    Ok(out) if out.status.success() => (
+                        true,
+                        Some(String::from_utf8_lossy(&out.stdout).trim().to_string()),
+                    ),
                     _ => (false, None),
                 }
             }
@@ -900,20 +926,20 @@ fn execute_scenario(
                     .arg("--version")
                     .output();
                 match output {
-                    Ok(out) if out.status.success() => {
-                        (true, Some(String::from_utf8_lossy(&out.stdout).trim().to_string()))
-                    }
+                    Ok(out) if out.status.success() => (
+                        true,
+                        Some(String::from_utf8_lossy(&out.stdout).trim().to_string()),
+                    ),
                     _ => (false, None),
                 }
             }
             "javascript" | "typescript" => {
-                let output = std::process::Command::new("node")
-                    .arg("--version")
-                    .output();
+                let output = std::process::Command::new("node").arg("--version").output();
                 match output {
-                    Ok(out) if out.status.success() => {
-                        (true, Some(String::from_utf8_lossy(&out.stdout).trim().to_string()))
-                    }
+                    Ok(out) if out.status.success() => (
+                        true,
+                        Some(String::from_utf8_lossy(&out.stdout).trim().to_string()),
+                    ),
                     _ => (false, None),
                 }
             }
@@ -1024,18 +1050,33 @@ fn execute_scenario(
         // Analyze the error to determine root cause
         let (root_cause, summary) = if error_kind == "Panic" || stderr.contains("panicked") {
             if stderr.contains("index out of bounds") || error_message.contains("index") {
-                ("index_out_of_bounds".to_string(), "Array or index access out of bounds".to_string())
+                (
+                    "index_out_of_bounds".to_string(),
+                    "Array or index access out of bounds".to_string(),
+                )
             } else if stderr.contains("unwrap") || stderr.contains("None") {
-                ("unwrap_on_none".to_string(), "Called unwrap() on None value".to_string())
+                (
+                    "unwrap_on_none".to_string(),
+                    "Called unwrap() on None value".to_string(),
+                )
             } else if stderr.contains("division") || stderr.contains("zero") {
-                ("division_by_zero".to_string(), "Division by zero".to_string())
+                (
+                    "division_by_zero".to_string(),
+                    "Division by zero".to_string(),
+                )
             } else if stderr.contains("assert") || stderr.contains("assertion") {
-                ("assertion_failed".to_string(), "Assertion failed".to_string())
+                (
+                    "assertion_failed".to_string(),
+                    "Assertion failed".to_string(),
+                )
             } else {
                 ("unknown_panic".to_string(), "Unknown panic".to_string())
             }
         } else if error_kind == "ExitCode" || exit_code != 0 {
-            ("exit_code_error".to_string(), format!("Process exited with code {}", exit_code))
+            (
+                "exit_code_error".to_string(),
+                format!("Process exited with code {}", exit_code),
+            )
         } else {
             ("no_error".to_string(), "No error detected".to_string())
         };
@@ -1085,121 +1126,128 @@ fn execute_scenario(
 
         // Validate root_cause against manifest specification
         if let Some(ref rcv) = scenario.root_cause_validation
-            && let Some(ref resp) = tool_response {
-                let result_obj = resp.get("result").and_then(|v| v.as_object());
-                if let Some(rc) = result_obj.and_then(|r| r.get("root_cause")).and_then(|v| v.as_object()) {
-                    let actual_kind = rc.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-                    let actual_summary = rc.get("summary").and_then(|v| v.as_str()).unwrap_or("");
+            && let Some(ref resp) = tool_response
+        {
+            let result_obj = resp.get("result").and_then(|v| v.as_object());
+            if let Some(rc) = result_obj
+                .and_then(|r| r.get("root_cause"))
+                .and_then(|v| v.as_object())
+            {
+                let actual_kind = rc.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                let actual_summary = rc.get("summary").and_then(|v| v.as_str()).unwrap_or("");
 
-                    // Check kind matches
-                    if actual_kind != rcv.kind {
+                // Check kind matches
+                if actual_kind != rcv.kind {
+                    root_cause_validation_passed = false;
+                    if verbose {
+                        eprintln!(
+                            "  [ROOT_CAUSE_VALIDATION] FAILED: expected kind '{}', got '{}'",
+                            rcv.kind, actual_kind
+                        );
+                    }
+                }
+
+                // Check summary_contains if specified
+                if root_cause_validation_passed && let Some(ref contains) = rcv.summary_contains {
+                    let contains_lower = contains.to_lowercase();
+                    if !actual_summary
+                        .to_lowercase()
+                        .contains(contains_lower.as_str())
+                    {
                         root_cause_validation_passed = false;
                         if verbose {
                             eprintln!(
-                                "  [ROOT_CAUSE_VALIDATION] FAILED: expected kind '{}', got '{}'",
-                                rcv.kind, actual_kind
+                                "  [ROOT_CAUSE_VALIDATION] FAILED: summary '{}' does not contain '{}'",
+                                actual_summary, contains
                             );
                         }
                     }
-
-                    // Check summary_contains if specified
-                    if root_cause_validation_passed
-                        && let Some(ref contains) = rcv.summary_contains {
-                            let contains_lower = contains.to_lowercase();
-                            if !actual_summary.to_lowercase().contains(contains_lower.as_str()) {
-                                root_cause_validation_passed = false;
-                                if verbose {
-                                    eprintln!(
-                                        "  [ROOT_CAUSE_VALIDATION] FAILED: summary '{}' does not contain '{}'",
-                                        actual_summary, contains
-                                    );
-                                }
-                            }
-                        }
-                } else {
-                    // No root_cause in response - validation fails
-                    root_cause_validation_passed = false;
-                    if verbose {
-                        eprintln!("  [ROOT_CAUSE_VALIDATION] FAILED: no root_cause in response");
-                    }
+                }
+            } else {
+                // No root_cause in response - validation fails
+                root_cause_validation_passed = false;
+                if verbose {
+                    eprintln!("  [ROOT_CAUSE_VALIDATION] FAILED: no root_cause in response");
                 }
             }
+        }
     }
 
     // Only use MCP if tool_response hasn't been set by direct handlers (debug_analyze, debug_doctor)
     if tool_response.is_none()
-        && let Some(ref mut srv) = server {
-            let method = "tools/call".to_string();
+        && let Some(ref mut srv) = server
+    {
+        let method = "tools/call".to_string();
 
-            // Transform manifest-style edit arguments to MCP schema.
-            // The manifest uses: { path, old_text, new_text }
-            // The MCP server expects: { path, edits: [{ oldString, newString }] }
-            // (FileEdit uses #[serde(rename_all = "camelCase")] so old_string → oldString)
-            let mcp_arguments: Value = if scenario.tool == "edit_file" {
-                let path = call_arguments.get("path").cloned();
-                let old_text = call_arguments
-                    .get("old_text")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let new_text = call_arguments
-                    .get("new_text")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                if let (Some(p), Some(ot), Some(nt)) = (path, old_text, new_text) {
-                    serde_json::json!({
-                        "path": p,
-                        "edits": [{
-                            "oldString": ot,
-                            "newString": nt
-                        }]
-                    })
-                } else {
-                    serde_json::to_value(&call_arguments).unwrap_or_default()
-                }
+        // Transform manifest-style edit arguments to MCP schema.
+        // The manifest uses: { path, old_text, new_text }
+        // The MCP server expects: { path, edits: [{ oldString, newString }] }
+        // (FileEdit uses #[serde(rename_all = "camelCase")] so old_string → oldString)
+        let mcp_arguments: Value = if scenario.tool == "edit_file" {
+            let path = call_arguments.get("path").cloned();
+            let old_text = call_arguments
+                .get("old_text")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let new_text = call_arguments
+                .get("new_text")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            if let (Some(p), Some(ot), Some(nt)) = (path, old_text, new_text) {
+                serde_json::json!({
+                    "path": p,
+                    "edits": [{
+                        "oldString": ot,
+                        "newString": nt
+                    }]
+                })
             } else {
                 serde_json::to_value(&call_arguments).unwrap_or_default()
-            };
+            }
+        } else {
+            serde_json::to_value(&call_arguments).unwrap_or_default()
+        };
 
-            let params = serde_json::json!({
-                "name": scenario.tool,
-                "arguments": mcp_arguments
-            });
+        let params = serde_json::json!({
+            "name": scenario.tool,
+            "arguments": mcp_arguments
+        });
 
-            let call_start = Instant::now();
-            let params_for_capture = params.clone();
-            match srv.call(&method, params, scenario.timeout_seconds) {
-                Ok(full_response) => {
-                    tool_call_ms = call_start.elapsed().as_millis() as u64;
-                    full_mcp_response = Some(full_response.clone());
-                    // Extract the inner tool result from the MCP response
-                    let tool_result = full_response
-                        .get("result")
-                        .cloned()
-                        .unwrap_or(full_response.clone());
-                    tool_response = Some(tool_result.clone());
-                    captured_call = Some(CapturedCall {
-                        request: serde_json::json!({"method": method, "params": params_for_capture}),
-                        response: full_response,
-                        notifications: Vec::new(), // Skip drain_notifications to avoid deadlock
-                        duration_ms: tool_call_ms,
-                    });
+        let call_start = Instant::now();
+        let params_for_capture = params.clone();
+        match srv.call(&method, params, scenario.timeout_seconds) {
+            Ok(full_response) => {
+                tool_call_ms = call_start.elapsed().as_millis() as u64;
+                full_mcp_response = Some(full_response.clone());
+                // Extract the inner tool result from the MCP response
+                let tool_result = full_response
+                    .get("result")
+                    .cloned()
+                    .unwrap_or(full_response.clone());
+                tool_response = Some(tool_result.clone());
+                captured_call = Some(CapturedCall {
+                    request: serde_json::json!({"method": method, "params": params_for_capture}),
+                    response: full_response,
+                    notifications: Vec::new(), // Skip drain_notifications to avoid deadlock
+                    duration_ms: tool_call_ms,
+                });
+            }
+            Err(e) => {
+                tool_call_ms = call_start.elapsed().as_millis() as u64;
+                let error_str = e.to_string();
+                mcp_error_detail = Some(error_str.clone());
+                eprintln!("  [ERROR] MCP call failed: {error_str}");
+                // Detect timeout specifically - McpError::Timeout contains "timeout" in its display
+                if error_str.contains("timeout") {
+                    mcp_timeout_occurred = true;
                 }
-                Err(e) => {
-                    tool_call_ms = call_start.elapsed().as_millis() as u64;
-                    let error_str = e.to_string();
-                    mcp_error_detail = Some(error_str.clone());
-                    eprintln!("  [ERROR] MCP call failed: {error_str}");
-                    // Detect timeout specifically - McpError::Timeout contains "timeout" in its display
-                    if error_str.contains("timeout") {
-                        mcp_timeout_occurred = true;
-                    }
-                    // Detect protocol violation - McpError::ProtocolViolation indicates non-JSON stdout
-                    if matches!(e, McpError::ProtocolViolation(_)) {
-                        protocol_violation_occurred = true;
-                    }
+                // Detect protocol violation - McpError::ProtocolViolation indicates non-JSON stdout
+                if matches!(e, McpError::ProtocolViolation(_)) {
+                    protocol_violation_occurred = true;
                 }
             }
         }
+    }
 
     // Phase B5: Capture resource snapshot after MCP call completes
     let res_end = take_snapshot();
@@ -1315,18 +1363,20 @@ fn execute_scenario(
     };
 
     // Apply root_cause_validation result if this is a debug_analyze scenario
-    if scenario.tool == "debug_analyze" && scenario.root_cause_validation.is_some()
-        && !root_cause_validation_passed {
-            validation_result.passed = false;
-            validation_result.stages.push(PipelineStageResult {
-                stage: "root_cause_validation".to_string(),
-                status: "fail".to_string(),
-                duration_ms: 0,
-                exit_code: None,
-                stdout_excerpt: Some("Root cause validation failed".to_string()),
-                stderr_excerpt: None,
-            });
-        }
+    if scenario.tool == "debug_analyze"
+        && scenario.root_cause_validation.is_some()
+        && !root_cause_validation_passed
+    {
+        validation_result.passed = false;
+        validation_result.stages.push(PipelineStageResult {
+            stage: "root_cause_validation".to_string(),
+            status: "fail".to_string(),
+            duration_ms: 0,
+            exit_code: None,
+            stdout_excerpt: Some("Root cause validation failed".to_string()),
+            stderr_excerpt: None,
+        });
+    }
 
     // Compute validation_ms from stage durations
     let validation_ms = validation_result.stages.iter().map(|s| s.duration_ms).sum();
@@ -1334,10 +1384,11 @@ fn execute_scenario(
     // Check for resource limit exceeded (SIGKILL = exit code 137) in validation stages
     for stage in &validation_result.stages {
         if let Some(code) = stage.exit_code
-            && code == 137 {
-                resource_limit_exceeded = true;
-                break;
-            }
+            && code == 137
+        {
+            resource_limit_exceeded = true;
+            break;
+        }
     }
 
     // Classify outcome - handle preexisting failure first
@@ -1470,7 +1521,9 @@ fn run_validation_pipeline(
                         stdout_excerpt = truncate(&String::from_utf8_lossy(&out.stdout), 2048);
                         stderr_excerpt = truncate(&String::from_utf8_lossy(&out.stderr), 2048);
                         if verbose {
-                            eprintln!("      FAILED: {cmd} (exit {code}, expected {min_exit}-{max_exit})");
+                            eprintln!(
+                                "      FAILED: {cmd} (exit {code}, expected {min_exit}-{max_exit})"
+                            );
                         }
                         break; // Stop at first failure
                     }
@@ -1686,10 +1739,10 @@ fn classify_outcome(
                 .and_then(|item| item.get("text"))
                 .and_then(|t| t.as_str())
                 .map(|t| t.to_lowercase())
-        })
-            && is_expected_tool_rejection(&scenario.id, &error_text) {
-                return "pass".into();
-            }
+        }) && is_expected_tool_rejection(&scenario.id, &error_text)
+        {
+            return "pass".into();
+        }
         // Distinguish path safety rejections from other errors
         if is_path_safety_rejection {
             return "path_safety_rejection".into();
@@ -1730,32 +1783,33 @@ fn classify_outcome(
     // so the edit is rejected before syntax error detection can fire. The file stays
     // unchanged, validation passes on the clean file.
     if scenario.tool == "edit_file"
-        && let Some(response) = response {
-            let edit_rejected = response
-                .get("result")
-                .and_then(|r| r.get("content"))
-                .and_then(|c| c.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|item| item.get("text"))
-                .and_then(|t| t.as_str())
-                .and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
-                .and_then(|parsed| {
-                    // Check applied: false explicitly
-                    parsed
-                        .get("applied")
-                        .and_then(|a| a.as_bool())
-                        .map(|applied| !applied)
-                })
-                .unwrap_or(false);
+        && let Some(response) = response
+    {
+        let edit_rejected = response
+            .get("result")
+            .and_then(|r| r.get("content"))
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|item| item.get("text"))
+            .and_then(|t| t.as_str())
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
+            .and_then(|parsed| {
+                // Check applied: false explicitly
+                parsed
+                    .get("applied")
+                    .and_then(|a| a.as_bool())
+                    .map(|applied| !applied)
+            })
+            .unwrap_or(false);
 
-            if edit_rejected {
-                if scenario.expected_outcome == "expected_fail" {
-                    return "expected_fail".into();
-                } else if scenario.expected_outcome == "pass" {
-                    return "edit_rejected".into();
-                }
+        if edit_rejected {
+            if scenario.expected_outcome == "expected_fail" {
+                return "expected_fail".into();
+            } else if scenario.expected_outcome == "pass" {
+                return "edit_rejected".into();
             }
         }
+    }
 
     // Check validation pipeline — detect specific stage failures
     if !validation.passed {
@@ -1918,10 +1972,7 @@ fn aggregate_summary(results: &[ScenarioResult]) -> Summary {
         }
 
         // By language — use LanguageBreakdown::new()
-        let lang_entry = summary
-            .by_language
-            .entry(r.language.clone())
-            .or_default();
+        let lang_entry = summary.by_language.entry(r.language.clone()).or_default();
         lang_entry.total += 1;
         if r.outcome == "pass" || r.outcome == "expected_fail" || r.outcome == "preexisting_fail" {
             lang_entry.passed += 1;
@@ -1929,16 +1980,14 @@ fn aggregate_summary(results: &[ScenarioResult]) -> Summary {
             lang_entry.failed += 1;
             // Count CI-blocking failures
             if let Some(fc) = &r.failure_class
-                && fc.is_ci_blocking() {
-                    summary.ci_blocking += 1;
-                }
+                && fc.is_ci_blocking()
+            {
+                summary.ci_blocking += 1;
+            }
         }
 
         // By tool — use ToolBreakdown::new()
-        let tool_entry = summary
-            .by_tool
-            .entry(r.tool.clone())
-            .or_default();
+        let tool_entry = summary.by_tool.entry(r.tool.clone()).or_default();
         tool_entry.total += 1;
         if r.outcome == "pass" || r.outcome == "expected_fail" || r.outcome == "preexisting_fail" {
             tool_entry.passed += 1;
@@ -2055,31 +2104,30 @@ fn write_result(
 
     // Write validation.log for failed scenarios (not pass, not expected_fail)
     let is_actual_failure = result.outcome != "pass" && result.outcome != "expected_fail";
-    if is_actual_failure
-        && let Some(validation) = &result.validation {
-            let validation_log_path = scenario_dir.join("validation.log");
-            let mut log_content = String::new();
+    if is_actual_failure && let Some(validation) = &result.validation {
+        let validation_log_path = scenario_dir.join("validation.log");
+        let mut log_content = String::new();
 
-            for stage in &validation.stages {
-                log_content.push_str(&format!("=== Stage: {} ===\n", stage.stage));
-                log_content.push_str(&format!("Status: {}\n", stage.status));
-                if let Some(exit_code) = stage.exit_code {
-                    log_content.push_str(&format!("Exit Code: {}\n", exit_code));
-                }
-                log_content.push_str(&format!("Duration: {}ms\n", stage.duration_ms));
-
-                if let Some(stdout) = &stage.stdout_excerpt {
-                    log_content.push_str(&format!("\nSTDOUT:\n{}\n", stdout));
-                }
-                if let Some(stderr) = &stage.stderr_excerpt {
-                    log_content.push_str(&format!("\nSTDERR:\n{}\n", stderr));
-                }
-                log_content.push('\n');
+        for stage in &validation.stages {
+            log_content.push_str(&format!("=== Stage: {} ===\n", stage.stage));
+            log_content.push_str(&format!("Status: {}\n", stage.status));
+            if let Some(exit_code) = stage.exit_code {
+                log_content.push_str(&format!("Exit Code: {}\n", exit_code));
             }
+            log_content.push_str(&format!("Duration: {}ms\n", stage.duration_ms));
 
-            fs::write(&validation_log_path, log_content)?;
-            artifacts.push("validation.log".to_string());
+            if let Some(stdout) = &stage.stdout_excerpt {
+                log_content.push_str(&format!("\nSTDOUT:\n{}\n", stdout));
+            }
+            if let Some(stderr) = &stage.stderr_excerpt {
+                log_content.push_str(&format!("\nSTDERR:\n{}\n", stderr));
+            }
+            log_content.push('\n');
         }
+
+        fs::write(&validation_log_path, log_content)?;
+        artifacts.push("validation.log".to_string());
+    }
 
     Ok((result_path, artifacts))
 }
@@ -2305,12 +2353,14 @@ fn parse_test_results(output: &str) -> String {
     // Parse lines like "test result: ok. 832 passed; 0 failed; 5 ignored"
     let mut total_passed = 0;
     for line in output.lines() {
-        if line.contains("test result:") && line.contains("passed")
+        if line.contains("test result:")
+            && line.contains("passed")
             && let Some(passed) = line.split("passed").next()
-                && let Some(num_str) = passed.split_whitespace().last()
-                    && let Ok(n) = num_str.parse::<usize>() {
-                        total_passed += n;
-                    }
+            && let Some(num_str) = passed.split_whitespace().last()
+            && let Ok(n) = num_str.parse::<usize>()
+        {
+            total_passed += n;
+        }
     }
     if total_passed > 0 {
         total_passed.to_string()
@@ -2345,15 +2395,19 @@ fn log_autoresearch_result(
     use std::io::Write;
 
     if write_header {
-        writeln!(file, "commit\ttests_passed\tsandbox_passed\thealth_score\tstatus\tdescription")
-            .map_err(|e| format!("Failed to write header: {e}"))?;
+        writeln!(
+            file,
+            "commit\ttests_passed\tsandbox_passed\thealth_score\tstatus\tdescription"
+        )
+        .map_err(|e| format!("Failed to write header: {e}"))?;
     }
 
     writeln!(
         file,
         "{}\t{}\t{}\t{:.1}\t{}\t{}",
         commit, tests_passed, sandbox_passed, health_score, status, description
-    ).map_err(|e| format!("Failed to write row: {e}"))?;
+    )
+    .map_err(|e| format!("Failed to write row: {e}"))?;
 
     Ok(())
 }
@@ -2372,7 +2426,8 @@ fn spawn_mcp_in_container(
 ) -> Option<McpServer> {
     use std::process::Command;
 
-    let workspace_abs = std::fs::canonicalize(workspace_path).unwrap_or_else(|_| workspace_path.clone());
+    let workspace_abs =
+        std::fs::canonicalize(workspace_path).unwrap_or_else(|_| workspace_path.clone());
     let server_abs = std::fs::canonicalize(server_binary).unwrap_or_else(|_| server_binary.clone());
 
     let ro_flag = if read_only { "ro" } else { "rw" };
@@ -2380,15 +2435,24 @@ fn spawn_mcp_in_container(
     let server_mount = format!("{}:/usr/local/bin/cognicode-mcp:ro,Z", server_abs.display());
 
     let mut podman_args: Vec<String> = vec![
-        "run".into(), "--rm".into(), "-i".into(),
+        "run".into(),
+        "--rm".into(),
+        "-i".into(),
         "--network=none".into(),
-        "--memory=512m".into(), "--cpus=1".into(), "--pids-limit=50".into(),
-        "-v".into(), workspace_mount,
-        "-v".into(), server_mount,
-        "--workdir".into(), "/workspace".into(),
-        "--entrypoint".into(), "/usr/local/bin/cognicode-mcp".into(),
+        "--memory=512m".into(),
+        "--cpus=1".into(),
+        "--pids-limit=50".into(),
+        "-v".into(),
+        workspace_mount,
+        "-v".into(),
+        server_mount,
+        "--workdir".into(),
+        "/workspace".into(),
+        "--entrypoint".into(),
+        "/usr/local/bin/cognicode-mcp".into(),
         container_image.into(),
-        "--cwd".into(), "/workspace".into(),
+        "--cwd".into(),
+        "/workspace".into(),
     ];
     for arg in extra_args {
         podman_args.push(arg.clone());
@@ -2654,7 +2718,9 @@ fn run(args: RunArgs, verbose: bool) -> Result<i32, String> {
 fn autoresearch(args: AutoresearchArgs, verbose: bool) -> Result<i32, String> {
     use std::process::Command as StdCommand;
 
-    let project_dir = args.project_dir.unwrap_or_else(|| std::env::current_dir().unwrap());
+    let project_dir = args
+        .project_dir
+        .unwrap_or_else(|| std::env::current_dir().unwrap());
     let commit = get_git_short_hash(&project_dir).unwrap_or_else(|_| "0000000".to_string());
 
     // Step 1: Run cargo test --workspace
@@ -2700,7 +2766,10 @@ fn autoresearch(args: AutoresearchArgs, verbose: bool) -> Result<i32, String> {
                 results.push(result);
             }
 
-            let passed = results.iter().filter(|r| r.outcome == "pass" || r.outcome == "expected_fail").count();
+            let passed = results
+                .iter()
+                .filter(|r| r.outcome == "pass" || r.outcome == "expected_fail")
+                .count();
             let total = results.len();
             sandbox_passed = format!("{}/{}", passed, total);
 
@@ -2990,7 +3059,8 @@ fn report(args: ReportArgs) -> Result<i32, String> {
         if baseline_path.exists() {
             match reporting::load_baseline_summary(baseline_path) {
                 Ok(baseline) => {
-                    summary.regressions_vs_baseline = reporting::compute_regressions(&results, &baseline);
+                    summary.regressions_vs_baseline =
+                        reporting::compute_regressions(&results, &baseline);
                     if !summary.regressions_vs_baseline.is_empty() {
                         eprintln!(
                             "⚠️  Found {} regression(s) vs baseline",
@@ -3031,7 +3101,6 @@ fn report(args: ReportArgs) -> Result<i32, String> {
 
 #[cfg(test)]
 mod edit_file_schema_tests {
-    
 
     /// Verify the MCP edit_file schema transformation:
     /// Manifest uses: { path, old_text, new_text }
@@ -3167,7 +3236,6 @@ mod edit_file_schema_tests {
 mod expand_manifests_tests {
     use super::*;
     use cognicode_core::sandbox_core::manifest::Manifest;
-    
 
     fn make_test_manifest() -> Manifest {
         let yaml = r#"
@@ -3266,7 +3334,10 @@ scenarios:
         assert_eq!(scenarios.len(), 1);
 
         let s = &scenarios[0];
-        assert!(s.root_cause_validation.is_some(), "root_cause_validation should be preserved");
+        assert!(
+            s.root_cause_validation.is_some(),
+            "root_cause_validation should be preserved"
+        );
 
         let rcv = s.root_cause_validation.as_ref().unwrap();
         assert_eq!(rcv.kind, "index_out_of_bounds");
@@ -3276,7 +3347,7 @@ scenarios:
 
 #[cfg(test)]
 mod workspace_root_substitution_tests {
-    
+
     use std::path::Path;
 
     #[test]
@@ -3284,7 +3355,10 @@ mod workspace_root_substitution_tests {
         let workspace = Path::new("/tmp/test_workspace");
         let cmd = "echo {workspace_root}/src && ls {workspace_root}";
         let expanded = cmd.replace("{workspace_root}", &workspace.to_string_lossy());
-        assert_eq!(expanded, "echo /tmp/test_workspace/src && ls /tmp/test_workspace");
+        assert_eq!(
+            expanded,
+            "echo /tmp/test_workspace/src && ls /tmp/test_workspace"
+        );
     }
 
     #[test]
@@ -3847,7 +3921,7 @@ mod classify_outcome_tests {
             &scenario,
             None,
             &validation,
-            true,  // mcp_timeout_occurred
+            true, // mcp_timeout_occurred
             false,
             false,
         );
@@ -3868,7 +3942,7 @@ mod classify_outcome_tests {
             &validation,
             false,
             false,
-            true,  // resource_limit_exceeded
+            true, // resource_limit_exceeded
         );
 
         assert_eq!(outcome, "resource_limit_exceeded");
@@ -3881,14 +3955,7 @@ mod classify_outcome_tests {
         let scenario = make_test_scenario("expected_fail");
         let validation = validation_with_stage("build", "fail");
 
-        let outcome = classify_outcome(
-            &scenario,
-            None,
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
 
         assert_eq!(outcome, "expected_fail");
     }
@@ -3904,14 +3971,8 @@ mod classify_outcome_tests {
             "error": { "code": -32600, "message": "Invalid request" }
         });
 
-        let outcome = classify_outcome(
-            &scenario,
-            Some(&response),
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
 
         assert_eq!(outcome, "mcp_error");
     }
@@ -3933,14 +3994,8 @@ mod classify_outcome_tests {
             }
         });
 
-        let outcome = classify_outcome(
-            &scenario,
-            Some(&response),
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
 
         assert_eq!(outcome, "path_safety_rejection");
     }
@@ -3964,14 +4019,8 @@ mod classify_outcome_tests {
             }
         });
 
-        let outcome = classify_outcome(
-            &scenario,
-            Some(&response),
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
 
         // is_expected_tool_rejection returns true, so outcome should be "pass"
         assert_eq!(outcome, "pass");
@@ -3995,14 +4044,8 @@ mod classify_outcome_tests {
             }
         });
 
-        let outcome = classify_outcome(
-            &scenario,
-            Some(&response),
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
 
         assert_eq!(outcome, "edit_rejected");
     }
@@ -4016,14 +4059,7 @@ mod classify_outcome_tests {
 
         let validation = validation_with_stage("build", "pass");
 
-        let outcome = classify_outcome(
-            &scenario,
-            None,
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
 
         assert_eq!(outcome, "unexpected_pass");
     }
@@ -4037,14 +4073,7 @@ mod classify_outcome_tests {
 
         let validation = validation_with_stage("test", "fail");
 
-        let outcome = classify_outcome(
-            &scenario,
-            None,
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
 
         assert_eq!(outcome, "semantic_regression");
     }
@@ -4057,14 +4086,7 @@ mod classify_outcome_tests {
         let validation = empty_validation();
 
         // No response (None) and validation stages is empty
-        let outcome = classify_outcome(
-            &scenario,
-            None,
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
 
         assert_eq!(outcome, "no_result");
     }
@@ -4076,14 +4098,7 @@ mod classify_outcome_tests {
         let scenario = make_test_scenario("capability_missing");
         let validation = validation_with_stage("build", "fail");
 
-        let outcome = classify_outcome(
-            &scenario,
-            None,
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
 
         assert_eq!(outcome, "capability_missing");
     }
@@ -4095,14 +4110,7 @@ mod classify_outcome_tests {
         let scenario = make_test_scenario("pass");
         let validation = validation_with_stage("build", "pass");
 
-        let outcome = classify_outcome(
-            &scenario,
-            None,
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
 
         assert_eq!(outcome, "pass");
     }
@@ -4116,14 +4124,7 @@ mod classify_outcome_tests {
 
         let validation = validation_with_stage("build", "pass");
 
-        let outcome = classify_outcome(
-            &scenario,
-            None,
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
 
         // preview_only + validation passed + expected_fail = expected_fail
         assert_eq!(outcome, "expected_fail");
@@ -4136,14 +4137,7 @@ mod classify_outcome_tests {
         let scenario = make_test_scenario("capability_missing");
         let validation = validation_with_stage("build", "pass");
 
-        let outcome = classify_outcome(
-            &scenario,
-            None,
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
 
         assert_eq!(outcome, "expected_fail");
     }
@@ -4155,14 +4149,7 @@ mod classify_outcome_tests {
         let scenario = make_test_scenario("pass");
         let validation = validation_with_stage("build", "fail");
 
-        let outcome = classify_outcome(
-            &scenario,
-            None,
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
 
         assert_eq!(outcome, "build_failure");
     }
@@ -4375,9 +4362,7 @@ mod determine_failure_class_tests {
 #[cfg(test)]
 mod aggregate_summary_tests {
     use super::*;
-    use cognicode_core::sandbox_core::artifacts::{
-        ResourceUsage, ScenarioResult, Timing,
-    };
+    use cognicode_core::sandbox_core::artifacts::{ResourceUsage, ScenarioResult, Timing};
 
     fn make_result(
         outcome: &str,
@@ -4622,7 +4607,10 @@ mod aggregate_summary_tests {
         assert_eq!(rust_entry.passed, 2);
         assert_eq!(rust_entry.failed, 0);
 
-        let python_entry = summary.by_language.get("python").expect("python entry exists");
+        let python_entry = summary
+            .by_language
+            .get("python")
+            .expect("python entry exists");
         assert_eq!(python_entry.total, 1);
         assert_eq!(python_entry.passed, 0);
         assert_eq!(python_entry.failed, 1);
@@ -4644,12 +4632,18 @@ mod aggregate_summary_tests {
         ];
         let summary = aggregate_summary(&results);
 
-        let edit_file_entry = summary.by_tool.get("edit_file").expect("edit_file entry exists");
+        let edit_file_entry = summary
+            .by_tool
+            .get("edit_file")
+            .expect("edit_file entry exists");
         assert_eq!(edit_file_entry.total, 2);
         assert_eq!(edit_file_entry.passed, 2);
         assert_eq!(edit_file_entry.failed, 0);
 
-        let read_file_entry = summary.by_tool.get("read_file").expect("read_file entry exists");
+        let read_file_entry = summary
+            .by_tool
+            .get("read_file")
+            .expect("read_file entry exists");
         assert_eq!(read_file_entry.total, 1);
         assert_eq!(read_file_entry.passed, 0);
         assert_eq!(read_file_entry.failed, 1);
@@ -4718,7 +4712,12 @@ mod aggregate_summary_tests {
 
     #[test]
     fn test_aggregate_summary_pass_does_not_block_ci() {
-        let results = vec![make_result("pass", "rust", "edit_file", Some(FailureClass::Pass))];
+        let results = vec![make_result(
+            "pass",
+            "rust",
+            "edit_file",
+            Some(FailureClass::Pass),
+        )];
         let summary = aggregate_summary(&results);
 
         assert_eq!(summary.ci_blocking, 0);
@@ -4730,7 +4729,12 @@ mod aggregate_summary_tests {
     fn test_generate_markdown_summary_contains_header() {
         let results = vec![
             make_result("pass", "rust", "edit_file", Some(FailureClass::Pass)),
-            make_result("unexpected_fail", "python", "find_usages", Some(FailureClass::UnexpectedFail)),
+            make_result(
+                "unexpected_fail",
+                "python",
+                "find_usages",
+                Some(FailureClass::UnexpectedFail),
+            ),
         ];
         let summary = aggregate_summary(&results);
         let md = generate_markdown_summary(&results, &summary);
@@ -5010,8 +5014,20 @@ test result: ok. 73 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
         let temp = tempfile::tempdir().unwrap();
         let tsv_path = temp.path().join("results.tsv");
 
-        log_autoresearch_result(&tsv_path, "abc1234", "832", "12/12", 95.0, "keep", "baseline").unwrap();
-        log_autoresearch_result(&tsv_path, "def5678", "830", "11/12", 88.0, "discard", "broke something").unwrap();
+        log_autoresearch_result(
+            &tsv_path, "abc1234", "832", "12/12", 95.0, "keep", "baseline",
+        )
+        .unwrap();
+        log_autoresearch_result(
+            &tsv_path,
+            "def5678",
+            "830",
+            "11/12",
+            88.0,
+            "discard",
+            "broke something",
+        )
+        .unwrap();
 
         let contents = std::fs::read_to_string(&tsv_path).unwrap();
         let lines: Vec<&str> = contents.lines().collect();
@@ -5072,7 +5088,10 @@ mod debug_tools_integration_tests {
         // Basic assertions
         assert!(toolchain_ok, "Rust toolchain should be available for tests");
         // Adapter may or may not be available depending on installation
-        println!("[DEBUG_DOCTOR] Rust toolchain_ok={}, adapter_available={}", toolchain_ok, adapter_available);
+        println!(
+            "[DEBUG_DOCTOR] Rust toolchain_ok={}, adapter_available={}",
+            toolchain_ok, adapter_available
+        );
     }
 
     #[test]
@@ -5092,8 +5111,14 @@ mod debug_tools_integration_tests {
             .map(|o| o.status.success())
             .unwrap_or(false);
 
-        assert!(toolchain_ok, "Python toolchain should be available for tests");
-        println!("[DEBUG_DOCTOR] Python toolchain_ok={}, adapter_available={}", toolchain_ok, adapter_available);
+        assert!(
+            toolchain_ok,
+            "Python toolchain should be available for tests"
+        );
+        println!(
+            "[DEBUG_DOCTOR] Python toolchain_ok={}, adapter_available={}",
+            toolchain_ok, adapter_available
+        );
     }
 
     #[test]
@@ -5101,7 +5126,9 @@ mod debug_tools_integration_tests {
         // Test that the rust-debug-fixture produces expected panic for index_oob
         let fixture = rust_fixture_path();
         if !Path::new(&fixture).exists() {
-            println!("SKIP: rust-debug-fixture not built. Run: cd sandbox/fixtures/rust-debug && cargo build --release");
+            println!(
+                "SKIP: rust-debug-fixture not built. Run: cd sandbox/fixtures/rust-debug && cargo build --release"
+            );
             return;
         }
 
@@ -5112,8 +5139,11 @@ mod debug_tools_integration_tests {
         assert!(output.is_ok());
         let output = output.unwrap();
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains("panicked") || stderr.contains("index out of bounds"),
-            "Expected panic message, got: {}", stderr);
+        assert!(
+            stderr.contains("panicked") || stderr.contains("index out of bounds"),
+            "Expected panic message, got: {}",
+            stderr
+        );
         println!("[RUST_FIXTURE] index_oob produced panic: OK");
     }
 
@@ -5131,8 +5161,11 @@ mod debug_tools_integration_tests {
             .unwrap();
 
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains("panicked") || stderr.contains("unwrap"),
-            "Expected panic, got: {}", stderr);
+        assert!(
+            stderr.contains("panicked") || stderr.contains("unwrap"),
+            "Expected panic, got: {}",
+            stderr
+        );
         println!("[RUST_FIXTURE] unwrap_none produced panic: OK");
     }
 
@@ -5150,8 +5183,11 @@ mod debug_tools_integration_tests {
             .unwrap();
 
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains("panicked") || stderr.contains("division"),
-            "Expected panic, got: {}", stderr);
+        assert!(
+            stderr.contains("panicked") || stderr.contains("division"),
+            "Expected panic, got: {}",
+            stderr
+        );
         println!("[RUST_FIXTURE] divzero produced panic: OK");
     }
 
@@ -5169,8 +5205,11 @@ mod debug_tools_integration_tests {
             .unwrap();
 
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains("IndexError") || stderr.contains("list index out of range"),
-            "Expected IndexError, got: {}", stderr);
+        assert!(
+            stderr.contains("IndexError") || stderr.contains("list index out of range"),
+            "Expected IndexError, got: {}",
+            stderr
+        );
         println!("[PYTHON_FIXTURE] index_error produced IndexError: OK");
     }
 
@@ -5188,8 +5227,11 @@ mod debug_tools_integration_tests {
             .unwrap();
 
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains("KeyError"),
-            "Expected KeyError, got: {}", stderr);
+        assert!(
+            stderr.contains("KeyError"),
+            "Expected KeyError, got: {}",
+            stderr
+        );
         println!("[PYTHON_FIXTURE] key_error produced KeyError: OK");
     }
 
@@ -5207,8 +5249,11 @@ mod debug_tools_integration_tests {
             .unwrap();
 
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains("ZeroDivisionError"),
-            "Expected ZeroDivisionError, got: {}", stderr);
+        assert!(
+            stderr.contains("ZeroDivisionError"),
+            "Expected ZeroDivisionError, got: {}",
+            stderr
+        );
         println!("[PYTHON_FIXTURE] zero_division produced ZeroDivisionError: OK");
     }
 
@@ -5241,11 +5286,20 @@ mod debug_tools_integration_tests {
 
         let (root_cause, summary) = if error_kind == "Panic" || stderr.contains("panicked") {
             if stderr.contains("index out of bounds") || error_message.contains("index") {
-                ("index_out_of_bounds".to_string(), "Array or index access out of bounds".to_string())
+                (
+                    "index_out_of_bounds".to_string(),
+                    "Array or index access out of bounds".to_string(),
+                )
             } else if stderr.contains("unwrap") || stderr.contains("None") {
-                ("unwrap_on_none".to_string(), "Called unwrap() on None value".to_string())
+                (
+                    "unwrap_on_none".to_string(),
+                    "Called unwrap() on None value".to_string(),
+                )
             } else if stderr.contains("division") || stderr.contains("zero") {
-                ("division_by_zero".to_string(), "Division by zero".to_string())
+                (
+                    "division_by_zero".to_string(),
+                    "Division by zero".to_string(),
+                )
             } else {
                 ("unknown_panic".to_string(), "Unknown panic".to_string())
             }
@@ -5255,7 +5309,10 @@ mod debug_tools_integration_tests {
 
         assert_eq!(root_cause, "index_out_of_bounds");
         assert!(summary.contains("Array") || summary.contains("index"));
-        println!("[DEBUG_ANALYZE] Rust index_oob correctly identified as {}: {}", root_cause, summary);
+        println!(
+            "[DEBUG_ANALYZE] Rust index_oob correctly identified as {}: {}",
+            root_cause, summary
+        );
     }
 
     #[test]
@@ -5280,11 +5337,20 @@ mod debug_tools_integration_tests {
 
         let (root_cause, summary) = if error_kind == "Panic" || stderr.contains("error") {
             if stderr.contains("index") || error_message.contains("index") {
-                ("index_out_of_bounds".to_string(), "Array or index access out of bounds".to_string())
+                (
+                    "index_out_of_bounds".to_string(),
+                    "Array or index access out of bounds".to_string(),
+                )
             } else if stderr.contains("key") {
-                ("key_error".to_string(), "Key not found in dictionary".to_string())
+                (
+                    "key_error".to_string(),
+                    "Key not found in dictionary".to_string(),
+                )
             } else if stderr.contains("division") || stderr.contains("zero") {
-                ("division_by_zero".to_string(), "Division by zero".to_string())
+                (
+                    "division_by_zero".to_string(),
+                    "Division by zero".to_string(),
+                )
             } else {
                 ("unknown_panic".to_string(), "Unknown panic".to_string())
             }
@@ -5293,15 +5359,17 @@ mod debug_tools_integration_tests {
         };
 
         assert_eq!(root_cause, "index_out_of_bounds");
-        println!("[DEBUG_ANALYZE] Python index_error correctly identified as {}: {}", root_cause, summary);
+        println!(
+            "[DEBUG_ANALYZE] Python index_error correctly identified as {}: {}",
+            root_cause, summary
+        );
     }
 
     #[test]
     fn test_debug_analyze_unsupported_language() {
         // Test that debug_analyze handles unsupported language gracefully
         // This should result in an error_kind of "ExitCode" with nonzero exit
-        let output = std::process::Command::new("/tmp/nonexistent_program_12345")
-            .output();
+        let output = std::process::Command::new("/tmp/nonexistent_program_12345").output();
 
         match output {
             Ok(out) => {
@@ -5310,7 +5378,10 @@ mod debug_tools_integration_tests {
             }
             Err(e) => {
                 // Expected - program doesn't exist
-                println!("[DEBUG_ANALYZE] Unsupported language handled gracefully: {}", e);
+                println!(
+                    "[DEBUG_ANALYZE] Unsupported language handled gracefully: {}",
+                    e
+                );
             }
         }
     }
@@ -5423,14 +5494,7 @@ mod bug_detection_tests {
         let scenario = make_test_scenario("expected_fail");
         let validation = failing_validation();
 
-        let outcome = classify_outcome(
-            &scenario,
-            None,
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
 
         assert_eq!(outcome, "expected_fail");
     }
@@ -5441,14 +5505,7 @@ mod bug_detection_tests {
         let scenario = make_test_scenario("expected_fail");
         let validation = empty_validation(); // passed=true
 
-        let outcome = classify_outcome(
-            &scenario,
-            None,
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
 
         // With no result and expected_outcome=expected_fail, it should return "expected_fail"
         assert_eq!(outcome, "expected_fail");
@@ -5558,8 +5615,8 @@ mod bug_detection_tests {
                     name: "multi".into(),
                     commands: vec![
                         "echo first".to_string(),
-                        "exit 1".to_string(),  // This should stop the stage
-                        "echo third".to_string(),  // This should NOT run
+                        "exit 1".to_string(),     // This should stop the stage
+                        "echo third".to_string(), // This should NOT run
                     ],
                     expected_exit_range: (0, 0),
                     timeout_seconds: 5,
@@ -5585,7 +5642,10 @@ mod bug_detection_tests {
         assert_eq!(result.stages[0].status, "fail");
         // stdout should NOT contain "third" because we stopped after "exit 1"
         if let Some(ref stdout) = result.stages[0].stdout_excerpt {
-            assert!(!stdout.contains("third"), "Third command should not have run");
+            assert!(
+                !stdout.contains("third"),
+                "Third command should not have run"
+            );
         }
     }
 
@@ -5699,7 +5759,12 @@ mod bug_detection_tests {
             make_result("pass", "rust", "edit_file", Some(FailureClass::Pass)),
             make_result("pass", "rust", "edit_file", Some(FailureClass::Pass)),
             make_result("pass", "rust", "edit_file", Some(FailureClass::Pass)),
-            make_result("unexpected_fail", "rust", "edit_file", Some(FailureClass::UnexpectedFail)),
+            make_result(
+                "unexpected_fail",
+                "rust",
+                "edit_file",
+                Some(FailureClass::UnexpectedFail),
+            ),
         ];
 
         let summary = aggregate_summary(&results);
@@ -5714,9 +5779,24 @@ mod bug_detection_tests {
     fn test_aggregate_summary_ci_blocking_counts_only_unexpected() {
         // Bug: CI blocking might count expected failures
         let results = vec![
-            make_result("unexpected_fail", "rust", "edit_file", Some(FailureClass::UnexpectedFail)),
-            make_result("expected_fail", "rust", "edit_file", Some(FailureClass::ExpectedFail)),
-            make_result("preexisting_fail", "rust", "edit_file", Some(FailureClass::PreexistingRepoFailure)),
+            make_result(
+                "unexpected_fail",
+                "rust",
+                "edit_file",
+                Some(FailureClass::UnexpectedFail),
+            ),
+            make_result(
+                "expected_fail",
+                "rust",
+                "edit_file",
+                Some(FailureClass::ExpectedFail),
+            ),
+            make_result(
+                "preexisting_fail",
+                "rust",
+                "edit_file",
+                Some(FailureClass::PreexistingRepoFailure),
+            ),
         ];
 
         let summary = aggregate_summary(&results);
@@ -5731,8 +5811,18 @@ mod bug_detection_tests {
         let results = vec![
             make_result("pass", "rust", "edit_file", Some(FailureClass::Pass)),
             make_result("pass", "python", "find_usages", Some(FailureClass::Pass)),
-            make_result("unexpected_fail", "rust", "edit_file", Some(FailureClass::UnexpectedFail)),
-            make_result("unexpected_fail", "python", "find_usages", Some(FailureClass::UnexpectedFail)),
+            make_result(
+                "unexpected_fail",
+                "rust",
+                "edit_file",
+                Some(FailureClass::UnexpectedFail),
+            ),
+            make_result(
+                "unexpected_fail",
+                "python",
+                "find_usages",
+                Some(FailureClass::UnexpectedFail),
+            ),
         ];
 
         let summary = aggregate_summary(&results);
@@ -5748,7 +5838,12 @@ mod bug_detection_tests {
         let results = vec![
             make_result("pass", "rust", "edit_file", Some(FailureClass::Pass)),
             make_result("pass", "rust", "get_file_symbols", Some(FailureClass::Pass)),
-            make_result("unexpected_fail", "rust", "edit_file", Some(FailureClass::UnexpectedFail)),
+            make_result(
+                "unexpected_fail",
+                "rust",
+                "edit_file",
+                Some(FailureClass::UnexpectedFail),
+            ),
         ];
 
         let summary = aggregate_summary(&results);
@@ -5894,9 +5989,9 @@ mod edge_case_tests {
             &scenario,
             None,
             &validation,
-            true,   // timeout
+            true, // timeout
             false,
-            true,   // resource_limit
+            true, // resource_limit
         );
         assert_eq!(outcome, "timeout");
     }
@@ -5918,7 +6013,7 @@ mod edge_case_tests {
             Some(&response),
             &validation,
             false,
-            true,   // protocol_violation
+            true, // protocol_violation
             false,
         );
         assert_eq!(outcome, "protocol_violation");
@@ -5936,14 +6031,8 @@ mod edge_case_tests {
             "content": "just a string"
         });
 
-        let outcome = classify_outcome(
-            &scenario,
-            Some(&response),
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
         // Should not panic - just classify appropriately
         println!("Malformed JSON outcome: {}", outcome);
     }
@@ -5963,14 +6052,8 @@ mod edge_case_tests {
             }
         });
 
-        let outcome = classify_outcome(
-            &scenario,
-            Some(&response),
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
         // Should handle unicode gracefully
         assert!(outcome == "mcp_error" || outcome == "pass" || outcome == "path_safety_rejection");
     }
@@ -5991,14 +6074,8 @@ mod edge_case_tests {
             }
         });
 
-        let outcome = classify_outcome(
-            &scenario,
-            Some(&response),
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
         // Should not panic
         assert!(!outcome.is_empty());
     }
@@ -6022,14 +6099,8 @@ mod edge_case_tests {
         // Response with no result
         let response = serde_json::json!({});
 
-        let outcome = classify_outcome(
-            &scenario,
-            Some(&response),
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
         // Should classify based on validation result
         println!("Empty result with stages outcome: {}", outcome);
     }
@@ -6053,14 +6124,8 @@ mod edge_case_tests {
             }
         });
 
-        let outcome = classify_outcome(
-            &scenario,
-            Some(&response),
-            &validation,
-            false,
-            false,
-            false,
-        );
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
         assert_eq!(outcome, "mcp_error");
     }
 
@@ -6085,7 +6150,14 @@ mod edge_case_tests {
     #[test]
     fn test_aggregate_summary_all_fail() {
         let results: Vec<ScenarioResult> = (0..5)
-            .map(|_| make_result("unexpected_fail", "python", "find_usages", Some(FailureClass::UnexpectedFail)))
+            .map(|_| {
+                make_result(
+                    "unexpected_fail",
+                    "python",
+                    "find_usages",
+                    Some(FailureClass::UnexpectedFail),
+                )
+            })
             .collect();
         let summary = aggregate_summary(&results);
 
@@ -6114,9 +6186,24 @@ mod edge_case_tests {
     fn test_aggregate_summary_mixed_expected_and_unexpected() {
         let results = vec![
             make_result("pass", "rust", "edit_file", Some(FailureClass::Pass)),
-            make_result("expected_fail", "rust", "edit_file", Some(FailureClass::ExpectedFail)),
-            make_result("preexisting_fail", "rust", "edit_file", Some(FailureClass::PreexistingRepoFailure)),
-            make_result("unexpected_fail", "rust", "edit_file", Some(FailureClass::UnexpectedFail)),
+            make_result(
+                "expected_fail",
+                "rust",
+                "edit_file",
+                Some(FailureClass::ExpectedFail),
+            ),
+            make_result(
+                "preexisting_fail",
+                "rust",
+                "edit_file",
+                Some(FailureClass::PreexistingRepoFailure),
+            ),
+            make_result(
+                "unexpected_fail",
+                "rust",
+                "edit_file",
+                Some(FailureClass::UnexpectedFail),
+            ),
         ];
         let summary = aggregate_summary(&results);
 
@@ -6134,7 +6221,12 @@ mod edge_case_tests {
                 if i % 2 == 0 {
                     make_result("pass", "rust", "edit_file", Some(FailureClass::Pass))
                 } else {
-                    make_result("unexpected_fail", "python", "find_usages", Some(FailureClass::UnexpectedFail))
+                    make_result(
+                        "unexpected_fail",
+                        "python",
+                        "find_usages",
+                        Some(FailureClass::UnexpectedFail),
+                    )
                 }
             })
             .collect();
@@ -6292,10 +6384,7 @@ mod edge_case_tests {
             validation: ValidationPipeline {
                 stages: vec![StageDef {
                     name: "fail_stop".into(),
-                    commands: vec![
-                        "exit 1".to_string(),
-                        "echo should_not_run".to_string(),
-                    ],
+                    commands: vec!["exit 1".to_string(), "echo should_not_run".to_string()],
                     expected_exit_range: (0, 0),
                     timeout_seconds: 5,
                 }],
@@ -6341,7 +6430,7 @@ mod edge_case_tests {
                 stages: vec![StageDef {
                     name: "exit_test".into(),
                     commands: vec!["exit 42".to_string()],
-                    expected_exit_range: (40, 50),  // Accept 40-50 as success
+                    expected_exit_range: (40, 50), // Accept 40-50 as success
                     timeout_seconds: 5,
                 }],
                 failure_is_regression: true,
@@ -6503,7 +6592,10 @@ scenarios:
 
         // Very long error WITH expected patterns should still work
         let long_error_with_pattern = format!("Error: not found - {}", "x".repeat(1_000_000));
-        assert!(is_expected_tool_rejection("test_nonexistent", &long_error_with_pattern));
+        assert!(is_expected_tool_rejection(
+            "test_nonexistent",
+            &long_error_with_pattern
+        ));
     }
 
     #[test]
@@ -6512,7 +6604,7 @@ scenarios:
         // Russian "файл не найден" contains "не найден" which means "not found" but isn't in English
         assert!(!is_expected_tool_rejection(
             "test_nonexistent",
-            "Error: файл не найден 🔴"  // Russian doesn't match English "not found"
+            "Error: файл не найден 🔴" // Russian doesn't match English "not found"
         ));
         // With English error text it works
         assert!(is_expected_tool_rejection(
@@ -6536,15 +6628,15 @@ scenarios:
         ));
         assert!(is_expected_tool_rejection(
             "test_nonexistent",
-            "Error: FILE NOT FOUND"  // uppercase now works
+            "Error: FILE NOT FOUND" // uppercase now works
         ));
         assert!(is_expected_tool_rejection(
             "test_nonexistent",
-            "Error: no such file"  // exact phrase
+            "Error: no such file" // exact phrase
         ));
         assert!(is_expected_tool_rejection(
             "test_nonexistent",
-            "Error: DOES NOT EXIST"  // uppercase works
+            "Error: DOES NOT EXIST" // uppercase works
         ));
     }
 
@@ -6615,9 +6707,18 @@ scenarios:
     #[test]
     fn test_parse_test_results_various_formats() {
         // parse_test_results only parses "test result:" lines with "passed"
-        assert_eq!(parse_test_results("test result: ok. 42 passed; 0 failed; 5 ignored"), "42");
-        assert_eq!(parse_test_results("test result: FAILED. 10 passed; 5 failed; 0 ignored"), "10");
-        assert_eq!(parse_test_results("test result: ok. 0 passed; 0 failed; 0 ignored"), "0");
+        assert_eq!(
+            parse_test_results("test result: ok. 42 passed; 0 failed; 5 ignored"),
+            "42"
+        );
+        assert_eq!(
+            parse_test_results("test result: FAILED. 10 passed; 5 failed; 0 ignored"),
+            "10"
+        );
+        assert_eq!(
+            parse_test_results("test result: ok. 0 passed; 0 failed; 0 ignored"),
+            "0"
+        );
         // "running X tests" format is NOT parsed by this function
         assert_eq!(parse_test_results("running 0 tests"), "0");
         assert_eq!(parse_test_results("running 15 tests"), "0"); // returns 0 because no "test result:" line
@@ -6635,7 +6736,12 @@ scenarios:
     // Helper function for unicode scenario names
     // -------------------------------------------------------------------------
 
-    fn make_result_with_id(id: &str, language: &str, tool: &str, failure_class: Option<FailureClass>) -> ScenarioResult {
+    fn make_result_with_id(
+        id: &str,
+        language: &str,
+        tool: &str,
+        failure_class: Option<FailureClass>,
+    ) -> ScenarioResult {
         ScenarioResult {
             scenario_id: id.to_string(),
             language: language.to_string(),
@@ -6681,7 +6787,10 @@ scenarios:
     fn test_debug_analyze_binary_output() {
         // Binary output should not cause issues
         let output = std::process::Command::new("python3")
-            .args(["-c", "import sys; sys.stdout.buffer.write(b'\\xff\\xfe\\x00\\x01')"])
+            .args([
+                "-c",
+                "import sys; sys.stdout.buffer.write(b'\\xff\\xfe\\x00\\x01')",
+            ])
             .output();
 
         match output {
@@ -6700,8 +6809,7 @@ scenarios:
     #[test]
     fn test_debug_analyze_nonexistent_program() {
         // Nonexistent program should fail gracefully
-        let result = std::process::Command::new("/nonexistent/program/path/12345")
-            .output();
+        let result = std::process::Command::new("/nonexistent/program/path/12345").output();
 
         match result {
             Ok(out) => {
@@ -6733,8 +6841,7 @@ scenarios:
     fn test_adapter_check_with_corrupt_path() {
         // Corrupt or very long paths should be handled
         let long_path = "/".repeat(1000);
-        let result = std::process::Command::new(&long_path)
-            .output();
+        let result = std::process::Command::new(&long_path).output();
 
         match result {
             Ok(_) => println!("Unexpected success with very long path"),
@@ -6764,7 +6871,12 @@ scenarios:
     fn test_markdown_summary_with_unicode_results() {
         let results = vec![
             make_result_with_id("test_日本語", "rust", "edit_file", Some(FailureClass::Pass)),
-            make_result_with_id("test_emoji_🎉", "python", "find_usages", Some(FailureClass::Pass)),
+            make_result_with_id(
+                "test_emoji_🎉",
+                "python",
+                "find_usages",
+                Some(FailureClass::Pass),
+            ),
         ];
         let summary = aggregate_summary(&results);
         let md = generate_markdown_summary(&results, &summary);

@@ -9,6 +9,7 @@
 //! - Phase 5.2: E2E via MCP protocol: edit_file (valid + invalid syntax)
 //! - Phase 5.3: E2E via MCP protocol: search_content + list_files
 
+use cognicode::infrastructure::telemetry::get_global_metrics;
 use cognicode::interface::mcp::file_ops_handlers::{
     handle_edit_file, handle_list_files, handle_read_file, handle_search_content, handle_write_file,
 };
@@ -16,12 +17,13 @@ use cognicode::interface::mcp::handlers::HandlerContext;
 use cognicode::interface::mcp::schemas::{
     EditFileInput, FileEdit, ListFilesInput, ReadFileInput, SearchContentInput, WriteFileInput,
 };
-use cognicode::infrastructure::telemetry::get_global_metrics;
 use tempfile::TempDir;
 
 /// Helper to create a HandlerContext with workspace scoping
 fn create_test_context(temp_dir: &TempDir) -> HandlerContext {
-    HandlerContext::builder().with_working_dir(temp_dir.path().to_path_buf()).build()
+    HandlerContext::builder()
+        .with_working_dir(temp_dir.path().to_path_buf())
+        .build()
 }
 
 // ============================================================================
@@ -65,7 +67,10 @@ mod path_traversal_tests {
         };
 
         let result = handle_read_file(&ctx, input).await;
-        assert!(result.is_err(), "read_file should reject absolute paths outside workspace");
+        assert!(
+            result.is_err(),
+            "read_file should reject absolute paths outside workspace"
+        );
     }
 
     #[tokio::test]
@@ -95,7 +100,10 @@ mod path_traversal_tests {
         };
 
         let result = handle_write_file(&ctx, input).await;
-        assert!(result.is_err(), "write_file should reject absolute paths outside workspace");
+        assert!(
+            result.is_err(),
+            "write_file should reject absolute paths outside workspace"
+        );
     }
 
     #[tokio::test]
@@ -129,7 +137,10 @@ mod path_traversal_tests {
         };
 
         let result = handle_edit_file(&ctx, input).await;
-        assert!(result.is_err(), "edit_file should reject absolute paths outside workspace");
+        assert!(
+            result.is_err(),
+            "edit_file should reject absolute paths outside workspace"
+        );
     }
 
     #[tokio::test]
@@ -148,7 +159,10 @@ mod path_traversal_tests {
         };
 
         let result = handle_search_content(&ctx, input).await;
-        assert!(result.is_err(), "search_content should reject path traversal in path");
+        assert!(
+            result.is_err(),
+            "search_content should reject path traversal in path"
+        );
     }
 
     #[tokio::test]
@@ -167,7 +181,10 @@ mod path_traversal_tests {
         };
 
         let result = handle_search_content(&ctx, input).await;
-        assert!(result.is_err(), "search_content should reject path outside workspace");
+        assert!(
+            result.is_err(),
+            "search_content should reject path outside workspace"
+        );
     }
 
     #[tokio::test]
@@ -203,7 +220,10 @@ mod path_traversal_tests {
         };
 
         let result = handle_list_files(&ctx, input).await;
-        assert!(result.is_err(), "list_files should reject path outside workspace");
+        assert!(
+            result.is_err(),
+            "list_files should reject path outside workspace"
+        );
     }
 
     #[tokio::test]
@@ -222,7 +242,10 @@ mod path_traversal_tests {
         };
 
         let result = handle_read_file(&ctx, input).await;
-        assert!(result.is_err(), "read_file should reject URL-encoded path traversal");
+        assert!(
+            result.is_err(),
+            "read_file should reject URL-encoded path traversal"
+        );
     }
 
     #[tokio::test]
@@ -241,7 +264,10 @@ mod path_traversal_tests {
         };
 
         let result = handle_read_file(&ctx, input).await;
-        assert!(result.is_err(), "read_file should reject backslash path traversal");
+        assert!(
+            result.is_err(),
+            "read_file should reject backslash path traversal"
+        );
     }
 }
 
@@ -319,16 +345,8 @@ mod gitignore_filtering_tests {
         std::fs::write(temp_dir.path().join(".gitignore"), "*.secret\n").unwrap();
 
         // Create files - one should be ignored
-        std::fs::write(
-            temp_dir.path().join("main.rs"),
-            "let password = \"hello\";",
-        )
-        .unwrap();
-        std::fs::write(
-            temp_dir.path().join("secret.secret"),
-            "API_KEY=supersecret",
-        )
-        .unwrap();
+        std::fs::write(temp_dir.path().join("main.rs"), "let password = \"hello\";").unwrap();
+        std::fs::write(temp_dir.path().join("secret.secret"), "API_KEY=supersecret").unwrap();
 
         let input = SearchContentInput {
             pattern: "password".to_string(),
@@ -352,7 +370,10 @@ mod gitignore_filtering_tests {
             output.matches
         );
         assert!(
-            !output.matches.iter().any(|m| m.file.contains("secret.secret")),
+            !output
+                .matches
+                .iter()
+                .any(|m| m.file.contains("secret.secret")),
             "Should not find matches in gitignored files, got: {:?}",
             output.matches
         );
@@ -387,11 +408,7 @@ mod gitignore_filtering_tests {
             "export default {}",
         )
         .unwrap();
-        std::fs::write(
-            temp_dir.path().join("main.js"),
-            "console.log('hello');",
-        )
-        .unwrap();
+        std::fs::write(temp_dir.path().join("main.js"), "console.log('hello');").unwrap();
 
         let input = ListFilesInput {
             path: None,
@@ -502,11 +519,7 @@ mod e2e_read_file_tests {
         let ctx = create_test_context(&temp_dir);
 
         let file_path = temp_dir.path().join("test.rs");
-        std::fs::write(
-            &file_path,
-            "struct MyStruct {}\nfn my_function() {}",
-        )
-        .unwrap();
+        std::fs::write(&file_path, "struct MyStruct {}\nfn my_function() {}").unwrap();
 
         let input = ReadFileInput {
             path: file_path.to_str().unwrap().to_string(),
@@ -576,11 +589,7 @@ mod e2e_read_file_tests {
         let ctx = create_test_context(&temp_dir);
 
         let file_path = temp_dir.path().join("test.txt");
-        std::fs::write(
-            &file_path,
-            "line 1\nline 2\nline 3\nline 4\nline 5\n",
-        )
-        .unwrap();
+        std::fs::write(&file_path, "line 1\nline 2\nline 3\nline 4\nline 5\n").unwrap();
 
         let input = ReadFileInput {
             path: file_path.to_str().unwrap().to_string(),
@@ -633,7 +642,10 @@ mod e2e_edit_file_tests {
         );
 
         let output = result.unwrap();
-        assert!(output.applied || output.validation.passed, "edit should be applied or validated");
+        assert!(
+            output.applied || output.validation.passed,
+            "edit should be applied or validated"
+        );
 
         // Verify the file was actually modified
         let content = std::fs::read_to_string(&file_path).unwrap();
@@ -739,8 +751,14 @@ mod e2e_edit_file_tests {
         );
 
         let output = result.unwrap();
-        assert!(!output.applied, "edit should not be applied when no matches");
-        assert!(output.preview.is_some(), "preview should explain why not applied");
+        assert!(
+            !output.applied,
+            "edit should not be applied when no matches"
+        );
+        assert!(
+            output.preview.is_some(),
+            "preview should explain why not applied"
+        );
     }
 }
 
@@ -782,7 +800,11 @@ mod e2e_search_list_tests {
         );
 
         let output = result.unwrap();
-        assert!(output.total >= 2, "Should find at least 2 matches, got {}", output.total);
+        assert!(
+            output.total >= 2,
+            "Should find at least 2 matches, got {}",
+            output.total
+        );
     }
 
     #[tokio::test]
@@ -846,7 +868,10 @@ mod e2e_search_list_tests {
         // Verify metadata is present
         for file_entry in &output.files {
             assert!(file_entry.size > 0, "File should have size");
-            assert!(file_entry.modified > 0, "File should have modified timestamp");
+            assert!(
+                file_entry.modified > 0,
+                "File should have modified timestamp"
+            );
         }
     }
 
@@ -898,11 +923,7 @@ mod spec_compliance_tests {
         let ctx = create_test_context(&temp_dir);
 
         // Create a test file so the search has something to scan
-        std::fs::write(
-            temp_dir.path().join("test.txt"),
-            "hello world",
-        )
-        .unwrap();
+        std::fs::write(temp_dir.path().join("test.txt"), "hello world").unwrap();
 
         // Invalid regex - unclosed character class
         let input = SearchContentInput {
@@ -916,7 +937,10 @@ mod spec_compliance_tests {
         };
 
         let result = handle_search_content(&ctx, input).await;
-        assert!(result.is_err(), "Malformed regex should return an error, not panic");
+        assert!(
+            result.is_err(),
+            "Malformed regex should return an error, not panic"
+        );
 
         let err_msg = result.unwrap_err().to_string();
         assert!(
@@ -934,11 +958,7 @@ mod spec_compliance_tests {
         let temp_dir = TempDir::new().unwrap();
         let ctx = create_test_context(&temp_dir);
 
-        std::fs::write(
-            temp_dir.path().join("test.txt"),
-            "hello world",
-        )
-        .unwrap();
+        std::fs::write(temp_dir.path().join("test.txt"), "hello world").unwrap();
 
         // Invalid regex - unclosed group
         let input = SearchContentInput {
@@ -952,7 +972,10 @@ mod spec_compliance_tests {
         };
 
         let result = handle_search_content(&ctx, input).await;
-        assert!(result.is_err(), "Unclosed group regex should return an error");
+        assert!(
+            result.is_err(),
+            "Unclosed group regex should return an error"
+        );
     }
 
     /// Issue 2: Test that listing a nonexistent directory returns an error
@@ -972,7 +995,10 @@ mod spec_compliance_tests {
         };
 
         let result = handle_list_files(&ctx, input).await;
-        assert!(result.is_err(), "Nonexistent directory should return an error");
+        assert!(
+            result.is_err(),
+            "Nonexistent directory should return an error"
+        );
 
         let err_msg = result.unwrap_err().to_string();
         assert!(
@@ -1144,11 +1170,7 @@ mod telemetry_tests {
         let temp_dir = TempDir::new().unwrap();
         let ctx = create_test_context(&temp_dir);
 
-        std::fs::write(
-            temp_dir.path().join("test.txt"),
-            "hello world",
-        )
-        .unwrap();
+        std::fs::write(temp_dir.path().join("test.txt"), "hello world").unwrap();
 
         let input = SearchContentInput {
             pattern: "hello".to_string(),
@@ -1227,8 +1249,14 @@ mod list_files_recursive_tests {
         let paths: Vec<&str> = output.files.iter().map(|f| f.path.as_str()).collect();
 
         // Should find root.txt and subdir, but NOT nested.txt
-        assert!(paths.iter().any(|p| p.contains("root.txt")), "Should find root.txt");
-        assert!(paths.iter().any(|p| p.contains("subdir")), "Should find subdir");
+        assert!(
+            paths.iter().any(|p| p.contains("root.txt")),
+            "Should find root.txt"
+        );
+        assert!(
+            paths.iter().any(|p| p.contains("subdir")),
+            "Should find subdir"
+        );
         assert!(
             !paths.iter().any(|p| p.contains("nested.txt")),
             "Should not find nested.txt (not immediate child)"
@@ -1253,7 +1281,11 @@ mod list_files_recursive_tests {
         std::fs::create_dir_all(temp_dir.path().join("l1").join("l2")).unwrap();
         std::fs::write(temp_dir.path().join("root.txt"), "root").unwrap();
         std::fs::write(temp_dir.path().join("l1").join("level1.txt"), "l1").unwrap();
-        std::fs::write(temp_dir.path().join("l1").join("l2").join("level2.txt"), "l2").unwrap();
+        std::fs::write(
+            temp_dir.path().join("l1").join("l2").join("level2.txt"),
+            "l2",
+        )
+        .unwrap();
 
         let input = ListFilesInput {
             path: None,
@@ -1272,10 +1304,16 @@ mod list_files_recursive_tests {
 
         // max_depth=2 means: entries at depth 0, 1, and 2
         // - root.txt at depth 1 (temp_dir/root.txt) - included
-        // - level1.txt at depth 2 (temp_dir/l1/level1.txt) - included  
+        // - level1.txt at depth 2 (temp_dir/l1/level1.txt) - included
         // - level2.txt at depth 3 (temp_dir/l1/l2/level2.txt) - NOT included
-        assert!(paths.iter().any(|p| p.contains("root.txt")), "Should find root.txt");
-        assert!(paths.iter().any(|p| p.contains("level1.txt")), "Should find level1.txt (depth 2)");
+        assert!(
+            paths.iter().any(|p| p.contains("root.txt")),
+            "Should find root.txt"
+        );
+        assert!(
+            paths.iter().any(|p| p.contains("level1.txt")),
+            "Should find level1.txt (depth 2)"
+        );
         assert!(
             !paths.iter().any(|p| p.contains("level2.txt")),
             "Should NOT find level2.txt (depth 3 > max_depth 2)"
@@ -1303,13 +1341,13 @@ mod spec_compliance_new_tests {
         // Create nested structure with files at various depths
         std::fs::create_dir_all(temp_dir.path().join("level1").join("level2")).unwrap();
         std::fs::write(temp_dir.path().join("root.txt"), "root").unwrap();
+        std::fs::write(temp_dir.path().join("level1").join("level1.txt"), "level1").unwrap();
         std::fs::write(
-            temp_dir.path().join("level1").join("level1.txt"),
-            "level1",
-        )
-        .unwrap();
-        std::fs::write(
-            temp_dir.path().join("level1").join("level2").join("level2.txt"),
+            temp_dir
+                .path()
+                .join("level1")
+                .join("level2")
+                .join("level2.txt"),
             "level2",
         )
         .unwrap();
@@ -1335,7 +1373,8 @@ mod spec_compliance_new_tests {
         // With glob **/*.txt, no files match at depth 0 (root has no .txt extension itself)
         // So we expect 0 entries, not 1
         assert_eq!(
-            output.files.len(), 0,
+            output.files.len(),
+            0,
             "max_depth=0 with **/*.txt glob should return 0 entries (root dir has no .txt extension), got {}",
             output.files.len()
         );
@@ -1349,21 +1388,21 @@ mod spec_compliance_new_tests {
         let ctx = create_test_context(&temp_dir);
 
         // Create 3 levels of directories
-        std::fs::create_dir_all(temp_dir.path().join("l1").join("l2").join("l3"))
-            .unwrap();
+        std::fs::create_dir_all(temp_dir.path().join("l1").join("l2").join("l3")).unwrap();
         std::fs::write(temp_dir.path().join("root.txt"), "root").unwrap();
-        std::fs::write(
-            temp_dir.path().join("l1").join("l1.txt"),
-            "level1",
-        )
-        .unwrap();
+        std::fs::write(temp_dir.path().join("l1").join("l1.txt"), "level1").unwrap();
         std::fs::write(
             temp_dir.path().join("l1").join("l2").join("l2.txt"),
             "level2",
         )
         .unwrap();
         std::fs::write(
-            temp_dir.path().join("l1").join("l2").join("l3").join("l3.txt"),
+            temp_dir
+                .path()
+                .join("l1")
+                .join("l2")
+                .join("l3")
+                .join("l3.txt"),
             "level3",
         )
         .unwrap();
@@ -1433,7 +1472,12 @@ mod spec_compliance_new_tests {
             output.bytes_changed
         );
         assert!(
-            !output.applied || output.preview.as_ref().map(|p| p.contains("No changes")).unwrap_or(false),
+            !output.applied
+                || output
+                    .preview
+                    .as_ref()
+                    .map(|p| p.contains("No changes"))
+                    .unwrap_or(false),
             "No-op edit should not be applied or should show no-change preview"
         );
 
@@ -1568,10 +1612,7 @@ mod spec_compliance_new_tests {
             );
         } else {
             // File fit in one chunk - that's also valid
-            assert!(
-                !result1.has_more,
-                "Single chunk should have has_more=false"
-            );
+            assert!(!result1.has_more, "Single chunk should have has_more=false");
         }
     }
 
@@ -1666,10 +1707,7 @@ mod spec_compliance_new_tests {
         let result = handle_read_file(&ctx, input).await.unwrap();
 
         // For >1MB file, should suggest chunking
-        assert!(
-            result.has_more,
-            "Large file should have has_more=true"
-        );
+        assert!(result.has_more, "Large file should have has_more=true");
         assert!(
             result.suggested_chunk_size.is_some(),
             "Large file should have suggested_chunk_size"

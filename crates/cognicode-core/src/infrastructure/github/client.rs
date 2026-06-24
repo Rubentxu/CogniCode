@@ -172,9 +172,6 @@ mod tests {
             "github api: rate limit exceeded; set GITHUB_TOKEN to increase to 5000/hr"
         );
         let api = GitHubError::ApiError("500 internal".to_string());
-        assert_eq!(
-            format!("{api}"),
-            "github api: 500 internal"
-        );
+        assert_eq!(format!("{api}"), "github api: 500 internal");
     }
 }

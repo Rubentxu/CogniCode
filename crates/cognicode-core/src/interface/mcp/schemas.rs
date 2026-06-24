@@ -2289,11 +2289,11 @@ pub enum SolidSeverity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SolidPrinciple {
-    SRP,  // Single Responsibility Principle
-    OCP,  // Open/Closed Principle
-    LSP,  // Liskov Substitution Principle
-    ISP,  // Interface Segregation Principle
-    DIP,  // Dependency Inversion Principle
+    SRP, // Single Responsibility Principle
+    OCP, // Open/Closed Principle
+    LSP, // Liskov Substitution Principle
+    ISP, // Interface Segregation Principle
+    DIP, // Dependency Inversion Principle
 }
 
 impl SolidPrinciple {
@@ -2504,4 +2504,3 @@ pub struct ReadViewSpecInput {
 pub struct ReadViewSpecOutput {
     pub view: ViewSpec,
 }
-

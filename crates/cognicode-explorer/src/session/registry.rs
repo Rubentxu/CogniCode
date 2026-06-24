@@ -16,8 +16,8 @@ use std::sync::{Arc, Mutex};
 use cognicode_core::domain::aggregates::CallGraph;
 
 use crate::facades::{SearchService, ViewService, WorkspaceService};
-use crate::mcp::envelope::err_envelope;
 use crate::mcp::McpContext;
+use crate::mcp::envelope::err_envelope;
 use crate::session::service::BrainSessionService;
 use rmcp::model::CallToolResult;
 
@@ -119,23 +119,22 @@ impl SessionRegistry {
 
     /// Look up a session via `get` (no TTL refresh) and invoke the closure.
     /// Maps `SessionError` to `err_envelope` with the prescribed codes and messages.
-    pub fn resolve_session<F>(
-        &self,
-        tool_name: &str,
-        session_id: &str,
-        f: F,
-    ) -> CallToolResult
+    pub fn resolve_session<F>(&self, tool_name: &str, session_id: &str, f: F) -> CallToolResult
     where
         F: FnOnce(Arc<BrainSessionService>) -> CallToolResult,
     {
         match self.get(session_id) {
             Ok(session) => f(session),
-            Err(SessionError::NotFound) => {
-                err_envelope(tool_name, "session_not_found", &format!("{tool_name}: session not found"))
-            }
-            Err(SessionError::Expired) => {
-                err_envelope(tool_name, "session_expired", &format!("{tool_name}: ttl elapsed and session was lazy-evicted"))
-            }
+            Err(SessionError::NotFound) => err_envelope(
+                tool_name,
+                "session_not_found",
+                &format!("{tool_name}: session not found"),
+            ),
+            Err(SessionError::Expired) => err_envelope(
+                tool_name,
+                "session_expired",
+                &format!("{tool_name}: ttl elapsed and session was lazy-evicted"),
+            ),
         }
     }
 
@@ -153,12 +152,16 @@ impl SessionRegistry {
     {
         match self.get(session_id) {
             Ok(session) => f(session).await,
-            Err(SessionError::NotFound) => {
-                err_envelope(tool_name, "session_not_found", &format!("{tool_name}: session not found"))
-            }
-            Err(SessionError::Expired) => {
-                err_envelope(tool_name, "session_expired", &format!("{tool_name}: ttl elapsed and session was lazy-evicted"))
-            }
+            Err(SessionError::NotFound) => err_envelope(
+                tool_name,
+                "session_not_found",
+                &format!("{tool_name}: session not found"),
+            ),
+            Err(SessionError::Expired) => err_envelope(
+                tool_name,
+                "session_expired",
+                &format!("{tool_name}: ttl elapsed and session was lazy-evicted"),
+            ),
         }
     }
 
@@ -175,12 +178,16 @@ impl SessionRegistry {
     {
         match self.attach(session_id) {
             Ok(session) => f(session),
-            Err(SessionError::NotFound) => {
-                err_envelope(tool_name, "session_not_found", &format!("{tool_name}: session not found"))
-            }
-            Err(SessionError::Expired) => {
-                err_envelope(tool_name, "session_expired", &format!("{tool_name}: ttl elapsed and session was lazy-evicted"))
-            }
+            Err(SessionError::NotFound) => err_envelope(
+                tool_name,
+                "session_not_found",
+                &format!("{tool_name}: session not found"),
+            ),
+            Err(SessionError::Expired) => err_envelope(
+                tool_name,
+                "session_expired",
+                &format!("{tool_name}: ttl elapsed and session was lazy-evicted"),
+            ),
         }
     }
 
@@ -198,12 +205,16 @@ impl SessionRegistry {
     {
         match self.attach(session_id) {
             Ok(session) => f(session).await,
-            Err(SessionError::NotFound) => {
-                err_envelope(tool_name, "session_not_found", &format!("{tool_name}: session not found"))
-            }
-            Err(SessionError::Expired) => {
-                err_envelope(tool_name, "session_expired", &format!("{tool_name}: ttl elapsed and session was lazy-evicted"))
-            }
+            Err(SessionError::NotFound) => err_envelope(
+                tool_name,
+                "session_not_found",
+                &format!("{tool_name}: session not found"),
+            ),
+            Err(SessionError::Expired) => err_envelope(
+                tool_name,
+                "session_expired",
+                &format!("{tool_name}: ttl elapsed and session was lazy-evicted"),
+            ),
         }
     }
 
@@ -297,7 +308,10 @@ fn generate_session_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dto::{InspectableObjectSummary, LensResult, SpotterResult, ViewDescriptorDto, WorkspaceSummary, OpenWorkspaceRequest};
+    use crate::dto::{
+        InspectableObjectSummary, LensResult, OpenWorkspaceRequest, SpotterResult,
+        ViewDescriptorDto, WorkspaceSummary,
+    };
     use crate::session::state::DEFAULT_TTL_SECS;
     use async_trait::async_trait;
     use std::collections::HashMap;
@@ -323,7 +337,10 @@ mod tests {
         ) -> crate::ExplorerResult<Vec<crate::dto::SpotterSearchResult>> {
             Ok(vec![])
         }
-        async fn inspect_object(&self, _object_id: &str) -> crate::ExplorerResult<InspectableObjectSummary> {
+        async fn inspect_object(
+            &self,
+            _object_id: &str,
+        ) -> crate::ExplorerResult<InspectableObjectSummary> {
             Err(crate::error::ExplorerError::ObjectNotFound("mock".into()))
         }
     }
@@ -332,22 +349,46 @@ mod tests {
     struct MockViewService;
     #[async_trait]
     impl ViewService for MockViewService {
-        async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<ViewDescriptorDto>> {
+        async fn available_views(
+            &self,
+            _object_id: &str,
+        ) -> crate::ExplorerResult<Vec<ViewDescriptorDto>> {
             Ok(vec![])
         }
-        async fn contextual_view(&self, _object_id: &str, _view_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+        async fn contextual_view(
+            &self,
+            _object_id: &str,
+            _view_id: &str,
+        ) -> crate::ExplorerResult<crate::dto::ContextualView> {
             Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
         }
-        async fn build_contextual_graph(&self, _focus_id: &str, _level: &str, _depth: u8, _max_nodes: usize) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
+        async fn build_contextual_graph(
+            &self,
+            _focus_id: &str,
+            _level: &str,
+            _depth: u8,
+            _max_nodes: usize,
+        ) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
             Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
         }
-        async fn available_lenses(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
+        async fn available_lenses(
+            &self,
+            _object_id: &str,
+        ) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
             Ok(vec![])
         }
-        async fn apply_lens(&self, _object_id: &str, _lens_id: &str) -> crate::ExplorerResult<LensResult> {
+        async fn apply_lens(
+            &self,
+            _object_id: &str,
+            _lens_id: &str,
+        ) -> crate::ExplorerResult<LensResult> {
             Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
         }
-        async fn execute_view_spec(&self, _spec: &crate::dto::ViewSpec, _object_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+        async fn execute_view_spec(
+            &self,
+            _spec: &crate::dto::ViewSpec,
+            _object_id: &str,
+        ) -> crate::ExplorerResult<crate::dto::ContextualView> {
             Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
         }
     }
@@ -356,23 +397,45 @@ mod tests {
     struct MockWorkspaceService;
     #[async_trait]
     impl WorkspaceService for MockWorkspaceService {
-        async fn open_workspace(&self, _request: OpenWorkspaceRequest) -> crate::ExplorerResult<WorkspaceSummary> {
-            Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        async fn open_workspace(
+            &self,
+            _request: OpenWorkspaceRequest,
+        ) -> crate::ExplorerResult<WorkspaceSummary> {
+            Err(crate::error::ExplorerError::WorkspaceNotFound(
+                "mock".into(),
+            ))
         }
         fn current_workspace(&self) -> crate::ExplorerResult<WorkspaceSummary> {
-            Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+            Err(crate::error::ExplorerError::WorkspaceNotFound(
+                "mock".into(),
+            ))
         }
     }
 
-    fn build_facades() -> (Arc<dyn SearchService>, Arc<dyn ViewService>, Arc<dyn WorkspaceService>) {
-        (Arc::new(MockSearchService), Arc::new(MockViewService), Arc::new(MockWorkspaceService))
+    fn build_facades() -> (
+        Arc<dyn SearchService>,
+        Arc<dyn ViewService>,
+        Arc<dyn WorkspaceService>,
+    ) {
+        (
+            Arc::new(MockSearchService),
+            Arc::new(MockViewService),
+            Arc::new(MockWorkspaceService),
+        )
     }
 
     #[test]
     fn registry_open_returns_uuid_and_workspace_id() {
         let (search, view, workspace) = build_facades();
         let reg = SessionRegistry::new();
-        let id = reg.open("ws-alpha".into(), DEFAULT_TTL_SECS, search, view, workspace, None);
+        let id = reg.open(
+            "ws-alpha".into(),
+            DEFAULT_TTL_SECS,
+            search,
+            view,
+            workspace,
+            None,
+        );
         // UUIDv4 shape: 8-4-4-4-12 hex.
         assert_eq!(id.len(), 36, "session id must be 36 chars, got `{id}`");
         assert_eq!(id.chars().filter(|c| *c == '-').count(), 4);
@@ -411,7 +474,14 @@ mod tests {
     fn registry_close_known_id_returns_true_and_removes_session() {
         let (search, view, workspace) = build_facades();
         let reg = SessionRegistry::new();
-        let id = reg.open("ws-1".into(), DEFAULT_TTL_SECS, search, view, workspace, None);
+        let id = reg.open(
+            "ws-1".into(),
+            DEFAULT_TTL_SECS,
+            search,
+            view,
+            workspace,
+            None,
+        );
         assert_eq!(reg.len(), 1);
         assert!(reg.close(&id));
         assert_eq!(reg.len(), 0);
@@ -430,7 +500,14 @@ mod tests {
     async fn registry_lock_not_held_across_await() {
         let (search, view, workspace) = build_facades();
         let reg = Arc::new(SessionRegistry::new());
-        let id = reg.open("ws-x".into(), DEFAULT_TTL_SECS, search, view, workspace, None);
+        let id = reg.open(
+            "ws-x".into(),
+            DEFAULT_TTL_SECS,
+            search,
+            view,
+            workspace,
+            None,
+        );
 
         let mut handles = Vec::new();
         for _ in 0..4 {
@@ -453,10 +530,24 @@ mod tests {
     fn registry_ttl_zero_disables_expiry() {
         let (search, view, workspace) = build_facades();
         let reg = SessionRegistry::new();
-        let id = reg.open("ws-forever".into(), 0, search.clone(), view.clone(), workspace.clone(), None);
+        let id = reg.open(
+            "ws-forever".into(),
+            0,
+            search.clone(),
+            view.clone(),
+            workspace.clone(),
+            None,
+        );
         // Open a second session to force eviction to run; the first
         // one must remain.
-        let _id2 = reg.open("ws-other".into(), DEFAULT_TTL_SECS, search, view, workspace, None);
+        let _id2 = reg.open(
+            "ws-other".into(),
+            DEFAULT_TTL_SECS,
+            search,
+            view,
+            workspace,
+            None,
+        );
         assert!(
             reg.attach(&id).is_ok(),
             "ttl=0 session must survive eviction"
@@ -471,11 +562,25 @@ mod tests {
     async fn registry_lazy_eviction_drops_expired_sessions() {
         let (search, view, workspace) = build_facades();
         let reg = SessionRegistry::new();
-        let stale = reg.open("ws-stale".into(), 1, search.clone(), view.clone(), workspace.clone(), None);
+        let stale = reg.open(
+            "ws-stale".into(),
+            1,
+            search.clone(),
+            view.clone(),
+            workspace.clone(),
+            None,
+        );
         // Sleep 1.1s to push the first session past its 1s TTL.
         tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
         // A new open triggers eviction.
-        let _fresh = reg.open("ws-fresh".into(), DEFAULT_TTL_SECS, search, view, workspace, None);
+        let _fresh = reg.open(
+            "ws-fresh".into(),
+            DEFAULT_TTL_SECS,
+            search,
+            view,
+            workspace,
+            None,
+        );
         // Stale must be gone.
         assert!(matches!(reg.attach(&stale), Err(SessionError::NotFound)));
     }
@@ -488,12 +593,26 @@ mod tests {
     async fn registry_get_does_not_refresh_last_activity() {
         let (search, view, workspace) = build_facades();
         let reg = SessionRegistry::new();
-        let id = reg.open("ws-get".into(), 1, search.clone(), view.clone(), workspace.clone(), None);
+        let id = reg.open(
+            "ws-get".into(),
+            1,
+            search.clone(),
+            view.clone(),
+            workspace.clone(),
+            None,
+        );
         tokio::time::sleep(std::time::Duration::from_millis(600)).await;
         let _ = reg.get(&id).expect("get within TTL");
         // Sleep another 600ms so total > 1s, then trigger eviction.
         tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-        let _trigger = reg.open("ws-trigger".into(), DEFAULT_TTL_SECS, search, view, workspace, None);
+        let _trigger = reg.open(
+            "ws-trigger".into(),
+            DEFAULT_TTL_SECS,
+            search,
+            view,
+            workspace,
+            None,
+        );
         assert!(matches!(reg.get(&id), Err(SessionError::NotFound)));
     }
 

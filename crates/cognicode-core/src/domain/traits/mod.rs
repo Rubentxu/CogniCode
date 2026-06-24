@@ -8,11 +8,11 @@ pub mod dependency_repository;
 pub mod file_system;
 pub mod graph_query_port;
 pub mod graph_store;
+pub mod iac_repository;
 pub mod parser;
 pub mod refactor_strategy;
 pub mod repository;
 pub mod search_provider;
-pub mod iac_repository;
 #[cfg(feature = "multimodal")]
 pub mod source_extractor;
 

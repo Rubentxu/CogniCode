@@ -24,7 +24,7 @@ use std::sync::Arc;
 use cognicode_core::domain::aggregates::call_graph::CallGraph;
 use cognicode_core::domain::aggregates::symbol::Symbol;
 use cognicode_core::domain::traits::graph_store::{GraphStore, StoreError};
-use cognicode_core::domain::value_objects::{Location, SymbolKind, CheckpointId};
+use cognicode_core::domain::value_objects::{CheckpointId, Location, SymbolKind};
 use cognicode_core::infrastructure::graph::GraphCache;
 use cognicode_core::infrastructure::persistence::CachedGraphStore;
 
@@ -177,8 +177,16 @@ fn concurrent_readers_see_consistent_snapshot() {
     let mut all_names = HashSet::new();
     for handle in handles {
         let (reader_id, counts, names) = handle.join().expect("thread panicked");
-        assert_eq!(counts.len(), 1, "reader {reader_id} saw multiple counts: {counts:?}");
-        assert_eq!(names.len(), 1, "reader {reader_id} saw multiple first names: {names:?}");
+        assert_eq!(
+            counts.len(),
+            1,
+            "reader {reader_id} saw multiple counts: {counts:?}"
+        );
+        assert_eq!(
+            names.len(),
+            1,
+            "reader {reader_id} saw multiple first names: {names:?}"
+        );
         all_counts.extend(counts);
         all_names.extend(names);
     }

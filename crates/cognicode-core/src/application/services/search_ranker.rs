@@ -4,8 +4,8 @@
 //! then ranks search results by IDF score (rare terms = higher value).
 //! Includes hub bypass to ignore overly-connected nodes.
 
-use std::collections::HashMap;
 use petgraph::Direction;
+use std::collections::HashMap;
 
 use crate::domain::aggregates::{CallGraph, SymbolId};
 use crate::infrastructure::graph::CallGraphProjection;
@@ -128,11 +128,7 @@ impl SearchRanker {
     ///   (the highest-scoring one).
     /// - A `CallGraph` whose symbols have empty names is filtered
     ///   out by the `score > 0` invariant.
-    pub fn search(
-        graph: &CallGraph,
-        query: &str,
-        max_results: usize,
-    ) -> Vec<ScoredSymbol> {
+    pub fn search(graph: &CallGraph, query: &str, max_results: usize) -> Vec<ScoredSymbol> {
         if graph.symbol_count() == 0 {
             return Vec::new();
         }

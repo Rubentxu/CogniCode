@@ -551,13 +551,22 @@ mod tests {
         let god = GraphAnalyticsService::god_nodes(&g, 0.5);
         assert!(!god.is_empty());
         // core should be in the god nodes set (it's called by every other symbol)
-        let core_score: Option<f64> = god.iter().find(|(sid, _)| sid == &id("core")).map(|(_, s)| *s);
-        assert!(core_score.is_some(), "core should appear in god_nodes results");
+        let core_score: Option<f64> = god
+            .iter()
+            .find(|(sid, _)| sid == &id("core"))
+            .map(|(_, s)| *s);
+        assert!(
+            core_score.is_some(),
+            "core should appear in god_nodes results"
+        );
         // core's score should be at least as high as the top result (allowing tiny float drift)
         let top_score = god[0].1;
-        assert!(core_score.unwrap() >= top_score - 1e-10,
+        assert!(
+            core_score.unwrap() >= top_score - 1e-10,
             "core score ({}) should match top score ({}) within floating-point tolerance",
-            core_score.unwrap(), top_score);
+            core_score.unwrap(),
+            top_score
+        );
     }
 
     #[test]

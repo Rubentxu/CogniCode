@@ -54,12 +54,12 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use petgraph::Direction;
 use petgraph::algo::{astar, has_path_connecting, tarjan_scc, toposort};
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
 use petgraph::unionfind::UnionFind;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
-use petgraph::Direction;
 
 use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
 use crate::domain::value_objects::DependencyType;
@@ -156,7 +156,9 @@ impl CallGraphProjection {
             // Skip edges whose endpoints are not in the symbol set; this
             // mirrors CallGraph's invariants and protects the projection
             // from orphan edge references.
-            let (Some(&src), Some(&dst)) = (id_to_index.get(&source_id), id_to_index.get(&target_id)) else {
+            let (Some(&src), Some(&dst)) =
+                (id_to_index.get(&source_id), id_to_index.get(&target_id))
+            else {
                 continue;
             };
             graph.add_edge(src, dst, (dep_type, sanitize_confidence(confidence)));
@@ -230,7 +232,12 @@ impl CallGraphProjection {
     pub fn strongly_connected_components(&self) -> Vec<Vec<SymbolId>> {
         tarjan_scc(&self.graph)
             .into_iter()
-            .map(|component| component.into_iter().map(|ni| self.graph[ni].clone()).collect())
+            .map(|component| {
+                component
+                    .into_iter()
+                    .map(|ni| self.graph[ni].clone())
+                    .collect()
+            })
             .collect()
     }
 
@@ -284,10 +291,7 @@ impl CallGraphProjection {
         for ni in self.graph.node_indices() {
             let pos = index_map[&ni];
             let root = uf.find(pos);
-            groups
-                .entry(root)
-                .or_default()
-                .push(self.graph[ni].clone());
+            groups.entry(root).or_default().push(self.graph[ni].clone());
         }
 
         groups.into_values().collect()
@@ -298,7 +302,9 @@ impl CallGraphProjection {
     /// Returns `false` (no panic) if either id is unknown. The trivial
     /// self-path `A → A` returns `true` when `A` is present in the graph.
     pub fn has_path(&self, from: &SymbolId, to: &SymbolId) -> bool {
-        let (Some(&from_node), Some(&to_node)) = (self.id_to_index.get(from), self.id_to_index.get(to)) else {
+        let (Some(&from_node), Some(&to_node)) =
+            (self.id_to_index.get(from), self.id_to_index.get(to))
+        else {
             return false;
         };
         has_path_connecting(&self.graph, from_node, to_node, None)
@@ -310,7 +316,9 @@ impl CallGraphProjection {
     /// module docs). Returns `None` if either id is unknown or `to` is
     /// unreachable from `from`.
     pub fn dijkstra(&self, from: &SymbolId, to: &SymbolId) -> Option<(Vec<SymbolId>, f64)> {
-        let (Some(&from_node), Some(&to_node)) = (self.id_to_index.get(from), self.id_to_index.get(to)) else {
+        let (Some(&from_node), Some(&to_node)) =
+            (self.id_to_index.get(from), self.id_to_index.get(to))
+        else {
             return None;
         };
         // `astar` is a generalized Dijkstra: with `estimate_cost = |_| 0`
@@ -321,7 +329,9 @@ impl CallGraphProjection {
             &self.graph,
             from_node,
             |n| n == to_node,
-            |e: petgraph::stable_graph::EdgeReference<ProjectionEdgeWeight>| dijkstra_cost(e.weight().1),
+            |e: petgraph::stable_graph::EdgeReference<ProjectionEdgeWeight>| {
+                dijkstra_cost(e.weight().1)
+            },
             |_| 0.0_f64,
         )?;
 
@@ -519,11 +529,7 @@ impl CallGraphProjection {
     ///   projection, or when no path exists.
     /// - Self-path `A -> A` returns `Some(ExplanationView)` with
     ///   `hops = vec![]` and `total_cost = 0.0` (no edges walked).
-    pub fn explain_path(
-        &self,
-        from: &SymbolId,
-        to: &SymbolId,
-    ) -> Option<ExplanationView> {
+    pub fn explain_path(&self, from: &SymbolId, to: &SymbolId) -> Option<ExplanationView> {
         // Self-path shortcut. Cheap and avoids re-walking the
         // trivial astar result.
         if from == to {
@@ -542,8 +548,14 @@ impl CallGraphProjection {
         for window in path.windows(2) {
             let from_id = &window[0];
             let to_id = &window[1];
-            let from_ni = self.id_to_index.get(from_id).expect("path node from dijkstra");
-            let to_ni = self.id_to_index.get(to_id).expect("path node from dijkstra");
+            let from_ni = self
+                .id_to_index
+                .get(from_id)
+                .expect("path node from dijkstra");
+            let to_ni = self
+                .id_to_index
+                .get(to_id)
+                .expect("path node from dijkstra");
 
             // Locate the parallel edge carrying the (dep_type, conf)
             // tuple. The cheapest path is unique-ish, but two parallel
@@ -753,7 +765,9 @@ mod tests {
         });
 
         let projection = CallGraphProjection::from_call_graph(&g);
-        let order = projection.topological_sort().expect("DAG should have a topological order");
+        let order = projection
+            .topological_sort()
+            .expect("DAG should have a topological order");
         assert_eq!(order.len(), 3);
 
         let pos = |n: &str| {
@@ -772,7 +786,10 @@ mod tests {
     fn topological_sort_empty_graph_returns_ok_empty() {
         let g = CallGraph::new();
         let projection = CallGraphProjection::from_call_graph(&g);
-        assert_eq!(projection.topological_sort().unwrap(), Vec::<SymbolId>::new());
+        assert_eq!(
+            projection.topological_sort().unwrap(),
+            Vec::<SymbolId>::new()
+        );
     }
 
     // 3.5
@@ -906,11 +923,15 @@ mod tests {
         });
         let projection = CallGraphProjection::from_call_graph(&g);
 
-        let (path_b, cost_b) = projection.dijkstra(&id("A"), &id("B")).expect("A->B reachable");
+        let (path_b, cost_b) = projection
+            .dijkstra(&id("A"), &id("B"))
+            .expect("A->B reachable");
         assert_eq!(path_b, vec![id("A"), id("B")]);
         assert!((cost_b - 0.0).abs() < 1e-9);
 
-        let (path_c, cost_c) = projection.dijkstra(&id("A"), &id("C")).expect("A->C reachable");
+        let (path_c, cost_c) = projection
+            .dijkstra(&id("A"), &id("C"))
+            .expect("A->C reachable");
         assert_eq!(path_c, vec![id("A"), id("C")]);
         assert!((cost_c - 0.0).abs() < 1e-9);
 
@@ -1211,11 +1232,7 @@ mod tests {
             add_edge(g, "A", "B", DependencyType::Calls);
         });
         let projection = CallGraphProjection::from_call_graph(&g);
-        let view = projection.extract_subgraph(
-            &id("missing"),
-            SubgraphDirection::Outgoing,
-            3,
-        );
+        let view = projection.extract_subgraph(&id("missing"), SubgraphDirection::Outgoing, 3);
         assert!(view.nodes.is_empty(), "unknown root must produce no nodes");
         assert!(view.edges.is_empty(), "unknown root must produce no edges");
     }

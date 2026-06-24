@@ -115,8 +115,7 @@ pg_test!(
     save_and_load_exploration_session,
     |_url: String, pool: PgPool| {
         let repo = PostgresRepository::from_pool(pool);
-        let (id, workspace_id, events, navigation_mode, panes) =
-            build_session_payload("ws-1");
+        let (id, workspace_id, events, navigation_mode, panes) = build_session_payload("ws-1");
 
         // Save the session.
         repo.save_exploration_session(&id, &workspace_id, &events, &navigation_mode, &panes)
@@ -136,14 +135,12 @@ pg_test!(
 
         // Events and panes are JSON strings in the row.
         let loaded_events: serde_json::Value =
-            serde_json::from_str(&row.events.to_string())
-                .expect("events must parse as JSON");
+            serde_json::from_str(&row.events.to_string()).expect("events must parse as JSON");
         assert!(loaded_events.is_array());
         assert_eq!(loaded_events.as_array().unwrap().len(), 2);
 
         let loaded_panes: serde_json::Value =
-            serde_json::from_str(&row.panes.to_string())
-                .expect("panes must parse as JSON");
+            serde_json::from_str(&row.panes.to_string()).expect("panes must parse as JSON");
         assert!(loaded_panes.is_array());
     }
 );
@@ -156,14 +153,12 @@ pg_test!(
 
         // Save 3 sessions for ws-1 and 1 for ws-2.
         for i in 0..3 {
-            let (id, ws_id, events, nav, panes) =
-                build_session_payload("ws-1");
+            let (id, ws_id, events, nav, panes) = build_session_payload("ws-1");
             repo.save_exploration_session(&id, &ws_id, &events, &nav, &panes)
                 .await
                 .expect("save must succeed");
         }
-        let (id2, ws2, events2, nav2, panes2) =
-            build_session_payload("ws-2");
+        let (id2, ws2, events2, nav2, panes2) = build_session_payload("ws-2");
         repo.save_exploration_session(&id2, &ws2, &events2, &nav2, &panes2)
             .await
             .expect("save must succeed");
@@ -213,31 +208,29 @@ pg_test!(
 );
 
 // Test: parallel isolation — each test's DB is independent.
-pg_test!(
-    parallel_isolation_first,
-    |_url: String, pool: PgPool| {
-        let repo = PostgresRepository::from_pool(pool);
-        let (id, ws_id, events, nav, panes) = build_session_payload("ws-isolated");
-        repo.save_exploration_session(&id, &ws_id, &events, &nav, &panes)
-            .await
-            .expect("save must succeed");
-        let rows = repo
-            .list_exploration_sessions(&ws_id)
-            .await
-            .expect("list must succeed");
-        assert_eq!(rows.len(), 1, "expected exactly 1 session");
-    }
-);
+pg_test!(parallel_isolation_first, |_url: String, pool: PgPool| {
+    let repo = PostgresRepository::from_pool(pool);
+    let (id, ws_id, events, nav, panes) = build_session_payload("ws-isolated");
+    repo.save_exploration_session(&id, &ws_id, &events, &nav, &panes)
+        .await
+        .expect("save must succeed");
+    let rows = repo
+        .list_exploration_sessions(&ws_id)
+        .await
+        .expect("list must succeed");
+    assert_eq!(rows.len(), 1, "expected exactly 1 session");
+});
 
-pg_test!(
-    parallel_isolation_second,
-    |_url: String, pool: PgPool| {
-        let repo = PostgresRepository::from_pool(pool);
-        // This test's DB was created fresh — no sessions from sibling test.
-        let rows = repo
-            .list_exploration_sessions("ws-isolated")
-            .await
-            .expect("list must succeed");
-        assert_eq!(rows.len(), 0, "isolation violated: saw sessions from sibling test");
-    }
-);
+pg_test!(parallel_isolation_second, |_url: String, pool: PgPool| {
+    let repo = PostgresRepository::from_pool(pool);
+    // This test's DB was created fresh — no sessions from sibling test.
+    let rows = repo
+        .list_exploration_sessions("ws-isolated")
+        .await
+        .expect("list must succeed");
+    assert_eq!(
+        rows.len(),
+        0,
+        "isolation violated: saw sessions from sibling test"
+    );
+});

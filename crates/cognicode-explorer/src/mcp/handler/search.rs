@@ -66,17 +66,28 @@ impl ToolHandler for SpotterSearchHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: SpotterArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_SPOTTER_SEARCH, "invalid_args",
-                &format!("{TOOL_SPOTTER_SEARCH}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_SPOTTER_SEARCH,
+                    "invalid_args",
+                    &format!("{TOOL_SPOTTER_SEARCH}: invalid args: {e}"),
+                );
+            }
         };
 
         let query = match args.query {
             Some(q) if !q.is_empty() => q,
-            _ => return err_envelope(TOOL_SPOTTER_SEARCH, "missing_required_arg",
-                "explorer_spotter_search: missing required arg `query`"),
+            _ => {
+                return err_envelope(
+                    TOOL_SPOTTER_SEARCH,
+                    "missing_required_arg",
+                    "explorer_spotter_search: missing required arg `query`",
+                );
+            }
         };
 
-        let result = ctx.search
+        let result = ctx
+            .search
             .as_ref()
             .unwrap()
             .spotter_search(&query, args.kind.as_deref())
@@ -114,17 +125,28 @@ impl ToolHandler for InspectObjectHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: InspectArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_INSPECT_OBJECT, "invalid_args",
-                &format!("{TOOL_INSPECT_OBJECT}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_INSPECT_OBJECT,
+                    "invalid_args",
+                    &format!("{TOOL_INSPECT_OBJECT}: invalid args: {e}"),
+                );
+            }
         };
 
         let object_id = match args.object_id {
             Some(id) if !id.is_empty() => id,
-            _ => return err_envelope(TOOL_INSPECT_OBJECT, "missing_required_arg",
-                "explorer_inspect_object: missing required arg `object_id`"),
+            _ => {
+                return err_envelope(
+                    TOOL_INSPECT_OBJECT,
+                    "missing_required_arg",
+                    "explorer_inspect_object: missing required arg `object_id`",
+                );
+            }
         };
 
-        let result = ctx.search
+        let result = ctx
+            .search
             .as_ref()
             .unwrap()
             .inspect_object(&object_id)

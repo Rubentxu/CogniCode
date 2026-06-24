@@ -138,9 +138,7 @@ impl CogniCodeHandler {
             .map_err(|e| format!("Failed to connect to PostgreSQL: {}", e))?;
 
         // Wrap in PostgresRepository (provides run_migrations if needed)
-        let pg_repo = Arc::new(
-            PostgresRepository::from_pool(pool.clone())
-        );
+        let pg_repo = Arc::new(PostgresRepository::from_pool(pool.clone()));
 
         // Create IacRepository from the same pool
         let iac_repo: Arc<dyn crate::domain::traits::iac_repository::IacRepository> =
@@ -1424,666 +1422,710 @@ async fn call_tool_handler(
     let timeout = timeout_for_category(&category);
     let dispatch = async {
         match tool_name {
-        "get_file_symbols" => {
-            let input: crate::interface::mcp::schemas::GetFileSymbolsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_get_file_symbols(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "build_graph" => {
-            let input: crate::interface::mcp::handlers::BuildGraphInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_build_graph(ctx, input).await?;
+            "get_file_symbols" => {
+                let input: crate::interface::mcp::schemas::GetFileSymbolsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_get_file_symbols(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "build_graph" => {
+                let input: crate::interface::mcp::handlers::BuildGraphInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_build_graph(ctx, input).await?;
 
-            // M2.1: Record graph statistics after successful build
-            if output.success {
-                let graph = ctx.analysis_service.get_project_graph();
-                let symbols = graph.symbol_count() as u64;
-                let edges = graph.edge_count() as u64;
-                let health_score =
+                // M2.1: Record graph statistics after successful build
+                if output.success {
+                    let graph = ctx.analysis_service.get_project_graph();
+                    let symbols = graph.symbol_count() as u64;
+                    let edges = graph.edge_count() as u64;
+                    let health_score =
                     crate::application::services::graph_insights::GraphInsightsService::analyze(&graph)
                         .health_score;
-                if let Some(m) = &metrics {
-                    m.record_graph_stats(symbols, edges, health_score);
+                    if let Some(m) = &metrics {
+                        m.record_graph_stats(symbols, edges, health_score);
+                    }
+                    // M3.1: Flip the readiness flag so /ready returns 200
+                    ctx.mark_graph_loaded();
                 }
-                // M3.1: Flip the readiness flag so /ready returns 200
-                ctx.mark_graph_loaded();
+
+                Ok(serde_json::to_string(&output)?)
+            }
+            "get_call_hierarchy" => {
+                let input: crate::interface::mcp::schemas::GetCallHierarchyInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_get_call_hierarchy(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "analyze_impact" => {
+                let input: crate::interface::mcp::schemas::AnalyzeImpactInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_analyze_impact(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
             }
 
-            Ok(serde_json::to_string(&output)?)
-        }
-        "get_call_hierarchy" => {
-            let input: crate::interface::mcp::schemas::GetCallHierarchyInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_get_call_hierarchy(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "analyze_impact" => {
-            let input: crate::interface::mcp::schemas::AnalyzeImpactInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_analyze_impact(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-
-        "safe_refactor" => {
-            let input: crate::interface::mcp::schemas::SafeRefactorInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::refactor_handlers::handle_safe_refactor(
-                ctx, input,
-            )
-            .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "find_usages" => {
-            let input: crate::interface::mcp::schemas::FindUsagesInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_find_usages(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "get_complexity" => {
-            let input: crate::interface::mcp::schemas::GetComplexityInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_get_complexity(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "get_entry_points" => {
-            let input: crate::interface::mcp::schemas::GetEntryPointsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_get_entry_points(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "get_leaf_functions" => {
-            let input: crate::interface::mcp::schemas::GetLeafFunctionsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_get_leaf_functions(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "trace_path" => {
-            let input: crate::interface::mcp::schemas::TracePathInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_trace_path(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "export_mermaid" => {
-            let input: crate::interface::mcp::schemas::ExportMermaidInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_export_mermaid(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "get_hot_paths" => {
-            let input: crate::interface::mcp::schemas::GetHotPathsInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_get_hot_paths(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "get_all_symbols" => {
-            let input: crate::interface::mcp::schemas::GetAllSymbolsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_get_all_symbols(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "find_dead_code" => {
-            let input: crate::interface::mcp::schemas::FindDeadCodeInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_find_dead_code(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "get_module_dependencies" => {
-            let input: crate::interface::mcp::schemas::GetModuleDependenciesInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_get_module_dependencies(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-
-        "query_symbol_index" => {
-            let input: crate::interface::mcp::schemas::QuerySymbolInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_query_symbol_index(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "build_call_subgraph" => {
-            let input: crate::interface::mcp::schemas::BuildSubgraphInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_build_call_subgraph(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "get_per_file_graph" => {
-            let input: crate::interface::mcp::schemas::GetPerFileGraphInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_get_per_file_graph(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-
-        "get_symbol_code" => {
-            let input: crate::interface::mcp::schemas::SymbolCodeInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_get_symbol_code(
-                ctx.symbol_code.clone(),
-                ctx.validator.clone(),
-                ctx.working_dir.clone(),
-                input,
-            )
-            .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-
-        "go_to_definition" => {
-            let input: crate::interface::mcp::schemas::GoToDefinitionInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::lsp_handlers::handle_go_to_definition(ctx, input)
+            "safe_refactor" => {
+                let input: crate::interface::mcp::schemas::SafeRefactorInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::refactor_handlers::handle_safe_refactor(
+                        ctx, input,
+                    )
                     .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "hover" => {
-            let input: crate::interface::mcp::schemas::HoverInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::lsp_handlers::handle_hover(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "find_references" => {
-            let input: crate::interface::mcp::schemas::FindReferencesInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::lsp_handlers::handle_find_references(ctx, input)
-                    .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "read_file" => {
-            let input: crate::interface::mcp::schemas::ReadFileInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_read_file(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "write_file" => {
-            let input: crate::interface::mcp::schemas::WriteFileInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_write_file(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "edit_file" => {
-            let input: crate::interface::mcp::schemas::EditFileInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_edit_file(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "search_content" => {
-            let input: crate::interface::mcp::schemas::SearchContentInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_search_content(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "list_files" => {
-            let input: crate::interface::mcp::schemas::ListFilesInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_list_files(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "retrieve_and_verify" => {
-            let input: crate::interface::mcp::schemas::RetrieveAndVerifyInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::handle_retrieve_and_verify(ctx, input).await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        // AIX-1: Smart Overview & Ranked Symbols
+                Ok(serde_json::to_string(&output)?)
+            }
+            "find_usages" => {
+                let input: crate::interface::mcp::schemas::FindUsagesInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_find_usages(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "get_complexity" => {
+                let input: crate::interface::mcp::schemas::GetComplexityInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_get_complexity(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "get_entry_points" => {
+                let input: crate::interface::mcp::schemas::GetEntryPointsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_get_entry_points(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "get_leaf_functions" => {
+                let input: crate::interface::mcp::schemas::GetLeafFunctionsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_get_leaf_functions(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "trace_path" => {
+                let input: crate::interface::mcp::schemas::TracePathInput =
+                    serde_json::from_value(arguments.into())?;
+                let output = crate::interface::mcp::handlers::handle_trace_path(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "export_mermaid" => {
+                let input: crate::interface::mcp::schemas::ExportMermaidInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_export_mermaid(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "get_hot_paths" => {
+                let input: crate::interface::mcp::schemas::GetHotPathsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_get_hot_paths(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "get_all_symbols" => {
+                let input: crate::interface::mcp::schemas::GetAllSymbolsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_get_all_symbols(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "find_dead_code" => {
+                let input: crate::interface::mcp::schemas::FindDeadCodeInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_find_dead_code(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "get_module_dependencies" => {
+                let input: crate::interface::mcp::schemas::GetModuleDependenciesInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_get_module_dependencies(ctx, input)
+                        .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
 
-        // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
+            "query_symbol_index" => {
+                let input: crate::interface::mcp::schemas::QuerySymbolInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_query_symbol_index(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "build_call_subgraph" => {
+                let input: crate::interface::mcp::schemas::BuildSubgraphInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_build_call_subgraph(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "get_per_file_graph" => {
+                let input: crate::interface::mcp::schemas::GetPerFileGraphInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_get_per_file_graph(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
 
-        // AIX-3: NL to Symbol & Ask About Code & Find Pattern
-        "nl_to_symbol" => {
-            let input: crate::interface::mcp::schemas::NlToSymbolInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_nl_to_symbol(ctx, input)
+            "get_symbol_code" => {
+                let input: crate::interface::mcp::schemas::SymbolCodeInput =
+                    serde_json::from_value(arguments.into())?;
+                let output = crate::interface::mcp::handlers::handle_get_symbol_code(
+                    ctx.symbol_code.clone(),
+                    ctx.validator.clone(),
+                    ctx.working_dir.clone(),
+                    input,
+                )
+                .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+
+            "go_to_definition" => {
+                let input: crate::interface::mcp::schemas::GoToDefinitionInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::lsp_handlers::handle_go_to_definition(
+                        ctx, input,
+                    )
                     .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "ask_about_code" => {
-            let input: crate::interface::mcp::schemas::AskAboutCodeInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_ask_about_code(ctx, input)
-                    .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "find_pattern_by_intent" => {
-            let input: crate::interface::mcp::schemas::FindPatternByIntentInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_find_pattern_by_intent(
+                Ok(serde_json::to_string(&output)?)
+            }
+            "hover" => {
+                let input: crate::interface::mcp::schemas::HoverInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::lsp_handlers::handle_hover(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "find_references" => {
+                let input: crate::interface::mcp::schemas::FindReferencesInput =
+                    serde_json::from_value(arguments.into())?;
+                let output = crate::interface::mcp::handlers::lsp_handlers::handle_find_references(
                     ctx, input,
                 )
                 .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        // AIX-4: Compare Call Graphs & Detect API Breaks
+                Ok(serde_json::to_string(&output)?)
+            }
+            "read_file" => {
+                let input: crate::interface::mcp::schemas::ReadFileInput =
+                    serde_json::from_value(arguments.into())?;
+                let output = crate::interface::mcp::handlers::handle_read_file(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "write_file" => {
+                let input: crate::interface::mcp::schemas::WriteFileInput =
+                    serde_json::from_value(arguments.into())?;
+                let output = crate::interface::mcp::handlers::handle_write_file(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "edit_file" => {
+                let input: crate::interface::mcp::schemas::EditFileInput =
+                    serde_json::from_value(arguments.into())?;
+                let output = crate::interface::mcp::handlers::handle_edit_file(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "search_content" => {
+                let input: crate::interface::mcp::schemas::SearchContentInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_search_content(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "list_files" => {
+                let input: crate::interface::mcp::schemas::ListFilesInput =
+                    serde_json::from_value(arguments.into())?;
+                let output = crate::interface::mcp::handlers::handle_list_files(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "retrieve_and_verify" => {
+                let input: crate::interface::mcp::schemas::RetrieveAndVerifyInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_retrieve_and_verify(ctx, input).await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            // AIX-1: Smart Overview & Ranked Symbols
 
-        // AIX-5: System Prompt Context & God Functions & Long Params
-        "detect_god_functions" => {
-            let input: crate::interface::mcp::schemas::DetectGodFunctionsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_detect_god_functions(
+            // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
+
+            // AIX-3: NL to Symbol & Ask About Code & Find Pattern
+            "nl_to_symbol" => {
+                let input: crate::interface::mcp::schemas::NlToSymbolInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::aix_handlers::handle_nl_to_symbol(ctx, input)
+                        .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "ask_about_code" => {
+                let input: crate::interface::mcp::schemas::AskAboutCodeInput =
+                    serde_json::from_value(arguments.into())?;
+                let output = crate::interface::mcp::handlers::aix_handlers::handle_ask_about_code(
                     ctx, input,
                 )
                 .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "detect_long_parameter_lists" => {
-            let input: crate::interface::mcp::schemas::DetectLongParamsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
+                Ok(serde_json::to_string(&output)?)
+            }
+            "find_pattern_by_intent" => {
+                let input: crate::interface::mcp::schemas::FindPatternByIntentInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::aix_handlers::handle_find_pattern_by_intent(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            // AIX-4: Compare Call Graphs & Detect API Breaks
+
+            // AIX-5: System Prompt Context & God Functions & Long Params
+            "detect_god_functions" => {
+                let input: crate::interface::mcp::schemas::DetectGodFunctionsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::aix_handlers::handle_detect_god_functions(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "detect_long_parameter_lists" => {
+                let input: crate::interface::mcp::schemas::DetectLongParamsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
                 crate::interface::mcp::handlers::aix_handlers::handle_detect_long_parameter_lists(
                     ctx, input,
                 )
                 .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        // PL3: Symbol Hotness Tracking
+                Ok(serde_json::to_string(&output)?)
+            }
+            // PL3: Symbol Hotness Tracking
 
-        // AVC: Agent-Verifiable Context tools
-        "generate_contract" => {
-            let input: crate::interface::mcp::schemas::GenerateContractInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_generate_contract(ctx, input)
+            // AVC: Agent-Verifiable Context tools
+            "generate_contract" => {
+                let input: crate::interface::mcp::schemas::GenerateContractInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::aix_handlers::handle_generate_contract(
+                        ctx, input,
+                    )
                     .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "validate_contract" => {
-            let input: crate::interface::mcp::schemas::ValidateContractInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_validate_contract(ctx, input)
+                Ok(serde_json::to_string(&output)?)
+            }
+            "validate_contract" => {
+                let input: crate::interface::mcp::schemas::ValidateContractInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::aix_handlers::handle_validate_contract(
+                        ctx, input,
+                    )
                     .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        // Phase 3A: Proactive Tools
-        #[cfg(feature = "persistence")]
-        // Detect Drift tool (S7000-S7003)
-        "detect_drift" => {
-            let input: crate::interface::mcp::schemas::DetectDriftInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::aix_handlers::handle_detect_drift(ctx, input)
-                    .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        // Batch D: Agent Task Tools (bidirectional interaction)
+                Ok(serde_json::to_string(&output)?)
+            }
+            // Phase 3A: Proactive Tools
+            #[cfg(feature = "persistence")]
+            // Detect Drift tool (S7000-S7003)
+            "detect_drift" => {
+                let input: crate::interface::mcp::schemas::DetectDriftInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::aix_handlers::handle_detect_drift(ctx, input)
+                        .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            // Batch D: Agent Task Tools (bidirectional interaction)
 
-        // Phase 4b: Graph analytics tools (extracted to graph_handlers.rs)
-        "graph_pagerank" => {
-            let input: crate::interface::mcp::schemas::GraphPageRankInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::graph_handlers::handle_graph_pagerank(ctx, input)
+            // Phase 4b: Graph analytics tools (extracted to graph_handlers.rs)
+            "graph_pagerank" => {
+                let input: crate::interface::mcp::schemas::GraphPageRankInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::graph_handlers::handle_graph_pagerank(
+                        ctx, input,
+                    )
                     .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_all_paths" => {
-            let input: crate::interface::mcp::schemas::GraphAllPathsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::graph_handlers::handle_graph_all_paths(ctx, input)
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "graph_all_paths" => {
+                let input: crate::interface::mcp::schemas::GraphAllPathsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::graph_handlers::handle_graph_all_paths(
+                        ctx, input,
+                    )
                     .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_condensed" => {
-            let input: crate::interface::mcp::schemas::GraphCondensedInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::graph_handlers::handle_graph_condensed(ctx, input)
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "graph_condensed" => {
+                let input: crate::interface::mcp::schemas::GraphCondensedInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::graph_handlers::handle_graph_condensed(
+                        ctx, input,
+                    )
                     .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_god_nodes" => {
-            let input: crate::interface::mcp::schemas::GraphGodNodesInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::graph_handlers::handle_graph_god_nodes(ctx, input)
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "graph_god_nodes" => {
+                let input: crate::interface::mcp::schemas::GraphGodNodesInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::graph_handlers::handle_graph_god_nodes(
+                        ctx, input,
+                    )
                     .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_reduced" => {
-            let input: crate::interface::mcp::schemas::GraphReducedInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::graph_handlers::handle_graph_reduced(ctx, input)
-                    .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_feedback_arcs" => {
-            let input: crate::interface::mcp::schemas::GraphFeedbackArcsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::graph_handlers::handle_graph_feedback_arcs(
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "graph_reduced" => {
+                let input: crate::interface::mcp::schemas::GraphReducedInput =
+                    serde_json::from_value(arguments.into())?;
+                let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_reduced(
                     ctx, input,
                 )
                 .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "graph_feedback_arcs" => {
+                let input: crate::interface::mcp::schemas::GraphFeedbackArcsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::graph_handlers::handle_graph_feedback_arcs(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
 
-        // Phase 5: Community Detection handlers (extracted to graph_handlers.rs)
-        "graph_communities" => {
-            let input: crate::interface::mcp::schemas::GraphCommunitiesInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_communities(
-                ctx, input,
-            )
-            .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_community_detail" => {
-            let input: crate::interface::mcp::schemas::GraphCommunityDetailInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::graph_handlers::handle_graph_community_detail(
-                    ctx, input,
-                )
-                .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_surprising_connections" => {
-            let input: crate::interface::mcp::schemas::GraphSurprisingConnectionsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
+            // Phase 5: Community Detection handlers (extracted to graph_handlers.rs)
+            "graph_communities" => {
+                let input: crate::interface::mcp::schemas::GraphCommunitiesInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::graph_handlers::handle_graph_communities(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "graph_community_detail" => {
+                let input: crate::interface::mcp::schemas::GraphCommunityDetailInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::graph_handlers::handle_graph_community_detail(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "graph_surprising_connections" => {
+                let input: crate::interface::mcp::schemas::GraphSurprisingConnectionsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
                 crate::interface::mcp::handlers::graph_handlers::handle_graph_surprising_connections(
                     ctx, input,
                 )
                 .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
 
-        // Phase 6: IDF-weighted Search & Unified Insights (extracted to graph_handlers.rs)
-        "graph_search_idf" => {
-            let input: crate::interface::mcp::schemas::GraphSearchIdfInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_handlers::handle_graph_search_idf(
-                ctx, input,
-            )
-            .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_insights" => {
-            let input: crate::interface::mcp::schemas::GraphInsightsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::graph_handlers::handle_graph_insights(ctx, input)
+            // Phase 6: IDF-weighted Search & Unified Insights (extracted to graph_handlers.rs)
+            "graph_search_idf" => {
+                let input: crate::interface::mcp::schemas::GraphSearchIdfInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::graph_handlers::handle_graph_search_idf(
+                        ctx, input,
+                    )
                     .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_suggest_questions" => {
-            let input: crate::interface::mcp::schemas::GraphSuggestQuestionsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "graph_insights" => {
+                let input: crate::interface::mcp::schemas::GraphInsightsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::graph_handlers::handle_graph_insights(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "graph_suggest_questions" => {
+                let input: crate::interface::mcp::schemas::GraphSuggestQuestionsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
                 crate::interface::mcp::handlers::graph_handlers::handle_graph_suggest_questions(
                     ctx, input,
                 )
                 .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        // Sprint 2: Graphify-style tools (ADR-026)
-        "graph_query" => {
-            let input: crate::interface::mcp::handlers::graph_query_handlers::GraphQueryInput =
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            // Sprint 2: Graphify-style tools (ADR-026)
+            "graph_query" => {
+                let input: crate::interface::mcp::handlers::graph_query_handlers::GraphQueryInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::graph_query_handlers::handle_graph_query(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "graph_explain" => {
+                let input: crate::interface::mcp::handlers::graph_query_handlers::GraphExplainInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_graph_query(
-                ctx, input,
-            )
-            .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_explain" => {
-            let input: crate::interface::mcp::handlers::graph_query_handlers::GraphExplainInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::graph_query_handlers::handle_graph_explain(
-                    ctx, input,
-                )
-                .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        // Edge-type query tools (ADR-026)
-        "get_type_references" => {
-            let input: crate::interface::mcp::handlers::graph_query_handlers::GetTypeRefsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
+                let output =
+                    crate::interface::mcp::handlers::graph_query_handlers::handle_graph_explain(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            // Edge-type query tools (ADR-026)
+            "get_type_references" => {
+                let input: crate::interface::mcp::handlers::graph_query_handlers::GetTypeRefsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
                 crate::interface::mcp::handlers::graph_query_handlers::handle_get_type_references(
                     ctx, input,
                 )
                 .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "get_imports" => {
-            let input: crate::interface::mcp::handlers::graph_query_handlers::GetImportsInput =
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "get_imports" => {
+                let input: crate::interface::mcp::handlers::graph_query_handlers::GetImportsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::graph_query_handlers::handle_get_imports(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "get_implementors" => {
+                let input: crate::interface::mcp::handlers::graph_query_handlers::GetImplementorsInput =
                 serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_get_imports(
-                ctx, input,
-            )
-            .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "get_implementors" => {
-            let input: crate::interface::mcp::handlers::graph_query_handlers::GetImplementorsInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::graph_query_handlers::handle_get_implementors(
-                    ctx, input,
-                )
-                .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "get_members" => {
-            let input: crate::interface::mcp::handlers::graph_query_handlers::GetMembersInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::graph_query_handlers::handle_get_members(
-                ctx, input,
-            )
-            .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_query_filtered" => {
-            let input: crate::interface::mcp::handlers::graph_query_handlers::GraphQueryFilteredInput = serde_json::from_value(arguments.into())?;
-            let output =
+                let output =
+                    crate::interface::mcp::handlers::graph_query_handlers::handle_get_implementors(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "get_members" => {
+                let input: crate::interface::mcp::handlers::graph_query_handlers::GetMembersInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::graph_query_handlers::handle_get_members(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "graph_query_filtered" => {
+                let input: crate::interface::mcp::handlers::graph_query_handlers::GraphQueryFilteredInput = serde_json::from_value(arguments.into())?;
+                let output =
                 crate::interface::mcp::handlers::graph_query_handlers::handle_graph_query_filtered(
                     ctx, input,
                 )
                 .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "export_callflow" => {
-            let input: crate::interface::mcp::handlers::graph_query_handlers::ExportCallflowInput =
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "export_callflow" => {
+                let input: crate::interface::mcp::handlers::graph_query_handlers::ExportCallflowInput =
                 serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::graph_query_handlers::handle_export_callflow(
-                    ctx, input,
-                )
-                .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        // Sprint 5: Consolidated + High-value tools (ADR-027 + ADR-028)
-        "smart_search" => {
-            let input: crate::interface::mcp::schemas::SmartSearchInput =
+                let output =
+                    crate::interface::mcp::handlers::graph_query_handlers::handle_export_callflow(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            // Sprint 5: Consolidated + High-value tools (ADR-027 + ADR-028)
+            "smart_search" => {
+                let input: crate::interface::mcp::schemas::SmartSearchInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::consolidated_handlers::handle_smart_search(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "graph_analyze" => {
+                let input: crate::interface::mcp::handlers::consolidated_handlers::GraphAnalyzeInput =
                 serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::consolidated_handlers::handle_smart_search(
-                    ctx, input,
-                )
-                .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_analyze" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::GraphAnalyzeInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::consolidated_handlers::handle_graph_analyze(
-                    ctx, input,
-                )
-                .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "project_overview" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::ProjectOverviewInput = serde_json::from_value(arguments.into())?;
-            let output =
+                let output =
+                    crate::interface::mcp::handlers::consolidated_handlers::handle_graph_analyze(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "project_overview" => {
+                let input: crate::interface::mcp::handlers::consolidated_handlers::ProjectOverviewInput = serde_json::from_value(arguments.into())?;
+                let output =
                 crate::interface::mcp::handlers::consolidated_handlers::handle_project_overview(
                     ctx, input,
                 )
                 .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "compare_graph" => {
-            let input: crate::interface::mcp::schemas::CompareGraphInput =
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "compare_graph" => {
+                let input: crate::interface::mcp::schemas::CompareGraphInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::consolidated_handlers::handle_compare_graph(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "codebase_map" => {
+                let input: crate::interface::mcp::handlers::consolidated_handlers::CodebaseMapInput =
                 serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::consolidated_handlers::handle_compare_graph(
-                    ctx, input,
-                )
-                .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "codebase_map" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::CodebaseMapInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::consolidated_handlers::handle_codebase_map(
-                    ctx, input,
-                )
-                .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "project_insights" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::ProjectInsightsInput = serde_json::from_value(arguments.into())?;
-            let output =
+                let output =
+                    crate::interface::mcp::handlers::consolidated_handlers::handle_codebase_map(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "project_insights" => {
+                let input: crate::interface::mcp::handlers::consolidated_handlers::ProjectInsightsInput = serde_json::from_value(arguments.into())?;
+                let output =
                 crate::interface::mcp::handlers::consolidated_handlers::handle_project_insights(
                     ctx, input,
                 )
                 .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "review_pr" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::ReviewPrInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_review_pr(
-                ctx, input,
-            )
-            .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "iac_query" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::IacQueryInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_iac_query(
-                ctx, input,
-            )
-            .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "ingest" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::IngestInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_ingest(
-                ctx, input,
-            )
-            .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        // SOLID Audit tool
-        "solid_audit" => {
-            let output = crate::interface::mcp::handlers::handle_solid_audit(ctx).await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        // Architecture check
-        "check_architecture" => {
-            let input: crate::interface::mcp::schemas::CheckArchitectureInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_check_architecture(ctx, input).await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        // Graph checkpoint management
-        "graph_checkpoint" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::GraphCheckpointInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_graph_checkpoint(
-                ctx, input,
-            )
-            .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        // Merge per-file graphs into consolidated project graph
-        "merge_graphs" => {
-            let input: crate::interface::mcp::schemas::MergeGraphsInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_merge_graphs(ctx, input).await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        // Build lightweight symbol index
-        "build_lightweight_index" => {
-            let input: crate::interface::mcp::schemas::BuildIndexInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::handle_build_lightweight_index(ctx, input).await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        // Incremental reindex after edits (requires persistence feature)
-        "reparse_on_edit" => {
-            let input: crate::interface::mcp::schemas::ReparseOnEditInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::aix_handlers::handle_reparse_on_edit(ctx, input).await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        // Sprint 5.3: graph_diff and graph_timeline tools
-        "graph_diff" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::GraphDiffInput =
-                serde_json::from_value(arguments.into())?;
-            let output = crate::interface::mcp::handlers::consolidated_handlers::handle_graph_diff(
-                ctx, input,
-            )
-            .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        "graph_timeline" => {
-            let input: crate::interface::mcp::handlers::consolidated_handlers::GraphTimelineInput =
-                serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::consolidated_handlers::handle_graph_timeline(
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "review_pr" => {
+                let input: crate::interface::mcp::handlers::consolidated_handlers::ReviewPrInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::consolidated_handlers::handle_review_pr(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "iac_query" => {
+                let input: crate::interface::mcp::handlers::consolidated_handlers::IacQueryInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::consolidated_handlers::handle_iac_query(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "ingest" => {
+                let input: crate::interface::mcp::handlers::consolidated_handlers::IngestInput =
+                    serde_json::from_value(arguments.into())?;
+                let output = crate::interface::mcp::handlers::consolidated_handlers::handle_ingest(
                     ctx, input,
                 )
                 .await?;
-            Ok(serde_json::to_string_pretty(&output)?)
-        }
-        // ViewSpec tools (ADR-008)
-        "list_view_specs" => {
-            let input: crate::interface::mcp::schemas::ListViewSpecsInput =
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            // SOLID Audit tool
+            "solid_audit" => {
+                let output = crate::interface::mcp::handlers::handle_solid_audit(ctx).await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            // Architecture check
+            "check_architecture" => {
+                let input: crate::interface::mcp::schemas::CheckArchitectureInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_check_architecture(ctx, input).await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            // Graph checkpoint management
+            "graph_checkpoint" => {
+                let input: crate::interface::mcp::handlers::consolidated_handlers::GraphCheckpointInput =
                 serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::consolidated_handlers::handle_list_view_specs(
+                let output = crate::interface::mcp::handlers::consolidated_handlers::handle_graph_checkpoint(
+                ctx, input,
+            )
+            .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            // Merge per-file graphs into consolidated project graph
+            "merge_graphs" => {
+                let input: crate::interface::mcp::schemas::MergeGraphsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_merge_graphs(ctx, input).await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            // Build lightweight symbol index
+            "build_lightweight_index" => {
+                let input: crate::interface::mcp::schemas::BuildIndexInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_build_lightweight_index(ctx, input)
+                        .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            // Incremental reindex after edits (requires persistence feature)
+            "reparse_on_edit" => {
+                let input: crate::interface::mcp::schemas::ReparseOnEditInput =
+                    serde_json::from_value(arguments.into())?;
+                let output = crate::interface::mcp::handlers::aix_handlers::handle_reparse_on_edit(
                     ctx, input,
                 )
                 .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
-        "read_view_spec" => {
-            let input: crate::interface::mcp::schemas::ReadViewSpecInput =
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            // Sprint 5.3: graph_diff and graph_timeline tools
+            "graph_diff" => {
+                let input: crate::interface::mcp::handlers::consolidated_handlers::GraphDiffInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::consolidated_handlers::handle_graph_diff(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            "graph_timeline" => {
+                let input: crate::interface::mcp::handlers::consolidated_handlers::GraphTimelineInput =
                 serde_json::from_value(arguments.into())?;
-            let output =
-                crate::interface::mcp::handlers::consolidated_handlers::handle_read_view_spec(
-                    ctx, input,
-                )
-                .await?;
-            Ok(serde_json::to_string(&output)?)
-        }
+                let output =
+                    crate::interface::mcp::handlers::consolidated_handlers::handle_graph_timeline(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string_pretty(&output)?)
+            }
+            // ViewSpec tools (ADR-008)
+            "list_view_specs" => {
+                let input: crate::interface::mcp::schemas::ListViewSpecsInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::consolidated_handlers::handle_list_view_specs(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "read_view_spec" => {
+                let input: crate::interface::mcp::schemas::ReadViewSpecInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::consolidated_handlers::handle_read_view_spec(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
 
-        _ => return Err(InterfaceError::ToolNotFound(tool_name.to_string())),
-    }
+            _ => return Err(InterfaceError::ToolNotFound(tool_name.to_string())),
+        }
     };
     let result = match tokio::time::timeout(timeout, dispatch).await {
         Ok(inner) => inner,
@@ -2346,30 +2388,15 @@ mod tests {
         // graph analytics is allowed the longest window (60s)
         assert_eq!(timeout_for_category("graph"), Duration::from_secs(60));
         // LSP navigation is allowed 45s
-        assert_eq!(
-            timeout_for_category("navigation"),
-            Duration::from_secs(45)
-        );
+        assert_eq!(timeout_for_category("navigation"), Duration::from_secs(45));
         // in-memory search is the tightest bound (500ms)
-        assert_eq!(
-            timeout_for_category("search"),
-            Duration::from_millis(500)
-        );
+        assert_eq!(timeout_for_category("search"), Duration::from_millis(500));
         // file operations default to 30s
         assert_eq!(timeout_for_category("file"), Duration::from_secs(30));
         // composite/quality/refactor/aix are also 30s
-        assert_eq!(
-            timeout_for_category("composite"),
-            Duration::from_secs(30)
-        );
-        assert_eq!(
-            timeout_for_category("quality"),
-            Duration::from_secs(30)
-        );
-        assert_eq!(
-            timeout_for_category("refactor"),
-            Duration::from_secs(30)
-        );
+        assert_eq!(timeout_for_category("composite"), Duration::from_secs(30));
+        assert_eq!(timeout_for_category("quality"), Duration::from_secs(30));
+        assert_eq!(timeout_for_category("refactor"), Duration::from_secs(30));
         assert_eq!(timeout_for_category("aix"), Duration::from_secs(30));
     }
 
@@ -2403,8 +2430,7 @@ mod tests {
             "expected tokio::time::timeout to fire on slow handler"
         );
         // Map the Elapsed to the same error we use in the boundary.
-        let err: InterfaceResult<String> =
-            Err(InterfaceError::Internal("timeout".to_string()));
+        let err: InterfaceResult<String> = Err(InterfaceError::Internal("timeout".to_string()));
         assert!(matches!(err, Err(InterfaceError::Internal(ref m)) if m == "timeout"));
     }
 
@@ -2459,14 +2485,8 @@ mod tests {
             map.get("search_content").map(|s| s.as_str()),
             Some("search")
         );
-        assert_eq!(
-            map.get("ask_about_code").map(|s| s.as_str()),
-            Some("aix")
-        );
-        assert_eq!(
-            map.get("read_file").map(|s| s.as_str()),
-            Some("file")
-        );
+        assert_eq!(map.get("ask_about_code").map(|s| s.as_str()), Some("aix"));
+        assert_eq!(map.get("read_file").map(|s| s.as_str()), Some("file"));
         // Every tool declared in `build_all_tools()` must have a
         // category — otherwise the lookup is incomplete and
         // roundtrip parity tests will diverge.

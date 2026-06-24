@@ -101,7 +101,6 @@ use crate::interface::mcp::schemas::{
     GetEntryPointsOutput,
     GetFileSymbolsInput,
     GetFileSymbolsOutput,
-    HierarchicalSymbolInfo,
     GetHotPathsInput,
     GetHotPathsOutput,
     GetHotSymbolsInput,
@@ -128,6 +127,7 @@ use crate::interface::mcp::schemas::{
     GraphSearchIdfInput,
     GraphSuggestQuestionsInput,
     GraphSurprisingConnectionsInput,
+    HierarchicalSymbolInfo,
     HierarchyEntryInfo,
     HierarchySymbolInfo,
     HotPathEntry,
@@ -341,7 +341,10 @@ pub trait ViewSpecRepository: Send + Sync {
         &self,
         workspace_id: &str,
         owner: &str,
-    ) -> Result<Vec<crate::infrastructure::persistence::ViewSpecRow>, crate::domain::traits::repository::RepositoryError>;
+    ) -> Result<
+        Vec<crate::infrastructure::persistence::ViewSpecRow>,
+        crate::domain::traits::repository::RepositoryError,
+    >;
 
     /// Load a single ViewSpec by id, scoped to workspace and owner.
     async fn load_view_spec(
@@ -349,7 +352,10 @@ pub trait ViewSpecRepository: Send + Sync {
         id: &str,
         workspace_id: &str,
         owner: &str,
-    ) -> Result<Option<crate::infrastructure::persistence::ViewSpecRow>, crate::domain::traits::repository::RepositoryError>;
+    ) -> Result<
+        Option<crate::infrastructure::persistence::ViewSpecRow>,
+        crate::domain::traits::repository::RepositoryError,
+    >;
 }
 
 #[cfg(feature = "postgres")]
@@ -359,9 +365,14 @@ impl ViewSpecRepository for HandlerContext {
         &self,
         workspace_id: &str,
         owner: &str,
-    ) -> Result<Vec<crate::infrastructure::persistence::ViewSpecRow>, crate::domain::traits::repository::RepositoryError> {
+    ) -> Result<
+        Vec<crate::infrastructure::persistence::ViewSpecRow>,
+        crate::domain::traits::repository::RepositoryError,
+    > {
         let repo = self.view_spec_repo.as_ref().ok_or_else(|| {
-            crate::domain::traits::repository::RepositoryError::NotFound("view_spec_repo not configured".into())
+            crate::domain::traits::repository::RepositoryError::NotFound(
+                "view_spec_repo not configured".into(),
+            )
         })?;
         ViewSpecRepository::list_view_specs(repo.as_ref(), workspace_id, owner).await
     }
@@ -371,9 +382,14 @@ impl ViewSpecRepository for HandlerContext {
         id: &str,
         workspace_id: &str,
         owner: &str,
-    ) -> Result<Option<crate::infrastructure::persistence::ViewSpecRow>, crate::domain::traits::repository::RepositoryError> {
+    ) -> Result<
+        Option<crate::infrastructure::persistence::ViewSpecRow>,
+        crate::domain::traits::repository::RepositoryError,
+    > {
         let repo = self.view_spec_repo.as_ref().ok_or_else(|| {
-            crate::domain::traits::repository::RepositoryError::NotFound("view_spec_repo not configured".into())
+            crate::domain::traits::repository::RepositoryError::NotFound(
+                "view_spec_repo not configured".into(),
+            )
         })?;
         ViewSpecRepository::load_view_spec(repo.as_ref(), id, workspace_id, owner).await
     }
@@ -676,7 +692,7 @@ impl HandlerContextBuilder {
 
     /// Sets the CodeIntelligenceProvider from a pre-built Arc.
     ///
-    /// Use when the caller already holds an `Arc<dyn CodeIntelligenceProvider>` 
+    /// Use when the caller already holds an `Arc<dyn CodeIntelligenceProvider>`
     /// rather than an owned `impl CodeIntelligenceProvider`. The Arc is stored
     /// directly without re-wrapping.
     pub fn with_code_intelligence_arc(
@@ -724,10 +740,7 @@ impl HandlerContextBuilder {
     ///
     /// If not set, list_view_specs and read_view_spec will return an error for runtime specs.
     #[cfg(feature = "postgres")]
-    pub fn with_view_spec_repo(
-        mut self,
-        repo: Arc<dyn ViewSpecRepository>,
-    ) -> Self {
+    pub fn with_view_spec_repo(mut self, repo: Arc<dyn ViewSpecRepository>) -> Self {
         self.view_spec_repo = Some(repo);
         self
     }
@@ -1149,7 +1162,9 @@ pub async fn handle_build_graph(
 
     info!(
         "handle_build_graph: {} symbols, {} edges in {}ms (source: {})",
-        symbols, edges_count, elapsed,
+        symbols,
+        edges_count,
+        elapsed,
         if loaded_from_cache { "cache" } else { "built" }
     );
 
@@ -1374,7 +1389,8 @@ fn build_hierarchical_symbols(symbol_dtos: &[SymbolDto]) -> Vec<HierarchicalSymb
     let mut parent_stack: Vec<(usize, u32)> = Vec::new();
 
     for (i, node) in nodes.iter().enumerate() {
-        let end_line = node.location.line + estimate_symbol_length(&node.name, &format!("{:?}", node.kind));
+        let end_line =
+            node.location.line + estimate_symbol_length(&node.name, &format!("{:?}", node.kind));
 
         while let Some((_, top_end)) = parent_stack.last() {
             if *top_end > node.location.line {
@@ -3958,7 +3974,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_build_lightweight_index_invalid_directory() {
-        let ctx = HandlerContext::builder().with_working_dir(PathBuf::from("/nonexistent/path")).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(PathBuf::from("/nonexistent/path"))
+            .build();
         let input = BuildIndexInput {
             directory: Some("/nonexistent/path".to_string()),
             strategy: "lightweight".to_string(),
@@ -3970,7 +3988,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_query_symbol_index_empty_symbol() {
-        let ctx = HandlerContext::builder().with_working_dir(PathBuf::from(".")).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(PathBuf::from("."))
+            .build();
         let input = QuerySymbolInput {
             symbol_name: "".to_string(),
             directory: None,
@@ -3985,7 +4005,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_build_call_subgraph_empty_symbol() {
-        let ctx = HandlerContext::builder().with_working_dir(PathBuf::from(".")).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(PathBuf::from("."))
+            .build();
         let input = BuildSubgraphInput {
             symbol_name: "".to_string(),
             depth: 3,
@@ -4000,7 +4022,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_get_per_file_graph_nonexistent_file() {
-        let ctx = HandlerContext::builder().with_working_dir(PathBuf::from(".")).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(PathBuf::from("."))
+            .build();
         let input = GetPerFileGraphInput {
             file_path: "/nonexistent/file.py".to_string(),
         };
@@ -4011,7 +4035,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_merge_graphs_empty_list() {
-        let ctx = HandlerContext::builder().with_working_dir(PathBuf::from(".")).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(PathBuf::from("."))
+            .build();
         let input = MergeGraphsInput { file_paths: vec![] };
 
         let result = handle_merge_graphs(&ctx, input).await;
@@ -4030,7 +4056,9 @@ mod tests {
         let rust_file = tempdir_path.join("hello.rs");
         std::fs::write(&rust_file, "fn hello() {}\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
         let input = BuildGraphInput { directory: None };
 
         let result = handle_build_graph(&ctx, input).await;
@@ -4051,7 +4079,9 @@ mod tests {
         std::fs::write(&rust_file, "fn hello() {}\n").unwrap();
 
         // First context
-        let ctx1 = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx1 = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
         let input1 = BuildGraphInput { directory: None };
         let result1 = handle_build_graph(&ctx1, input1).await;
         assert!(result1.is_ok());
@@ -4061,7 +4091,9 @@ mod tests {
         let symbols_first = output1.symbols_found;
 
         // Second call with DIFFERENT context (simulates restart)
-        let ctx2 = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx2 = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
         let input2 = BuildGraphInput { directory: None };
         let result2 = handle_build_graph(&ctx2, input2).await;
         assert!(result2.is_ok());
@@ -4085,7 +4117,9 @@ mod tests {
         let rust_file2 = tempdir2_path.join("file2.rs");
         std::fs::write(&rust_file2, "fn function_two() {}\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir1_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir1_path.to_path_buf())
+            .build();
 
         // First call with tempdir1
         let input1 = BuildGraphInput {
@@ -4113,7 +4147,9 @@ mod tests {
         let rust_file = tempdir_path.join("hello.rs");
         std::fs::write(&rust_file, "fn hello() {}\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         // First call - should build
         let input1 = BuildGraphInput { directory: None };
@@ -4158,7 +4194,9 @@ mod tests {
         let main_file = tempdir_path.join("main.rs");
         std::fs::write(&main_file, "fn main() {}\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         // Build the graph first
         let build_input = BuildGraphInput { directory: None };
@@ -4204,7 +4242,9 @@ mod tests {
         let handlers_file = tempdir_path.join("handlers.rs");
         std::fs::write(&handlers_file, "pub fn handle_request() {}\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         // Build the graph first
         let build_input = BuildGraphInput { directory: None };
@@ -4245,7 +4285,9 @@ mod tests {
         let handlers_file = tempdir_path.join("handlers.rs");
         std::fs::write(&handlers_file, "pub fn handle_request() {}\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         // Build the graph first
         let build_input = BuildGraphInput { directory: None };
@@ -4281,7 +4323,9 @@ mod tests {
         let handlers_file = tempdir_path.join("handlers.rs");
         std::fs::write(&handlers_file, "pub fn handle_request() {}\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         // Build the graph first
         let build_input = BuildGraphInput { directory: None };
@@ -4321,7 +4365,9 @@ mod tests {
         let handlers_file = tempdir_path.join("handlers.rs");
         std::fs::write(&handlers_file, "pub fn handle_request() {}\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let build_input = BuildGraphInput { directory: None };
         let _ = handle_build_graph(&ctx, build_input).await;
@@ -4359,7 +4405,9 @@ mod tests {
         let handlers_file = tempdir_path.join("handlers.rs");
         std::fs::write(&handlers_file, "pub fn handle_request() {}\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let build_input = BuildGraphInput { directory: None };
         let _ = handle_build_graph(&ctx, build_input).await;
@@ -4405,7 +4453,9 @@ mod tests {
         let main_file = tempdir_path.join("main.rs");
         std::fs::write(&main_file, "fn main() { handle_request(); }\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let build_input = BuildGraphInput { directory: None };
         let _ = handle_build_graph(&ctx, build_input).await;
@@ -4450,7 +4500,9 @@ mod tests {
         let main_file = tempdir_path.join("main.rs");
         std::fs::write(&main_file, "fn main() {}\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let build_input = BuildGraphInput { directory: None };
         let _ = handle_build_graph(&ctx, build_input).await;
@@ -4493,7 +4545,9 @@ mod tests {
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         std::fs::write(&file_path, "fn main() { helper(); }\nfn helper() {}").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp.path().to_path_buf())
+            .build();
 
         // Call ensure_graph_built on empty state — should auto-build
         let result = ensure_graph_built(&ctx).unwrap();
@@ -4509,7 +4563,9 @@ mod tests {
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         std::fs::write(&file_path, "fn main() { helper(); }\nfn helper() {}").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp.path().to_path_buf())
+            .build();
 
         // Build graph first
         ctx.analysis_service
@@ -4532,7 +4588,9 @@ mod tests {
         )
         .unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp.path().to_path_buf())
+            .build();
 
         // Call analyze_impact WITHOUT calling build_graph first
         let input = AnalyzeImpactInput {
@@ -4552,7 +4610,9 @@ mod tests {
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         std::fs::write(&file_path, "fn main() { helper(); }\nfn helper() {}").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(temp.path().to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp.path().to_path_buf())
+            .build();
 
         // Call get_entry_points WITHOUT calling build_graph first
         let input = GetEntryPointsInput { compressed: false };
@@ -4715,7 +4775,9 @@ mod tests {
     #[tokio::test]
     async fn test_handler_error_propagation_in_handler() {
         // Test that errors properly propagate through a handler
-        let ctx = HandlerContext::builder().with_working_dir(PathBuf::from("/nonexistent/path")).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(PathBuf::from("/nonexistent/path"))
+            .build();
         let input = BuildGraphInput {
             directory: Some("/nonexistent/path".to_string()),
         };
@@ -4737,7 +4799,9 @@ mod tests {
         let rust_file = tempdir_path.join("test.rs");
         std::fs::write(&rust_file, "fn test() {}").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
         ctx.cancellation_token
             .store(true, std::sync::atomic::Ordering::SeqCst);
 
@@ -4778,7 +4842,9 @@ mod tests {
     #[tokio::test]
     async fn test_handler_result_in_practice_error_path() {
         // Integration test: handler returns error which converts to McpError
-        let ctx = HandlerContext::builder().with_working_dir(PathBuf::from("/invalid path with spaces")).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(PathBuf::from("/invalid path with spaces"))
+            .build();
         let input = GetCallHierarchyInput {
             symbol_name: "test".to_string(),
             depth: 1,
@@ -4876,7 +4942,9 @@ mod tests {
         let tempdir_path = tempdir.path().to_path_buf();
 
         // Create with new()
-        let ctx_new = HandlerContext::builder().with_working_dir(tempdir_path.clone()).build();
+        let ctx_new = HandlerContext::builder()
+            .with_working_dir(tempdir_path.clone())
+            .build();
 
         // Create with builder (no overrides)
         let ctx_builder = HandlerContext::builder()

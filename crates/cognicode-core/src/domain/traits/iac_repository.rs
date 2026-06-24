@@ -24,6 +24,14 @@ pub struct IacEdge {
 #[async_trait]
 pub trait IacRepository: Send + Sync {
     async fn find_resource(&self, resource_id: &str) -> Result<Option<IacResource>, String>;
-    async fn get_dependencies(&self, resource_id: &str, depth: Option<u32>) -> Result<Vec<IacEdge>, String>;
-    async fn get_dependents(&self, resource_id: &str, depth: Option<u32>) -> Result<Vec<IacEdge>, String>;
+    async fn get_dependencies(
+        &self,
+        resource_id: &str,
+        depth: Option<u32>,
+    ) -> Result<Vec<IacEdge>, String>;
+    async fn get_dependents(
+        &self,
+        resource_id: &str,
+        depth: Option<u32>,
+    ) -> Result<Vec<IacEdge>, String>;
 }

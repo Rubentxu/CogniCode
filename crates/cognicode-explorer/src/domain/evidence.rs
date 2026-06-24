@@ -64,7 +64,10 @@ fn symbol_metadata_evidence(symbol: &ResolvedSymbol) -> EvidenceBlock {
     }
 }
 
-fn call_graph_evidence(symbol: &ResolvedSymbol, graph_query: Option<&dyn GraphQueryPort>) -> EvidenceBlock {
+fn call_graph_evidence(
+    symbol: &ResolvedSymbol,
+    graph_query: Option<&dyn GraphQueryPort>,
+) -> EvidenceBlock {
     let fan_in = graph_query.map(|gq| gq.fan_in(&symbol.id)).unwrap_or(0);
     let fan_out = graph_query.map(|gq| gq.fan_out(&symbol.id)).unwrap_or(0);
     EvidenceBlock {

@@ -367,10 +367,7 @@ mod tests {
         create_temp_file(dir.path(), "b.rs", b"fn foo() {}");
 
         let mut manifest = FileManifest::new();
-        manifest.apply_delta(
-            dir.path(),
-            &[PathBuf::from("a.rs"), PathBuf::from("b.rs")],
-        );
+        manifest.apply_delta(dir.path(), &[PathBuf::from("a.rs"), PathBuf::from("b.rs")]);
 
         // Delete b.rs
         fs::remove_file(dir.path().join("b.rs")).unwrap();
@@ -444,10 +441,7 @@ mod tests {
         create_temp_file(dir.path(), "b.rs", b"fn b() {}");
 
         let mut manifest = FileManifest::new();
-        manifest.apply_delta(
-            dir.path(),
-            &[PathBuf::from("a.rs"), PathBuf::from("b.rs")],
-        );
+        manifest.apply_delta(dir.path(), &[PathBuf::from("a.rs"), PathBuf::from("b.rs")]);
         assert_eq!(manifest.len(), 2);
 
         manifest.remove_deleted(&[PathBuf::from("a.rs")]);
@@ -528,7 +522,11 @@ mod tests {
         let path_a = create_temp_file(dir.path(), "a.rs", b"v1");
         let mut manifest = FileManifest::new();
         manifest.apply_delta(dir.path(), &[PathBuf::from("a.rs")]);
-        let hash_v1 = manifest.get(Path::new("a.rs")).unwrap().content_hash.clone();
+        let hash_v1 = manifest
+            .get(Path::new("a.rs"))
+            .unwrap()
+            .content_hash
+            .clone();
 
         // Change content; sleep so mtime resolution advances.
         thread::sleep(Duration::from_millis(20));
@@ -538,7 +536,11 @@ mod tests {
         assert_eq!(delta.changed.len(), 1);
 
         manifest.apply_delta(dir.path(), &delta.changed);
-        let hash_v2 = manifest.get(Path::new("a.rs")).unwrap().content_hash.clone();
+        let hash_v2 = manifest
+            .get(Path::new("a.rs"))
+            .unwrap()
+            .content_hash
+            .clone();
         assert_ne!(hash_v1, hash_v2);
     }
 }

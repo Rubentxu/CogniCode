@@ -1,9 +1,9 @@
-mod newtype;
 mod aix_tool;
+mod newtype;
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, ItemStruct, Ident, Type, Expr, Token, LitStr};
+use syn::{parse_macro_input, Expr, Ident, ItemStruct, LitStr, Token, Type};
 
 /// Newtype macro for creating wrapper types with consistent derives.
 ///
@@ -111,16 +111,16 @@ pub fn declare_rule(input: TokenStream) -> TokenStream {
         .collect();
 
     // Field names for constructor
-    let field_names: Vec<_> = params
-        .iter()
-        .map(|(name, _, _)| name)
-        .collect();
+    let field_names: Vec<_> = params.iter().map(|(name, _, _)| name).collect();
 
     // Default values for constructor
     let field_defaults: Vec<_> = params
         .iter()
         .map(|(_, _, default): &(Ident, Type, Option<Expr>)| {
-            default.as_ref().map(|e| quote! { #e }).unwrap_or_else(|| quote! { Default::default() })
+            default
+                .as_ref()
+                .map(|e| quote! { #e })
+                .unwrap_or_else(|| quote! { Default::default() })
         })
         .collect();
 
@@ -138,14 +138,17 @@ pub fn declare_rule(input: TokenStream) -> TokenStream {
     let impacts_code = if impacts.is_empty() {
         quote! { vec![] }
     } else {
-        let impacts: Vec<_> = impacts.iter().map(|(q, s)| {
-            quote! {
-                SoftwareQualityImpact {
-                    quality: SoftwareQuality::#q,
-                    severity: ImpactSeverity::#s,
+        let impacts: Vec<_> = impacts
+            .iter()
+            .map(|(q, s)| {
+                quote! {
+                    SoftwareQualityImpact {
+                        quality: SoftwareQuality::#q,
+                        severity: ImpactSeverity::#s,
+                    }
                 }
-            }
-        }).collect();
+            })
+            .collect();
         quote! { vec![#(#impacts),*] }
     };
 
@@ -248,7 +251,9 @@ pub fn cogni_rule(attr: TokenStream, item: TokenStream) -> TokenStream {
     let rule_id_str = LitStr::new(&attrs.id, item_struct.ident.span());
     let rule_name_str = attrs.name.unwrap_or_else(|| attrs.id.clone());
     let language_str = LitStr::new(&attrs.language, item_struct.ident.span());
-    let message_str = attrs.message.unwrap_or_else(|| "Issue detected".to_string());
+    let message_str = attrs
+        .message
+        .unwrap_or_else(|| "Issue detected".to_string());
     let message_lit = LitStr::new(&message_str, item_struct.ident.span());
     let severity = &attrs.severity;
     let category = &attrs.category;
@@ -294,7 +299,8 @@ pub fn cogni_rule(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // Generate the required_keywords method body
     let required_keywords_code = if let Some(ref kws) = attrs.required_keywords {
-        let kw_lits: Vec<LitStr> = kws.iter()
+        let kw_lits: Vec<LitStr> = kws
+            .iter()
             .map(|kw| LitStr::new(kw, item_struct.ident.span()))
             .collect();
         quote! {
@@ -436,7 +442,12 @@ impl syn::parse::Parse for CogniRuleAttrs {
                     }
                     required_keywords = Some(kws);
                 }
-                _ => return Err(syn::Error::new(key.span(), format!("Unknown key: {}", key_str))),
+                _ => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("Unknown key: {}", key_str),
+                    ))
+                }
             }
 
             if input.peek(Token![,]) {
@@ -447,9 +458,12 @@ impl syn::parse::Parse for CogniRuleAttrs {
         Ok(Self {
             id: id.ok_or_else(|| syn::Error::new(input.span(), "Missing `id` field"))?,
             name,
-            severity: severity.ok_or_else(|| syn::Error::new(input.span(), "Missing `severity` field"))?,
-            category: category.ok_or_else(|| syn::Error::new(input.span(), "Missing `category` field"))?,
-            language: language.ok_or_else(|| syn::Error::new(input.span(), "Missing `language` field"))?,
+            severity: severity
+                .ok_or_else(|| syn::Error::new(input.span(), "Missing `severity` field"))?,
+            category: category
+                .ok_or_else(|| syn::Error::new(input.span(), "Missing `category` field"))?,
+            language: language
+                .ok_or_else(|| syn::Error::new(input.span(), "Missing `language` field"))?,
             pattern,
             message,
             required_keywords,
@@ -562,7 +576,12 @@ impl syn::parse::Parse for RuleInput {
                         }
                     }
                 }
-                _ => return Err(syn::Error::new(key.span(), format!("Unknown key: {}", key_str))),
+                _ => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("Unknown key: {}", key_str),
+                    ))
+                }
             }
 
             if input.peek(Token![,]) {
@@ -573,9 +592,12 @@ impl syn::parse::Parse for RuleInput {
         Ok(Self {
             id: id.ok_or_else(|| syn::Error::new(input.span(), "Missing `id` field"))?,
             name: name.ok_or_else(|| syn::Error::new(input.span(), "Missing `name` field"))?,
-            severity: severity.ok_or_else(|| syn::Error::new(input.span(), "Missing `severity` field"))?,
-            category: category.ok_or_else(|| syn::Error::new(input.span(), "Missing `category` field"))?,
-            language: language.ok_or_else(|| syn::Error::new(input.span(), "Missing `language` field"))?,
+            severity: severity
+                .ok_or_else(|| syn::Error::new(input.span(), "Missing `severity` field"))?,
+            category: category
+                .ok_or_else(|| syn::Error::new(input.span(), "Missing `category` field"))?,
+            language: language
+                .ok_or_else(|| syn::Error::new(input.span(), "Missing `language` field"))?,
             params,
             check: check.ok_or_else(|| syn::Error::new(input.span(), "Missing `check` field"))?,
             explanation,

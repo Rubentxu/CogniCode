@@ -67,9 +67,10 @@ pub fn aggregate_summary(results: &[ScenarioResult]) -> Summary {
         } else {
             lang_entry.failed += 1;
             if let Some(fc) = &r.failure_class
-                && fc.is_ci_blocking() {
-                    summary.ci_blocking += 1;
-                }
+                && fc.is_ci_blocking()
+            {
+                summary.ci_blocking += 1;
+            }
         }
 
         let tool_entry = summary.by_tool.entry(r.tool.clone()).or_default();
@@ -172,7 +173,11 @@ pub fn generate_markdown_summary(results: &[ScenarioResult], summary: &Summary) 
             "| Language | Total | Passed | Failed | Pass Rate | p50 | p95 | p99 |"
         )
         .unwrap();
-        writeln!(md, "|----------|-------|--------|--------|-----------|-----|-----|-----|").unwrap();
+        writeln!(
+            md,
+            "|----------|-------|--------|--------|-----------|-----|-----|-----|"
+        )
+        .unwrap();
 
         let mut languages: Vec<_> = summary.by_language.iter().collect();
         languages.sort_by(|a, b| a.0.cmp(b.0));
@@ -198,8 +203,16 @@ pub fn generate_markdown_summary(results: &[ScenarioResult], summary: &Summary) 
     if !summary.by_tool.is_empty() {
         writeln!(md, "## Per-Tool Breakdown").unwrap();
         writeln!(md).unwrap();
-        writeln!(md, "| Tool | Total | Passed | Failed | Pass Rate | p50 | p95 | p99 |").unwrap();
-        writeln!(md, "|------|-------|--------|--------|-----------|-----|-----|-----|").unwrap();
+        writeln!(
+            md,
+            "| Tool | Total | Passed | Failed | Pass Rate | p50 | p95 | p99 |"
+        )
+        .unwrap();
+        writeln!(
+            md,
+            "|------|-------|--------|--------|-----------|-----|-----|-----|"
+        )
+        .unwrap();
 
         let mut tools: Vec<_> = summary.by_tool.iter().collect();
         tools.sort_by(|a, b| a.0.cmp(b.0));
@@ -233,8 +246,16 @@ pub fn generate_markdown_summary(results: &[ScenarioResult], summary: &Summary) 
 
     writeln!(md, "## Results").unwrap();
     writeln!(md).unwrap();
-    writeln!(md, "| Scenario | Language | Tool | Action | Outcome | Duration |").unwrap();
-    writeln!(md, "|----------|----------|------|--------|---------|----------|").unwrap();
+    writeln!(
+        md,
+        "| Scenario | Language | Tool | Action | Outcome | Duration |"
+    )
+    .unwrap();
+    writeln!(
+        md,
+        "|----------|----------|------|--------|---------|----------|"
+    )
+    .unwrap();
 
     for r in results {
         writeln!(

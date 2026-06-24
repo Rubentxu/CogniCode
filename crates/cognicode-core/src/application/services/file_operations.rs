@@ -18,8 +18,8 @@ use crate::application::dto::{
     VerificationStatus, VerifiedMatchDto, WriteFileRequest, WriteFileResult,
 };
 use crate::application::error::{AppError, AppResult};
-use crate::domain::traits::code_verifier::{CodeVerifier, CompilationResult};
 use crate::domain::traits::Parser;
+use crate::domain::traits::code_verifier::{CodeVerifier, CompilationResult};
 use crate::domain::value_objects::SymbolKind;
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use crate::infrastructure::vfs::VirtualFileSystem;
@@ -137,19 +137,19 @@ impl FileOperationsService {
                 SecurityError::PathOutsideWorkspace => {
                     AppError::InvalidParameter("Path outside workspace".to_string())
                 }
-                SecurityError::PathTooDeep { depth, max } => {
-                    AppError::InvalidParameter(format!(
-                        "Path too deep: {} components (max: {})",
-                        depth, max
-                    ))
-                }
+                SecurityError::PathTooDeep { depth, max } => AppError::InvalidParameter(format!(
+                    "Path too deep: {} components (max: {})",
+                    depth, max
+                )),
                 SecurityError::InvalidPathCharacters { path } => {
                     AppError::InvalidParameter(format!("Invalid characters in path: {}", path))
                 }
                 SecurityError::SymlinkDetected { path } => {
                     AppError::InvalidParameter(format!("Symlink detected in path: {}", path))
                 }
-                other => AppError::InvalidParameter(format!("Security validation failed: {}", other)),
+                other => {
+                    AppError::InvalidParameter(format!("Security validation failed: {}", other))
+                }
             })?;
 
         // Resolve to absolute path for return value
@@ -164,7 +164,9 @@ impl FileOperationsService {
         let canonical = if absolute_path.exists() {
             std::fs::canonicalize(&absolute_path)
         } else if let Some(parent) = absolute_path.parent() {
-            parent.canonicalize().map(|p| p.join(absolute_path.file_name().unwrap_or_default()))
+            parent
+                .canonicalize()
+                .map(|p| p.join(absolute_path.file_name().unwrap_or_default()))
         } else {
             Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -210,118 +212,111 @@ impl FileOperationsService {
         let total_lines = self.count_lines(&validated_path)?;
 
         // Handle different modes using static enum dispatch
-        let (content, start_line, end_line, has_more, next_token, suggested_chunk_size) =
-            match mode {
-                ReadMode::Outline | ReadMode::Symbols | ReadMode::Compressed => {
-                    // Non-raw modes ignore chunk_size and continuation_token
-                    let content = match mode {
-                        ReadMode::Outline => {
-                            self.read_file_outline(&validated_path, &input)?
-                        }
-                        ReadMode::Symbols => {
-                            self.read_file_symbols(&validated_path, &input)?
-                        }
-                        ReadMode::Compressed => {
-                            self.read_file_compressed(&validated_path, &input)?
-                        }
-                        ReadMode::Raw => unreachable!(),
-                    };
-                    let start = input.start_line.unwrap_or(1);
-                    let end = input.end_line.unwrap_or(total_lines);
-                    (content, start, end, false, None, None)
-                }
-                ReadMode::Raw => {
-                    // Raw mode with optional chunked reading
-                    let file_size = metadata.size as usize;
-                    let is_large_file = file_size > 1_000_000; // 1MB threshold
+        let (content, start_line, end_line, has_more, next_token, suggested_chunk_size) = match mode
+        {
+            ReadMode::Outline | ReadMode::Symbols | ReadMode::Compressed => {
+                // Non-raw modes ignore chunk_size and continuation_token
+                let content = match mode {
+                    ReadMode::Outline => self.read_file_outline(&validated_path, &input)?,
+                    ReadMode::Symbols => self.read_file_symbols(&validated_path, &input)?,
+                    ReadMode::Compressed => self.read_file_compressed(&validated_path, &input)?,
+                    ReadMode::Raw => unreachable!(),
+                };
+                let start = input.start_line.unwrap_or(1);
+                let end = input.end_line.unwrap_or(total_lines);
+                (content, start, end, false, None, None)
+            }
+            ReadMode::Raw => {
+                // Raw mode with optional chunked reading
+                let file_size = metadata.size as usize;
+                let is_large_file = file_size > 1_000_000; // 1MB threshold
 
-                    // Determine offset from continuation_token or start_line
-                    let (offset, chunk_size): (usize, usize) =
-                        if let Some(ref token) = input.continuation_token {
-                            if let Some(ct) = decode_token(token) {
-                                (ct.offset, ct.chunk_size)
-                            } else {
-                                return Err(AppError::InvalidParameter(
-                                    "Invalid continuation token".to_string(),
-                                ));
-                            }
+                // Determine offset from continuation_token or start_line
+                let (offset, chunk_size): (usize, usize) =
+                    if let Some(ref token) = input.continuation_token {
+                        if let Some(ct) = decode_token(token) {
+                            (ct.offset, ct.chunk_size)
                         } else {
-                            let start = input.start_line.unwrap_or(1);
-                            // Convert start_line to byte offset (approximate)
-                            let offset = if start <= 1 {
-                                0
-                            } else {
-                                // Read up to start_line to compute approximate offset
-                                self.read_file_raw_at_line(&validated_path, start)?
-                            };
-                            (offset, input.chunk_size.unwrap_or(0))
-                        };
-
-                    // Read chunk or full content
-                    let chunk_mode = chunk_size > 0 || input.continuation_token.is_some();
-                    let effective_chunk_size = chunk_size;
-
-                    let (content, actual_end_line, actual_has_more, actual_next_token) =
-                        if chunk_mode && effective_chunk_size > 0 {
-                            // Chunked reading
-                            let (chunk, new_offset, reached_end) =
-                                self.read_file_chunk(&validated_path, offset, effective_chunk_size)?;
-
-                            let has_more = !reached_end;
-                            let next_token = if has_more {
-                                Some(encode_token(
-                                    &validated_path,
-                                    new_offset,
-                                    effective_chunk_size,
-                                ))
-                            } else {
-                                None
-                            };
-
-                            // Count lines in chunk to determine line numbers
-                            let lines_in_chunk: Vec<&str> = chunk.lines().collect();
-                            let chunk_start_line = if offset == 0 {
-                                1
-                            } else {
-                                // Count newlines before offset to determine line number
-                                let content = fs::read_to_string(&validated_path).map_err(|e| {
-                                    AppError::InvalidParameter(format!("Failed to read file: {}", e))
-                                })?;
-                                content[..offset].lines().count() as u32 + 1
-                            };
-                            let chunk_end_line =
-                                chunk_start_line + lines_in_chunk.len() as u32 - 1;
-
-                            (chunk, chunk_end_line, has_more, next_token)
-                        } else {
-                            // Non-chunked reading (original behavior)
-                            let start = input.start_line.unwrap_or(1);
-                            let end = input.end_line.unwrap_or(500).min(500);
-                            let content = self.read_file_range(&validated_path, start, end)?;
-                            (content, end, false, None)
-                        };
-
-                    // Auto-suggest for large files in raw mode without chunk_size
-                    let auto_suggest =
-                        is_large_file && chunk_size == 0 && input.continuation_token.is_none();
-
-                    let suggested = if auto_suggest {
-                        Some(65536) // 64KB suggested chunk size
+                            return Err(AppError::InvalidParameter(
+                                "Invalid continuation token".to_string(),
+                            ));
+                        }
                     } else {
-                        None
+                        let start = input.start_line.unwrap_or(1);
+                        // Convert start_line to byte offset (approximate)
+                        let offset = if start <= 1 {
+                            0
+                        } else {
+                            // Read up to start_line to compute approximate offset
+                            self.read_file_raw_at_line(&validated_path, start)?
+                        };
+                        (offset, input.chunk_size.unwrap_or(0))
                     };
 
-                    let start = input.start_line.unwrap_or(1);
-                    (
-                        content,
-                        start,
-                        actual_end_line,
-                        actual_has_more || auto_suggest,
-                        actual_next_token,
-                        suggested,
-                    )
-                }
-            };
+                // Read chunk or full content
+                let chunk_mode = chunk_size > 0 || input.continuation_token.is_some();
+                let effective_chunk_size = chunk_size;
+
+                let (content, actual_end_line, actual_has_more, actual_next_token) =
+                    if chunk_mode && effective_chunk_size > 0 {
+                        // Chunked reading
+                        let (chunk, new_offset, reached_end) =
+                            self.read_file_chunk(&validated_path, offset, effective_chunk_size)?;
+
+                        let has_more = !reached_end;
+                        let next_token = if has_more {
+                            Some(encode_token(
+                                &validated_path,
+                                new_offset,
+                                effective_chunk_size,
+                            ))
+                        } else {
+                            None
+                        };
+
+                        // Count lines in chunk to determine line numbers
+                        let lines_in_chunk: Vec<&str> = chunk.lines().collect();
+                        let chunk_start_line = if offset == 0 {
+                            1
+                        } else {
+                            // Count newlines before offset to determine line number
+                            let content = fs::read_to_string(&validated_path).map_err(|e| {
+                                AppError::InvalidParameter(format!("Failed to read file: {}", e))
+                            })?;
+                            content[..offset].lines().count() as u32 + 1
+                        };
+                        let chunk_end_line = chunk_start_line + lines_in_chunk.len() as u32 - 1;
+
+                        (chunk, chunk_end_line, has_more, next_token)
+                    } else {
+                        // Non-chunked reading (original behavior)
+                        let start = input.start_line.unwrap_or(1);
+                        let end = input.end_line.unwrap_or(500).min(500);
+                        let content = self.read_file_range(&validated_path, start, end)?;
+                        (content, end, false, None)
+                    };
+
+                // Auto-suggest for large files in raw mode without chunk_size
+                let auto_suggest =
+                    is_large_file && chunk_size == 0 && input.continuation_token.is_none();
+
+                let suggested = if auto_suggest {
+                    Some(65536) // 64KB suggested chunk size
+                } else {
+                    None
+                };
+
+                let start = input.start_line.unwrap_or(1);
+                (
+                    content,
+                    start,
+                    actual_end_line,
+                    actual_has_more || auto_suggest,
+                    actual_next_token,
+                    suggested,
+                )
+            }
+        };
 
         // Handle large file truncation warning
         let truncated = content.len() > 100_000;
@@ -1521,7 +1516,10 @@ impl FileOperationsService {
     )> {
         use crate::application::dto::VerificationStatus as Vs;
 
-        let result = self.code_verifier.verify_with_timeout(file_path, timeout_secs).await?;
+        let result = self
+            .code_verifier
+            .verify_with_timeout(file_path, timeout_secs)
+            .await?;
         Ok(match result {
             CompilationResult::Verified { stdout } => (Vs::Verified, Some(stdout), None, None),
             CompilationResult::Rejected { error } => (Vs::Rejected, None, Some(error), None),
@@ -1780,8 +1778,7 @@ mod tests {
         writeln!(file, "line 2").unwrap();
         writeln!(file, "line 3").unwrap();
 
-        let service =
-            test_service_with_temp_file(&file);
+        let service = test_service_with_temp_file(&file);
         let input = ReadFileRequest {
             path: file.path().to_str().unwrap().to_string(),
             start_line: Some(2),
@@ -1805,8 +1802,7 @@ mod tests {
         writeln!(file, "fn hello() {{}}").unwrap();
         writeln!(file, "struct MyStruct {{}}").unwrap();
 
-        let service =
-            test_service_with_temp_file(&file);
+        let service = test_service_with_temp_file(&file);
         let input = ReadFileRequest {
             path: file.path().to_str().unwrap().to_string(),
             start_line: None,
@@ -1915,8 +1911,7 @@ mod tests {
         writeln!(file, "fn old_name() {{}}").unwrap();
         let file_path = file.path().to_str().unwrap().to_string();
 
-        let service =
-            test_service_with_temp_file(&file);
+        let service = test_service_with_temp_file(&file);
         let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
@@ -1945,8 +1940,7 @@ mod tests {
         writeln!(file, "let y = foo;").unwrap();
         let file_path = file.path().to_str().unwrap().to_string();
 
-        let service =
-            test_service_with_temp_file(&file);
+        let service = test_service_with_temp_file(&file);
         let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
@@ -1975,8 +1969,7 @@ mod tests {
         writeln!(file, "fn test() {{}}").unwrap();
         let file_path = file.path().to_str().unwrap().to_string();
 
-        let service =
-            test_service_with_temp_file(&file);
+        let service = test_service_with_temp_file(&file);
         let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
@@ -2349,8 +2342,7 @@ mod tests {
         writeln!(file, "Hello World").unwrap();
         let file_path = file.path().to_str().unwrap().to_string();
 
-        let service =
-            test_service_with_temp_file(&file);
+        let service = test_service_with_temp_file(&file);
         let input = EditFileRequest {
             path: file_path.clone(),
             edits: vec![FileEdit {
@@ -2374,8 +2366,7 @@ mod tests {
         writeln!(file, "Hello World").unwrap();
         let file_path = file.path().to_str().unwrap().to_string();
 
-        let service =
-            test_service_with_temp_file(&file);
+        let service = test_service_with_temp_file(&file);
 
         // Try to edit something that doesn't exist
         let input = EditFileRequest {

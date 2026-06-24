@@ -76,13 +76,12 @@ impl IncrementalScanner {
     ///
     /// After this returns, the internal manifest is already up-to-date —
     /// subsequent calls will take the mtime fastpath for unchanged files.
-    pub fn scan(
-        &mut self,
-        current_files: &[PathBuf],
-    ) -> (ScanDelta, IncrementalScanResult) {
+    pub fn scan(&mut self, current_files: &[PathBuf]) -> (ScanDelta, IncrementalScanResult) {
         let was_first_scan = self.manifest.is_empty();
 
-        let delta = self.manifest.compute_delta(&self.project_dir, current_files);
+        let delta = self
+            .manifest
+            .compute_delta(&self.project_dir, current_files);
 
         let files_processed = delta.changed.len();
         let files_skipped = delta.unchanged.len();
@@ -153,8 +152,7 @@ mod tests {
         scanner.scan(&[PathBuf::from("a.rs"), PathBuf::from("b.rs")]);
 
         // Second scan with the same files: everything should be unchanged.
-        let (delta, result) =
-            scanner.scan(&[PathBuf::from("a.rs"), PathBuf::from("b.rs")]);
+        let (delta, result) = scanner.scan(&[PathBuf::from("a.rs"), PathBuf::from("b.rs")]);
         assert!(!result.was_first_scan);
         assert_eq!(result.files_processed, 0);
         assert_eq!(result.files_skipped, 2);
@@ -212,8 +210,7 @@ mod tests {
         let manifest = scanner1.into_manifest();
 
         // Second scanner constructed from the first's manifest
-        let mut scanner2 =
-            IncrementalScanner::with_manifest(dir.path().to_path_buf(), manifest);
+        let mut scanner2 = IncrementalScanner::with_manifest(dir.path().to_path_buf(), manifest);
         let (_, result) = scanner2.scan(&[PathBuf::from("a.rs")]);
         assert!(!result.was_first_scan);
         assert_eq!(result.files_processed, 0);

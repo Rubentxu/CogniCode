@@ -6,4 +6,4 @@
 
 pub mod builtin_descriptors;
 
-pub use builtin_descriptors::{BuiltinDescriptorRaw, BUILTIN_DESCRIPTORS_RAW, builtin_descriptors};
+pub use builtin_descriptors::{BUILTIN_DESCRIPTORS_RAW, BuiltinDescriptorRaw, builtin_descriptors};

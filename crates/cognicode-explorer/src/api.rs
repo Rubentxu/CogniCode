@@ -411,7 +411,10 @@ impl ApiState {
         }
     }
 
-    pub fn with_ingest(mut self, ingest: Arc<cognicode_core::application::ingest::IngestController>) -> Self {
+    pub fn with_ingest(
+        mut self,
+        ingest: Arc<cognicode_core::application::ingest::IngestController>,
+    ) -> Self {
         self.ingest = Some(ingest);
         self
     }
@@ -436,9 +439,18 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/api/workspaces/:workspace_id/index", post(index_workspace))
         .route("/api/workspaces/:workspace_id/spotter", get(spotter))
         .route("/api/workspaces/:workspace_id/scan", post(index_workspace))
-        .route("/api/workspaces/:workspace_id/graph/stats", get(graph_stats_handler))
-        .route("/api/workspaces/:workspace_id/landing", get(landing_handler))
-        .route("/api/workspaces/:workspace_id/architecture", get(architecture_handler))
+        .route(
+            "/api/workspaces/:workspace_id/graph/stats",
+            get(graph_stats_handler),
+        )
+        .route(
+            "/api/workspaces/:workspace_id/landing",
+            get(landing_handler),
+        )
+        .route(
+            "/api/workspaces/:workspace_id/architecture",
+            get(architecture_handler),
+        )
         .route("/api/workspaces/:workspace_id/drift", get(drift_handler))
         .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
@@ -478,9 +490,18 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/workspaces/:workspace_id/index", post(index_workspace))
         .route("/api/workspaces/:workspace_id/spotter", get(spotter))
         .route("/api/workspaces/:workspace_id/scan", post(index_workspace))
-        .route("/api/workspaces/:workspace_id/graph/stats", get(graph_stats_handler))
-        .route("/api/workspaces/:workspace_id/landing", get(landing_handler))
-        .route("/api/workspaces/:workspace_id/architecture", get(architecture_handler))
+        .route(
+            "/api/workspaces/:workspace_id/graph/stats",
+            get(graph_stats_handler),
+        )
+        .route(
+            "/api/workspaces/:workspace_id/landing",
+            get(landing_handler),
+        )
+        .route(
+            "/api/workspaces/:workspace_id/architecture",
+            get(architecture_handler),
+        )
         .route("/api/workspaces/:workspace_id/drift", get(drift_handler))
         .route("/api/jobs/:job_id", get(job_status))
         .route("/api/objects/:object_id", get(inspect_object))
@@ -585,7 +606,9 @@ async fn job_status(
     Path(job_id): Path<String>,
 ) -> Result<Response, ApiError> {
     let ingest = state.ingest.as_ref().ok_or_else(|| {
-        ApiError(ExplorerError::NotImplemented("ingest controller not wired".into()))
+        ApiError(ExplorerError::NotImplemented(
+            "ingest controller not wired".into(),
+        ))
     })?;
 
     match ingest.get_job(&job_id).await {
@@ -593,7 +616,8 @@ async fn job_status(
         None => Ok((
             axum::http::StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "job not found"})),
-        ).into_response()),
+        )
+            .into_response()),
     }
 }
 
@@ -602,7 +626,9 @@ async fn graph_stats_handler(
     Path(workspace_id): Path<String>,
 ) -> Result<Response, ApiError> {
     let ingest = state.ingest.as_ref().ok_or_else(|| {
-        ApiError(ExplorerError::NotImplemented("ingest controller not wired".into()))
+        ApiError(ExplorerError::NotImplemented(
+            "ingest controller not wired".into(),
+        ))
     })?;
 
     let stats = ingest.graph_stats(&workspace_id).await;
@@ -621,10 +647,7 @@ async fn landing_handler(
     Path(workspace_id): Path<String>,
 ) -> Result<Response, ApiError> {
     // Get workspace summary
-    let workspace = state
-        .workspace
-        .current_workspace()
-        .map_err(ApiError)?;
+    let workspace = state.workspace.current_workspace().map_err(ApiError)?;
 
     // Get graph stats from ingest controller
     let (symbol_count, relation_count, graph_status) = if let Some(ingest) = &state.ingest {
@@ -676,10 +699,7 @@ async fn architecture_handler(
     Path(_workspace_id): Path<String>,
 ) -> Result<Response, ApiError> {
     let workspace = state.workspace.current_workspace().map_err(ApiError)?;
-    let response = state
-        .graph
-        .build_architecture(&workspace.root_path)
-        .await?;
+    let response = state.graph.build_architecture(&workspace.root_path).await?;
     Ok(Json(response).into_response())
 }
 
@@ -710,7 +730,13 @@ async fn spotter(
     Path(_workspace_id): Path<String>,
     Query(query): Query<SpotterQuery>,
 ) -> Result<Response, ApiError> {
-    Ok(Json(state.search.spotter_search(&query.q, query.kind.as_deref()).await?).into_response())
+    Ok(Json(
+        state
+            .search
+            .spotter_search(&query.q, query.kind.as_deref())
+            .await?,
+    )
+    .into_response())
 }
 
 async fn inspect_object(
@@ -769,7 +795,10 @@ async fn get_exploration_session(
     State(state): State<ApiState>,
     Path(session_id): Path<String>,
 ) -> Result<Response, ApiError> {
-    let session = state.persistence.load_exploration_session(&session_id).await?;
+    let session = state
+        .persistence
+        .load_exploration_session(&session_id)
+        .await?;
     match session {
         Some(s) => Ok(Json(s).into_response()),
         None => Err(ApiError(ExplorerError::NotFound(format!(

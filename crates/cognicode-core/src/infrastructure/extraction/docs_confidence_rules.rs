@@ -158,10 +158,7 @@ pub fn heading_confidence(heading: &str, context: &str) -> f64 {
 /// identifier in backticks. We strip the wrapper uniformly.
 #[cfg(feature = "multimodal")]
 fn normalise_link(s: &str) -> String {
-    s.trim()
-        .trim_matches('`')
-        .trim()
-        .to_ascii_lowercase()
+    s.trim().trim_matches('`').trim().to_ascii_lowercase()
 }
 
 /// The "short name" of a `SymbolId` is the segment after the LAST
@@ -205,7 +202,10 @@ mod tests {
         let (tier, matched) = score_link("foo", &targets);
         assert_eq!(tier, ConfidenceTier::LinkExact);
         assert_eq!(tier.confidence(), 0.9);
-        assert_eq!(matched.as_ref().map(SymbolId::as_str), Some("src/a.rs:foo:1"));
+        assert_eq!(
+            matched.as_ref().map(SymbolId::as_str),
+            Some("src/a.rs:foo:1")
+        );
     }
 
     /// `score_link("foo", [SymbolId("src/other.rs:foobar:2")])`
@@ -262,9 +262,18 @@ mod tests {
     /// Provenance tags must match the spec table.
     #[test]
     fn tier_provenance_matches_spec() {
-        assert_eq!(ConfidenceTier::LinkExact.provenance(), Provenance::Extracted);
-        assert_eq!(ConfidenceTier::LinkFuzzy.provenance(), Provenance::Ambiguous);
-        assert_eq!(ConfidenceTier::HeadingMatch.provenance(), Provenance::Extracted);
+        assert_eq!(
+            ConfidenceTier::LinkExact.provenance(),
+            Provenance::Extracted
+        );
+        assert_eq!(
+            ConfidenceTier::LinkFuzzy.provenance(),
+            Provenance::Ambiguous
+        );
+        assert_eq!(
+            ConfidenceTier::HeadingMatch.provenance(),
+            Provenance::Extracted
+        );
         assert_eq!(
             ConfidenceTier::Unresolved.provenance(),
             Provenance::Ambiguous
@@ -317,7 +326,10 @@ mod tests {
         ];
         let (tier, matched) = score_link("foo", &targets);
         assert_eq!(tier, ConfidenceTier::LinkExact);
-        assert_eq!(matched.as_ref().map(SymbolId::as_str), Some("src/a.rs:foo:1"));
+        assert_eq!(
+            matched.as_ref().map(SymbolId::as_str),
+            Some("src/a.rs:foo:1")
+        );
     }
 
     /// Exact match is checked BEFORE fuzzy match. `score_link("foo",
@@ -332,7 +344,10 @@ mod tests {
         ];
         let (tier, matched) = score_link("foo", &targets);
         assert_eq!(tier, ConfidenceTier::LinkExact);
-        assert_eq!(matched.as_ref().map(SymbolId::as_str), Some("src/x.rs:foo:1"));
+        assert_eq!(
+            matched.as_ref().map(SymbolId::as_str),
+            Some("src/x.rs:foo:1")
+        );
     }
 
     /// Convenience helpers return the same confidence as the

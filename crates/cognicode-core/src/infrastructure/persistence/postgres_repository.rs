@@ -127,9 +127,7 @@ impl PostgresRepository {
             sqlx::raw_sql(SCHEMA_SQL_MULTIMODAL)
                 .execute(&self.pool)
                 .await
-                .map_err(|e| {
-                    RepositoryError::Store(format!("multimodal migration: {e}"))
-                })?;
+                .map_err(|e| RepositoryError::Store(format!("multimodal migration: {e}")))?;
         }
         Ok(())
     }
@@ -217,10 +215,7 @@ impl PostgresRepository {
     /// on any DB failure. The transaction is rolled back before the
     /// error is returned, so previously-stored data (if any) is
     /// preserved.
-    pub async fn save_call_graph(
-        &self,
-        graph: &CallGraph,
-    ) -> Result<(), RepositoryError> {
+    pub async fn save_call_graph(&self, graph: &CallGraph) -> Result<(), RepositoryError> {
         let mut tx = self
             .pool
             .begin()
@@ -259,9 +254,7 @@ impl PostgresRepository {
             .bind(column)
             .execute(&mut *tx)
             .await
-            .map_err(|e| {
-                RepositoryError::Store(format!("save_call_graph insert symbol: {e}"))
-            })?;
+            .map_err(|e| RepositoryError::Store(format!("save_call_graph insert symbol: {e}")))?;
         }
 
         // 3. Insert every edge with all 7 data columns.
@@ -337,9 +330,7 @@ impl PostgresRepository {
             let edge_count_row = sqlx::query("SELECT COUNT(*) AS n FROM call_edges")
                 .fetch_one(&self.pool)
                 .await
-                .map_err(|e| {
-                    RepositoryError::Store(format!("load_call_graph count edges: {e}"))
-                })?;
+                .map_err(|e| RepositoryError::Store(format!("load_call_graph count edges: {e}")))?;
             let n: i64 = edge_count_row
                 .try_get("n")
                 .map_err(|e| RepositoryError::Store(format!("load_call_graph count col: {e}")))?;
@@ -1163,9 +1154,9 @@ fn parse_qualified_name(qualified: &str) -> Result<(String, String, i32), Reposi
 #[cfg(all(feature = "postgres", feature = "multimodal"))]
 use crate::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
 #[cfg(all(feature = "postgres", feature = "multimodal"))]
-use crate::domain::value_objects::node_kind::NodeKind as VkNodeKind;
-#[cfg(all(feature = "postgres", feature = "multimodal"))]
 use crate::domain::value_objects::edge_kind::EdgeKind as VkEdgeKind;
+#[cfg(all(feature = "postgres", feature = "multimodal"))]
+use crate::domain::value_objects::node_kind::NodeKind as VkNodeKind;
 #[cfg(all(feature = "postgres", feature = "multimodal"))]
 use std::str::FromStr as _FromStr;
 
@@ -1280,10 +1271,11 @@ impl GraphEdgeRow {
     /// [`EdgeRow::into_edge`].
     fn into_graph_edge(self) -> GraphEdge {
         let kind = VkEdgeKind::from_str(&self.kind).unwrap_or_else(|_| {
-            VkEdgeKind::Dependency(crate::domain::value_objects::dependency_type::DependencyType::Calls)
+            VkEdgeKind::Dependency(
+                crate::domain::value_objects::dependency_type::DependencyType::Calls,
+            )
         });
-        let provenance =
-            Provenance::from_str(&self.provenance).unwrap_or(Provenance::Extracted);
+        let provenance = Provenance::from_str(&self.provenance).unwrap_or(Provenance::Extracted);
         let metadata = match self.metadata {
             serde_json::Value::Object(map) => map
                 .into_iter()
@@ -1349,10 +1341,7 @@ impl PostgresRepository {
     /// batches from the [`DocsExtractor`](crate::infrastructure::extraction::docs_extractor::DocsExtractor).
     /// Batching keeps the round-trip count low: 100 nodes = 1
     /// transaction, not 100.
-    pub async fn store_graph_nodes(
-        &self,
-        nodes: Vec<GraphNode>,
-    ) -> Result<(), RepositoryError> {
+    pub async fn store_graph_nodes(&self, nodes: Vec<GraphNode>) -> Result<(), RepositoryError> {
         if nodes.is_empty() {
             return Ok(());
         }
@@ -1403,9 +1392,7 @@ impl PostgresRepository {
             .bind(properties_json)
             .execute(&mut *tx)
             .await
-            .map_err(|e| {
-                RepositoryError::Store(format!("store_graph_nodes insert `{id}`: {e}"))
-            })?;
+            .map_err(|e| RepositoryError::Store(format!("store_graph_nodes insert `{id}`: {e}")))?;
         }
         tx.commit()
             .await
@@ -1433,10 +1420,7 @@ impl PostgresRepository {
     /// Callers MUST call [`PostgresRepository::store_graph_nodes`]
     /// FIRST in the pipeline (the docs-source adapter does this
     /// in [`crate::infrastructure::extraction::docs_extractor`]).
-    pub async fn store_graph_edges(
-        &self,
-        edges: Vec<GraphEdge>,
-    ) -> Result<(), RepositoryError> {
+    pub async fn store_graph_edges(&self, edges: Vec<GraphEdge>) -> Result<(), RepositoryError> {
         if edges.is_empty() {
             return Ok(());
         }
@@ -1545,7 +1529,10 @@ impl PostgresRepository {
             .await
             .map_err(|e| RepositoryError::Store(format!("find_graph_nodes: {e}")))?,
         };
-        Ok(rows.into_iter().map(GraphNodeRow::into_graph_node).collect())
+        Ok(rows
+            .into_iter()
+            .map(GraphNodeRow::into_graph_node)
+            .collect())
     }
 
     /// Find graph edges. At least one of `source` or `target` MUST
@@ -1608,10 +1595,7 @@ impl PostgresRepository {
 
     /// Look up a single graph node by `id`. Returns `Ok(None)` when
     /// the id is missing.
-    pub async fn get_graph_node(
-        &self,
-        id: NodeId,
-    ) -> Result<Option<GraphNode>, RepositoryError> {
+    pub async fn get_graph_node(&self, id: NodeId) -> Result<Option<GraphNode>, RepositoryError> {
         let row: Option<GraphNodeRow> = sqlx::query_as(
             "SELECT id, kind, label, source_path, properties, \
                     created_at::text AS created_at, \
@@ -2269,8 +2253,7 @@ mod tests {
     fn parse_qualified_name_preserves_double_colon_in_name() {
         // `module::Foo` is the file/module path,
         // `Fn::call` is the symbol name, `5` is the line.
-        let (file, name, line) =
-            parse_qualified_name("module::Foo:Fn::call:5").unwrap();
+        let (file, name, line) = parse_qualified_name("module::Foo:Fn::call:5").unwrap();
         assert_eq!(file, "module::Foo");
         assert_eq!(name, "Fn::call");
         assert_eq!(line, 5);
@@ -2331,7 +2314,11 @@ mod tests {
             SymbolKind::Function,
             Location::new("b.rs", 1, 0),
         ));
-        let c = g.add_symbol(Symbol::new("c", SymbolKind::Class, Location::new("c.rs", 1, 0)));
+        let c = g.add_symbol(Symbol::new(
+            "c",
+            SymbolKind::Class,
+            Location::new("c.rs", 1, 0),
+        ));
         let d = g.add_symbol(Symbol::new(
             "d",
             SymbolKind::Method,
@@ -2466,63 +2453,63 @@ mod tests {
     /// Spec requirement: loaded graph matches the saved one with
     /// exact per-edge `(provenance, confidence)` and per-symbol
     /// FQN. Uses `assert_eq!` (PartialEq) for structural equality.
-    pg_test!(load_populated_returns_some_with_exact_metadata, |pool: PgPool| {
-        let repo = PostgresRepository::from_pool(pool);
-        let graph = build_mixed_provenance_graph();
-        repo.save_call_graph(&graph).await.expect("save");
+    pg_test!(
+        load_populated_returns_some_with_exact_metadata,
+        |pool: PgPool| {
+            let repo = PostgresRepository::from_pool(pool);
+            let graph = build_mixed_provenance_graph();
+            repo.save_call_graph(&graph).await.expect("save");
 
-        let loaded = repo
-            .load_call_graph()
-            .await
-            .expect("load")
-            .expect("Some(graph) for populated DB");
+            let loaded = repo
+                .load_call_graph()
+                .await
+                .expect("load")
+                .expect("Some(graph) for populated DB");
 
-        assert_eq!(loaded.symbol_count(), graph.symbol_count());
-        assert_eq!(loaded.edge_count(), graph.edge_count());
+            assert_eq!(loaded.symbol_count(), graph.symbol_count());
+            assert_eq!(loaded.edge_count(), graph.edge_count());
 
-        // FQN-by-FQN: every saved symbol must be present with
-        // matching name.
-        for (_, sym) in graph.symbol_ids() {
-            let fqn = sym.fully_qualified_name();
-            let loaded_sym = loaded
-                .get_symbol(&SymbolId::new(fqn))
-                .unwrap_or_else(|| panic!("missing symbol: {fqn}"));
-            assert_eq!(loaded_sym.name(), sym.name());
-            assert_eq!(loaded_sym.location().file(), sym.location().file());
-            assert_eq!(loaded_sym.location().line(), sym.location().line());
-        }
-
-        // Per-edge: every saved (src, tgt, dep, prov, conf) tuple
-        // must round-trip bit-exactly.
-        let saved_edges: Vec<_> = graph.edges_with_metadata().collect();
-        let loaded_edges: Vec<_> = loaded.edges_with_metadata().collect();
-        assert_eq!(
-            saved_edges.len(),
-            loaded_edges.len(),
-            "edge count must match"
-        );
-        for (s_src, s_tgt, s_dep, s_prov, s_conf) in &saved_edges {
-            let mut found = false;
-            for (l_src, l_tgt, l_dep, l_prov, l_conf) in &loaded_edges {
-                if s_src == l_src && s_tgt == l_tgt && s_dep == l_dep {
-                    assert_eq!(
-                        s_prov, l_prov,
-                        "provenance mismatch for {s_src}->{s_tgt}"
-                    );
-                    assert_eq!(
-                        s_conf, l_conf,
-                        "confidence mismatch for {s_src}->{s_tgt} ({s_conf} vs {l_conf})"
-                    );
-                    found = true;
-                    break;
-                }
+            // FQN-by-FQN: every saved symbol must be present with
+            // matching name.
+            for (_, sym) in graph.symbol_ids() {
+                let fqn = sym.fully_qualified_name();
+                let loaded_sym = loaded
+                    .get_symbol(&SymbolId::new(fqn))
+                    .unwrap_or_else(|| panic!("missing symbol: {fqn}"));
+                assert_eq!(loaded_sym.name(), sym.name());
+                assert_eq!(loaded_sym.location().file(), sym.location().file());
+                assert_eq!(loaded_sym.location().line(), sym.location().line());
             }
-            assert!(
-                found,
-                "edge {s_src}->{s_tgt} ({s_dep:?}) missing from loaded graph"
+
+            // Per-edge: every saved (src, tgt, dep, prov, conf) tuple
+            // must round-trip bit-exactly.
+            let saved_edges: Vec<_> = graph.edges_with_metadata().collect();
+            let loaded_edges: Vec<_> = loaded.edges_with_metadata().collect();
+            assert_eq!(
+                saved_edges.len(),
+                loaded_edges.len(),
+                "edge count must match"
             );
+            for (s_src, s_tgt, s_dep, s_prov, s_conf) in &saved_edges {
+                let mut found = false;
+                for (l_src, l_tgt, l_dep, l_prov, l_conf) in &loaded_edges {
+                    if s_src == l_src && s_tgt == l_tgt && s_dep == l_dep {
+                        assert_eq!(s_prov, l_prov, "provenance mismatch for {s_src}->{s_tgt}");
+                        assert_eq!(
+                            s_conf, l_conf,
+                            "confidence mismatch for {s_src}->{s_tgt} ({s_conf} vs {l_conf})"
+                        );
+                        found = true;
+                        break;
+                    }
+                }
+                assert!(
+                    found,
+                    "edge {s_src}->{s_tgt} ({s_dep:?}) missing from loaded graph"
+                );
+            }
         }
-    });
+    );
 
     /// Spec requirement: round-trip `assert_eq!` of the source and
     /// the loaded graph. `CallGraph` derives `PartialEq`, so this
@@ -2616,73 +2603,72 @@ mod tests {
     /// `(workspace_id, owner, name)` triple. The second insert
     /// surfaces as `RepositoryError::UniqueViolation` (mapped from
     /// PG SQLSTATE `23505`).
-    pg_test!(named_views_unique_index_rejects_duplicate_name, |pool: PgPool| {
-        let repo = PostgresRepository::from_pool(pool);
-        // Seed first row.
-        repo.save_named_view(
-            "11111111-1111-1111-1111-111111111111",
-            "w1",
-            "u1",
-            "hotspots",
-            Some("first"),
-            "function",
-            "callgraph",
-            "crate::foo",
-            3,
-        )
-        .await
-        .expect("first save must succeed");
-
-        // Second insert with the same (w1, u1, hotspots) must fail
-        // with the typed UniqueViolation error.
-        let result = repo
-            .save_named_view(
-                "22222222-2222-2222-2222-222222222222",
+    pg_test!(
+        named_views_unique_index_rejects_duplicate_name,
+        |pool: PgPool| {
+            let repo = PostgresRepository::from_pool(pool);
+            // Seed first row.
+            repo.save_named_view(
+                "11111111-1111-1111-1111-111111111111",
                 "w1",
                 "u1",
                 "hotspots",
-                Some("second"),
+                Some("first"),
                 "function",
                 "callgraph",
                 "crate::foo",
                 3,
             )
-            .await;
-        match result {
-            Err(RepositoryError::UniqueViolation(msg)) => {
-                assert!(msg.contains("hotspots"), "got: {msg}");
+            .await
+            .expect("first save must succeed");
+
+            // Second insert with the same (w1, u1, hotspots) must fail
+            // with the typed UniqueViolation error.
+            let result = repo
+                .save_named_view(
+                    "22222222-2222-2222-2222-222222222222",
+                    "w1",
+                    "u1",
+                    "hotspots",
+                    Some("second"),
+                    "function",
+                    "callgraph",
+                    "crate::foo",
+                    3,
+                )
+                .await;
+            match result {
+                Err(RepositoryError::UniqueViolation(msg)) => {
+                    assert!(msg.contains("hotspots"), "got: {msg}");
+                }
+                other => panic!("expected UniqueViolation, got: {other:?}"),
             }
-            other => panic!("expected UniqueViolation, got: {other:?}"),
-        }
 
-        // Distinct owners can share a name.
-        repo.save_named_view(
-            "33333333-3333-3333-3333-333333333333",
-            "w1",
-            "u2",
-            "hotspots",
-            None,
-            "function",
-            "callgraph",
-            "crate::foo",
-            3,
-        )
-        .await
-        .expect("different owner must succeed");
-
-        // The first row is still queryable.
-        let row = repo
-            .load_named_view(
-                "11111111-1111-1111-1111-111111111111",
+            // Distinct owners can share a name.
+            repo.save_named_view(
+                "33333333-3333-3333-3333-333333333333",
                 "w1",
-                "u1",
+                "u2",
+                "hotspots",
+                None,
+                "function",
+                "callgraph",
+                "crate::foo",
+                3,
             )
             .await
-            .expect("load must succeed")
-            .expect("Some");
-        assert_eq!(row.name, "hotspots");
-        assert_eq!(row.description.as_deref(), Some("first"));
-    });
+            .expect("different owner must succeed");
+
+            // The first row is still queryable.
+            let row = repo
+                .load_named_view("11111111-1111-1111-1111-111111111111", "w1", "u1")
+                .await
+                .expect("load must succeed")
+                .expect("Some");
+            assert_eq!(row.name, "hotspots");
+            assert_eq!(row.description.as_deref(), Some("first"));
+        }
+    );
 
     /// Spec requirement: load returns the same row by id+scope,
     /// and `None` when the id is unknown.
@@ -2900,8 +2886,10 @@ mod tests {
             Location::new("b5.rs", 1, 0),
         ));
         b.add_dependency(&b1, &b2, DependencyType::Imports).unwrap();
-        b.add_dependency(&b2, &b3, DependencyType::Inherits).unwrap();
-        b.add_dependency(&b3, &b4, DependencyType::References).unwrap();
+        b.add_dependency(&b2, &b3, DependencyType::Inherits)
+            .unwrap();
+        b.add_dependency(&b3, &b4, DependencyType::References)
+            .unwrap();
         b.add_dependency(&b4, &b5, DependencyType::Calls).unwrap();
 
         repo.save_call_graph(&b).await.expect("save B");
@@ -2945,14 +2933,8 @@ mod tests {
         repo.save_call_graph(&graph).await.expect("save 2");
         let syms_2 = repo.count_symbols().await.unwrap();
         let edges_2 = repo.count_edges().await.unwrap();
-        assert_eq!(
-            syms_2, syms_1,
-            "idempotent re-save must keep symbol count"
-        );
-        assert_eq!(
-            edges_2, edges_1,
-            "idempotent re-save must keep edge count"
-        );
+        assert_eq!(syms_2, syms_1, "idempotent re-save must keep symbol count");
+        assert_eq!(edges_2, edges_1, "idempotent re-save must keep edge count");
 
         // Re-load and assert_eq! — semantically equivalent.
         let loaded = repo
@@ -3035,9 +3017,10 @@ mod tests {
         // Clean up so the per-test DB can be dropped without
         // complaints. We DROP the constraint, not the table,
         // so the per-test isolation remains.
-        let _ = sqlx::query("ALTER TABLE symbols DROP CONSTRAINT IF EXISTS chk_kind_block_function")
-            .execute(repo.pool())
-            .await;
+        let _ =
+            sqlx::query("ALTER TABLE symbols DROP CONSTRAINT IF EXISTS chk_kind_block_function")
+                .execute(repo.pool())
+                .await;
     });
 
     /// Spec requirement: rollback unwinds the DELETE phase. Save
@@ -3068,7 +3051,8 @@ mod tests {
         a.add_dependency(&a1, &a2, DependencyType::Calls).unwrap();
         a.add_dependency(&a2, &a3, DependencyType::Calls).unwrap();
         a.add_dependency(&a1, &a3, DependencyType::Imports).unwrap();
-        a.add_dependency(&a3, &a1, DependencyType::Inherits).unwrap();
+        a.add_dependency(&a3, &a1, DependencyType::Inherits)
+            .unwrap();
         repo.save_call_graph(&a).await.expect("save A");
         assert_eq!(repo.count_symbols().await.unwrap(), 3);
         assert_eq!(repo.count_edges().await.unwrap(), 4);
@@ -3120,11 +3104,10 @@ mod tests {
         }
 
         // Cleanup: drop the constraint.
-        let _ = sqlx::query(
-            "ALTER TABLE symbols DROP CONSTRAINT IF EXISTS chk_kind_block_function2",
-        )
-        .execute(repo.pool())
-        .await;
+        let _ =
+            sqlx::query("ALTER TABLE symbols DROP CONSTRAINT IF EXISTS chk_kind_block_function2")
+                .execute(repo.pool())
+                .await;
     });
 
     /// Spec requirement: default build stays sqlx-free. This is a
@@ -3181,12 +3164,7 @@ mod tests {
     }
 
     #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
-    fn fixture_edge(
-        source: &str,
-        target: &str,
-        kind: MmEdgeKind,
-        confidence: f64,
-    ) -> MmGraphEdge {
+    fn fixture_edge(source: &str, target: &str, kind: MmEdgeKind, confidence: f64) -> MmGraphEdge {
         MmGraphEdge::new(
             MmNodeId::new(source),
             MmNodeId::new(target),
@@ -3351,57 +3329,51 @@ mod tests {
     /// in the DDL is the source of truth). Round-trip a valid
     /// edge and assert it survives.
     #[cfg(all(test, feature = "postgres", feature = "multimodal"))]
-    pg_test!(
-        store_graph_edge_with_validation,
-        |pool: PgPool| {
-            let repo = PostgresRepository::from_pool(pool);
-            repo.run_migrations().await.expect("migrations");
+    pg_test!(store_graph_edge_with_validation, |pool: PgPool| {
+        let repo = PostgresRepository::from_pool(pool);
+        repo.run_migrations().await.expect("migrations");
 
-            repo.store_graph_nodes(vec![
-                fixture_doc_node("doc:src.md#intro", "Intro", "draft"),
-                fixture_decision_node("decision:adr/0001.md#context", "ADR-0001"),
-            ])
+        repo.store_graph_nodes(vec![
+            fixture_doc_node("doc:src.md#intro", "Intro", "draft"),
+            fixture_decision_node("decision:adr/0001.md#context", "ADR-0001"),
+        ])
+        .await
+        .expect("seed nodes");
+
+        let edge = fixture_edge(
+            "doc:src.md#intro",
+            "decision:adr/0001.md#context",
+            MmEdgeKind::Cites,
+            0.9,
+        );
+        repo.store_graph_edges(vec![edge.clone()])
             .await
-            .expect("seed nodes");
+            .expect("store_graph_edges valid");
+        let fetched = repo
+            .find_graph_edges(
+                Some(MmNodeId::new("doc:src.md#intro")),
+                Some(MmNodeId::new("decision:adr/0001.md#context")),
+            )
+            .await
+            .expect("find_graph_edges");
+        assert_eq!(fetched.len(), 1);
+        assert_eq!(fetched[0].kind, MmEdgeKind::Cites);
+        assert!((fetched[0].confidence - 0.9).abs() < 1e-9);
 
-            let edge = fixture_edge(
-                "doc:src.md#intro",
-                "decision:adr/0001.md#context",
-                MmEdgeKind::Cites,
-                0.9,
-            );
-            repo.store_graph_edges(vec![edge.clone()])
-                .await
-                .expect("store_graph_edges valid");
-            let fetched = repo
-                .find_graph_edges(
-                    Some(MmNodeId::new("doc:src.md#intro")),
-                    Some(MmNodeId::new("decision:adr/0001.md#context")),
-                )
-                .await
-                .expect("find_graph_edges");
-            assert_eq!(fetched.len(), 1);
-            assert_eq!(fetched[0].kind, MmEdgeKind::Cites);
-            assert!((fetched[0].confidence - 0.9).abs() < 1e-9);
-
-            // Bypassing `GraphEdge::new` to write a
-            // confidence=1.5 row directly: the CHECK constraint
-            // must reject it.
-            let bad = sqlx::query(
-                "INSERT INTO graph_edges \
+        // Bypassing `GraphEdge::new` to write a
+        // confidence=1.5 row directly: the CHECK constraint
+        // must reject it.
+        let bad = sqlx::query(
+            "INSERT INTO graph_edges \
                     (source_id, target_id, kind, provenance, confidence) \
                  VALUES ($1, $2, 'cites', 'extracted', 1.5)",
-            )
-            .bind("doc:src.md#intro")
-            .bind("decision:adr/0001.md#context")
-            .execute(repo.pool())
-            .await;
-            assert!(
-                bad.is_err(),
-                "CHECK constraint must reject confidence=1.5"
-            );
-        }
-    );
+        )
+        .bind("doc:src.md#intro")
+        .bind("decision:adr/0001.md#context")
+        .execute(repo.pool())
+        .await;
+        assert!(bad.is_err(), "CHECK constraint must reject confidence=1.5");
+    });
 
     /// `store_graph_nodes` + `store_graph_edges` must be
     /// idempotent: re-ingesting the same payload updates the
@@ -3481,10 +3453,7 @@ mod tests {
         assert_eq!(decisions.len(), 1);
         assert_eq!(decisions[0].kind, MmNodeKind::Decision);
 
-        let all = repo
-            .find_graph_nodes(None, 100)
-            .await
-            .expect("find_all");
+        let all = repo.find_graph_nodes(None, 100).await.expect("find_all");
         assert_eq!(all.len(), 3, "no kind filter returns every node");
     });
 
@@ -3505,8 +3474,18 @@ mod tests {
         .expect("seed nodes");
 
         repo.store_graph_edges(vec![
-            fixture_edge("doc:src.md#a", "decision:adr/0001.md#c", MmEdgeKind::Cites, 0.9),
-            fixture_edge("doc:src.md#b", "decision:adr/0001.md#c", MmEdgeKind::Cites, 0.7),
+            fixture_edge(
+                "doc:src.md#a",
+                "decision:adr/0001.md#c",
+                MmEdgeKind::Cites,
+                0.9,
+            ),
+            fixture_edge(
+                "doc:src.md#b",
+                "decision:adr/0001.md#c",
+                MmEdgeKind::Cites,
+                0.7,
+            ),
             fixture_edge(
                 "decision:adr/0001.md#c",
                 "doc:src.md#a",
@@ -3531,9 +3510,7 @@ mod tests {
             .expect("by target");
         assert_eq!(by_target.len(), 2);
 
-        let both_none = repo
-            .find_graph_edges(None, None)
-            .await;
+        let both_none = repo.find_graph_edges(None, None).await;
         assert!(both_none.is_err(), "must reject (None, None)");
     });
 

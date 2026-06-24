@@ -24,8 +24,8 @@
 // are not explicitly needed here since we delegate to the types' own
 // serialization methods.
 
-use cognicode_core::interface::mcp::schemas as core_schema;
 use crate::dto::{ViewDescriptorDto, ViewSpec};
+use cognicode_core::interface::mcp::schemas as core_schema;
 
 impl From<core_schema::ViewDescriptor> for ViewDescriptorDto {
     fn from(s: core_schema::ViewDescriptor) -> Self {

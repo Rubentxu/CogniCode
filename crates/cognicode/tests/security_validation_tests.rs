@@ -3,8 +3,7 @@
 //! These tests establish the expected behavior for the Rule trait and Strategy pattern.
 
 use cognicode::interface::mcp::security::{
-    InputValidator, PathValidationRule, UrlValidationRule, SqlValidationRule,
-    ValidationRule,
+    InputValidator, PathValidationRule, SqlValidationRule, UrlValidationRule, ValidationRule,
 };
 
 #[test]
@@ -15,9 +14,18 @@ fn test_path_validation_rule_detects_traversal() {
     std::fs::create_dir_all(&workspace).unwrap();
 
     // Path traversal should be rejected
-    assert!(rule.validate_with_context("../etc/passwd", &workspace).is_err());
-    assert!(rule.validate_with_context("foo/../../etc/passwd", &workspace).is_err());
-    assert!(rule.validate_with_context("foo/../bar/../../../etc/passwd", &workspace).is_err());
+    assert!(
+        rule.validate_with_context("../etc/passwd", &workspace)
+            .is_err()
+    );
+    assert!(
+        rule.validate_with_context("foo/../../etc/passwd", &workspace)
+            .is_err()
+    );
+    assert!(
+        rule.validate_with_context("foo/../bar/../../../etc/passwd", &workspace)
+            .is_err()
+    );
 }
 
 #[test]
@@ -32,7 +40,10 @@ fn test_path_validation_rule_allows_safe_paths() {
     std::fs::write(&safe_file, "fn main() {}").unwrap();
 
     // Safe path within workspace should be allowed
-    assert!(rule.validate_with_context(safe_file.to_str().unwrap(), &workspace).is_ok());
+    assert!(
+        rule.validate_with_context(safe_file.to_str().unwrap(), &workspace)
+            .is_ok()
+    );
 }
 
 #[test]
@@ -42,7 +53,10 @@ fn test_url_validation_rule_detects_mailto() {
     // mailto: should be rejected
     assert!(rule.validate("mailto:user@example.com").is_err());
     assert!(rule.validate("javascript:alert(1)").is_err());
-    assert!(rule.validate("data:text/html,<script>alert(1)</script>").is_err());
+    assert!(
+        rule.validate("data:text/html,<script>alert(1)</script>")
+            .is_err()
+    );
 }
 
 #[test]
@@ -72,7 +86,10 @@ fn test_sql_validation_rule_allows_safe_queries() {
 
     // Safe SQL should be allowed
     assert!(rule.validate("SELECT * FROM users WHERE id = 1").is_ok());
-    assert!(rule.validate("INSERT INTO users VALUES ('name', 'email')").is_ok());
+    assert!(
+        rule.validate("INSERT INTO users VALUES ('name', 'email')")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -86,10 +103,18 @@ fn test_input_validator_with_strategy_pattern() {
     assert!(validator.validate_input("path", "../etc/passwd").is_err());
 
     // Should fail with SQL injection
-    assert!(validator.validate_input("sql", "'; DROP TABLE users;").is_err());
+    assert!(
+        validator
+            .validate_input("sql", "'; DROP TABLE users;")
+            .is_err()
+    );
 
     // Should fail with malicious URL
-    assert!(validator.validate_input("url", "javascript:alert(1)").is_err());
+    assert!(
+        validator
+            .validate_input("url", "javascript:alert(1)")
+            .is_err()
+    );
 }
 
 #[test]

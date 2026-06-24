@@ -35,7 +35,7 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Ident, ItemFn, LitStr, Type, Token};
+use syn::{Ident, ItemFn, LitStr, Token, Type};
 
 /// Parsed attributes for `#[aix_tool]`
 struct AixToolAttrs {
@@ -76,7 +76,12 @@ impl syn::parse::Parse for AixToolAttrs {
                     let value: Type = input.parse()?;
                     input_schema = Some(value);
                 }
-                _ => return Err(syn::Error::new(key.span(), format!("Unknown key: {}", key_str))),
+                _ => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("Unknown key: {}", key_str),
+                    ))
+                }
             }
 
             if input.peek(Token![,]) {
@@ -86,8 +91,10 @@ impl syn::parse::Parse for AixToolAttrs {
 
         Ok(Self {
             name: name.ok_or_else(|| syn::Error::new(input.span(), "Missing `name` field"))?,
-            description: description.ok_or_else(|| syn::Error::new(input.span(), "Missing `description` field"))?,
-            input_schema: input_schema.ok_or_else(|| syn::Error::new(input.span(), "Missing `input_schema` field"))?,
+            description: description
+                .ok_or_else(|| syn::Error::new(input.span(), "Missing `description` field"))?,
+            input_schema: input_schema
+                .ok_or_else(|| syn::Error::new(input.span(), "Missing `input_schema` field"))?,
         })
     }
 }
@@ -96,9 +103,12 @@ impl syn::parse::Parse for AixToolAttrs {
 fn generate_tool_def(attrs: &AixToolAttrs, fn_name: &Ident) -> TokenStream {
     let name_literal = LitStr::new(&attrs.name, fn_name.span());
     let desc_literal = LitStr::new(&attrs.description, fn_name.span());
-    let const_name = Ident::new(&format!("TOOL_DEF_{}", fn_name.to_string().to_uppercase()), fn_name.span());
+    let const_name = Ident::new(
+        &format!("TOOL_DEF_{}", fn_name.to_string().to_uppercase()),
+        fn_name.span(),
+    );
     let input_type = &attrs.input_schema;
-    
+
     // Create a valid CamelCase Rust identifier from the tool name
     let snake_name = fn_name.to_string();
     let camel_name = to_camel_case(&snake_name);
@@ -153,7 +163,10 @@ fn to_camel_case(snake: &str) -> String {
 }
 
 /// Implementation of the `#[aix_tool]` attribute macro
-pub fn derive_aix_tool(attr: proc_macro2::TokenStream, input: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+pub fn derive_aix_tool(
+    attr: proc_macro2::TokenStream,
+    input: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
     // Parse attribute tokens
     let attrs = syn::parse2::<AixToolAttrs>(attr).expect("Failed to parse #[aix_tool] attributes");
 

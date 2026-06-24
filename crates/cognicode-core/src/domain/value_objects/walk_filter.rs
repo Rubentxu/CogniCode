@@ -295,14 +295,23 @@ mod tests {
     fn should_walk_prunes_env_files() {
         let filter = WalkFilter::default();
         assert_eq!(filter.should_walk(Path::new(".env")), WalkDecision::Prune);
-        assert_eq!(filter.should_walk(Path::new(".env.local")), WalkDecision::Prune);
+        assert_eq!(
+            filter.should_walk(Path::new(".env.local")),
+            WalkDecision::Prune
+        );
     }
 
     #[test]
     fn should_walk_prunes_credentials_paths() {
         let filter = WalkFilter::default();
-        assert_eq!(filter.should_walk(Path::new("credentials")), WalkDecision::Prune);
-        assert_eq!(filter.should_walk(Path::new("secrets")), WalkDecision::Prune);
+        assert_eq!(
+            filter.should_walk(Path::new("credentials")),
+            WalkDecision::Prune
+        );
+        assert_eq!(
+            filter.should_walk(Path::new("secrets")),
+            WalkDecision::Prune
+        );
     }
 
     // =====================================================================
@@ -326,8 +335,14 @@ mod tests {
     #[test]
     fn should_walk_prunes_python_cache() {
         let filter = WalkFilter::default();
-        assert_eq!(filter.should_walk(Path::new("__pycache__")), WalkDecision::Prune);
-        assert_eq!(filter.should_walk(Path::new(".pytest_cache")), WalkDecision::Prune);
+        assert_eq!(
+            filter.should_walk(Path::new("__pycache__")),
+            WalkDecision::Prune
+        );
+        assert_eq!(
+            filter.should_walk(Path::new(".pytest_cache")),
+            WalkDecision::Prune
+        );
     }
 
     #[test]
@@ -352,24 +367,42 @@ mod tests {
     #[test]
     fn should_walk_includes_normal_source_files() {
         let filter = WalkFilter::default();
-        assert_eq!(filter.should_walk(Path::new("src/main.rs")), WalkDecision::Include);
-        assert_eq!(filter.should_walk(Path::new("lib.py")), WalkDecision::Include);
-        assert_eq!(filter.should_walk(Path::new("index.js")), WalkDecision::Include);
+        assert_eq!(
+            filter.should_walk(Path::new("src/main.rs")),
+            WalkDecision::Include
+        );
+        assert_eq!(
+            filter.should_walk(Path::new("lib.py")),
+            WalkDecision::Include
+        );
+        assert_eq!(
+            filter.should_walk(Path::new("index.js")),
+            WalkDecision::Include
+        );
     }
 
     #[test]
     fn should_walk_includes_hidden_files_that_are_not_blocked() {
         let filter = WalkFilter::default();
         // .gitignore is not in the blocklist
-        assert_eq!(filter.should_walk(Path::new(".gitignore")), WalkDecision::Include);
-        assert_eq!(filter.should_walk(Path::new(".editorconfig")), WalkDecision::Include);
+        assert_eq!(
+            filter.should_walk(Path::new(".gitignore")),
+            WalkDecision::Include
+        );
+        assert_eq!(
+            filter.should_walk(Path::new(".editorconfig")),
+            WalkDecision::Include
+        );
     }
 
     #[test]
     fn should_walk_includes_normal_directories() {
         let filter = WalkFilter::default();
         assert_eq!(filter.should_walk(Path::new("src")), WalkDecision::Include);
-        assert_eq!(filter.should_walk(Path::new("tests")), WalkDecision::Include);
+        assert_eq!(
+            filter.should_walk(Path::new("tests")),
+            WalkDecision::Include
+        );
         assert_eq!(filter.should_walk(Path::new("docs")), WalkDecision::Include);
     }
 
@@ -398,7 +431,10 @@ mod tests {
         let filter = WalkFilter::default();
         // Just the directory name as a path
         assert_eq!(filter.should_walk(Path::new("target")), WalkDecision::Prune);
-        assert_eq!(filter.should_walk(Path::new("node_modules")), WalkDecision::Prune);
+        assert_eq!(
+            filter.should_walk(Path::new("node_modules")),
+            WalkDecision::Prune
+        );
     }
 
     #[test]
@@ -406,7 +442,10 @@ mod tests {
         let filter = WalkFilter::default();
         // Blocklist is lowercase
         assert_eq!(filter.should_walk(Path::new("Git")), WalkDecision::Include);
-        assert_eq!(filter.should_walk(Path::new("NODE_MODULES")), WalkDecision::Include);
+        assert_eq!(
+            filter.should_walk(Path::new("NODE_MODULES")),
+            WalkDecision::Include
+        );
     }
 
     #[test]

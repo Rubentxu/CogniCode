@@ -15,8 +15,7 @@
 //! but for the new types.
 
 use crate::dto::{
-    ChildrenSection, ContextualGraphResponse, GraphEdge, GraphNode, ParentSection,
-    SameLevelSection,
+    ChildrenSection, ContextualGraphResponse, GraphEdge, GraphNode, ParentSection, SameLevelSection,
 };
 
 fn sample_focus() -> GraphNode {
@@ -61,7 +60,10 @@ fn sample_edge(source: &str, target: &str) -> GraphEdge {
     }
 }
 
-fn sample_response(parent: Option<ParentSection>, children: Option<ChildrenSection>) -> ContextualGraphResponse {
+fn sample_response(
+    parent: Option<ParentSection>,
+    children: Option<ChildrenSection>,
+) -> ContextualGraphResponse {
     let focus = sample_focus();
     let same_level = SameLevelSection {
         nodes: vec![sample_child_node("sym:focus::callee:1")],
@@ -108,8 +110,12 @@ fn contextual_response_with_parent_serializes_edge() {
     // carries the same source/target we put in.
     let pid = v["parent"]["node"]["id"].as_str().expect("parent.node.id");
     assert_eq!(pid, "file:src/focus.rs");
-    let p_edge_src = v["parent"]["edge"]["source"].as_str().expect("parent.edge.source");
-    let p_edge_tgt = v["parent"]["edge"]["target"].as_str().expect("parent.edge.target");
+    let p_edge_src = v["parent"]["edge"]["source"]
+        .as_str()
+        .expect("parent.edge.source");
+    let p_edge_tgt = v["parent"]["edge"]["target"]
+        .as_str()
+        .expect("parent.edge.target");
     assert_eq!(p_edge_src, "sym:focus::alpha:1");
     assert_eq!(p_edge_tgt, "file:src/focus.rs");
 }
@@ -172,17 +178,11 @@ fn contextual_response_reuses_graph_node_schema() {
         .keys()
         .cloned()
         .collect();
-    let expected: std::collections::BTreeSet<String> = [
-        "id",
-        "label",
-        "kind",
-        "file",
-        "line",
-        "style_class",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
+    let expected: std::collections::BTreeSet<String> =
+        ["id", "label", "kind", "file", "line", "style_class"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
     assert_eq!(focus_keys, expected, "GraphNode shape must be reused");
 
     // Edges carry the four GraphEdge keys.
@@ -197,8 +197,5 @@ fn contextual_response_reuses_graph_node_schema() {
             .iter()
             .map(|s| s.to_string())
             .collect();
-    assert_eq!(
-        edge_keys, expected_edge,
-        "GraphEdge shape must be reused"
-    );
+    assert_eq!(edge_keys, expected_edge, "GraphEdge shape must be reused");
 }

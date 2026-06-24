@@ -24,10 +24,7 @@ use axum::http::StatusCode;
 /// - missing header → reject
 /// - malformed (no scheme, truncated, lowercase scheme) → mixed
 /// - empty bearer value with non-empty expected → reject
-pub fn check_bearer_token(
-    header_value: Option<&str>,
-    expected: &str,
-) -> Result<(), StatusCode> {
+pub fn check_bearer_token(header_value: Option<&str>, expected: &str) -> Result<(), StatusCode> {
     // Accept both "Bearer " and "bearer " — RFC 7235 says the auth
     // scheme is case-insensitive. `eq_ignore_ascii_case` is OK here
     // because we're comparing a 7-byte literal, not the secret itself.

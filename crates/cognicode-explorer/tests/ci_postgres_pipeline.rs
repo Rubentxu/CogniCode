@@ -30,8 +30,12 @@ fn workspace_root() -> PathBuf {
 #[test]
 fn env_example_declares_database_urls() {
     let path = workspace_root().join(".env.example");
-    let content = fs::read_to_string(&path)
-        .unwrap_or_else(|_| panic!("FAIL: .env.example must exist at workspace root: {:?}", path));
+    let content = fs::read_to_string(&path).unwrap_or_else(|_| {
+        panic!(
+            "FAIL: .env.example must exist at workspace root: {:?}",
+            path
+        )
+    });
 
     assert!(
         content.contains("DATABASE_URL"),
@@ -65,7 +69,9 @@ fn gitignore_excludes_env_file() {
             || trimmed == "/.env"
             || trimmed == "**/.env"
             || trimmed.starts_with(".env\n")
-            || (trimmed.starts_with("#") == false && trimmed.contains(".env") && !trimmed.contains(".env.example"))
+            || (trimmed.starts_with("#") == false
+                && trimmed.contains(".env")
+                && !trimmed.contains(".env.example"))
     });
     assert!(
         has_env_ignore,

@@ -12,9 +12,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::ask::AskRouter;
+use crate::mcp::context::McpContext;
 use crate::mcp::envelope::{err_envelope, ok_envelope_with_provenance};
 use crate::mcp::handler::ToolHandler;
-use crate::mcp::context::McpContext;
 use crate::mcp::{McpResultEnvelope, ProvenanceMetadata, TOOL_ASK};
 
 // ============================================================================
@@ -95,11 +95,7 @@ impl ToolHandler for AskHandler {
         let search = match ctx.search.as_ref() {
             Some(s) => s.as_ref(),
             None => {
-                return err_envelope(
-                    TOOL_ASK,
-                    "facade_unavailable",
-                    "search service not wired",
-                );
+                return err_envelope(TOOL_ASK, "facade_unavailable", "search service not wired");
             }
         };
         let workspace = match ctx.workspace.as_ref() {
@@ -115,21 +111,12 @@ impl ToolHandler for AskHandler {
         let view = match ctx.view.as_ref() {
             Some(v) => v.as_ref(),
             None => {
-                return err_envelope(
-                    TOOL_ASK,
-                    "facade_unavailable",
-                    "view service not wired",
-                );
+                return err_envelope(TOOL_ASK, "facade_unavailable", "view service not wired");
             }
         };
 
         let env = crate::ask::dispatch::dispatch_ask(
-            classified,
-            search,
-            workspace,
-            view,
-            &ctx.graph,
-            None,
+            classified, search, workspace, view, &ctx.graph, None,
         )
         .await;
 
@@ -137,8 +124,8 @@ impl ToolHandler for AskHandler {
         // dispatch_ask already has the right structure, but we need to
         // wrap it in our own envelope so the tool_name, version, timestamp
         // match this tool's identity.
-        let provenance = ProvenanceMetadata::new(0.0, Some("ask-router".into()))
-            .unwrap_or_default();
+        let provenance =
+            ProvenanceMetadata::new(0.0, Some("ask-router".into())).unwrap_or_default();
         let payload = serde_json::to_value(&env).unwrap_or(serde_json::Value::Null);
         ok_envelope_with_provenance(TOOL_ASK, &payload, provenance)
     }

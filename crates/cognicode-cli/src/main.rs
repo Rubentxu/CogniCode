@@ -41,7 +41,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => {
             let msg = e.to_string();
             if msg.contains("already been initialized") {
-                tracing::warn!("Rayon global thread pool already initialized; using existing configuration");
+                tracing::warn!(
+                    "Rayon global thread pool already initialized; using existing configuration"
+                );
             } else {
                 panic!("Failed to initialize Rayon global thread pool: {}", e);
             }

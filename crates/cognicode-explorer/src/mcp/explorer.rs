@@ -16,8 +16,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, Content, ErrorData, Implementation,
-    ListToolsResult, PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerInfo, Tool,
+    CallToolRequestParams, CallToolResult, Content, ErrorData, Implementation, ListToolsResult,
+    PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerInfo, Tool,
 };
 use rmcp::service::{RequestContext, RoleServer};
 use serde::Deserialize;
@@ -29,14 +29,16 @@ use cognicode_core::domain::traits::GraphQueryPort;
 pub use super::context::McpContext;
 pub use super::error::ToolError;
 pub use super::handler::{ToolHandler, ToolHandlerRegistry};
-use crate::facades::{GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService};
+use crate::facades::LensExecutor;
 use crate::facades::graph::GraphServiceImpl;
 use crate::facades::moldql::MoldQLServiceImpl;
 use crate::facades::persistence::PersistenceServiceImpl;
 use crate::facades::search::SearchServiceImpl;
 use crate::facades::view::ViewServiceImpl;
 use crate::facades::workspace::WorkspaceServiceImpl;
-use crate::facades::LensExecutor;
+use crate::facades::{
+    GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
+};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::SymbolRepository;
 use crate::session::SessionRegistry;
@@ -178,13 +180,19 @@ pub struct ProvenanceMetadata {
 impl ProvenanceMetadata {
     /// Construct a new provenance entry.
     pub fn new(confidence: f64, source: Option<String>) -> Option<Self> {
-        Some(Self { confidence: Some(confidence), source })
+        Some(Self {
+            confidence: Some(confidence),
+            source,
+        })
     }
 }
 
 impl Default for ProvenanceMetadata {
     fn default() -> Self {
-        Self { confidence: None, source: None }
+        Self {
+            confidence: None,
+            source: None,
+        }
     }
 }
 
@@ -277,14 +285,13 @@ impl ExplorerMcpHandler {
     ) -> Self {
         // GraphQueryPort may be None when no call graph is loaded.
         let graph_query: Option<Arc<dyn GraphQueryPort>> = graph.as_ref().map(|g| {
-            Arc::new(crate::adapters::CallGraphRepository::new(g.clone())) as Arc<dyn GraphQueryPort>
+            Arc::new(crate::adapters::CallGraphRepository::new(g.clone()))
+                as Arc<dyn GraphQueryPort>
         });
 
         // Workspace facade.
-        let workspace: Arc<dyn WorkspaceService> = Arc::new(WorkspaceServiceImpl::new(
-            symbol_repo.clone(),
-            cwd,
-        ));
+        let workspace: Arc<dyn WorkspaceService> =
+            Arc::new(WorkspaceServiceImpl::new(symbol_repo.clone(), cwd));
 
         // Search facade.
         let search: Arc<dyn SearchService> = Arc::new(SearchServiceImpl::new(
@@ -329,10 +336,8 @@ impl ExplorerMcpHandler {
         ));
 
         // Graph facade.
-        let graph_facade: Arc<dyn GraphService> = Arc::new(GraphServiceImpl::new(
-            symbol_repo.clone(),
-            graph_query,
-        ));
+        let graph_facade: Arc<dyn GraphService> =
+            Arc::new(GraphServiceImpl::new(symbol_repo.clone(), graph_query));
 
         // Build McpContext with all facades wired.
         let ctx = McpContext::builder()
@@ -372,10 +377,7 @@ impl ExplorerMcpHandler {
             .into_iter()
             .map(|h| {
                 let schema: serde_json::Value = h.arg_schema();
-                let obj = schema
-                    .as_object()
-                    .cloned()
-                    .unwrap_or_default();
+                let obj = schema.as_object().cloned().unwrap_or_default();
                 Tool::new(
                     Cow::Borrowed(h.name()),
                     Cow::Owned(format!("Registered tool: {}", h.name())),
@@ -397,9 +399,10 @@ impl ExplorerMcpHandler {
 impl ServerHandler for ExplorerMcpHandler {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(
-                Implementation::new("cognicode-explorer", env!("CARGO_PKG_VERSION")),
-            )
+            .with_server_info(Implementation::new(
+                "cognicode-explorer",
+                env!("CARGO_PKG_VERSION"),
+            ))
             .with_protocol_version(ProtocolVersion::V_2025_03_26)
     }
 

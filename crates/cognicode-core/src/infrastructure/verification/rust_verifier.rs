@@ -3,9 +3,9 @@
 //! This verifier checks Rust source files by compiling them with `rustc` in a
 //! sandboxed temporary directory.
 
-use async_trait::async_trait;
 use crate::application::error::AppResult;
 use crate::domain::traits::code_verifier::{CodeVerifier, CompilationResult};
+use async_trait::async_trait;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -31,15 +31,13 @@ impl RustVerifier {
     ///
     /// Creates a TempDir with prefix `cognicode_rust_verify_`, writes content to a temp file,
     /// and returns both the TempDir (for lifetime management) and the temp file path.
-    fn setup_temp_file(
-        content: &str,
-        file_name: &str,
-    ) -> AppResult<(TempDir, std::path::PathBuf)> {
-        let temp_dir = TempDir::with_prefix("cognicode_rust_verify_")
-            .map_err(|e| crate::application::error::AppError::InternalError(format!(
+    fn setup_temp_file(content: &str, file_name: &str) -> AppResult<(TempDir, std::path::PathBuf)> {
+        let temp_dir = TempDir::with_prefix("cognicode_rust_verify_").map_err(|e| {
+            crate::application::error::AppError::InternalError(format!(
                 "Failed to create temp dir: {}",
                 e
-            )))?;
+            ))
+        })?;
 
         let temp_file_path = temp_dir.path().join(file_name);
 
@@ -64,13 +62,9 @@ impl RustVerifier {
     /// Runs rustc asynchronously with kill_on_drop(true).
     ///
     /// When the returned future is dropped (e.g., on timeout), the child process is killed.
-    async fn run_rustc_async(
-        temp_file: std::path::PathBuf,
-    ) -> AppResult<std::process::Output> {
+    async fn run_rustc_async(temp_file: std::path::PathBuf) -> AppResult<std::process::Output> {
         let mut cmd = tokio::process::Command::new("rustc");
-        cmd.args(RUSTC_ARGS)
-            .arg(&temp_file)
-            .kill_on_drop(true);
+        cmd.args(RUSTC_ARGS).arg(&temp_file).kill_on_drop(true);
 
         cmd.output().await.map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -131,7 +125,9 @@ impl RustVerifier {
                 } else {
                     stderr
                 };
-                Ok(CompilationResult::Rejected { error: error_snippet })
+                Ok(CompilationResult::Rejected {
+                    error: error_snippet,
+                })
             }
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::NotFound {
@@ -178,18 +174,15 @@ impl CodeVerifier for RustVerifier {
         })?;
 
         // Set up temp file (file I/O - can be blocking)
-        let (temp_dir, temp_file_path) =
-            Self::setup_temp_file(&content, &file_name)?;
+        let (temp_dir, temp_file_path) = Self::setup_temp_file(&content, &file_name)?;
 
         let timeout_duration = std::time::Duration::from_secs(timeout_secs);
 
         // Use tokio::time::timeout with tokio::process::Command directly
         // kill_on_drop ensures process dies on timeout
         // We use spawn_blocking for the blocking file operations and temp dir management
-        let output_result = tokio::time::timeout(
-            timeout_duration,
-            Self::run_rustc_async(temp_file_path)
-        ).await;
+        let output_result =
+            tokio::time::timeout(timeout_duration, Self::run_rustc_async(temp_file_path)).await;
 
         // Drop temp_dir explicitly after rustc completes to ensure cleanup happens
         // while temp_file_path reference is still valid
@@ -237,7 +230,9 @@ mod tests {
 
         match result.unwrap() {
             CompilationResult::Verified { stdout } => {
-                assert!(stdout.is_empty() || stdout.contains("warning") || stdout.contains("Compiling"));
+                assert!(
+                    stdout.is_empty() || stdout.contains("warning") || stdout.contains("Compiling")
+                );
             }
             other => panic!("Expected Verified, got {:?}", other),
         }

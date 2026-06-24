@@ -64,19 +64,19 @@ use crate::domain::value_objects::node_kind::NodeKind;
 use crate::domain::value_objects::provenance::Provenance;
 #[cfg(feature = "multimodal")]
 use crate::infrastructure::git::commit_issue_parser::{
-    issue_node_id_for_commit, parse_commit_issue_refs, CommitIssueRef, CommitRefKind,
+    CommitIssueRef, CommitRefKind, issue_node_id_for_commit, parse_commit_issue_refs,
 };
 #[cfg(feature = "multimodal")]
 use crate::infrastructure::github::client::{GitHubClient, GitHubError, IssueState, RawIssue};
 
 #[cfg(feature = "multimodal")]
 use super::issues_confidence_rules::{
-    score_body_mention, score_commit_fixes, score_commit_refs, ConfidenceTier,
+    ConfidenceTier, score_body_mention, score_commit_fixes, score_commit_refs,
 };
 
 #[cfg(feature = "multimodal")]
 use crate::domain::value_objects::issue_properties::{
-    issue_node_id, parse_github_url, validate_issue_properties, IssueTracker,
+    IssueTracker, issue_node_id, parse_github_url, validate_issue_properties,
 };
 
 // ============================================================================
@@ -91,11 +91,7 @@ use crate::domain::value_objects::issue_properties::{
 /// (`issue:{tracker}/{repo_full}#{number}`).
 /// The function is pure — no I/O, no global state.
 #[cfg(feature = "multimodal")]
-pub fn build_issue_node(
-    raw: &RawIssue,
-    owner: &str,
-    repo: &str,
-) -> Result<ExtractedNode, String> {
+pub fn build_issue_node(raw: &RawIssue, owner: &str, repo: &str) -> Result<ExtractedNode, String> {
     let tracker = IssueTracker::Github;
     let repo_full = format!("{owner}/{repo}");
     let id = issue_node_id(tracker.as_str(), &repo_full, &raw.number.to_string());
@@ -158,10 +154,7 @@ pub fn build_issue_node(
     let mut edges: Vec<GraphEdge> = Vec::new();
     if let Some(body) = raw.body.as_deref() {
         for line in body.lines().take(1024) {
-            if matches!(
-                score_body_mention(line),
-                ConfidenceTier::BodyMention
-            ) {
+            if matches!(score_body_mention(line), ConfidenceTier::BodyMention) {
                 for target in body_mention_targets(line) {
                     if let Ok(edge) = GraphEdge::new(
                         NodeId::new(id.clone()),
@@ -226,11 +219,7 @@ fn body_mention_targets(line: &str) -> Vec<NodeId> {
     let parts: Vec<&str> = target.split(':').collect();
     let valid = match parts.len() {
         2 => !parts[0].is_empty() && !parts[1].is_empty(),
-        3 => {
-            !parts[0].is_empty()
-                && !parts[1].is_empty()
-                && parts[2].parse::<i32>().is_ok()
-        }
+        3 => !parts[0].is_empty() && !parts[1].is_empty() && parts[2].parse::<i32>().is_ok(),
         _ => false,
     };
     if !valid {
@@ -272,11 +261,7 @@ impl IssuesExtractor {
     /// Build with an explicit `(owner, repo)` override
     /// (used by tests that want to feed canned data without
     /// going through the URL parse).
-    pub fn with_repo_override(
-        client: Arc<dyn GitHubClient>,
-        owner: String,
-        repo: String,
-    ) -> Self {
+    pub fn with_repo_override(client: Arc<dyn GitHubClient>, owner: String, repo: String) -> Self {
         Self {
             client,
             repo_override: Some((owner, repo)),
@@ -290,7 +275,9 @@ impl Default for IssuesExtractor {
         // The default `OctocrabClient` reads `GITHUB_TOKEN`
         // on the first call. The dyn-compat shape stays the
         // same regardless of the client.
-        Self::new(Arc::new(crate::infrastructure::github::octocrab_client::OctocrabClient::new()))
+        Self::new(Arc::new(
+            crate::infrastructure::github::octocrab_client::OctocrabClient::new(),
+        ))
     }
 }
 
@@ -301,10 +288,7 @@ impl SourceExtractor for IssuesExtractor {
         "github_issues"
     }
 
-    async fn extract(
-        &self,
-        source: SourcePath,
-    ) -> SourceExtractorResult<Vec<ExtractedNode>> {
+    async fn extract(&self, source: SourcePath) -> SourceExtractorResult<Vec<ExtractedNode>> {
         match source {
             SourcePath::Url(url) => self.extract_url(&url).await,
             SourcePath::Directory(dir) => self.extract_directory(&dir).await,
@@ -323,9 +307,8 @@ impl IssuesExtractor {
     async fn extract_url(&self, url: &str) -> SourceExtractorResult<Vec<ExtractedNode>> {
         let (owner, repo) = match self.repo_override.clone() {
             Some(o) => o,
-            None => parse_github_url(url).map_err(|e| {
-                SourceExtractorError::Unsupported(format!("issues extractor: {e}"))
-            })?,
+            None => parse_github_url(url)
+                .map_err(|e| SourceExtractorError::Unsupported(format!("issues extractor: {e}")))?,
         };
         let raws = self
             .client
@@ -352,10 +335,7 @@ impl IssuesExtractor {
     /// references, emit `commit:{sha_short}` synthetic nodes
     /// (only if not already in the index) + `Resolves` /
     /// `References` edges to the issue.
-    async fn extract_directory(
-        &self,
-        dir: &PathBuf,
-    ) -> SourceExtractorResult<Vec<ExtractedNode>> {
+    async fn extract_directory(&self, dir: &PathBuf) -> SourceExtractorResult<Vec<ExtractedNode>> {
         if !dir.is_dir() {
             return Err(SourceExtractorError::NotFound(dir.display().to_string()));
         }
@@ -472,11 +452,7 @@ fn split_owner_repo(rest: &str) -> Option<(String, String)> {
 /// node per unique commit, with the `Resolves` /
 /// `References` edges to the issue nodes attached.
 #[cfg(feature = "multimodal")]
-fn refs_to_nodes(
-    refs: Vec<CommitIssueRef>,
-    owner: &str,
-    repo: &str,
-) -> Vec<ExtractedNode> {
+fn refs_to_nodes(refs: Vec<CommitIssueRef>, owner: &str, repo: &str) -> Vec<ExtractedNode> {
     use std::collections::BTreeMap;
     // Group by commit (the synthetic `commit:{sha_short}`
     // node is one per unique commit). The BTreeMap keeps the
@@ -488,9 +464,10 @@ fn refs_to_nodes(
     let mut out: Vec<ExtractedNode> = Vec::with_capacity(by_commit.len());
     for (sha, refs) in by_commit {
         let commit_id = crate::infrastructure::git::commit_issue_parser::commit_node_id(&sha);
-        let node = GraphNode::builder(NodeId::new(commit_id.clone()), NodeKind::Symbol(
-            crate::domain::value_objects::symbol_kind::SymbolKind::Module,
-        ))
+        let node = GraphNode::builder(
+            NodeId::new(commit_id.clone()),
+            NodeKind::Symbol(crate::domain::value_objects::symbol_kind::SymbolKind::Module),
+        )
         .label(format!("commit {sha}"))
         .created_at(Utc::now())
         .updated_at(Utc::now())
@@ -566,7 +543,9 @@ mod tests {
         let client: Arc<dyn GitHubClient> = Arc::new(MockGitHubClient::with_issues(raws));
         let extractor = IssuesExtractor::new(client);
         let nodes = extractor
-            .extract(SourcePath::Url("https://github.com/acme/widgets".to_string()))
+            .extract(SourcePath::Url(
+                "https://github.com/acme/widgets".to_string(),
+            ))
             .await
             .expect("extract");
         assert_eq!(nodes.len(), 5);
@@ -625,12 +604,13 @@ mod tests {
     async fn auth_required_surfaces_as_internal() {
         use crate::infrastructure::github::client::GitHubError;
         use crate::infrastructure::github::mock_client::MockGitHubClient;
-        let client: Arc<dyn GitHubClient> = Arc::new(MockGitHubClient::with_error(
-            GitHubError::AuthRequired,
-        ));
+        let client: Arc<dyn GitHubClient> =
+            Arc::new(MockGitHubClient::with_error(GitHubError::AuthRequired));
         let extractor = IssuesExtractor::new(client);
         let result = extractor
-            .extract(SourcePath::Url("https://github.com/acme/widgets".to_string()))
+            .extract(SourcePath::Url(
+                "https://github.com/acme/widgets".to_string(),
+            ))
             .await;
         match result {
             Err(SourceExtractorError::Internal(msg)) => {
@@ -650,12 +630,13 @@ mod tests {
     async fn rate_limited_surfaces_as_internal() {
         use crate::infrastructure::github::client::GitHubError;
         use crate::infrastructure::github::mock_client::MockGitHubClient;
-        let client: Arc<dyn GitHubClient> = Arc::new(MockGitHubClient::with_error(
-            GitHubError::RateLimited,
-        ));
+        let client: Arc<dyn GitHubClient> =
+            Arc::new(MockGitHubClient::with_error(GitHubError::RateLimited));
         let extractor = IssuesExtractor::new(client);
         let result = extractor
-            .extract(SourcePath::Url("https://github.com/acme/widgets".to_string()))
+            .extract(SourcePath::Url(
+                "https://github.com/acme/widgets".to_string(),
+            ))
             .await;
         match result {
             Err(SourceExtractorError::Internal(msg)) => {
@@ -689,11 +670,15 @@ mod tests {
         let client: Arc<dyn GitHubClient> = Arc::new(MockGitHubClient::with_issues(raws));
         let extractor = IssuesExtractor::new(client);
         let first = extractor
-            .extract(SourcePath::Url("https://github.com/acme/widgets".to_string()))
+            .extract(SourcePath::Url(
+                "https://github.com/acme/widgets".to_string(),
+            ))
             .await
             .expect("first extract");
         let second = extractor
-            .extract(SourcePath::Url("https://github.com/acme/widgets".to_string()))
+            .extract(SourcePath::Url(
+                "https://github.com/acme/widgets".to_string(),
+            ))
             .await
             .expect("second extract");
         let first_ids: Vec<String> = first
@@ -738,11 +723,15 @@ mod tests {
         let client: Arc<dyn GitHubClient> = Arc::new(MockGitHubClient::with_issues(raws));
         let extractor = IssuesExtractor::new(client);
         let first = extractor
-            .extract(SourcePath::Url("https://github.com/acme/widgets".to_string()))
+            .extract(SourcePath::Url(
+                "https://github.com/acme/widgets".to_string(),
+            ))
             .await
             .expect("first extract");
         let second = extractor
-            .extract(SourcePath::Url("https://github.com/acme/widgets".to_string()))
+            .extract(SourcePath::Url(
+                "https://github.com/acme/widgets".to_string(),
+            ))
             .await
             .expect("second extract");
         // Both runs have 5 nodes.
@@ -766,10 +755,13 @@ mod tests {
     #[test]
     fn build_issue_node_normalises_unknown_state_to_open() {
         let raw = make_raw(42, "Weird", "in_progress");
-        let node = build_issue_node(&raw, "acme", "widgets")
-            .expect("build accepts normalised status");
+        let node =
+            build_issue_node(&raw, "acme", "widgets").expect("build accepts normalised status");
         assert_eq!(
-            node.potential_node.properties.get("status").map(String::as_str),
+            node.potential_node
+                .properties
+                .get("status")
+                .map(String::as_str),
             Some("open"),
             "unknown state must be normalised to 'open'"
         );
@@ -783,11 +775,17 @@ mod tests {
         let node = build_issue_node(&raw, "acme", "widgets").expect("build");
         assert_eq!(node.potential_node.kind, NodeKind::Issue);
         assert_eq!(
-            node.potential_node.properties.get("status").map(String::as_str),
+            node.potential_node
+                .properties
+                .get("status")
+                .map(String::as_str),
             Some("open")
         );
         assert_eq!(
-            node.potential_node.properties.get("number").map(String::as_str),
+            node.potential_node
+                .properties
+                .get("number")
+                .map(String::as_str),
             Some("42")
         );
     }

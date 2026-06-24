@@ -17,7 +17,10 @@ pub enum ToolError {
     /// One or more input arguments failed validation.
     InvalidInput { tool: &'static str, field: String },
     /// The tool requires a feature that is not enabled in this build.
-    FeatureDisabled { tool: &'static str, feature: &'static str },
+    FeatureDisabled {
+        tool: &'static str,
+        feature: &'static str,
+    },
     /// The request conflicts with current state (e.g. duplicate, unique violation).
     Conflict { tool: &'static str, what: String },
     /// A storage or I/O operation failed.
@@ -69,31 +72,46 @@ mod tests {
 
     #[test]
     fn tool_error_code_not_found() {
-        let err = ToolError::NotFound { tool: "foo", what: "bar".into() };
+        let err = ToolError::NotFound {
+            tool: "foo",
+            what: "bar".into(),
+        };
         assert_eq!(err.code(), "not_found");
     }
 
     #[test]
     fn tool_error_code_invalid_input() {
-        let err = ToolError::InvalidInput { tool: "foo", field: "x".into() };
+        let err = ToolError::InvalidInput {
+            tool: "foo",
+            field: "x".into(),
+        };
         assert_eq!(err.code(), "invalid_input");
     }
 
     #[test]
     fn tool_error_code_feature_disabled() {
-        let err = ToolError::FeatureDisabled { tool: "foo", feature: "multimodal" };
+        let err = ToolError::FeatureDisabled {
+            tool: "foo",
+            feature: "multimodal",
+        };
         assert_eq!(err.code(), "feature_disabled");
     }
 
     #[test]
     fn tool_error_code_conflict() {
-        let err = ToolError::Conflict { tool: "foo", what: "dup".into() };
+        let err = ToolError::Conflict {
+            tool: "foo",
+            what: "dup".into(),
+        };
         assert_eq!(err.code(), "conflict");
     }
 
     #[test]
     fn tool_error_code_storage() {
-        let err = ToolError::Storage { tool: "foo", source: "io".into() };
+        let err = ToolError::Storage {
+            tool: "foo",
+            source: "io".into(),
+        };
         assert_eq!(err.code(), "storage_error");
     }
 
@@ -105,20 +123,41 @@ mod tests {
 
     #[test]
     fn tool_error_code_internal() {
-        let err = ToolError::Internal { tool: "foo", message: "boom".into() };
+        let err = ToolError::Internal {
+            tool: "foo",
+            message: "boom".into(),
+        };
         assert_eq!(err.code(), "internal_error");
     }
 
     #[test]
     fn tool_error_code_all_variants() {
         let variants = [
-            ToolError::NotFound { tool: "t", what: "w".into() },
-            ToolError::InvalidInput { tool: "t", field: "f".into() },
-            ToolError::FeatureDisabled { tool: "t", feature: "x" },
-            ToolError::Conflict { tool: "t", what: "w".into() },
-            ToolError::Storage { tool: "t", source: "s".into() },
+            ToolError::NotFound {
+                tool: "t",
+                what: "w".into(),
+            },
+            ToolError::InvalidInput {
+                tool: "t",
+                field: "f".into(),
+            },
+            ToolError::FeatureDisabled {
+                tool: "t",
+                feature: "x",
+            },
+            ToolError::Conflict {
+                tool: "t",
+                what: "w".into(),
+            },
+            ToolError::Storage {
+                tool: "t",
+                source: "s".into(),
+            },
             ToolError::UnknownTool("t"),
-            ToolError::Internal { tool: "t", message: "m".into() },
+            ToolError::Internal {
+                tool: "t",
+                message: "m".into(),
+            },
         ];
         let expected = [
             "not_found",

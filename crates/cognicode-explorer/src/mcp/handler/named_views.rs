@@ -16,9 +16,7 @@ use serde_json::Value;
 use crate::error::ExplorerError;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
-use crate::mcp::{
-    McpContext, TOOL_VIEW_DELETE, TOOL_VIEW_LIST, TOOL_VIEW_LOAD, TOOL_VIEW_SAVE,
-};
+use crate::mcp::{McpContext, TOOL_VIEW_DELETE, TOOL_VIEW_LIST, TOOL_VIEW_LOAD, TOOL_VIEW_SAVE};
 
 /// Generate a v4-ish UUID string using a clock + atomic counter.
 /// Format: `"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"`.
@@ -157,51 +155,94 @@ impl ToolHandler for ViewSaveHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: ViewSaveArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_VIEW_SAVE, "invalid_args",
-                &format!("{TOOL_VIEW_SAVE}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_VIEW_SAVE,
+                    "invalid_args",
+                    &format!("{TOOL_VIEW_SAVE}: invalid args: {e}"),
+                );
+            }
         };
 
         let workspace_id = match args.workspace_id {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_VIEW_SAVE, "invalid_input",
-                "view_save: missing required arg `workspace_id`"),
+            _ => {
+                return err_envelope(
+                    TOOL_VIEW_SAVE,
+                    "invalid_input",
+                    "view_save: missing required arg `workspace_id`",
+                );
+            }
         };
         let owner = match args.owner {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_VIEW_SAVE, "invalid_input",
-                "view_save: missing required arg `owner`"),
+            _ => {
+                return err_envelope(
+                    TOOL_VIEW_SAVE,
+                    "invalid_input",
+                    "view_save: missing required arg `owner`",
+                );
+            }
         };
         let name = match args.name {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_VIEW_SAVE, "invalid_input",
-                "view_save: missing required arg `name`"),
+            _ => {
+                return err_envelope(
+                    TOOL_VIEW_SAVE,
+                    "invalid_input",
+                    "view_save: missing required arg `name`",
+                );
+            }
         };
         let level = match args.level {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_VIEW_SAVE, "invalid_input",
-                "view_save: missing required arg `level`"),
+            _ => {
+                return err_envelope(
+                    TOOL_VIEW_SAVE,
+                    "invalid_input",
+                    "view_save: missing required arg `level`",
+                );
+            }
         };
         let lens = match args.lens {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_VIEW_SAVE, "invalid_input",
-                "view_save: missing required arg `lens`"),
+            _ => {
+                return err_envelope(
+                    TOOL_VIEW_SAVE,
+                    "invalid_input",
+                    "view_save: missing required arg `lens`",
+                );
+            }
         };
         let focus_node = match args.focus_node {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_VIEW_SAVE, "invalid_input",
-                "view_save: missing required arg `focus_node`"),
+            _ => {
+                return err_envelope(
+                    TOOL_VIEW_SAVE,
+                    "invalid_input",
+                    "view_save: missing required arg `focus_node`",
+                );
+            }
         };
         let max_depth = match args.max_depth {
             Some(d) => d,
-            None => return err_envelope(TOOL_VIEW_SAVE, "invalid_input",
-                "view_save: missing required arg `max_depth`"),
+            None => {
+                return err_envelope(
+                    TOOL_VIEW_SAVE,
+                    "invalid_input",
+                    "view_save: missing required arg `max_depth`",
+                );
+            }
         };
 
         // Input validation fires BEFORE the persistence availability check,
         // matching the original ExplorerService behavior.
         if max_depth < 0 {
-            return err_envelope(TOOL_VIEW_SAVE, "invalid_input",
-                "view_save: max_depth must be >= 0");
+            return err_envelope(
+                TOOL_VIEW_SAVE,
+                "invalid_input",
+                "view_save: max_depth must be >= 0",
+            );
         }
 
         let persistence = match &ctx.persistence {
@@ -250,8 +291,14 @@ impl ToolHandler for ViewSaveHandler {
             owner: owner.clone(),
         };
 
-        match persistence.save_view_spec(&spec, &workspace_id, &owner).await {
-            Ok(()) => ok_envelope(TOOL_VIEW_SAVE, &serde_json::json!({ "id": spec.id, "title": spec.title })),
+        match persistence
+            .save_view_spec(&spec, &workspace_id, &owner)
+            .await
+        {
+            Ok(()) => ok_envelope(
+                TOOL_VIEW_SAVE,
+                &serde_json::json!({ "id": spec.id, "title": spec.title }),
+            ),
             Err(ExplorerError::FeatureDisabled(_)) => err_envelope(
                 TOOL_VIEW_SAVE,
                 "view_specs_require_postgres_feature",
@@ -260,11 +307,9 @@ impl ToolHandler for ViewSaveHandler {
             Err(ExplorerError::InvalidInput(msg)) => {
                 err_envelope(TOOL_VIEW_SAVE, "invalid_input", &msg)
             }
-            Err(ExplorerError::Anyhow(_)) => err_envelope(
-                TOOL_VIEW_SAVE,
-                "storage_error",
-                "storage_error",
-            ),
+            Err(ExplorerError::Anyhow(_)) => {
+                err_envelope(TOOL_VIEW_SAVE, "storage_error", "storage_error")
+            }
             Err(other) => err_envelope(TOOL_VIEW_SAVE, "storage_error", &other.to_string()),
         }
     }
@@ -304,24 +349,44 @@ impl ToolHandler for ViewLoadHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: ViewLoadArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_VIEW_LOAD, "invalid_args",
-                &format!("{TOOL_VIEW_LOAD}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_VIEW_LOAD,
+                    "invalid_args",
+                    &format!("{TOOL_VIEW_LOAD}: invalid args: {e}"),
+                );
+            }
         };
 
         let id = match args.id {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_VIEW_LOAD, "invalid_input",
-                "view_load: missing required arg `id`"),
+            _ => {
+                return err_envelope(
+                    TOOL_VIEW_LOAD,
+                    "invalid_input",
+                    "view_load: missing required arg `id`",
+                );
+            }
         };
         let workspace_id = match args.workspace_id {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_VIEW_LOAD, "invalid_input",
-                "view_load: missing required arg `workspace_id`"),
+            _ => {
+                return err_envelope(
+                    TOOL_VIEW_LOAD,
+                    "invalid_input",
+                    "view_load: missing required arg `workspace_id`",
+                );
+            }
         };
         let owner = match args.owner {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_VIEW_LOAD, "invalid_input",
-                "view_load: missing required arg `owner`"),
+            _ => {
+                return err_envelope(
+                    TOOL_VIEW_LOAD,
+                    "invalid_input",
+                    "view_load: missing required arg `owner`",
+                );
+            }
         };
 
         let persistence = match &ctx.persistence {
@@ -381,19 +446,34 @@ impl ToolHandler for ViewListHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: ViewListArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_VIEW_LIST, "invalid_args",
-                &format!("{TOOL_VIEW_LIST}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_VIEW_LIST,
+                    "invalid_args",
+                    &format!("{TOOL_VIEW_LIST}: invalid args: {e}"),
+                );
+            }
         };
 
         let workspace_id = match args.workspace_id {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_VIEW_LIST, "invalid_input",
-                "view_list: missing required arg `workspace_id`"),
+            _ => {
+                return err_envelope(
+                    TOOL_VIEW_LIST,
+                    "invalid_input",
+                    "view_list: missing required arg `workspace_id`",
+                );
+            }
         };
         let owner = match args.owner {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_VIEW_LIST, "invalid_input",
-                "view_list: missing required arg `owner`"),
+            _ => {
+                return err_envelope(
+                    TOOL_VIEW_LIST,
+                    "invalid_input",
+                    "view_list: missing required arg `owner`",
+                );
+            }
         };
 
         let persistence = match &ctx.persistence {
@@ -456,24 +536,44 @@ impl ToolHandler for ViewDeleteHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: ViewDeleteArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_VIEW_DELETE, "invalid_args",
-                &format!("{TOOL_VIEW_DELETE}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_VIEW_DELETE,
+                    "invalid_args",
+                    &format!("{TOOL_VIEW_DELETE}: invalid args: {e}"),
+                );
+            }
         };
 
         let id = match args.id {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_VIEW_DELETE, "invalid_input",
-                "view_delete: missing required arg `id`"),
+            _ => {
+                return err_envelope(
+                    TOOL_VIEW_DELETE,
+                    "invalid_input",
+                    "view_delete: missing required arg `id`",
+                );
+            }
         };
         let workspace_id = match args.workspace_id {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_VIEW_DELETE, "invalid_input",
-                "view_delete: missing required arg `workspace_id`"),
+            _ => {
+                return err_envelope(
+                    TOOL_VIEW_DELETE,
+                    "invalid_input",
+                    "view_delete: missing required arg `workspace_id`",
+                );
+            }
         };
         let owner = match args.owner {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_VIEW_DELETE, "invalid_input",
-                "view_delete: missing required arg `owner`"),
+            _ => {
+                return err_envelope(
+                    TOOL_VIEW_DELETE,
+                    "invalid_input",
+                    "view_delete: missing required arg `owner`",
+                );
+            }
         };
 
         let persistence = match &ctx.persistence {
@@ -487,8 +587,13 @@ impl ToolHandler for ViewDeleteHandler {
             }
         };
 
-        match persistence.delete_view_spec(&id, &workspace_id, &owner).await {
-            Ok(removed) => ok_envelope(TOOL_VIEW_DELETE, &serde_json::json!({ "deleted": removed })),
+        match persistence
+            .delete_view_spec(&id, &workspace_id, &owner)
+            .await
+        {
+            Ok(removed) => {
+                ok_envelope(TOOL_VIEW_DELETE, &serde_json::json!({ "deleted": removed }))
+            }
             Err(ExplorerError::FeatureDisabled(_)) => err_envelope(
                 TOOL_VIEW_DELETE,
                 "view_specs_require_postgres_feature",

@@ -36,9 +36,7 @@ pub fn extract_all(changes: Vec<FileChange>) -> Vec<ExtractionResult> {
 /// Extract Changed/New files with streaming via a bounded tokio mpsc channel.
 /// Returns the receiver end. The caller (ingester) consumes results as they
 /// arrive. Backpressure via the bounded channel prevents OOM.
-pub fn extract_streaming(
-    changes: Vec<FileChange>,
-) -> mpsc::Receiver<ExtractionResult> {
+pub fn extract_streaming(changes: Vec<FileChange>) -> mpsc::Receiver<ExtractionResult> {
     let (tx, rx) = mpsc::channel(EXTRACT_CHANNEL_CAPACITY);
 
     // Spawn a rayon task that extracts and sends through the channel
@@ -66,21 +64,13 @@ pub fn extract_streaming(
 /// Returns `ExtractionResult::failed` on any error.
 fn extract_one(change: FileChange) -> ExtractionResult {
     let path = &change.path;
-    let hash = change
-        .content_hash
-        .as_deref()
-        .unwrap_or("")
-        .to_string();
+    let hash = change.content_hash.as_deref().unwrap_or("").to_string();
 
     // Read source
     let source = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
-            return ExtractionResult::failed(
-                path.clone(),
-                hash,
-                format!("read error: {e}"),
-            );
+            return ExtractionResult::failed(path.clone(), hash, format!("read error: {e}"));
         }
     };
 
@@ -103,12 +93,8 @@ fn config_by_name(name: &str) -> Option<&'static LanguageConfig> {
     match name {
         "rust" => Some(&crate::infrastructure::parser::language_config::RUST_CONFIG),
         "python" => Some(&crate::infrastructure::parser::language_config::PYTHON_CONFIG),
-        "typescript" => Some(
-            &crate::infrastructure::parser::language_config::TYPESCRIPT_CONFIG,
-        ),
-        "javascript" => Some(
-            &crate::infrastructure::parser::language_config::JAVASCRIPT_CONFIG,
-        ),
+        "typescript" => Some(&crate::infrastructure::parser::language_config::TYPESCRIPT_CONFIG),
+        "javascript" => Some(&crate::infrastructure::parser::language_config::JAVASCRIPT_CONFIG),
         "go" => Some(&crate::infrastructure::parser::language_config::GO_CONFIG),
         "java" => Some(&crate::infrastructure::parser::language_config::JAVA_CONFIG),
         "c" => Some(&crate::infrastructure::parser::language_config::C_CONFIG),
@@ -134,7 +120,9 @@ fn config_by_name(name: &str) -> Option<&'static LanguageConfig> {
         "json" => Some(&crate::infrastructure::parser::language_config::JSON_CONFIG),
         "fortran" => Some(&crate::infrastructure::parser::language_config::FORTRAN_CONFIG),
         "verilog" => Some(&crate::infrastructure::parser::language_config::VERILOG_CONFIG),
-        "systemverilog" => Some(&crate::infrastructure::parser::language_config::SYSTEMVERILOG_CONFIG),
+        "systemverilog" => {
+            Some(&crate::infrastructure::parser::language_config::SYSTEMVERILOG_CONFIG)
+        }
         "elixir" => Some(&crate::infrastructure::parser::language_config::ELIXIR_CONFIG),
         "erlang" => Some(&crate::infrastructure::parser::language_config::ERLANG_CONFIG),
         "haskell" => Some(&crate::infrastructure::parser::language_config::HASKELL_CONFIG),
@@ -145,7 +133,9 @@ fn config_by_name(name: &str) -> Option<&'static LanguageConfig> {
         "json" => Some(&crate::infrastructure::parser::language_config::JSON_CONFIG),
         "fortran" => Some(&crate::infrastructure::parser::language_config::FORTRAN_CONFIG),
         "verilog" => Some(&crate::infrastructure::parser::language_config::VERILOG_CONFIG),
-        "systemverilog" => Some(&crate::infrastructure::parser::language_config::SYSTEMVERILOG_CONFIG),
+        "systemverilog" => {
+            Some(&crate::infrastructure::parser::language_config::SYSTEMVERILOG_CONFIG)
+        }
         _ => None,
     }
 }

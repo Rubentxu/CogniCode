@@ -60,37 +60,38 @@ pub fn start_watcher(root: PathBuf) -> (WatcherHandle, mpsc::UnboundedReceiver<V
 
     std::thread::spawn(move || {
         let tx = tx.clone();
-        let mut watcher = match notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
-            match res {
-                Ok(event) => {
-                    // Handle Create, Modify, and Delete events
-                    let is_relevant = matches!(
-                        event.kind,
-                        EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_)
-                    );
+        let mut watcher =
+            match notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
+                match res {
+                    Ok(event) => {
+                        // Handle Create, Modify, and Delete events
+                        let is_relevant = matches!(
+                            event.kind,
+                            EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_)
+                        );
 
-                    if is_relevant {
-                        let paths: Vec<PathBuf> = event
-                            .paths
-                            .into_iter()
-                            .filter(|p| is_watchable(p))
-                            .collect();
-                        if !paths.is_empty() {
-                            let _ = tx.send(paths);
+                        if is_relevant {
+                            let paths: Vec<PathBuf> = event
+                                .paths
+                                .into_iter()
+                                .filter(|p| is_watchable(p))
+                                .collect();
+                            if !paths.is_empty() {
+                                let _ = tx.send(paths);
+                            }
                         }
                     }
+                    Err(e) => {
+                        tracing::error!("file watcher error: {e}");
+                    }
                 }
+            }) {
+                Ok(w) => w,
                 Err(e) => {
-                    tracing::error!("file watcher error: {e}");
+                    tracing::error!("failed to create file watcher: {e}");
+                    return;
                 }
-            }
-        }) {
-            Ok(w) => w,
-            Err(e) => {
-                tracing::error!("failed to create file watcher: {e}");
-                return;
-            }
-        };
+            };
 
         if let Err(e) = watcher.watch(&root, RecursiveMode::Recursive) {
             tracing::error!("file watcher failed to watch {}: {e}", root.display());
@@ -154,11 +155,38 @@ fn is_watchable(path: &std::path::Path) -> bool {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     matches!(
         ext,
-        "rs" | "py" | "pyw" | "ts" | "tsx" | "js" | "jsx" | "mjs" | "cjs"
-            | "go" | "java" | "c" | "h" | "cpp" | "cc" | "cxx" | "hpp" | "hxx"
-            | "cs" | "tf" | "tfvars" | "hcl" | "yml" | "yaml"
-            | "rb" | "php" | "swift"
-            | "md" | "mdx" | "txt" | "rst" | "json" | "toml"
+        "rs" | "py"
+            | "pyw"
+            | "ts"
+            | "tsx"
+            | "js"
+            | "jsx"
+            | "mjs"
+            | "cjs"
+            | "go"
+            | "java"
+            | "c"
+            | "h"
+            | "cpp"
+            | "cc"
+            | "cxx"
+            | "hpp"
+            | "hxx"
+            | "cs"
+            | "tf"
+            | "tfvars"
+            | "hcl"
+            | "yml"
+            | "yaml"
+            | "rb"
+            | "php"
+            | "swift"
+            | "md"
+            | "mdx"
+            | "txt"
+            | "rst"
+            | "json"
+            | "toml"
     )
 }
 

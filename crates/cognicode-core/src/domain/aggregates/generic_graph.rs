@@ -424,7 +424,10 @@ mod tests {
             1.0,
         )
         .unwrap_err();
-        assert_eq!(err, GraphEdgeError::SelfLoop("src/main.rs:main:1".to_string()));
+        assert_eq!(
+            err,
+            GraphEdgeError::SelfLoop("src/main.rs:main:1".to_string())
+        );
     }
 
     // ---- Additional T3 coverage ----
@@ -442,7 +445,10 @@ mod tests {
         .with_metadata("section", "intro")
         .with_metadata("line", "12");
         assert!(edge.has_metadata());
-        assert_eq!(edge.metadata.get("section").map(String::as_str), Some("intro"));
+        assert_eq!(
+            edge.metadata.get("section").map(String::as_str),
+            Some("intro")
+        );
         assert_eq!(edge.metadata.get("line").map(String::as_str), Some("12"));
     }
 
@@ -484,7 +490,10 @@ mod tests {
             node.source_path.as_deref(),
             Some(std::path::Path::new("/repo/src/main.rs"))
         );
-        assert_eq!(node.properties.get("visibility").map(String::as_str), Some("pub"));
+        assert_eq!(
+            node.properties.get("visibility").map(String::as_str),
+            Some("pub")
+        );
         assert_eq!(node.created_at, now);
         assert_eq!(node.updated_at, now);
 
@@ -528,8 +537,14 @@ mod tests {
             Some(std::path::Path::new("/repo/docs/adr/0001.md"))
         );
         assert_eq!(full.properties.len(), 4);
-        assert_eq!(full.properties.get("status").map(String::as_str), Some("accepted"));
-        assert_eq!(full.properties.get("section").map(String::as_str), Some("Context"));
+        assert_eq!(
+            full.properties.get("status").map(String::as_str),
+            Some("accepted")
+        );
+        assert_eq!(
+            full.properties.get("section").map(String::as_str),
+            Some("Context")
+        );
         assert_eq!(full.created_at, fixed);
         assert_eq!(full.updated_at, fixed);
 
@@ -558,7 +573,10 @@ mod tests {
             .updated_at(now)
             .build();
         assert_eq!(node.label, "main");
-        assert_eq!(node.properties.get("visibility").map(String::as_str), Some("pub"));
+        assert_eq!(
+            node.properties.get("visibility").map(String::as_str),
+            Some("pub")
+        );
         assert_eq!(node.created_at, now);
     }
 

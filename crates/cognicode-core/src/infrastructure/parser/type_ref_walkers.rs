@@ -23,7 +23,12 @@ pub fn walk_rust_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
                             for j in 0..param.child_count() {
                                 let child = param.child(j).unwrap();
                                 if child.kind() == "type_annotation" {
-                                    collect_type_names(&child, source, TypeRefContext::ParamType, &mut refs);
+                                    collect_type_names(
+                                        &child,
+                                        source,
+                                        TypeRefContext::ParamType,
+                                        &mut refs,
+                                    );
                                 }
                                 // self parameter: `&self` → no type ref (it's the struct itself)
                             }
@@ -50,7 +55,12 @@ pub fn walk_rust_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
                     let child = body.child(i).unwrap();
                     if child.kind() == "field_declaration" {
                         if let Some(type_ann) = child.child_by_field_name("type") {
-                            collect_type_names(&type_ann, source, TypeRefContext::FieldType, &mut refs);
+                            collect_type_names(
+                                &type_ann,
+                                source,
+                                TypeRefContext::FieldType,
+                                &mut refs,
+                            );
                         }
                     }
                 }
@@ -84,7 +94,12 @@ pub fn walk_python_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Typ
                     let kind = child.kind();
                     if kind == "typed_parameter" || kind == "typed_default_parameter" {
                         if let Some(type_ann) = child.child_by_field_name("type") {
-                            collect_type_names(&type_ann, source, TypeRefContext::ParamType, &mut refs);
+                            collect_type_names(
+                                &type_ann,
+                                source,
+                                TypeRefContext::ParamType,
+                                &mut refs,
+                            );
                         }
                     }
                 }
@@ -135,7 +150,12 @@ pub fn walk_typescript_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec
                     let kind = child.kind();
                     if kind == "required_parameter" || kind == "optional_parameter" {
                         if let Some(type_ann) = child.child_by_field_name("type") {
-                            collect_type_names(&type_ann, source, TypeRefContext::ParamType, &mut refs);
+                            collect_type_names(
+                                &type_ann,
+                                source,
+                                TypeRefContext::ParamType,
+                                &mut refs,
+                            );
                         }
                     }
                 }
@@ -185,7 +205,12 @@ pub fn walk_go_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef
             // 1. Parameters: Go has `parameter_list` → `parameter_declaration`
             // Each param_declaration has `name` and `type` children
             if let Some(params) = node.child_by_field_name("parameters") {
-                collect_param_types_recursive(&params, source, TypeRefContext::ParamType, &mut refs);
+                collect_param_types_recursive(
+                    &params,
+                    source,
+                    TypeRefContext::ParamType,
+                    &mut refs,
+                );
             }
 
             // 2. Return type: `result` field in Go grammar
@@ -195,7 +220,12 @@ pub fn walk_go_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef
 
             // 3. Receiver type (for methods): `receiver` field
             if let Some(receiver) = node.child_by_field_name("receiver") {
-                collect_type_names_recursive(&receiver, source, TypeRefContext::ParamType, &mut refs);
+                collect_type_names_recursive(
+                    &receiver,
+                    source,
+                    TypeRefContext::ParamType,
+                    &mut refs,
+                );
             }
         }
 
@@ -217,7 +247,12 @@ pub fn walk_go_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef
                                         if field.kind() == "field_declaration" {
                                             // field_declaration has `type` field
                                             if let Some(ftype) = field.child_by_field_name("type") {
-                                                collect_type_names(&ftype, source, TypeRefContext::FieldType, &mut refs);
+                                                collect_type_names(
+                                                    &ftype,
+                                                    source,
+                                                    TypeRefContext::FieldType,
+                                                    &mut refs,
+                                                );
                                             }
                                         }
                                     }
@@ -225,10 +260,20 @@ pub fn walk_go_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef
                             }
                         } else if type_node.kind() == "interface_type" {
                             // interface_type → method_spec_list → method_spec
-                            collect_type_names_recursive(&type_node, source, TypeRefContext::TraitBound, &mut refs);
+                            collect_type_names_recursive(
+                                &type_node,
+                                source,
+                                TypeRefContext::TraitBound,
+                                &mut refs,
+                            );
                         } else {
                             // type alias: type Foo = Bar
-                            collect_type_names(&type_node, source, TypeRefContext::FieldType, &mut refs);
+                            collect_type_names(
+                                &type_node,
+                                source,
+                                TypeRefContext::FieldType,
+                                &mut refs,
+                            );
                         }
                     }
                 }
@@ -257,7 +302,12 @@ pub fn walk_java_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
                     if child.kind() == "formal_parameter" {
                         // formal_parameter has `type` field (Type comes first in Java)
                         if let Some(type_node) = child.child_by_field_name("type") {
-                            collect_type_names(&type_node, source, TypeRefContext::ParamType, &mut refs);
+                            collect_type_names(
+                                &type_node,
+                                source,
+                                TypeRefContext::ParamType,
+                                &mut refs,
+                            );
                         }
                     }
                 }
@@ -354,7 +404,12 @@ pub fn walk_c_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef>
                         let field = child.child(j).unwrap();
                         if field.kind() == "field_declaration" || field.kind() == "declaration" {
                             if let Some(ftype) = field.child_by_field_name("type") {
-                                collect_type_names(&ftype, source, TypeRefContext::FieldType, &mut refs);
+                                collect_type_names(
+                                    &ftype,
+                                    source,
+                                    TypeRefContext::FieldType,
+                                    &mut refs,
+                                );
                             }
                         }
                     }
@@ -399,13 +454,23 @@ pub fn walk_cpp_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRe
                         match field.kind() {
                             "field_declaration" | "declaration" => {
                                 if let Some(ftype) = field.child_by_field_name("type") {
-                                    collect_type_names(&ftype, source, TypeRefContext::FieldType, &mut refs);
+                                    collect_type_names(
+                                        &ftype,
+                                        source,
+                                        TypeRefContext::FieldType,
+                                        &mut refs,
+                                    );
                                 }
                             }
                             "function_definition" | "function_declaration" => {
                                 // Method return types
                                 if let Some(ret) = field.child_by_field_name("type") {
-                                    collect_type_names(&ret, source, TypeRefContext::ReturnType, &mut refs);
+                                    collect_type_names(
+                                        &ret,
+                                        source,
+                                        TypeRefContext::ReturnType,
+                                        &mut refs,
+                                    );
                                 }
                             }
                             _ => {}
@@ -442,7 +507,12 @@ pub fn walk_csharp_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Typ
                     let child = params.child(i).unwrap();
                     if child.kind() == "parameter" {
                         if let Some(type_node) = child.child_by_field_name("type") {
-                            collect_type_names(&type_node, source, TypeRefContext::ParamType, &mut refs);
+                            collect_type_names(
+                                &type_node,
+                                source,
+                                TypeRefContext::ParamType,
+                                &mut refs,
+                            );
                         }
                     }
                 }
@@ -456,7 +526,10 @@ pub fn walk_csharp_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Typ
             }
         }
 
-        "class_declaration" | "interface_declaration" | "struct_declaration" | "record_declaration" => {
+        "class_declaration"
+        | "interface_declaration"
+        | "struct_declaration"
+        | "record_declaration" => {
             // C# inheritance: `class Foo : Bar, IBaz` → base_list
             for i in 0..node.child_count() {
                 let child = node.child(i).unwrap();
@@ -464,7 +537,12 @@ pub fn walk_csharp_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Typ
                     for j in 0..child.child_count() {
                         let base = child.child(j).unwrap();
                         if base.is_named() {
-                            collect_type_names(&base, source, TypeRefContext::TraitBound, &mut refs);
+                            collect_type_names(
+                                &base,
+                                source,
+                                TypeRefContext::TraitBound,
+                                &mut refs,
+                            );
                         }
                     }
                 }
@@ -484,7 +562,12 @@ pub fn walk_csharp_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Typ
                     for j in 0..child.child_count() {
                         let base = child.child(j).unwrap();
                         if base.is_named() {
-                            collect_type_names(&base, source, TypeRefContext::TraitBound, &mut refs);
+                            collect_type_names(
+                                &base,
+                                source,
+                                TypeRefContext::TraitBound,
+                                &mut refs,
+                            );
                         }
                     }
                 }
@@ -551,7 +634,12 @@ pub fn walk_php_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRe
                         for j in 0..child.child_count() {
                             let param_child = child.child(j).unwrap();
                             if param_child.kind() == "type_declaration" {
-                                collect_type_names(&param_child, source, TypeRefContext::ParamType, &mut refs);
+                                collect_type_names(
+                                    &param_child,
+                                    source,
+                                    TypeRefContext::ParamType,
+                                    &mut refs,
+                                );
                             }
                         }
                     }
@@ -573,10 +661,20 @@ pub fn walk_php_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRe
                     for j in 0..child.child_count() {
                         let base = child.child(j).unwrap();
                         if base.is_named() && base.kind() != "named_type" {
-                            collect_type_names(&base, source, TypeRefContext::TraitBound, &mut refs);
+                            collect_type_names(
+                                &base,
+                                source,
+                                TypeRefContext::TraitBound,
+                                &mut refs,
+                            );
                         }
                         if base.kind() == "named_type" {
-                            collect_type_names(&base, source, TypeRefContext::TraitBound, &mut refs);
+                            collect_type_names(
+                                &base,
+                                source,
+                                TypeRefContext::TraitBound,
+                                &mut refs,
+                            );
                         }
                     }
                 }
@@ -608,7 +706,12 @@ pub fn walk_swift_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Type
                     let child = params.child(i).unwrap();
                     if child.kind() == "parameter" {
                         if let Some(type_node) = child.child_by_field_name("type") {
-                            collect_type_names(&type_node, source, TypeRefContext::ParamType, &mut refs);
+                            collect_type_names(
+                                &type_node,
+                                source,
+                                TypeRefContext::ParamType,
+                                &mut refs,
+                            );
                         }
                     }
                 }
@@ -620,7 +723,10 @@ pub fn walk_swift_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Type
             }
         }
 
-        "class_declaration" | "struct_declaration" | "protocol_declaration" | "enum_declaration" => {
+        "class_declaration"
+        | "struct_declaration"
+        | "protocol_declaration"
+        | "enum_declaration" => {
             // Swift inheritance: `inheritance_specifier` or `type_inheritance_clause`
             if let Some(inheritance) = node.child_by_field_name("inheritance_specifier") {
                 // inheritance_specifier contains comma-separated type identifiers
@@ -640,7 +746,12 @@ pub fn walk_swift_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Type
             }
             // Also check for generic `where_clause` (protocol constraints)
             if let Some(where_clause) = node.child_by_field_name("where_clause") {
-                collect_type_names_recursive(&where_clause, source, TypeRefContext::TraitBound, &mut refs);
+                collect_type_names_recursive(
+                    &where_clause,
+                    source,
+                    TypeRefContext::TraitBound,
+                    &mut refs,
+                );
             }
         }
 
@@ -700,8 +811,8 @@ fn collect_type_names(
                 }
             }
         }
-        "reference_type" | "pointer_type" | "array_type" | "slice_type" | "tuple_type" |
-        "optional_type" | "nullable_type" | "union_type" | "intersection_type" => {
+        "reference_type" | "pointer_type" | "array_type" | "slice_type" | "tuple_type"
+        | "optional_type" | "nullable_type" | "union_type" | "intersection_type" => {
             // Recurse into inner types
             for i in 0..node.child_count() {
                 let child = node.child(i).unwrap();
@@ -735,11 +846,7 @@ fn collect_type_names(
 }
 
 /// Collect type names from a `where_clause` in Rust.
-fn collect_where_types(
-    node: &tree_sitter::Node,
-    source: &[u8],
-    out: &mut Vec<TypeRef>,
-) {
+fn collect_where_types(node: &tree_sitter::Node, source: &[u8], out: &mut Vec<TypeRef>) {
     // where T: Trait + AnotherTrait
     for i in 0..node.child_count() {
         let child = node.child(i).unwrap();
@@ -781,15 +888,60 @@ fn node_text(node: &tree_sitter::Node, source: &[u8]) -> String {
 fn is_primitive(name: &str) -> bool {
     matches!(
         name,
-        "bool" | "char" | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
-            | "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
-            | "f32" | "f64" | "str" | "String" | "Vec" | "Option"
-            | "Result" | "Box" | "Arc" | "Rc" | "Cell" | "RefCell"
-            | "HashMap" | "HashSet" | "BTreeMap" | "BTreeSet"
-            | "int" | "float" | "double" | "number" | "void"
-            | "boolean" | "any" | "never" | "undefined" | "null"
-            | "byte" | "rune" | "uint" | "int8" | "int16" | "int32" | "int64"
-            | "uint8" | "uint16" | "uint32" | "uint64" | "uintptr" | "complex64" | "complex128"
+        "bool"
+            | "char"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
+            | "f32"
+            | "f64"
+            | "str"
+            | "String"
+            | "Vec"
+            | "Option"
+            | "Result"
+            | "Box"
+            | "Arc"
+            | "Rc"
+            | "Cell"
+            | "RefCell"
+            | "HashMap"
+            | "HashSet"
+            | "BTreeMap"
+            | "BTreeSet"
+            | "int"
+            | "float"
+            | "double"
+            | "number"
+            | "void"
+            | "boolean"
+            | "any"
+            | "never"
+            | "undefined"
+            | "null"
+            | "byte"
+            | "rune"
+            | "uint"
+            | "int8"
+            | "int16"
+            | "int32"
+            | "int64"
+            | "uint8"
+            | "uint16"
+            | "uint32"
+            | "uint64"
+            | "uintptr"
+            | "complex64"
+            | "complex128"
             | "error" // Go: error is a built-in interface
     )
 }
@@ -833,11 +985,7 @@ fn collect_type_names_recursive(
 }
 
 /// Walk Java class body field declarations for type references.
-fn collect_field_types_java(
-    node: &tree_sitter::Node,
-    source: &[u8],
-    out: &mut Vec<TypeRef>,
-) {
+fn collect_field_types_java(node: &tree_sitter::Node, source: &[u8], out: &mut Vec<TypeRef>) {
     for i in 0..node.child_count() {
         let child = node.child(i).unwrap();
         if child.kind() == "field_declaration" {
@@ -858,21 +1006,41 @@ mod tests {
     #[test]
     fn test_walk_rust_type_refs_function() {
         let source = "fn process(user: User, ctx: &Context) -> Result<Output> { todo!() }";
-        test_walker(source, walk_rust_type_refs, "function_item", |refs| {
-            // User (param), Context (param inside reference), Output (generic arg)
-            // Note: the walker may find fewer than expected due to tree-sitter
-            // node type variations. We validate what's found.
-            assert!(!refs.is_empty(), "should find at least one type ref in function params");
-        }, tree_sitter_rust::LANGUAGE.into());
+        test_walker(
+            source,
+            walk_rust_type_refs,
+            "function_item",
+            |refs| {
+                // User (param), Context (param inside reference), Output (generic arg)
+                // Note: the walker may find fewer than expected due to tree-sitter
+                // node type variations. We validate what's found.
+                assert!(
+                    !refs.is_empty(),
+                    "should find at least one type ref in function params"
+                );
+            },
+            tree_sitter_rust::LANGUAGE.into(),
+        );
     }
 
     #[test]
     fn test_walk_rust_type_refs_struct() {
         let source = "struct Config { pool: DbPool, cache: Arc<RedisCache> }";
-        test_walker(source, walk_rust_type_refs, "struct_item", |refs| {
-            // DbPool (field), RedisCache (field, inside Arc)
-            assert_eq!(refs.len(), 2, "expected 2, got: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
-        }, tree_sitter_rust::LANGUAGE.into());
+        test_walker(
+            source,
+            walk_rust_type_refs,
+            "struct_item",
+            |refs| {
+                // DbPool (field), RedisCache (field, inside Arc)
+                assert_eq!(
+                    refs.len(),
+                    2,
+                    "expected 2, got: {:?}",
+                    refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+                );
+            },
+            tree_sitter_rust::LANGUAGE.into(),
+        );
     }
 
     #[test]
@@ -880,95 +1048,193 @@ mod tests {
         // Known limitation: Python type annotation extractor needs refinement
         // for tree-sitter-python's node type variations.
         let source = "def save(user: User, repo: Repository) -> bool: pass";
-        test_walker(source, walk_python_type_refs, "function_definition", |_refs| {
-            // At minimum, the walker should not panic
-        }, tree_sitter_python::LANGUAGE.into());
+        test_walker(
+            source,
+            walk_python_type_refs,
+            "function_definition",
+            |_refs| {
+                // At minimum, the walker should not panic
+            },
+            tree_sitter_python::LANGUAGE.into(),
+        );
     }
 
     #[test]
     fn test_walk_typescript_type_refs() {
         let source = "function handle(req: Request): Response { return {} as Response; }";
-        test_walker(source, walk_typescript_type_refs, "function_declaration", |refs| {
-            assert_eq!(refs.len(), 2);
-        }, tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into());
+        test_walker(
+            source,
+            walk_typescript_type_refs,
+            "function_declaration",
+            |refs| {
+                assert_eq!(refs.len(), 2);
+            },
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        );
     }
 
     #[test]
     fn test_walk_go_type_refs_function() {
         let source = "func save(user User, repo Repository) error { return nil }";
-        test_walker(source, walk_go_type_refs, "function_declaration", |refs| {
-            assert!(!refs.is_empty(), "should find type refs in Go function params: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
-        }, tree_sitter_go::LANGUAGE.into());
+        test_walker(
+            source,
+            walk_go_type_refs,
+            "function_declaration",
+            |refs| {
+                assert!(
+                    !refs.is_empty(),
+                    "should find type refs in Go function params: {:?}",
+                    refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+                );
+            },
+            tree_sitter_go::LANGUAGE.into(),
+        );
     }
 
     #[test]
     fn test_walk_go_type_refs_struct() {
         let source = "type Config struct {\n  pool DbPool\n  cache RedisCache\n}";
-        test_walker(source, walk_go_type_refs, "type_declaration", |refs| {
-            assert!(!refs.is_empty(), "should find field type refs in Go struct: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
-        }, tree_sitter_go::LANGUAGE.into());
+        test_walker(
+            source,
+            walk_go_type_refs,
+            "type_declaration",
+            |refs| {
+                assert!(
+                    !refs.is_empty(),
+                    "should find field type refs in Go struct: {:?}",
+                    refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+                );
+            },
+            tree_sitter_go::LANGUAGE.into(),
+        );
     }
 
     #[test]
     fn test_walk_java_type_refs_method() {
         let source = "void save(User user, Repository repo) throws Exception {}";
-        test_walker(source, walk_java_type_refs, "method_declaration", |refs| {
-            assert!(!refs.is_empty(), "should find type refs in Java method: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
-        }, tree_sitter_java::LANGUAGE.into());
+        test_walker(
+            source,
+            walk_java_type_refs,
+            "method_declaration",
+            |refs| {
+                assert!(
+                    !refs.is_empty(),
+                    "should find type refs in Java method: {:?}",
+                    refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+                );
+            },
+            tree_sitter_java::LANGUAGE.into(),
+        );
     }
 
     #[test]
     fn test_walk_java_type_refs_class() {
         let source = "class Foo extends Bar implements Baz, Quux {}";
-        test_walker(source, walk_java_type_refs, "class_declaration", |refs| {
-            assert!(!refs.is_empty(), "should find extends/implements type refs: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
-        }, tree_sitter_java::LANGUAGE.into());
+        test_walker(
+            source,
+            walk_java_type_refs,
+            "class_declaration",
+            |refs| {
+                assert!(
+                    !refs.is_empty(),
+                    "should find extends/implements type refs: {:?}",
+                    refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+                );
+            },
+            tree_sitter_java::LANGUAGE.into(),
+        );
     }
 
     #[test]
     fn test_walk_ruby_type_refs_class() {
         // Ruby has no static type annotations, but we extract inheritance
         let source = "class User < ActiveRecord::Base\nend";
-        test_walker(source, walk_ruby_type_refs, "class", |_refs| {
-            // Ruby is dynamically typed — no params/return types to extract
-            // We just verify no panic occurs
-        }, tree_sitter_ruby::LANGUAGE.into());
+        test_walker(
+            source,
+            walk_ruby_type_refs,
+            "class",
+            |_refs| {
+                // Ruby is dynamically typed — no params/return types to extract
+                // We just verify no panic occurs
+            },
+            tree_sitter_ruby::LANGUAGE.into(),
+        );
     }
 
     #[test]
     #[ignore = "tree-sitter-php parser compiled with LANGUAGE_VERSION=15 (ts 0.22.x); runtime is 0.24.7 (expects 14). Await grammar regeneration."]
     fn test_walk_php_type_refs_function() {
         let source = "function save(User $user, Repository $repo): void { }";
-        test_walker(source, walk_php_type_refs, "function_definition", |refs| {
-            assert!(!refs.is_empty(), "should find type refs in PHP function params: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
-        }, tree_sitter_php::LANGUAGE_PHP.into());
+        test_walker(
+            source,
+            walk_php_type_refs,
+            "function_definition",
+            |refs| {
+                assert!(
+                    !refs.is_empty(),
+                    "should find type refs in PHP function params: {:?}",
+                    refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+                );
+            },
+            tree_sitter_php::LANGUAGE_PHP.into(),
+        );
     }
 
     #[test]
     #[ignore = "tree-sitter-php parser compiled with LANGUAGE_VERSION=15 (ts 0.22.x); runtime is 0.24.7 (expects 14). Await grammar regeneration."]
     fn test_walk_php_type_refs_class() {
         let source = "class User extends Model implements Serializable {}";
-        test_walker(source, walk_php_type_refs, "class_declaration", |refs| {
-            assert!(!refs.is_empty(), "should find extends/implements type refs: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
-        }, tree_sitter_php::LANGUAGE_PHP.into());
+        test_walker(
+            source,
+            walk_php_type_refs,
+            "class_declaration",
+            |refs| {
+                assert!(
+                    !refs.is_empty(),
+                    "should find extends/implements type refs: {:?}",
+                    refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+                );
+            },
+            tree_sitter_php::LANGUAGE_PHP.into(),
+        );
     }
 
     #[test]
     #[ignore = "tree-sitter-swift parser compiled with LANGUAGE_VERSION=15 (ts 0.22.x); runtime is 0.24.7 (expects 14). Await grammar regeneration."]
     fn test_walk_swift_type_refs_function() {
         let source = "func save(user: User, repo: Repository) -> Error? { return nil }";
-        test_walker(source, walk_swift_type_refs, "function_declaration", |refs| {
-            assert!(!refs.is_empty(), "should find type refs in Swift function params: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
-        }, tree_sitter_swift::LANGUAGE.into());
+        test_walker(
+            source,
+            walk_swift_type_refs,
+            "function_declaration",
+            |refs| {
+                assert!(
+                    !refs.is_empty(),
+                    "should find type refs in Swift function params: {:?}",
+                    refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+                );
+            },
+            tree_sitter_swift::LANGUAGE.into(),
+        );
     }
 
     #[test]
     #[ignore = "tree-sitter-swift parser compiled with LANGUAGE_VERSION=15 (ts 0.22.x); runtime is 0.24.7 (expects 14). Await grammar regeneration."]
     fn test_walk_swift_type_refs_class() {
         let source = "class User: Model, Serializable { }";
-        test_walker(source, walk_swift_type_refs, "class_declaration", |refs| {
-            assert!(!refs.is_empty(), "should find inheritance type refs: {:?}", refs.iter().map(|r| &r.target_name).collect::<Vec<_>>());
-        }, tree_sitter_swift::LANGUAGE.into());
+        test_walker(
+            source,
+            walk_swift_type_refs,
+            "class_declaration",
+            |refs| {
+                assert!(
+                    !refs.is_empty(),
+                    "should find inheritance type refs: {:?}",
+                    refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+                );
+            },
+            tree_sitter_swift::LANGUAGE.into(),
+        );
     }
 
     fn test_walker(

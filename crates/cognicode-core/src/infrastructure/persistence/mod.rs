@@ -20,11 +20,14 @@ pub use cached_graph_store::CachedGraphStore;
 // feature is off, this module and the `PostgresRepository` re-export
 // are absent from the dep graph entirely.
 #[cfg(feature = "postgres")]
+pub mod postgres_iac_repository;
+#[cfg(feature = "postgres")]
 pub mod postgres_repository;
-#[cfg(feature = "postgres")] pub mod postgres_iac_repository;
 
 #[cfg(feature = "postgres")]
-pub use postgres_repository::{ExplorationSessionRow, NamedViewRow, PostgresRepository, ScanManifestRow, ViewSpecRow};
+pub use postgres_repository::{
+    ExplorationSessionRow, NamedViewRow, PostgresRepository, ScanManifestRow, ViewSpecRow,
+};
 
 // IaC repository stub — re-export the concrete PG-backed implementation
 // alongside the trait so callers can `use ...::persistence::PostgresIacRepository`

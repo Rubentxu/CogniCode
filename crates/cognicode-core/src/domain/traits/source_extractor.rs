@@ -165,10 +165,7 @@ mod tests {
             "mock"
         }
 
-        async fn extract(
-            &self,
-            _source: SourcePath,
-        ) -> SourceExtractorResult<Vec<ExtractedNode>> {
+        async fn extract(&self, _source: SourcePath) -> SourceExtractorResult<Vec<ExtractedNode>> {
             Ok(Vec::new())
         }
     }
@@ -313,7 +310,10 @@ mod tests {
             .push_edge(justifies.clone());
 
         assert_eq!(extracted.potential_node.label, "ADR-0007: Adopt GraphQL");
-        assert_eq!(extracted.potential_node.properties.get("status").unwrap(), "accepted");
+        assert_eq!(
+            extracted.potential_node.properties.get("status").unwrap(),
+            "accepted"
+        );
         assert_eq!(extracted.potential_edges.len(), 2);
         assert_eq!(extracted.potential_edges[0].kind, EdgeKind::Cites);
         assert_eq!(extracted.potential_edges[1].kind, EdgeKind::Justifies);

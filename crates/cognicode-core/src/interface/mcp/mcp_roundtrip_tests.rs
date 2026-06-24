@@ -17,7 +17,9 @@ mod tests {
 
     /// Helper to create a HandlerContext with workspace scoping
     fn create_test_context(temp_dir: &tempfile::TempDir) -> HandlerContext {
-        HandlerContext::builder().with_working_dir(temp_dir.path().to_path_buf()).build()
+        HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .build()
     }
 
     // ==========================================================================

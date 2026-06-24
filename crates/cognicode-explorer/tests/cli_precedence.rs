@@ -12,7 +12,7 @@
 //!     is unit-tested separately; here we test the helper accepts the
 //!     resolved inputs.
 
-use cognicode_explorer::cli_dispatch::{resolve_backend, Backend, ResolveInput};
+use cognicode_explorer::cli_dispatch::{Backend, ResolveInput, resolve_backend};
 
 fn input(postgres: Option<&str>, env: Option<&str>) -> ResolveInput {
     let mut i = ResolveInput::new(postgres.map(str::to_string));

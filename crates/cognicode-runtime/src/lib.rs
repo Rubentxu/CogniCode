@@ -8,8 +8,7 @@ use tracing_subscriber::EnvFilter;
 
 #[cfg(feature = "postgres")]
 use cognicode_core::infrastructure::{
-    graph::graph_cache::GraphCache,
-    persistence::PostgresRepository,
+    graph::graph_cache::GraphCache, persistence::PostgresRepository,
 };
 
 pub struct Runtime {
@@ -30,16 +29,19 @@ impl Runtime {
             .with_env_filter(EnvFilter::from_default_env())
             .init();
 
-        let source_reader: Arc<dyn cognicode_explorer::ports::SourceReader> =
-            Arc::new(cognicode_explorer::adapters::FsSourceReader::new(cwd.clone()));
+        let source_reader: Arc<dyn cognicode_explorer::ports::SourceReader> = Arc::new(
+            cognicode_explorer::adapters::FsSourceReader::new(cwd.clone()),
+        );
 
-        let graph_cache = Arc::new(cognicode_core::infrastructure::graph::graph_cache::GraphCache::new());
+        let graph_cache =
+            Arc::new(cognicode_core::infrastructure::graph::graph_cache::GraphCache::new());
 
         let pg_url = postgres_url.clone();
         let graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>> = match &pg_url {
             #[cfg(feature = "postgres")]
             Some(url) => {
-                let graph = cognicode_explorer::postgres_bridge::open_graph_from_postgres(url).await?;
+                let graph =
+                    cognicode_explorer::postgres_bridge::open_graph_from_postgres(url).await?;
                 graph_cache.set((*graph).clone());
                 Some(graph)
             }
@@ -49,18 +51,22 @@ impl Runtime {
         };
 
         #[cfg(feature = "postgres")]
-        let pg_repo: Option<Arc<cognicode_core::infrastructure::persistence::PostgresRepository>> =
-            if let Some(ref url) = pg_url {
-                let repo = cognicode_core::infrastructure::persistence::PostgresRepository::new(url).await
-                    .map_err(|e| anyhow::anyhow!("PG connect: {e}"))?;
-                Some(Arc::new(repo))
-            } else {
-                None
-            };
+        let pg_repo: Option<
+            Arc<cognicode_core::infrastructure::persistence::PostgresRepository>,
+        > = if let Some(ref url) = pg_url {
+            let repo = cognicode_core::infrastructure::persistence::PostgresRepository::new(url)
+                .await
+                .map_err(|e| anyhow::anyhow!("PG connect: {e}"))?;
+            Some(Arc::new(repo))
+        } else {
+            None
+        };
 
         let symbol_repo: Arc<dyn cognicode_explorer::ports::SymbolRepository> =
             if let Some(ref g) = graph {
-                Arc::new(cognicode_explorer::adapters::CallGraphRepository::new(g.clone()))
+                Arc::new(cognicode_explorer::adapters::CallGraphRepository::new(
+                    g.clone(),
+                ))
             } else {
                 return Err(anyhow::anyhow!(
                     "cognicode-runtime requires --postgres <URL> or DATABASE_URL to be set. \
@@ -121,27 +127,25 @@ impl Runtime {
         // Search facade.
         let view_registry = Arc::new(cognicode_explorer::registry::ViewRegistry::new(None));
         let view_registry_for_search = view_registry.clone();
-        let search: Arc<dyn cognicode_explorer::facades::SearchService> = Arc::new(
-            cognicode_explorer::facades::search::SearchServiceImpl::new(
+        let search: Arc<dyn cognicode_explorer::facades::SearchService> =
+            Arc::new(cognicode_explorer::facades::search::SearchServiceImpl::new(
                 self.symbol_repo.clone(),
                 None, // search_repo
                 view_registry_for_search,
                 None, // view_spec_store
                 None, // quality_repo
-            ),
-        );
+            ));
 
         // View facade.
-        let view_impl: Arc<cognicode_explorer::facades::view::ViewServiceImpl> = Arc::new(
-            cognicode_explorer::facades::view::ViewServiceImpl::new(
+        let view_impl: Arc<cognicode_explorer::facades::view::ViewServiceImpl> =
+            Arc::new(cognicode_explorer::facades::view::ViewServiceImpl::new(
                 self.symbol_repo.clone(),
                 self.source_reader.clone(),
                 None, // quality_repo
                 cognicode_explorer::domain::lens::default_registry(),
                 graph_query.clone(),
                 view_registry.clone(),
-            ),
-        );
+            ));
         let view: Arc<dyn cognicode_explorer::facades::ViewService> = view_impl.clone();
         let lens_executor: Arc<dyn cognicode_explorer::facades::LensExecutor> = view_impl;
 
@@ -153,27 +157,30 @@ impl Runtime {
                 self.pg_repo.clone(), // postgres_repo
             ),
         );
-        let moldql: Arc<dyn cognicode_explorer::facades::MoldQLService> = Arc::new(
-            cognicode_explorer::facades::moldql::MoldQLServiceImpl::new(
+        let moldql: Arc<dyn cognicode_explorer::facades::MoldQLService> =
+            Arc::new(cognicode_explorer::facades::moldql::MoldQLServiceImpl::new(
                 self.symbol_repo.clone(),
                 None, // quality_repo
                 self.source_reader.clone(),
                 lens_executor,
                 #[cfg(feature = "multimodal")]
                 None, // graph_repo
-            ),
-        );
+            ));
 
         // Graph facade.
-        let graph: Arc<dyn cognicode_explorer::facades::GraphService> = Arc::new(
-            cognicode_explorer::facades::graph::GraphServiceImpl::new(
+        let graph: Arc<dyn cognicode_explorer::facades::GraphService> =
+            Arc::new(cognicode_explorer::facades::graph::GraphServiceImpl::new(
                 self.symbol_repo.clone(),
                 graph_query,
-            ),
-        );
+            ));
 
         let mut state = cognicode_explorer::api::ApiState::new(
-            workspace, search, view, persistence, moldql, graph,
+            workspace,
+            search,
+            view,
+            persistence,
+            moldql,
+            graph,
         );
 
         #[cfg(feature = "postgres")]

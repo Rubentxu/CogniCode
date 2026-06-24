@@ -127,7 +127,8 @@ mod tests {
     fn test_newtype_parsing_empty_derive() {
         let input: DeriveInput = syn::parse2(quote! {
             pub struct UserId(i64);
-        }).unwrap();
+        })
+        .unwrap();
 
         let extra = parse_extra_derives(&input.attrs);
         assert!(extra.is_empty());
@@ -138,7 +139,8 @@ mod tests {
         let input: DeriveInput = syn::parse2(quote! {
             #[newtype(derive(Clone, Eq))]
             pub struct UserId(i64);
-        }).unwrap();
+        })
+        .unwrap();
 
         let extra = parse_extra_derives(&input.attrs);
         assert_eq!(extra.len(), 2);
@@ -151,7 +153,8 @@ mod tests {
         let input: DeriveInput = syn::parse2(quote! {
             #[newtype(derive(Clone))]
             pub struct ResourceHandle(String);
-        }).unwrap();
+        })
+        .unwrap();
 
         let extra = parse_extra_derives(&input.attrs);
         assert_eq!(extra.len(), 1);
@@ -162,7 +165,8 @@ mod tests {
     fn test_extract_inner_type_simple() {
         let input: DeriveInput = syn::parse2(quote! {
             pub struct UserId(i64);
-        }).unwrap();
+        })
+        .unwrap();
 
         let inner = extract_inner_type(&input.data);
         let inner_str = quote! { #inner }.to_string();
@@ -173,7 +177,8 @@ mod tests {
     fn test_extract_inner_type_string() {
         let input: DeriveInput = syn::parse2(quote! {
             pub struct ResourceHandle(String);
-        }).unwrap();
+        })
+        .unwrap();
 
         let inner = extract_inner_type(&input.data);
         let inner_str = quote! { #inner }.to_string();
@@ -184,7 +189,8 @@ mod tests {
     fn test_extract_inner_type_option() {
         let input: DeriveInput = syn::parse2(quote! {
             pub struct OptionalId(Option<i64>);
-        }).unwrap();
+        })
+        .unwrap();
 
         let inner = extract_inner_type(&input.data);
         let inner_str = quote! { #inner }.to_string();
@@ -253,18 +259,15 @@ mod tests {
     #[test]
     fn test_derive_newtype_compiles_without_errors() {
         // This test just verifies the derive doesn't panic
-        let result = std::panic::catch_unwind(|| {
-            derive_newtype(quote! { pub struct TestType(String); })
-        });
+        let result =
+            std::panic::catch_unwind(|| derive_newtype(quote! { pub struct TestType(String); }));
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_derive_newtype_with_unit_type() {
         // Test edge case with unit type
-        let result = std::panic::catch_unwind(|| {
-            derive_newtype(quote! { pub struct Empty(()); })
-        });
+        let result = std::panic::catch_unwind(|| derive_newtype(quote! { pub struct Empty(()); }));
         assert!(result.is_ok());
     }
 }

@@ -104,8 +104,7 @@ static FIXES_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     // The `(?i)` enables case-insensitive matching. The word
     // boundaries on the keyword and the `\s+` between keyword
     // and `#` prevent partial-word matches (e.g. `prefixes`).
-    Regex::new(r"(?i)\b(?:fixes|closes|resolves)\s+#(\d+)\b")
-        .expect("FIXES_REGEX must compile")
+    Regex::new(r"(?i)\b(?:fixes|closes|resolves)\s+#(\d+)\b").expect("FIXES_REGEX must compile")
 });
 
 /// `Refs/References/See/Part of #N` — soft reference. Issue
@@ -135,11 +134,7 @@ static REFS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 /// shortened to 7 hex chars (e.g. empty / non-hex) are also
 /// skipped.
 #[cfg(feature = "multimodal")]
-pub fn parse_commit_issue_refs(
-    log_output: &str,
-    owner: &str,
-    _repo: &str,
-) -> Vec<CommitIssueRef> {
+pub fn parse_commit_issue_refs(log_output: &str, owner: &str, _repo: &str) -> Vec<CommitIssueRef> {
     let mut out: Vec<CommitIssueRef> = Vec::new();
     for line in log_output.lines() {
         if line.is_empty() {
@@ -194,11 +189,7 @@ pub fn parse_commit_issue_refs(
 /// Build the canonical `issue:{tracker}/{repo}#{N}` NodeId for
 /// the issue referenced by a commit.
 #[cfg(feature = "multimodal")]
-pub fn issue_node_id_for_commit(
-    tracker: &str,
-    repo: &str,
-    issue_number: u32,
-) -> String {
+pub fn issue_node_id_for_commit(tracker: &str, repo: &str, issue_number: u32) -> String {
     format!("issue:{tracker}/{repo}#{issue_number}")
 }
 
@@ -220,7 +211,13 @@ fn short_sha(full: &str) -> String {
     let prefix: String = full
         .chars()
         .take(7)
-        .map(|c| if c.is_ascii_hexdigit() { c.to_ascii_lowercase() } else { '\0' })
+        .map(|c| {
+            if c.is_ascii_hexdigit() {
+                c.to_ascii_lowercase()
+            } else {
+                '\0'
+            }
+        })
         .collect();
     if prefix.contains('\0') {
         return String::new();
@@ -252,11 +249,7 @@ mod tests {
     /// `CommitRefKind::Fixes` reference.
     #[test]
     fn fixes_in_subject() {
-        let log = log_line(
-            "abc1234567890def",
-            "Fixes #42: handle null pointer",
-            "",
-        );
+        let log = log_line("abc1234567890def", "Fixes #42: handle null pointer", "");
         let refs = parse_commit_issue_refs(&log, "acme", "widgets");
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].commit_sha, "abc1234");
@@ -323,11 +316,7 @@ mod tests {
     /// both kinds.
     #[test]
     fn multiple_references_in_one_commit() {
-        let log = log_line(
-            "abc1234",
-            "Closes #10, Refs #11, Refs #12",
-            "",
-        );
+        let log = log_line("abc1234", "Closes #10, Refs #11, Refs #12", "");
         let refs = parse_commit_issue_refs(&log, "acme", "widgets");
         assert_eq!(refs.len(), 3, "expected 3 references: {:?}", refs);
         assert_eq!(refs[0].ref_kind, CommitRefKind::Fixes);
@@ -344,7 +333,11 @@ mod tests {
     fn issue_zero_rejected() {
         let log = log_line("abc1234", "Fixes #0", "");
         let refs = parse_commit_issue_refs(&log, "acme", "widgets");
-        assert!(refs.is_empty(), "expected no refs (issue 0 invalid), got: {:?}", refs);
+        assert!(
+            refs.is_empty(),
+            "expected no refs (issue 0 invalid), got: {:?}",
+            refs
+        );
     }
 
     /// An empty log produces no refs.

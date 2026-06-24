@@ -6,8 +6,8 @@ use async_trait::async_trait;
 
 use crate::dto::MoldQLResultDto;
 use crate::error::{ExplorerError, ExplorerResult};
-use crate::facades::MoldQLService;
 use crate::facades::LensExecutor;
+use crate::facades::MoldQLService;
 use crate::moldql::{MoldQLExecutor, MoldQLResult, MoldQLView};
 use crate::ports::quality_repository::QualityRepository;
 use crate::ports::source_reader::SourceReader;
@@ -38,8 +38,7 @@ impl MoldQLServiceImpl {
         quality: Option<Arc<dyn QualityRepository>>,
         reader: Arc<dyn SourceReader>,
         lens_executor: Arc<dyn LensExecutor>,
-        #[cfg(feature = "multimodal")]
-        graph_repo: Option<Arc<dyn GraphRepository>>,
+        #[cfg(feature = "multimodal")] graph_repo: Option<Arc<dyn GraphRepository>>,
     ) -> Self {
         Self {
             repo,
@@ -84,8 +83,7 @@ impl MoldQLServiceImpl {
             dyn Fn(&str, &str) -> ExplorerResult<crate::dto::LensResult> + Send + Sync,
         > = std::sync::Arc::new(move |object_id, lens_id| {
             // Use block_on to call the async LensExecutor from the sync MoldQLView context.
-            tokio::runtime::Handle::current()
-                .block_on(lens_executor.apply_lens(object_id, lens_id))
+            tokio::runtime::Handle::current().block_on(lens_executor.apply_lens(object_id, lens_id))
         });
 
         MoldQLView {

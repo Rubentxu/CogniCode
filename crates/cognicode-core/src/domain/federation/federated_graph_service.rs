@@ -24,8 +24,8 @@ use crate::domain::federation::federated_node::FederatedNode;
 use crate::domain::federation::federated_node_id::FederatedNodeId;
 use crate::domain::ports::graph_error::GraphResult;
 use crate::domain::ports::graph_repository::{GraphRepository, SearchPage};
-use crate::domain::value_objects::node_kind::NodeKind;
 use crate::domain::value_objects::SpaceId;
+use crate::domain::value_objects::node_kind::NodeKind;
 
 /// One page of a federated search. Same shape as
 /// [`SearchPage`] but each `GraphNode` is wrapped in a
@@ -162,11 +162,7 @@ impl FederatedGraphService {
             };
             // The per-space cursor is either the offset (when the
             // target space matches) or "0" (start of this space).
-            let per_offset: usize = if target_space.is_some() {
-                offset
-            } else {
-                0
-            };
+            let per_offset: usize = if target_space.is_some() { offset } else { 0 };
             futures.push((space_id.clone(), per_offset, async move {
                 let per_cursor = per_offset.to_string();
                 let r: GraphResult<SearchPage> =
@@ -261,10 +257,7 @@ impl FederatedGraphService {
 
     /// Find outgoing edges of a federated node. Routes to the
     /// space identified by the left half of the id.
-    pub async fn find_outgoing_edges(
-        &self,
-        id: FederatedNodeId,
-    ) -> GraphResult<Vec<GraphEdge>> {
+    pub async fn find_outgoing_edges(&self, id: FederatedNodeId) -> GraphResult<Vec<GraphEdge>> {
         let space_id = id.space_id();
         let local_id = NodeId::new(id.local_id_str().to_string());
         let repo = match self.spaces.get(&space_id) {
@@ -302,8 +295,8 @@ fn parse_federated_cursor(cursor: Option<&str>) -> (Option<SpaceId>, usize) {
 mod tests {
     use super::*;
     use crate::domain::aggregates::generic_graph::GraphNode;
-    use crate::domain::value_objects::node_kind::NodeKind;
     use crate::domain::value_objects::SymbolKind;
+    use crate::domain::value_objects::node_kind::NodeKind;
 
     use std::collections::HashMap;
 
@@ -507,11 +500,7 @@ mod tests {
         let (svc, a, b) = build_two_space_service();
         let page = svc.federated_search("User", &[], 50, None).await.unwrap();
         // One match in `a`, one in `b`.
-        let spaces: Vec<String> = page
-            .items
-            .iter()
-            .map(|f| f.space_id.to_string())
-            .collect();
+        let spaces: Vec<String> = page.items.iter().map(|f| f.space_id.to_string()).collect();
         assert!(spaces.contains(&a.to_string()));
         assert!(spaces.contains(&b.to_string()));
     }
@@ -521,11 +510,7 @@ mod tests {
     async fn federated_get_node_routes_to_correct_space() {
         let (svc, a, _) = build_two_space_service();
         let fid = FederatedNodeId::from_parts(&a, "file:a.rs:User:1").unwrap();
-        let node = svc
-            .get_node(fid)
-            .await
-            .expect("get_node ok")
-            .expect("Some");
+        let node = svc.get_node(fid).await.expect("get_node ok").expect("Some");
         assert_eq!(node.space_id, a);
         assert_eq!(node.node.id.as_str(), "file:a.rs:User:1");
     }
@@ -534,11 +519,9 @@ mod tests {
     #[tokio::test]
     async fn federated_get_node_unknown_space_returns_none() {
         let (svc, _, _) = build_two_space_service();
-        let fid = FederatedNodeId::from_parts(
-            &SpaceId::try_new("unknown").unwrap(),
-            "file:unknown:1",
-        )
-        .unwrap();
+        let fid =
+            FederatedNodeId::from_parts(&SpaceId::try_new("unknown").unwrap(), "file:unknown:1")
+                .unwrap();
         let node = svc.get_node(fid).await.unwrap();
         assert!(node.is_none());
     }

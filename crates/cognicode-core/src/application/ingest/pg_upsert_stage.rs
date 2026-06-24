@@ -19,9 +19,7 @@ use serde_json::json;
 use sqlx::{Acquire, Postgres};
 use tokio::sync::mpsc;
 
-use crate::application::ingest::types::{
-    ExtractionEdge, ExtractionResult, TargetRef,
-};
+use crate::application::ingest::types::{ExtractionEdge, ExtractionResult, TargetRef};
 use crate::infrastructure::persistence::{PostgresRepository, ScanManifestRow};
 
 /// Number of files per transaction. Larger = fewer commits, more memory.
@@ -174,26 +172,24 @@ async fn upsert_one<'c>(
     let resolved_edges: Vec<_> = result
         .edges
         .iter()
-        .filter_map(|edge| {
-            match &edge.target_ref {
-                TargetRef::Resolved(id) => {
-                    let metadata = json!({
-                        "source_file": result.source_path.to_string_lossy(),
-                        "line": edge.line,
-                    });
-                    Some((
-                        edge.source.clone(),
-                        id.clone(),
-                        edge.kind.clone(),
-                        edge.provenance.to_string(),
-                        edge.confidence,
-                        metadata,
-                    ))
-                }
-                TargetRef::Unresolved(_) => {
-                    unresolved.push(edge.clone());
-                    None
-                }
+        .filter_map(|edge| match &edge.target_ref {
+            TargetRef::Resolved(id) => {
+                let metadata = json!({
+                    "source_file": result.source_path.to_string_lossy(),
+                    "line": edge.line,
+                });
+                Some((
+                    edge.source.clone(),
+                    id.clone(),
+                    edge.kind.clone(),
+                    edge.provenance.to_string(),
+                    edge.confidence,
+                    metadata,
+                ))
+            }
+            TargetRef::Unresolved(_) => {
+                unresolved.push(edge.clone());
+                None
             }
         })
         .collect();
@@ -205,15 +201,18 @@ async fn upsert_one<'c>(
             "INSERT INTO graph_edges \
              (source_id, target_id, kind, provenance, confidence, metadata, workspace_id) ",
         );
-        qb.push_values(resolved_edges.iter(), |mut b, (source, target, kind, prov, conf, meta)| {
-            b.push_bind(source)
-                .push_bind(target)
-                .push_bind(kind)
-                .push_bind(prov)
-                .push_bind(*conf)
-                .push_bind(meta.clone())
-                .push_bind(workspace_id);
-        });
+        qb.push_values(
+            resolved_edges.iter(),
+            |mut b, (source, target, kind, prov, conf, meta)| {
+                b.push_bind(source)
+                    .push_bind(target)
+                    .push_bind(kind)
+                    .push_bind(prov)
+                    .push_bind(*conf)
+                    .push_bind(meta.clone())
+                    .push_bind(workspace_id);
+            },
+        );
         qb.push(
             " ON CONFLICT (source_id, target_id, kind) DO UPDATE SET \
              provenance = EXCLUDED.provenance, \
@@ -239,11 +238,14 @@ async fn upsert_one<'c>(
     };
     upsert_manifest_row(tx, &row).await?;
 
-    Ok((FileStats {
-        files: 1,
-        nodes: nodes_written,
-        edges: edges_written,
-    }, unresolved))
+    Ok((
+        FileStats {
+            files: 1,
+            nodes: nodes_written,
+            edges: edges_written,
+        },
+        unresolved,
+    ))
 }
 
 /// Upsert a single scan_manifest row (helper).
@@ -412,16 +414,12 @@ mod tests {
             vec![edge],
         );
 
-        let (stats, _unresolved) = pg_upsert_streaming(
-            &repo,
-            "test_upsert",
-            {
-                let (tx, rx) = mpsc::channel(10);
-                tx.send(result).await.unwrap();
-                drop(tx);
-                rx
-            },
-        )
+        let (stats, _unresolved) = pg_upsert_streaming(&repo, "test_upsert", {
+            let (tx, rx) = mpsc::channel(10);
+            tx.send(result).await.unwrap();
+            drop(tx);
+            rx
+        })
         .await;
 
         assert_eq!(stats.files, 1);

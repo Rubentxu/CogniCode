@@ -44,9 +44,9 @@ use pulldown_cmark::{Event, HeadingLevel, LinkType, Parser, Tag, TagEnd};
 use walkdir::WalkDir;
 
 #[cfg(feature = "multimodal")]
-use crate::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
-#[cfg(feature = "multimodal")]
 use crate::domain::aggregates::SymbolId;
+#[cfg(feature = "multimodal")]
+use crate::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
 #[cfg(feature = "multimodal")]
 use crate::domain::traits::source_extractor::{
     ExtractedNode, SourceExtractor, SourceExtractorError, SourceExtractorResult, SourcePath,
@@ -60,7 +60,7 @@ use crate::domain::value_objects::provenance::Provenance;
 
 #[cfg(feature = "multimodal")]
 use super::docs_confidence_rules::{
-    heading_confidence, score_heading, score_link, sym_short_name, ConfidenceTier,
+    ConfidenceTier, heading_confidence, score_heading, score_link, sym_short_name,
 };
 
 // ============================================================================
@@ -81,11 +81,7 @@ use super::docs_confidence_rules::{
 /// whether the document is a `Decision` (ADR) or a generic
 /// `Doc`.
 #[cfg(feature = "multimodal")]
-pub fn parse_markdown(
-    text: &str,
-    source_path: &Path,
-    file_stem: &str,
-) -> Vec<ExtractedNode> {
+pub fn parse_markdown(text: &str, source_path: &Path, file_stem: &str) -> Vec<ExtractedNode> {
     let mut nodes: Vec<ExtractedNode> = Vec::new();
     let mut status_lines: Vec<String> = Vec::new();
     let is_adr = detect_adr(text);
@@ -111,11 +107,7 @@ pub fn parse_markdown(
     /// exists yet (e.g. body before the first heading), the body
     /// is dropped — in practice, the parser guarantees the body
     /// never precedes the first heading.
-    fn flush_trailing_body(
-        nodes: &mut Vec<ExtractedNode>,
-        body: &mut String,
-        file_stem: &str,
-    ) {
+    fn flush_trailing_body(nodes: &mut Vec<ExtractedNode>, body: &mut String, file_stem: &str) {
         if body.is_empty() {
             return;
         }
@@ -126,10 +118,7 @@ pub fn parse_markdown(
         // heading was emitted earlier, not the one that opens
         // next).
         if let Some(status) = extract_status(body) {
-            last.potential_node = last
-                .potential_node
-                .clone()
-                .with_property("status", status);
+            last.potential_node = last.potential_node.clone().with_property("status", status);
         }
         for line in body.lines() {
             if let Some(cites) = classify_body_line(line, file_stem) {
@@ -193,7 +182,11 @@ pub fn parse_markdown(
                 }
                 let _ = in_link.as_ref();
             }
-            Event::Start(Tag::Link { dest_url, link_type, .. }) => {
+            Event::Start(Tag::Link {
+                dest_url,
+                link_type,
+                ..
+            }) => {
                 // Skip autolinks and external URLs — the spec
                 // only resolves intra-repo links.
                 if link_type == LinkType::Autolink
@@ -329,10 +322,7 @@ impl DocsExtractor {
 
     /// Extract candidate nodes + edges from a single file. The
     /// single-file path is unaffected by the `recursive` flag.
-    pub async fn extract_file(
-        &self,
-        file: &Path,
-    ) -> SourceExtractorResult<Vec<ExtractedNode>> {
+    pub async fn extract_file(&self, file: &Path) -> SourceExtractorResult<Vec<ExtractedNode>> {
         extract_from_file(file).await
     }
 }
@@ -344,10 +334,7 @@ impl SourceExtractor for DocsExtractor {
         "markdown"
     }
 
-    async fn extract(
-        &self,
-        source: SourcePath,
-    ) -> SourceExtractorResult<Vec<ExtractedNode>> {
+    async fn extract(&self, source: SourcePath) -> SourceExtractorResult<Vec<ExtractedNode>> {
         match source {
             SourcePath::File(path) => extract_from_file(&path).await,
             SourcePath::Directory(path) => extract_from_directory(&path, true).await,
@@ -367,7 +354,10 @@ impl SourceExtractor for DocsExtractor {
 /// are logged via `tracing::warn!` and skipped (the contract is
 /// "skip, don't crash"; callers get the partial result).
 #[cfg(feature = "multimodal")]
-async fn extract_from_directory(dir: &Path, recursive: bool) -> SourceExtractorResult<Vec<ExtractedNode>> {
+async fn extract_from_directory(
+    dir: &Path,
+    recursive: bool,
+) -> SourceExtractorResult<Vec<ExtractedNode>> {
     if !dir.is_dir() {
         return Err(SourceExtractorError::NotFound(dir.display().to_string()));
     }
@@ -422,7 +412,10 @@ async fn extract_from_file(path: &Path) -> SourceExtractorResult<Vec<ExtractedNo
 #[cfg(feature = "multimodal")]
 fn is_markdown_path(p: &Path) -> bool {
     matches!(
-        p.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref(),
+        p.extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
         Some("md") | Some("markdown") | Some("mdx")
     )
 }
@@ -509,7 +502,11 @@ fn build_fallback_node(
     is_adr: bool,
     _status_lines: &[String],
 ) -> GraphNode {
-    let kind = if is_adr { NodeKind::Decision } else { NodeKind::Doc };
+    let kind = if is_adr {
+        NodeKind::Decision
+    } else {
+        NodeKind::Doc
+    };
     let id_str = format!("{}:{}#intro", kind_prefix(&kind), file_stem);
     let now = Utc::now();
     let label = source_path
@@ -686,11 +683,7 @@ fn looks_like_symbol_id(s: &str) -> bool {
     let parts: Vec<&str> = s.split(':').collect();
     match parts.len() {
         2 => !parts[0].is_empty() && !parts[1].is_empty(),
-        3 => {
-            !parts[0].is_empty()
-                && !parts[1].is_empty()
-                && parts[2].parse::<i32>().is_ok()
-        }
+        3 => !parts[0].is_empty() && !parts[1].is_empty() && parts[2].parse::<i32>().is_ok(),
         _ => false,
     }
 }
@@ -722,12 +715,20 @@ mod tests {
         assert_eq!(first.potential_node.kind, NodeKind::Decision);
         assert_eq!(first.potential_node.label, "ADR-0007: Adopt GraphQL");
         assert_eq!(
-            first.potential_node.properties.get("status").map(String::as_str),
+            first
+                .potential_node
+                .properties
+                .get("status")
+                .map(String::as_str),
             Some("accepted")
         );
         // The `heading_level` property is recorded.
         assert_eq!(
-            first.potential_node.properties.get("heading_level").map(String::as_str),
+            first
+                .potential_node
+                .properties
+                .get("heading_level")
+                .map(String::as_str),
             Some("h1")
         );
     }
@@ -777,16 +778,8 @@ mod tests {
         let a = tmp.path().join("a.md");
         let b = tmp.path().join("nested").join("b.md");
         std::fs::create_dir_all(b.parent().unwrap()).unwrap();
-        std::fs::write(
-            &a,
-            "# Top\n\nsee [helper](src/lib.rs:helper:10).\n",
-        )
-        .unwrap();
-        std::fs::write(
-            &b,
-            "# ADR-0001: Add a thing\n\nStatus: proposed\n",
-        )
-        .unwrap();
+        std::fs::write(&a, "# Top\n\nsee [helper](src/lib.rs:helper:10).\n").unwrap();
+        std::fs::write(&b, "# ADR-0001: Add a thing\n\nStatus: proposed\n").unwrap();
 
         let extractor = DocsExtractor::new();
         let nodes = extractor
@@ -813,11 +806,7 @@ mod tests {
     async fn idempotent_reingest() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let f = tmp.path().join("doc.md");
-        std::fs::write(
-            &f,
-            "# Hello\n\nsee [foo](src/foo.rs:foo:1).\n",
-        )
-        .unwrap();
+        std::fs::write(&f, "# Hello\n\nsee [foo](src/foo.rs:foo:1).\n").unwrap();
 
         let extractor = DocsExtractor::new();
         let first = extractor
@@ -830,9 +819,18 @@ mod tests {
             .expect("second extract");
 
         // Same id sequence on both runs.
-        let first_ids: Vec<String> = first.iter().map(|n| n.potential_node.id.to_string()).collect();
-        let second_ids: Vec<String> = second.iter().map(|n| n.potential_node.id.to_string()).collect();
-        assert_eq!(first_ids, second_ids, "node ids must be deterministic across re-ingests");
+        let first_ids: Vec<String> = first
+            .iter()
+            .map(|n| n.potential_node.id.to_string())
+            .collect();
+        let second_ids: Vec<String> = second
+            .iter()
+            .map(|n| n.potential_node.id.to_string())
+            .collect();
+        assert_eq!(
+            first_ids, second_ids,
+            "node ids must be deterministic across re-ingests"
+        );
         assert!(!first_ids.is_empty());
     }
 
@@ -853,7 +851,9 @@ mod tests {
     /// rejects plain Markdown.
     #[test]
     fn detect_adr_recognises_markers() {
-        assert!(detect_adr("# ADR-0007: Adopt GraphQL\n\nStatus: accepted\n"));
+        assert!(detect_adr(
+            "# ADR-0007: Adopt GraphQL\n\nStatus: accepted\n"
+        ));
         assert!(detect_adr("# ADR- 0007: Adopt GraphQL\n"));
         assert!(detect_adr("# Decision: 0007 — Adopt GraphQL\n"));
         assert!(!detect_adr("# Overview\n\nSome text.\n"));
@@ -908,7 +908,9 @@ mod tests {
     async fn extract_missing_file_returns_not_found() {
         let extractor = DocsExtractor::new();
         let result = extractor
-            .extract(SourcePath::File(PathBuf::from("/nonexistent/path/does-not-exist.md")))
+            .extract(SourcePath::File(PathBuf::from(
+                "/nonexistent/path/does-not-exist.md",
+            )))
             .await;
         match result {
             Err(SourceExtractorError::NotFound(_)) => {}

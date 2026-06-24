@@ -138,9 +138,7 @@ impl<'a> MoldQLExecutor<'a> {
             // `FeatureDisabled` so callers see the right
             // error code (no panic, no silent empty list).
             #[cfg(feature = "multimodal")]
-            TargetType::Decisions | TargetType::Docs => {
-                self.find_multimodal_nodes(find)?
-            }
+            TargetType::Decisions | TargetType::Docs => self.find_multimodal_nodes(find)?,
         };
         let total = items.len();
         Ok(MoldQLResult {
@@ -299,8 +297,18 @@ impl<'a> MoldQLExecutor<'a> {
                 break;
             }
             let neighbors: Vec<RelationTarget> = match explore.direction {
-                Direction::Callers => self.view.graph_query.as_ref().map(|gq| gq.callers(&current)).unwrap_or_default(),
-                Direction::Callees => self.view.graph_query.as_ref().map(|gq| gq.callees(&current)).unwrap_or_default(),
+                Direction::Callers => self
+                    .view
+                    .graph_query
+                    .as_ref()
+                    .map(|gq| gq.callers(&current))
+                    .unwrap_or_default(),
+                Direction::Callees => self
+                    .view
+                    .graph_query
+                    .as_ref()
+                    .map(|gq| gq.callees(&current))
+                    .unwrap_or_default(),
             };
             for n in neighbors {
                 if visited.insert(n.id.to_string()) {
@@ -355,8 +363,20 @@ impl<'a> MoldQLExecutor<'a> {
     fn eval_symbol_condition(&self, cond: &Condition, s: &ResolvedSymbol) -> bool {
         let field = &cond.field;
         let raw = match field.head() {
-            "fan_in" => Some(Value::Number(self.view.graph_query.as_ref().map(|gq| gq.fan_in(&s.id)).unwrap_or(0) as f64)),
-            "fan_out" => Some(Value::Number(self.view.graph_query.as_ref().map(|gq| gq.fan_out(&s.id)).unwrap_or(0) as f64)),
+            "fan_in" => Some(Value::Number(
+                self.view
+                    .graph_query
+                    .as_ref()
+                    .map(|gq| gq.fan_in(&s.id))
+                    .unwrap_or(0) as f64,
+            )),
+            "fan_out" => Some(Value::Number(
+                self.view
+                    .graph_query
+                    .as_ref()
+                    .map(|gq| gq.fan_out(&s.id))
+                    .unwrap_or(0) as f64,
+            )),
             "kind" => Some(Value::String(s.kind.name().to_string())),
             "name" => Some(Value::String(s.name.clone())),
             "file" => Some(Value::String(s.file.clone())),
@@ -837,7 +857,9 @@ mod tests {
                 .map(|ids| {
                     ids.iter()
                         .filter_map(|caller_id| {
-                            self.by_id.get(caller_id).map(|sym| RelationTarget::from(sym))
+                            self.by_id
+                                .get(caller_id)
+                                .map(|sym| RelationTarget::from(sym))
                         })
                         .collect()
                 })
@@ -849,31 +871,57 @@ mod tests {
                 .map(|ids| {
                     ids.iter()
                         .filter_map(|callee_id| {
-                            self.by_id.get(callee_id).map(|sym| RelationTarget::from(sym))
+                            self.by_id
+                                .get(callee_id)
+                                .map(|sym| RelationTarget::from(sym))
                         })
                         .collect()
                 })
                 .unwrap_or_default()
         }
         fn fan_in(&self, id: &SymbolId) -> usize {
-            self.callers_of.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
+            self.callers_of
+                .get(id.as_str())
+                .map(|v| v.len())
+                .unwrap_or(0)
         }
         fn fan_out(&self, id: &SymbolId) -> usize {
-            self.callees_of.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
+            self.callees_of
+                .get(id.as_str())
+                .map(|v| v.len())
+                .unwrap_or(0)
         }
-        fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
+        fn callers_with_metadata(
+            &self,
+            _id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
             Vec::new()
         }
-        fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
+        fn callees_with_metadata(
+            &self,
+            _id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
             Vec::new()
         }
-        fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata> {
+        fn dependencies_with_metadata(
+            &self,
+            _id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata>
+        {
             Vec::new()
         }
-        fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
+        fn traverse_callees(
+            &self,
+            _id: &SymbolId,
+            _max_depth: u8,
+        ) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
             Vec::new()
         }
-        fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
+        fn traverse_callers(
+            &self,
+            _id: &SymbolId,
+            _max_depth: u8,
+        ) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
             Vec::new()
         }
     }

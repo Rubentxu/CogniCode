@@ -18,8 +18,7 @@ use serde_json::Value;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::{
-    McpContext, DEFAULT_SUBGRAPH_DEPTH, TOOL_GRAPH_CLUSTER, TOOL_GRAPH_EXPLAIN,
-    TOOL_GRAPH_SUBGRAPH,
+    DEFAULT_SUBGRAPH_DEPTH, McpContext, TOOL_GRAPH_CLUSTER, TOOL_GRAPH_EXPLAIN, TOOL_GRAPH_SUBGRAPH,
 };
 
 // ============================================================================

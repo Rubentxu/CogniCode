@@ -386,7 +386,10 @@ pub async fn handle_get_type_references(
 
     // Filter dependencies by References edge type
     for (target_id, dep_type, _prov, _conf) in graph.dependencies_with_metadata(&sym_id) {
-        if matches!(dep_type, crate::domain::value_objects::DependencyType::References) {
+        if matches!(
+            dep_type,
+            crate::domain::value_objects::DependencyType::References
+        ) {
             if let Some(target_sym) = graph.get_symbol(target_id) {
                 references.push(TypeRefRecord {
                     target: target_sym.name().to_string(),
@@ -427,7 +430,10 @@ pub async fn handle_get_imports(
 
     // Filter dependencies by Imports edge type
     for (target_id, dep_type, _prov, _conf) in graph.dependencies_with_metadata(&file_id) {
-        if matches!(dep_type, crate::domain::value_objects::DependencyType::Imports) {
+        if matches!(
+            dep_type,
+            crate::domain::value_objects::DependencyType::Imports
+        ) {
             if let Some(target_sym) = graph.get_symbol(target_id) {
                 imports.push(target_sym.name().to_string());
             } else {
@@ -442,7 +448,10 @@ pub async fn handle_get_imports(
         if let Some(file_sym) = candidates.first() {
             let file_id = SymbolId::new(file_sym.fully_qualified_name());
             for (target_id, dep_type, _prov, _conf) in graph.dependencies_with_metadata(&file_id) {
-                if matches!(dep_type, crate::domain::value_objects::DependencyType::Imports) {
+                if matches!(
+                    dep_type,
+                    crate::domain::value_objects::DependencyType::Imports
+                ) {
                     if let Some(target_sym) = graph.get_symbol(target_id) {
                         imports.push(target_sym.name().to_string());
                     } else {
@@ -490,7 +499,10 @@ pub async fn handle_get_implementors(
     for (dep_id, _) in graph.symbol_ids() {
         for (target_id, dep_type, _prov, _conf) in graph.dependencies_with_metadata(dep_id) {
             if target_id == &trait_id
-                && matches!(dep_type, crate::domain::value_objects::DependencyType::Inherits)
+                && matches!(
+                    dep_type,
+                    crate::domain::value_objects::DependencyType::Inherits
+                )
             {
                 if let Some(impl_sym) = graph.get_symbol(dep_id) {
                     implementors.push(impl_sym.name().to_string());
@@ -537,7 +549,10 @@ pub async fn handle_get_members(
 
     // Filter dependencies by Contains edge type — these are the class members
     for (target_id, dep_type, _prov, _conf) in graph.dependencies_with_metadata(&class_id) {
-        if matches!(dep_type, crate::domain::value_objects::DependencyType::Contains) {
+        if matches!(
+            dep_type,
+            crate::domain::value_objects::DependencyType::Contains
+        ) {
             if let Some(member_sym) = graph.get_symbol(target_id) {
                 match member_sym.kind() {
                     crate::domain::value_objects::SymbolKind::Function

@@ -36,10 +36,7 @@ fn test_database_url_unset_produces_skip_path() {
 
     // The gating contract: if the env is unset, PG tests skip.
     let resolved: Option<String> = env::var("TEST_DATABASE_URL").ok();
-    let skip = resolved
-        .as_deref()
-        .map(str::is_empty)
-        .unwrap_or(true);
+    let skip = resolved.as_deref().map(str::is_empty).unwrap_or(true);
     assert!(skip, "TEST_DATABASE_URL unset must trigger skip path");
 
     // Restore the original env (best-effort).
@@ -55,14 +52,14 @@ fn test_database_url_set_means_run() {
     // Save and override the env var.
     let saved = env::var("TEST_DATABASE_URL").ok();
     unsafe {
-        env::set_var("TEST_DATABASE_URL", "postgres://test:test@localhost:5432/test");
+        env::set_var(
+            "TEST_DATABASE_URL",
+            "postgres://test:test@localhost:5432/test",
+        );
     }
 
     let resolved: Option<String> = env::var("TEST_DATABASE_URL").ok();
-    let skip = resolved
-        .as_deref()
-        .map(str::is_empty)
-        .unwrap_or(true);
+    let skip = resolved.as_deref().map(str::is_empty).unwrap_or(true);
     assert!(!skip, "TEST_DATABASE_URL set must trigger run path");
 
     if let Some(v) = saved {

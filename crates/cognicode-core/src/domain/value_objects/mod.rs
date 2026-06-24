@@ -19,11 +19,11 @@ pub mod walk_filter;
 // is byte-for-byte unchanged. With the feature disabled, no `space`
 // symbol is exported and the PG `spaces` migration is absent.
 #[cfg(feature = "multimodal")]
+pub mod issue_properties;
+#[cfg(feature = "multimodal")]
 pub mod space;
 #[cfg(feature = "multimodal")]
 pub mod space_id;
-#[cfg(feature = "multimodal")]
-pub mod issue_properties;
 
 pub use checkpoint_id::CheckpointId;
 pub use dependency_type::DependencyType;

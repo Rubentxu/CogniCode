@@ -23,9 +23,9 @@ use crate::session::state::{
 
 // Multimodal (brain-federation) — per-session space registry.
 #[cfg(feature = "multimodal")]
-use cognicode_core::domain::value_objects::{Space, SpaceError, SpaceId};
-#[cfg(feature = "multimodal")]
 use crate::federation::SpaceRegistry;
+#[cfg(feature = "multimodal")]
+use cognicode_core::domain::value_objects::{Space, SpaceError, SpaceId};
 
 /// Per-session service. Cheap to clone (the inner state sits behind
 /// a `Mutex`).
@@ -299,8 +299,11 @@ pub const SESSION_DEFAULT_TTL_SECS: u64 = DEFAULT_TTL_SECS;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dto::{InspectableObjectSummary, InspectableObjectType, LensResult, SpotterResult, ViewDescriptorDto};
-    use crate::dto::{WorkspaceSummary, OpenWorkspaceRequest};
+    use crate::dto::{
+        InspectableObjectSummary, InspectableObjectType, LensResult, SpotterResult,
+        ViewDescriptorDto,
+    };
+    use crate::dto::{OpenWorkspaceRequest, WorkspaceSummary};
     use async_trait::async_trait;
 
     // --- Mock facades -------------------------------------------------------
@@ -324,7 +327,10 @@ mod tests {
         ) -> crate::ExplorerResult<Vec<crate::dto::SpotterSearchResult>> {
             Ok(vec![])
         }
-        async fn inspect_object(&self, _object_id: &str) -> crate::ExplorerResult<InspectableObjectSummary> {
+        async fn inspect_object(
+            &self,
+            _object_id: &str,
+        ) -> crate::ExplorerResult<InspectableObjectSummary> {
             Err(crate::error::ExplorerError::ObjectNotFound("mock".into()))
         }
     }
@@ -333,22 +339,46 @@ mod tests {
     struct MockViewService;
     #[async_trait]
     impl ViewService for MockViewService {
-        async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<ViewDescriptorDto>> {
+        async fn available_views(
+            &self,
+            _object_id: &str,
+        ) -> crate::ExplorerResult<Vec<ViewDescriptorDto>> {
             Ok(vec![])
         }
-        async fn contextual_view(&self, _object_id: &str, _view_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+        async fn contextual_view(
+            &self,
+            _object_id: &str,
+            _view_id: &str,
+        ) -> crate::ExplorerResult<crate::dto::ContextualView> {
             Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
         }
-        async fn build_contextual_graph(&self, _focus_id: &str, _level: &str, _depth: u8, _max_nodes: usize) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
+        async fn build_contextual_graph(
+            &self,
+            _focus_id: &str,
+            _level: &str,
+            _depth: u8,
+            _max_nodes: usize,
+        ) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
             Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
         }
-        async fn available_lenses(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
+        async fn available_lenses(
+            &self,
+            _object_id: &str,
+        ) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
             Ok(vec![])
         }
-        async fn apply_lens(&self, _object_id: &str, _lens_id: &str) -> crate::ExplorerResult<LensResult> {
+        async fn apply_lens(
+            &self,
+            _object_id: &str,
+            _lens_id: &str,
+        ) -> crate::ExplorerResult<LensResult> {
             Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
         }
-        async fn execute_view_spec(&self, _spec: &crate::dto::ViewSpec, _object_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+        async fn execute_view_spec(
+            &self,
+            _spec: &crate::dto::ViewSpec,
+            _object_id: &str,
+        ) -> crate::ExplorerResult<crate::dto::ContextualView> {
             Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
         }
     }
@@ -357,16 +387,31 @@ mod tests {
     struct MockWorkspaceService;
     #[async_trait]
     impl WorkspaceService for MockWorkspaceService {
-        async fn open_workspace(&self, _request: OpenWorkspaceRequest) -> crate::ExplorerResult<WorkspaceSummary> {
-            Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        async fn open_workspace(
+            &self,
+            _request: OpenWorkspaceRequest,
+        ) -> crate::ExplorerResult<WorkspaceSummary> {
+            Err(crate::error::ExplorerError::WorkspaceNotFound(
+                "mock".into(),
+            ))
         }
         fn current_workspace(&self) -> crate::ExplorerResult<WorkspaceSummary> {
-            Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+            Err(crate::error::ExplorerError::WorkspaceNotFound(
+                "mock".into(),
+            ))
         }
     }
 
-    fn build_facades() -> (Arc<dyn SearchService>, Arc<dyn ViewService>, Arc<dyn WorkspaceService>) {
-        (Arc::new(MockSearchService), Arc::new(MockViewService), Arc::new(MockWorkspaceService))
+    fn build_facades() -> (
+        Arc<dyn SearchService>,
+        Arc<dyn ViewService>,
+        Arc<dyn WorkspaceService>,
+    ) {
+        (
+            Arc::new(MockSearchService),
+            Arc::new(MockViewService),
+            Arc::new(MockWorkspaceService),
+        )
     }
 
     #[test]

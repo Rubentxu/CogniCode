@@ -108,7 +108,12 @@ pub enum TargetRef {
 
 impl ExtractionResult {
     /// Create a successful extraction result.
-    pub fn ok(path: PathBuf, hash: String, nodes: Vec<GraphNode>, edges: Vec<ExtractionEdge>) -> Self {
+    pub fn ok(
+        path: PathBuf,
+        hash: String,
+        nodes: Vec<GraphNode>,
+        edges: Vec<ExtractionEdge>,
+    ) -> Self {
         Self {
             source_path: path,
             nodes,

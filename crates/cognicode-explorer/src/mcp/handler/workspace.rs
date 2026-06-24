@@ -53,16 +53,24 @@ impl ToolHandler for OpenWorkspaceHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: OpenWorkspaceArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_OPEN_WORKSPACE, "invalid_args",
-                &format!("{TOOL_OPEN_WORKSPACE}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_OPEN_WORKSPACE,
+                    "invalid_args",
+                    &format!("{TOOL_OPEN_WORKSPACE}: invalid args: {e}"),
+                );
+            }
         };
 
         // Use the workspace facade directly (PR 1 migration — fallback removed).
         let workspace_svc = match ctx.workspace.as_ref() {
             Some(ws) => ws,
             None => {
-                return err_envelope(TOOL_OPEN_WORKSPACE, "facade_unavailable",
-                    "workspace service not wired");
+                return err_envelope(
+                    TOOL_OPEN_WORKSPACE,
+                    "facade_unavailable",
+                    "workspace service not wired",
+                );
             }
         };
 

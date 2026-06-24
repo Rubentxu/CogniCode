@@ -88,23 +88,16 @@ pub fn target_score(target: &NodeId, edges: &[GraphEdge]) -> f64 {
 ///
 /// The result is deterministic for identical inputs: edges are
 /// traversed in order and the score formula is pure.
-pub fn score_subgraph(
-    _nodes: &[GraphNode],
-    edges: &[GraphEdge],
-) -> HashMap<String, f64> {
+pub fn score_subgraph(_nodes: &[GraphNode], edges: &[GraphEdge]) -> HashMap<String, f64> {
     let mut out: HashMap<String, f64> = HashMap::new();
     // 1) Per-edge scores (backward-compat keys).
     for e in edges {
-        out.insert(
-            format!("{}->{}", e.source.0, e.target.0),
-            edge_score(e),
-        );
+        out.insert(format!("{}->{}", e.source.0, e.target.0), edge_score(e));
     }
     // 2) Per-target scores (new): bucket-max by target.
     // Collect distinct targets first so the map is deterministic
     // regardless of HashMap iteration order.
-    let mut distinct_targets: Vec<&NodeId> =
-        edges.iter().map(|e| &e.target).collect();
+    let mut distinct_targets: Vec<&NodeId> = edges.iter().map(|e| &e.target).collect();
     distinct_targets.sort_by(|a, b| a.0.cmp(&b.0));
     distinct_targets.dedup();
     for target in distinct_targets {
@@ -117,8 +110,8 @@ pub fn score_subgraph(
 mod tests {
     use super::*;
     use crate::domain::aggregates::generic_graph::GraphEdge;
-    use crate::domain::value_objects::edge_kind::EdgeKind;
     use crate::domain::value_objects::dependency_type::DependencyType;
+    use crate::domain::value_objects::edge_kind::EdgeKind;
     use std::collections::HashMap;
 
     // ---- helpers ----

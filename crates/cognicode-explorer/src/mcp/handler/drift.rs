@@ -78,7 +78,10 @@ impl ToolHandler for DetectArchitectureDriftHandler {
         };
 
         let root_path = std::path::PathBuf::from(&workspace.root_path);
-        match graph_svc.compare_architecture(root_path.to_string_lossy().as_ref()).await {
+        match graph_svc
+            .compare_architecture(root_path.to_string_lossy().as_ref())
+            .await
+        {
             Ok(report) => {
                 let report: DriftReport = report;
                 ok_envelope(TOOL_DETECT_ARCHITECTURE_DRIFT, &report)
