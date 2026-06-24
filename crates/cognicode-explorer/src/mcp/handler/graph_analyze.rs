@@ -156,20 +156,37 @@ fn build_subgraph_callgraph(
     view: &cognicode_core::infrastructure::graph::SubgraphView,
 ) -> CallGraph {
     let mut cg = CallGraph::new();
-    // Add all nodes.
+
+    // Map old SymbolId → new SymbolId after add_symbol, so we can
+    // correctly re-map edges even when the new graph's internal SymbolId
+    // differs from the original.
+    let mut old_to_new: std::collections::HashMap<SymbolId, SymbolId> =
+        std::collections::HashMap::new();
+
     for node_id in &view.nodes {
+        // Use a placeholder name; after add_symbol, we use set_fqn_override
+        // to restore the original FQN. This bypasses Location's inability to
+        // store the symbol name (Location only carries file/line/column).
+        let placeholder_name = node_id.as_str();
         let sym = Symbol::new(
-            node_id.to_string(),
+            placeholder_name,
             SymbolKind::Function,
             Location::new("subgraph", 1, 1),
         );
-        cg.add_symbol(sym);
+        let new_id = cg.add_symbol(sym);
+        // Restore the original FQN now that the symbol is owned by cg.
+        cg.get_symbol_mut(&new_id)
+            .expect("symbol must exist")
+            .set_fqn_override(node_id.as_str());
+        old_to_new.insert(node_id.clone(), new_id);
     }
-    // Add all edges.
+
     for edge in &view.edges {
+        let src = old_to_new.get(&edge.source).unwrap_or(&edge.source);
+        let dst = old_to_new.get(&edge.target).unwrap_or(&edge.target);
         let _ = cg.add_dependency_with_provenance(
-            &edge.source,
-            &edge.target,
+            src,
+            dst,
             edge.dependency_type,
             ExtractionContext::DirectExtraction,
         );
