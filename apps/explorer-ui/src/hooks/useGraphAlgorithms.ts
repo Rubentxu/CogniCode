@@ -17,6 +17,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  CommunityGodNodesOutput,
+  CommunitiesOutput,
+  SurprisingConnectionsOutput,
   WasmGodNodesOutput,
   WasmPageRankOutput,
 } from "../api/types";
@@ -28,6 +31,19 @@ type WasmModule = {
   default: (input?: string | URL) => Promise<unknown>;
   pagerank: (nodes: unknown, edges: unknown, options: unknown) => WasmPageRankOutput;
   god_nodes: (nodes: unknown, edges: unknown, options: unknown) => WasmGodNodesOutput;
+  communities: (nodes: unknown, edges: unknown, options: unknown) => CommunitiesOutput;
+  community_god_nodes: (
+    nodes: unknown,
+    edges: unknown,
+    communities: unknown,
+    options: unknown
+  ) => CommunityGodNodesOutput;
+  surprising_connections: (
+    nodes: unknown,
+    edges: unknown,
+    communities: unknown,
+    options: unknown
+  ) => SurprisingConnectionsOutput;
 };
 
 type WasmState = "idle" | "loading" | "ready" | "error";
@@ -57,13 +73,53 @@ export interface UseGraphAlgorithmsResult {
     edges: { source: string; target: string }[],
     options?: { percentile?: number }
   ) => Promise<WasmGodNodesOutput>;
+  /**
+   * Detect communities using Label Propagation.
+   *
+   * @param nodes - Array of { id, label? } objects representing graph nodes.
+   * @param edges - Array of { source, target } objects representing directed edges.
+   * @param options - Optional { maxIterations?: number } (default 100).
+   */
+  communities: (
+    nodes: { id: string; label?: string | null }[],
+    edges: { source: string; target: string }[],
+    options?: { maxIterations?: number }
+  ) => Promise<CommunitiesOutput>;
+  /**
+   * Find god nodes within each community.
+   *
+   * @param nodes - Array of { id, label? } objects representing graph nodes.
+   * @param edges - Array of { source, target } objects representing directed edges.
+   * @param communities - Array of communities, each an array of node IDs.
+   * @param options - Optional { percentile?: number } (default 0.95).
+   */
+  communityGodNodes: (
+    nodes: { id: string; label?: string | null }[],
+    edges: { source: string; target: string }[],
+    communities: string[][],
+    options?: { percentile?: number }
+  ) => Promise<CommunityGodNodesOutput>;
+  /**
+   * Find surprising cross-community connections.
+   *
+   * @param nodes - Array of { id, label? } objects representing graph nodes.
+   * @param edges - Array of { source, target } objects representing directed edges.
+   * @param communities - Array of communities, each an array of node IDs.
+   * @param options - Optional { limit?: number } (default 10).
+   */
+  surprisingConnections: (
+    nodes: { id: string; label?: string | null }[],
+    edges: { source: string; target: string }[],
+    communities: string[][],
+    options?: { limit?: number }
+  ) => Promise<SurprisingConnectionsOutput>;
   /** WASM module load state. */
   state: WasmState;
   /** Error if state === 'error'. */
   error: Error | null;
   /**
    * True if VITE_ENABLE_WASM === 'true' (i.e. WASM is enabled at build time).
-   * When false, pagerank/godNodes throw with a helpful error message.
+   * When false, pagerank/godNodes/communities throw with a helpful error message.
    */
   enabled: boolean;
 }
@@ -170,9 +226,68 @@ export function useGraphAlgorithms(): UseGraphAlgorithmsResult {
     [loadModule]
   );
 
+  const communitiesFn = useCallback(
+    async (
+      nodes: { id: string; label?: string | null }[],
+      edges: { source: string; target: string }[],
+      options?: { maxIterations?: number }
+    ): Promise<CommunitiesOutput> => {
+      if (!WASM_ENABLED) {
+        throw new Error(
+          "WASM communities is disabled (VITE_ENABLE_WASM!==true). " +
+            "Use the backend endpoint /api/graph/:id/communities instead."
+        );
+      }
+      const mod = await loadModule();
+      return mod.communities(nodes, edges, options ?? {});
+    },
+    [loadModule]
+  );
+
+  const communityGodNodesFn = useCallback(
+    async (
+      nodes: { id: string; label?: string | null }[],
+      edges: { source: string; target: string }[],
+      communities: string[][],
+      options?: { percentile?: number }
+    ): Promise<CommunityGodNodesOutput> => {
+      if (!WASM_ENABLED) {
+        throw new Error(
+          "WASM community_god_nodes is disabled (VITE_ENABLE_WASM!==true). " +
+            "Use the backend endpoint /api/graph/:id/community-god-nodes instead."
+        );
+      }
+      const mod = await loadModule();
+      return mod.community_god_nodes(nodes, edges, communities, options ?? {});
+    },
+    [loadModule]
+  );
+
+  const surprisingConnectionsFn = useCallback(
+    async (
+      nodes: { id: string; label?: string | null }[],
+      edges: { source: string; target: string }[],
+      communities: string[][],
+      options?: { limit?: number }
+    ): Promise<SurprisingConnectionsOutput> => {
+      if (!WASM_ENABLED) {
+        throw new Error(
+          "WASM surprising_connections is disabled (VITE_ENABLE_WASM!==true). " +
+            "Use the backend endpoint /api/graph/:id/surprising-connections instead."
+        );
+      }
+      const mod = await loadModule();
+      return mod.surprising_connections(nodes, edges, communities, options ?? {});
+    },
+    [loadModule]
+  );
+
   return {
     pagerank: pagerankFn,
     godNodes: godNodesFn,
+    communities: communitiesFn,
+    communityGodNodes: communityGodNodesFn,
+    surprisingConnections: surprisingConnectionsFn,
     state,
     error,
     enabled: WASM_ENABLED,
