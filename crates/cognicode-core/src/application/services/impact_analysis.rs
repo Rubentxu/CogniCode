@@ -36,6 +36,7 @@ use crate::application::dto::{
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::infrastructure::graph::{CallGraphProjection, SubgraphDirection};
+use cognicode_graph_algos::GraphBuilder;
 
 /// Application service for graph-aware impact analysis.
 ///
@@ -197,19 +198,35 @@ impl ImpactAnalysisService {
     /// label (defensive fallback; unreachable in practice).
     ///
     /// The returned [`ClusterResultDto`] preserves the order returned
-    /// by the underlying algorithm. Tarjan SCC and the
-    /// `connected_components` BFS each yield their own canonical order;
-    /// callers wanting order-insensitive equality should sort by
-    /// `ClusterDto::members` (string form).
+    /// by the underlying graph-algos algorithm. Callers wanting
+    /// order-insensitive equality should sort by `ClusterDto::members`
+    /// (string form).
     pub fn cluster_components(&self, graph: &CallGraph, method: &str) -> ClusterResultDto {
         let projection = CallGraphProjection::from_call_graph(graph);
-        let clusters: Vec<Vec<SymbolId>> = match method {
-            "scc" => projection.strongly_connected_components(),
-            "connected" => projection.connected_components(),
-            // Defensive fallback: caller pre-validated.
-            _ => projection.strongly_connected_components(),
-        };
-        ClusterResultDto::from_clusters(clusters)
+        let (in_neighbors, _) = projection.build_adjacency();
+        let out_neighbors = projection.build_out_neighbors();
+        let n = projection.node_count();
+        let raw = cognicode_graph_algos::cluster_components(&in_neighbors, &out_neighbors, n);
+        let clusters: Vec<Vec<SymbolId>> = raw
+            .into_iter()
+            .map(|cluster| {
+                cluster
+                    .into_iter()
+                    .filter_map(|idx| {
+                        projection
+                            .id_to_index()
+                            .iter()
+                            .find(|(_, ni)| ni.index() == idx)
+                            .map(|(sid, _)| sid.clone())
+                    })
+                    .collect()
+            })
+            .collect();
+        // Validate method (MCP layer pre-validates, but we preserve the
+        // match structure for clarity and future extension).
+        match method {
+            "scc" | "connected" | _ => ClusterResultDto::from_clusters(clusters),
+        }
     }
 
     /// Explain the lowest-cost path from `from` to `to`.

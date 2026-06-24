@@ -100,14 +100,14 @@ impl GraphAnalyticsService {
     /// Find all simple paths from `from` to `to` bounded by `max_hops`.
     ///
     /// A simple path does not repeat a node, so cycles are terminated
-    /// by the visited-set inside petgraph. `max_hops` is the maximum
-    /// number of intermediate nodes (i.e. the path may traverse at
-    /// most `max_hops + 1` edges).
+    /// by the visited-set. `max_hops` is the maximum number of
+    /// intermediate nodes (i.e. the path may traverse at most
+    /// `max_hops + 1` edges).
     ///
     /// Edge cases:
     /// - Missing `from` or `to` id -> empty vec.
     /// - No path within `max_hops` -> empty vec.
-    /// - `from == to` -> no path is emitted (petgraph's behaviour).
+    /// - `from == to` -> no path is emitted.
     pub fn all_simple_paths(
         graph: &CallGraph,
         from: &SymbolId,
@@ -115,44 +115,62 @@ impl GraphAnalyticsService {
         max_hops: usize,
     ) -> Vec<Vec<SymbolId>> {
         let projection = CallGraphProjection::from_call_graph(graph);
-        let g = projection.graph();
+        let out_neighbors = projection.build_out_neighbors();
+        let n = projection.node_count();
 
-        let (Some(&from_ni), Some(&to_ni)) = (
+        let (Some(&from_idx), Some(&to_idx)) = (
             projection.id_to_index().get(from),
             projection.id_to_index().get(to),
         ) else {
             return Vec::new();
         };
 
-        // `all_simple_paths` takes the graph by value, but
-        // `&'a StableGraph` implements `IntoNeighborsDirected`, so
-        // passing a reference is sufficient and avoids consuming the
-        // projection.
-        petgraph::algo::simple_paths::all_simple_paths::<Vec<_>, _>(
-            g,
-            from_ni,
-            to_ni,
-            0,
-            Some(max_hops),
-        )
-        .into_iter()
-        .map(|path: Vec<NodeIndex>| {
-            path.into_iter()
-                .filter_map(|ni| g.node_weight(ni).cloned())
-                .collect()
-        })
-        .collect()
+        let raw = cognicode_graph_algos::all_simple_paths(
+            &out_neighbors,
+            from_idx.index(),
+            to_idx.index(),
+            max_hops,
+        );
+        raw.into_iter()
+            .map(|path| {
+                path.into_iter()
+                    .filter_map(|idx| {
+                        projection
+                            .id_to_index()
+                            .iter()
+                            .find(|(_, ni)| ni.index() == idx)
+                            .map(|(sid, _)| sid.clone())
+                    })
+                    .collect()
+            })
+            .collect()
     }
 
     /// Compute the SCC condensation of the call graph.
     ///
     /// Each returned `Vec<SymbolId>` is one strongly connected
     /// component. The order of components and the order of nodes
-    /// inside a component follow petgraph's `tarjan_scc` output
-    /// (post-order on the DFS tree). Self-loops surface as singleton
-    /// components.
+    /// inside a component follow the graph-algos Tarjan implementation
+    /// (post-order on the DFS tree, alphabetic sort within each SCC).
+    /// Self-loops surface as singleton components.
     pub fn condensation(graph: &CallGraph) -> Vec<Vec<SymbolId>> {
-        CallGraphProjection::from_call_graph(graph).strongly_connected_components()
+        let projection = CallGraphProjection::from_call_graph(graph);
+        let out_neighbors = projection.build_out_neighbors();
+        let n = projection.node_count();
+        let raw = cognicode_graph_algos::condensation(&out_neighbors, n);
+        raw.into_iter()
+            .map(|scc| {
+                scc.into_iter()
+                    .filter_map(|idx| {
+                        projection
+                            .id_to_index()
+                            .iter()
+                            .find(|(_, ni)| ni.index() == idx)
+                            .map(|(sid, _)| sid.clone())
+                    })
+                    .collect()
+            })
+            .collect()
     }
 
     /// Find god nodes — symbols with PageRank above a percentile
@@ -198,85 +216,32 @@ impl GraphAnalyticsService {
     /// Returns every `(source, target)` pair that survives the
     /// reduction. Edges that are implied by a longer path (e.g.
     /// `A -> C` when `A -> B` and `B -> C` exist) are dropped.
-    ///
-    /// Implementation note: petgraph's `tred` module requires a
-    /// `NodeCompactIndexable` graph (its `dag_to_toposorted_adjacency_list`
-    /// helper). `StableGraph` does not implement that trait, so we
-    /// materialise a `DiGraph` snapshot of the projection. The copy
-    /// is unavoidable per petgraph 0.6 API.
+    /// For cyclic graphs, all edges are returned (identity reduction)
+    /// since no edge is implied by a strictly longer simple path.
     pub fn transitive_reduction(graph: &CallGraph) -> Vec<(SymbolId, SymbolId)> {
         let projection = CallGraphProjection::from_call_graph(graph);
-        let g = projection.graph();
-
-        if g.node_count() == 0 {
-            return Vec::new();
-        }
-
-        // Snapshot the projection into a DiGraph that satisfies the
-        // NodeCompactIndexable bound of petgraph::algo::tred.
-        let mut pg: petgraph::graph::DiGraph<SymbolId, ()> = petgraph::graph::DiGraph::new();
-        let mut id_to_idx: HashMap<SymbolId, NodeIndex> = HashMap::new();
-        for ni in g.node_indices() {
-            let sid = g[ni].clone();
-            let idx = pg.add_node(sid.clone());
-            id_to_idx.insert(sid, idx);
-        }
-        for edge in g.edge_references() {
-            let s = g[edge.source()].clone();
-            let d = g[edge.target()].clone();
-            if let (Some(&s_idx), Some(&d_idx)) = (id_to_idx.get(&s), id_to_idx.get(&d)) {
-                pg.add_edge(s_idx, d_idx, ());
-            }
-        }
-
-        // Cycle-safe handling: a transitive reduction is well-defined
-        // only for DAGs. For graphs with cycles we approximate by
-        // collecting every edge of the snapshot — that's the
-        // "reduction" of a cyclic graph (no edge is implied by a
-        // strictly longer simple path, since cycles make every
-        // shorter edge also part of some cycle).
-        if petgraph::algo::is_cyclic_directed(&pg) {
-            return pg
-                .edge_references()
-                .map(|e| (pg[e.source()].clone(), pg[e.target()].clone()))
-                .collect();
-        }
-
-        let toposort = match petgraph::algo::toposort(&pg, None) {
-            Ok(order) => order,
-            Err(_) => {
-                // Defensive: is_cyclic_directed said no, but the
-                // graph changed in flight. Bail with the identity
-                // (every edge kept) rather than risk a panic.
-                return pg
-                    .edge_references()
-                    .map(|e| (pg[e.source()].clone(), pg[e.target()].clone()))
-                    .collect();
-            }
-        };
-
-        let (tred, _tclos) = petgraph::algo::tred::dag_transitive_reduction_closure(
-            &petgraph::algo::tred::dag_to_toposorted_adjacency_list(&pg, &toposort).0,
-        );
-        // tred is a `List<(), u32>` (unweighted adjacency-list);
-        // iterate its edges and translate back to SymbolId pairs.
-        let mut out: Vec<(SymbolId, SymbolId)> = Vec::new();
-        for edge in tred.edge_references() {
-            // `edge.source()` returns `NodeIndex<u32>` for
-            // `List<(), u32>`. Annotate explicitly so the
-            // subsequent `toposort.get(idx.index())` call resolves.
-            let s_idx: NodeIndex = edge.source();
-            let d_idx: NodeIndex = edge.target();
-            // Map rank-positions back through toposort to original NodeIndex.
-            if let (Some(&s_orig), Some(&d_orig)) =
-                (toposort.get(s_idx.index()), toposort.get(d_idx.index()))
-            {
-                if let (Some(s_id), Some(d_id)) = (pg.node_weight(s_orig), pg.node_weight(d_orig)) {
-                    out.push((s_id.clone(), d_id.clone()));
+        let (in_neighbors, _) = projection.build_adjacency();
+        let out_neighbors = projection.build_out_neighbors();
+        let n = projection.node_count();
+        let raw = cognicode_graph_algos::transitive_reduction(&in_neighbors, &out_neighbors, n);
+        raw.into_iter()
+            .filter_map(|(s, t)| {
+                let sid_s = projection
+                    .id_to_index()
+                    .iter()
+                    .find(|(_, ni)| ni.index() == s)
+                    .map(|(sid, _)| sid.clone());
+                let sid_t = projection
+                    .id_to_index()
+                    .iter()
+                    .find(|(_, ni)| ni.index() == t)
+                    .map(|(sid, _)| sid.clone());
+                match (sid_s, sid_t) {
+                    (Some(a), Some(b)) => Some((a, b)),
+                    _ => None,
                 }
-            }
-        }
-        out
+            })
+            .collect()
     }
 
     /// Find the greedy feedback arc set — edges whose removal makes
@@ -284,21 +249,29 @@ impl GraphAnalyticsService {
     ///
     /// Useful for resolving circular dependencies: the reported edges
     /// are the cheapest candidates to break first (per the
-    /// Eades-Lin-Smyth heuristic that petgraph implements).
-    ///
-    /// Returns an empty vec for an acyclic graph.
+    /// Eades-Lin-Smyth heuristic). Returns an empty vec for a DAG.
     pub fn feedback_arc_set(graph: &CallGraph) -> Vec<(SymbolId, SymbolId)> {
         let projection = CallGraphProjection::from_call_graph(graph);
-        let g = projection.graph();
-
-        // The greedy FAS needs `GraphProp<EdgeType = Directed>`,
-        // which `StableGraph` implements. We can pass the projection
-        // graph by reference.
-        petgraph::algo::feedback_arc_set::greedy_feedback_arc_set(g)
-            .map(|edge| {
-                let s = g[edge.source()].clone();
-                let d = g[edge.target()].clone();
-                (s, d)
+        let (in_neighbors, _) = projection.build_adjacency();
+        let out_neighbors = projection.build_out_neighbors();
+        let n = projection.node_count();
+        let raw = cognicode_graph_algos::feedback_arc_set(&in_neighbors, &out_neighbors, n);
+        raw.into_iter()
+            .filter_map(|(s, t)| {
+                let sid_s = projection
+                    .id_to_index()
+                    .iter()
+                    .find(|(_, ni)| ni.index() == s)
+                    .map(|(sid, _)| sid.clone());
+                let sid_t = projection
+                    .id_to_index()
+                    .iter()
+                    .find(|(_, ni)| ni.index() == t)
+                    .map(|(sid, _)| sid.clone());
+                match (sid_s, sid_t) {
+                    (Some(a), Some(b)) => Some((a, b)),
+                    _ => None,
+                }
             })
             .collect()
     }
