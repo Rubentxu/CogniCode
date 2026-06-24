@@ -205,3 +205,87 @@ pub struct SurprisingConnectionsOutput {
     /// List of surprising cross-community edges.
     pub edges: Vec<SurprisingEdge>,
 }
+
+// =============================================================================
+// Condensation (SCC)
+// =============================================================================
+
+/// Output for `condensation` — strongly connected components.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CondensationOutput {
+    /// List of SCCs. Each SCC is a list of node IDs.
+    pub components: Vec<Vec<String>>,
+}
+
+// =============================================================================
+// Transitive Reduction
+// =============================================================================
+
+/// A directed edge in a transitive reduction output.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransitiveReductionEdge {
+    /// Source node ID.
+    pub source_id: String,
+    /// Target node ID.
+    pub target_id: String,
+}
+
+/// Output for `transitive_reduction`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransitiveReductionOutput {
+    /// List of edges that survive the transitive reduction.
+    pub edges: Vec<TransitiveReductionEdge>,
+}
+
+// =============================================================================
+// Feedback Arc Set
+// =============================================================================
+
+/// Output for `feedback_arc_set`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeedbackArcSetOutput {
+    /// List of edges whose removal breaks all cycles.
+    pub edges: Vec<TransitiveReductionEdge>,
+}
+
+// =============================================================================
+// All Simple Paths
+// =============================================================================
+
+/// Options for `all_simple_paths`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AllSimplePathsOptions {
+    /// Maximum number of intermediate nodes (hops). Defaults to 10.
+    #[serde(default = "default_max_hops")]
+    pub max_hops: usize,
+}
+
+fn default_max_hops() -> usize {
+    10
+}
+
+impl Default for AllSimplePathsOptions {
+    fn default() -> Self {
+        Self {
+            max_hops: default_max_hops(),
+        }
+    }
+}
+
+/// Output for `all_simple_paths`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AllSimplePathsOutput {
+    /// List of paths. Each path is a sequence of node IDs.
+    pub paths: Vec<Vec<String>>,
+}
+
+// =============================================================================
+// Cluster Components
+// =============================================================================
+
+/// Output for `cluster_components`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClusterComponentsOutput {
+    /// List of clusters. Each cluster is a list of node IDs.
+    pub clusters: Vec<Vec<String>>,
+}
