@@ -1,8 +1,8 @@
 # ADR-007: No WASM in Browser
 
 **Fecha:** 2026-06-12
-**Estado:** PROPOSED
-**Decisión:** No WebAssembly in the browser for visualization or business logic
+**Estado:** ACCEPTED (enmendado por [ADR-047](ADR-047-wasm-shared-compute-amendment.md) el 2026-06-24)
+**Decisión:** No WebAssembly en el browser para duplicar lógica de backend
 **Fuente:** grill-with-docs + gap analysis vs gtoolkit
 **Confianza:** alta
 
@@ -16,11 +16,19 @@ gtoolkit usa Bloc (un engine de visualización en Pharo) compilado a WASM para s
 
 ## Decision
 
-**Descartar WASM en el browser.** La arquitectura de CogniCode será:
+**Descartar WASM en el browser para duplicación.** La arquitectura de CogniCode será:
 
 - **Backend**: Axum server + MCP tools — produce layouts determinísticos (tree)
 - **Frontend**: React + Cytoscape/D3 — aplica layouts interactivos (force-directed)
-- **Regla**: Nunca duplicar lógica de backend en el frontend
+- **Regla §1**: Nunca duplicar lógica de backend en el frontend (rendering, layout, business logic)
+- **Regla §2** (enmendado por [ADR-047](ADR-047-wasm-shared-compute-amendment.md)):
+  WASM compilado desde Rust compartido **SÍ está permitido** si cumple single-source rule:
+  - Mismo código fuente compila a `native` (backend) + `wasm32-unknown-unknown` (browser)
+  - Cero duplicación JS↔Rust
+  - Feature-gated, opt-in, con fallback graceful al backend
+  - Solo para compute capabilities que NO existen en el browser (PageRank, SCC, community detection)
+
+Ver [ADR-047](ADR-047-wasm-shared-compute-amendment.md) para el rationale y las reglas operacionales completas del §2.
 
 ## Rationale
 
