@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AllSimplePathsOutput,
+  ClusterComponentsOutput,
   CommunityGodNodesOutput,
   CommunitiesOutput,
   CondensationOutput,

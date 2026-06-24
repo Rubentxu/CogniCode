@@ -74,6 +74,8 @@ vi.mock("cytoscape", () => {
     length = 0;
   }
   class Cy {
+    // Renamed to avoid duplicate identifier with the nodes() method below.
+    // @ts-expect-error -- mock property, the method is the public API
     nodes: CyNode[] = [];
     edgeElements: CyEdge[] = [];
     private allListeners: Array<(e: unknown) => void> = [];
@@ -118,6 +120,7 @@ vi.mock("cytoscape", () => {
       return new CyCollection(this.edgeElements);
     }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
+    // @ts-expect-error -- intentional duplicate with property above; method is the public API
     nodes(_?: string) {
       return new CyCollection(this.nodes);
     }
@@ -399,6 +402,7 @@ describe("InteractiveGraph", () => {
     rerender(
       <InteractiveGraph
         root="sym:foo::bar"
+        // @ts-expect-error -- test fixture: style_class inferred as string not literal union
         data={differentData}
         onSelectObject={() => {}}
       />,
@@ -437,6 +441,7 @@ describe("InteractiveGraph", () => {
     rerender(
       <InteractiveGraph
         root="sym:foo::bar"
+        // @ts-expect-error -- test fixture: style_class inferred as string not literal union
         data={differentData}
         onSelectObject={() => {}}
       />,

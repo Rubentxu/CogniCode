@@ -8,8 +8,8 @@
  * the default vitest environment pagerank/godNodes throw clear errors.
  */
 
-import { describe, expect, it, vi } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { renderHook } from "@testing-library/react";
 import { useGraphAlgorithms } from "../useGraphAlgorithms";
 
 describe("useGraphAlgorithms", () => {
