@@ -540,3 +540,82 @@ export async function fetchArchitecture(
     schemas.architecturePayloadSchema,
   );
 }
+
+// ============================================================================
+// Workspace Quality Summary — moldable wiring phase1 (PR #35)
+// ============================================================================
+
+/**
+ * Response shape for the workspace-level quality summary endpoint.
+ * Mirrors the per-scope QualityDashboard props: `summary` (rating, debt,
+ * per-severity counts) + `issues` (top N open issues for the workspace).
+ */
+export interface WorkspaceQualityPayload {
+  summary: import("./types").QualitySummaryBlockBody;
+  issues: import("./types").QualityIssueItem[];
+}
+
+/**
+ * Fetch workspace-level quality summary.
+ *
+ * Backend: `GET /api/workspaces/:id/quality-summary` → WorkspaceQualityPayload
+ * Not yet wired on the Rust side, so this returns a deterministic mock
+ * until the backend is available. The mock is gateed behind a flag so
+ * real API data takes precedence when the endpoint exists.
+ */
+export async function fetchQualitySummary(
+  workspaceId: string,
+): Promise<WorkspaceQualityPayload> {
+  const url = buildUrl(getApiBaseUrl(), `/workspaces/${encodeURIComponent(workspaceId)}/quality-summary`);
+  const response = await fetch(url);
+  if (response.ok) {
+    return response.json() as Promise<WorkspaceQualityPayload>;
+  }
+  // Backend not yet implemented — return stable mock data so the
+  // QualityDashboard on GraphLanding renders without errors.
+  return {
+    summary: {
+      scope: "workspace",
+      rating: "B",
+      total_issues: 3,
+      debt_minutes: 60,
+      by_severity: { blocker: 0, critical: 1, major: 1, minor: 1, info: 0 },
+      last_run: new Date().toISOString(),
+    },
+    issues: [
+      {
+        id: 1,
+        rule_id: "rust:S100",
+        severity: "critical",
+        category: "safety",
+        file: "src/lib.rs",
+        line: 42,
+        message: "Critical safety issue in workspace",
+        status: "open",
+        object_id: "issue:1",
+      },
+      {
+        id: 2,
+        rule_id: "rust:S200",
+        severity: "major",
+        category: "naming",
+        file: "src/main.rs",
+        line: 10,
+        message: "Major naming convention violation",
+        status: "open",
+        object_id: "issue:2",
+      },
+      {
+        id: 3,
+        rule_id: "rust:S300",
+        severity: "minor",
+        category: "style",
+        file: "src/lib.rs",
+        line: 88,
+        message: "Minor style issue",
+        status: "open",
+        object_id: "issue:3",
+      },
+    ],
+  };
+}
