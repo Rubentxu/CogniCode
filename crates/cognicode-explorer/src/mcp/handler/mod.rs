@@ -22,6 +22,8 @@ mod graph;
 mod graph_analyze;
 mod impact;
 mod ingest;
+// `internal_mcp` exposes wrappers around internal MCP logic.
+pub mod internal_mcp;
 // `lens_mcp` is `pub` so integration tests in `tests/` can register
 // its handlers into a fresh registry. Internal callers still go
 // through `register_lens_mcp_handlers`.
@@ -146,6 +148,7 @@ pub use graph::register_graph_handlers;
 pub use graph_analyze::register_graph_analyze_handlers;
 pub use impact::register_impact_handlers;
 pub use ingest::register_ingest_handlers;
+pub use internal_mcp::register_internal_mcp_handlers;
 pub use lens_mcp::register_lens_mcp_handlers;
 pub use named_views::register_named_views_handlers;
 pub use search::register_search_handlers;
