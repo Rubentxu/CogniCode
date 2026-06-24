@@ -13,6 +13,8 @@ import { SkipLink } from "./SkipLink";
 import { PerspectiveToggle } from "./PerspectiveToggle";
 import { ScanBar } from "./ScanBar";
 import { ShareExplorationButton } from "./ShareExplorationButton";
+import { LensSidebarToggle } from "./LensSidebarToggle";
+import { LensPanelSidebar } from "./LensPanel/LensPanelSidebar";
 import type { WorkspaceSummary } from "../api/types";
 
 export interface ShellLayoutProps {
@@ -79,6 +81,7 @@ export function ShellLayout({
         </div>
         <div className="flex items-center gap-2">
           <ShareExplorationButton />
+          <LensSidebarToggle />
           <button
             type="button"
             onClick={onSpotterOpen}
@@ -132,15 +135,18 @@ export function ShellLayout({
             </div>
           </div>
         ) : (
-          /* Desktop / Tablet / Ultrawide: 2-zone grid */
-          <div
-            className="grid h-full"
-            style={{ gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr)" }}
-          >
-            {/* Left — InteractiveGraph (primary) */}
-            {children}
-            {/* Right — PaneStackView (secondary) */}
-            {secondaryContent}
+          /* Desktop / Tablet / Ultrawide: 2-zone grid + optional lens sidebar */
+          <div className="flex h-full">
+            <div
+              className="grid h-full flex-1"
+              style={{ gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr)" }}
+            >
+              {/* Left — InteractiveGraph (primary) */}
+              {children}
+              {/* Right — PaneStackView (secondary) */}
+              {secondaryContent}
+            </div>
+            <LensPanelSidebar />
           </div>
         )}
       </main>
