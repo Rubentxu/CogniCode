@@ -151,8 +151,13 @@ fn extract_subgraph_view(
 ///
 // The subgraph nodes and edges carry only SymbolId on nodes and
 // (DependencyType, confidence) on edges — we reconstruct a minimal
-// CallGraph from those primitives.
+// CallGraph from those primitives by looking up the original Symbol
+// in `graph` (which has full name/file/line metadata). This produces
+// subgraph symbols with FQNs that match the original exactly, so
+// downstream tools (PageRank, all_simple_paths, etc.) that look up
+// symbols by id continue to work.
 fn build_subgraph_callgraph(
+    graph: &CallGraph,
     view: &cognicode_core::infrastructure::graph::SubgraphView,
 ) -> CallGraph {
     let mut cg = CallGraph::new();
@@ -164,20 +169,22 @@ fn build_subgraph_callgraph(
         std::collections::HashMap::new();
 
     for node_id in &view.nodes {
-        // Use a placeholder name; after add_symbol, we use set_fqn_override
-        // to restore the original FQN. This bypasses Location's inability to
-        // store the symbol name (Location only carries file/line/column).
-        let placeholder_name = node_id.as_str();
-        let sym = Symbol::new(
-            placeholder_name,
-            SymbolKind::Function,
-            Location::new("subgraph", 1, 1),
-        );
+        // Resolve the original symbol from the source graph so we can
+        // build the subgraph symbol with matching name, file, and line.
+        // `CallGraph::add_symbol` derives the SymbolId from
+        // `Symbol::fully_qualified_name()` BEFORE we get a chance to
+        // mutate the symbol, so we must pass the right components to
+        // `Symbol::new` — using a placeholder + set_fqn_override does
+        // NOT update the SymbolId stored in `cg.symbols`.
+        let sym = match graph.get_symbol(node_id) {
+            Some(original) => original.clone(),
+            None => Symbol::new(
+                node_id.as_str(),
+                SymbolKind::Function,
+                Location::new("subgraph", 1, 0),
+            ),
+        };
         let new_id = cg.add_symbol(sym);
-        // Restore the original FQN now that the symbol is owned by cg.
-        cg.get_symbol_mut(&new_id)
-            .expect("symbol must exist")
-            .set_fqn_override(node_id.as_str());
         old_to_new.insert(node_id.clone(), new_id);
     }
 
@@ -276,7 +283,7 @@ impl ToolHandler for GraphPagerankHandler {
             return ok_envelope(TOOL_GRAPH_PAGERANK, &serde_json::json!({ "scores": {} }));
         }
 
-        let sub_cg = build_subgraph_callgraph(&view);
+        let sub_cg = build_subgraph_callgraph(g, &view);
         let scores = GraphAnalyticsService::page_rank(&sub_cg, alpha, max_iter);
         let scores_str: std::collections::HashMap<String, f64> = scores
             .into_iter()
@@ -354,7 +361,7 @@ impl ToolHandler for GraphGodNodesHandler {
             return ok_envelope(TOOL_GRAPH_GOD_NODES, &serde_json::json!({ "nodes": [] }));
         }
 
-        let sub_cg = build_subgraph_callgraph(&view);
+        let sub_cg = build_subgraph_callgraph(g, &view);
         let god = GraphAnalyticsService::god_nodes(&sub_cg, percentile);
         let nodes: Vec<_> = god
             .into_iter()
@@ -442,7 +449,7 @@ impl ToolHandler for GraphCommunitiesHandler {
             );
         }
 
-        let sub_cg = build_subgraph_callgraph(&view);
+        let sub_cg = build_subgraph_callgraph(g, &view);
         let result = CommunityDetector::detect(&sub_cg, max_iter);
         let communities: Vec<Vec<String>> = result
             .communities
@@ -529,7 +536,7 @@ impl ToolHandler for GraphCommunityGodNodesHandler {
             );
         }
 
-        let sub_cg = build_subgraph_callgraph(&view);
+        let sub_cg = build_subgraph_callgraph(g, &view);
         let community_result =
             CommunityDetector::detect(&sub_cg, CommunityDetector::MAX_ITERATIONS);
         let top_n = ((percentile * 100.0) as usize).max(1);
@@ -625,7 +632,7 @@ impl ToolHandler for GraphSurprisingConnectionsHandler {
             );
         }
 
-        let sub_cg = build_subgraph_callgraph(&view);
+        let sub_cg = build_subgraph_callgraph(g, &view);
         let community_result =
             CommunityDetector::detect(&sub_cg, CommunityDetector::MAX_ITERATIONS);
         let surprising =
@@ -714,7 +721,7 @@ impl ToolHandler for GraphTransitiveReductionHandler {
             );
         }
 
-        let sub_cg = build_subgraph_callgraph(&view);
+        let sub_cg = build_subgraph_callgraph(g, &view);
         let reduced = GraphAnalyticsService::transitive_reduction(&sub_cg);
 
         let edges: Vec<_> = reduced
@@ -799,7 +806,7 @@ impl ToolHandler for GraphFeedbackArcSetHandler {
             );
         }
 
-        let sub_cg = build_subgraph_callgraph(&view);
+        let sub_cg = build_subgraph_callgraph(g, &view);
         let fas = GraphAnalyticsService::feedback_arc_set(&sub_cg);
 
         let edges: Vec<_> = fas
@@ -910,7 +917,7 @@ impl ToolHandler for GraphAllSimplePathsHandler {
             );
         }
 
-        let sub_cg = build_subgraph_callgraph(&view);
+        let sub_cg = build_subgraph_callgraph(g, &view);
         let paths = GraphAnalyticsService::all_simple_paths(
             &sub_cg,
             &SymbolId::new(from),
