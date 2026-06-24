@@ -13,9 +13,10 @@
  * so the wiring is in place and tested. The fixtures are scoped to
  * this component so the data-shape mismatch is isolated.
  */
+import type { JSX } from "react";
 import { HotspotTreemap } from "../AnalyticsViews/HotspotTreemap";
 import { DeadCodeSunburst } from "../AnalyticsViews/DeadCodeSunburst";
-import type { DesignFinding } from "../api/types";
+import type { DesignFinding } from "../../api/types";
 import type { SunburstData, SunburstLeaf, TreemapData, TreemapLeaf } from "../AnalyticsViews/types";
 
 // -----------------------------------------------------------------------------

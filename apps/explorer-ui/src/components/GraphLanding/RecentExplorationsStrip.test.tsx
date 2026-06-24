@@ -43,7 +43,7 @@ describe("RecentExplorationsStrip", () => {
       data: [makeExploration({ id: "exp-1", panes: [{ pane_id: "pane-1", object_id: "obj-1", view_id: "overview", scroll_y: 0, viewport: null }] })],
       isLoading: false,
       error: null,
-    } as ReturnType<typeof useExplorations>);
+    } as unknown as ReturnType<typeof useExplorations>);
 
     render(
       <RecentExplorationsStrip workspaceId="ws-001" onExplorationClick={mockOnExplorationClick} />
@@ -59,7 +59,7 @@ describe("RecentExplorationsStrip", () => {
       data: [],
       isLoading: false,
       error: null,
-    } as ReturnType<typeof useExplorations>);
+    } as unknown as ReturnType<typeof useExplorations>);
 
     render(
       <RecentExplorationsStrip workspaceId="ws-001" onExplorationClick={mockOnExplorationClick} />
@@ -74,7 +74,7 @@ describe("RecentExplorationsStrip", () => {
       data: null,
       isLoading: false,
       error: null,
-    } as ReturnType<typeof useExplorations>);
+    } as unknown as ReturnType<typeof useExplorations>);
 
     render(
       <RecentExplorationsStrip workspaceId="ws-001" onExplorationClick={mockOnExplorationClick} />
@@ -92,7 +92,7 @@ describe("RecentExplorationsStrip", () => {
       data: [older, newer],
       isLoading: false,
       error: null,
-    } as ReturnType<typeof useExplorations>);
+    } as unknown as ReturnType<typeof useExplorations>);
 
     render(
       <RecentExplorationsStrip workspaceId="ws-001" onExplorationClick={mockOnExplorationClick} />
@@ -114,7 +114,7 @@ describe("RecentExplorationsStrip", () => {
       data: explorations,
       isLoading: false,
       error: null,
-    } as ReturnType<typeof useExplorations>);
+    } as unknown as ReturnType<typeof useExplorations>);
 
     render(
       <RecentExplorationsStrip workspaceId="ws-001" onExplorationClick={mockOnExplorationClick} />
@@ -130,7 +130,7 @@ describe("RecentExplorationsStrip", () => {
       data: undefined,
       isLoading: true,
       error: null,
-    } as ReturnType<typeof useExplorations>);
+    } as unknown as ReturnType<typeof useExplorations>);
 
     render(
       <RecentExplorationsStrip workspaceId="ws-001" onExplorationClick={mockOnExplorationClick} />
@@ -150,7 +150,7 @@ describe("RecentExplorationsStrip", () => {
       data: [exploration],
       isLoading: false,
       error: null,
-    } as ReturnType<typeof useExplorations>);
+    } as unknown as ReturnType<typeof useExplorations>);
 
     render(
       <RecentExplorationsStrip workspaceId="ws-001" onExplorationClick={mockOnExplorationClick} />

@@ -5,11 +5,11 @@
  *
  * PR #35 — moldable wiring phase1.
  */
-import { useState } from "react";
+import { useState, type JSX } from "react";
 import useSWR from "swr";
 
 import { QualityDashboard } from "../QualityDashboard";
-import type { QualitySummaryBlockBody } from "../api/types";
+import type { QualitySummaryBlockBody } from "../../api/types";
 import {
   fetchQualitySummary,
   type WorkspaceQualityPayload,

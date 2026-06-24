@@ -18,7 +18,7 @@
  * navigations; keeping the selection local keeps the back-button
  * experience predictable without giving up the per-object memory.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useApp, useAppDispatch } from "../state/context";
 import { useLenses } from "../hooks/useLenses";
@@ -414,7 +414,6 @@ function LensResult({
       isValidating={isValidating}
       onPickFinding={onPickFinding}
       lensId={lensId}
-      activeObjectId={activeObjectId}
     />
   );
 }
@@ -430,7 +429,6 @@ interface LensFindingsViewProps {
   isValidating: boolean;
   onPickFinding: (finding: DesignFinding) => void;
   lensId: string;
-  activeObjectId: string;
 }
 
 function LensFindingsView({
@@ -440,7 +438,6 @@ function LensFindingsView({
   isValidating,
   onPickFinding,
   lensId,
-  activeObjectId,
 }: LensFindingsViewProps) {
   // Filter for the "blockers only" toggle. We treat both `blocker`
   // and `critical` severities as blockers — they are the ones the

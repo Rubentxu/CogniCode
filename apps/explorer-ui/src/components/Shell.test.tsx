@@ -74,6 +74,7 @@ vi.mock("cytoscape", () => {
     length = 0;
   }
   class Cy {
+    // @ts-expect-error -- mock property, the nodes() method below is the public API
     nodes: CyNode[] = [];
     edgeElements: CyEdge[] = [];
     constructor(opts: {
@@ -112,6 +113,7 @@ vi.mock("cytoscape", () => {
       return new CyCollection(this.edgeElements);
     }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
+    // @ts-expect-error -- intentional duplicate with property above; method is the public API
     nodes(_?: string) {
       return new CyCollection(this.nodes);
     }

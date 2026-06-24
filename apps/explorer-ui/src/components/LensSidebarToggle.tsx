@@ -3,6 +3,7 @@
  * Shows a small badge indicating the number of available lenses.
  */
 
+import type { JSX } from "react";
 import { useAppDispatch, useAppState } from "../state/context";
 import { useLenses } from "../hooks/useLenses";
 

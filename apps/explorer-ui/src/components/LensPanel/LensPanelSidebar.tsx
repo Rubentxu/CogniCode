@@ -6,7 +6,7 @@
  * - Viewport-aware visibility (desktop vs mobile)
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type JSX } from "react";
 
 import { useAppState } from "../../state/context";
 import { detectViewport, type ShellViewport } from "../viewport";

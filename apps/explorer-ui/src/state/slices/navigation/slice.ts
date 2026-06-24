@@ -7,7 +7,8 @@
  * RESET is also handled here to reset navigation to initial state.
  */
 import type { Action } from "../../context";
-import { apply, getActiveFocus, makeInitialNavigationState } from "./reducer";
+import { apply, getActiveFocus } from "./reducer";
+import { makeInitialNavigationState } from "./types";
 import type { NavigationAction, NavigationState } from "./types";
 
 export type NavigationSliceAction = Extract<

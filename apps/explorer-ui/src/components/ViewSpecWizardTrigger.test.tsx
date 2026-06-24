@@ -12,7 +12,6 @@
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
 
 // Mock the state hooks so we can drive them from tests.
 const mockDispatch = vi.fn();

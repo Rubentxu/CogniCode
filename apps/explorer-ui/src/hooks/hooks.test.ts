@@ -31,6 +31,7 @@ import {
 } from "../mocks/fixtures";
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally stubbed
+// @ts-expect-error -- intentionally stubbed, used in future MSW instrumentation
 let _fetchCount = 0;
 let spotterFetchCount = 0;
 let artifactFetchCount = 0;
