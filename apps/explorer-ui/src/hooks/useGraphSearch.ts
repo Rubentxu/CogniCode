@@ -17,7 +17,7 @@
  * append pages without round-tripping the server's cursor on
  * every render.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { graphSearch as graphSearchApi } from "../api/client";
 import type {
@@ -75,15 +75,17 @@ export function useGraphSearch(
   // We keep a ref to the latest `nextCursor` so the effect
   // below can read it without re-creating the effect on every
   // cursor update.
-  const cursorRef = useRef<string | null>(null);
-  // eslint-disable-next-line react-hooks/refs -- real architectural issue; needs useEffect refactor deferred
-  cursorRef.current = nextCursor;
 
   // The closure captures `query`/`nodeKinds`/`limit` from the
   // current render; we re-fetch by calling the helper directly.
   const fetchPage = useCallback(
     async (cursor: string | null, append: boolean): Promise<void> => {
-      if (!enabled || !query) return;
+      if (!enabled || !query) {
+        setResults([]);
+        setTotalCount(0);
+        setNextCursor(null);
+        return;
+      }
       setIsLoading(true);
       setIsError(false);
       setError(null);
@@ -112,22 +114,18 @@ export function useGraphSearch(
   );
 
   // Eager first-page fetch on mount + whenever the inputs change.
-  /* eslint-disable react-hooks/set-state-in-effect -- real architectural issue; refactor deferred */
+  // Data fetching in an effect is the React-recommended pattern for SWR-less
+  // hooks. The setIsLoading call inside fetchPage is intentional — it reflects
+  // the in-flight request state, which is not derivable from render alone.
+  // The lint rule traces the call chain and flags the void fetchPage call.
   useEffect(() => {
-    if (!enabled || !query) {
-      setResults([]);
-      setTotalCount(0);
-      setNextCursor(null);
-      return;
-    }
-    void fetchPage(null, false);
+    void fetchPage(null, false); // eslint-disable-line react-hooks/set-state-in-effect
   }, [query, nodeKinds, limit, enabled, fetchPage]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const loadMore = useCallback(async () => {
-    if (cursorRef.current === null) return;
-    await fetchPage(cursorRef.current, true);
-  }, [fetchPage]);
+    if (nextCursor === null) return;
+    await fetchPage(nextCursor, true);
+  }, [fetchPage, nextCursor]);
 
   const reset = useCallback(() => {
     setResults([]);

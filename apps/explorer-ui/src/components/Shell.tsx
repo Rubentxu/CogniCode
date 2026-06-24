@@ -12,7 +12,7 @@
  * and ShellLayout (pure layout). The public API (props, data-testid, data-viewport)
  * is preserved unchanged.
  */
-import { Suspense, lazy, useRef } from "react";
+import { Suspense, lazy } from "react";
 
 import { useAppDispatch, useAppState } from "../state/context";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -22,6 +22,7 @@ import { ShellBootstrap } from "./ShellBootstrap";
 import { ShellLayout } from "./ShellLayout";
 import { useSubgraph } from "../hooks/useSubgraph";
 import { useArchitecture } from "../hooks/useArchitecture";
+import { useStaleDataHold } from "../hooks/useStaleDataHold";
 import { GraphLanding } from "./GraphLanding";
 import type { ShellViewport } from "./viewport";
 
@@ -52,12 +53,19 @@ function InteractiveGraphPanel({
 }) {
   const { activeLensId, perspective } = useAppState();
 
-  // React rules of hooks: both hooks called unconditionally.
-  // Inactive hook receives null → SWR skips fetch.
+  // React rules of hooks: all hooks called unconditionally.
+  // Inactive hooks receive null → SWR skips fetch.
   // Pattern proven by GraphLanding.tsx:43-54 (shipping since E4).
   const isGraph = perspective === "graph";
   const subgraph = useSubgraph(isGraph ? rootId : null);
   const architecture = useArchitecture(!isGraph ? (workspaceId ?? null) : null);
+
+  const { data, isLoading, error } = isGraph ? subgraph : architecture;
+
+  // E5.5: stale-data hold — keep last good SubgraphResponse across revalidation
+  // so the panel never unmounts (and InteractiveGraph never remounts cytoscape)
+  // during warm-cache perspective toggles. Called before any early return.
+  const displayData = useStaleDataHold(data, isLoading, error != null);
 
   if (activeLensId === "rationale" && rootId) {
     return (
@@ -70,20 +78,8 @@ function InteractiveGraphPanel({
     );
   }
 
-  const { data, isLoading, error } = isGraph ? subgraph : architecture;
-
-  // E5.5: stale-data hold — keep last good SubgraphResponse across revalidation
-  // so the panel never unmounts (and InteractiveGraph never remounts cytoscape)
-  // during warm-cache perspective toggles.
-  /* eslint-disable react-hooks/rules-of-hooks, react-hooks/refs */
-  const lastGoodDataRef = useRef<typeof data>(null);
-  if (data) lastGoodDataRef.current = data;
-  if (error) lastGoodDataRef.current = null;
-  const displayData = isLoading ? lastGoodDataRef.current ?? data : data;
-
-  if (isLoading && !lastGoodDataRef.current) return GRAPH_LOADING;
+  if (isLoading && !data) return GRAPH_LOADING;
   if (error && !displayData) return GRAPH_ERROR;
-  /* eslint-enable react-hooks/rules-of-hooks, react-hooks/refs */
 
   return (
     <InteractiveGraph

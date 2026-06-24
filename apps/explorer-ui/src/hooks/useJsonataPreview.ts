@@ -115,6 +115,9 @@ export function useJsonataPreview(
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Derive isEmpty during render — no state needed for the clear case
+  const isEmpty = expression === null || expression.trim().length === 0;
+
   // Track in-flight execution for debounce + race cancellation
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -145,18 +148,13 @@ export function useJsonataPreview(
     [], // stable — all state via refs
   );
 
-  /* eslint-disable react-hooks/set-state-in-effect -- real architectural issue; refactor deferred */
   useEffect(() => {
-    // Clear state when expression is null / empty
-    if (expression === null || expression.trim().length === 0) {
+    if (isEmpty) {
       abortControllerRef.current?.abort();
       if (debounceTimerRef.current !== null) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
       }
-      setOutput(null);
-      setError(null);
-      setLoading(false);
       return;
     }
 
@@ -176,8 +174,11 @@ export function useJsonataPreview(
         debounceTimerRef.current = null;
       }
     };
-  }, [expression, input, execute]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }, [expression, input, execute, isEmpty]);
 
-  return { output, error, loading };
+  return {
+    output: isEmpty ? null : output,
+    error: isEmpty ? null : error,
+    loading: isEmpty ? false : loading,
+  };
 }
