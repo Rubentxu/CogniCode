@@ -135,7 +135,8 @@ Auditoría del estado real contra el modelo de gtoolkit. El vocabulario es compa
 | ADR-004 | jun-11 | C3 WalkFilter (value object) | ARCHIVED | Consolidación hecha en jun-15 |
 | ADR-005 | jun-11 | C5 ReadMode | ARCHIVED | Ya implementado |
 | ADR-006 | jun-11 | C6 Mock Crate | ARCHIVED | Ya implementado |
-| ADR-007 | jun-12 | No-WASM browser | ACCEPTED | |
+| ADR-007 | jun-12 | No-WASM browser | ACCEPTED (amended by ADR-047) | §2 WASM-for-shared-compute permitted |
+| ADR-047 | jun-24 | WASM-for-shared-compute amendment | ACCEPTED | Unblocks WASM graph transforms roadmap item |
 | ADR-008 | jun-12 | Moldable View Runtime | ACCEPTED | |
 | ADR-009 | jun-12 | Hybrid Explorer Navigation | ACCEPTED | |
 | ADR-010 | jun-13 | Deepening Roadmap | ACCEPTED | 100% |
