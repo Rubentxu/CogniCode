@@ -1,0 +1,24 @@
+[package]
+name = "cognicode-graph-algos"
+description = "Pure graph algorithms (PageRank, god_nodes, SCC) — WASM-compatible"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license = "MIT OR Apache-2.0"
+
+[features]
+default = []
+# Enables petgraph support so cognicode-core can implement GraphBuilder for
+# CallGraphProjection. WASM builds leave this OFF — petgraph never enters
+# the WASM dependency tree. This is the WASM-clean-by-default principle
+# from ADR-048.
+petgraph-adapter = ["dep:petgraph"]
+
+[dependencies]
+petgraph = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
