@@ -36,12 +36,10 @@ use cognicode_core::schemas::BUILTIN_DESCRIPTORS_RAW;
 
 /// Convert raw built-in descriptor to dto::ViewDescriptorDto.
 fn raw_to_view_descriptor(raw: &cognicode_core::schemas::BuiltinDescriptorRaw) -> ViewDescriptorDto {
-    ViewDescriptorDto {
-        id: raw.id.to_string(),
-        title: raw.title.to_string(),
-        is_builtin: true,
-        source: None,
-    }
+    // Use the From impl for the ACL boundary.
+    // The raw descriptor's to_view_descriptor() returns core_schema::ViewDescriptor,
+    // which we then convert to ViewDescriptorDto.
+    ViewDescriptorDto::from(raw.to_view_descriptor())
 }
 
 /// Error returned by [`ViewSpecStore`] operations.
