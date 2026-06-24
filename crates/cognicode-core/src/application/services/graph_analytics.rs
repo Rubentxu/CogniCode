@@ -100,14 +100,14 @@ impl GraphAnalyticsService {
     /// Find all simple paths from `from` to `to` bounded by `max_hops`.
     ///
     /// A simple path does not repeat a node, so cycles are terminated
-    /// by the visited-set inside petgraph. `max_hops` is the maximum
-    /// number of intermediate nodes (i.e. the path may traverse at
-    /// most `max_hops + 1` edges).
+    /// by the visited-set. `max_hops` is the maximum number of
+    /// intermediate nodes (i.e. the path may traverse at most
+    /// `max_hops + 1` edges).
     ///
     /// Edge cases:
     /// - Missing `from` or `to` id -> empty vec.
     /// - No path within `max_hops` -> empty vec.
-    /// - `from == to` -> no path is emitted (petgraph's behaviour).
+    /// - `from == to` -> no path is emitted.
     pub fn all_simple_paths(
         graph: &CallGraph,
         from: &SymbolId,
@@ -115,33 +115,35 @@ impl GraphAnalyticsService {
         max_hops: usize,
     ) -> Vec<Vec<SymbolId>> {
         let projection = CallGraphProjection::from_call_graph(graph);
-        let g = projection.graph();
+        let out_neighbors = projection.build_out_neighbors();
+        let n = projection.node_count();
 
-        let (Some(&from_ni), Some(&to_ni)) = (
+        let (Some(&from_idx), Some(&to_idx)) = (
             projection.id_to_index().get(from),
             projection.id_to_index().get(to),
         ) else {
             return Vec::new();
         };
 
-        // `all_simple_paths` takes the graph by value, but
-        // `&'a StableGraph` implements `IntoNeighborsDirected`, so
-        // passing a reference is sufficient and avoids consuming the
-        // projection.
-        petgraph::algo::simple_paths::all_simple_paths::<Vec<_>, _>(
-            g,
-            from_ni,
-            to_ni,
-            0,
-            Some(max_hops),
-        )
-        .into_iter()
-        .map(|path: Vec<NodeIndex>| {
-            path.into_iter()
-                .filter_map(|ni| g.node_weight(ni).cloned())
-                .collect()
-        })
-        .collect()
+        let raw = cognicode_graph_algos::all_simple_paths(
+            &out_neighbors,
+            from_idx.index(),
+            to_idx.index(),
+            max_hops,
+        );
+        raw.into_iter()
+            .map(|path| {
+                path.into_iter()
+                    .filter_map(|idx| {
+                        projection
+                            .id_to_index()
+                            .iter()
+                            .find(|(_, ni)| ni.index() == idx)
+                            .map(|(sid, _)| sid.clone())
+                    })
+                    .collect()
+            })
+            .collect()
     }
 
     /// Compute the SCC condensation of the call graph.
