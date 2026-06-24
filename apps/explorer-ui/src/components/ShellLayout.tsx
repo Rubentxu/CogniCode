@@ -15,6 +15,7 @@ import { ScanBar } from "./ScanBar";
 import { ShareExplorationButton } from "./ShareExplorationButton";
 import { LensSidebarToggle } from "./LensSidebarToggle";
 import { LensPanelSidebar } from "./LensPanel/LensPanelSidebar";
+import { ViewSpecWizardTrigger } from "./ViewSpecWizardTrigger";
 import type { WorkspaceSummary } from "../api/types";
 
 export interface ShellLayoutProps {
@@ -81,6 +82,7 @@ export function ShellLayout({
         </div>
         <div className="flex items-center gap-2">
           <ShareExplorationButton />
+          <ViewSpecWizardTrigger />
           <LensSidebarToggle />
           <button
             type="button"
