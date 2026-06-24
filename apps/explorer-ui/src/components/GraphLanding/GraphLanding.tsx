@@ -13,12 +13,14 @@
  * Clicking a node dispatches `SELECT_OBJECT { objectId, viewId: "overview" }`
  * which opens the pane stack.
  */
-import { useEffect, useRef, lazy, Suspense } from "react";
+import { useEffect, useRef, lazy, Suspense, useState } from "react";
 import cytoscape, { type Core } from "cytoscape";
 
 import { useAppDispatch, useAppState } from "../../state/context";
 import { useLanding } from "../../hooks/useLanding";
 import { useArchitecture } from "../../hooks/useArchitecture";
+import { useGraphAlgorithms } from "../../hooks/useGraphAlgorithms";
+import type { GodNodeEntry } from "../../api/types";
 import { toCytoscapeElements } from "../InteractiveGraph/adapter";
 import { buildStylesheet, resolveNodeStyleClass } from "../InteractiveGraph/stylesheet";
 
@@ -40,6 +42,12 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
 
+  // WASM god_nodes integration (ADR-047 §Integration)
+  // When VITE_ENABLE_WASM=true, we compute god_nodes in the browser via WASM.
+  // The backend god_nodes from landingData remain as a fallback if WASM fails.
+  const { godNodes: wasmGodNodes, enabled: wasmEnabled } = useGraphAlgorithms();
+  const [wasmGodNodesResult, setWasmGodNodesResult] = useState<GodNodeEntry[] | null>(null);
+
   // Choose data source based on perspective
   const isGraph = perspective === "graph";
   const { data: landingData, isLoading: isLandingLoading, error: landingError } = useLanding(
@@ -52,6 +60,33 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
   const data = isGraph ? landingData : archData;
   const isLoading = isGraph ? isLandingLoading : isArchLoading;
   const error = isGraph ? landingError : archError;
+
+  // Compute god_nodes via WASM when enabled (lazy — only runs once data is available)
+  useEffect(() => {
+    if (!wasmEnabled || !landingData || !isGraph) return;
+    if (landingData.nodes.length === 0) return;
+
+    const nodes = landingData.nodes.map((n) => ({ id: n.id, label: n.label }));
+    const edges = landingData.edges.map((e) => ({ source: e.source, target: e.target }));
+
+    wasmGodNodes(nodes, edges, { percentile: 0.95 })
+      .then((result) => {
+        // WASM god_nodes returns { id, score } — enrich with label from landing nodes
+        const enriched: GodNodeEntry[] = result.nodes.map((wn) => ({
+          id: wn.id,
+          label: landingData.nodes.find((n) => n.id === wn.id)?.label ?? wn.id,
+          score: wn.score,
+        }));
+        setWasmGodNodesResult(enriched);
+      })
+      .catch((err) => {
+        console.warn("[GraphLanding] WASM god_nodes failed, using backend fallback:", err);
+        setWasmGodNodesResult(null);
+      });
+  }, [wasmEnabled, landingData, isGraph, wasmGodNodes]);
+
+  // Use WASM god_nodes if available, otherwise fall back to backend
+  const godNodes = wasmGodNodesResult ?? landingData?.god_nodes ?? [];
 
   // Mount cytoscape when data arrives
   useEffect(() => {
@@ -66,8 +101,8 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
         const isEntryPoint = landingData.entry_points.some((ep) => ep.id === n.id);
         // Check if this node is a hot path
         const isHot = landingData.hot_paths.some((hp) => hp.id === n.id);
-        // Check if this node is a god node
-        const isGod = landingData.god_nodes.some((g) => g.id === n.id);
+        // Check if this node is a god node (WASM or backend)
+        const isGod = godNodes.some((g) => g.id === n.id);
 
         const style_class = isEntryPoint
           ? "entry-point"
@@ -116,7 +151,7 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
       cy.destroy();
       cyRef.current = null;
     };
-  }, [data, dispatch, isGraph, landingData]);
+  }, [data, dispatch, isGraph, landingData, godNodes]);
 
   if (isLoading) {
     return (
