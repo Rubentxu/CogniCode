@@ -24,7 +24,6 @@ import {
 } from "./slices/navigation";
 import {
   rootReducer,
-  type LensSidebarAction,
   type LensSidebarState,
   type ViewSpecWizardAction,
   type ViewSpecWizardState,

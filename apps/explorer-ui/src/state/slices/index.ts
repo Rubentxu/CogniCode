@@ -38,8 +38,8 @@ export function rootReducer(state: AppState, action: import("../context").Action
     spotterOpen: spotterReducer(state.spotterOpen, action),
     activeView: navSlice.activeView,
     perspective: perspectiveReducer(state.perspective, action),
-    lensSidebar: lensSidebarReducer(state.lensSidebar, action),
-    viewSpecWizard: viewSpecWizardReducer(state.viewSpecWizard, action),
+    lensSidebar: lensSidebarReducer(state.lensSidebar, action as never),
+    viewSpecWizard: viewSpecWizardReducer(state.viewSpecWizard, action as never),
   };
 }
 

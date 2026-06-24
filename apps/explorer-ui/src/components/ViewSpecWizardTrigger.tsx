@@ -11,6 +11,7 @@
  * the global Zustand slice `viewSpecWizard`.
  */
 
+import type { JSX } from "react";
 import { useAppDispatch, useAppState } from "../state/context";
 
 export function ViewSpecWizardTrigger(): JSX.Element {

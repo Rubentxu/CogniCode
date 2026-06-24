@@ -5,7 +5,7 @@
  *
  * When `onClose` is provided, a close button appears (pane-stack only).
  */
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAppDispatch, useAppState } from "../../state/context";
 import { useObject } from "../../hooks/useObject";
 import { useAvailableViews, useViews } from "../../hooks/useViews";
