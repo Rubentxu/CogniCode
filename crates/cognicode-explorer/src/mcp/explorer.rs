@@ -199,6 +199,18 @@ pub const TOOL_FIND_INTERSECTION: &str = "lens_find_intersection";
 /// relative to an anchoring object.
 pub const TOOL_HOTSPOTS: &str = "lens_hotspots";
 
+/// `find_dead_code_v2` — workspace-wide dead-code analysis with confidence filter
+/// (wraps internal MCP `find_dead_code` logic via CallGraph).
+pub const TOOL_FIND_DEAD_CODE_V2: &str = "find_dead_code_v2";
+
+/// `find_cycles` — detect all strongly-connected components (cycles) in the call graph
+/// (wraps `CycleDetector` from cognicode-graph-algos).
+pub const TOOL_FIND_CYCLES: &str = "find_cycles";
+
+/// `health_dashboard` — single-call workspace health summary with findings
+/// (derives health score from graph metrics).
+pub const TOOL_HEALTH_DASHBOARD: &str = "health_dashboard";
+
 // ============================================================================
 // Result envelope types
 // ============================================================================
@@ -394,6 +406,7 @@ impl ExplorerMcpHandler {
         crate::mcp::handler::register_graph_analyze_handlers(&mut registry);
         crate::mcp::handler::register_impact_handlers(&mut registry);
         crate::mcp::handler::register_ingest_handlers(&mut registry);
+        crate::mcp::handler::register_internal_mcp_handlers(&mut registry);
         crate::mcp::handler::register_lens_mcp_handlers(&mut registry);
         crate::mcp::handler::register_named_views_handlers(&mut registry);
         crate::mcp::handler::register_search_handlers(&mut registry);
@@ -535,6 +548,7 @@ pub const TOOL_NAMES: &[&str] = &[
     TOOL_GRAPH_TRANSITIVE_REDUCTION,
     TOOL_GRAPH_FEEDBACK_ARC_SET,
     TOOL_GRAPH_ALL_SIMPLE_PATHS,
+    TOOL_HEALTH_DASHBOARD,
     TOOL_DETECT_ARCHITECTURE_DRIFT,
     TOOL_ASK,
     TOOL_BRAIN_OPEN,
@@ -547,7 +561,9 @@ pub const TOOL_NAMES: &[&str] = &[
     TOOL_VIEW_LOAD,
     TOOL_VIEW_LIST,
     TOOL_VIEW_DELETE,
+    TOOL_FIND_CYCLES,
     TOOL_FIND_DEAD_CODE,
+    TOOL_FIND_DEAD_CODE_V2,
     TOOL_FIND_INTERSECTION,
     TOOL_HOTSPOTS,
 ];
