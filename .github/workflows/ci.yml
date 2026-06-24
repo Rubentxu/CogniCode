@@ -52,22 +52,10 @@ jobs:
             **/Cargo.lock
             .github/workflows/*.yml
       - name: Format check
-        # On PRs: scope `cargo fmt --check` to files changed in this PR
-        # so pre-existing workspace debt doesn't block review. The full
-        # workspace is checked on main pushes.
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            CHANGED=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -E '\.rs$' || true)
-            if [ -n "$CHANGED" ]; then
-              echo "Files to format-check:"
-              echo "$CHANGED"
-              echo "$CHANGED" | xargs cargo fmt -- --check
-            else
-              echo "No .rs files changed; skipping format check"
-            fi
-          else
-            cargo fmt --all -- --check
-          fi
+        # Workspace-wide check. Pre-existing format debt was paid down
+        # in PR #20 (`chore(fmt): fix pre-existing workspace format debt`).
+        # Future PRs are expected to keep this clean.
+        run: cargo fmt --all -- --check
       - name: Clippy (deny warnings)
         # On PRs: strict `-D warnings` only on crates with files changed
         # in this PR. The full workspace check still runs (so pre-existing
