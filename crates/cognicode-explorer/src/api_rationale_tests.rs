@@ -26,7 +26,7 @@ use crate::adapters::InMemoryGraphRepository;
 use crate::api::{router_with_state, ApiState};
 use crate::dto::SubgraphResponse;
 use crate::facades::{
-    GraphService, GraphServiceImpl, MoldQLService, PersistenceService, SearchService,
+    graph::GraphServiceImpl, GraphService, MoldQLService, PersistenceService, SearchService,
     ViewService, WorkspaceService,
 };
 use crate::ports::graph_repository::GraphRepository;

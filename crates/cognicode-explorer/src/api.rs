@@ -12,13 +12,14 @@ use tower_http::trace::TraceLayer;
 
 use crate::dto::{
     GenerateArtifactRequest, GodNodeEntry, LandingPayload, OpenWorkspaceRequest,
-    SaveExplorationSessionRequest,
+    SaveExplorationSessionRequest, SubgraphResponse,
 };
 use crate::error::ExplorerError;
 use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService,
     SubgraphDirection as FacadeSubgraphDirection, ViewService, WorkspaceService,
 };
+use crate::ports::graph_repository::GraphRepository;
 
 // ============================================================================
 // Style-class taxonomy
@@ -311,7 +312,6 @@ async fn rationale_handler(
 ) -> Result<Response, ApiError> {
     use cognicode_core::domain::aggregates::generic_graph::NodeId;
     use cognicode_core::domain::services::score_subgraph;
-    use crate::ports::graph_repository::GraphRepository;
 
     let id = validate_id(&id).map_err(ApiError)?;
     let (max_depth, max_nodes) = q.validated().map_err(ApiError)?;
