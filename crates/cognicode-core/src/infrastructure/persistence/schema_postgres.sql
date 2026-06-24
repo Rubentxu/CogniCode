@@ -90,6 +90,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_view_specs_scope_title
 CREATE INDEX IF NOT EXISTS idx_view_specs_scope
     ON view_specs (workspace_id, owner);
 
+-- Exploration sessions persistence table — ADR-045 Phase 2.
+-- Replaces the in-memory HashMap with a durable Postgres table so
+-- saved explorations survive server restarts. The `events` and `panes`
+-- columns are JSONB for ergonomic PG + serde_json round-tripping.
+CREATE TABLE IF NOT EXISTS exploration_sessions (
+    id              TEXT NOT NULL,
+    workspace_id    TEXT NOT NULL,
+    events          JSONB NOT NULL,
+    navigation_mode TEXT NOT NULL,
+    panes           JSONB NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_exploration_sessions_workspace
+    ON exploration_sessions (workspace_id);
+
 -- ----------------------------------------------------------------------------
 -- Multimodal (Generic Graph Layer) tables — `graph_nodes` + `graph_edges`.
 -- The DDL is in `m0009_graph_nodes_edges.sql` and is applied only when

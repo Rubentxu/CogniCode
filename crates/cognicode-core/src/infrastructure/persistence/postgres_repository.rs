@@ -685,6 +685,97 @@ impl PostgresRepository {
     }
 
     // ===========================================================
+    // Exploration Sessions CRUD (PostgreSQL `exploration_sessions` table)
+    // ===========================================================
+
+    /// Persist a single exploration session. The `id` is
+    /// client-provided and `created_at` is filled by the PG DEFAULT.
+    ///
+    /// `events` and `panes` are serialized via `serde_json::to_string`
+    /// and stored as JSONB using the `$n::jsonb` cast (no `json` feature
+    /// required on sqlx).
+    ///
+    /// # Errors
+    ///
+    /// - `RepositoryError::Store` on any DB failure.
+    pub async fn save_exploration_session(
+        &self,
+        id: &str,
+        workspace_id: &str,
+        events_json: &str,
+        navigation_mode: &str,
+        panes_json: &str,
+    ) -> Result<(), RepositoryError> {
+        sqlx::query(
+            "INSERT INTO exploration_sessions \
+                (id, workspace_id, events, navigation_mode, panes) \
+             VALUES ($1, $2, $3::jsonb, $4, $5::jsonb)",
+        )
+        .bind(id)
+        .bind(workspace_id)
+        .bind(events_json)
+        .bind(navigation_mode)
+        .bind(panes_json)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("save_exploration_session: {e}")))?;
+        Ok(())
+    }
+
+    /// Load a single exploration session by id, scoped to
+    /// `(workspace_id)`. Returns `Ok(None)` when the id is missing
+    /// OR when the scope does not match — the two cases are
+    /// intentionally indistinguishable to avoid existence leaks.
+    ///
+    /// `events` and `panes` are read as `text` and parsed via
+    /// `serde_json::from_str` by the caller.
+    pub async fn load_exploration_session(
+        &self,
+        id: &str,
+        workspace_id: &str,
+    ) -> Result<Option<ExplorationSessionRow>, RepositoryError> {
+        let row: Option<ExplorationSessionRow> = sqlx::query_as(
+            "SELECT id, workspace_id, \
+                    events::text AS events, \
+                    navigation_mode, \
+                    panes::text AS panes, \
+                    created_at::text AS created_at \
+             FROM exploration_sessions \
+             WHERE id = $1 AND workspace_id = $2 \
+             LIMIT 1",
+        )
+        .bind(id)
+        .bind(workspace_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("load_exploration_session: {e}")))?;
+        Ok(row)
+    }
+
+    /// List every exploration session for `(workspace_id)`, newest
+    /// first. Returns `Ok(Vec::new())` on empty scope (NOT an error).
+    pub async fn list_exploration_sessions(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Vec<ExplorationSessionRow>, RepositoryError> {
+        let rows: Vec<ExplorationSessionRow> = sqlx::query_as(
+            "SELECT id, workspace_id, \
+                    events::text AS events, \
+                    navigation_mode, \
+                    panes::text AS panes, \
+                    created_at::text AS created_at \
+             FROM exploration_sessions \
+             WHERE workspace_id = $1 \
+             ORDER BY created_at DESC, id DESC",
+        )
+        .bind(workspace_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("list_exploration_sessions: {e}")))?;
+        Ok(rows)
+    }
+
+    // ===========================================================
     // ViewSpecs CRUD (PostgreSQL `view_specs` table)
     // ===========================================================
     //
@@ -975,6 +1066,25 @@ pub struct ViewSpecRow {
     pub props: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// Row-mapping struct used by [`PostgresRepository`]'s
+/// `exploration_sessions` queries. Mirrors the 7 columns of the
+/// `exploration_sessions` table.
+///
+/// `events` and `panes` are JSONB columns scanned as raw
+/// `serde_json::Value` so the caller can project them through
+/// `serde_json::from_str::<Vec<_>>` for the domain type.
+/// `created_at` is read as RFC 3339 (PG `TIMESTAMPTZ` → String).
+#[cfg(feature = "postgres")]
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ExplorationSessionRow {
+    pub id: String,
+    pub workspace_id: String,
+    pub events: serde_json::Value,
+    pub navigation_mode: String,
+    pub panes: serde_json::Value,
+    pub created_at: String,
 }
 
 /// Split a `file:name:line` qualified name into its components.

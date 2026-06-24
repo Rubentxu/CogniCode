@@ -15,8 +15,8 @@ in **Phase 1** (sddk/ADR-045-phase1-debt1-debt2, commit `2f65940` base).
   unified onto `ExplorationSession`. `ExplorationColumn`, `SaveExplorationRequest` also
   removed. Frontend `useExplorations` no longer exposes `saveExploration`.
 
-**Debt 3** (In-Memory Store Lifetime) remains **Deferred** — blocked on Postgres
-persistence work (separate ADR).
+**Debt 3** (In-Memory Store Lifetime) is **RESOLVED v0.12.6** — Postgres
+`exploration_sessions` table added (ADR-045 Phase 2, commit `e6ef208`).
 
 ## Resolution Evidence
 
@@ -91,12 +91,17 @@ type aliases: `ExplorationPathStore` and `ExplorationSessionStore`).
 **Description**: Both the `paths` and `sessions` HashMaps are process-lifetime only. Server
 restart loses all rows. There is no Postgres exploration table today.
 
-**Disposition**: **Defer + timeline.** Postgres persistence for the **unified** model
-(blocked on Debt 2). No PG exploration table exists; migration will be a separate ADR.
+**Disposition**: **✅ RESOLVED — Phase 2 (v0.12.6).** `exploration_sessions` Postgres table
+added (`schema_postgres.sql`). `PersistenceServiceImpl` now delegates to
+`PostgresRepository` when available, with in-memory fallback. Sessions survive server
+restarts. In-memory store retained as fallback for dev/test without PG.
 
-**Rationale**: Highest user impact (all saved explorations lost on restart). However,
-Debt 2 must be resolved first to avoid entrenching the legacy `ExplorationPath` columns
-model in a new SQL table.
+**Resolution Evidence**:
+- Schema: `crates/cognicode-core/src/infrastructure/persistence/schema_postgres.sql` (T1.1)
+- Repository methods: `crates/cognicode-core/src/infrastructure/persistence/postgres_repository.rs` (T1.2–T1.5)
+- Facade delegation: `crates/cognicode-explorer/src/facades/persistence.rs` (T1.7–T1.8)
+- Runtime wiring: `crates/cognicode-runtime/src/lib.rs:153` (T1.9)
+- Contract tests: `crates/cognicode-explorer/tests/pg_exploration_session_contract.rs` (T1.10)
 
 ## ADR-039 Contradiction
 
