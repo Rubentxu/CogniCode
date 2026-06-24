@@ -1,0 +1,7 @@
+# WASM build artifacts land here from:
+#   wasm-pack build crates/cognicode-graph-wasm \
+#     --target web --out-dir ../../apps/explorer-ui/src/wasm
+#
+# The generated files (cognicode_graph_wasm.js, .wasm, .d.ts) are
+# gitignored — they are build artifacts, not source. Only this .gitkeep
+# is tracked.

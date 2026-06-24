@@ -91,6 +91,45 @@ export type {
   ArchitecturePayload,
 } from "./schemas";
 
+// ---- WASM graph algorithm outputs (ADR-047) ----
+//
+// These match the Rust `PageRankOutput` and `GodNodesOutput` structs
+// defined in `crates/cognicode-graph-algos/src/protocol.rs` and exposed
+// by the WASM module at `crates/cognicode-graph-wasm/src/lib.rs`.
+//
+// IMPORTANT: The WASM `GodNodeEntry` shape is { id, score } — NOT the same
+// as the backend `GodNodeEntry` from schemas.ts (which has an extra `label`
+// field). The WASM types are used internally by `useGraphAlgorithms`; the
+// backend types flow through the public API via `LandingPayload`.
+
+/**
+ * PageRank scores keyed by node id.
+ * Matches Rust `PageRankOutput` from `protocol.rs`.
+ */
+export interface WasmPageRankOutput {
+  scores: Record<string, number>;
+}
+
+/**
+ * A god node — a symbol with PageRank above the configured percentile threshold.
+ * Matches Rust `GodNodeEntry` from `protocol.rs`.
+ *
+ * Note: This is the WASM output shape { id, score }. The backend API
+ * `GodNodeEntry` in schemas.ts additionally includes a `label` field.
+ */
+export interface WasmGodNodeEntry {
+  id: string;
+  score: number;
+}
+
+/**
+ * Output shape for `god_nodes` from the WASM module.
+ * Matches Rust `GodNodesOutput` from `protocol.rs`.
+ */
+export interface WasmGodNodesOutput {
+  nodes: WasmGodNodeEntry[];
+}
+
 export {
   graphStatusSchema,
   inspectableObjectTypeSchema,
