@@ -297,7 +297,7 @@ fn generate_session_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dto::{InspectableObjectSummary, LensResult, SpotterResult, ViewDescriptor, WorkspaceSummary, OpenWorkspaceRequest};
+    use crate::dto::{InspectableObjectSummary, LensResult, SpotterResult, ViewDescriptorDto, WorkspaceSummary, OpenWorkspaceRequest};
     use crate::session::state::DEFAULT_TTL_SECS;
     use async_trait::async_trait;
     use std::collections::HashMap;
@@ -332,7 +332,7 @@ mod tests {
     struct MockViewService;
     #[async_trait]
     impl ViewService for MockViewService {
-        async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<ViewDescriptor>> {
+        async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<ViewDescriptorDto>> {
             Ok(vec![])
         }
         async fn contextual_view(&self, _object_id: &str, _view_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {

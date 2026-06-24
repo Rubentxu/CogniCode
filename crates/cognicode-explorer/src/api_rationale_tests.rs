@@ -181,7 +181,7 @@ impl SearchService for MockSearchService {
 struct MockViewService;
 #[async_trait]
 impl ViewService for MockViewService {
-    async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::ViewDescriptor>> { Ok(vec![]) }
+    async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::ViewDescriptorDto>> { Ok(vec![]) }
     async fn contextual_view(&self, _object_id: &str, _view_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
         Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
     }

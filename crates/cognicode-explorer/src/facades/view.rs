@@ -10,7 +10,7 @@ use cognicode_core::domain::traits::GraphQueryPort;
 use crate::domain::lens::{LensContext, LensRegistry};
 use crate::dto::{ChildrenSection, ContextualGraphResponse, GraphEdge, GraphNode, LensDescriptor, LensResult, ParentSection, SameLevelSection};
 use crate::domain::object_identity::ObjectIdentity;
-use crate::dto::{ContextualView, ViewDescriptor, ViewSpec};
+use crate::dto::{ContextualView, ViewDescriptorDto, ViewSpec};
 use crate::dto::{InspectionTarget, InspectableObjectType, ViewContext};
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::{LensExecutor, ViewService};
@@ -48,7 +48,7 @@ impl ViewServiceImpl {
         }
     }
 
-    fn available_views_sync(&self, object_id: &str) -> ExplorerResult<Vec<ViewDescriptor>> {
+    fn available_views_sync(&self, object_id: &str) -> ExplorerResult<Vec<ViewDescriptorDto>> {
         let identity = ObjectIdentity::parse_mvp_id(object_id)?;
         let object_type = match &identity {
             ObjectIdentity::Symbol { .. } => InspectableObjectType::Symbol,
@@ -267,7 +267,7 @@ impl ViewServiceImpl {
 
 #[async_trait]
 impl ViewService for ViewServiceImpl {
-    async fn available_views(&self, object_id: &str) -> ExplorerResult<Vec<ViewDescriptor>> {
+    async fn available_views(&self, object_id: &str) -> ExplorerResult<Vec<ViewDescriptorDto>> {
         let object_id = object_id.to_string();
         let result = self.available_views_sync(&object_id);
         tokio::task::spawn_blocking(move || result)

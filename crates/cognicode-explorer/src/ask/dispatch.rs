@@ -456,7 +456,7 @@ impl GraphRequired for QuestionCategory {
 mod tests {
     use super::*;
     use crate::ask::AskRouter;
-    use crate::dto::{InspectableObjectSummary, LensResult, SpotterResult, ViewDescriptor, WorkspaceSummary, OpenWorkspaceRequest};
+    use crate::dto::{InspectableObjectSummary, LensResult, SpotterResult, ViewDescriptorDto, WorkspaceSummary, OpenWorkspaceRequest};
     use async_trait::async_trait;
 
     // Helper — let the tests be tight. Build a question that maps to
@@ -495,7 +495,7 @@ mod tests {
     struct MockViewService;
     #[async_trait]
     impl ViewService for MockViewService {
-        async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<ViewDescriptor>> {
+        async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<ViewDescriptorDto>> {
             Ok(vec![])
         }
         async fn contextual_view(&self, _object_id: &str, _view_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {

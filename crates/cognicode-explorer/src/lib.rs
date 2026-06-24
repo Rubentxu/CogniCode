@@ -6,6 +6,7 @@
 pub mod adapters;
 pub mod api;
 pub mod ask;
+pub mod boundary;
 pub mod cli_dispatch;
 pub mod domain;
 pub mod dto;

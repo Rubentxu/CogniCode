@@ -299,7 +299,7 @@ pub const SESSION_DEFAULT_TTL_SECS: u64 = DEFAULT_TTL_SECS;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dto::{InspectableObjectSummary, InspectableObjectType, LensResult, SpotterResult, ViewDescriptor};
+    use crate::dto::{InspectableObjectSummary, InspectableObjectType, LensResult, SpotterResult, ViewDescriptorDto};
     use crate::dto::{WorkspaceSummary, OpenWorkspaceRequest};
     use async_trait::async_trait;
 
@@ -333,7 +333,7 @@ mod tests {
     struct MockViewService;
     #[async_trait]
     impl ViewService for MockViewService {
-        async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<ViewDescriptor>> {
+        async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<ViewDescriptorDto>> {
             Ok(vec![])
         }
         async fn contextual_view(&self, _object_id: &str, _view_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {

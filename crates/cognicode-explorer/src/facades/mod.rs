@@ -30,7 +30,7 @@ use cognicode_core::domain::traits::GraphQueryPort;
 use crate::dto::{
     ContextualGraphResponse, ContextualView, DecisionArtifactSummary, DriftReport, GraphNode,
     ExplorationSession, GenerateArtifactRequest, InspectableObjectSummary, LensDescriptor,
-    LensResult, SpotterResult, SpotterSearchResult, SubgraphResponse, ViewDescriptor, ViewSpec,
+    LensResult, SpotterResult, SpotterSearchResult, SubgraphResponse, ViewDescriptorDto, ViewSpec,
     WorkspaceSummary,
 };
 use crate::error::ExplorerResult;
@@ -134,7 +134,7 @@ pub trait ViewService: Send + Sync {
     async fn available_views(
         &self,
         object_id: &str,
-    ) -> ExplorerResult<Vec<ViewDescriptor>>;
+    ) -> ExplorerResult<Vec<ViewDescriptorDto>>;
 
     /// Build a contextual view for an object.
     async fn contextual_view(

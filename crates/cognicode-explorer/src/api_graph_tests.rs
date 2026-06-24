@@ -93,7 +93,7 @@ impl ViewService for MockViewService {
     async fn available_views(
         &self,
         _object_id: &str,
-    ) -> crate::ExplorerResult<Vec<crate::dto::ViewDescriptor>> {
+    ) -> crate::ExplorerResult<Vec<crate::dto::ViewDescriptorDto>> {
         Ok(vec![])
     }
     async fn contextual_view(
@@ -384,7 +384,7 @@ impl TestContextualViewService {
 
 #[async_trait]
 impl ViewService for TestContextualViewService {
-    async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::ViewDescriptor>> {
+    async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::ViewDescriptorDto>> {
         Ok(vec![])
     }
     async fn contextual_view(&self, _object_id: &str, _view_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {

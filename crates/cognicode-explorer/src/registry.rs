@@ -29,19 +29,17 @@ use std::sync::OnceLock;
 
 use async_trait::async_trait;
 
-use crate::dto::{InspectableObjectType, RendererKind, ViewDescriptor, ViewKind, ViewSpec};
+use crate::dto::{InspectableObjectType, RendererKind, ViewDescriptorDto, ViewKind, ViewSpec};
 
 /// Import raw built-in descriptor data from core to avoid duplication.
 use cognicode_core::schemas::BUILTIN_DESCRIPTORS_RAW;
 
-/// Convert raw built-in descriptor to dto::ViewDescriptor.
-fn raw_to_view_descriptor(raw: &cognicode_core::schemas::BuiltinDescriptorRaw) -> ViewDescriptor {
-    ViewDescriptor {
-        id: raw.id.to_string(),
-        title: raw.title.to_string(),
-        is_builtin: true,
-        source: None,
-    }
+/// Convert raw built-in descriptor to dto::ViewDescriptorDto.
+fn raw_to_view_descriptor(raw: &cognicode_core::schemas::BuiltinDescriptorRaw) -> ViewDescriptorDto {
+    // Use the From impl for the ACL boundary.
+    // The raw descriptor's to_view_descriptor() returns core_schema::ViewDescriptor,
+    // which we then convert to ViewDescriptorDto.
+    ViewDescriptorDto::from(raw.to_view_descriptor())
 }
 
 /// Error returned by [`ViewSpecStore`] operations.
@@ -185,8 +183,8 @@ fn builtin_providers() -> &'static [&'static dyn ViewDescriptorProvider] {
     SORTED.get().unwrap().as_slice()
 }
 
-/// `ViewDescriptor` extracted from a provider.
-impl From<&dyn ViewDescriptorProvider> for ViewDescriptor {
+/// `ViewDescriptorDto` extracted from a provider.
+impl From<&dyn ViewDescriptorProvider> for ViewDescriptorDto {
     fn from(provider: &dyn ViewDescriptorProvider) -> Self {
         Self {
             id: provider.id().to_string(),
@@ -258,22 +256,22 @@ impl ViewRegistry {
     /// Every view that applies to `object_type`, in stable order:
     /// built-ins first (sorted alphabetically by id), then runtime specs
     /// (Phase 2+ — currently always empty).
-    pub fn list_for(&self, object_type: InspectableObjectType) -> Vec<ViewDescriptor> {
+    pub fn list_for(&self, object_type: InspectableObjectType) -> Vec<ViewDescriptorDto> {
         // Collect from both builtin providers (inventory-based) and REAL_EXECUTORS (Phase 3).
         // REAL_EXECUTORS includes all 8 executors (Phase 1-3), some of which may not
         // have provider wrappers (Phase 3: evidence, symbols, dependencies, hotspots).
-        let mut descriptors: Vec<ViewDescriptor> = Vec::new();
+        let mut descriptors: Vec<ViewDescriptorDto> = Vec::new();
 
         // Add from builtin providers
         for provider in builtin_providers() {
             if provider.applies_to().contains(&object_type) {
-                descriptors.push(ViewDescriptor::from(*provider));
+                descriptors.push(ViewDescriptorDto::from(*provider));
             }
         }
 
         // Add from REAL_EXECUTORS that aren't already in providers (Phase 3 executors)
         // Uses shared BUILTIN_DESCRIPTORS_RAW from core to avoid duplication
-        static REAL_EXECUTOR_DESCRIPTORS: OnceLock<Vec<ViewDescriptor>> = OnceLock::new();
+        static REAL_EXECUTOR_DESCRIPTORS: OnceLock<Vec<ViewDescriptorDto>> = OnceLock::new();
         let real_descriptors = REAL_EXECUTOR_DESCRIPTORS.get_or_init(|| {
             BUILTIN_DESCRIPTORS_RAW
                 .iter()
@@ -283,7 +281,7 @@ impl ViewRegistry {
 
         // Add Phase 3 executors that apply to this object type and aren't duplicates
         let provider_ids: std::collections::HashSet<_> = descriptors.iter().map(|d| d.id.as_str()).collect();
-        let mut additional: Vec<ViewDescriptor> = Vec::new();
+        let mut additional: Vec<ViewDescriptorDto> = Vec::new();
         for executor_desc in real_descriptors.iter() {
             if provider_ids.contains(executor_desc.id.as_str()) {
                 continue; // Already added from providers
@@ -301,23 +299,6 @@ impl ViewRegistry {
         descriptors.sort_by_key(|d| d.id.clone());
         descriptors
     }
-
-/// Returns all 8 built-in view descriptors without filtering by `applies_to`.
-///
-/// This is used by the MCP `list_view_specs` handler which must return
-/// all built-ins regardless of what object type is being inspected.
-/// Uses shared BUILTIN_DESCRIPTORS_RAW from core to avoid duplication.
-pub fn list_all_builtin_descriptors() -> Vec<ViewDescriptor> {
-    static REAL_EXECUTOR_DESCRIPTORS: OnceLock<Vec<ViewDescriptor>> = OnceLock::new();
-    REAL_EXECUTOR_DESCRIPTORS
-        .get_or_init(|| {
-            BUILTIN_DESCRIPTORS_RAW
-                .iter()
-                .map(raw_to_view_descriptor)
-                .collect()
-        })
-        .clone()
-}
 
     /// Look up a single view executor by id.
     ///
@@ -374,8 +355,8 @@ pub fn list_all_builtin_descriptors() -> Vec<ViewDescriptor> {
         &self,
         object_type: InspectableObjectType,
         workspace_id: &str,
-    ) -> Vec<ViewDescriptor> {
-        let mut descriptors: Vec<ViewDescriptor> = self.list_for(object_type);
+    ) -> Vec<ViewDescriptorDto> {
+        let mut descriptors: Vec<ViewDescriptorDto> = self.list_for(object_type);
 
         if let Some(store) = &self.spec_store {
             let existing_ids: std::collections::HashSet<_> =
@@ -386,7 +367,7 @@ pub fn list_all_builtin_descriptors() -> Vec<ViewDescriptor> {
                 for spec in specs {
                     // Skip if already in built-in list
                     if !existing_ids.contains(&spec.id) {
-                        descriptors.push(ViewDescriptor {
+                        descriptors.push(ViewDescriptorDto {
                             id: spec.id.clone(),
                             title: spec.title.clone(),
                             is_builtin: false,
@@ -405,11 +386,11 @@ pub fn list_all_builtin_descriptors() -> Vec<ViewDescriptor> {
     ///
     /// Note: this is a sync version that only checks built-ins.
     /// For runtime lookup with workspace context, use `get_with_store`.
-    pub fn get(&self, id: &str) -> Option<ViewDescriptor> {
+    pub fn get(&self, id: &str) -> Option<ViewDescriptorDto> {
         builtin_providers()
             .iter()
             .find(|provider| provider.id() == id)
-            .map(|provider| ViewDescriptor::from(*provider))
+            .map(|provider| ViewDescriptorDto::from(*provider))
     }
 
     /// Async version of `get` that also looks up runtime specs by id
@@ -419,7 +400,7 @@ pub fn list_all_builtin_descriptors() -> Vec<ViewDescriptor> {
         id: &str,
         workspace_id: &str,
         owner: &str,
-    ) -> Option<ViewDescriptor> {
+    ) -> Option<ViewDescriptorDto> {
         // Check built-ins first
         if let Some(descriptor) = self.get(id) {
             return Some(descriptor);
@@ -427,7 +408,7 @@ pub fn list_all_builtin_descriptors() -> Vec<ViewDescriptor> {
         // Check runtime specs
         if let Some(store) = &self.spec_store {
             if let Ok(Some(spec)) = store.load(id, workspace_id, owner).await {
-                return Some(ViewDescriptor {
+                return Some(ViewDescriptorDto {
                     id: spec.id.clone(),
                     title: spec.title.clone(),
                     is_builtin: false,
@@ -519,7 +500,7 @@ mod tests {
             fn view_kind(&self) -> ViewKind { ViewKind::CallGraph }
         }
         let provider = MockProvider;
-        let descriptor = ViewDescriptor::from(&provider as &dyn ViewDescriptorProvider);
+        let descriptor = ViewDescriptorDto::from(&provider as &dyn ViewDescriptorProvider);
         assert_eq!(descriptor.id, "test-view");
         assert_eq!(descriptor.title, "Test View");
     }
