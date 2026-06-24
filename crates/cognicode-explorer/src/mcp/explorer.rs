@@ -188,6 +188,17 @@ pub const TOOL_GRAPH_SEARCH: &str = "graph_search";
 /// `issues_ingest` — ingest GitHub issues from a repository (multimodal).
 pub const TOOL_ISSUES_INGEST: &str = "issues_ingest";
 
+/// `lens_find_dead_code` — symbols not reachable from any entry point.
+pub const TOOL_FIND_DEAD_CODE: &str = "lens_find_dead_code";
+
+/// `lens_find_intersection` — findings shared across multiple lenses
+/// applied to the same object.
+pub const TOOL_FIND_INTERSECTION: &str = "lens_find_intersection";
+
+/// `lens_hotspots` — top-N symbols by PageRank across the full graph,
+/// relative to an anchoring object.
+pub const TOOL_HOTSPOTS: &str = "lens_hotspots";
+
 // ============================================================================
 // Result envelope types
 // ============================================================================
@@ -383,6 +394,7 @@ impl ExplorerMcpHandler {
         crate::mcp::handler::register_graph_analyze_handlers(&mut registry);
         crate::mcp::handler::register_impact_handlers(&mut registry);
         crate::mcp::handler::register_ingest_handlers(&mut registry);
+        crate::mcp::handler::register_lens_mcp_handlers(&mut registry);
         crate::mcp::handler::register_named_views_handlers(&mut registry);
         crate::mcp::handler::register_search_handlers(&mut registry);
         crate::mcp::handler::register_session_handlers(&mut registry);
@@ -535,6 +547,9 @@ pub const TOOL_NAMES: &[&str] = &[
     TOOL_VIEW_LOAD,
     TOOL_VIEW_LIST,
     TOOL_VIEW_DELETE,
+    TOOL_FIND_DEAD_CODE,
+    TOOL_FIND_INTERSECTION,
+    TOOL_HOTSPOTS,
 ];
 
 /// Names of tools that are only available with the `multimodal` feature.
