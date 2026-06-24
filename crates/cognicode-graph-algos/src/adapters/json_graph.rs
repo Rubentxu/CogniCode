@@ -45,8 +45,12 @@ impl JsonGraph {
 impl GraphBuilder for JsonGraph {
     fn build_adjacency(&self) -> (Vec<Vec<usize>>, Vec<usize>) {
         let n = self.nodes.len();
-        let mut id_to_idx: std::collections::HashMap<&str, usize> =
-            self.nodes.iter().enumerate().map(|(i, n)| (n.id.as_str(), i)).collect();
+        let mut id_to_idx: std::collections::HashMap<&str, usize> = self
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.id.as_str(), i))
+            .collect();
         let mut in_neighbors: Vec<Vec<usize>> = vec![Vec::new(); n];
         let mut out_degree: Vec<usize> = vec![0; n];
 
@@ -95,14 +99,32 @@ mod tests {
     fn three_node_cycle() {
         let g = JsonGraph::new(
             vec![
-                JsonNode { id: "A".into(), label: None },
-                JsonNode { id: "B".into(), label: None },
-                JsonNode { id: "C".into(), label: None },
+                JsonNode {
+                    id: "A".into(),
+                    label: None,
+                },
+                JsonNode {
+                    id: "B".into(),
+                    label: None,
+                },
+                JsonNode {
+                    id: "C".into(),
+                    label: None,
+                },
             ],
             vec![
-                JsonEdge { source: "A".into(), target: "B".into() },
-                JsonEdge { source: "B".into(), target: "C".into() },
-                JsonEdge { source: "C".into(), target: "A".into() },
+                JsonEdge {
+                    source: "A".into(),
+                    target: "B".into(),
+                },
+                JsonEdge {
+                    source: "B".into(),
+                    target: "C".into(),
+                },
+                JsonEdge {
+                    source: "C".into(),
+                    target: "A".into(),
+                },
             ],
         );
         let (in_neighbors, out_degree) = g.build_adjacency();
@@ -117,11 +139,23 @@ mod tests {
         // All edges involve ghost nodes (indices >= n) and are skipped per
         // skip-orphan behavior: phantom slots (s or t >= n) are ignored.
         let g = JsonGraph::new(
-            vec![JsonNode { id: "A".into(), label: None }],
+            vec![JsonNode {
+                id: "A".into(),
+                label: None,
+            }],
             vec![
-                JsonEdge { source: "A".into(), target: "B".into() }, // dangling target
-                JsonEdge { source: "X".into(), target: "A".into() }, // dangling source
-                JsonEdge { source: "A".into(), target: "Y".into() }, // dangling target
+                JsonEdge {
+                    source: "A".into(),
+                    target: "B".into(),
+                }, // dangling target
+                JsonEdge {
+                    source: "X".into(),
+                    target: "A".into(),
+                }, // dangling source
+                JsonEdge {
+                    source: "A".into(),
+                    target: "Y".into(),
+                }, // dangling target
             ],
         );
         let (_in_neighbors, out_degree) = g.build_adjacency();

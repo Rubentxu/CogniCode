@@ -20,10 +20,7 @@ use std::collections::HashMap;
 /// - `percentile < 0.0`: clamped to 0.0
 /// - `percentile > 1.0`: clamped to 1.0
 /// - Single node: returned regardless of percentile
-pub fn god_nodes(
-    scores: &HashMap<usize, f64>,
-    percentile: f64,
-) -> Vec<(usize, f64)> {
+pub fn god_nodes(scores: &HashMap<usize, f64>, percentile: f64) -> Vec<(usize, f64)> {
     if scores.is_empty() {
         return Vec::new();
     }

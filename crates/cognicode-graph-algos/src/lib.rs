@@ -22,8 +22,8 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
-pub mod algorithms;
 pub mod adapters;
+pub mod algorithms;
 pub mod error;
 pub mod graph_builder;
 

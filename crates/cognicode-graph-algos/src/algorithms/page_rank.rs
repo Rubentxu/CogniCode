@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn self_loop_only() {
         let in_neighbors = vec![vec![0]]; // A is called by A
-        let out_degree = vec![1];        // A calls A
+        let out_degree = vec![1]; // A calls A
         let result = page_rank(&in_neighbors, &out_degree, 1, 0.85, 100);
         // All mass on A
         assert!((result[&0] - 1.0).abs() < 1e-6);
@@ -154,8 +154,8 @@ mod tests {
     fn disconnected_components() {
         // A=0 ↔ B=1 (2-cycle), C=2 isolated.
         let in_neighbors = vec![
-            vec![1], // A called by B
-            vec![0], // B called by A
+            vec![1],    // A called by B
+            vec![0],    // B called by A
             Vec::new(), // C has no callers
         ];
         let out_degree = vec![1, 1, 0]; // C has no callees (dangling)
@@ -178,12 +178,16 @@ mod tests {
         let mut out_degree = vec![0usize; 6];
         for leaf in 1..6 {
             in_neighbors[0].push(leaf); // center is called by leaf
-            out_degree[leaf] = 1;       // leaf calls center
+            out_degree[leaf] = 1; // leaf calls center
         }
         let result = page_rank(&in_neighbors, &out_degree, 6, 0.85, 100);
         let center = result[&0];
         for leaf in 1..6 {
-            assert!(center > result[&leaf], "center should outrank leaf {}", leaf);
+            assert!(
+                center > result[&leaf],
+                "center should outrank leaf {}",
+                leaf
+            );
         }
     }
 
