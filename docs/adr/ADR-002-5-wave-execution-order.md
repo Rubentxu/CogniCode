@@ -1,9 +1,29 @@
 # ADR-002: 5-Wave Candidate Execution Order
 
 **Fecha:** 2026-06-11  
-**Estado:** PROPOSED  
-**Decisión:** Ejecución en 5 waves con gating CI automatizado por wave  
+**Estado:** SUPERSEDED  
+**Decisión original:** Ejecución en 5 waves con gating CI automatizado por wave  
 **Fuente:** auto-grill-loop Q007-P1, Q013-P2  
+**Superseded by:** v0.5.0–v0.12.7 (jun–jul 2026), cycles ejecutados en orden distinto al plan original
+
+---
+
+## Revisión 2026-06-24 (v0.12.7)
+
+**Estado actual:** SUPERSEDED.
+
+**Por qué:** Los 5 waves originales se ejecutaron en un orden distinto al planificado, con gates CI parciales (no se construyó el sistema de CI gating automatizado por wave). El plan quedó obsoleto a medida que el trabajo real reveló dependencias no anticipadas:
+
+- **C3 (WalkFilter)** se ejecutó dentro de v0.5.0 (C1-C6 cycle)
+- **C5 (ReadMode)** se ejecutó dentro de v0.5.0
+- **C6 (Mock crate)** se ejecutó parcialmente — el crate `cognicode-core-mock` separado NO se creó; los mocks permanecieron inline (ver ADR-006)
+- **C2 (Builder)** se ejecutó dentro de v0.7.0 (deprecation + migration)
+- **C4 (Unification)** se ejecutó parcialmente en v0.12.3 (Type divergence) — solo para ViewDescriptor, no para los 10 re-exports de ADR-015
+- **C1 (Tool Registry)** se ejecutó dentro de v0.5.0
+
+**Conclusión:** El plan de 5 waves fue una guía útil al inicio pero perdió relevancia. El trabajo real se priorizó por valor y dependencias, no por wave. La disciplina de CI gating por wave no se materializó — los tests de round-trip MCP son el firewall real (ver ADR-015).
+
+**Estado final:** SUPERSEDED. No se reabre.  
 
 ---
 
