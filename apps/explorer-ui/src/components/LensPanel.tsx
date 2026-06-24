@@ -32,6 +32,7 @@ import {
   type TreemapData,
 } from "./AnalyticsViews";
 import type { DesignFinding, FindingSeverity } from "../api/types";
+import type { ShellViewport } from "./viewport";
 
 // ============================================================================
 // Severity ordering — blockers first, info last
@@ -71,7 +72,14 @@ function firstObjectId(finding: DesignFinding): string | null {
 // Public component
 // ============================================================================
 
-export function LensPanel() {
+export interface LensPanelProps {
+  /**
+   * Viewport classification — drives responsive behaviour inside the panel.
+   */
+  viewport?: ShellViewport;
+}
+
+export function LensPanel({ viewport: _viewport }: LensPanelProps = {}) {
   const { state } = useApp();
   const dispatch = useAppDispatch();
   const { activeObjectId, activeLensId } = state;
