@@ -28,7 +28,8 @@ pub mod error;
 pub mod graph_builder;
 
 pub use algorithms::{
-    communities, community_god_nodes, god_nodes, page_rank, surprising_connections,
+    all_simple_paths, cluster_components, communities, community_god_nodes, condensation,
+    feedback_arc_set, god_nodes, page_rank, surprising_connections, transitive_reduction,
 };
 pub use error::AnalyticsError;
 pub use graph_builder::GraphBuilder;
