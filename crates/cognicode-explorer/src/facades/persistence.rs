@@ -155,15 +155,39 @@ impl PersistenceService for PersistenceServiceImpl {
 
     /// List all saved `ExplorationSession` records for a workspace.
     ///
-    /// ## KNOWN-DEBT (ADR-045 Phase 1 — resolved)
+    /// ## KNOWN-DEBT (ADR-045 Phase 2 — resolved)
     ///
     /// - Debt 1 ✅: Orphaned `GET /api/explorations/:id` route removed.
     /// - Debt 2 ✅: Dual model unified onto `ExplorationSession` (ADR-040 Wave 3 aligned).
-    /// - Debt 3 ⚠️: In-memory store lifetime — Postgres persistence deferred to Phase 2.
+    /// - Debt 3 ✅: Postgres persistence added — exploration sessions survive server restarts (v0.12.6).
     async fn list_explorations(
         &self,
         workspace_id: &str,
     ) -> ExplorerResult<Vec<ExplorationSession>> {
+        #[cfg(feature = "postgres")]
+        if let Some(ref repo) = self.postgres_repo {
+            let rows = repo
+                .list_exploration_sessions(workspace_id)
+                .await
+                .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("list_explorations: {e}")))?;
+            let sessions: Vec<ExplorationSession> = rows
+                .into_iter()
+                .map(|row| {
+                    ExplorationSession {
+                        id: row.id,
+                        workspace_id: row.workspace_id,
+                        events: serde_json::from_str(&row.events.to_string())
+                            .unwrap_or_default(),
+                        navigation_mode: row.navigation_mode,
+                        panes: serde_json::from_str(&row.panes.to_string())
+                            .unwrap_or_default(),
+                        created_at: row.created_at,
+                    }
+                })
+                .collect();
+            return Ok(sessions);
+        }
+
         let sessions = self.sessions.lock().map_err(|_| {
             ExplorerError::Anyhow(anyhow::anyhow!("exploration session store poisoned"))
         })?;
@@ -187,19 +211,38 @@ impl PersistenceService for PersistenceServiceImpl {
         }
 
         let created_at = Utc::now().to_rfc3339();
+        let id = format!("session:{}", Utc::now().timestamp_millis());
         let session = ExplorationSession {
-            id: format!("session:{}", Utc::now().timestamp_millis()),
-            workspace_id: request.workspace_id,
-            events: request.events,
-            navigation_mode: request.navigation_mode,
-            panes: request.panes,
-            created_at,
+            id: id.clone(),
+            workspace_id: request.workspace_id.clone(),
+            events: request.events.clone(),
+            navigation_mode: request.navigation_mode.clone(),
+            panes: request.panes.clone(),
+            created_at: created_at.clone(),
         };
+
+        #[cfg(feature = "postgres")]
+        if let Some(ref repo) = self.postgres_repo {
+            let events_json = serde_json::to_string(&request.events)
+                .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("serialize events: {e}")))?;
+            let panes_json = serde_json::to_string(&request.panes)
+                .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("serialize panes: {e}")))?;
+            repo.save_exploration_session(
+                &id,
+                &request.workspace_id,
+                &events_json,
+                &request.navigation_mode,
+                &panes_json,
+            )
+            .await
+            .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("save_exploration_session: {e}")))?;
+            return Ok(session);
+        }
 
         self.sessions
             .lock()
             .map_err(|_| ExplorerError::Anyhow(anyhow::anyhow!("session store poisoned")))?
-            .insert(session.id.clone(), session.clone());
+            .insert(id, session.clone());
 
         Ok(session)
     }
@@ -208,6 +251,37 @@ impl PersistenceService for PersistenceServiceImpl {
         &self,
         session_id: &str,
     ) -> ExplorerResult<Option<ExplorationSession>> {
+        #[cfg(feature = "postgres")]
+        if let Some(ref repo) = self.postgres_repo {
+            // Try to find the workspace_id from in-memory store first
+            // to scope the PG query correctly
+            let workspace_id = {
+                let guard = self.sessions.lock().map_err(|_| {
+                    ExplorerError::Anyhow(anyhow::anyhow!("session store poisoned"))
+                })?;
+                guard
+                    .get(session_id)
+                    .map(|s| s.workspace_id.clone())
+            };
+            if let Some(ws_id) = workspace_id {
+                if let Ok(Some(row)) = repo
+                    .load_exploration_session(session_id, &ws_id)
+                    .await
+                {
+                    return Ok(Some(ExplorationSession {
+                        id: row.id,
+                        workspace_id: row.workspace_id,
+                        events: serde_json::from_str(&row.events.to_string())
+                            .unwrap_or_default(),
+                        navigation_mode: row.navigation_mode,
+                        panes: serde_json::from_str(&row.panes.to_string())
+                            .unwrap_or_default(),
+                        created_at: row.created_at,
+                    }));
+                }
+            }
+        }
+
         let guard = self
             .sessions
             .lock()

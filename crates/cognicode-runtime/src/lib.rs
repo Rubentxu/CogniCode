@@ -150,7 +150,7 @@ impl Runtime {
             cognicode_explorer::facades::persistence::PersistenceServiceImpl::new(
                 None, // view_spec_store
                 #[cfg(feature = "postgres")]
-                None, // postgres_repo
+                self.pg_repo.clone(), // postgres_repo
             ),
         );
         let moldql: Arc<dyn cognicode_explorer::facades::MoldQLService> = Arc::new(
