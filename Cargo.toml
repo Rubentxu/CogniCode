@@ -25,6 +25,7 @@ authors = ["CogniCode Team"]
 [workspace.dependencies]
 # Internal
 cognicode-core = { path = "crates/cognicode-core" }
+cognicode-graph-algos = { path = "crates/cognicode-graph-algos" }
 # cognicode-axiom = { path = "crates/cognicode-axiom" }  # PARKED
 cognicode-macros = { path = "crates/cognicode-macros" }
 

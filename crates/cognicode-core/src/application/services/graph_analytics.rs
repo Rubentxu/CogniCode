@@ -37,6 +37,7 @@ use petgraph::visit::{EdgeRef, IntoEdgeReferences, NodeIndexable};
 
 use crate::domain::aggregates::{CallGraph, SymbolId};
 use crate::infrastructure::graph::CallGraphProjection;
+use cognicode_graph_algos::{self, GraphBuilder};
 
 /// Graph analytics service wrapping petgraph algorithms.
 ///
@@ -81,95 +82,15 @@ impl GraphAnalyticsService {
         max_iterations: usize,
     ) -> HashMap<SymbolId, f64> {
         let projection = CallGraphProjection::from_call_graph(graph);
-        let g = projection.graph();
-
-        let n = g.node_count();
-        if n == 0 {
-            return HashMap::new();
-        }
-
-        // Build both out-degree (for normalisation) and in-neighbour
-        // lists indexed by `to_index()`. The output vecs have length
-        // `node_bound()` (the upper bound of NodeIndex values); we only
-        // fill slots for live nodes, leaving holes for removed indices —
-        // those will read as empty vecs during the fixed-point loop and
-        // contribute 0 to incoming sums.
-        let bound = g.node_bound();
-        let mut in_neighbors: Vec<Vec<usize>> = vec![Vec::new(); bound];
-        let mut out_degree: Vec<usize> = vec![0; bound];
-        for ni in g.node_indices() {
-            let mut row: Vec<usize> = Vec::with_capacity(g.edges(ni).count());
-            for edge in g.edges(ni) {
-                // edge: ni -> target means "ni calls target", so
-                // `target` gains an in-neighbour (caller) reference.
-                row.push(edge.target().index());
-            }
-            in_neighbors[ni.index()] = row;
-            out_degree[ni.index()] = g.edges(ni).count();
-        }
-
-        // Initial rank: uniform 1/N.
-        let inv_n = 1.0 / n as f64;
-        let mut ranks: Vec<f64> = vec![inv_n; bound];
-
-        // Convergence tolerance: 1e-6 is the standard PageRank threshold.
-        const TOLERANCE: f64 = 1e-6;
-
-        for _ in 0..max_iterations.max(1) {
-            // Dangling-node mass: sum of ranks of nodes with no outgoing edges.
-            // In our call-graph model these are leaf functions — symbols that
-            // call nothing else. Their rank must still flow somewhere, so we
-            // redistribute it uniformly across all nodes.
-            let mut dangling_sum = 0.0_f64;
-            for v in g.node_indices() {
-                if out_degree[v.index()] == 0 {
-                    dangling_sum += ranks[v.index()];
-                }
-            }
-            let dangling_contrib = alpha * dangling_sum * inv_n;
-
-            let base = (1.0 - alpha) * inv_n;
-            let mut max_delta = 0.0_f64;
-            let mut new_ranks: Vec<f64> = vec![0.0; bound];
-
-            for v in g.node_indices() {
-                let v_idx = v.index();
-                // Standard PageRank formula (transposed for caller -> callee):
-                //   rank[v] = (1 - alpha) / N
-                //           + alpha * (dangling_sum / N)
-                //           + alpha * Σ (rank[u] / outdeg[u])  for u in in-neighbours(v)
-                //
-                // In our model, in-neighbours of v are its *callers* — every
-                // node that calls v contributes 1/outdeg[u] of its rank back
-                // to v. This makes heavily-called symbols score high.
-                let mut incoming = 0.0_f64;
-                for &u in &in_neighbors[v_idx] {
-                    let od = out_degree[u];
-                    if od > 0 {
-                        incoming += ranks[u] / od as f64;
-                    }
-                }
-                let r = base + dangling_contrib + alpha * incoming;
-                // Clamp NaN/Inf to 0 for stability on degenerate inputs.
-                let new_v = if r.is_finite() && r > 0.0 { r } else { 0.0 };
-                let delta = (new_v - ranks[v_idx]).abs();
-                if delta > max_delta {
-                    max_delta = delta;
-                }
-                new_ranks[v_idx] = new_v;
-            }
-
-            ranks = new_ranks;
-            if max_delta < TOLERANCE {
-                break;
-            }
-        }
-
-        // Materialize the result keyed by SymbolId for live nodes only.
+        let (in_neighbors, out_degree) = projection.build_adjacency();
+        let n = projection.node_count();
+        let raw_scores =
+            cognicode_graph_algos::page_rank(&in_neighbors, &out_degree, n, alpha, max_iterations);
+        // Map usize indices back to SymbolId via projection.id_to_index().
         let mut out: HashMap<SymbolId, f64> = HashMap::with_capacity(n);
         for (sid, ni) in projection.id_to_index() {
             let idx = ni.index();
-            if let Some(&score) = ranks.get(idx) {
+            if let Some(&score) = raw_scores.get(&idx) {
                 out.insert(sid.clone(), score);
             }
         }
@@ -250,25 +171,25 @@ impl GraphAnalyticsService {
         if scores.is_empty() {
             return Vec::new();
         }
-
-        let mut sorted_scores: Vec<f64> = scores.values().copied().collect();
-        sorted_scores.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-        // Clamp percentile into [0.0, 1.0] before computing the
-        // threshold index. `len() * percentile` can saturate `usize`
-        // for huge graphs; the saturating_sub on the upper bound
-        // protects against that.
-        let p = percentile.clamp(0.0, 1.0);
-        let threshold_idx = ((sorted_scores.len() as f64) * p) as usize;
-        let threshold_idx = threshold_idx.min(sorted_scores.len().saturating_sub(1));
-        let threshold = sorted_scores[threshold_idx];
-
-        let mut result: Vec<(SymbolId, f64)> = scores
+        // Map SymbolId -> usize (positional) for the new API, then back.
+        let projection = CallGraphProjection::from_call_graph(graph);
+        let mut usize_scores: HashMap<usize, f64> = HashMap::with_capacity(scores.len());
+        for (sid, score) in &scores {
+            if let Some(ni) = projection.id_to_index().get(sid) {
+                usize_scores.insert(ni.index(), *score);
+            }
+        }
+        let god_indices = cognicode_graph_algos::god_nodes(&usize_scores, percentile);
+        god_indices
             .into_iter()
-            .filter(|(_, s)| *s >= threshold)
-            .collect();
-        result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        result
+            .filter_map(|(idx, score)| {
+                projection
+                    .id_to_index()
+                    .iter()
+                    .find(|(_, ni)| ni.index() == idx)
+                    .map(|(sid, _)| (sid.clone(), score))
+            })
+            .collect()
     }
 
     /// Compute the transitive reduction of the call graph — the

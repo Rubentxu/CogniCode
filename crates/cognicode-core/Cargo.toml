@@ -30,6 +30,9 @@ multimodal = []
 # Proc macros for tool definitions
 cognicode-macros.workspace = true
 
+# Graph algorithms (WASM-compilable)
+cognicode-graph-algos = { workspace = true, features = ["petgraph-adapter"] }
+
 # Parsing
 tree-sitter.workspace = true
 tree-sitter-python.workspace = true
