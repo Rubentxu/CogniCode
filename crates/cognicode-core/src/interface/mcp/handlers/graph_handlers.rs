@@ -29,20 +29,18 @@ pub async fn handle_graph_pagerank(
 ) -> HandlerResult<serde_json::Value> {
     match ctx.get_graph_store().load_graph() {
         Ok(Some(graph)) => {
-            let mut scores = crate::application::services::graph_analytics::GraphAnalyticsService::page_rank(
-                &graph,
-                input.alpha,
-                input.max_iterations as usize,
-            );
+            let mut scores =
+                crate::application::services::graph_analytics::GraphAnalyticsService::page_rank(
+                    &graph,
+                    input.alpha,
+                    input.max_iterations as usize,
+                );
             // Sort descending by score so the most important symbols come first.
             let mut sorted: Vec<(String, f64)> = scores
                 .drain()
                 .map(|(id, score)| (id.as_str().to_string(), score))
                 .collect();
-            sorted.sort_by(|a, b| {
-                b.1.partial_cmp(&a.1)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
+            sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             // Truncate to a reasonable cap (200) so the JSON payload does not blow up.
             sorted.truncate(200);
             Ok(serde_json::json!({
@@ -114,11 +112,7 @@ pub async fn handle_graph_all_paths(
                     // Render paths as lists of FQNs for human-readable output.
                     let rendered: Vec<Vec<String>> = paths
                         .into_iter()
-                        .map(|path| {
-                            path.into_iter()
-                                .map(|id| id.as_str().to_string())
-                                .collect()
-                        })
+                        .map(|path| path.into_iter().map(|id| id.as_str().to_string()).collect())
                         .collect();
                     Ok(serde_json::json!({
                         "from": from.as_str(),
@@ -157,7 +151,10 @@ pub async fn handle_graph_condensed(
 ) -> HandlerResult<serde_json::Value> {
     match ctx.get_graph_store().load_graph() {
         Ok(Some(graph)) => {
-            let comps = crate::application::services::graph_analytics::GraphAnalyticsService::condensation(&graph);
+            let comps =
+                crate::application::services::graph_analytics::GraphAnalyticsService::condensation(
+                    &graph,
+                );
             let rendered: Vec<Vec<String>> = comps
                 .into_iter()
                 .map(|c| c.into_iter().map(|id| id.as_str().to_string()).collect())
@@ -193,10 +190,11 @@ pub async fn handle_graph_god_nodes(
 ) -> HandlerResult<serde_json::Value> {
     match ctx.get_graph_store().load_graph() {
         Ok(Some(graph)) => {
-            let mut god = crate::application::services::graph_analytics::GraphAnalyticsService::god_nodes(
-                &graph,
-                input.percentile,
-            );
+            let mut god =
+                crate::application::services::graph_analytics::GraphAnalyticsService::god_nodes(
+                    &graph,
+                    input.percentile,
+                );
             let rendered: Vec<(String, f64)> = god
                 .drain(..)
                 .map(|(id, score)| (id.as_str().to_string(), score))
@@ -299,10 +297,11 @@ pub async fn handle_graph_communities(
 ) -> HandlerResult<serde_json::Value> {
     match ctx.get_graph_store().load_graph() {
         Ok(Some(graph)) => {
-            let result = crate::application::services::community_detector::CommunityDetector::detect(
-                &graph,
-                input.max_iterations as usize,
-            );
+            let result =
+                crate::application::services::community_detector::CommunityDetector::detect(
+                    &graph,
+                    input.max_iterations as usize,
+                );
             let payload = serde_json::json!({
                 "algorithm": "label_propagation",
                 "max_iterations": input.max_iterations,
@@ -343,11 +342,16 @@ pub async fn handle_graph_community_detail(
 ) -> HandlerResult<serde_json::Value> {
     match ctx.get_graph_store().load_graph() {
         Ok(Some(graph)) => {
-            let result = crate::application::services::community_detector::CommunityDetector::detect(
-                &graph,
-                input.max_iterations as usize,
-            );
-            match result.communities.iter().find(|c| c.id == input.community_id) {
+            let result =
+                crate::application::services::community_detector::CommunityDetector::detect(
+                    &graph,
+                    input.max_iterations as usize,
+                );
+            match result
+                .communities
+                .iter()
+                .find(|c| c.id == input.community_id)
+            {
                 Some(c) => {
                     // Top god nodes within this community.
                     let god = crate::application::services::community_detector::CommunityDetector::community_god_nodes(
@@ -355,16 +359,16 @@ pub async fn handle_graph_community_detail(
                         std::slice::from_ref(c),
                         5,
                     );
-                    let god_list = god.into_iter().flat_map(|(_id, scored)| scored).collect::<Vec<_>>();
+                    let god_list = god
+                        .into_iter()
+                        .flat_map(|(_id, scored)| scored)
+                        .collect::<Vec<_>>();
                     let god_rendered: Vec<(String, f64)> = god_list
                         .into_iter()
                         .map(|(id, score)| (id.as_str().to_string(), score))
                         .collect();
-                    let nodes_rendered: Vec<String> = c
-                        .nodes
-                        .iter()
-                        .map(|n| n.as_str().to_string())
-                        .collect();
+                    let nodes_rendered: Vec<String> =
+                        c.nodes.iter().map(|n| n.as_str().to_string()).collect();
                     let payload = serde_json::json!({
                         "community_id": c.id,
                         "label": c.label,
@@ -407,11 +411,16 @@ pub async fn handle_graph_surprising_connections(
 ) -> HandlerResult<serde_json::Value> {
     match ctx.get_graph_store().load_graph() {
         Ok(Some(graph)) => {
-            let result = crate::application::services::community_detector::CommunityDetector::detect(
-                &graph,
-                input.max_iterations as usize,
-            );
-            let top_n = if input.top_n == 0 { 20 } else { input.top_n as usize };
+            let result =
+                crate::application::services::community_detector::CommunityDetector::detect(
+                    &graph,
+                    input.max_iterations as usize,
+                );
+            let top_n = if input.top_n == 0 {
+                20
+            } else {
+                input.top_n as usize
+            };
             let crosses = crate::application::services::community_detector::CommunityDetector::surprising_connections(
                 &graph,
                 &result,
@@ -510,7 +519,8 @@ pub async fn handle_graph_insights(
 ) -> HandlerResult<serde_json::Value> {
     match ctx.get_graph_store().load_graph() {
         Ok(Some(graph)) => {
-            let report = crate::application::services::graph_insights::GraphInsightsService::analyze(&graph);
+            let report =
+                crate::application::services::graph_insights::GraphInsightsService::analyze(&graph);
             let payload = serde_json::json!({
                 "summary": {
                     "total_symbols": report.summary.total_symbols,
@@ -576,7 +586,8 @@ pub async fn handle_graph_suggest_questions(
 ) -> HandlerResult<serde_json::Value> {
     match ctx.get_graph_store().load_graph() {
         Ok(Some(graph)) => {
-            let report = crate::application::services::graph_insights::GraphInsightsService::analyze(&graph);
+            let report =
+                crate::application::services::graph_insights::GraphInsightsService::analyze(&graph);
             let payload = serde_json::json!({
                 "question_count": report.suggested_questions.len(),
                 "questions": report.suggested_questions,

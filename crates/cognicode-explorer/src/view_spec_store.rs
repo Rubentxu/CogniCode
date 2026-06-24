@@ -44,16 +44,16 @@ impl ViewSpecStore for PostgresViewSpecStore {
         workspace_id: &str,
         owner: &str,
     ) -> Result<(), ViewSpecStoreError> {
-        let data_source_json =
-            serde_json::to_string(&spec.data_source).map_err(|e| ViewSpecStoreError::Store(e.to_string()))?;
+        let data_source_json = serde_json::to_string(&spec.data_source)
+            .map_err(|e| ViewSpecStoreError::Store(e.to_string()))?;
         let transform_json = spec
             .transform
             .as_ref()
             .map(|t| serde_json::to_string(t))
             .transpose()
             .map_err(|e| ViewSpecStoreError::Store(e.to_string()))?;
-        let props_json =
-            serde_json::to_string(&spec.props).map_err(|e| ViewSpecStoreError::Store(e.to_string()))?;
+        let props_json = serde_json::to_string(&spec.props)
+            .map_err(|e| ViewSpecStoreError::Store(e.to_string()))?;
 
         self.repo
             .save_view_spec(
@@ -197,16 +197,16 @@ fn view_spec_row_to_view_spec(
         .ok_or_else(|| format!("unknown applies_to: {}", row.applies_to))?;
     let view_kind: ViewKind =
         serde_json::from_str(&row.view_kind).map_err(|e| format!("view_kind parse error: {e}"))?;
-    let data_source: DataSource =
-        serde_json::from_str(&row.data_source).map_err(|e| format!("data_source parse error: {e}"))?;
+    let data_source: DataSource = serde_json::from_str(&row.data_source)
+        .map_err(|e| format!("data_source parse error: {e}"))?;
     let transform: Option<Transform> = row
         .transform
         .as_ref()
         .map(|t| serde_json::from_str(t))
         .transpose()
         .map_err(|e| format!("transform parse error: {e}"))?;
-    let renderer_kind: RendererKind =
-        serde_json::from_str(&row.renderer_kind).map_err(|e| format!("renderer_kind parse error: {e}"))?;
+    let renderer_kind: RendererKind = serde_json::from_str(&row.renderer_kind)
+        .map_err(|e| format!("renderer_kind parse error: {e}"))?;
     let props: serde_json::Value =
         serde_json::from_str(&row.props).map_err(|e| format!("props parse error: {e}"))?;
 

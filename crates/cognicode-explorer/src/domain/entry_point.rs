@@ -214,7 +214,11 @@ impl EntryPoint {
         // Event / UseCase heuristics
         // CamelCase PascalCase → Event or UseCase
         // Simple heuristic: starts with capital, no spaces → event/use-case name
-        if input.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+        if input
+            .chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false)
             && !input.contains(' ')
             && input.len() <= 64
         {
@@ -382,8 +386,12 @@ impl std::error::Error for EntryPointParseError {}
 impl From<EntryPointParseError> for crate::error::ExplorerError {
     fn from(err: EntryPointParseError) -> Self {
         match err {
-            EntryPointParseError::EmptyInput => crate::error::ExplorerError::InvalidInput(err.to_string()),
-            EntryPointParseError::NotResolved(_) => crate::error::ExplorerError::NotFound(err.to_string()),
+            EntryPointParseError::EmptyInput => {
+                crate::error::ExplorerError::InvalidInput(err.to_string())
+            }
+            EntryPointParseError::NotResolved(_) => {
+                crate::error::ExplorerError::NotFound(err.to_string())
+            }
         }
     }
 }
@@ -514,7 +522,9 @@ mod tests {
     #[test]
     fn parse_not_resolved_preserves_input() {
         let result = EntryPoint::parse("completely_unknown_input");
-        assert!(matches!(result, Err(EntryPointParseError::NotResolved(s)) if s == "completely_unknown_input"));
+        assert!(
+            matches!(result, Err(EntryPointParseError::NotResolved(s)) if s == "completely_unknown_input")
+        );
     }
 
     // --- EntryPoint::default_view_kind ---
@@ -558,7 +568,10 @@ mod tests {
         let ep = EntryPoint::File {
             path: "src/main.rs".to_string(),
         };
-        assert_eq!(ep.default_view_kind(), ViewKind::Custom("file_overview".to_string()));
+        assert_eq!(
+            ep.default_view_kind(),
+            ViewKind::Custom("file_overview".to_string())
+        );
     }
 
     #[test]

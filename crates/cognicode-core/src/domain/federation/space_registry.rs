@@ -138,11 +138,7 @@ mod tests {
         reg.register(make_space("a", "alpha")).unwrap();
         reg.register(make_space("b", "beta")).unwrap();
         reg.register(make_space("c", "gamma")).unwrap();
-        let ids: Vec<String> = reg
-            .list()
-            .into_iter()
-            .map(|s| s.id.to_string())
-            .collect();
+        let ids: Vec<String> = reg.list().into_iter().map(|s| s.id.to_string()).collect();
         assert_eq!(ids, vec!["a", "b", "c"]);
     }
 
@@ -173,11 +169,7 @@ mod tests {
         for letter in ["a", "b", "c", "d", "e"] {
             reg.register(make_space(letter, letter)).unwrap();
         }
-        let ids: Vec<String> = reg
-            .list_ids()
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect();
+        let ids: Vec<String> = reg.list_ids().into_iter().map(|s| s.to_string()).collect();
         assert_eq!(ids, vec!["a", "b", "c", "d", "e"]);
     }
 

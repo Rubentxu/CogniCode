@@ -372,9 +372,7 @@ impl CommandExecutor {
                 repo,
                 include_git_log,
             }) => {
-                if let Err(e) =
-                    Self::execute_issues_ingest(owner, repo, *include_git_log).await
-                {
+                if let Err(e) = Self::execute_issues_ingest(owner, repo, *include_git_log).await {
                     eprintln!("issues-ingest command failed: {}", e);
                 }
             }
@@ -1523,11 +1521,7 @@ mod docs_ingest_cli_tests {
     fn cli_docs_ingest_exits_0_on_success() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let f = tmp.path().join("hello.md");
-        std::fs::write(
-            &f,
-            "# Hello\n\nsee [foo](src/foo.rs:foo:1) for details.\n",
-        )
-        .unwrap();
+        std::fs::write(&f, "# Hello\n\nsee [foo](src/foo.rs:foo:1) for details.\n").unwrap();
 
         let bin = cognicode_bin();
         if !bin.exists() {

@@ -22,11 +22,11 @@
 //! - [`federated_graph_service`] — fan-out over N `GraphRepository`s.
 
 #[cfg(feature = "multimodal")]
+pub mod federated_graph_service;
+#[cfg(feature = "multimodal")]
 pub mod federated_node;
 #[cfg(feature = "multimodal")]
 pub mod federated_node_id;
-#[cfg(feature = "multimodal")]
-pub mod federated_graph_service;
 #[cfg(feature = "multimodal")]
 pub mod merge_candidate;
 #[cfg(feature = "multimodal")]
@@ -43,6 +43,6 @@ pub use federated_node_id::{FederatedNodeId, FederatedNodeIdError};
 #[cfg(feature = "multimodal")]
 pub use merge_candidate::{MergeCandidate, MergeReason};
 #[cfg(feature = "multimodal")]
-pub use merge_detector::{MergeDetector, MERGE_THRESHOLD};
+pub use merge_detector::{MERGE_THRESHOLD, MergeDetector};
 #[cfg(feature = "multimodal")]
 pub use space_registry::SpaceRegistry;

@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use axum::body::{to_bytes, Body};
+use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use cognicode_core::domain::aggregates::{CallEntry, SymbolId};
 use cognicode_core::domain::traits::graph_query_port::{
@@ -28,18 +28,15 @@ use cognicode_core::domain::traits::graph_query_port::{
 use cognicode_core::domain::value_objects::SymbolKind;
 use tower::ServiceExt;
 
-use crate::api::router;
 use crate::api::ApiState;
+use crate::api::router;
 use crate::error::ExplorerError;
 use crate::facades::graph::GraphServiceImpl;
 use crate::facades::{
-    GraphService, MoldQLService, PersistenceService, SearchService,
-    ViewService, WorkspaceService,
+    GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
 };
 use crate::ports::source_reader::SourceReader;
-use crate::ports::symbol_repository::{
-    GraphStats, ResolvedSymbol, SymbolRepository,
-};
+use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
 
 // ============================================================================
 // Mock service implementations for ApiState
@@ -53,10 +50,14 @@ impl WorkspaceService for MockWorkspaceService {
         &self,
         _request: crate::dto::OpenWorkspaceRequest,
     ) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
-        Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        Err(crate::error::ExplorerError::WorkspaceNotFound(
+            "mock".into(),
+        ))
     }
     fn current_workspace(&self) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
-        Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        Err(crate::error::ExplorerError::WorkspaceNotFound(
+            "mock".into(),
+        ))
     }
 }
 
@@ -144,7 +145,9 @@ struct MockPersistenceService {
 
 impl MockPersistenceService {
     fn new() -> Self {
-        Self { sessions: Arc::new(Mutex::new(HashMap::new())) }
+        Self {
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 }
 
@@ -235,7 +238,10 @@ impl PersistenceService for MockPersistenceService {
 struct MockMoldQLService;
 #[async_trait]
 impl MoldQLService for MockMoldQLService {
-    async fn execute_query(&self, _query: &str) -> crate::ExplorerResult<crate::moldql::MoldQLResult> {
+    async fn execute_query(
+        &self,
+        _query: &str,
+    ) -> crate::ExplorerResult<crate::moldql::MoldQLResult> {
         Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
     }
     async fn execute_query_with_target(
@@ -262,13 +268,18 @@ impl TestContextualViewService {
         _depth: u8,
         max_nodes: usize,
     ) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
-        use crate::dto::{ChildrenSection, ContextualGraphResponse, GraphEdge, GraphNode, ParentSection, SameLevelSection};
+        use crate::dto::{
+            ChildrenSection, ContextualGraphResponse, GraphEdge, GraphNode, ParentSection,
+            SameLevelSection,
+        };
         use cognicode_core::domain::aggregates::SymbolId;
 
         let symbol_id = SymbolId::new(focus_id);
 
         // Resolve focus symbol
-        let focus_resolved = self.symbol_repo.resolve(&symbol_id)?
+        let focus_resolved = self
+            .symbol_repo
+            .resolve(&symbol_id)?
             .ok_or_else(|| ExplorerError::SymbolNotFound(focus_id.to_string()))?;
 
         let focus_node = GraphNode {
@@ -277,11 +288,16 @@ impl TestContextualViewService {
             kind: format!("{:?}", focus_resolved.kind).to_lowercase(),
             file: Some(focus_resolved.file.clone()),
             line: Some(focus_resolved.line),
-            style_class: crate::api::style_class_for(&format!("{:?}", focus_resolved.kind).to_lowercase()).to_string(),
+            style_class: crate::api::style_class_for(
+                &format!("{:?}", focus_resolved.kind).to_lowercase(),
+            )
+            .to_string(),
         };
 
         // Find siblings in same file (parent section)
-        let file_siblings = self.symbol_repo.find_symbols_by_file(&focus_resolved.file)?;
+        let file_siblings = self
+            .symbol_repo
+            .find_symbols_by_file(&focus_resolved.file)?;
         let (parent, children, children_clipped) = if file_siblings.is_empty() || level != "file" {
             (None, None, false)
         } else {
@@ -319,27 +335,33 @@ impl TestContextualViewService {
                     kind: format!("{:?}", sib.kind).to_lowercase(),
                     file: Some(sib.file.clone()),
                     line: Some(sib.line),
-                    style_class: crate::api::style_class_for(&format!("{:?}", sib.kind).to_lowercase()).to_string(),
+                    style_class: crate::api::style_class_for(
+                        &format!("{:?}", sib.kind).to_lowercase(),
+                    )
+                    .to_string(),
                 });
             }
 
             let clipped = child_nodes.len() > max_nodes;
             if clipped {
                 child_nodes.truncate(max_nodes);
-                let kept: std::collections::HashSet<String> = child_nodes.iter().map(|n| n.id.clone()).collect();
+                let kept: std::collections::HashSet<String> =
+                    child_nodes.iter().map(|n| n.id.clone()).collect();
                 child_edges.retain(|e| kept.contains(&e.source));
             }
             (
                 Some(parent_section),
-                Some(ChildrenSection { nodes: child_nodes, edges: child_edges }),
+                Some(ChildrenSection {
+                    nodes: child_nodes,
+                    edges: child_edges,
+                }),
                 clipped,
             )
         };
 
         // Same-level section using graph_query
-        let remaining_cap = max_nodes.saturating_sub(
-            children.as_ref().map(|c| c.nodes.len()).unwrap_or(0),
-        );
+        let remaining_cap =
+            max_nodes.saturating_sub(children.as_ref().map(|c| c.nodes.len()).unwrap_or(0));
         let (same_nodes, same_edges) = if remaining_cap == 0 || self.graph_query.is_none() {
             (Vec::new(), Vec::new())
         } else {
@@ -362,7 +384,10 @@ impl TestContextualViewService {
                         kind: format!("{:?}", callee.kind).to_lowercase(),
                         file: Some(callee.file.clone()),
                         line: Some(callee.line),
-                        style_class: crate::api::style_class_for(&format!("{:?}", callee.kind).to_lowercase()).to_string(),
+                        style_class: crate::api::style_class_for(
+                            &format!("{:?}", callee.kind).to_lowercase(),
+                        )
+                        .to_string(),
                     });
                     edges.push(GraphEdge {
                         source: focus_id.to_string(),
@@ -373,7 +398,10 @@ impl TestContextualViewService {
                 }
             }
 
-            for caller in callers.iter().take(remaining_cap.saturating_sub(nodes.len())) {
+            for caller in callers
+                .iter()
+                .take(remaining_cap.saturating_sub(nodes.len()))
+            {
                 let caller_id_str = caller.id.to_string();
                 if visited.insert(caller_id_str.clone()) {
                     nodes.push(GraphNode {
@@ -382,7 +410,10 @@ impl TestContextualViewService {
                         kind: format!("{:?}", caller.kind).to_lowercase(),
                         file: Some(caller.file.clone()),
                         line: Some(caller.line),
-                        style_class: crate::api::style_class_for(&format!("{:?}", caller.kind).to_lowercase()).to_string(),
+                        style_class: crate::api::style_class_for(
+                            &format!("{:?}", caller.kind).to_lowercase(),
+                        )
+                        .to_string(),
                     });
                     edges.push(GraphEdge {
                         source: caller_id_str,
@@ -396,9 +427,18 @@ impl TestContextualViewService {
             (nodes, edges)
         };
 
-        let fan_in = self.graph_query.as_ref().map(|gq| gq.fan_in(&SymbolId::new(focus_id))).unwrap_or(0);
-        let fan_out = self.graph_query.as_ref().map(|gq| gq.fan_out(&SymbolId::new(focus_id))).unwrap_or(0);
-        let bfs_clipped = !same_nodes.is_empty() && same_nodes.len() >= remaining_cap
+        let fan_in = self
+            .graph_query
+            .as_ref()
+            .map(|gq| gq.fan_in(&SymbolId::new(focus_id)))
+            .unwrap_or(0);
+        let fan_out = self
+            .graph_query
+            .as_ref()
+            .map(|gq| gq.fan_out(&SymbolId::new(focus_id)))
+            .unwrap_or(0);
+        let bfs_clipped = !same_nodes.is_empty()
+            && same_nodes.len() >= remaining_cap
             && (fan_in + fan_out) > remaining_cap as usize;
         let truncated = children_clipped || bfs_clipped;
 
@@ -406,23 +446,43 @@ impl TestContextualViewService {
             focus_node,
             parent,
             children,
-            same_level: SameLevelSection { nodes: same_nodes, edges: same_edges },
+            same_level: SameLevelSection {
+                nodes: same_nodes,
+                edges: same_edges,
+            },
             level: level.to_string(),
             truncated,
-            truncation_reason: if truncated { Some("max_nodes_exceeded".to_string()) } else { None },
+            truncation_reason: if truncated {
+                Some("max_nodes_exceeded".to_string())
+            } else {
+                None
+            },
         })
     }
 }
 
 #[async_trait]
 impl ViewService for TestContextualViewService {
-    async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::ViewDescriptorDto>> {
+    async fn available_views(
+        &self,
+        _object_id: &str,
+    ) -> crate::ExplorerResult<Vec<crate::dto::ViewDescriptorDto>> {
         Ok(vec![])
     }
-    async fn contextual_view(&self, _object_id: &str, _view_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+    async fn contextual_view(
+        &self,
+        _object_id: &str,
+        _view_id: &str,
+    ) -> crate::ExplorerResult<crate::dto::ContextualView> {
         Err(ExplorerError::FeatureDisabled("mock".into()))
     }
-    async fn build_contextual_graph(&self, focus_id: &str, level: &str, depth: u8, max_nodes: usize) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
+    async fn build_contextual_graph(
+        &self,
+        focus_id: &str,
+        level: &str,
+        depth: u8,
+        max_nodes: usize,
+    ) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
         let focus_id = focus_id.to_string();
         let level = level.to_string();
         let result = self.build_contextual_graph_sync(&focus_id, &level, depth, max_nodes);
@@ -430,13 +490,24 @@ impl ViewService for TestContextualViewService {
             .await
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("join error: {}", e)))?
     }
-    async fn available_lenses(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
+    async fn available_lenses(
+        &self,
+        _object_id: &str,
+    ) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
         Ok(vec![])
     }
-    async fn apply_lens(&self, _object_id: &str, _lens_id: &str) -> crate::ExplorerResult<crate::dto::LensResult> {
+    async fn apply_lens(
+        &self,
+        _object_id: &str,
+        _lens_id: &str,
+    ) -> crate::ExplorerResult<crate::dto::LensResult> {
         Err(ExplorerError::FeatureDisabled("mock".into()))
     }
-    async fn execute_view_spec(&self, _spec: &crate::dto::ViewSpec, _object_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+    async fn execute_view_spec(
+        &self,
+        _spec: &crate::dto::ViewSpec,
+        _object_id: &str,
+    ) -> crate::ExplorerResult<crate::dto::ContextualView> {
         Err(ExplorerError::FeatureDisabled("mock".into()))
     }
 }
@@ -505,10 +576,7 @@ fn style_class_for_unknown_falls_back_to_function() {
 
 #[test]
 fn edge_style_class_for_calls() {
-    assert_eq!(
-        crate::api::edge_style_class_for("calls"),
-        "edge.calls"
-    );
+    assert_eq!(crate::api::edge_style_class_for("calls"), "edge.calls");
 }
 
 #[test]
@@ -526,18 +594,12 @@ fn edge_style_class_for_uses() {
 
 #[test]
 fn edge_style_class_for_imports_is_uses() {
-    assert_eq!(
-        crate::api::edge_style_class_for("imports"),
-        "edge.uses"
-    );
+    assert_eq!(crate::api::edge_style_class_for("imports"), "edge.uses");
 }
 
 #[test]
 fn edge_style_class_for_unknown_falls_back_to_calls() {
-    assert_eq!(
-        crate::api::edge_style_class_for("wires"),
-        "edge.calls"
-    );
+    assert_eq!(crate::api::edge_style_class_for("wires"), "edge.calls");
 }
 
 // ============================================================================
@@ -617,10 +679,7 @@ fn style_class_code() {
 /// `cites` (a doc → code reference) maps to `"edge-cites"`.
 #[test]
 fn edge_style_cites() {
-    assert_eq!(
-        crate::api::edge_style_class_for("cites"),
-        "edge-cites"
-    );
+    assert_eq!(crate::api::edge_style_class_for("cites"), "edge-cites");
 }
 
 /// `justifies` (an ADR → architectural choice) maps to `"edge-justifies"`.
@@ -653,10 +712,7 @@ fn edge_style_corroborated() {
 /// `part_of` (a component → container) maps to `"edge-part-of"`.
 #[test]
 fn edge_style_part_of() {
-    assert_eq!(
-        crate::api::edge_style_class_for("part_of"),
-        "edge-part-of"
-    );
+    assert_eq!(crate::api::edge_style_class_for("part_of"), "edge-part-of");
 }
 
 /// `deployed_as` (a container → service) maps to `"edge-deployed-as"`.
@@ -707,10 +763,7 @@ fn style_class_for_external_regression() {
 /// `edge.calls` / `edge.implements` / `edge.uses` keep their buckets.
 #[test]
 fn edge_style_class_calls_regression() {
-    assert_eq!(
-        crate::api::edge_style_class_for("calls"),
-        "edge.calls"
-    );
+    assert_eq!(crate::api::edge_style_class_for("calls"), "edge.calls");
     assert_eq!(
         crate::api::edge_style_class_for("implements"),
         "edge.implements"
@@ -814,10 +867,7 @@ fn query_explicit_values_accepted() {
 struct TinyRepo;
 
 impl SymbolRepository for TinyRepo {
-    fn resolve(
-        &self,
-        id: &SymbolId,
-    ) -> crate::error::ExplorerResult<Option<ResolvedSymbol>> {
+    fn resolve(&self, id: &SymbolId) -> crate::error::ExplorerResult<Option<ResolvedSymbol>> {
         if id.as_str() == "sym:foo::bar" {
             return Ok(Some(ResolvedSymbol {
                 id: id.clone(),
@@ -1088,10 +1138,7 @@ async fn handler_edge_sources_and_targets_exist_in_nodes() {
 struct WideRepo;
 
 impl SymbolRepository for WideRepo {
-    fn resolve(
-        &self,
-        id: &SymbolId,
-    ) -> crate::error::ExplorerResult<Option<ResolvedSymbol>> {
+    fn resolve(&self, id: &SymbolId) -> crate::error::ExplorerResult<Option<ResolvedSymbol>> {
         Ok(Some(ResolvedSymbol {
             id: id.clone(),
             name: id.as_str().to_string(),
@@ -1239,8 +1286,14 @@ async fn handler_truncated_response_has_no_dangling_edges() {
     for e in json["edges"].as_array().unwrap() {
         let src = e["source"].as_str().unwrap().to_string();
         let tgt = e["target"].as_str().unwrap().to_string();
-        assert!(ids.contains(&src), "dangling source after truncation: {src}");
-        assert!(ids.contains(&tgt), "dangling target after truncation: {tgt}");
+        assert!(
+            ids.contains(&src),
+            "dangling source after truncation: {src}"
+        );
+        assert!(
+            ids.contains(&tgt),
+            "dangling target after truncation: {tgt}"
+        );
     }
 }
 
@@ -1293,10 +1346,7 @@ async fn handler_unknown_symbol_returns_404() {
 async fn handler_graph_unavailable_returns_503() {
     struct UnavailableRepo;
     impl SymbolRepository for UnavailableRepo {
-        fn resolve(
-            &self,
-            _id: &SymbolId,
-        ) -> crate::error::ExplorerResult<Option<ResolvedSymbol>> {
+        fn resolve(&self, _id: &SymbolId) -> crate::error::ExplorerResult<Option<ResolvedSymbol>> {
             Err(ExplorerError::GraphNotReady)
         }
         fn find_symbols_by_name(
@@ -1353,9 +1403,7 @@ async fn handler_graph_unavailable_returns_503() {
 // TDD contract: every block here is RED before the route + handler
 // exist. After they do, the tests pass.
 
-use crate::dto::{
-    ChildrenSection, ContextualGraphResponse, ParentSection, SameLevelSection,
-};
+use crate::dto::{ChildrenSection, ContextualGraphResponse, ParentSection, SameLevelSection};
 
 /// Mock repository that powers the contextual-handler tests. It is a
 /// minimal subset of `TinyRepo` + a `find_symbols_by_file` so the
@@ -1363,10 +1411,7 @@ use crate::dto::{
 struct ContextualRepo;
 
 impl SymbolRepository for ContextualRepo {
-    fn resolve(
-        &self,
-        id: &SymbolId,
-    ) -> crate::error::ExplorerResult<Option<ResolvedSymbol>> {
+    fn resolve(&self, id: &SymbolId) -> crate::error::ExplorerResult<Option<ResolvedSymbol>> {
         if id.as_str() == "sym:ctx::alpha" {
             Ok(Some(ResolvedSymbol {
                 id: id.clone(),
@@ -1477,47 +1522,33 @@ impl GraphQueryPort for ContextualGraphQueryPort {
         0
     }
 
-    fn callers_with_metadata(
-        &self,
-        _id: &SymbolId,
-    ) -> Vec<CallerWithMetadata> {
+    fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<CallerWithMetadata> {
         Vec::new()
     }
 
-    fn callees_with_metadata(
-        &self,
-        _id: &SymbolId,
-    ) -> Vec<CalleeWithMetadata> {
+    fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<CalleeWithMetadata> {
         Vec::new()
     }
 
-    fn dependencies_with_metadata(
-        &self,
-        _id: &SymbolId,
-    ) -> Vec<RelationTargetWithMetadata> {
+    fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<RelationTargetWithMetadata> {
         Vec::new()
     }
 
-    fn traverse_callees(
-        &self,
-        _id: &SymbolId,
-        _max_depth: u8,
-    ) -> Vec<CallEntry> {
+    fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
         Vec::new()
     }
 
-    fn traverse_callers(
-        &self,
-        _id: &SymbolId,
-        _max_depth: u8,
-    ) -> Vec<CallEntry> {
+    fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
         Vec::new()
     }
 }
 
 fn contextual_app() -> axum::Router {
     let repo = Arc::new(ContextualRepo);
-    let graph = Arc::new(GraphServiceImpl::new(repo.clone(), Some(Arc::new(ContextualGraphQueryPort))));
+    let graph = Arc::new(GraphServiceImpl::new(
+        repo.clone(),
+        Some(Arc::new(ContextualGraphQueryPort)),
+    ));
     let view_service = TestContextualViewService {
         symbol_repo: repo,
         graph_query: Some(Arc::new(ContextualGraphQueryPort)),
@@ -1560,7 +1591,12 @@ async fn contextual_handler_returns_200_with_valid_payload() {
     let child_ids: Vec<&str> = children.nodes.iter().map(|n| n.id.as_str()).collect();
     assert!(child_ids.contains(&"sym:ctx::beta"));
     // `sameLevel` is non-null and includes beta.
-    let same_ids: Vec<&str> = parsed.same_level.nodes.iter().map(|n| n.id.as_str()).collect();
+    let same_ids: Vec<&str> = parsed
+        .same_level
+        .nodes
+        .iter()
+        .map(|n| n.id.as_str())
+        .collect();
     assert!(same_ids.contains(&"sym:ctx::beta"));
     // JSON shape: `focusNode` camelCase, not `focus_node`.
     assert!(json["focusNode"].is_object());
@@ -1677,7 +1713,11 @@ async fn generate_artifact_returns_decision_artifact_summary() {
         .body(Body::from(serde_json::to_vec(&session_payload).unwrap()))
         .unwrap();
     let response = app.clone().oneshot(req).await.expect("save response");
-    assert_eq!(response.status(), StatusCode::OK, "save session should succeed");
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "save session should succeed"
+    );
     let body = to_bytes(response.into_body(), 1024 * 1024)
         .await
         .expect("body");

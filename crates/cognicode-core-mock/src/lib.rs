@@ -12,11 +12,15 @@ use async_trait::async_trait;
 use lsp_types::Url;
 
 // Import aggregates
-use cognicode_core::domain::aggregates::{CallGraph, Refactor, RefactorKind, RefactorParameters, Symbol, SymbolId};
+use cognicode_core::domain::aggregates::{
+    CallGraph, Refactor, RefactorKind, RefactorParameters, Symbol, SymbolId,
+};
 use cognicode_core::domain::services::CycleDetectionResult;
 
 // Import value objects
-use cognicode_core::domain::value_objects::{DependencyType, Location, SourceRange, SymbolKind, CheckpointId};
+use cognicode_core::domain::value_objects::{
+    CheckpointId, DependencyType, Location, SourceRange, SymbolKind,
+};
 
 // Import from code_intelligence sub-module directly
 use cognicode_core::domain::traits::code_intelligence::{
@@ -25,19 +29,23 @@ use cognicode_core::domain::traits::code_intelligence::{
 };
 
 // Import from traits modules directly
-use cognicode_core::domain::traits::code_intelligence::CodeIntelligenceProvider;
 use cognicode_core::domain::traits::code_intelligence::CodeIntelligenceError;
-use cognicode_core::domain::traits::dependency_repository::{DependencyError, DependencyRepository};
+use cognicode_core::domain::traits::code_intelligence::CodeIntelligenceProvider;
+use cognicode_core::domain::traits::dependency_repository::{
+    DependencyError, DependencyRepository,
+};
 use cognicode_core::domain::traits::file_system::{FileSystem, TextEdit, VfsResult};
 use cognicode_core::domain::traits::graph_store::{GraphStore, StoreError};
-use cognicode_core::domain::traits::parser::{AstScanner, ParseError, Parser, ParsedTree, ScannedNode};
+use cognicode_core::domain::traits::parser::{
+    AstScanner, ParseError, ParsedTree, Parser, ScannedNode,
+};
 use cognicode_core::domain::traits::refactor_strategy::{
-    PreparedEdits, RefactorError, RefactorResult, RefactorValidation, RefactorStrategy,
+    PreparedEdits, RefactorError, RefactorResult, RefactorStrategy, RefactorValidation,
 };
 use cognicode_core::domain::traits::repository::{Repository, RepositoryError};
 use cognicode_core::domain::traits::search_provider::{
-    QueryValidation, Replacement, SearchError, SearchMatch, SearchProvider, SearchQuery, SearchScope,
-    SimilarMatch,
+    QueryValidation, Replacement, SearchError, SearchMatch, SearchProvider, SearchQuery,
+    SearchScope, SimilarMatch,
 };
 use cognicode_core::domain::value_objects::EdgeMetadata;
 
@@ -175,7 +183,10 @@ impl CodeIntelligenceProvider for MockCodeIntelligenceProvider {
         }
     }
 
-    async fn hover(&self, _location: &Location) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
+    async fn hover(
+        &self,
+        _location: &Location,
+    ) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
         Ok(self.hover.clone())
     }
 }
@@ -383,9 +394,8 @@ impl MockGraphStore {
 
 impl GraphStore for MockGraphStore {
     fn save_graph(&self, graph: &CallGraph) -> Result<(), StoreError> {
-        let bytes =
-            bincode::serde::encode_to_vec(graph, bincode::config::standard())
-                .map_err(|e| StoreError::Serialization(e.to_string()))?;
+        let bytes = bincode::serde::encode_to_vec(graph, bincode::config::standard())
+            .map_err(|e| StoreError::Serialization(e.to_string()))?;
         *self.graph.lock().unwrap() = Some(bytes);
         Ok(())
     }
@@ -409,9 +419,8 @@ impl GraphStore for MockGraphStore {
         &self,
         manifest: &cognicode_core::domain::value_objects::FileManifest,
     ) -> Result<(), StoreError> {
-        let bytes =
-            bincode::serde::encode_to_vec(manifest, bincode::config::standard())
-                .map_err(|e| StoreError::Serialization(e.to_string()))?;
+        let bytes = bincode::serde::encode_to_vec(manifest, bincode::config::standard())
+            .map_err(|e| StoreError::Serialization(e.to_string()))?;
         *self.manifest.lock().unwrap() = Some(bytes);
         Ok(())
     }
@@ -455,10 +464,7 @@ impl GraphStore for MockGraphStore {
         }
     }
 
-    fn checkpoint_at(
-        &self,
-        id: CheckpointId,
-    ) -> Result<Option<Arc<CallGraph>>, StoreError> {
+    fn checkpoint_at(&self, id: CheckpointId) -> Result<Option<Arc<CallGraph>>, StoreError> {
         if id != CheckpointId(1) {
             return Err(StoreError::CheckpointNotFound(id));
         }
@@ -598,7 +604,9 @@ impl AstScanner for MockAstScanner {
     }
 
     fn get_node_text(&self, node: &tree_sitter::Node, source: &str) -> String {
-        node.utf8_text(source.as_bytes()).unwrap_or_default().to_string()
+        node.utf8_text(source.as_bytes())
+            .unwrap_or_default()
+            .to_string()
     }
 
     fn node_to_range(&self, node: &tree_sitter::Node) -> SourceRange {
@@ -763,14 +771,22 @@ impl Repository for MockRepository {
         &self,
         caller_id: &str,
     ) -> Result<Vec<EdgeMetadata>, RepositoryError> {
-        Ok(self.edges_by_caller.get(caller_id).cloned().unwrap_or_default())
+        Ok(self
+            .edges_by_caller
+            .get(caller_id)
+            .cloned()
+            .unwrap_or_default())
     }
 
     async fn find_edges_by_callee(
         &self,
         callee_id: &str,
     ) -> Result<Vec<EdgeMetadata>, RepositoryError> {
-        Ok(self.edges_by_callee.get(callee_id).cloned().unwrap_or_default())
+        Ok(self
+            .edges_by_callee
+            .get(callee_id)
+            .cloned()
+            .unwrap_or_default())
     }
 
     async fn count_edges(&self) -> Result<usize, RepositoryError> {
@@ -866,7 +882,9 @@ impl SearchProvider for MockSearchProvider {
 // ============================================================================
 
 #[cfg(feature = "multimodal")]
-use cognicode_core::domain::traits::source_extractor::{ExtractedNode, SourceExtractor, SourceExtractorResult, SourcePath};
+use cognicode_core::domain::traits::source_extractor::{
+    ExtractedNode, SourceExtractor, SourceExtractorResult, SourcePath,
+};
 
 #[cfg(feature = "multimodal")]
 use std::path::PathBuf;
@@ -909,10 +927,7 @@ impl SourceExtractor for MockSourceExtractor {
         self.source_kind_name
     }
 
-    async fn extract(
-        &self,
-        _source: SourcePath,
-    ) -> SourceExtractorResult<Vec<ExtractedNode>> {
+    async fn extract(&self, _source: SourcePath) -> SourceExtractorResult<Vec<ExtractedNode>> {
         Ok(self.extracted_nodes.clone())
     }
 }
@@ -1047,11 +1062,7 @@ mod tests {
     #[test]
     fn mock_refactor_strategy_validate() {
         let strategy = MockRefactorStrategy::mock();
-        let symbol = Symbol::new(
-            "test",
-            SymbolKind::Function,
-            Location::new("test.rs", 1, 1),
-        );
+        let symbol = Symbol::new("test", SymbolKind::Function, Location::new("test.rs", 1, 1));
         let refactor = Refactor::new(RefactorKind::Rename, symbol, RefactorParameters::new());
         let validation = strategy.validate(&refactor);
         assert!(validation.is_valid);
@@ -1069,10 +1080,7 @@ mod tests {
     #[tokio::test]
     async fn mock_repository_find_symbol() {
         let repo = MockRepository::mock();
-        let result = repo
-            .find_symbol_by_qualified_name("test")
-            .await
-            .unwrap();
+        let result = repo.find_symbol_by_qualified_name("test").await.unwrap();
         assert!(result.is_none());
     }
 

@@ -21,12 +21,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::{
+    Json, Router,
     extract::{Request, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::get,
-    Json, Router,
 };
 use clap::Parser;
 use cognicode_core::interface::mcp::CogniCodeHandler;
@@ -191,7 +191,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cwd = args.cwd.clone();
     let session_manager = std::sync::Arc::new(
-        rmcp::transport::streamable_http_server::session::local::LocalSessionManager::default()
+        rmcp::transport::streamable_http_server::session::local::LocalSessionManager::default(),
     );
     let mut config = rmcp::transport::streamable_http_server::StreamableHttpServerConfig::default();
     config.stateful_mode = true;
@@ -244,9 +244,7 @@ async fn main() -> anyhow::Result<()> {
         .with_registry((*prometheus_registry).clone())
         .build()?;
 
-    let meter_provider = SdkMeterProvider::builder()
-        .with_reader(exporter)
-        .build();
+    let meter_provider = SdkMeterProvider::builder().with_reader(exporter).build();
     global::set_meter_provider(meter_provider);
 
     // `init_global_metrics()` returns
@@ -262,14 +260,16 @@ async fn main() -> anyhow::Result<()> {
     // ── File watcher (Sprint 4 / ADR-022) ─────────────────────────────────
     // Start the file watcher as a background task. It watches the workspace
     // for file changes and triggers graph rebuilds automatically.
-    let (watcher_handle, watcher_rx) = cognicode_core::application::ingest::watcher::start_watcher(cwd.clone());
+    let (watcher_handle, watcher_rx) =
+        cognicode_core::application::ingest::watcher::start_watcher(cwd.clone());
     let watcher_handle = Arc::new(std::sync::Mutex::new(watcher_handle));
 
     // Spawn a task that consumes watcher events and triggers graph rebuilds.
     // Uses debounce_changes to coalesce rapid file changes into a single rebuild.
     {
         let ctx_for_watcher = shared_ctx.clone();
-        let debounced = cognicode_core::application::ingest::watcher::debounce_changes(watcher_rx, 500);
+        let debounced =
+            cognicode_core::application::ingest::watcher::debounce_changes(watcher_rx, 500);
         tokio::spawn(async move {
             let mut rx = debounced.await;
             while let Some(changed_files) = rx.recv().await {
@@ -277,12 +277,19 @@ async fn main() -> anyhow::Result<()> {
                     "file watcher: {} files changed, rebuilding graph",
                     changed_files.len()
                 );
-                let input = cognicode_core::interface::mcp::handlers::BuildGraphInput { directory: None };
-                match cognicode_core::interface::mcp::handlers::handle_build_graph(&ctx_for_watcher, input).await {
+                let input =
+                    cognicode_core::interface::mcp::handlers::BuildGraphInput { directory: None };
+                match cognicode_core::interface::mcp::handlers::handle_build_graph(
+                    &ctx_for_watcher,
+                    input,
+                )
+                .await
+                {
                     Ok(output) => {
                         tracing::info!(
                             "file watcher: graph rebuilt — {} symbols, {} edges",
-                            output.symbols_found, output.relationships_found
+                            output.symbols_found,
+                            output.relationships_found
                         );
                     }
                     Err(e) => {
@@ -314,12 +321,13 @@ async fn main() -> anyhow::Result<()> {
     // of the global router state (the tuple below), which is why
     // `auth_middleware` keeps its `State<Arc<HandlerContext>>`
     // signature unchanged.
-    let api_routes = Router::new()
-        .nest_service("/mcp", service)
-        .layer(middleware::from_fn_with_state(
-            shared_ctx.clone(),
-            auth_middleware,
-        ));
+    let api_routes =
+        Router::new()
+            .nest_service("/mcp", service)
+            .layer(middleware::from_fn_with_state(
+                shared_ctx.clone(),
+                auth_middleware,
+            ));
 
     let public_routes = Router::new()
         .route("/health", get(health_handler))

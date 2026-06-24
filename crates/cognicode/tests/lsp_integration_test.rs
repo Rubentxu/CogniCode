@@ -29,11 +29,11 @@ fn pyright_available() -> bool {
 async fn test_rust_analyzer_hover() {
     use cognicode::application::services::analysis_service::AnalysisService;
     use cognicode::application::services::lsp_proxy_service::LspProxyService;
-    
+
     // Create a temporary Rust project
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let project_dir = temp_dir.path().to_path_buf();
-    
+
     // Create Cargo.toml so rust-analyzer recognizes the project
     std::fs::write(
         project_dir.join("Cargo.toml"),
@@ -44,7 +44,7 @@ edition = "2021"
 "#,
     )
     .expect("Failed to write Cargo.toml");
-    
+
     // Create a simple Rust file with a function
     // Line 0 (0-indexed): "pub fn greet(name: &str) -> String {"
     // "greet" starts at character 7 on line 0
@@ -66,7 +66,7 @@ fn main() {
 
     // Create the LSP proxy service with the temp directory as workspace
     let service = LspProxyService::new(Arc::new(AnalysisService::new()), project_dir.clone());
-    
+
     // Enable proxy mode with the composite provider
     let mut service = service;
     service.enable_proxy_mode_with_provider();
@@ -84,12 +84,10 @@ fn main() {
     });
 
     // Send hover request with 30 second timeout (rust-analyzer needs ~10s to index)
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        async {
-            service.route_operation("hover", &params).await
-        }
-    ).await;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        service.route_operation("hover", &params).await
+    })
+    .await;
 
     // Verify the result
     match result {
@@ -120,11 +118,11 @@ fn main() {
 async fn test_rust_analyzer_goto_definition() {
     use cognicode::application::services::analysis_service::AnalysisService;
     use cognicode::application::services::lsp_proxy_service::LspProxyService;
-    
+
     // Create a temporary Rust project
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let project_dir = temp_dir.path().to_path_buf();
-    
+
     // Create Cargo.toml so rust-analyzer recognizes the project
     std::fs::write(
         project_dir.join("Cargo.toml"),
@@ -135,7 +133,7 @@ edition = "2021"
 "#,
     )
     .expect("Failed to write Cargo.toml");
-    
+
     // Create a simple Rust file
     // Line 0 (0-indexed): "pub fn calculate(x: i32, y: i32) -> i32 {"
     // Line 4 (0-indexed): "    let result = calculate(1, 2);"
@@ -173,12 +171,12 @@ fn main() {
         }
     });
 
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        async {
-            service.route_operation("textDocument/definition", &params).await
-        }
-    ).await;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        service
+            .route_operation("textDocument/definition", &params)
+            .await
+    })
+    .await;
 
     match result {
         Ok(Ok(Some(response))) => {
@@ -209,11 +207,11 @@ fn main() {
 async fn test_pyright_goto_definition() {
     use cognicode::application::services::analysis_service::AnalysisService;
     use cognicode::application::services::lsp_proxy_service::LspProxyService;
-    
+
     // Create a temporary Python project
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let project_dir = temp_dir.path().to_path_buf();
-    
+
     // Create a simple Python file
     let python_file = project_dir.join("test_file.py");
     std::fs::write(
@@ -245,12 +243,12 @@ print(result)
         }
     });
 
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        async {
-            service.route_operation("textDocument/definition", &params).await
-        }
-    ).await;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        service
+            .route_operation("textDocument/definition", &params)
+            .await
+    })
+    .await;
 
     match result {
         Ok(Ok(Some(response))) => {
@@ -278,11 +276,11 @@ print(result)
 async fn test_pyright_find_references() {
     use cognicode::application::services::analysis_service::AnalysisService;
     use cognicode::application::services::lsp_proxy_service::LspProxyService;
-    
+
     // Create a temporary Python project
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let project_dir = temp_dir.path().to_path_buf();
-    
+
     // Create a Python file with a variable used in multiple places
     let python_file = project_dir.join("test_refs.py");
     std::fs::write(
@@ -318,12 +316,10 @@ farewell()
         }
     });
 
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        async {
-            service.route_operation("find_references", &params).await
-        }
-    ).await;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        service.route_operation("find_references", &params).await
+    })
+    .await;
 
     match result {
         Ok(Ok(Some(response))) => {
@@ -360,7 +356,7 @@ fn test_rust_analyzer_available_detection() {
     // It doesn't require rust-analyzer to be installed
     let available = rust_analyzer_available();
     println!("rust-analyzer available: {}", available);
-    
+
     // The test always passes - it just reports the status
     // In CI, this can be used to determine which tests to run
 }
@@ -370,7 +366,7 @@ fn test_pyright_available_detection() {
     // This test just verifies the detection function works
     let available = pyright_available();
     println!("pyright available: {}", available);
-    
+
     // The test always passes - it just reports the status
 }
 
@@ -378,9 +374,9 @@ fn test_pyright_available_detection() {
 async fn test_extract_location_from_lsp_params() {
     use cognicode::application::services::analysis_service::AnalysisService;
     use cognicode::application::services::lsp_proxy_service::LspProxyService;
-    
+
     let service = LspProxyService::new_without_workspace(Arc::new(AnalysisService::new()));
-    
+
     // Test valid LSP params (0-indexed line 10, character 5 becomes Location line 11, column 6)
     let params = serde_json::json!({
         "textDocument": {
@@ -391,11 +387,11 @@ async fn test_extract_location_from_lsp_params() {
             "character": 5
         }
     });
-    
+
     // Use reflection to test extract_location - but it's private, so we test via route_operation
     // The error case can be tested directly
     let result = service.route_operation("hover", &params).await;
-    
+
     // With proxy disabled, should return None even with valid params
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());

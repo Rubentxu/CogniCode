@@ -118,12 +118,7 @@ impl ToolHandlerRegistry {
     /// Returns a `CallToolResult::error` when:
     /// - No handler is registered for the given name (`UnknownTool`)
     /// - The handler itself returns an error (any [`ToolError`] variant)
-    pub async fn dispatch(
-        &self,
-        name: &str,
-        ctx: &McpContext,
-        params: Value,
-    ) -> CallToolResult {
+    pub async fn dispatch(&self, name: &str, ctx: &McpContext, params: Value) -> CallToolResult {
         match self.get(name) {
             Some(handler) => handler.handle(ctx, params).await,
             None => unknown_tool_error(name),

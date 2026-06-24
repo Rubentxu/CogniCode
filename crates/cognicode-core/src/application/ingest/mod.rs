@@ -16,7 +16,7 @@ pub mod service;
 pub mod types;
 pub mod watcher;
 
-pub use analyzer::{run_analyze, AnalysisSummary};
+pub use analyzer::{AnalysisSummary, run_analyze};
 pub use cluster::run_cluster;
 pub use controller::{
     GraphStats, IngestController, JobState, JobStatus, ScanAccepted, StaticWorkspaceResolver,
@@ -24,11 +24,11 @@ pub use controller::{
 };
 pub use extract_stage::{extract_all, extract_streaming};
 pub use extractor::extract_file;
-pub use pg_upsert_stage::{pg_upsert_streaming, PgUpsertStats};
-pub use refresh::{refresh_from_pg, RefreshStats};
+pub use pg_upsert_stage::{PgUpsertStats, pg_upsert_streaming};
+pub use refresh::{RefreshStats, refresh_from_pg};
 pub use report_stage::run_report;
 pub use resolve::{resolve_cross_file_calls, resolve_imports};
-pub use scan::{classify_file, hash_file, scan_for_changes, walk_files, ScanEntry};
+pub use scan::{ScanEntry, classify_file, hash_file, scan_for_changes, walk_files};
 pub use service::run_scan;
 pub use types::{
     ChangeKind, ExtractionEdge, ExtractionResult, FailedFile, FileChange, FileType,

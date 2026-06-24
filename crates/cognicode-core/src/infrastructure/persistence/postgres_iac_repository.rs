@@ -1,8 +1,8 @@
 //! PostgreSQL-backed IacRepository stub — pending full PG wiring.
 #![cfg(feature = "postgres")]
 
-use async_trait::async_trait;
 use crate::domain::traits::iac_repository::{IacEdge, IacRepository, IacResource};
+use async_trait::async_trait;
 use sqlx::PgPool;
 
 pub struct PostgresIacRepository {
@@ -21,11 +21,19 @@ impl IacRepository for PostgresIacRepository {
         Ok(None)
     }
 
-    async fn get_dependencies(&self, _resource_id: &str, _depth: Option<u32>) -> Result<Vec<IacEdge>, String> {
+    async fn get_dependencies(
+        &self,
+        _resource_id: &str,
+        _depth: Option<u32>,
+    ) -> Result<Vec<IacEdge>, String> {
         Ok(vec![])
     }
 
-    async fn get_dependents(&self, _resource_id: &str, _depth: Option<u32>) -> Result<Vec<IacEdge>, String> {
+    async fn get_dependents(
+        &self,
+        _resource_id: &str,
+        _depth: Option<u32>,
+    ) -> Result<Vec<IacEdge>, String> {
         Ok(vec![])
     }
 }

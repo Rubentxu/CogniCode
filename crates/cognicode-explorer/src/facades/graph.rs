@@ -7,7 +7,10 @@ use async_trait::async_trait;
 use cognicode_core::domain::aggregates::SymbolId;
 use cognicode_core::domain::traits::GraphQueryPort;
 
-use crate::dto::{DriftKind, DriftFinding, DriftReport, ExpectedArchitecture, ExpectedContainer, GraphEdge, GraphNode, SubgraphResponse};
+use crate::dto::{
+    DriftFinding, DriftKind, DriftReport, ExpectedArchitecture, ExpectedContainer, GraphEdge,
+    GraphNode, SubgraphResponse,
+};
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::GraphService;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
@@ -42,11 +45,7 @@ fn map_repo_unavailable(e: ExplorerError) -> ExplorerError {
     }
 }
 
-fn symbol_to_node(
-    id: &str,
-    s: &ResolvedSymbol,
-    _style_hint: &str,
-) -> GraphNode {
+fn symbol_to_node(id: &str, s: &ResolvedSymbol, _style_hint: &str) -> GraphNode {
     let kind_label = format!("{:?}", s.kind).to_lowercase();
     GraphNode {
         id: id.to_string(),
@@ -144,10 +143,7 @@ impl GraphService for GraphServiceImpl {
                 ),
             };
 
-            for neighbour in incoming
-                .into_iter()
-                .chain(outgoing.into_iter())
-            {
+            for neighbour in incoming.into_iter().chain(outgoing.into_iter()) {
                 if nodes.len() >= max_nodes_usize {
                     truncated = true;
                     break;
@@ -265,7 +261,8 @@ impl GraphServiceImpl {
         if let Ok(toml_content) = std::fs::read_to_string(&workspace_toml) {
             if let Ok(toml_value) = toml_content.parse::<toml::Value>() {
                 // Get workspace members (array of paths)
-                if let Some(members) = toml_value.get("workspace")
+                if let Some(members) = toml_value
+                    .get("workspace")
                     .and_then(|w| w.get("members"))
                     .and_then(|m| m.as_array())
                 {
@@ -275,15 +272,30 @@ impl GraphServiceImpl {
                             let member_toml_path = member_dir.join("Cargo.toml");
 
                             if member_toml_path.exists() {
-                                if let Ok(member_toml_content) = std::fs::read_to_string(&member_toml_path) {
-                                    if let Ok(member_toml) = member_toml_content.parse::<toml::Value>() {
+                                if let Ok(member_toml_content) =
+                                    std::fs::read_to_string(&member_toml_path)
+                                {
+                                    if let Ok(member_toml) =
+                                        member_toml_content.parse::<toml::Value>()
+                                    {
                                         // Determine sub_kind: library if [lib] present, binary if [[bin]] present
                                         let has_lib = member_toml.get("lib").is_some();
-                                        let has_bin = member_toml.get("bin")
-                                            .map(|b| b.as_array().map(|arr| !arr.is_empty()).unwrap_or(false))
+                                        let has_bin = member_toml
+                                            .get("bin")
+                                            .map(|b| {
+                                                b.as_array()
+                                                    .map(|arr| !arr.is_empty())
+                                                    .unwrap_or(false)
+                                            })
                                             .unwrap_or(false);
 
-                                        let _sub_kind = if has_lib { "library" } else if has_bin { "binary" } else { "library" };
+                                        let _sub_kind = if has_lib {
+                                            "library"
+                                        } else if has_bin {
+                                            "binary"
+                                        } else {
+                                            "library"
+                                        };
                                         let container_id = format!("container:{}", member_path);
                                         container_ids.insert(container_id.clone());
 
@@ -366,11 +378,14 @@ impl GraphServiceImpl {
 
         for module_path in &modules {
             // Find which container this module belongs to
-            let module_container = container_ids.iter().find(|container_id| {
-                let container_path = container_id.strip_prefix("container:").unwrap_or("");
-                module_path.starts_with(container_path) ||
-                module_path.starts_with(&format!("{}/", container_path))
-            }).cloned();
+            let module_container = container_ids
+                .iter()
+                .find(|container_id| {
+                    let container_path = container_id.strip_prefix("container:").unwrap_or("");
+                    module_path.starts_with(container_path)
+                        || module_path.starts_with(&format!("{}/", container_path))
+                })
+                .cloned();
 
             let component_id = format!("component:{}", module_path);
             component_ids.insert(component_id.clone());
@@ -414,10 +429,13 @@ impl GraphServiceImpl {
 
             // Check if the symbol's file's parent directory matches a C3 component
             let file_path = Path::new(&symbol.file);
-            let parent_dir = file_path.parent().map(|p| {
-                // Get the relative path from the module root
-                p.to_string_lossy().to_string()
-            }).unwrap_or_default();
+            let parent_dir = file_path
+                .parent()
+                .map(|p| {
+                    // Get the relative path from the module root
+                    p.to_string_lossy().to_string()
+                })
+                .unwrap_or_default();
 
             // Check if parent matches a module (C3 component)
             if component_ids.contains(&format!("component:{}", parent_dir)) {
@@ -462,12 +480,18 @@ impl GraphServiceImpl {
         // Parse expected architecture file if it exists
         let expected_file = Path::new(root_path).join(".cognicode/expected-architecture.yaml");
         let expected_arch: ExpectedArchitecture = if expected_file.exists() {
-            let content = std::fs::read_to_string(&expected_file)
-                .map_err(|e| ExplorerError::InvalidInput(format!(
-                    "Failed to read expected-architecture.yaml: {}", e)))?;
-            serde_yaml::from_str(&content)
-                .map_err(|e| ExplorerError::InvalidInput(format!(
-                    "Failed to parse expected-architecture.yaml: {}", e)))?
+            let content = std::fs::read_to_string(&expected_file).map_err(|e| {
+                ExplorerError::InvalidInput(format!(
+                    "Failed to read expected-architecture.yaml: {}",
+                    e
+                ))
+            })?;
+            serde_yaml::from_str(&content).map_err(|e| {
+                ExplorerError::InvalidInput(format!(
+                    "Failed to parse expected-architecture.yaml: {}",
+                    e
+                ))
+            })?
         } else {
             // Graceful degradation: no expected architecture file
             return Ok(DriftReport::default());
@@ -489,7 +513,9 @@ impl GraphServiceImpl {
         }
 
         // Compare expected vs inferred
-        let expected_names: HashSet<String> = expected_arch.containers.iter()
+        let expected_names: HashSet<String> = expected_arch
+            .containers
+            .iter()
             .map(|c| c.name.clone())
             .collect();
         let inferred_names: HashSet<String> = inferred_containers.keys().cloned().collect();
@@ -547,9 +573,18 @@ impl GraphServiceImpl {
             }
         }
 
-        let missing_containers = findings.iter().filter(|f| f.kind == DriftKind::MissingContainer).count();
-        let extra_containers = findings.iter().filter(|f| f.kind == DriftKind::ExtraContainer).count();
-        let wrong_sub_kinds = findings.iter().filter(|f| f.kind == DriftKind::WrongSubKind).count();
+        let missing_containers = findings
+            .iter()
+            .filter(|f| f.kind == DriftKind::MissingContainer)
+            .count();
+        let extra_containers = findings
+            .iter()
+            .filter(|f| f.kind == DriftKind::ExtraContainer)
+            .count();
+        let wrong_sub_kinds = findings
+            .iter()
+            .filter(|f| f.kind == DriftKind::WrongSubKind)
+            .count();
 
         let summary = if findings.is_empty() {
             "No architecture drift detected".to_string()
@@ -628,7 +663,10 @@ mod tests {
         }
     }
 
-    fn make_mock_repo(modules: Vec<String>, symbols: Vec<ResolvedSymbol>) -> Arc<dyn SymbolRepository> {
+    fn make_mock_repo(
+        modules: Vec<String>,
+        symbols: Vec<ResolvedSymbol>,
+    ) -> Arc<dyn SymbolRepository> {
         Arc::new(MockSymbolRepo::new(modules, symbols))
     }
 
@@ -649,14 +687,20 @@ mod tests {
         let service = GraphServiceImpl::new(repo, None);
 
         let tmp = TempDir::new().unwrap();
-        let workspace_name = tmp.path().file_name().unwrap().to_string_lossy().to_string();
+        let workspace_name = tmp
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         let expected_system_id = format!("system:{}", workspace_name.to_lowercase());
-        let result = service.build_architecture(tmp.path().to_str().unwrap()).await.unwrap();
+        let result = service
+            .build_architecture(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
 
         // Should have exactly one system node
-        let system_nodes: Vec<_> = result.nodes.iter()
-            .filter(|n| n.kind == "system")
-            .collect();
+        let system_nodes: Vec<_> = result.nodes.iter().filter(|n| n.kind == "system").collect();
         assert_eq!(system_nodes.len(), 1);
         assert_eq!(system_nodes[0].id, expected_system_id.as_str());
         assert_eq!(system_nodes[0].style_class, "node-system");
@@ -666,37 +710,55 @@ mod tests {
     async fn build_architecture_includes_workspace_containers() {
         // Create a temp workspace with Cargo.toml containing members
         let tmp = TempDir::new().unwrap();
-        let workspace_name = tmp.path().file_name().unwrap().to_string_lossy().to_string();
+        let workspace_name = tmp
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         let expected_system_id = format!("system:{}", workspace_name.to_lowercase());
         let workspace_toml = tmp.path().join("Cargo.toml");
-        std::fs::write(&workspace_toml, r#"
+        std::fs::write(
+            &workspace_toml,
+            r#"
 [workspace]
 members = [
     "crates/test-crate"
 ]
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         // Create the member crate directory with Cargo.toml
         let crate_dir = tmp.path().join("crates/test-crate");
         std::fs::create_dir_all(&crate_dir).unwrap();
         let crate_toml = crate_dir.join("Cargo.toml");
-        std::fs::write(&crate_toml, r#"
+        std::fs::write(
+            &crate_toml,
+            r#"
 [package]
 name = "test-crate"
 version = "0.1.0"
 
 [lib]
 path = "lib.rs"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         std::fs::write(crate_dir.join("lib.rs"), "").unwrap();
 
         let repo = make_mock_repo(vec![], vec![]);
         let service = GraphServiceImpl::new(repo, None);
 
-        let result = service.build_architecture(tmp.path().to_str().unwrap()).await.unwrap();
+        let result = service
+            .build_architecture(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
 
         // Should have system + 1 container
-        let container_nodes: Vec<_> = result.nodes.iter()
+        let container_nodes: Vec<_> = result
+            .nodes
+            .iter()
             .filter(|n| n.kind == "container")
             .collect();
         assert_eq!(container_nodes.len(), 1);
@@ -704,8 +766,12 @@ path = "lib.rs"
         assert_eq!(container_nodes[0].style_class, "node-container");
 
         // Should have part_of edge from container to system
-        let container_to_system: Vec<_> = result.edges.iter()
-            .filter(|e| e.source == "container:crates/test-crate" && e.target == expected_system_id.as_str())
+        let container_to_system: Vec<_> = result
+            .edges
+            .iter()
+            .filter(|e| {
+                e.source == "container:crates/test-crate" && e.target == expected_system_id.as_str()
+            })
             .collect();
         assert_eq!(container_to_system.len(), 1);
         assert_eq!(container_to_system[0].relation, "part_of");
@@ -725,10 +791,15 @@ path = "lib.rs"
         let repo = make_mock_repo(vec![], vec![]);
         let service = GraphServiceImpl::new(repo, None);
 
-        let result = service.build_architecture(tmp.path().to_str().unwrap()).await.unwrap();
+        let result = service
+            .build_architecture(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
 
         // Should have system + 1 node-app container
-        let container_nodes: Vec<_> = result.nodes.iter()
+        let container_nodes: Vec<_> = result
+            .nodes
+            .iter()
             .filter(|n| n.kind == "container")
             .collect();
         assert_eq!(container_nodes.len(), 1);
@@ -740,34 +811,44 @@ path = "lib.rs"
     async fn build_architecture_includes_components() {
         let tmp = TempDir::new().unwrap();
         let workspace_toml = tmp.path().join("Cargo.toml");
-        std::fs::write(&workspace_toml, r#"
+        std::fs::write(
+            &workspace_toml,
+            r#"
 [workspace]
 members = ["crates/test-crate"]
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let crate_dir = tmp.path().join("crates/test-crate");
         std::fs::create_dir_all(&crate_dir).unwrap();
-        std::fs::write(crate_dir.join("Cargo.toml"), r#"
+        std::fs::write(
+            crate_dir.join("Cargo.toml"),
+            r#"
 [package]
 name = "test-crate"
 version = "0.1.0"
 [lib]
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         // Create src directory as a module
         let src_dir = crate_dir.join("src");
         std::fs::create_dir_all(&src_dir).unwrap();
 
-        let repo = make_mock_repo(
-            vec!["crates/test-crate/src".to_string()],
-            vec![],
-        );
+        let repo = make_mock_repo(vec!["crates/test-crate/src".to_string()], vec![]);
         let service = GraphServiceImpl::new(repo, None);
 
-        let result = service.build_architecture(tmp.path().to_str().unwrap()).await.unwrap();
+        let result = service
+            .build_architecture(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
 
         // Should have container + component
-        let component_nodes: Vec<_> = result.nodes.iter()
+        let component_nodes: Vec<_> = result
+            .nodes
+            .iter()
             .filter(|n| n.kind == "component")
             .collect();
         assert_eq!(component_nodes.len(), 1);
@@ -775,7 +856,9 @@ version = "0.1.0"
         assert_eq!(component_nodes[0].style_class, "node-component");
 
         // Should have part_of edge from component to container
-        let component_to_container: Vec<_> = result.edges.iter()
+        let component_to_container: Vec<_> = result
+            .edges
+            .iter()
             .filter(|e| e.source == "component:crates/test-crate/src" && e.relation == "part_of")
             .collect();
         assert_eq!(component_to_container.len(), 1);
@@ -797,47 +880,56 @@ version = "0.1.0"
             .map(|i| sym(&format!("func_{}", i), "crates/test-crate/src/lib.rs", i))
             .collect();
 
-        let repo = make_mock_repo(
-            vec!["crates/test-crate/src".to_string()],
-            symbols,
-        );
+        let repo = make_mock_repo(vec!["crates/test-crate/src".to_string()], symbols);
         let service = GraphServiceImpl::new(repo, None);
 
-        let result = service.build_architecture(tmp.path().to_str().unwrap()).await.unwrap();
+        let result = service
+            .build_architecture(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
 
         // Should have exactly 200 code nodes due to cap
-        let code_nodes: Vec<_> = result.nodes.iter()
-            .filter(|n| n.kind == "code")
-            .collect();
+        let code_nodes: Vec<_> = result.nodes.iter().filter(|n| n.kind == "code").collect();
         assert_eq!(code_nodes.len(), 200);
     }
 
     #[tokio::test]
     async fn build_architecture_creates_part_of_edges() {
         let tmp = TempDir::new().unwrap();
-        let workspace_name = tmp.path().file_name().unwrap().to_string_lossy().to_string();
+        let workspace_name = tmp
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         let expected_system_id = format!("system:{}", workspace_name.to_lowercase());
         let workspace_toml = tmp.path().join("Cargo.toml");
-        std::fs::write(&workspace_toml, r#"
+        std::fs::write(
+            &workspace_toml,
+            r#"
 [workspace]
 members = ["crates/test-crate"]
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let crate_dir = tmp.path().join("crates/test-crate");
         std::fs::create_dir_all(&crate_dir.join("src")).unwrap();
         std::fs::write(crate_dir.join("Cargo.toml"), "[lib]").unwrap();
 
         let symbols = vec![sym("my_func", "crates/test-crate/src/lib.rs", 10)];
-        let repo = make_mock_repo(
-            vec!["crates/test-crate/src".to_string()],
-            symbols,
-        );
+        let repo = make_mock_repo(vec!["crates/test-crate/src".to_string()], symbols);
         let service = GraphServiceImpl::new(repo, None);
 
-        let result = service.build_architecture(tmp.path().to_str().unwrap()).await.unwrap();
+        let result = service
+            .build_architecture(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
 
         // Should have edges: container->system, component->container, code->component
-        let part_of_edges: Vec<_> = result.edges.iter()
+        let part_of_edges: Vec<_> = result
+            .edges
+            .iter()
             .filter(|e| e.relation == "part_of")
             .collect();
         assert_eq!(part_of_edges.len(), 3); // 3 part_of edges
@@ -873,7 +965,10 @@ members = ["crates/test-crate"]
             .unwrap()
             .to_string_lossy()
             .to_string();
-        assert_eq!(system_nodes[0].id, format!("system:{}", workspace_name.to_lowercase()));
+        assert_eq!(
+            system_nodes[0].id,
+            format!("system:{}", workspace_name.to_lowercase())
+        );
         assert_eq!(system_nodes[0].label, workspace_name);
         assert_ne!(system_nodes[0].id, "system:cognicode");
     }
@@ -896,23 +991,28 @@ members = ["crates/test-crate"]
         // One function symbol — its kind is Function but inside a C4 component
         // it must surface as kind="code"
         let symbols = vec![sym("my_func", "crates/my-crate/src/lib.rs", 10)];
-        let repo = make_mock_repo(
-            vec!["crates/my-crate/src".to_string()],
-            symbols,
-        );
+        let repo = make_mock_repo(vec!["crates/my-crate/src".to_string()], symbols);
         let service = GraphServiceImpl::new(repo, None);
 
-        let result = service.build_architecture(tmp.path().to_str().unwrap()).await.unwrap();
+        let result = service
+            .build_architecture(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
 
         // There should be exactly one code node (the my_func symbol)
-        let code_nodes: Vec<_> = result.nodes.iter()
-            .filter(|n| n.kind == "code")
-            .collect();
-        assert_eq!(code_nodes.len(), 1, "expected exactly one code node, got: {:#?}", result.nodes);
+        let code_nodes: Vec<_> = result.nodes.iter().filter(|n| n.kind == "code").collect();
+        assert_eq!(
+            code_nodes.len(),
+            1,
+            "expected exactly one code node, got: {:#?}",
+            result.nodes
+        );
         assert_eq!(code_nodes[0].label, "my_func");
 
         // Ensure it is NOT emitted as kind="function"
-        let function_kind_nodes: Vec<_> = result.nodes.iter()
+        let function_kind_nodes: Vec<_> = result
+            .nodes
+            .iter()
             .filter(|n| n.kind == "function")
             .collect();
         assert!(

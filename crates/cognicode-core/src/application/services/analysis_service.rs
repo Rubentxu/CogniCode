@@ -293,20 +293,25 @@ impl AnalysisService {
             .collect();
 
         // Stage: parse — count what we got from the parallel extraction
-        let files_cached = results.iter().filter(|(_, _, _, _, was_parsed)| !was_parsed).count();
+        let files_cached = results
+            .iter()
+            .filter(|(_, _, _, _, was_parsed)| !was_parsed)
+            .count();
         let files_parsed = results.len() - files_cached;
         let total_symbols_extracted: usize = results
             .iter()
             .map(|(_, _, symbols, _, _)| symbols.len())
             .sum();
-        let total_relationships_found: usize = results
-            .iter()
-            .map(|(_, _, _, rels, _)| rels.len())
-            .sum();
+        let total_relationships_found: usize =
+            results.iter().map(|(_, _, _, rels, _)| rels.len()).sum();
 
         info!(
             "build_project_graph: stage=parse — {} files ({} parsed, {} cached), {} symbols, {} relationships",
-            results.len(), files_parsed, files_cached, total_symbols_extracted, total_relationships_found
+            results.len(),
+            files_parsed,
+            files_cached,
+            total_symbols_extracted,
+            total_relationships_found
         );
 
         if files_parsed == 0 && files_cached == 0 && files_with_lang > 0 {
@@ -364,7 +369,8 @@ impl AnalysisService {
         let edge_count = call_graph.edge_count();
 
         // Stage: done — final graph with per-language breakdown
-        let mut lang_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut lang_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         for symbol in call_graph.symbols() {
             let file = symbol.location().file();
             let lang = std::path::Path::new(file)
@@ -2097,7 +2103,6 @@ def d():
 
     #[tokio::test]
     async fn test_build_project_graph_async_completes_without_blocking() {
-        
         use tempfile::TempDir;
         use tokio::time::{Duration, timeout};
 

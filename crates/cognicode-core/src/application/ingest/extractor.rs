@@ -31,7 +31,9 @@ pub fn extract_file(
 ) -> ExtractionResult {
     let mut parser = Parser::new();
     let ts_lang = (config.ts_language)();
-    parser.set_language(&ts_lang).expect("failed to set tree-sitter language");
+    parser
+        .set_language(&ts_lang)
+        .expect("failed to set tree-sitter language");
 
     let tree = match parser.parse(source.as_bytes(), None) {
         Some(t) => t,
@@ -55,7 +57,12 @@ pub fn extract_file(
     // ── File-level node ────────────────────────────────────────────────
     let file_node_id = NodeId::new(&source_path_str);
     let file_node = GraphNode::builder(file_node_id.clone(), NodeKind::Symbol(SymbolKind::File))
-        .label(path.file_name().unwrap_or_default().to_string_lossy().into_owned())
+        .label(
+            path.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+        )
         .source_path(path.to_path_buf())
         .build();
     nodes.push(file_node);
@@ -205,7 +212,9 @@ fn extract_import_target(node: &Node, source: &[u8]) -> Option<String> {
         if let Some(child) = node.child_by_field_name(field) {
             let text = node_text(&child, source);
             // Strip quotes from string literals (JS/TS)
-            let cleaned = text.trim_matches(|c| c == '"' || c == '\'' || c == '`').to_string();
+            let cleaned = text
+                .trim_matches(|c| c == '"' || c == '\'' || c == '`')
+                .to_string();
             if !cleaned.is_empty() {
                 return Some(cleaned);
             }
@@ -216,7 +225,9 @@ fn extract_import_target(node: &Node, source: &[u8]) -> Option<String> {
     for child in node.children(&mut cursor) {
         if child.kind() == "string" || child.kind() == "string_content" {
             let text = node_text(&child, source);
-            let cleaned = text.trim_matches(|c| c == '"' || c == '\'' || c == '`').to_string();
+            let cleaned = text
+                .trim_matches(|c| c == '"' || c == '\'' || c == '`')
+                .to_string();
             if !cleaned.is_empty() {
                 return Some(cleaned);
             }
@@ -248,7 +259,9 @@ fn extract_calls_from_node(
             } else {
                 // First named child is the callee
                 let mut cursor = node.walk();
-                node.children(&mut cursor).next().map(|n| node_text(&n, source))
+                node.children(&mut cursor)
+                    .next()
+                    .map(|n| node_text(&n, source))
             };
 
             if let Some(callee) = callee_name {

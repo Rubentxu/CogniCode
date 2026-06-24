@@ -92,9 +92,7 @@ async fn multimodal_roundtrip_ingest_query() {
     let repo: Arc<dyn GraphRepository> = Arc::new(repo);
 
     // `find_nodes_by_kind` for each multimodal variant.
-    let docs = repo
-        .find_nodes_by_kind(&NodeKind::Doc)
-        .expect("find_docs");
+    let docs = repo.find_nodes_by_kind(&NodeKind::Doc).expect("find_docs");
     assert_eq!(docs.len(), 1);
     let decisions = repo
         .find_nodes_by_kind(&NodeKind::Decision)

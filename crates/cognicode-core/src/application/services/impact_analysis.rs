@@ -113,12 +113,7 @@ impl ImpactAnalysisService {
     /// Returns `false` (no panic) when either id is missing from the
     /// graph. The trivial self-path `A -> A` returns `true` when `A` is
     /// present.
-    pub fn has_path(
-        &self,
-        graph: &CallGraph,
-        from: &SymbolId,
-        to: &SymbolId,
-    ) -> bool {
+    pub fn has_path(&self, graph: &CallGraph, from: &SymbolId, to: &SymbolId) -> bool {
         let projection = CallGraphProjection::from_call_graph(graph);
         projection.has_path(from, to)
     }
@@ -163,11 +158,7 @@ impl ImpactAnalysisService {
     /// Returns `None` (no panic) when `id` is not in the graph. An
     /// isolated node (no edges) is its own component and returns
     /// `Some(vec![id])`.
-    pub fn containing_component(
-        &self,
-        graph: &CallGraph,
-        id: &SymbolId,
-    ) -> Option<Vec<SymbolId>> {
+    pub fn containing_component(&self, graph: &CallGraph, id: &SymbolId) -> Option<Vec<SymbolId>> {
         let projection = CallGraphProjection::from_call_graph(graph);
         projection
             .connected_components()
@@ -210,11 +201,7 @@ impl ImpactAnalysisService {
     /// `connected_components` BFS each yield their own canonical order;
     /// callers wanting order-insensitive equality should sort by
     /// `ClusterDto::members` (string form).
-    pub fn cluster_components(
-        &self,
-        graph: &CallGraph,
-        method: &str,
-    ) -> ClusterResultDto {
+    pub fn cluster_components(&self, graph: &CallGraph, method: &str) -> ClusterResultDto {
         let projection = CallGraphProjection::from_call_graph(graph);
         let clusters: Vec<Vec<SymbolId>> = match method {
             "scc" => projection.strongly_connected_components(),
@@ -461,7 +448,10 @@ mod tests {
             .shortest_path(&g, &id("A"), &id("B"))
             .expect("A -> B is reachable");
 
-        assert_eq!(result.path, vec!["test.rs:A:1".to_string(), "test.rs:B:1".to_string()]);
+        assert_eq!(
+            result.path,
+            vec!["test.rs:A:1".to_string(), "test.rs:B:1".to_string()]
+        );
         assert!(result.found);
         assert!(
             (result.total_cost - 0.0).abs() < 1e-9,
@@ -813,8 +803,14 @@ mod tests {
             .containing_component(&g, &id("C"))
             .expect("C is present");
 
-        assert_eq!(sorted_set(&comp_a), sorted_set(&[id("A"), id("B"), id("C")]));
-        assert_eq!(sorted_set(&comp_c), sorted_set(&[id("A"), id("B"), id("C")]));
+        assert_eq!(
+            sorted_set(&comp_a),
+            sorted_set(&[id("A"), id("B"), id("C")])
+        );
+        assert_eq!(
+            sorted_set(&comp_c),
+            sorted_set(&[id("A"), id("B"), id("C")])
+        );
 
         // No cycle in the linear chain.
         assert!(svc.detect_cycles(&g).is_empty());
@@ -836,9 +832,7 @@ mod tests {
     // land in Phase 2.
     // ---------------------------------------------------------------------
 
-    use crate::application::dto::{
-        ClusterResultDto, ExplainResultDto, SubgraphResultDto,
-    };
+    use crate::application::dto::{ClusterResultDto, ExplainResultDto, SubgraphResultDto};
     use crate::infrastructure::graph::SubgraphDirection;
 
     /// Service `subgraph` MUST mirror the projection `extract_subgraph`
@@ -852,16 +846,15 @@ mod tests {
         });
         let svc = ImpactAnalysisService::new();
 
-        let dto: SubgraphResultDto = svc.subgraph(
-            &g,
-            &id("A"),
-            SubgraphDirection::Outgoing,
-            2,
-        );
+        let dto: SubgraphResultDto = svc.subgraph(&g, &id("A"), SubgraphDirection::Outgoing, 2);
 
         let mut nodes_sorted = dto.nodes.clone();
         nodes_sorted.sort();
-        let mut expected_nodes = vec![id("A").as_str().to_string(), id("B").as_str().to_string(), id("C").as_str().to_string()];
+        let mut expected_nodes = vec![
+            id("A").as_str().to_string(),
+            id("B").as_str().to_string(),
+            id("C").as_str().to_string(),
+        ];
         expected_nodes.sort();
         assert_eq!(nodes_sorted, expected_nodes);
         assert_eq!(dto.edges.len(), 2, "two edges in subgraph dto");
@@ -911,8 +904,7 @@ mod tests {
             add_edge(g, "A", "B", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
-        let result: Option<ExplainResultDto> =
-            svc.explain_path(&g, &id("A"), &id("missing"));
+        let result: Option<ExplainResultDto> = svc.explain_path(&g, &id("A"), &id("missing"));
         let dto = result.expect("service must wrap None as Some(found:false)");
         assert!(!dto.found, "found must be false for missing endpoint");
         assert!(dto.hops.is_empty(), "no hops when no path");
@@ -927,8 +919,7 @@ mod tests {
             add_edge(g, "A", "B", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
-        let result: Option<ExplainResultDto> =
-            svc.explain_path(&g, &id("A"), &id("B"));
+        let result: Option<ExplainResultDto> = svc.explain_path(&g, &id("A"), &id("B"));
         let dto = result.expect("A -> B is reachable");
         assert!(dto.found);
         assert_eq!(dto.hops.len(), 1);

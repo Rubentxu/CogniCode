@@ -22,11 +22,11 @@ use crate::infrastructure::parser::LanguageConfig;
 /// approach to skip noise directories.
 pub fn walk_files(root: &Path) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = WalkBuilder::new(root)
-        .hidden(false)        // don't skip dotfiles
-        .git_ignore(true)     // respect .gitignore
-        .git_global(true)     // respect global .gitignore
-        .git_exclude(true)    // respect .git/info/exclude
-        .require_git(false)   // work even if not a git repo
+        .hidden(false) // don't skip dotfiles
+        .git_ignore(true) // respect .gitignore
+        .git_global(true) // respect global .gitignore
+        .git_exclude(true) // respect .git/info/exclude
+        .require_git(false) // work even if not a git repo
         .filter_entry(|entry| {
             // Skip noise directories
             if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
@@ -70,10 +70,7 @@ pub fn hash_files_parallel(paths: &[PathBuf]) -> Vec<(PathBuf, Option<String>)> 
 /// Classify a file by its extension into a `FileType` and optional
 /// `LanguageConfig` (for code files).
 pub fn classify_file(path: &Path) -> (FileType, Option<&'static str>) {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let lang = match ext.to_lowercase().as_str() {
         "rs" => Some("rust"),
         "py" | "pyw" => Some("python"),
@@ -135,13 +132,13 @@ pub fn scan_for_changes(
             .filter_map(|p| {
                 let rel = relative_to(root, p);
                 let (_, lang) = classify_file(p);
-                p.metadata()
-                    .ok()
-                    .and_then(|m| m.modified().ok())
-                    .map(|t| {
-                        let mtime = t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs_f64();
-                        (rel, mtime, lang)
-                    })
+                p.metadata().ok().and_then(|m| m.modified().ok()).map(|t| {
+                    let mtime = t
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs_f64();
+                    (rel, mtime, lang)
+                })
             })
             .collect();
         collected
@@ -306,7 +303,11 @@ mod tests {
         assert!(files.iter().any(|p| p.ends_with("src/lib.rs")));
         // Noise dirs should be skipped
         assert!(!files.iter().any(|p| p.to_string_lossy().contains("target")));
-        assert!(!files.iter().any(|p| p.to_string_lossy().contains("node_modules")));
+        assert!(
+            !files
+                .iter()
+                .any(|p| p.to_string_lossy().contains("node_modules"))
+        );
     }
 
     #[test]
@@ -324,14 +325,38 @@ mod tests {
 
     #[test]
     fn test_classify_file() {
-        assert_eq!(classify_file(Path::new("foo.rs")), (FileType::Code, Some("rust")));
-        assert_eq!(classify_file(Path::new("foo.py")), (FileType::Code, Some("python")));
-        assert_eq!(classify_file(Path::new("foo.ts")), (FileType::Code, Some("typescript")));
-        assert_eq!(classify_file(Path::new("foo.js")), (FileType::Code, Some("javascript")));
-        assert_eq!(classify_file(Path::new("foo.go")), (FileType::Code, Some("go")));
-        assert_eq!(classify_file(Path::new("foo.java")), (FileType::Code, Some("java")));
-        assert_eq!(classify_file(Path::new("foo.md")), (FileType::Document, None));
-        assert_eq!(classify_file(Path::new("foo.json")), (FileType::Config, None));
+        assert_eq!(
+            classify_file(Path::new("foo.rs")),
+            (FileType::Code, Some("rust"))
+        );
+        assert_eq!(
+            classify_file(Path::new("foo.py")),
+            (FileType::Code, Some("python"))
+        );
+        assert_eq!(
+            classify_file(Path::new("foo.ts")),
+            (FileType::Code, Some("typescript"))
+        );
+        assert_eq!(
+            classify_file(Path::new("foo.js")),
+            (FileType::Code, Some("javascript"))
+        );
+        assert_eq!(
+            classify_file(Path::new("foo.go")),
+            (FileType::Code, Some("go"))
+        );
+        assert_eq!(
+            classify_file(Path::new("foo.java")),
+            (FileType::Code, Some("java"))
+        );
+        assert_eq!(
+            classify_file(Path::new("foo.md")),
+            (FileType::Document, None)
+        );
+        assert_eq!(
+            classify_file(Path::new("foo.json")),
+            (FileType::Config, None)
+        );
         assert_eq!(classify_file(Path::new("foo.xyz")), (FileType::Other, None));
     }
 
@@ -358,13 +383,27 @@ mod tests {
                     .metadata()
                     .ok()
                     .and_then(|m| m.modified().ok())
-                    .map(|t| t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs_f64())
+                    .map(|t| {
+                        t.duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs_f64()
+                    })
                     .unwrap_or(0.0);
-                Some((rel, ScanEntry { content_hash: hash, mtime }))
+                Some((
+                    rel,
+                    ScanEntry {
+                        content_hash: hash,
+                        mtime,
+                    },
+                ))
             })
             .collect();
         let changes = scan_for_changes(dir.path(), &previous);
-        assert!(changes.is_empty(), "No changes expected, got: {:?}", changes);
+        assert!(
+            changes.is_empty(),
+            "No changes expected, got: {:?}",
+            changes
+        );
     }
 
     #[test]
@@ -377,7 +416,10 @@ mod tests {
         let mut previous = std::collections::HashMap::new();
         previous.insert(
             "main.rs".to_string(),
-            ScanEntry { content_hash: hash1.clone(), mtime: 1000.0 },
+            ScanEntry {
+                content_hash: hash1.clone(),
+                mtime: 1000.0,
+            },
         );
 
         // Modify the file
@@ -385,7 +427,10 @@ mod tests {
         fs::write(&path, "fn main() { println!(\"changed\"); }").unwrap();
 
         let changes = scan_for_changes(dir.path(), &previous);
-        let main_change = changes.iter().find(|c| c.path.ends_with("main.rs")).expect("main.rs changed");
+        let main_change = changes
+            .iter()
+            .find(|c| c.path.ends_with("main.rs"))
+            .expect("main.rs changed");
         assert_eq!(main_change.kind, ChangeKind::Changed);
     }
 
@@ -397,7 +442,10 @@ mod tests {
         let mut previous = std::collections::HashMap::new();
         previous.insert(
             "existing.rs".to_string(),
-            ScanEntry { content_hash: hash, mtime: 1000.0 },
+            ScanEntry {
+                content_hash: hash,
+                mtime: 1000.0,
+            },
         );
 
         // Delete the file

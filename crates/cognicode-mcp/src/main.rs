@@ -11,7 +11,11 @@ use std::path::PathBuf;
 use tracing::info;
 
 #[derive(Parser)]
-#[command(name = "cognicode-mcp", version, about = "CogniCode MCP Server — dual mode: standalone (default) or PG-connected (--postgres)")]
+#[command(
+    name = "cognicode-mcp",
+    version,
+    about = "CogniCode MCP Server — dual mode: standalone (default) or PG-connected (--postgres)"
+)]
 struct Args {
     #[arg(short, long, default_value = ".")]
     cwd: PathBuf,
@@ -45,18 +49,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize OpenTelemetry meter provider with OTLP exporter
     // Default endpoint: http://localhost:4317 (configurable via OTEL_EXPORTER_OTLP_ENDPOINT env var)
-    let exporter = MetricExporter::builder()
-        .with_tonic()
-        .build()?;
+    let exporter = MetricExporter::builder().with_tonic().build()?;
 
     let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(
         exporter,
         opentelemetry_sdk::runtime::Tokio,
     )
     .build();
-    let meter_provider = SdkMeterProvider::builder()
-        .with_reader(reader)
-        .build();
+    let meter_provider = SdkMeterProvider::builder().with_reader(reader).build();
 
     // Set the global meter provider
     global::set_meter_provider(meter_provider);
@@ -75,14 +75,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => {
             let msg = e.to_string();
             if msg.contains("already been initialized") {
-                tracing::warn!("Rayon global thread pool already initialized; using existing configuration");
+                tracing::warn!(
+                    "Rayon global thread pool already initialized; using existing configuration"
+                );
             } else {
                 panic!("Failed to initialize Rayon global thread pool: {}", e);
             }
         }
     }
 
-    info!("Starting CogniCode MCP Server v{}", env!("CARGO_PKG_VERSION"));
+    info!(
+        "Starting CogniCode MCP Server v{}",
+        env!("CARGO_PKG_VERSION")
+    );
 
     // Mode A (standalone) or Mode B (PG-connected) — both supported
     // (ADR-025). Falls back to DATABASE_URL env var when --postgres

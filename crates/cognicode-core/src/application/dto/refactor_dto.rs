@@ -114,8 +114,6 @@ impl RefactorPreviewDto {
 mod tests {
     use super::*;
     use crate::domain::aggregates::refactor::ValidationResult;
-    
-    
 
     #[test]
     fn test_refactor_plan_dto_new() {

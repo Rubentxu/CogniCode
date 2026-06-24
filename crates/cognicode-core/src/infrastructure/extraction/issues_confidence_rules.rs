@@ -174,12 +174,19 @@ fn has_fix_keyword(text: &str) -> bool {
         // non-alphanumeric char) and word boundary on the right
         // (whitespace, punctuation, or end of string). We use
         // simple ASCII checks to keep this pure.
-        lower.split(|c: char| !c.is_ascii_alphanumeric())
+        lower
+            .split(|c: char| !c.is_ascii_alphanumeric())
             .any(|w| w == kw)
     };
-    needle("fix") || needle("fixes") || needle("fixed")
-        || needle("close") || needle("closes") || needle("closed")
-        || needle("resolve") || needle("resolves") || needle("resolved")
+    needle("fix")
+        || needle("fixes")
+        || needle("fixed")
+        || needle("close")
+        || needle("closes")
+        || needle("closed")
+        || needle("resolve")
+        || needle("resolves")
+        || needle("resolved")
 }
 
 /// True when `text` mentions a 7-40 char hex SHA-1 / SHA-256
@@ -202,10 +209,8 @@ fn has_commit_sha(text: &str) -> bool {
                 // Confirm the blob is bounded by non-hex chars or
                 // string ends (so a `cafe` word doesn't count
                 // as a SHA-1).
-                let left_ok = start == 0
-                    || !bytes[start - 1].is_ascii_hexdigit();
-                let right_ok = i == bytes.len()
-                    || !bytes[i].is_ascii_hexdigit();
+                let left_ok = start == 0 || !bytes[start - 1].is_ascii_hexdigit();
+                let right_ok = i == bytes.len() || !bytes[i].is_ascii_hexdigit();
                 if left_ok && right_ok {
                     return true;
                 }
@@ -272,8 +277,7 @@ fn contains_keyword_issue(lower: &str, kw: &str) -> bool {
             // (or start of string), char after must be whitespace.
             let left_ok = i == 0 || !bytes[i - 1].is_ascii_alphanumeric();
             let after = i + kw_bytes.len();
-            let right_ok = after < bytes.len()
-                && (bytes[after] == b' ' || bytes[after] == b'\t');
+            let right_ok = after < bytes.len() && (bytes[after] == b' ' || bytes[after] == b'\t');
             if left_ok && right_ok {
                 // Skip the whitespace, then look for `#`.
                 let mut j = after;
@@ -316,9 +320,7 @@ fn contains_keyword_issue_zero(lower: &str, kw: &str) -> bool {
                 let digit_run = &bytes[digit_start..j];
                 // Issue-zero iff the run is non-empty and ALL
                 // digits are `0`.
-                if !digit_run.is_empty()
-                    && digit_run.iter().all(|b| *b == b'0')
-                {
+                if !digit_run.is_empty() && digit_run.iter().all(|b| *b == b'0') {
                     return true;
                 }
             }
@@ -340,8 +342,7 @@ fn contains_phrase_issue(lower: &str, phrase: &str) -> bool {
         if &bytes[i..i + phrase_bytes.len()] == phrase_bytes {
             let left_ok = i == 0 || !bytes[i - 1].is_ascii_alphanumeric();
             let after = i + phrase_bytes.len();
-            let right_ok = after < bytes.len()
-                && (bytes[after] == b' ' || bytes[after] == b'\t');
+            let right_ok = after < bytes.len() && (bytes[after] == b' ' || bytes[after] == b'\t');
             if left_ok && right_ok {
                 let mut j = after;
                 while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
@@ -389,11 +390,7 @@ fn looks_like_body_mention(line: &str) -> bool {
     let parts: Vec<&str> = target.split(':').collect();
     match parts.len() {
         2 => !parts[0].is_empty() && !parts[1].is_empty(),
-        3 => {
-            !parts[0].is_empty()
-                && !parts[1].is_empty()
-                && parts[2].parse::<i32>().is_ok()
-        }
+        3 => !parts[0].is_empty() && !parts[1].is_empty() && parts[2].parse::<i32>().is_ok(),
         _ => false,
     }
 }
@@ -540,10 +537,7 @@ mod tests {
             score_commit_fixes("FIXES #7 — typo"),
             ConfidenceTier::CommitFixes
         );
-        assert_eq!(
-            score_commit_fixes("closes #8"),
-            ConfidenceTier::CommitFixes
-        );
+        assert_eq!(score_commit_fixes("closes #8"), ConfidenceTier::CommitFixes);
         assert_eq!(
             score_commit_fixes("ReSoLvEs #9"),
             ConfidenceTier::CommitFixes
@@ -560,18 +554,9 @@ mod tests {
             score_explicit_link("just a comment"),
             ConfidenceTier::Unresolved
         );
-        assert_eq!(
-            score_commit_fixes(""),
-            ConfidenceTier::Unresolved
-        );
-        assert_eq!(
-            score_commit_refs(""),
-            ConfidenceTier::Unresolved
-        );
-        assert_eq!(
-            score_body_mention("   "),
-            ConfidenceTier::Unresolved
-        );
+        assert_eq!(score_commit_fixes(""), ConfidenceTier::Unresolved);
+        assert_eq!(score_commit_refs(""), ConfidenceTier::Unresolved);
+        assert_eq!(score_body_mention("   "), ConfidenceTier::Unresolved);
         assert_eq!(
             score_body_mention("https://example.com"),
             ConfidenceTier::Unresolved
@@ -604,10 +589,7 @@ mod tests {
         // Sample one explicit check to anchor the test in
         // observable behavior.
         for _ in 0..1000 {
-            assert_eq!(
-                score_commit_fixes("Fixes #1"),
-                ConfidenceTier::CommitFixes
-            );
+            assert_eq!(score_commit_fixes("Fixes #1"), ConfidenceTier::CommitFixes);
         }
     }
 
@@ -634,24 +616,15 @@ mod tests {
     /// input.
     #[test]
     fn fixes_issue_zero_returns_unresolved() {
-        assert_eq!(
-            score_commit_fixes("Fixes #0"),
-            ConfidenceTier::Unresolved
-        );
-        assert_eq!(
-            score_commit_fixes("Closes #0"),
-            ConfidenceTier::Unresolved
-        );
+        assert_eq!(score_commit_fixes("Fixes #0"), ConfidenceTier::Unresolved);
+        assert_eq!(score_commit_fixes("Closes #0"), ConfidenceTier::Unresolved);
     }
 
     /// `Fixes #01` is also rejected — issue 0 padded with
     /// leading zeros is still issue 0 in GitHub's view.
     #[test]
     fn fixes_issue_zero_padded_returns_unresolved() {
-        assert_eq!(
-            score_commit_fixes("Fixes #00"),
-            ConfidenceTier::Unresolved
-        );
+        assert_eq!(score_commit_fixes("Fixes #00"), ConfidenceTier::Unresolved);
     }
 
     // ---- Additional TDD coverage ----
@@ -664,14 +637,8 @@ mod tests {
     #[test]
     fn commit_fixes_wins_over_commit_refs_in_same_message() {
         let msg = "Fixes #10, Refs #11";
-        assert_eq!(
-            score_commit_fixes(msg),
-            ConfidenceTier::CommitFixes
-        );
-        assert_eq!(
-            score_commit_refs(msg),
-            ConfidenceTier::CommitRefs
-        );
+        assert_eq!(score_commit_fixes(msg), ConfidenceTier::CommitFixes);
+        assert_eq!(score_commit_refs(msg), ConfidenceTier::CommitRefs);
     }
 
     /// A SHA mention alone triggers `ExplicitLink` even without
@@ -710,10 +677,7 @@ mod tests {
     /// string.
     #[test]
     fn empty_commit_msg_is_unresolved() {
-        assert_eq!(
-            score_commit_fixes(""),
-            ConfidenceTier::Unresolved
-        );
+        assert_eq!(score_commit_fixes(""), ConfidenceTier::Unresolved);
     }
 
     /// `looks_like_body_mention` accepts a `file:name` shape

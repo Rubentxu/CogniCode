@@ -422,7 +422,6 @@ pub async fn handle_validate_syntax(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     // =========================================================================
     // handle_safe_refactor Tests - Rename Action
@@ -437,7 +436,9 @@ mod tests {
         let rust_file = tempdir_path.join("test.rs");
         std::fs::write(&rust_file, "fn foo() {}\nfn bar() { foo(); }").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::Rename,
@@ -460,7 +461,9 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap();
         let tempdir_path = tempdir.path();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::Rename,
@@ -489,7 +492,9 @@ mod tests {
         let rust_file = tempdir_path.join("test.rs");
         std::fs::write(&rust_file, "fn existing_func() {}\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::Rename,
@@ -531,7 +536,9 @@ fn process() {
         )
         .unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::Extract,
@@ -554,7 +561,9 @@ fn process() {
         let tempdir = tempfile::tempdir().unwrap();
         let tempdir_path = tempdir.path();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::Extract,
@@ -577,7 +586,9 @@ fn process() {
         let rust_file = tempdir_path.join("test.rs");
         std::fs::write(&rust_file, "fn foo() {}\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::Extract,
@@ -619,7 +630,9 @@ fn main() {
         )
         .unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::Inline,
@@ -643,7 +656,9 @@ fn main() {
         let rust_file = tempdir_path.join("test.rs");
         std::fs::write(&rust_file, "fn foo() {}\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::Inline,
@@ -679,7 +694,9 @@ fn process(x: i32, y: i32) -> i32 {
         )
         .unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::ChangeSignature,
@@ -705,7 +722,9 @@ fn process(x: i32, y: i32) -> i32 {
         let tempdir = tempfile::tempdir().unwrap();
         let tempdir_path = tempdir.path();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::ChangeSignature,
@@ -729,7 +748,9 @@ fn process(x: i32, y: i32) -> i32 {
         let tempdir = tempfile::tempdir().unwrap();
         let tempdir_path = tempdir.path();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::ChangeSignature,
@@ -760,7 +781,9 @@ fn process(x: i32, y: i32) -> i32 {
         std::fs::write(&source_file, "pub struct MyStruct {}\n").unwrap();
         std::fs::write(&target_file, "// target file\n").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::Move,
@@ -782,7 +805,9 @@ fn process(x: i32, y: i32) -> i32 {
         let tempdir = tempfile::tempdir().unwrap();
         let tempdir_path = tempdir.path();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::Move,
@@ -809,7 +834,9 @@ fn process(x: i32, y: i32) -> i32 {
         let tempdir = tempfile::tempdir().unwrap();
         let tempdir_path = tempdir.path();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::Move,
@@ -840,7 +867,9 @@ fn process(x: i32, y: i32) -> i32 {
         let tempdir = tempfile::tempdir().unwrap();
         let tempdir_path = tempdir.path();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         // Use a query pattern that might be rejected by validator
         let input = SafeRefactorInput {
@@ -861,7 +890,9 @@ fn process(x: i32, y: i32) -> i32 {
         let tempdir = tempfile::tempdir().unwrap();
         let tempdir_path = tempdir.path();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = SafeRefactorInput {
             action: RefactorAction::Rename,
@@ -896,7 +927,9 @@ fn main() {
         )
         .unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = ValidateSyntaxInput {
             file_path: rust_file.to_str().unwrap().to_string(),
@@ -917,7 +950,9 @@ fn main() {
         // Write invalid Rust code (missing closing brace)
         std::fs::write(&rust_file, "fn main() { println!(\"Hello\"); ").unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = ValidateSyntaxInput {
             file_path: rust_file.to_str().unwrap().to_string(),
@@ -935,7 +970,9 @@ fn main() {
         let tempdir = tempfile::tempdir().unwrap();
         let tempdir_path = tempdir.path();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = ValidateSyntaxInput {
             file_path: tempdir_path
@@ -969,7 +1006,9 @@ main()
         )
         .unwrap();
 
-        let ctx = HandlerContext::builder().with_working_dir(tempdir_path.to_path_buf()).build();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(tempdir_path.to_path_buf())
+            .build();
 
         let input = ValidateSyntaxInput {
             file_path: py_file.to_str().unwrap().to_string(),

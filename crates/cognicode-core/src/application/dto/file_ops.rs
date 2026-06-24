@@ -6,9 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 // Import shared types from common.rs
-use super::common::{
-    ContentMatch, EditValidation, FileEdit, FileMetadata,
-};
+use super::common::{ContentMatch, EditValidation, FileEdit, FileMetadata};
 
 // ============================================================================
 // Read File

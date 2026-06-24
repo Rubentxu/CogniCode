@@ -22,7 +22,10 @@ use serde_json::Value;
 
 use crate::mcp::envelope::{err_envelope, ok_envelope_with_provenance};
 use crate::mcp::handler::ToolHandler;
-use crate::mcp::{McpContext, ProvenanceMetadata, TOOL_BRAIN_OPEN, TOOL_BRAIN_ATTACH, TOOL_BRAIN_ASK, TOOL_BRAIN_FOCUS, TOOL_BRAIN_STATUS, TOOL_BRAIN_CLOSE};
+use crate::mcp::{
+    McpContext, ProvenanceMetadata, TOOL_BRAIN_ASK, TOOL_BRAIN_ATTACH, TOOL_BRAIN_CLOSE,
+    TOOL_BRAIN_FOCUS, TOOL_BRAIN_OPEN, TOOL_BRAIN_STATUS,
+};
 #[cfg(feature = "multimodal")]
 use crate::mcp::{TOOL_BRAIN_ADD_SPACE, TOOL_BRAIN_REMOVE_SPACE, TOOL_BRAIN_SPACES};
 use crate::session::DEFAULT_TTL_SECS;
@@ -172,25 +175,47 @@ impl ToolHandler for BrainOpenHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: BrainOpenArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return self.err("missing_required_arg", &format!("{TOOL_BRAIN_OPEN}: invalid args: {e}")),
+            Err(e) => {
+                return self.err(
+                    "missing_required_arg",
+                    &format!("{TOOL_BRAIN_OPEN}: invalid args: {e}"),
+                );
+            }
         };
 
         let workspace_id = match args.workspace_id {
             Some(w) if !w.is_empty() => w,
-            _ => return self.err("invalid_workspace_id", "missing or empty required arg `workspace_id`"),
+            _ => {
+                return self.err(
+                    "invalid_workspace_id",
+                    "missing or empty required arg `workspace_id`",
+                );
+            }
         };
 
         let ttl = args.ttl.unwrap_or(DEFAULT_TTL_SECS);
         if ttl > 86_400 {
-            return self.err("invalid_ttl", "ttl must be in 0..=86400 (24h); 0 disables expiry");
+            return self.err(
+                "invalid_ttl",
+                "ttl must be in 0..=86400 (24h); 0 disables expiry",
+            );
         }
 
         let session_id = ctx.session_registry.open(
             workspace_id.clone(),
             ttl,
-            ctx.search.as_ref().expect("search facade must be wired").clone(),
-            ctx.view.as_ref().expect("view facade must be wired").clone(),
-            ctx.workspace.as_ref().expect("workspace facade must be wired").clone(),
+            ctx.search
+                .as_ref()
+                .expect("search facade must be wired")
+                .clone(),
+            ctx.view
+                .as_ref()
+                .expect("view facade must be wired")
+                .clone(),
+            ctx.workspace
+                .as_ref()
+                .expect("workspace facade must be wired")
+                .clone(),
             ctx.graph.clone(),
         );
 
@@ -200,7 +225,7 @@ impl ToolHandler for BrainOpenHandler {
         #[cfg(feature = "multimodal")]
         if let Some(ref space_specs) = args.spaces {
             if !space_specs.is_empty() {
-                use cognicode_core::domain::value_objects::{SpaceId, SpaceKind, Space};
+                use cognicode_core::domain::value_objects::{Space, SpaceId, SpaceKind};
                 if let Ok(session) = ctx.session_registry.get(&session_id) {
                     for spec in space_specs {
                         if let (Some(name), Some(k)) = (&spec.space_name, &spec.space_kind) {
@@ -210,7 +235,9 @@ impl ToolHandler for BrainOpenHandler {
                                     "docs" => SpaceKind::Docs,
                                     "issues" => SpaceKind::Issues,
                                     other => {
-                                        space_errors.push(format!("unknown space_kind '{other}' for space '{name}'"));
+                                        space_errors.push(format!(
+                                            "unknown space_kind '{other}' for space '{name}'"
+                                        ));
                                         continue;
                                     }
                                 };
@@ -224,12 +251,15 @@ impl ToolHandler for BrainOpenHandler {
                                 let space = match Space::try_new(sid, name.clone(), kind) {
                                     Ok(s) => s,
                                     Err(e) => {
-                                        space_errors.push(format!("could not build space '{name}': {e}"));
+                                        space_errors
+                                            .push(format!("could not build space '{name}': {e}"));
                                         continue;
                                     }
                                 };
                                 let space = match spec.source_path {
-                                    Some(ref p) if !p.is_empty() => space.with_source_path(p.clone()),
+                                    Some(ref p) if !p.is_empty() => {
+                                        space.with_source_path(p.clone())
+                                    }
                                     _ => space,
                                 };
                                 if let Err(e) = session.add_space(space) {
@@ -249,7 +279,8 @@ impl ToolHandler for BrainOpenHandler {
             }
         }
 
-        let snap = ctx.session_registry
+        let snap = ctx
+            .session_registry
             .attach(&session_id)
             .expect("freshly opened session must be present")
             .snapshot();
@@ -305,7 +336,12 @@ impl ToolHandler for BrainAttachHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: BrainAttachArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return self.err("missing_required_arg", &format!("{TOOL_BRAIN_ATTACH}: invalid args: {e}")),
+            Err(e) => {
+                return self.err(
+                    "missing_required_arg",
+                    &format!("{TOOL_BRAIN_ATTACH}: invalid args: {e}"),
+                );
+            }
         };
 
         let session_id = match args.session_id {
@@ -313,16 +349,17 @@ impl ToolHandler for BrainAttachHandler {
             _ => return self.err("missing_required_arg", "missing required arg `session_id`"),
         };
 
-        ctx.session_registry.resolve_session_attached(TOOL_BRAIN_ATTACH, &session_id, |session| {
-            let snap = session.snapshot();
-            self.ok(&serde_json::json!({
-                "session_id": session_id,
-                "workspace_id": snap.workspace_id,
-                "last_activity": snap.last_activity,
-                "ttl_secs": snap.ttl,
-                "focus_node": snap.focus_node,
-            }))
-        })
+        ctx.session_registry
+            .resolve_session_attached(TOOL_BRAIN_ATTACH, &session_id, |session| {
+                let snap = session.snapshot();
+                self.ok(&serde_json::json!({
+                    "session_id": session_id,
+                    "workspace_id": snap.workspace_id,
+                    "last_activity": snap.last_activity,
+                    "ttl_secs": snap.ttl,
+                    "focus_node": snap.focus_node,
+                }))
+            })
     }
 }
 
@@ -366,7 +403,12 @@ impl ToolHandler for BrainAskHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: BrainAskArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return self.err("missing_required_arg", &format!("{TOOL_BRAIN_ASK}: invalid args: {e}")),
+            Err(e) => {
+                return self.err(
+                    "missing_required_arg",
+                    &format!("{TOOL_BRAIN_ASK}: invalid args: {e}"),
+                );
+            }
         };
 
         let session_id = match args.session_id {
@@ -379,21 +421,23 @@ impl ToolHandler for BrainAskHandler {
             _ => return self.err("missing_required_arg", "missing required arg `question`"),
         };
 
-        ctx.session_registry.resolve_session_async(TOOL_BRAIN_ASK, &session_id, |session| async move {
-            let mut env = session.ask_with_session(&question).await;
-            // Override provenance source to "brain-session" so consumers
-            // can distinguish brain-mediated answers from raw ask answers.
-            match env.provenance.as_mut() {
-                Some(p) => p.source = Some("brain-session".to_string()),
-                None => {
-                    env.provenance = Some(crate::mcp::ProvenanceMetadata {
-                        confidence: None,
-                        source: Some("brain-session".to_string()),
-                    });
+        ctx.session_registry
+            .resolve_session_async(TOOL_BRAIN_ASK, &session_id, |session| async move {
+                let mut env = session.ask_with_session(&question).await;
+                // Override provenance source to "brain-session" so consumers
+                // can distinguish brain-mediated answers from raw ask answers.
+                match env.provenance.as_mut() {
+                    Some(p) => p.source = Some("brain-session".to_string()),
+                    None => {
+                        env.provenance = Some(crate::mcp::ProvenanceMetadata {
+                            confidence: None,
+                            source: Some("brain-session".to_string()),
+                        });
+                    }
                 }
-            }
-            self.ok_brain_envelope(env)
-        }).await
+                self.ok_brain_envelope(env)
+            })
+            .await
     }
 }
 
@@ -403,7 +447,10 @@ impl BrainAskHandler {
     }
 
     /// Handle ask — returns the full nested envelope as the payload.
-    fn ok_brain_envelope(&self, env: crate::mcp::McpResultEnvelope<serde_json::Value>) -> CallToolResult {
+    fn ok_brain_envelope(
+        &self,
+        env: crate::mcp::McpResultEnvelope<serde_json::Value>,
+    ) -> CallToolResult {
         let json = serde_json::to_value(&env).unwrap_or(serde_json::Value::Null);
         ok_envelope_with_provenance(TOOL_BRAIN_ASK, &json, brain_provenance())
     }
@@ -440,7 +487,12 @@ impl ToolHandler for BrainFocusHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: BrainFocusArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return self.err("missing_required_arg", &format!("{TOOL_BRAIN_FOCUS}: invalid args: {e}")),
+            Err(e) => {
+                return self.err(
+                    "missing_required_arg",
+                    &format!("{TOOL_BRAIN_FOCUS}: invalid args: {e}"),
+                );
+            }
         };
 
         let session_id = match args.session_id {
@@ -451,19 +503,23 @@ impl ToolHandler for BrainFocusHandler {
         // Empty string is explicit error; None/null means clear.
         let focus = match args.focus_node {
             Some(ref f) if f.is_empty() => {
-                return self.err("invalid_focus_node", "focus_node must be a non-empty string or null");
+                return self.err(
+                    "invalid_focus_node",
+                    "focus_node must be a non-empty string or null",
+                );
             }
             Some(f) => Some(f),
             None => None,
         };
 
-        ctx.session_registry.resolve_session(TOOL_BRAIN_FOCUS, &session_id, |session| {
-            session.set_focus(focus.clone());
-            self.ok(&serde_json::json!({
-                "session_id": session_id,
-                "focus_node": focus,
-            }))
-        })
+        ctx.session_registry
+            .resolve_session(TOOL_BRAIN_FOCUS, &session_id, |session| {
+                session.set_focus(focus.clone());
+                self.ok(&serde_json::json!({
+                    "session_id": session_id,
+                    "focus_node": focus,
+                }))
+            })
     }
 }
 
@@ -503,7 +559,12 @@ impl ToolHandler for BrainStatusHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: BrainStatusArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return self.err("missing_required_arg", &format!("{TOOL_BRAIN_STATUS}: invalid args: {e}")),
+            Err(e) => {
+                return self.err(
+                    "missing_required_arg",
+                    &format!("{TOOL_BRAIN_STATUS}: invalid args: {e}"),
+                );
+            }
         };
 
         let session_id = match args.session_id {
@@ -511,12 +572,13 @@ impl ToolHandler for BrainStatusHandler {
             _ => return self.err("missing_required_arg", "missing required arg `session_id`"),
         };
 
-        ctx.session_registry.resolve_session(TOOL_BRAIN_STATUS, &session_id, |session| {
-            let snap = session.snapshot();
+        ctx.session_registry
+            .resolve_session(TOOL_BRAIN_STATUS, &session_id, |session| {
+                let snap = session.snapshot();
 
-            #[cfg(feature = "multimodal")]
-            {
-                let space_details: Vec<Value> = session
+                #[cfg(feature = "multimodal")]
+                {
+                    let space_details: Vec<Value> = session
                     .spaces()
                     .into_iter()
                     .map(|s| {
@@ -528,21 +590,24 @@ impl ToolHandler for BrainStatusHandler {
                         })
                     })
                     .collect();
-                let space_count = space_details.len();
-                let mut payload = serde_json::to_value(&snap).unwrap_or(Value::Null);
-                if let Some(ref mut obj) = payload.as_object_mut() {
-                    obj.insert("space_count".to_string(), serde_json::json!(space_count));
-                    obj.insert("space_details".to_string(), serde_json::json!(space_details));
+                    let space_count = space_details.len();
+                    let mut payload = serde_json::to_value(&snap).unwrap_or(Value::Null);
+                    if let Some(ref mut obj) = payload.as_object_mut() {
+                        obj.insert("space_count".to_string(), serde_json::json!(space_count));
+                        obj.insert(
+                            "space_details".to_string(),
+                            serde_json::json!(space_details),
+                        );
+                    }
+                    self.ok(&payload)
                 }
-                self.ok(&payload)
-            }
 
-            #[cfg(not(feature = "multimodal"))]
-            {
-                let payload = serde_json::to_value(&snap).unwrap_or(Value::Null);
-                self.ok(&payload)
-            }
-        })
+                #[cfg(not(feature = "multimodal"))]
+                {
+                    let payload = serde_json::to_value(&snap).unwrap_or(Value::Null);
+                    self.ok(&payload)
+                }
+            })
     }
 }
 
@@ -582,7 +647,12 @@ impl ToolHandler for BrainCloseHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: BrainCloseArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return self.err("missing_required_arg", &format!("{TOOL_BRAIN_CLOSE}: invalid args: {e}")),
+            Err(e) => {
+                return self.err(
+                    "missing_required_arg",
+                    &format!("{TOOL_BRAIN_CLOSE}: invalid args: {e}"),
+                );
+            }
         };
 
         let session_id = match args.session_id {
@@ -638,7 +708,12 @@ impl ToolHandler for BrainAddSpaceHandler {
 
         let args: BrainAddSpaceArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return self.err("missing_required_arg", &format!("{TOOL_BRAIN_ADD_SPACE}: invalid args: {e}")),
+            Err(e) => {
+                return self.err(
+                    "missing_required_arg",
+                    &format!("{TOOL_BRAIN_ADD_SPACE}: invalid args: {e}"),
+                );
+            }
         };
 
         let session_id = match args.session_id {
@@ -657,33 +732,48 @@ impl ToolHandler for BrainAddSpaceHandler {
             "repo" => SpaceKind::Repo,
             "docs" => SpaceKind::Docs,
             "issues" => SpaceKind::Issues,
-            other => return self.err("invalid_space_kind",
-                &format!("invalid space_kind `{other}`: expected one of Repo, Docs, Issues")),
+            other => {
+                return self.err(
+                    "invalid_space_kind",
+                    &format!("invalid space_kind `{other}`: expected one of Repo, Docs, Issues"),
+                );
+            }
         };
         let space_id = match SpaceId::try_new(space_name.clone()) {
             Ok(id) => id,
-            Err(_) => return self.err("invalid_space_id", "space name could not be converted to a valid space id"),
+            Err(_) => {
+                return self.err(
+                    "invalid_space_id",
+                    "space name could not be converted to a valid space id",
+                );
+            }
         };
         let space = match Space::try_new(space_id, space_name.clone(), space_kind) {
             Ok(s) => s,
-            Err(e) => return self.err("space_construction_error", &format!("failed to construct space: {e}")),
+            Err(e) => {
+                return self.err(
+                    "space_construction_error",
+                    &format!("failed to construct space: {e}"),
+                );
+            }
         };
         let space = match args.source_path {
             Some(ref p) if !p.is_empty() => space.with_source_path(p.clone()),
             _ => space,
         };
 
-        ctx.session_registry.resolve_session(TOOL_BRAIN_ADD_SPACE, &session_id, |session| {
-            if let Err(e) = session.add_space(space) {
-                return self.err("duplicate_space_id", &format!("duplicate space id: {e}"));
-            }
+        ctx.session_registry
+            .resolve_session(TOOL_BRAIN_ADD_SPACE, &session_id, |session| {
+                if let Err(e) = session.add_space(space) {
+                    return self.err("duplicate_space_id", &format!("duplicate space id: {e}"));
+                }
 
-            self.ok(&serde_json::json!({
-                "space_id": space_name,
-                "space_name": space_name,
-                "space_kind": space_kind.as_str(),
-            }))
-        })
+                self.ok(&serde_json::json!({
+                    "space_id": space_name,
+                    "space_name": space_name,
+                    "space_kind": space_kind.as_str(),
+                }))
+            })
     }
 }
 
@@ -725,7 +815,12 @@ impl ToolHandler for BrainRemoveSpaceHandler {
 
         let args: BrainRemoveSpaceArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return self.err("missing_required_arg", &format!("{TOOL_BRAIN_REMOVE_SPACE}: invalid args: {e}")),
+            Err(e) => {
+                return self.err(
+                    "missing_required_arg",
+                    &format!("{TOOL_BRAIN_REMOVE_SPACE}: invalid args: {e}"),
+                );
+            }
         };
 
         let session_id = match args.session_id {
@@ -738,13 +833,19 @@ impl ToolHandler for BrainRemoveSpaceHandler {
         };
         let space_id = match SpaceId::try_new(&space_id_str) {
             Ok(id) => id,
-            Err(_) => return self.err("invalid_space_id", &format!("invalid space_id `{space_id_str}`")),
+            Err(_) => {
+                return self.err(
+                    "invalid_space_id",
+                    &format!("invalid space_id `{space_id_str}`"),
+                );
+            }
         };
 
-        ctx.session_registry.resolve_session(TOOL_BRAIN_REMOVE_SPACE, &session_id, |session| {
-            let removed = session.remove_space(&space_id);
-            self.ok(&serde_json::json!({ "removed": removed }))
-        })
+        ctx.session_registry
+            .resolve_session(TOOL_BRAIN_REMOVE_SPACE, &session_id, |session| {
+                let removed = session.remove_space(&space_id);
+                self.ok(&serde_json::json!({ "removed": removed }))
+            })
     }
 }
 
@@ -783,7 +884,12 @@ impl ToolHandler for BrainSpacesHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: BrainSpacesArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return self.err("missing_required_arg", &format!("{TOOL_BRAIN_SPACES}: invalid args: {e}")),
+            Err(e) => {
+                return self.err(
+                    "missing_required_arg",
+                    &format!("{TOOL_BRAIN_SPACES}: invalid args: {e}"),
+                );
+            }
         };
 
         let session_id = match args.session_id {
@@ -791,22 +897,23 @@ impl ToolHandler for BrainSpacesHandler {
             _ => return self.err("missing_required_arg", "missing required arg `session_id`"),
         };
 
-        ctx.session_registry.resolve_session(TOOL_BRAIN_SPACES, &session_id, |session| {
-            let spaces: Vec<Value> = session
-                .spaces()
-                .into_iter()
-                .map(|s| {
-                    serde_json::json!({
-                        "id": s.id.as_str(),
-                        "name": s.name,
-                        "kind": s.kind.as_str(),
-                        "source_path": s.source_path.map(|p| p.to_string_lossy().into_owned()),
+        ctx.session_registry
+            .resolve_session(TOOL_BRAIN_SPACES, &session_id, |session| {
+                let spaces: Vec<Value> = session
+                    .spaces()
+                    .into_iter()
+                    .map(|s| {
+                        serde_json::json!({
+                            "id": s.id.as_str(),
+                            "name": s.name,
+                            "kind": s.kind.as_str(),
+                            "source_path": s.source_path.map(|p| p.to_string_lossy().into_owned()),
+                        })
                     })
-                })
-                .collect();
+                    .collect();
 
-            self.ok(&serde_json::json!({ "spaces": spaces }))
-        })
+                self.ok(&serde_json::json!({ "spaces": spaces }))
+            })
     }
 }
 
@@ -832,14 +939,20 @@ trait SchemaFields {
 impl SchemaFields for BrainOpenArgs {
     fn schema_fields() -> serde_json::Map<String, serde_json::Value> {
         let mut m = serde_json::Map::new();
-        m.insert("workspace_id".to_string(), serde_json::json!({
-            "type": "string",
-            "description": "Workspace identifier for the new session (required)."
-        }));
-        m.insert("ttl".to_string(), serde_json::json!({
-            "type": "integer",
-            "description": "Session time-to-live in seconds. 0 = no expiry. Range: 0..=86400."
-        }));
+        m.insert(
+            "workspace_id".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "description": "Workspace identifier for the new session (required)."
+            }),
+        );
+        m.insert(
+            "ttl".to_string(),
+            serde_json::json!({
+                "type": "integer",
+                "description": "Session time-to-live in seconds. 0 = no expiry. Range: 0..=86400."
+            }),
+        );
         m
     }
 }
@@ -847,10 +960,13 @@ impl SchemaFields for BrainOpenArgs {
 impl SchemaFields for BrainAttachArgs {
     fn schema_fields() -> serde_json::Map<String, serde_json::Value> {
         let mut m = serde_json::Map::new();
-        m.insert("session_id".to_string(), serde_json::json!({
-            "type": "string",
-            "description": "The session id to rejoin (required)."
-        }));
+        m.insert(
+            "session_id".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "description": "The session id to rejoin (required)."
+            }),
+        );
         m
     }
 }
@@ -858,14 +974,20 @@ impl SchemaFields for BrainAttachArgs {
 impl SchemaFields for BrainAskArgs {
     fn schema_fields() -> serde_json::Map<String, serde_json::Value> {
         let mut m = serde_json::Map::new();
-        m.insert("session_id".to_string(), serde_json::json!({
-            "type": "string",
-            "description": "Session id (required)."
-        }));
-        m.insert("question".to_string(), serde_json::json!({
-            "type": "string",
-            "description": "Natural-language question (required)."
-        }));
+        m.insert(
+            "session_id".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "description": "Session id (required)."
+            }),
+        );
+        m.insert(
+            "question".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "description": "Natural-language question (required)."
+            }),
+        );
         m
     }
 }
@@ -873,10 +995,13 @@ impl SchemaFields for BrainAskArgs {
 impl SchemaFields for BrainFocusArgs {
     fn schema_fields() -> serde_json::Map<String, serde_json::Value> {
         let mut m = serde_json::Map::new();
-        m.insert("session_id".to_string(), serde_json::json!({
-            "type": "string",
-            "description": "Session id (required)."
-        }));
+        m.insert(
+            "session_id".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "description": "Session id (required)."
+            }),
+        );
         m.insert("focus_node".to_string(), serde_json::json!({
             "type": "string",
             "description": "MVP id of the focus node. Omit or pass null to clear. Empty string is an error."
@@ -888,10 +1013,13 @@ impl SchemaFields for BrainFocusArgs {
 impl SchemaFields for BrainStatusArgs {
     fn schema_fields() -> serde_json::Map<String, serde_json::Value> {
         let mut m = serde_json::Map::new();
-        m.insert("session_id".to_string(), serde_json::json!({
-            "type": "string",
-            "description": "Session id (required)."
-        }));
+        m.insert(
+            "session_id".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "description": "Session id (required)."
+            }),
+        );
         m
     }
 }
@@ -899,10 +1027,13 @@ impl SchemaFields for BrainStatusArgs {
 impl SchemaFields for BrainCloseArgs {
     fn schema_fields() -> serde_json::Map<String, serde_json::Value> {
         let mut m = serde_json::Map::new();
-        m.insert("session_id".to_string(), serde_json::json!({
-            "type": "string",
-            "description": "Session id to close (required)."
-        }));
+        m.insert(
+            "session_id".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "description": "Session id to close (required)."
+            }),
+        );
         m
     }
 }
@@ -949,7 +1080,7 @@ pub fn register_session_handlers(registry: &mut crate::mcp::handler::ToolHandler
 #[cfg(test)]
 mod tests {
     use super::*;
-use rmcp::model::{CallToolResult, Content, RawContent};
+    use rmcp::model::{CallToolResult, Content, RawContent};
     use serde_json::json;
 
     // ------------------------------------------------------------------------
@@ -973,7 +1104,11 @@ use rmcp::model::{CallToolResult, Content, RawContent};
         assert!(result.is_error == Some(true));
         let items = &result.content;
         assert!(!items.is_empty());
-        let Content { raw: RawContent::Text(text), annotations: _ } = &items[0] else {
+        let Content {
+            raw: RawContent::Text(text),
+            annotations: _,
+        } = &items[0]
+        else {
             panic!("expected Content::Text");
         };
         let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
@@ -1009,11 +1144,8 @@ use rmcp::model::{CallToolResult, Content, RawContent};
 
     #[test]
     fn ok_envelope_with_provenance_returns_success_variant() {
-        let result = ok_envelope_with_provenance(
-            "brain_open",
-            &serde_json::json!({}),
-            brain_provenance(),
-        );
+        let result =
+            ok_envelope_with_provenance("brain_open", &serde_json::json!({}), brain_provenance());
         assert!(
             result.is_error == Some(false),
             "ok_envelope_with_provenance must return CallToolResult::success"
@@ -1030,7 +1162,11 @@ use rmcp::model::{CallToolResult, Content, RawContent};
         assert!(result.is_error == Some(false));
         let items = &result.content;
         assert!(!items.is_empty());
-        let Content { raw: RawContent::Text(text), annotations: _ } = &items[0] else {
+        let Content {
+            raw: RawContent::Text(text),
+            annotations: _,
+        } = &items[0]
+        else {
             panic!("expected Content::Text");
         };
         let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();

@@ -14,7 +14,9 @@ use std::sync::Arc;
 use cognicode_core::domain::aggregates::CallGraph;
 use cognicode_core::domain::traits::GraphQueryPort;
 
-use crate::facades::{GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService};
+use crate::facades::{
+    GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
+};
 use crate::session::SessionRegistry;
 
 /// Optional Generic Graph Layer port for multimodal queries.
@@ -58,10 +60,7 @@ pub struct McpContext {
 
 impl McpContext {
     /// Construct a new context from the primary ports.
-    pub fn new(
-        graph: Option<Arc<CallGraph>>,
-        session_registry: SessionRegistry,
-    ) -> Self {
+    pub fn new(graph: Option<Arc<CallGraph>>, session_registry: SessionRegistry) -> Self {
         Self {
             graph,
             session_registry,
@@ -208,7 +207,10 @@ impl McpContextBuilder {
 
     /// Wire an optional `GraphQueryPort` into the context (Phase 4).
     /// Passes through `None` when `graph_query` is `None`.
-    pub fn with_optional_graph_query(mut self, graph_query: Option<Arc<dyn GraphQueryPort>>) -> Self {
+    pub fn with_optional_graph_query(
+        mut self,
+        graph_query: Option<Arc<dyn GraphQueryPort>>,
+    ) -> Self {
         self.graph_query = graph_query;
         self
     }
@@ -224,9 +226,9 @@ impl McpContextBuilder {
     pub fn build(self) -> McpContext {
         McpContext {
             graph: self.graph.unwrap_or(None),
-            session_registry: self.session_registry.unwrap_or_else(|| {
-                crate::session::SessionRegistry::new()
-            }),
+            session_registry: self
+                .session_registry
+                .unwrap_or_else(|| crate::session::SessionRegistry::new()),
             #[cfg(feature = "multimodal")]
             graph_repo: self.graph_repo.unwrap_or(None),
             workspace: self.workspace,

@@ -62,8 +62,7 @@ pub fn ok_envelope_with_provenance<T: Serialize>(
     payload: &T,
     provenance: ProvenanceMetadata,
 ) -> CallToolResult {
-    let provenance_json =
-        serde_json::to_value(provenance).unwrap_or(serde_json::Value::Null);
+    let provenance_json = serde_json::to_value(provenance).unwrap_or(serde_json::Value::Null);
     let envelope = serde_json::json!({
         "tool_name": tool_name,
         "version": env!("CARGO_PKG_VERSION"),
@@ -120,7 +119,11 @@ mod tests {
         assert!(result.is_error == Some(false));
         let items = &result.content;
         assert!(!items.is_empty());
-        let Content { raw: RawContent::Text(text), annotations: _ } = &items[0] else {
+        let Content {
+            raw: RawContent::Text(text),
+            annotations: _,
+        } = &items[0]
+        else {
             panic!("expected Content::Text");
         };
         let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
@@ -165,7 +168,11 @@ mod tests {
         assert!(result.is_error == Some(true));
         let items = &result.content;
         assert!(!items.is_empty());
-        let Content { raw: RawContent::Text(text), annotations: _ } = &items[0] else {
+        let Content {
+            raw: RawContent::Text(text),
+            annotations: _,
+        } = &items[0]
+        else {
             panic!("expected Content::Text");
         };
         let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
@@ -190,7 +197,13 @@ mod tests {
         assert!(result.is_error == Some(true));
         let items = &result.content;
         assert!(!items.is_empty());
-        let Content { raw: RawContent::Text(text), annotations: _ } = &items[0] else { panic!() };
+        let Content {
+            raw: RawContent::Text(text),
+            annotations: _,
+        } = &items[0]
+        else {
+            panic!()
+        };
         let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
 
         let keys: Vec<_> = parsed.as_object().unwrap().keys().collect();
@@ -218,7 +231,11 @@ mod tests {
         assert!(result.is_error == Some(false));
         let items = &result.content;
         assert!(!items.is_empty());
-        let Content { raw: RawContent::Text(text), annotations: _ } = &items[0] else {
+        let Content {
+            raw: RawContent::Text(text),
+            annotations: _,
+        } = &items[0]
+        else {
             panic!("expected Content::Text");
         };
         let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
@@ -241,7 +258,11 @@ mod tests {
         assert!(result.is_error == Some(false));
         let items = &result.content;
         assert!(!items.is_empty());
-        let Content { raw: RawContent::Text(text), annotations: _ } = &items[0] else {
+        let Content {
+            raw: RawContent::Text(text),
+            annotations: _,
+        } = &items[0]
+        else {
             panic!("expected Content::Text");
         };
         let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
@@ -252,11 +273,8 @@ mod tests {
 
     #[test]
     fn ok_envelope_with_provenance_is_success_variant() {
-        let result = ok_envelope_with_provenance(
-            "test_tool",
-            &json!({}),
-            ProvenanceMetadata::default(),
-        );
+        let result =
+            ok_envelope_with_provenance("test_tool", &json!({}), ProvenanceMetadata::default());
         assert!(result.is_error == Some(false));
     }
 

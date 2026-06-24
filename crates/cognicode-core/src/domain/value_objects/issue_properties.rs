@@ -21,14 +21,12 @@
 use std::collections::HashMap;
 
 #[cfg(feature = "multimodal")]
-pub const ISSUE_REQUIRED_PROPERTIES: &[&str] = &[
-    "number", "title", "status", "url", "tracker", "repo",
-];
+pub const ISSUE_REQUIRED_PROPERTIES: &[&str] =
+    &["number", "title", "status", "url", "tracker", "repo"];
 
 #[cfg(feature = "multimodal")]
-pub const ISSUE_OPTIONAL_PROPERTIES: &[&str] = &[
-    "labels", "assignee", "author", "created_at", "updated_at",
-];
+pub const ISSUE_OPTIONAL_PROPERTIES: &[&str] =
+    &["labels", "assignee", "author", "created_at", "updated_at"];
 
 /// Recognised tracker values. V1 only implements `github`; the
 /// other three are reserved for future adapters.
@@ -85,7 +83,9 @@ impl std::str::FromStr for IssueTracker {
             "gitlab" => Ok(IssueTracker::Gitlab),
             "linear" => Ok(IssueTracker::Linear),
             "jira" => Ok(IssueTracker::Jira),
-            other => Err(format!("unknown tracker: '{other}' (expected one of: github, gitlab, linear, jira)")),
+            other => Err(format!(
+                "unknown tracker: '{other}' (expected one of: github, gitlab, linear, jira)"
+            )),
         }
     }
 }
@@ -139,9 +139,7 @@ impl std::str::FromStr for IssueStatus {
 /// Called by the extractor before emitting the node — fail-fast
 /// is the contract.
 #[cfg(feature = "multimodal")]
-pub fn validate_issue_properties(
-    props: &HashMap<String, String>,
-) -> Result<(), String> {
+pub fn validate_issue_properties(props: &HashMap<String, String>) -> Result<(), String> {
     // 1) Required keys are all present and non-empty.
     for key in ISSUE_REQUIRED_PROPERTIES {
         let value = props
@@ -152,18 +150,14 @@ pub fn validate_issue_properties(
         }
     }
     // 2) `status` is one of the known statuses.
-    let status = props
-        .get("status")
-        .expect("checked above; qed");
+    let status = props.get("status").expect("checked above; qed");
     if !ISSUE_STATUSES.contains(&status.as_str()) {
         return Err(format!(
             "unknown issue status: '{status}' (expected: open | closed)"
         ));
     }
     // 3) `tracker` is one of the known trackers.
-    let tracker = props
-        .get("tracker")
-        .expect("checked above; qed");
+    let tracker = props.get("tracker").expect("checked above; qed");
     if !ISSUE_TRACKERS.contains(&tracker.as_str()) {
         return Err(format!(
             "unknown issue tracker: '{tracker}' (expected one of: github, gitlab, linear, jira)"
@@ -305,7 +299,10 @@ mod tests {
         props.insert("number".into(), "42".into());
         props.insert("title".into(), "Null pointer in render path".into());
         props.insert("status".into(), "open".into());
-        props.insert("url".into(), "https://github.com/acme/widgets/issues/42".into());
+        props.insert(
+            "url".into(),
+            "https://github.com/acme/widgets/issues/42".into(),
+        );
         props.insert("tracker".into(), "github".into());
         props.insert("repo".into(), "acme/widgets".into());
         assert!(validate_issue_properties(&props).is_ok());
@@ -334,7 +331,10 @@ mod tests {
         props.insert("number".into(), "42".into());
         props.insert("title".into(), "x".into());
         props.insert("status".into(), "in_progress".into());
-        props.insert("url".into(), "https://github.com/acme/widgets/issues/42".into());
+        props.insert(
+            "url".into(),
+            "https://github.com/acme/widgets/issues/42".into(),
+        );
         props.insert("tracker".into(), "github".into());
         props.insert("repo".into(), "acme/widgets".into());
         let err = validate_issue_properties(&props).unwrap_err();
@@ -351,7 +351,10 @@ mod tests {
         props.insert("number".into(), "42".into());
         props.insert("title".into(), "x".into());
         props.insert("status".into(), "open".into());
-        props.insert("url".into(), "https://github.com/acme/widgets/issues/42".into());
+        props.insert(
+            "url".into(),
+            "https://github.com/acme/widgets/issues/42".into(),
+        );
         props.insert("tracker".into(), "bitbucket".into());
         props.insert("repo".into(), "acme/widgets".into());
         let err = validate_issue_properties(&props).unwrap_err();
@@ -388,8 +391,7 @@ mod tests {
     /// A canonical github.com URL parses to `(owner, repo)`.
     #[test]
     fn parse_github_url_canonical() {
-        let (owner, repo) =
-            parse_github_url("https://github.com/acme/widgets").expect("parse");
+        let (owner, repo) = parse_github_url("https://github.com/acme/widgets").expect("parse");
         assert_eq!(owner, "acme");
         assert_eq!(repo, "widgets");
     }
@@ -398,10 +400,8 @@ mod tests {
     /// parses to the same `(owner, repo)` — the tail is ignored.
     #[test]
     fn parse_github_url_with_path_tail() {
-        let (owner, repo) = parse_github_url(
-            "https://github.com/acme/widgets/issues/42",
-        )
-        .expect("parse");
+        let (owner, repo) =
+            parse_github_url("https://github.com/acme/widgets/issues/42").expect("parse");
         assert_eq!(owner, "acme");
         assert_eq!(repo, "widgets");
     }
@@ -409,8 +409,7 @@ mod tests {
     /// A non-github host is rejected (V1 only supports github.com).
     #[test]
     fn parse_github_url_rejects_ghe() {
-        let err = parse_github_url("https://ghe.acme.com/owner/repo")
-            .unwrap_err();
+        let err = parse_github_url("https://ghe.acme.com/owner/repo").unwrap_err();
         assert!(
             err.contains("ghe.acme.com") && err.contains("V1"),
             "expected error to name the host and V1, got: {err}"
@@ -421,8 +420,7 @@ mod tests {
     /// `https://` URLs).
     #[test]
     fn parse_github_url_rejects_no_scheme() {
-        let err =
-            parse_github_url("github.com/acme/widgets").unwrap_err();
+        let err = parse_github_url("github.com/acme/widgets").unwrap_err();
         assert!(err.contains("not a github.com URL"));
     }
 
@@ -464,10 +462,7 @@ mod tests {
     /// `IssueStatus::from_str` is case-insensitive.
     #[test]
     fn status_from_str_case_insensitive() {
-        assert_eq!(
-            "open".parse::<IssueStatus>().unwrap(),
-            IssueStatus::Open
-        );
+        assert_eq!("open".parse::<IssueStatus>().unwrap(), IssueStatus::Open);
         assert_eq!(
             "CLOSED".parse::<IssueStatus>().unwrap(),
             IssueStatus::Closed

@@ -14,9 +14,9 @@ use crate::dto::{
     DesignFinding, FindingSeverity, InspectableObjectType, LensDescriptor, LensResult,
 };
 use crate::error::ExplorerResult;
-use crate::ports::symbol_repository::{ResolvedSymbol, RelationTarget};
-use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
+use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol};
 use cognicode_core::domain::aggregates::SymbolId;
+use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 
 pub const LENS_ID: &str = "architecture";
 const FINDING_CAP: usize = 20;
@@ -97,7 +97,12 @@ fn analyse_scope(scope: &str, ctx: &LensContext, quality_present: bool) -> Vec<D
     // into this one). Used to detect "god modules".
     let mut incoming_counts: HashMap<String, BTreeSet<String>> = HashMap::new();
     for sym in &all {
-        for caller in ctx.graph_query.as_ref().map(|gq| gq.callers(&sym.id)).unwrap_or_default() {
+        for caller in ctx
+            .graph_query
+            .as_ref()
+            .map(|gq| gq.callers(&sym.id))
+            .unwrap_or_default()
+        {
             if crate::domain::views::scope_contains_file(scope, &caller.file) {
                 continue;
             }
@@ -120,7 +125,12 @@ fn analyse_scope(scope: &str, ctx: &LensContext, quality_present: bool) -> Vec<D
     // counting the unique parent dirs that are foreign.
     let mut foreign_callers: BTreeSet<String> = BTreeSet::new();
     for sym in &members {
-        for caller in ctx.graph_query.as_ref().map(|gq| gq.callers(&sym.id)).unwrap_or_default() {
+        for caller in ctx
+            .graph_query
+            .as_ref()
+            .map(|gq| gq.callers(&sym.id))
+            .unwrap_or_default()
+        {
             if !crate::domain::views::scope_contains_file(scope, &caller.file) {
                 foreign_callers.insert(parent_dir(&caller.file));
             }
@@ -201,10 +211,20 @@ fn analyse_file(file: &str, ctx: &LensContext, quality_present: bool) -> Vec<Des
         .unwrap_or_default();
     let mut scopes_touched: BTreeSet<String> = BTreeSet::new();
     for sym in &symbols {
-        for callee in ctx.graph_query.as_ref().map(|gq| gq.callees(&sym.id)).unwrap_or_default() {
+        for callee in ctx
+            .graph_query
+            .as_ref()
+            .map(|gq| gq.callees(&sym.id))
+            .unwrap_or_default()
+        {
             scopes_touched.insert(parent_dir(&callee.file));
         }
-        for caller in ctx.graph_query.as_ref().map(|gq| gq.callers(&sym.id)).unwrap_or_default() {
+        for caller in ctx
+            .graph_query
+            .as_ref()
+            .map(|gq| gq.callers(&sym.id))
+            .unwrap_or_default()
+        {
             scopes_touched.insert(parent_dir(&caller.file));
         }
     }
@@ -244,13 +264,23 @@ fn analyse_symbol(
     let mut findings = Vec::new();
     let own_scope = parent_dir(&symbol.file);
     let mut foreign_scopes: BTreeSet<String> = BTreeSet::new();
-    for callee in ctx.graph_query.as_ref().map(|gq| gq.callees(&symbol.id)).unwrap_or_default() {
+    for callee in ctx
+        .graph_query
+        .as_ref()
+        .map(|gq| gq.callees(&symbol.id))
+        .unwrap_or_default()
+    {
         let other = parent_dir(&callee.file);
         if other != own_scope {
             foreign_scopes.insert(other);
         }
     }
-    for caller in ctx.graph_query.as_ref().map(|gq| gq.callers(&symbol.id)).unwrap_or_default() {
+    for caller in ctx
+        .graph_query
+        .as_ref()
+        .map(|gq| gq.callers(&symbol.id))
+        .unwrap_or_default()
+    {
         let other = parent_dir(&caller.file);
         if other != own_scope {
             foreign_scopes.insert(other);
@@ -305,7 +335,12 @@ fn detect_scope_cycle(
             if parent_dir(&sym.file) != current {
                 continue;
             }
-            for callee in ctx.graph_query.as_ref().map(|gq| gq.callees(&sym.id)).unwrap_or_default() {
+            for callee in ctx
+                .graph_query
+                .as_ref()
+                .map(|gq| gq.callees(&sym.id))
+                .unwrap_or_default()
+            {
                 let other = parent_dir(&callee.file);
                 if other == current {
                     continue;
@@ -431,19 +466,37 @@ mod tests {
         fn fan_out(&self, id: &SymbolId) -> usize {
             self.callees.get(id.as_str()).map(|v| v.len()).unwrap_or(0)
         }
-        fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
+        fn callers_with_metadata(
+            &self,
+            _id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
             Vec::new()
         }
-        fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
+        fn callees_with_metadata(
+            &self,
+            _id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
             Vec::new()
         }
-        fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata> {
+        fn dependencies_with_metadata(
+            &self,
+            _id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata>
+        {
             Vec::new()
         }
-        fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
+        fn traverse_callees(
+            &self,
+            _id: &SymbolId,
+            _max_depth: u8,
+        ) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
             Vec::new()
         }
-        fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
+        fn traverse_callers(
+            &self,
+            _id: &SymbolId,
+            _max_depth: u8,
+        ) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
             Vec::new()
         }
     }

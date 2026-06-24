@@ -25,13 +25,13 @@ use crate::domain::traits::graph_store::GraphStore;
 use crate::domain::value_objects::Location;
 use crate::infrastructure::graph::GraphCache;
 use crate::infrastructure::graph::TraversalDirection;
-use crate::interface::mcp::security::InputValidator;
 use crate::infrastructure::lsp::CompositeProvider;
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::semantic::{
     SearchQuery, SearchSymbolKind, SemanticSearchService, SymbolCodeService,
 };
 use crate::infrastructure::verification::RustVerifier;
+use crate::interface::mcp::security::InputValidator;
 
 /// Error type for workspace operations
 #[derive(Debug, thiserror::Error)]
@@ -2927,8 +2927,6 @@ pub struct PublicStruct {}
     #[cfg(feature = "persistence")]
     #[tokio::test(flavor = "current_thread")]
     async fn test_load_from_store_with_valid_data_returns_true() {
-        
-        
         use crate::infrastructure::persistence::InMemoryGraphStore;
         use std::sync::Arc;
 
@@ -3054,8 +3052,6 @@ pub struct PublicStruct {}
 
     #[tokio::test(flavor = "current_thread")]
     async fn test_subscribe_graph_events_returns_receiver_that_receives_events() {
-        
-
         let temp_dir = tempfile::TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
         std::fs::write(&test_file, "pub fn test_function() {}").unwrap();
@@ -3407,8 +3403,6 @@ pub struct PublicStruct {}
     /// because AnalysisService and WorkspaceSession share the same GraphCache.
     #[tokio::test(flavor = "current_thread")]
     async fn test_shared_cache_prevents_double_build() {
-        
-
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
         std::fs::write(&test_file, "pub fn test_function() {}").unwrap();

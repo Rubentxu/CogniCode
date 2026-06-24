@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex};
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::traits::graph_store::{GraphStore, StoreError};
-use crate::domain::value_objects::file_manifest::FileManifest;
 use crate::domain::value_objects::CheckpointId;
+use crate::domain::value_objects::file_manifest::FileManifest;
 
 /// In-memory implementation of GraphStore for testing
 #[derive(Debug, Default)]
@@ -110,10 +110,7 @@ impl GraphStore for InMemoryGraphStore {
         }
     }
 
-    fn checkpoint_at(
-        &self,
-        id: CheckpointId,
-    ) -> Result<Option<Arc<CallGraph>>, StoreError> {
+    fn checkpoint_at(&self, id: CheckpointId) -> Result<Option<Arc<CallGraph>>, StoreError> {
         // Only id 1 is valid for a single-version store.
         if id != CheckpointId(1) {
             return Err(StoreError::CheckpointNotFound(id));
@@ -247,7 +244,9 @@ mod tests {
         let store = InMemoryGraphStore::new();
         store.save_graph(&create_test_graph()).unwrap();
         let result = store.checkpoint_at(CheckpointId(42));
-        assert!(matches!(result, Err(StoreError::CheckpointNotFound(id)) if id == CheckpointId(42)));
+        assert!(
+            matches!(result, Err(StoreError::CheckpointNotFound(id)) if id == CheckpointId(42))
+        );
     }
 
     #[test]

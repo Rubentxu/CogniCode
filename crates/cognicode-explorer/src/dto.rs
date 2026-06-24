@@ -263,7 +263,9 @@ pub enum InspectionTarget {
         symbols: Vec<ResolvedSymbol>,
     },
     Issue(QualityIssue),
-    Rule { rule_id: String },
+    Rule {
+        rule_id: String,
+    },
 }
 
 /// Context passed to ViewExecutor::build(). The service populates all
@@ -363,8 +365,6 @@ pub struct ViewBlock {
     pub body: serde_json::Value,
 }
 
-
-
 // ============================================================================
 // ExplorationSession — semantic exploration history (ADR-016 Fase 3)
 // ============================================================================
@@ -424,7 +424,9 @@ pub struct ExplorationSession {
     pub created_at: String,
 }
 
-fn default_pane_stack_navigation() -> String { "pane-stack".to_string() }
+fn default_pane_stack_navigation() -> String {
+    "pane-stack".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SaveExplorationSessionRequest {
@@ -1201,7 +1203,9 @@ impl Serialize for ViewKind {
             ViewKind::TestSlice => serializer.serialize_str("test_slice"),
             ViewKind::DebugSlice => serializer.serialize_str("debug_slice"),
             ViewKind::RefactorPlan => serializer.serialize_str("refactor_plan"),
-            ViewKind::CallersAndImplementors => serializer.serialize_str("callers_and_implementors"),
+            ViewKind::CallersAndImplementors => {
+                serializer.serialize_str("callers_and_implementors")
+            }
             ViewKind::UsageExamples => serializer.serialize_str("usage_examples"),
             ViewKind::ApiSurface => serializer.serialize_str("api_surface"),
             ViewKind::DeadCodeCandidates => serializer.serialize_str("dead_code_candidates"),
@@ -1619,7 +1623,10 @@ mod view_spec_tests {
         let back: ViewKind = serde_json::from_str(json).expect("deserialize");
         // Re-serialize and verify the original string is preserved
         let reserialized = serde_json::to_string(&back).expect("serialize");
-        assert_eq!(reserialized, json, "unknown tag must round-trip as original string");
+        assert_eq!(
+            reserialized, json,
+            "unknown tag must round-trip as original string"
+        );
     }
 
     #[test]
@@ -1635,7 +1642,10 @@ mod view_spec_tests {
         let json = r#""future_renderer_v3""#;
         let back: RendererKind = serde_json::from_str(json).expect("deserialize");
         let reserialized = serde_json::to_string(&back).expect("serialize");
-        assert_eq!(reserialized, json, "unknown renderer tag must round-trip as original string");
+        assert_eq!(
+            reserialized, json,
+            "unknown renderer tag must round-trip as original string"
+        );
     }
 
     #[test]
@@ -1643,7 +1653,10 @@ mod view_spec_tests {
         let json = r#""experimental_hierarchy_kind""#;
         let back: HierarchyKind = serde_json::from_str(json).expect("deserialize");
         let reserialized = serde_json::to_string(&back).expect("serialize");
-        assert_eq!(reserialized, json, "unknown hierarchy tag must round-trip as original string");
+        assert_eq!(
+            reserialized, json,
+            "unknown hierarchy tag must round-trip as original string"
+        );
     }
 
     // --- RendererKind serde round-trip ---
@@ -1890,7 +1903,10 @@ mod view_spec_tests {
 
     #[test]
     fn view_spec_error_display() {
-        assert_eq!(ViewSpecError::EmptyTitle.to_string(), "title must not be empty");
+        assert_eq!(
+            ViewSpecError::EmptyTitle.to_string(),
+            "title must not be empty"
+        );
         assert_eq!(
             ViewSpecError::TitleTooLong.to_string(),
             "title must not exceed 200 characters"
@@ -1903,7 +1919,10 @@ mod view_spec_tests {
             ViewSpecError::EmptyQuery.to_string(),
             "data_source query must not be empty"
         );
-        assert_eq!(ViewSpecError::InvalidUuid.to_string(), "id must be a valid UUID");
+        assert_eq!(
+            ViewSpecError::InvalidUuid.to_string(),
+            "id must be a valid UUID"
+        );
     }
 
     // --- ViewSpecError -> ExplorerError conversion ---
@@ -1950,15 +1969,17 @@ mod exploration_session_tests {
             workspace_id: "ws1".into(),
             events: vec![],
             navigation_mode: "pane-stack".into(),
-            panes: vec![
-                PaneSnapshot {
-                    pane_id: "pane-1".into(),
-                    object_id: "symbol:a".into(),
-                    view_id: "call_graph".into(),
-                    scroll_y: 42.0,
-                    viewport: Some(ViewportState { x: 10.0, y: 20.0, scale: 1.5 }),
-                },
-            ],
+            panes: vec![PaneSnapshot {
+                pane_id: "pane-1".into(),
+                object_id: "symbol:a".into(),
+                view_id: "call_graph".into(),
+                scroll_y: 42.0,
+                viewport: Some(ViewportState {
+                    x: 10.0,
+                    y: 20.0,
+                    scale: 1.5,
+                }),
+            }],
             created_at: "2026-06-20T00:00:00Z".into(),
         };
         let json = serde_json::to_string(&session).unwrap();

@@ -93,14 +93,16 @@ impl GraphRepository for InMemoryGraphRepository {
             })
             .collect();
         // Stable sort: higher score first, then by id for determinism.
-        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal).then_with(|| a.1.id.as_str().cmp(b.1.id.as_str())));
+        scored.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.1.id.as_str().cmp(b.1.id.as_str()))
+        });
 
         let raw_total = scored.len() as u64;
 
         // Apply cursor offset. The cursor format is "<offset>".
-        let offset: usize = cursor
-            .and_then(|c| c.parse::<usize>().ok())
-            .unwrap_or(0);
+        let offset: usize = cursor.and_then(|c| c.parse::<usize>().ok()).unwrap_or(0);
         if offset > scored.len() {
             return Ok(SearchPage {
                 items: Vec::new(),
@@ -176,9 +178,9 @@ impl GraphRepository for InMemoryGraphRepository {
             let key = (e.source.clone(), e.target.clone(), e.kind.clone());
             // Dedup: keep the edge with the highest confidence.
             if let Some(pos) = seen.get(&key).and_then(|k| {
-                results.iter().position(|r| {
-                    r.source == k.0 && r.target == k.1 && r.kind == k.2
-                })
+                results
+                    .iter()
+                    .position(|r| r.source == k.0 && r.target == k.1 && r.kind == k.2)
             }) {
                 if e.confidence > results[pos].confidence {
                     results[pos] = e.clone();
@@ -254,11 +256,7 @@ impl GraphRepository for InMemoryGraphRepository {
 
                 let is_new = visited.insert(e.target.clone());
                 if is_new {
-                    if let Some(target_node) = self
-                        .nodes
-                        .iter()
-                        .find(|n| n.id == e.target)
-                        .cloned()
+                    if let Some(target_node) = self.nodes.iter().find(|n| n.id == e.target).cloned()
                     {
                         nodes.push(target_node);
                     } else {

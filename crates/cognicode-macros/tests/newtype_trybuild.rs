@@ -22,6 +22,5 @@ fn test_newtype_ui_compile_fail() {
 
     let glob_pattern = ui_dir.join("*.rs");
 
-    trybuild::TestCases::new()
-        .compile_fail(glob_pattern.to_str().unwrap());
+    trybuild::TestCases::new().compile_fail(glob_pattern.to_str().unwrap());
 }

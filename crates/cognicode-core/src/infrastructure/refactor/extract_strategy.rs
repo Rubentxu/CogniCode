@@ -360,7 +360,32 @@ impl ExtractStrategy {
                     Language::Rust => format!("{}: /* inferred type */", var),
                     Language::Python => var.to_string(),
                     Language::JavaScript | Language::TypeScript => var.to_string(),
-                    Language::Go | Language::Java | Language::C | Language::Cpp | Language::CSharp | Language::Hcl | Language::Yaml | Language::Ruby | Language::Php | Language::Swift | Language::Scala | Language::Lua | Language::Zig | Language::Dart | Language::Groovy | Language::Elixir | Language::Erlang | Language::Haskell | Language::Julia | Language::Bash | Language::R | Language::PowerShell | Language::Json | Language::Fortran | Language::Verilog | Language::SystemVerilog  => var.to_string(),
+                    Language::Go
+                    | Language::Java
+                    | Language::C
+                    | Language::Cpp
+                    | Language::CSharp
+                    | Language::Hcl
+                    | Language::Yaml
+                    | Language::Ruby
+                    | Language::Php
+                    | Language::Swift
+                    | Language::Scala
+                    | Language::Lua
+                    | Language::Zig
+                    | Language::Dart
+                    | Language::Groovy
+                    | Language::Elixir
+                    | Language::Erlang
+                    | Language::Haskell
+                    | Language::Julia
+                    | Language::Bash
+                    | Language::R
+                    | Language::PowerShell
+                    | Language::Json
+                    | Language::Fortran
+                    | Language::Verilog
+                    | Language::SystemVerilog => var.to_string(),
                 }
             })
             .collect();
@@ -398,7 +423,31 @@ impl ExtractStrategy {
                     format!("function {}() {{\n    // body\n}}", name)
                 }
             }
-            Language::Go | Language::C | Language::Cpp | Language::CSharp | Language::Hcl | Language::Yaml | Language::Ruby | Language::Php | Language::Swift | Language::Scala | Language::Lua | Language::Zig | Language::Dart | Language::Groovy | Language::Elixir | Language::Erlang | Language::Haskell | Language::Julia | Language::Bash | Language::R | Language::PowerShell | Language::Json | Language::Fortran | Language::Verilog | Language::SystemVerilog  => {
+            Language::Go
+            | Language::C
+            | Language::Cpp
+            | Language::CSharp
+            | Language::Hcl
+            | Language::Yaml
+            | Language::Ruby
+            | Language::Php
+            | Language::Swift
+            | Language::Scala
+            | Language::Lua
+            | Language::Zig
+            | Language::Dart
+            | Language::Groovy
+            | Language::Elixir
+            | Language::Erlang
+            | Language::Haskell
+            | Language::Julia
+            | Language::Bash
+            | Language::R
+            | Language::PowerShell
+            | Language::Json
+            | Language::Fortran
+            | Language::Verilog
+            | Language::SystemVerilog => {
                 let return_type = if has_return {
                     if let Some(hint) = return_type_hint {
                         format!(" /* {} */", hint)
@@ -413,7 +462,31 @@ impl ExtractStrategy {
                     name, params_str, return_type
                 )
             }
-            Language::Java | Language::C | Language::Cpp | Language::CSharp | Language::Hcl | Language::Yaml | Language::Ruby | Language::Php | Language::Swift | Language::Scala | Language::Lua | Language::Zig | Language::Dart | Language::Groovy | Language::Elixir | Language::Erlang | Language::Haskell | Language::Julia | Language::Bash | Language::R | Language::PowerShell | Language::Json | Language::Fortran | Language::Verilog | Language::SystemVerilog  => {
+            Language::Java
+            | Language::C
+            | Language::Cpp
+            | Language::CSharp
+            | Language::Hcl
+            | Language::Yaml
+            | Language::Ruby
+            | Language::Php
+            | Language::Swift
+            | Language::Scala
+            | Language::Lua
+            | Language::Zig
+            | Language::Dart
+            | Language::Groovy
+            | Language::Elixir
+            | Language::Erlang
+            | Language::Haskell
+            | Language::Julia
+            | Language::Bash
+            | Language::R
+            | Language::PowerShell
+            | Language::Json
+            | Language::Fortran
+            | Language::Verilog
+            | Language::SystemVerilog => {
                 let return_type = if has_return {
                     if let Some(hint) = return_type_hint {
                         format!(" /* {} */", hint)
@@ -521,7 +594,31 @@ impl ExtractStrategy {
                     )
                 }
             }
-            Language::Go | Language::C | Language::Cpp | Language::CSharp | Language::Hcl | Language::Yaml | Language::Ruby | Language::Php | Language::Swift | Language::Scala | Language::Lua | Language::Zig | Language::Dart | Language::Groovy | Language::Elixir | Language::Erlang | Language::Haskell | Language::Julia | Language::Bash | Language::R | Language::PowerShell | Language::Json | Language::Fortran | Language::Verilog | Language::SystemVerilog  => {
+            Language::Go
+            | Language::C
+            | Language::Cpp
+            | Language::CSharp
+            | Language::Hcl
+            | Language::Yaml
+            | Language::Ruby
+            | Language::Php
+            | Language::Swift
+            | Language::Scala
+            | Language::Lua
+            | Language::Zig
+            | Language::Dart
+            | Language::Groovy
+            | Language::Elixir
+            | Language::Erlang
+            | Language::Haskell
+            | Language::Julia
+            | Language::Bash
+            | Language::R
+            | Language::PowerShell
+            | Language::Json
+            | Language::Fortran
+            | Language::Verilog
+            | Language::SystemVerilog => {
                 let return_type = if has_return { " /* return type */" } else { "" };
                 let body_str = if body.is_empty() {
                     "    /* body */".to_string()
@@ -535,7 +632,31 @@ impl ExtractStrategy {
                     name, params_str, return_type, body_str
                 )
             }
-            Language::Java | Language::C | Language::Cpp | Language::CSharp | Language::Hcl | Language::Yaml | Language::Ruby | Language::Php | Language::Swift | Language::Scala | Language::Lua | Language::Zig | Language::Dart | Language::Groovy | Language::Elixir | Language::Erlang | Language::Haskell | Language::Julia | Language::Bash | Language::R | Language::PowerShell | Language::Json | Language::Fortran | Language::Verilog | Language::SystemVerilog  => {
+            Language::Java
+            | Language::C
+            | Language::Cpp
+            | Language::CSharp
+            | Language::Hcl
+            | Language::Yaml
+            | Language::Ruby
+            | Language::Php
+            | Language::Swift
+            | Language::Scala
+            | Language::Lua
+            | Language::Zig
+            | Language::Dart
+            | Language::Groovy
+            | Language::Elixir
+            | Language::Erlang
+            | Language::Haskell
+            | Language::Julia
+            | Language::Bash
+            | Language::R
+            | Language::PowerShell
+            | Language::Json
+            | Language::Fortran
+            | Language::Verilog
+            | Language::SystemVerilog => {
                 let return_type = if has_return {
                     " /* ReturnType */"
                 } else {

@@ -13,8 +13,7 @@ use serde_json::json;
 use cognicode_core::infrastructure::persistence::PostgresRepository;
 
 use crate::dto::{
-    DecisionArtifactSummary, ExplorationSession,
-    GenerateArtifactRequest,
+    DecisionArtifactSummary, ExplorationSession, GenerateArtifactRequest,
     SaveExplorationSessionRequest, ViewSpec,
 };
 use crate::error::{ExplorerError, ExplorerResult};
@@ -172,17 +171,13 @@ impl PersistenceService for PersistenceServiceImpl {
                 .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("list_explorations: {e}")))?;
             let sessions: Vec<ExplorationSession> = rows
                 .into_iter()
-                .map(|row| {
-                    ExplorationSession {
-                        id: row.id,
-                        workspace_id: row.workspace_id,
-                        events: serde_json::from_str(&row.events.to_string())
-                            .unwrap_or_default(),
-                        navigation_mode: row.navigation_mode,
-                        panes: serde_json::from_str(&row.panes.to_string())
-                            .unwrap_or_default(),
-                        created_at: row.created_at,
-                    }
+                .map(|row| ExplorationSession {
+                    id: row.id,
+                    workspace_id: row.workspace_id,
+                    events: serde_json::from_str(&row.events.to_string()).unwrap_or_default(),
+                    navigation_mode: row.navigation_mode,
+                    panes: serde_json::from_str(&row.panes.to_string()).unwrap_or_default(),
+                    created_at: row.created_at,
                 })
                 .collect();
             return Ok(sessions);
@@ -259,23 +254,16 @@ impl PersistenceService for PersistenceServiceImpl {
                 let guard = self.sessions.lock().map_err(|_| {
                     ExplorerError::Anyhow(anyhow::anyhow!("session store poisoned"))
                 })?;
-                guard
-                    .get(session_id)
-                    .map(|s| s.workspace_id.clone())
+                guard.get(session_id).map(|s| s.workspace_id.clone())
             };
             if let Some(ws_id) = workspace_id {
-                if let Ok(Some(row)) = repo
-                    .load_exploration_session(session_id, &ws_id)
-                    .await
-                {
+                if let Ok(Some(row)) = repo.load_exploration_session(session_id, &ws_id).await {
                     return Ok(Some(ExplorationSession {
                         id: row.id,
                         workspace_id: row.workspace_id,
-                        events: serde_json::from_str(&row.events.to_string())
-                            .unwrap_or_default(),
+                        events: serde_json::from_str(&row.events.to_string()).unwrap_or_default(),
                         navigation_mode: row.navigation_mode,
-                        panes: serde_json::from_str(&row.panes.to_string())
-                            .unwrap_or_default(),
+                        panes: serde_json::from_str(&row.panes.to_string()).unwrap_or_default(),
                         created_at: row.created_at,
                     }));
                 }

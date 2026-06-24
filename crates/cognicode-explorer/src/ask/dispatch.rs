@@ -61,13 +61,21 @@ pub async fn dispatch_ask(
     }
 
     // 3. Build (primary_result, supporting) for the matched category.
-    let (primary_result, supporting) =
-        match dispatch_category(classified.category, &classified.entities, search, workspace, view, graph).await {
-            Ok(t) => t,
-            Err(message) => {
-                return error_envelope(&classified, message, entity_follow_ups);
-            }
-        };
+    let (primary_result, supporting) = match dispatch_category(
+        classified.category,
+        &classified.entities,
+        search,
+        workspace,
+        view,
+        graph,
+    )
+    .await
+    {
+        Ok(t) => t,
+        Err(message) => {
+            return error_envelope(&classified, message, entity_follow_ups);
+        }
+    };
 
     // 4. Deterministic follow-up generation. Combine the entity
     //    follow-ups with the category follow-ups; the spec requires
@@ -456,7 +464,10 @@ impl GraphRequired for QuestionCategory {
 mod tests {
     use super::*;
     use crate::ask::AskRouter;
-    use crate::dto::{InspectableObjectSummary, LensResult, SpotterResult, ViewDescriptorDto, WorkspaceSummary, OpenWorkspaceRequest};
+    use crate::dto::{
+        InspectableObjectSummary, LensResult, OpenWorkspaceRequest, SpotterResult,
+        ViewDescriptorDto, WorkspaceSummary,
+    };
     use async_trait::async_trait;
 
     // Helper — let the tests be tight. Build a question that maps to
@@ -486,7 +497,10 @@ mod tests {
         ) -> crate::ExplorerResult<Vec<crate::dto::SpotterSearchResult>> {
             Ok(vec![])
         }
-        async fn inspect_object(&self, _object_id: &str) -> crate::ExplorerResult<InspectableObjectSummary> {
+        async fn inspect_object(
+            &self,
+            _object_id: &str,
+        ) -> crate::ExplorerResult<InspectableObjectSummary> {
             Err(crate::error::ExplorerError::ObjectNotFound("mock".into()))
         }
     }
@@ -495,22 +509,46 @@ mod tests {
     struct MockViewService;
     #[async_trait]
     impl ViewService for MockViewService {
-        async fn available_views(&self, _object_id: &str) -> crate::ExplorerResult<Vec<ViewDescriptorDto>> {
+        async fn available_views(
+            &self,
+            _object_id: &str,
+        ) -> crate::ExplorerResult<Vec<ViewDescriptorDto>> {
             Ok(vec![])
         }
-        async fn contextual_view(&self, _object_id: &str, _view_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+        async fn contextual_view(
+            &self,
+            _object_id: &str,
+            _view_id: &str,
+        ) -> crate::ExplorerResult<crate::dto::ContextualView> {
             Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
         }
-        async fn build_contextual_graph(&self, _focus_id: &str, _level: &str, _depth: u8, _max_nodes: usize) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
+        async fn build_contextual_graph(
+            &self,
+            _focus_id: &str,
+            _level: &str,
+            _depth: u8,
+            _max_nodes: usize,
+        ) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
             Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
         }
-        async fn available_lenses(&self, _object_id: &str) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
+        async fn available_lenses(
+            &self,
+            _object_id: &str,
+        ) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
             Ok(vec![])
         }
-        async fn apply_lens(&self, _object_id: &str, _lens_id: &str) -> crate::ExplorerResult<LensResult> {
+        async fn apply_lens(
+            &self,
+            _object_id: &str,
+            _lens_id: &str,
+        ) -> crate::ExplorerResult<LensResult> {
             Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
         }
-        async fn execute_view_spec(&self, _spec: &crate::dto::ViewSpec, _object_id: &str) -> crate::ExplorerResult<crate::dto::ContextualView> {
+        async fn execute_view_spec(
+            &self,
+            _spec: &crate::dto::ViewSpec,
+            _object_id: &str,
+        ) -> crate::ExplorerResult<crate::dto::ContextualView> {
             Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
         }
     }
@@ -519,11 +557,18 @@ mod tests {
     struct MockWorkspaceService;
     #[async_trait]
     impl WorkspaceService for MockWorkspaceService {
-        async fn open_workspace(&self, _request: OpenWorkspaceRequest) -> crate::ExplorerResult<WorkspaceSummary> {
-            Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+        async fn open_workspace(
+            &self,
+            _request: OpenWorkspaceRequest,
+        ) -> crate::ExplorerResult<WorkspaceSummary> {
+            Err(crate::error::ExplorerError::WorkspaceNotFound(
+                "mock".into(),
+            ))
         }
         fn current_workspace(&self) -> crate::ExplorerResult<WorkspaceSummary> {
-            Err(crate::error::ExplorerError::WorkspaceNotFound("mock".into()))
+            Err(crate::error::ExplorerError::WorkspaceNotFound(
+                "mock".into(),
+            ))
         }
     }
 
@@ -586,15 +631,7 @@ mod tests {
         // remain available (4 and 8 per the spec).
         let (search, view, workspace) = build_mocks();
         let classified = run_classify("path between `a` and `b`").await;
-        let env = dispatch_ask(
-            classified,
-            &search,
-            &workspace,
-            &view,
-            &None,
-            None,
-        )
-        .await;
+        let env = dispatch_ask(classified, &search, &workspace, &view, &None, None).await;
         // No graph → graph_unavailable envelope, alternatives 4 and 8.
         let body = serde_json::to_string(&env).unwrap();
         assert!(
@@ -613,15 +650,7 @@ mod tests {
         // graph is None.
         let (search, view, workspace) = build_mocks();
         let classified = run_classify("any smells in `parse_config`?").await;
-        let env = dispatch_ask(
-            classified,
-            &search,
-            &workspace,
-            &view,
-            &None,
-            None,
-        )
-        .await;
+        let env = dispatch_ask(classified, &search, &workspace, &view, &None, None).await;
         // No graph_unavailable should appear — pattern 4 doesn't need
         // the graph.
         let body = serde_json::to_string(&env).unwrap();

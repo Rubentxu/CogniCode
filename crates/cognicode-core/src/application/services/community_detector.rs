@@ -290,8 +290,7 @@ impl CommunityDetector {
         dir_counts
             .into_iter()
             .max_by(|(d1, c1), (d2, c2)| {
-                c1.cmp(c2)
-                    .then_with(|| d1.cmp(d2)) // tie: lexicographic order
+                c1.cmp(c2).then_with(|| d1.cmp(d2)) // tie: lexicographic order
             })
             .map(|(d, _)| d.to_string())
             .unwrap_or_else(|| "unknown".to_string())
@@ -315,10 +314,7 @@ impl CommunityDetector {
                     .iter()
                     .filter_map(|n| all_scores.get(n).map(|&s| (n.clone(), s)))
                     .collect();
-                scored.sort_by(|a, b| {
-                    b.1.partial_cmp(&a.1)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
+                scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
                 scored.truncate(top_n);
                 (c.id, scored)
             })

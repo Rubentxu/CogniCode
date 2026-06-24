@@ -17,8 +17,8 @@ use serde_json::Value;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::{
-    McpContext, ProvenanceMetadata, TOOL_APPLY_LENS, TOOL_GET_LENSES,
-    TOOL_GET_VIEW, TOOL_GET_VIEWS, TOOL_QUERY_MOLDQL,
+    McpContext, ProvenanceMetadata, TOOL_APPLY_LENS, TOOL_GET_LENSES, TOOL_GET_VIEW,
+    TOOL_GET_VIEWS, TOOL_QUERY_MOLDQL,
 };
 
 // ============================================================================
@@ -438,12 +438,10 @@ impl ToolHandler for QueryMoldQLHandler {
         };
 
         let result: Result<crate::dto::MoldQLResultDto, _> = match target {
-            None => {
-                moldql_service
-                    .execute_query(&query)
-                    .await
-                    .map(crate::dto::MoldQLResultDto::from)
-            }
+            None => moldql_service
+                .execute_query(&query)
+                .await
+                .map(crate::dto::MoldQLResultDto::from),
             Some(tgt) => moldql_service
                 .execute_query_with_target(&query, tgt)
                 .await

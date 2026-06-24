@@ -68,11 +68,9 @@ pub fn resolve_backend(input: &ResolveInput) -> Result<Backend, String> {
         }
     }
 
-    Err(
-        "DATABASE_URL not set — cannot start explorer. \
+    Err("DATABASE_URL not set — cannot start explorer. \
          Set DATABASE_URL=postgres://... or pass --postgres <URL>"
-            .to_string(),
-    )
+        .to_string())
 }
 
 #[cfg(test)]
@@ -82,13 +80,19 @@ mod tests {
     #[test]
     fn unit_postgres_flag_wins() {
         let i = ResolveInput::new(Some("postgres://x".into())).with_env("postgres://e");
-        assert_eq!(resolve_backend(&i).unwrap(), Backend::Postgres("postgres://x".into()));
+        assert_eq!(
+            resolve_backend(&i).unwrap(),
+            Backend::Postgres("postgres://x".into())
+        );
     }
 
     #[test]
     fn unit_env_wins_over_postgres() {
         let i = ResolveInput::new(None).with_env("postgres://e");
-        assert_eq!(resolve_backend(&i).unwrap(), Backend::Postgres("postgres://e".into()));
+        assert_eq!(
+            resolve_backend(&i).unwrap(),
+            Backend::Postgres("postgres://e".into())
+        );
     }
 
     #[test]

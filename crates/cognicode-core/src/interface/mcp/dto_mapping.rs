@@ -9,18 +9,15 @@
 //! and do not require From impls here.
 
 use crate::application::dto::{
-    CallHierarchyEntry, EditFileRequest, EditFileResult,
-    GetCallHierarchyResult,
+    CallHierarchyEntry, EditFileRequest, EditFileResult, GetCallHierarchyResult,
     GetFileSymbolsResult, ListFilesRequest, ListFilesResult, ReadFileRequest, ReadFileResult,
-    ReadMode, SearchContentRequest, SearchContentResult,
-    SymbolKind, SymbolSummary,
+    ReadMode, SearchContentRequest, SearchContentResult, SymbolKind, SymbolSummary,
     WriteFileRequest, WriteFileResult,
 };
 use crate::interface::mcp::schemas::{
     CallEntry, EditFileInput, EditFileOutput, GetCallHierarchyOutput, GetFileSymbolsOutput,
     ListFilesInput, ListFilesOutput, ReadFileInput, ReadFileOutput, SearchContentInput,
-    SearchContentOutput, SymbolInfo,
-    SymbolKind as McpSymbolKind, WriteFileInput, WriteFileOutput,
+    SearchContentOutput, SymbolInfo, SymbolKind as McpSymbolKind, WriteFileInput, WriteFileOutput,
 };
 
 // ============================================================================
@@ -230,4 +227,3 @@ impl From<CallEntry> for CallHierarchyEntry {
         }
     }
 }
-

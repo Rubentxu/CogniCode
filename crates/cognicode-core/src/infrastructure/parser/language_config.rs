@@ -71,10 +71,8 @@ pub type SemanticHandlerFn = fn(
 /// Receives the tree-sitter node for a function/class definition and the
 /// source bytes. Returns type references extracted from the node's
 /// type annotations.
-pub type TypeRefWalkerFn = fn(
-    node: &tree_sitter::Node,
-    source: &[u8],
-) -> Vec<crate::application::ingest::types::TypeRef>;
+pub type TypeRefWalkerFn =
+    fn(node: &tree_sitter::Node, source: &[u8]) -> Vec<crate::application::ingest::types::TypeRef>;
 
 /// Sentinel value: no type-ref walker configured for this language.
 
@@ -148,7 +146,13 @@ pub const RUST_CONFIG: LanguageConfig = LanguageConfig {
     extensions: &["rs"],
     ts_language: || tree_sitter_rust::LANGUAGE.into(),
     function_types: &["function_item"],
-    class_types: &["struct_item", "enum_item", "trait_item", "impl_item", "union_item"],
+    class_types: &[
+        "struct_item",
+        "enum_item",
+        "trait_item",
+        "impl_item",
+        "union_item",
+    ],
     variable_types: &["let_declaration", "const_item", "static_item"],
     call_types: &["call_expression", "macro_invocation"],
     call_has_function_field: false,
@@ -179,13 +183,19 @@ pub const TYPESCRIPT_CONFIG: LanguageConfig = LanguageConfig {
     language: Language::TypeScript,
     extensions: &["ts", "tsx"],
     ts_language: || tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-    function_types: &["function_declaration", "method_definition", "arrow_function"],
+    function_types: &[
+        "function_declaration",
+        "method_definition",
+        "arrow_function",
+    ],
     class_types: &["class_declaration", "interface_declaration"],
     variable_types: &["variable_declaration", "lexical_declaration"],
     call_types: &["call_expression", "new_expression"],
     call_has_function_field: true,
     import_types: &["import_statement", "export_statement"],
-    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_typescript_type_refs),
+    type_ref_walker: Some(
+        crate::infrastructure::parser::type_ref_walkers::walk_typescript_type_refs,
+    ),
     semantic_handler: NO_SEMANTIC_HANDLER,
 };
 
@@ -195,13 +205,19 @@ pub const JAVASCRIPT_CONFIG: LanguageConfig = LanguageConfig {
     language: Language::JavaScript,
     extensions: &["js", "jsx", "mjs", "cjs"],
     ts_language: || tree_sitter_javascript::LANGUAGE.into(),
-    function_types: &["function_declaration", "method_definition", "arrow_function"],
+    function_types: &[
+        "function_declaration",
+        "method_definition",
+        "arrow_function",
+    ],
     class_types: &["class_declaration"],
     variable_types: &["variable_declaration", "lexical_declaration"],
     call_types: &["call_expression", "new_expression"],
     call_has_function_field: true,
     import_types: &["import_statement", "export_statement"],
-    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_typescript_type_refs),
+    type_ref_walker: Some(
+        crate::infrastructure::parser::type_ref_walkers::walk_typescript_type_refs,
+    ),
     semantic_handler: NO_SEMANTIC_HANDLER,
 };
 
@@ -228,7 +244,11 @@ pub const JAVA_CONFIG: LanguageConfig = LanguageConfig {
     extensions: &["java"],
     ts_language: || tree_sitter_java::LANGUAGE.into(),
     function_types: &["method_declaration", "constructor_declaration"],
-    class_types: &["class_declaration", "interface_declaration", "enum_declaration"],
+    class_types: &[
+        "class_declaration",
+        "interface_declaration",
+        "enum_declaration",
+    ],
     variable_types: &["local_variable_declaration", "field_declaration"],
     call_types: &["method_invocation"],
     call_has_function_field: false,
@@ -276,7 +296,12 @@ pub const CSHARP_CONFIG: LanguageConfig = LanguageConfig {
     extensions: &["cs"],
     ts_language: || tree_sitter_c_sharp::LANGUAGE.into(),
     function_types: &["method_declaration"],
-    class_types: &["class_declaration", "struct_declaration", "interface_declaration", "enum_declaration"],
+    class_types: &[
+        "class_declaration",
+        "struct_declaration",
+        "interface_declaration",
+        "enum_declaration",
+    ],
     variable_types: &["local_declaration_statement", "field_declaration"],
     call_types: &["invocation_expression"],
     call_has_function_field: true,
@@ -428,7 +453,11 @@ pub const PHP_CONFIG: LanguageConfig = LanguageConfig {
     extensions: &["php"],
     ts_language: || tree_sitter_php::LANGUAGE_PHP.into(),
     function_types: &["function_definition", "method_declaration"],
-    class_types: &["class_declaration", "interface_declaration", "trait_declaration"],
+    class_types: &[
+        "class_declaration",
+        "interface_declaration",
+        "trait_declaration",
+    ],
     variable_types: &["expression_statement"],
     call_types: &["function_call_expression", "method_call_expression"],
     call_has_function_field: true,
@@ -444,7 +473,12 @@ pub const SWIFT_CONFIG: LanguageConfig = LanguageConfig {
     extensions: &["swift"],
     ts_language: || tree_sitter_swift::LANGUAGE.into(),
     function_types: &["function_declaration", "method_declaration"],
-    class_types: &["class_declaration", "struct_declaration", "enum_declaration", "protocol_declaration"],
+    class_types: &[
+        "class_declaration",
+        "struct_declaration",
+        "enum_declaration",
+        "protocol_declaration",
+    ],
     variable_types: &["variable_declaration"],
     call_types: &["call_expression"],
     call_has_function_field: true,
@@ -453,13 +487,16 @@ pub const SWIFT_CONFIG: LanguageConfig = LanguageConfig {
     semantic_handler: NO_SEMANTIC_HANDLER,
 };
 
-
 pub const SCALA_CONFIG: LanguageConfig = LanguageConfig {
     language: Language::Scala,
     extensions: &["scala"],
     ts_language: || tree_sitter_scala::LANGUAGE.into(),
     function_types: &["function_declaration", "method_declaration"],
-    class_types: &["class_declaration", "object_declaration", "trait_declaration"],
+    class_types: &[
+        "class_declaration",
+        "object_declaration",
+        "trait_declaration",
+    ],
     variable_types: &["val_declaration", "var_declaration"],
     call_types: &["call_expression"],
     call_has_function_field: true,
@@ -524,16 +561,148 @@ pub const GROOVY_CONFIG: LanguageConfig = LanguageConfig {
     semantic_handler: NO_SEMANTIC_HANDLER,
 };
 
-pub const ELIXIR_CONFIG: LanguageConfig = LanguageConfig { language: Language::Elixir, extensions: &["ex","exs"], ts_language: || tree_sitter_elixir::LANGUAGE.into(), function_types: &["function"], class_types: &["module"], variable_types: &["variable_declaration"], call_types: &["call"], call_has_function_field: true, import_types: &["call"], type_ref_walker: NO_TYPE_REFS, semantic_handler: NO_SEMANTIC_HANDLER };
-pub const ERLANG_CONFIG: LanguageConfig = LanguageConfig { language: Language::Erlang, extensions: &["erl","hrl"], ts_language: || tree_sitter_erlang::LANGUAGE.into(), function_types: &["function_clause"], class_types: &["module"], variable_types: &["variable_declaration"], call_types: &["function_call"], call_has_function_field: true, import_types: &["function_call"], type_ref_walker: NO_TYPE_REFS, semantic_handler: NO_SEMANTIC_HANDLER };
-pub const HASKELL_CONFIG: LanguageConfig = LanguageConfig { language: Language::Haskell, extensions: &["hs"], ts_language: || tree_sitter_haskell::LANGUAGE.into(), function_types: &["function"], class_types: &["module"], variable_types: &["declaration"], call_types: &["application"], call_has_function_field: true, import_types: &["import"], type_ref_walker: NO_TYPE_REFS, semantic_handler: NO_SEMANTIC_HANDLER };
-pub const JULIA_CONFIG: LanguageConfig = LanguageConfig { language: Language::Julia, extensions: &["jl"], ts_language: || tree_sitter_julia::LANGUAGE.into(), function_types: &["function_definition"], class_types: &["module_definition"], variable_types: &["assignment"], call_types: &["call_expression"], call_has_function_field: true, import_types: &["import_statement"], type_ref_walker: NO_TYPE_REFS, semantic_handler: NO_SEMANTIC_HANDLER };
-pub const BASH_CONFIG: LanguageConfig = LanguageConfig { language: Language::Bash, extensions: &["sh","bash"], ts_language: || tree_sitter_bash::LANGUAGE.into(), function_types: &["function_definition"], class_types: &["function_definition"], variable_types: &["variable_assignment"], call_types: &["command"], call_has_function_field: true, import_types: &["command"], type_ref_walker: NO_TYPE_REFS, semantic_handler: NO_SEMANTIC_HANDLER };
+pub const ELIXIR_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Elixir,
+    extensions: &["ex", "exs"],
+    ts_language: || tree_sitter_elixir::LANGUAGE.into(),
+    function_types: &["function"],
+    class_types: &["module"],
+    variable_types: &["variable_declaration"],
+    call_types: &["call"],
+    call_has_function_field: true,
+    import_types: &["call"],
+    type_ref_walker: NO_TYPE_REFS,
+    semantic_handler: NO_SEMANTIC_HANDLER,
+};
+pub const ERLANG_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Erlang,
+    extensions: &["erl", "hrl"],
+    ts_language: || tree_sitter_erlang::LANGUAGE.into(),
+    function_types: &["function_clause"],
+    class_types: &["module"],
+    variable_types: &["variable_declaration"],
+    call_types: &["function_call"],
+    call_has_function_field: true,
+    import_types: &["function_call"],
+    type_ref_walker: NO_TYPE_REFS,
+    semantic_handler: NO_SEMANTIC_HANDLER,
+};
+pub const HASKELL_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Haskell,
+    extensions: &["hs"],
+    ts_language: || tree_sitter_haskell::LANGUAGE.into(),
+    function_types: &["function"],
+    class_types: &["module"],
+    variable_types: &["declaration"],
+    call_types: &["application"],
+    call_has_function_field: true,
+    import_types: &["import"],
+    type_ref_walker: NO_TYPE_REFS,
+    semantic_handler: NO_SEMANTIC_HANDLER,
+};
+pub const JULIA_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Julia,
+    extensions: &["jl"],
+    ts_language: || tree_sitter_julia::LANGUAGE.into(),
+    function_types: &["function_definition"],
+    class_types: &["module_definition"],
+    variable_types: &["assignment"],
+    call_types: &["call_expression"],
+    call_has_function_field: true,
+    import_types: &["import_statement"],
+    type_ref_walker: NO_TYPE_REFS,
+    semantic_handler: NO_SEMANTIC_HANDLER,
+};
+pub const BASH_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Bash,
+    extensions: &["sh", "bash"],
+    ts_language: || tree_sitter_bash::LANGUAGE.into(),
+    function_types: &["function_definition"],
+    class_types: &["function_definition"],
+    variable_types: &["variable_assignment"],
+    call_types: &["command"],
+    call_has_function_field: true,
+    import_types: &["command"],
+    type_ref_walker: NO_TYPE_REFS,
+    semantic_handler: NO_SEMANTIC_HANDLER,
+};
 
-pub const R_CONFIG: LanguageConfig = LanguageConfig { language: Language::R, extensions: &["r","R"], ts_language: || tree_sitter_r::LANGUAGE.into(), function_types: &["function_definition"], class_types: &["function_definition"], variable_types: &["assignment"], call_types: &["call"], call_has_function_field: true, import_types: &["call"], type_ref_walker: NO_TYPE_REFS, semantic_handler: NO_SEMANTIC_HANDLER };
-pub const POWERSHELL_CONFIG: LanguageConfig = LanguageConfig { language: Language::PowerShell, extensions: &["ps1","psm1"], ts_language: || tree_sitter_powershell::LANGUAGE.into(), function_types: &["function_definition"], class_types: &["function_definition"], variable_types: &["assignment"], call_types: &["command"], call_has_function_field: true, import_types: &["command"], type_ref_walker: NO_TYPE_REFS, semantic_handler: NO_SEMANTIC_HANDLER };
-pub const JSON_CONFIG: LanguageConfig = LanguageConfig { language: Language::Json, extensions: &["json"], ts_language: || tree_sitter_json::LANGUAGE.into(), function_types: &["object"], class_types: &["object"], variable_types: &["pair"], call_types: &["string"], call_has_function_field: false, import_types: &["object"], type_ref_walker: NO_TYPE_REFS, semantic_handler: NO_SEMANTIC_HANDLER };
+pub const R_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::R,
+    extensions: &["r", "R"],
+    ts_language: || tree_sitter_r::LANGUAGE.into(),
+    function_types: &["function_definition"],
+    class_types: &["function_definition"],
+    variable_types: &["assignment"],
+    call_types: &["call"],
+    call_has_function_field: true,
+    import_types: &["call"],
+    type_ref_walker: NO_TYPE_REFS,
+    semantic_handler: NO_SEMANTIC_HANDLER,
+};
+pub const POWERSHELL_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::PowerShell,
+    extensions: &["ps1", "psm1"],
+    ts_language: || tree_sitter_powershell::LANGUAGE.into(),
+    function_types: &["function_definition"],
+    class_types: &["function_definition"],
+    variable_types: &["assignment"],
+    call_types: &["command"],
+    call_has_function_field: true,
+    import_types: &["command"],
+    type_ref_walker: NO_TYPE_REFS,
+    semantic_handler: NO_SEMANTIC_HANDLER,
+};
+pub const JSON_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Json,
+    extensions: &["json"],
+    ts_language: || tree_sitter_json::LANGUAGE.into(),
+    function_types: &["object"],
+    class_types: &["object"],
+    variable_types: &["pair"],
+    call_types: &["string"],
+    call_has_function_field: false,
+    import_types: &["object"],
+    type_ref_walker: NO_TYPE_REFS,
+    semantic_handler: NO_SEMANTIC_HANDLER,
+};
 
-pub const FORTRAN_CONFIG: LanguageConfig = LanguageConfig { language: Language::Fortran, extensions: &["f","f90","f95","f03","f08"], ts_language: || tree_sitter_fortran::LANGUAGE.into(), function_types: &["function_definition"], class_types: &["module"], variable_types: &["variable_declaration"], call_types: &["call_expression"], call_has_function_field: true, import_types: &["use_statement"], type_ref_walker: NO_TYPE_REFS, semantic_handler: NO_SEMANTIC_HANDLER };
-pub const VERILOG_CONFIG: LanguageConfig = LanguageConfig { language: Language::Verilog, extensions: &["v"], ts_language: || tree_sitter_verilog::LANGUAGE.into(), function_types: &["module_declaration"], class_types: &["module_declaration"], variable_types: &["variable_declaration"], call_types: &["module_instantiation"], call_has_function_field: false, import_types: &["include_statement"], type_ref_walker: NO_TYPE_REFS, semantic_handler: NO_SEMANTIC_HANDLER };
-pub const SYSTEMVERILOG_CONFIG: LanguageConfig = LanguageConfig { language: Language::SystemVerilog, extensions: &["sv"], ts_language: || tree_sitter_systemverilog::LANGUAGE.into(), function_types: &["module_declaration"], class_types: &["module_declaration"], variable_types: &["variable_declaration"], call_types: &["module_instantiation"], call_has_function_field: false, import_types: &["include_statement"], type_ref_walker: NO_TYPE_REFS, semantic_handler: NO_SEMANTIC_HANDLER };
+pub const FORTRAN_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Fortran,
+    extensions: &["f", "f90", "f95", "f03", "f08"],
+    ts_language: || tree_sitter_fortran::LANGUAGE.into(),
+    function_types: &["function_definition"],
+    class_types: &["module"],
+    variable_types: &["variable_declaration"],
+    call_types: &["call_expression"],
+    call_has_function_field: true,
+    import_types: &["use_statement"],
+    type_ref_walker: NO_TYPE_REFS,
+    semantic_handler: NO_SEMANTIC_HANDLER,
+};
+pub const VERILOG_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Verilog,
+    extensions: &["v"],
+    ts_language: || tree_sitter_verilog::LANGUAGE.into(),
+    function_types: &["module_declaration"],
+    class_types: &["module_declaration"],
+    variable_types: &["variable_declaration"],
+    call_types: &["module_instantiation"],
+    call_has_function_field: false,
+    import_types: &["include_statement"],
+    type_ref_walker: NO_TYPE_REFS,
+    semantic_handler: NO_SEMANTIC_HANDLER,
+};
+pub const SYSTEMVERILOG_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::SystemVerilog,
+    extensions: &["sv"],
+    ts_language: || tree_sitter_systemverilog::LANGUAGE.into(),
+    function_types: &["module_declaration"],
+    class_types: &["module_declaration"],
+    variable_types: &["variable_declaration"],
+    call_types: &["module_instantiation"],
+    call_has_function_field: false,
+    import_types: &["include_statement"],
+    type_ref_walker: NO_TYPE_REFS,
+    semantic_handler: NO_SEMANTIC_HANDLER,
+};

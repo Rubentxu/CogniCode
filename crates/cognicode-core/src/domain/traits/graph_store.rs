@@ -10,8 +10,8 @@
 use std::sync::Arc;
 
 use crate::domain::aggregates::call_graph::CallGraph;
-use crate::domain::value_objects::file_manifest::FileManifest;
 use crate::domain::value_objects::CheckpointId;
+use crate::domain::value_objects::file_manifest::FileManifest;
 
 /// Error type for graph store operations
 #[derive(Debug, thiserror::Error)]
@@ -79,10 +79,7 @@ pub trait GraphStore: Send + Sync {
     ///
     /// Default impl panics. Single-version stores should override to
     /// return the current graph for any valid id.
-    fn checkpoint_at(
-        &self,
-        id: CheckpointId,
-    ) -> Result<Option<Arc<CallGraph>>, StoreError> {
+    fn checkpoint_at(&self, id: CheckpointId) -> Result<Option<Arc<CallGraph>>, StoreError> {
         panic!(
             "checkpoint_at not implemented for {} (id={})",
             std::any::type_name::<Self>(),

@@ -65,7 +65,13 @@ impl SearchService for SearchServiceImpl {
         let kind = kind.map(|s| s.to_string());
 
         tokio::task::spawn_blocking(move || {
-            spotter_search_impl(&repo, search.as_ref(), &view_registry, &query, kind.as_deref())
+            spotter_search_impl(
+                &repo,
+                search.as_ref(),
+                &view_registry,
+                &query,
+                kind.as_deref(),
+            )
         })
         .await
         .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("join error: {e}")))?
@@ -109,8 +115,10 @@ impl SearchService for SearchServiceImpl {
         }
 
         // 3) Build symbol results as SpotterSearchResult
-        let symbol_hits: Vec<SpotterSearchResult> =
-            symbol_results.into_iter().map(SpotterSearchResult::Symbol).collect();
+        let symbol_hits: Vec<SpotterSearchResult> = symbol_results
+            .into_iter()
+            .map(SpotterSearchResult::Symbol)
+            .collect();
 
         // 4) Merge: symbols first, then ViewSpecs
         let mut all_hits: Vec<SpotterSearchResult> =
@@ -249,15 +257,9 @@ fn inspect_object_impl(
 ) -> ExplorerResult<InspectableObjectSummary> {
     let identity = ObjectIdentity::parse_mvp_id(object_id)?;
     match &identity {
-        ObjectIdentity::Symbol { .. } => {
-            inspect_symbol_impl(repo, view_registry, &identity)
-        }
-        ObjectIdentity::File { path } => {
-            inspect_file_impl(repo, view_registry, &identity, path)
-        }
-        ObjectIdentity::Scope { path } => {
-            inspect_scope_impl(repo, view_registry, &identity, path)
-        }
+        ObjectIdentity::Symbol { .. } => inspect_symbol_impl(repo, view_registry, &identity),
+        ObjectIdentity::File { path } => inspect_file_impl(repo, view_registry, &identity, path),
+        ObjectIdentity::Scope { path } => inspect_scope_impl(repo, view_registry, &identity, path),
         ObjectIdentity::QualityIssue { id } => {
             inspect_quality_issue_impl(quality, view_registry, &identity, *id)
         }
@@ -583,13 +585,23 @@ fn build_summary_properties(
         },
         Property {
             key: "fan_in".into(),
-            value: Value::Number(graph_query.map(|gq| gq.fan_in(&resolved.id)).unwrap_or(0).into()),
+            value: Value::Number(
+                graph_query
+                    .map(|gq| gq.fan_in(&resolved.id))
+                    .unwrap_or(0)
+                    .into(),
+            ),
             value_type: "usize".into(),
             source: "CallGraph".into(),
         },
         Property {
             key: "fan_out".into(),
-            value: Value::Number(graph_query.map(|gq| gq.fan_out(&resolved.id)).unwrap_or(0).into()),
+            value: Value::Number(
+                graph_query
+                    .map(|gq| gq.fan_out(&resolved.id))
+                    .unwrap_or(0)
+                    .into(),
+            ),
             value_type: "usize".into(),
             source: "CallGraph".into(),
         },

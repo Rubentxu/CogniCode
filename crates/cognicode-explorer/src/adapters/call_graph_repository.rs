@@ -13,9 +13,7 @@ use cognicode_core::domain::traits::graph_query_port::{
 use cognicode_core::domain::value_objects::{DependencyType, Provenance};
 
 use crate::error::{ExplorerError, ExplorerResult};
-use crate::ports::symbol_repository::{
-    GraphStats, ResolvedSymbol, SymbolRepository,
-};
+use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};
 
 /// Adapter that exposes a `CallGraph` through the explorer port.
 pub struct CallGraphRepository {
@@ -178,11 +176,13 @@ impl GraphQueryPort for CallGraphRepository {
         self.graph
             .edges_with_metadata()
             .filter(|(_, target, _, _, _)| target == id)
-            .map(|(source, _, _, provenance, confidence)| CallerWithMetadata {
-                caller_id: source,
-                provenance,
-                confidence,
-            })
+            .map(
+                |(source, _, _, provenance, confidence)| CallerWithMetadata {
+                    caller_id: source,
+                    provenance,
+                    confidence,
+                },
+            )
             .collect()
     }
 
@@ -190,12 +190,14 @@ impl GraphQueryPort for CallGraphRepository {
         self.graph
             .callees_with_metadata(id)
             .into_iter()
-            .map(|(callee_id, dependency_type, provenance, confidence)| CalleeWithMetadata {
-                callee_id,
-                dependency_type,
-                provenance,
-                confidence,
-            })
+            .map(
+                |(callee_id, dependency_type, provenance, confidence)| CalleeWithMetadata {
+                    callee_id,
+                    dependency_type,
+                    provenance,
+                    confidence,
+                },
+            )
             .collect()
     }
 

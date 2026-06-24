@@ -113,7 +113,8 @@ mod tests {
 
     #[test]
     fn test_missing_status() {
-        let result: InterfaceResult<String> = Err(InterfaceError::ToolNotFound("unknown_tool".to_string()));
+        let result: InterfaceResult<String> =
+            Err(InterfaceError::ToolNotFound("unknown_tool".to_string()));
         assert_eq!(classify_status("unknown_tool", &result), "missing");
     }
 
@@ -135,13 +136,16 @@ mod tests {
 
     #[test]
     fn test_error_status() {
-        let result: InterfaceResult<String> = Err(InterfaceError::InvalidInput("bad input".to_string()));
+        let result: InterfaceResult<String> =
+            Err(InterfaceError::InvalidInput("bad input".to_string()));
         assert_eq!(classify_status("get_file_symbols", &result), "error");
     }
 
     #[test]
     fn test_error_status_domain() {
-        let result: InterfaceResult<String> = Err(InterfaceError::Domain(crate::domain::error::DomainError::SymbolNotFound("foo".to_string())));
+        let result: InterfaceResult<String> = Err(InterfaceError::Domain(
+            crate::domain::error::DomainError::SymbolNotFound("foo".to_string()),
+        ));
         assert_eq!(classify_status("get_file_symbols", &result), "error");
     }
 

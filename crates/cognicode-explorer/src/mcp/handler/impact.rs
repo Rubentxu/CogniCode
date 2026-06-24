@@ -21,9 +21,9 @@ use serde_json::Value;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::{
-    McpContext, DEFAULT_IMPACT_RADIUS_DEPTH,
-    TOOL_IMPACT_COMPONENT, TOOL_IMPACT_DETECT_CYCLES, TOOL_IMPACT_FORWARD_RADIUS,
-    TOOL_IMPACT_HAS_PATH, TOOL_IMPACT_RADIUS, TOOL_IMPACT_SHORTEST_PATH,
+    DEFAULT_IMPACT_RADIUS_DEPTH, McpContext, TOOL_IMPACT_COMPONENT, TOOL_IMPACT_DETECT_CYCLES,
+    TOOL_IMPACT_FORWARD_RADIUS, TOOL_IMPACT_HAS_PATH, TOOL_IMPACT_RADIUS,
+    TOOL_IMPACT_SHORTEST_PATH,
 };
 
 // ============================================================================
@@ -109,8 +109,13 @@ impl ToolHandler for ImpactRadiusHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: ImpactRadiusArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_IMPACT_RADIUS, "invalid_args",
-                &format!("{TOOL_IMPACT_RADIUS}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_IMPACT_RADIUS,
+                    "invalid_args",
+                    &format!("{TOOL_IMPACT_RADIUS}: invalid args: {e}"),
+                );
+            }
         };
 
         let g = match require_graph(ctx, TOOL_IMPACT_RADIUS) {
@@ -120,8 +125,13 @@ impl ToolHandler for ImpactRadiusHandler {
 
         let root = match args.root {
             Some(r) if !r.is_empty() => r,
-            _ => return err_envelope(TOOL_IMPACT_RADIUS, "missing_required_arg",
-                "impact_radius: missing required arg `root`"),
+            _ => {
+                return err_envelope(
+                    TOOL_IMPACT_RADIUS,
+                    "missing_required_arg",
+                    "impact_radius: missing required arg `root`",
+                );
+            }
         };
 
         let max_depth = args.max_depth.unwrap_or(DEFAULT_IMPACT_RADIUS_DEPTH);
@@ -162,8 +172,13 @@ impl ToolHandler for ImpactForwardRadiusHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: ImpactForwardRadiusArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_IMPACT_FORWARD_RADIUS, "invalid_args",
-                &format!("{TOOL_IMPACT_FORWARD_RADIUS}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_IMPACT_FORWARD_RADIUS,
+                    "invalid_args",
+                    &format!("{TOOL_IMPACT_FORWARD_RADIUS}: invalid args: {e}"),
+                );
+            }
         };
 
         let g = match require_graph(ctx, TOOL_IMPACT_FORWARD_RADIUS) {
@@ -173,8 +188,13 @@ impl ToolHandler for ImpactForwardRadiusHandler {
 
         let root = match args.root {
             Some(r) if !r.is_empty() => r,
-            _ => return err_envelope(TOOL_IMPACT_FORWARD_RADIUS, "missing_required_arg",
-                "impact_forward_radius: missing required arg `root`"),
+            _ => {
+                return err_envelope(
+                    TOOL_IMPACT_FORWARD_RADIUS,
+                    "missing_required_arg",
+                    "impact_forward_radius: missing required arg `root`",
+                );
+            }
         };
 
         let max_depth = args.max_depth.unwrap_or(DEFAULT_IMPACT_RADIUS_DEPTH);
@@ -215,8 +235,13 @@ impl ToolHandler for ImpactHasPathHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: ImpactEndpointsArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_IMPACT_HAS_PATH, "invalid_args",
-                &format!("{TOOL_IMPACT_HAS_PATH}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_IMPACT_HAS_PATH,
+                    "invalid_args",
+                    &format!("{TOOL_IMPACT_HAS_PATH}: invalid args: {e}"),
+                );
+            }
         };
 
         let g = match require_graph(ctx, TOOL_IMPACT_HAS_PATH) {
@@ -226,14 +251,24 @@ impl ToolHandler for ImpactHasPathHandler {
 
         let from = match args.from {
             Some(v) if !v.is_empty() => v,
-            _ => return err_envelope(TOOL_IMPACT_HAS_PATH, "missing_required_arg",
-                "impact_has_path: missing required arg `from`"),
+            _ => {
+                return err_envelope(
+                    TOOL_IMPACT_HAS_PATH,
+                    "missing_required_arg",
+                    "impact_has_path: missing required arg `from`",
+                );
+            }
         };
 
         let to = match args.to {
             Some(v) if !v.is_empty() => v,
-            _ => return err_envelope(TOOL_IMPACT_HAS_PATH, "missing_required_arg",
-                "impact_has_path: missing required arg `to`"),
+            _ => {
+                return err_envelope(
+                    TOOL_IMPACT_HAS_PATH,
+                    "missing_required_arg",
+                    "impact_has_path: missing required arg `to`",
+                );
+            }
         };
 
         let svc = ImpactAnalysisService::new();
@@ -277,8 +312,13 @@ impl ToolHandler for ImpactShortestPathHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: ImpactEndpointsArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_IMPACT_SHORTEST_PATH, "invalid_args",
-                &format!("{TOOL_IMPACT_SHORTEST_PATH}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_IMPACT_SHORTEST_PATH,
+                    "invalid_args",
+                    &format!("{TOOL_IMPACT_SHORTEST_PATH}: invalid args: {e}"),
+                );
+            }
         };
 
         let g = match require_graph(ctx, TOOL_IMPACT_SHORTEST_PATH) {
@@ -288,14 +328,24 @@ impl ToolHandler for ImpactShortestPathHandler {
 
         let from = match args.from {
             Some(v) if !v.is_empty() => v,
-            _ => return err_envelope(TOOL_IMPACT_SHORTEST_PATH, "missing_required_arg",
-                "impact_shortest_path: missing required arg `from`"),
+            _ => {
+                return err_envelope(
+                    TOOL_IMPACT_SHORTEST_PATH,
+                    "missing_required_arg",
+                    "impact_shortest_path: missing required arg `from`",
+                );
+            }
         };
 
         let to = match args.to {
             Some(v) if !v.is_empty() => v,
-            _ => return err_envelope(TOOL_IMPACT_SHORTEST_PATH, "missing_required_arg",
-                "impact_shortest_path: missing required arg `to`"),
+            _ => {
+                return err_envelope(
+                    TOOL_IMPACT_SHORTEST_PATH,
+                    "missing_required_arg",
+                    "impact_shortest_path: missing required arg `to`",
+                );
+            }
         };
 
         let svc = ImpactAnalysisService::new();
@@ -363,8 +413,13 @@ impl ToolHandler for ImpactComponentHandler {
     async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
         let args: ImpactIdArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_IMPACT_COMPONENT, "invalid_args",
-                &format!("{TOOL_IMPACT_COMPONENT}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_IMPACT_COMPONENT,
+                    "invalid_args",
+                    &format!("{TOOL_IMPACT_COMPONENT}: invalid args: {e}"),
+                );
+            }
         };
 
         let g = match require_graph(ctx, TOOL_IMPACT_COMPONENT) {
@@ -374,8 +429,13 @@ impl ToolHandler for ImpactComponentHandler {
 
         let id = match args.id {
             Some(v) if !v.is_empty() => v,
-            _ => return err_envelope(TOOL_IMPACT_COMPONENT, "missing_required_arg",
-                "impact_component: missing required arg `id`"),
+            _ => {
+                return err_envelope(
+                    TOOL_IMPACT_COMPONENT,
+                    "missing_required_arg",
+                    "impact_component: missing required arg `id`",
+                );
+            }
         };
 
         let svc = ImpactAnalysisService::new();

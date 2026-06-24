@@ -9,8 +9,7 @@
 use std::path::PathBuf;
 
 use cognicode::sandbox_core::artifacts::{
-    LanguageBreakdown, ResourceUsage, ScenarioResult,
-    Timing, ToolBreakdown,
+    LanguageBreakdown, ResourceUsage, ScenarioResult, Timing, ToolBreakdown,
 };
 use cognicode::sandbox_core::failure::FailureClass;
 
@@ -304,9 +303,6 @@ fn test_scenario_result_roundtrip_serde() {
 
 #[test]
 fn test_summary_aggregation() {
-    
-    
-
     let results = vec![
         make_pass_result("rust_read_file_raw"),
         make_pass_result("rust_safe_refactor_rename_preview"),
@@ -366,7 +362,6 @@ fn aggregate_test_results(
     results: &[ScenarioResult],
 ) -> cognicode::sandbox_core::artifacts::Summary {
     use cognicode::sandbox_core::artifacts::Summary;
-    
 
     let mut summary = Summary::new("2026-01-01T00:00:00Z".into(), "test".into());
     let mut all_durations = Vec::new();
@@ -434,10 +429,6 @@ fn aggregate_test_results(
 /// This is a unit test for the classify_outcome function via direct import.
 #[test]
 fn test_classify_outcome_respects_expected_fail_on_validation_failure() {
-    
-    
-    
-
     // We need to test classify_outcome directly, but it's private.
     // We test via integration: run a scenario with expected_fail + validation failure
     // and verify outcome is "expected_fail", not "format_failure" or similar.
@@ -542,7 +533,7 @@ scenarios:
 #[test]
 fn test_fixture_isolation_no_corruption() {
     use std::fs;
-    
+
     use tempfile::TempDir;
 
     // Create a minimal test fixture

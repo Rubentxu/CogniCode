@@ -36,7 +36,7 @@ pub use call_graph_projection::{
     SubgraphEdge, SubgraphView,
 };
 pub use checkpoint::{CheckpointId, VersionedGraphCache};
-pub use graph_cache::{GraphCache, DEFAULT_RETENTION};
+pub use graph_cache::{DEFAULT_RETENTION, GraphCache};
 pub use lightweight_index::{LightweightIndex, SymbolLocation};
 pub use on_demand_graph::{
     CallHierarchyResult, HierarchyEntry, OnDemandGraphBuilder, TraversalDirection,

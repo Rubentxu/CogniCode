@@ -14,21 +14,17 @@ use serde::Deserialize;
 use serde_json::Value;
 
 #[cfg(feature = "multimodal")]
-use crate::mcp::handler::ToolHandler;
-#[cfg(feature = "multimodal")]
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 #[cfg(feature = "multimodal")]
-use crate::mcp::{
-    McpContext, TOOL_DOCS_INGEST, TOOL_GRAPH_SEARCH, TOOL_ISSUES_INGEST,
-};
+use crate::mcp::handler::ToolHandler;
+#[cfg(feature = "multimodal")]
+use crate::mcp::{McpContext, TOOL_DOCS_INGEST, TOOL_GRAPH_SEARCH, TOOL_ISSUES_INGEST};
 
 #[cfg(feature = "multimodal")]
 use crate::ports::GraphRepository;
 
 #[cfg(feature = "multimodal")]
-use crate::mcp::{
-    DEFAULT_GRAPH_SEARCH_LIMIT, MAX_GRAPH_SEARCH_LIMIT,
-};
+use crate::mcp::{DEFAULT_GRAPH_SEARCH_LIMIT, MAX_GRAPH_SEARCH_LIMIT};
 
 // ============================================================================
 // Arg structs
@@ -98,20 +94,33 @@ impl ToolHandler for DocsIngestHandler {
 
         let args: DocsIngestArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_DOCS_INGEST, "invalid_input",
-                &format!("{TOOL_DOCS_INGEST}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_DOCS_INGEST,
+                    "invalid_input",
+                    &format!("{TOOL_DOCS_INGEST}: invalid args: {e}"),
+                );
+            }
         };
 
         let path_str = match args.path {
             Some(s) if !s.is_empty() => s,
-            _ => return err_envelope(TOOL_DOCS_INGEST, "invalid_input",
-                "docs_ingest: missing required arg `path`"),
+            _ => {
+                return err_envelope(
+                    TOOL_DOCS_INGEST,
+                    "invalid_input",
+                    "docs_ingest: missing required arg `path`",
+                );
+            }
         };
 
         let path = PathBuf::from(&path_str);
         if !path.exists() {
-            return err_envelope(TOOL_DOCS_INGEST, "not_found",
-                &format!("path does not exist: {path_str}"));
+            return err_envelope(
+                TOOL_DOCS_INGEST,
+                "not_found",
+                &format!("path does not exist: {path_str}"),
+            );
         }
 
         let recursive = args.recursive.unwrap_or(true);
@@ -119,14 +128,24 @@ impl ToolHandler for DocsIngestHandler {
         let result = if path.is_dir() {
             match extractor.extract_directory(&path, recursive).await {
                 Ok(nodes) => nodes,
-                Err(e) => return err_envelope(TOOL_DOCS_INGEST, "extractor_error",
-                    &format!("docs extractor failed: {e}")),
+                Err(e) => {
+                    return err_envelope(
+                        TOOL_DOCS_INGEST,
+                        "extractor_error",
+                        &format!("docs extractor failed: {e}"),
+                    );
+                }
             }
         } else {
             match extractor.extract_file(&path).await {
                 Ok(nodes) => nodes,
-                Err(e) => return err_envelope(TOOL_DOCS_INGEST, "extractor_error",
-                    &format!("docs extractor failed: {e}")),
+                Err(e) => {
+                    return err_envelope(
+                        TOOL_DOCS_INGEST,
+                        "extractor_error",
+                        &format!("docs extractor failed: {e}"),
+                    );
+                }
             }
         };
 
@@ -192,20 +211,33 @@ impl ToolHandler for GraphSearchHandler {
 
         let args: GraphSearchArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_GRAPH_SEARCH, "invalid_input",
-                &format!("{TOOL_GRAPH_SEARCH}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_GRAPH_SEARCH,
+                    "invalid_input",
+                    &format!("{TOOL_GRAPH_SEARCH}: invalid args: {e}"),
+                );
+            }
         };
 
         let query = match args.query {
             Some(q) if !q.is_empty() => q,
-            _ => return err_envelope(TOOL_GRAPH_SEARCH, "invalid_input",
-                "graph_search: missing required arg `query`"),
+            _ => {
+                return err_envelope(
+                    TOOL_GRAPH_SEARCH,
+                    "invalid_input",
+                    "graph_search: missing required arg `query`",
+                );
+            }
         };
 
         let limit = match args.limit {
             Some(n) if n <= 0 => {
-                return err_envelope(TOOL_GRAPH_SEARCH, "invalid_input",
-                    &format!("graph_search: `limit` must be a positive integer (got {n})"));
+                return err_envelope(
+                    TOOL_GRAPH_SEARCH,
+                    "invalid_input",
+                    &format!("graph_search: `limit` must be a positive integer (got {n})"),
+                );
             }
             Some(n) => (n as usize).min(MAX_GRAPH_SEARCH_LIMIT as usize),
             None => DEFAULT_GRAPH_SEARCH_LIMIT as usize,
@@ -252,8 +284,11 @@ impl ToolHandler for GraphSearchHandler {
                     "container" => parsed_kinds.push(NodeKind::Container),
                     "system" => parsed_kinds.push(NodeKind::System),
                     other => {
-                        return err_envelope(TOOL_GRAPH_SEARCH, "invalid_input",
-                            &format!("graph_search: unknown `node_kinds` entry `{other}`"));
+                        return err_envelope(
+                            TOOL_GRAPH_SEARCH,
+                            "invalid_input",
+                            &format!("graph_search: unknown `node_kinds` entry `{other}`"),
+                        );
                     }
                 }
             }
@@ -262,15 +297,23 @@ impl ToolHandler for GraphSearchHandler {
         let repo = match &ctx.graph_repo {
             Some(r) => r.as_ref(),
             None => {
-                return err_envelope(TOOL_GRAPH_SEARCH, "graph_search_unavailable",
-                    "graph_search: no GraphRepository wired into the handler");
+                return err_envelope(
+                    TOOL_GRAPH_SEARCH,
+                    "graph_search_unavailable",
+                    "graph_search: no GraphRepository wired into the handler",
+                );
             }
         };
 
         let page = match repo.search(&query, &parsed_kinds, limit, args.cursor.as_deref()) {
             Ok(p) => p,
-            Err(e) => return err_envelope(TOOL_GRAPH_SEARCH, "repository_error",
-                &format!("graph_search: search failed: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_GRAPH_SEARCH,
+                    "repository_error",
+                    &format!("graph_search: search failed: {e}"),
+                );
+            }
         };
 
         let normalized_score = page.raw_rank.clamp(0.0, 1.0);
@@ -350,20 +393,35 @@ impl ToolHandler for IssuesIngestHandler {
 
         let args: IssuesIngestArgs = match serde_json::from_value(params) {
             Ok(a) => a,
-            Err(e) => return err_envelope(TOOL_ISSUES_INGEST, "invalid_input",
-                &format!("{TOOL_ISSUES_INGEST}: invalid args: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_ISSUES_INGEST,
+                    "invalid_input",
+                    &format!("{TOOL_ISSUES_INGEST}: invalid args: {e}"),
+                );
+            }
         };
 
         let owner = match args.owner {
             Some(o) if !o.is_empty() => o,
-            _ => return err_envelope(TOOL_ISSUES_INGEST, "invalid_input",
-                "issues_ingest: missing required arg `owner`"),
+            _ => {
+                return err_envelope(
+                    TOOL_ISSUES_INGEST,
+                    "invalid_input",
+                    "issues_ingest: missing required arg `owner`",
+                );
+            }
         };
 
         let repo = match args.repo {
             Some(r) if !r.is_empty() => r,
-            _ => return err_envelope(TOOL_ISSUES_INGEST, "invalid_input",
-                "issues_ingest: missing required arg `repo`"),
+            _ => {
+                return err_envelope(
+                    TOOL_ISSUES_INGEST,
+                    "invalid_input",
+                    "issues_ingest: missing required arg `repo`",
+                );
+            }
         };
 
         let extractor = IssuesExtractor::with_repo_override(
@@ -375,8 +433,13 @@ impl ToolHandler for IssuesIngestHandler {
         let url = format!("https://github.com/{owner}/{repo}");
         let result = match extractor.extract(SourcePath::Url(url)).await {
             Ok(nodes) => nodes,
-            Err(e) => return err_envelope(TOOL_ISSUES_INGEST, "extractor_error",
-                &format!("issues extractor failed: {e}")),
+            Err(e) => {
+                return err_envelope(
+                    TOOL_ISSUES_INGEST,
+                    "extractor_error",
+                    &format!("issues extractor failed: {e}"),
+                );
+            }
         };
 
         let issues_processed = result.len();

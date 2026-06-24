@@ -76,7 +76,9 @@ impl FederatedNodeId {
             1 => {} // exactly one — proceed
             _ => return Err(FederatedNodeIdError::MultipleSeparators(inner)),
         }
-        let (space, local) = inner.split_once(Self::SEPARATOR).expect("one separator present");
+        let (space, local) = inner
+            .split_once(Self::SEPARATOR)
+            .expect("one separator present");
         if space.is_empty() {
             return Err(FederatedNodeIdError::EmptySpaceSegment(inner));
         }
@@ -254,8 +256,7 @@ mod tests {
     /// separator.
     #[test]
     fn federated_node_id_from_parts_rejects_forbidden_substring() {
-        let result =
-            FederatedNodeId::from_parts(&SpaceId::try_new("auth").unwrap(), "bad::local");
+        let result = FederatedNodeId::from_parts(&SpaceId::try_new("auth").unwrap(), "bad::local");
         assert!(result.is_err());
     }
 

@@ -217,7 +217,10 @@ mod tests {
     /// kind. The frontend and the PG layer both rely on this string.
     #[test]
     fn node_kind_display() {
-        assert_eq!(format!("{}", NodeKind::Symbol(SymbolKind::Function)), "symbol");
+        assert_eq!(
+            format!("{}", NodeKind::Symbol(SymbolKind::Function)),
+            "symbol"
+        );
         #[cfg(feature = "multimodal")]
         {
             assert_eq!(format!("{}", NodeKind::Decision), "decision");
@@ -240,7 +243,10 @@ mod tests {
 
         #[cfg(feature = "multimodal")]
         {
-            assert_eq!(NodeKind::Decision.as_str(), format!("{}", NodeKind::Decision));
+            assert_eq!(
+                NodeKind::Decision.as_str(),
+                format!("{}", NodeKind::Decision)
+            );
             assert_eq!(NodeKind::Doc.as_str(), format!("{}", NodeKind::Doc));
         }
     }

@@ -28,10 +28,10 @@ use async_trait::async_trait;
 use cognicode_core::domain::traits::GraphQueryPort;
 
 use crate::dto::{
-    ContextualGraphResponse, ContextualView, DecisionArtifactSummary, DriftReport, GraphNode,
-    ExplorationSession, GenerateArtifactRequest, InspectableObjectSummary, LensDescriptor,
-    LensResult, SpotterResult, SpotterSearchResult, SubgraphResponse, ViewDescriptorDto, ViewSpec,
-    WorkspaceSummary,
+    ContextualGraphResponse, ContextualView, DecisionArtifactSummary, DriftReport,
+    ExplorationSession, GenerateArtifactRequest, GraphNode, InspectableObjectSummary,
+    LensDescriptor, LensResult, SpotterResult, SpotterSearchResult, SubgraphResponse,
+    ViewDescriptorDto, ViewSpec, WorkspaceSummary,
 };
 use crate::error::ExplorerResult;
 use crate::moldql::MoldQLResult;
@@ -131,10 +131,7 @@ pub trait SearchService: Send + Sync {
 #[async_trait]
 pub trait ViewService: Send + Sync {
     /// List built-in views available for the given object.
-    async fn available_views(
-        &self,
-        object_id: &str,
-    ) -> ExplorerResult<Vec<ViewDescriptorDto>>;
+    async fn available_views(&self, object_id: &str) -> ExplorerResult<Vec<ViewDescriptorDto>>;
 
     /// Build a contextual view for an object.
     async fn contextual_view(
@@ -193,8 +190,12 @@ pub trait PersistenceService: Send + Sync {
     ) -> ExplorerResult<DecisionArtifactSummary>;
 
     /// Persist a ViewSpec.
-    async fn save_view_spec(&self, spec: &ViewSpec, workspace_id: &str, owner: &str)
-        -> ExplorerResult<()>;
+    async fn save_view_spec(
+        &self,
+        spec: &ViewSpec,
+        workspace_id: &str,
+        owner: &str,
+    ) -> ExplorerResult<()>;
 
     /// Load a ViewSpec by id.
     async fn load_view_spec(

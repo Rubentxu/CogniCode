@@ -372,7 +372,9 @@ impl Language {
         match self {
             Language::Rust => "rustup component add rust-analyzer",
             Language::Python => "npm install -g pyright",
-            Language::TypeScript | Language::JavaScript => "npm install -g typescript-language-server typescript",
+            Language::TypeScript | Language::JavaScript => {
+                "npm install -g typescript-language-server typescript"
+            }
             Language::Go => "go install golang.org/x/tools/gopls@latest",
             Language::Java => "brew install jdtls",
             Language::C | Language::Cpp => "apt install clangd",

@@ -86,8 +86,8 @@ impl MergeCandidate {
 mod tests {
     use super::*;
     use crate::domain::aggregates::generic_graph::GraphNode;
-    use crate::domain::value_objects::node_kind::NodeKind;
     use crate::domain::value_objects::SpaceId;
+    use crate::domain::value_objects::node_kind::NodeKind;
 
     fn make_node(id: &str, label: &str) -> FederatedNode {
         FederatedNode::new(

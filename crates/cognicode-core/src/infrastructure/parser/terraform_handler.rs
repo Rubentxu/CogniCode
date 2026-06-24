@@ -40,12 +40,13 @@ pub fn interpret_terraform(
         // Detect resource blocks: "resource aws_instance web"
         if let Some((resource_type, resource_name)) = parse_terraform_resource(label) {
             let id = format!("tf:{}:{}.{}", source_path, resource_type, resource_name);
-            let iac_node = GraphNode::builder(NodeId::new(&id), NodeKind::Symbol(SymbolKind::Function))
-                .label(format!("{}.{}", resource_type, resource_name))
-                .source_path(std::path::PathBuf::from(source_path))
-                .property("iac_type".to_string(), resource_type.clone())
-                .property("iac_kind".to_string(), "resource".to_string())
-                .build();
+            let iac_node =
+                GraphNode::builder(NodeId::new(&id), NodeKind::Symbol(SymbolKind::Function))
+                    .label(format!("{}.{}", resource_type, resource_name))
+                    .source_path(std::path::PathBuf::from(source_path))
+                    .property("iac_type".to_string(), resource_type.clone())
+                    .property("iac_kind".to_string(), "resource".to_string())
+                    .build();
             nodes.push(iac_node);
             edges.push(ExtractionEdge {
                 source: file_node_id.as_str().to_string(),
@@ -64,12 +65,13 @@ pub fn interpret_terraform(
         // Detect data blocks: "data aws_ami ubuntu"
         if let Some((data_type, data_name)) = parse_terraform_data(label) {
             let id = format!("tf:{}:data.{}.{}", source_path, data_type, data_name);
-            let iac_node = GraphNode::builder(NodeId::new(&id), NodeKind::Symbol(SymbolKind::Variable))
-                .label(format!("data.{}.{}", data_type, data_name))
-                .source_path(std::path::PathBuf::from(source_path))
-                .property("iac_type".to_string(), data_type.clone())
-                .property("iac_kind".to_string(), "data".to_string())
-                .build();
+            let iac_node =
+                GraphNode::builder(NodeId::new(&id), NodeKind::Symbol(SymbolKind::Variable))
+                    .label(format!("data.{}.{}", data_type, data_name))
+                    .source_path(std::path::PathBuf::from(source_path))
+                    .property("iac_type".to_string(), data_type.clone())
+                    .property("iac_kind".to_string(), "data".to_string())
+                    .build();
             nodes.push(iac_node);
             edges.push(ExtractionEdge {
                 source: file_node_id.as_str().to_string(),
@@ -85,11 +87,12 @@ pub fn interpret_terraform(
         // Detect variable blocks: "variable region"
         if let Some(var_name) = parse_terraform_variable(label) {
             let id = format!("tf:{}:var.{}", source_path, var_name);
-            let iac_node = GraphNode::builder(NodeId::new(&id), NodeKind::Symbol(SymbolKind::Variable))
-                .label(format!("var.{}", var_name))
-                .source_path(std::path::PathBuf::from(source_path))
-                .property("iac_kind".to_string(), "variable".to_string())
-                .build();
+            let iac_node =
+                GraphNode::builder(NodeId::new(&id), NodeKind::Symbol(SymbolKind::Variable))
+                    .label(format!("var.{}", var_name))
+                    .source_path(std::path::PathBuf::from(source_path))
+                    .property("iac_kind".to_string(), "variable".to_string())
+                    .build();
             nodes.push(iac_node);
             edges.push(ExtractionEdge {
                 source: file_node_id.as_str().to_string(),
@@ -104,11 +107,12 @@ pub fn interpret_terraform(
         // Detect module blocks: "module vpc"
         if let Some(module_name) = parse_terraform_module(label) {
             let id = format!("tf:{}:module.{}", source_path, module_name);
-            let iac_node = GraphNode::builder(NodeId::new(&id), NodeKind::Symbol(SymbolKind::Module))
-                .label(format!("module.{}", module_name))
-                .source_path(std::path::PathBuf::from(source_path))
-                .property("iac_kind".to_string(), "module".to_string())
-                .build();
+            let iac_node =
+                GraphNode::builder(NodeId::new(&id), NodeKind::Symbol(SymbolKind::Module))
+                    .label(format!("module.{}", module_name))
+                    .source_path(std::path::PathBuf::from(source_path))
+                    .property("iac_kind".to_string(), "module".to_string())
+                    .build();
             nodes.push(iac_node);
             edges.push(ExtractionEdge {
                 source: file_node_id.as_str().to_string(),
@@ -123,11 +127,12 @@ pub fn interpret_terraform(
         // Detect output blocks: "output instance_ip"
         if let Some(output_name) = parse_terraform_output(label) {
             let id = format!("tf:{}:output.{}", source_path, output_name);
-            let iac_node = GraphNode::builder(NodeId::new(&id), NodeKind::Symbol(SymbolKind::Property))
-                .label(format!("output.{}", output_name))
-                .source_path(std::path::PathBuf::from(source_path))
-                .property("iac_kind".to_string(), "output".to_string())
-                .build();
+            let iac_node =
+                GraphNode::builder(NodeId::new(&id), NodeKind::Symbol(SymbolKind::Property))
+                    .label(format!("output.{}", output_name))
+                    .source_path(std::path::PathBuf::from(source_path))
+                    .property("iac_kind".to_string(), "output".to_string())
+                    .build();
             nodes.push(iac_node);
             edges.push(ExtractionEdge {
                 source: file_node_id.as_str().to_string(),
@@ -151,13 +156,19 @@ pub fn interpret_terraform(
 
 /// Check if an extraction result looks like a Terraform file.
 fn is_terraform_file(result: &ExtractionResult) -> bool {
-    let text = result.nodes.iter()
+    let text = result
+        .nodes
+        .iter()
         .map(|n| n.label.clone())
         .collect::<Vec<_>>()
         .join("\n");
-    text.contains("resource ") || text.contains("data ") || text.contains("variable ") ||
-    text.contains("module ") || text.contains("output ") || text.contains("provider ") ||
-    text.contains("terraform ")
+    text.contains("resource ")
+        || text.contains("data ")
+        || text.contains("variable ")
+        || text.contains("module ")
+        || text.contains("output ")
+        || text.contains("provider ")
+        || text.contains("terraform ")
 }
 
 /// Parse "resource aws_instance web" → Some(("aws_instance", "web"))
@@ -217,7 +228,7 @@ fn extract_terraform_refs(label: &str, source_id: &str, edges: &mut Vec<Extracti
         if segments.len() >= 3 {
             // Could be a reference like "aws_security_group.allow_ssh.id"
             // The reference target is all segments except the last (attribute)
-            let ref_target = segments[..segments.len()-1].join(".");
+            let ref_target = segments[..segments.len() - 1].join(".");
             edges.push(ExtractionEdge {
                 source: source_id.to_string(),
                 target_ref: TargetRef::Unresolved(ref_target),
@@ -255,7 +266,10 @@ mod tests {
 
     #[test]
     fn test_parse_terraform_variable() {
-        assert_eq!(parse_terraform_variable("variable region"), Some("region".into()));
+        assert_eq!(
+            parse_terraform_variable("variable region"),
+            Some("region".into())
+        );
         assert_eq!(parse_terraform_variable("resource aws_instance web"), None);
     }
 
@@ -302,6 +316,8 @@ mod tests {
         );
         // Should find "data.aws_ami.ubuntu.id" → reference to "data.aws_ami.ubuntu"
         assert!(!edges.is_empty());
-        assert!(edges.iter().any(|e| matches!(&e.target_ref, TargetRef::Unresolved(r) if r == "data.aws_ami.ubuntu")));
+        assert!(edges.iter().any(
+            |e| matches!(&e.target_ref, TargetRef::Unresolved(r) if r == "data.aws_ami.ubuntu")
+        ));
     }
 }

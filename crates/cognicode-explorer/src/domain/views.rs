@@ -74,29 +74,34 @@ pub fn build_callgraph<'a>(
     repo: &'a dyn SymbolRepository,
     graph_query: Option<&'a dyn GraphQueryPort>,
 ) -> ContextualView {
-    let callers = graph_query.as_ref().map(|gq| gq.callers(&symbol.id)).unwrap_or_default();
-    let callees = graph_query.as_ref().map(|gq| gq.callees(&symbol.id)).unwrap_or_default();
+    let callers = graph_query
+        .as_ref()
+        .map(|gq| gq.callers(&symbol.id))
+        .unwrap_or_default();
+    let callees = graph_query
+        .as_ref()
+        .map(|gq| gq.callees(&symbol.id))
+        .unwrap_or_default();
 
     // Use GraphQueryPort for metadata when available. The base `SymbolRepository`
     // trait is metadata-free by design; the `GraphQueryPort` is the segregated
     // seam that lets us enrich the relations and the evidence block with
     // per-edge `(Provenance, f64)`. When `graph_query` is `None` — mocks, legacy
     // paths — we log once and emit `provenance: None`, `confidence: None`.
-    let edge_meta: std::collections::HashMap<SymbolId, (Provenance, f64)> =
-        match graph_query {
-            Some(gq) => gq
-                .callees_with_metadata(&symbol.id)
-                .into_iter()
-                .map(|m| (m.callee_id, (m.provenance, m.confidence)))
-                .collect(),
-            None => {
-                tracing::warn!(
-                    symbol = %symbol.id,
-                    "graph_query not available; emitting null provenance/confidence"
-                );
-                std::collections::HashMap::new()
-            }
-        };
+    let edge_meta: std::collections::HashMap<SymbolId, (Provenance, f64)> = match graph_query {
+        Some(gq) => gq
+            .callees_with_metadata(&symbol.id)
+            .into_iter()
+            .map(|m| (m.callee_id, (m.provenance, m.confidence)))
+            .collect(),
+        None => {
+            tracing::warn!(
+                symbol = %symbol.id,
+                "graph_query not available; emitting null provenance/confidence"
+            );
+            std::collections::HashMap::new()
+        }
+    };
 
     // The evidence block mirrors the per-edge confidence when at least one
     // edge has metadata. With multiple distinct confidences we fall back to
@@ -1067,14 +1072,22 @@ pub fn build_scope_dependencies<'a>(
     let mut buckets: std::collections::BTreeMap<String, Bucket> = std::collections::BTreeMap::new();
 
     for sym in &member_symbols {
-        for target in graph_query.as_ref().map(|gq| gq.callees(&sym.id)).unwrap_or_default() {
+        for target in graph_query
+            .as_ref()
+            .map(|gq| gq.callees(&sym.id))
+            .unwrap_or_default()
+        {
             if member_ids.contains(target.id.as_str()) {
                 continue; // same-scope
             }
             let scope = other_scope(scope_path, &target.file);
             buckets.entry(scope).or_default().outgoing_count += 1;
         }
-        for caller in graph_query.as_ref().map(|gq| gq.callers(&sym.id)).unwrap_or_default() {
+        for caller in graph_query
+            .as_ref()
+            .map(|gq| gq.callers(&sym.id))
+            .unwrap_or_default()
+        {
             if member_ids.contains(caller.id.as_str()) {
                 continue; // same-scope
             }
@@ -1253,55 +1266,93 @@ pub trait ViewExecutor: ViewDescriptor {
 // Registration uses `RegisterBuiltin` trait with a static initializer.
 // Each provider struct calls `register_self()` during module initialization.
 
-use crate::registry::{ViewDescriptorProvider, ProviderWrapper};
+use crate::registry::{ProviderWrapper, ViewDescriptorProvider};
 
 /// Overview view provider — applies to Symbol, File, Scope.
 struct OverviewProvider;
 impl ViewDescriptorProvider for OverviewProvider {
-    fn id(&self) -> &'static str { "overview" }
-    fn title(&self) -> &'static str { "Overview" }
-    fn applies_to(&self) -> &'static [InspectableObjectType] {
-        &[InspectableObjectType::Symbol, InspectableObjectType::File, InspectableObjectType::Scope]
+    fn id(&self) -> &'static str {
+        "overview"
     }
-    fn view_kind(&self) -> ViewKind { ViewKind::VerticalSlice }
-    fn renderer_kind(&self) -> RendererKind { RendererKind::Json }
+    fn title(&self) -> &'static str {
+        "Overview"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[
+            InspectableObjectType::Symbol,
+            InspectableObjectType::File,
+            InspectableObjectType::Scope,
+        ]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::VerticalSlice
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Json
+    }
 }
 static OVERVIEW_PROVIDER: OverviewProvider = OverviewProvider;
-inventory::submit!(ProviderWrapper { provider: &OVERVIEW_PROVIDER as &dyn ViewDescriptorProvider });
+inventory::submit!(ProviderWrapper {
+    provider: &OVERVIEW_PROVIDER as &dyn ViewDescriptorProvider
+});
 
 /// Call-graph view provider — applies to Symbol.
 struct CallGraphProvider;
 impl ViewDescriptorProvider for CallGraphProvider {
-    fn id(&self) -> &'static str { "call-graph" }
-    fn title(&self) -> &'static str { "Call Graph" }
+    fn id(&self) -> &'static str {
+        "call-graph"
+    }
+    fn title(&self) -> &'static str {
+        "Call Graph"
+    }
     fn applies_to(&self) -> &'static [InspectableObjectType] {
         &[InspectableObjectType::Symbol]
     }
-    fn view_kind(&self) -> ViewKind { ViewKind::CallGraph }
-    fn renderer_kind(&self) -> RendererKind { RendererKind::Graph }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::CallGraph
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Graph
+    }
 }
 static CALLGRAPH_PROVIDER: CallGraphProvider = CallGraphProvider;
-inventory::submit!(ProviderWrapper { provider: &CALLGRAPH_PROVIDER as &dyn ViewDescriptorProvider });
+inventory::submit!(ProviderWrapper {
+    provider: &CALLGRAPH_PROVIDER as &dyn ViewDescriptorProvider
+});
 
 /// Source view provider — applies to Symbol.
 struct SourceProvider;
 impl ViewDescriptorProvider for SourceProvider {
-    fn id(&self) -> &'static str { "source" }
-    fn title(&self) -> &'static str { "Source" }
+    fn id(&self) -> &'static str {
+        "source"
+    }
+    fn title(&self) -> &'static str {
+        "Source"
+    }
     fn applies_to(&self) -> &'static [InspectableObjectType] {
         &[InspectableObjectType::Symbol]
     }
-    fn view_kind(&self) -> ViewKind { ViewKind::SourceView }
-    fn renderer_kind(&self) -> RendererKind { RendererKind::Code }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::SourceView
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Code
+    }
 }
 static SOURCE_PROVIDER: SourceProvider = SourceProvider;
-inventory::submit!(ProviderWrapper { provider: &SOURCE_PROVIDER as &dyn ViewDescriptorProvider });
+inventory::submit!(ProviderWrapper {
+    provider: &SOURCE_PROVIDER as &dyn ViewDescriptorProvider
+});
 
 /// Quality view provider — applies to Symbol, File, Scope, QualityIssue, Rule.
 struct QualityProvider;
 impl ViewDescriptorProvider for QualityProvider {
-    fn id(&self) -> &'static str { "quality" }
-    fn title(&self) -> &'static str { "Quality" }
+    fn id(&self) -> &'static str {
+        "quality"
+    }
+    fn title(&self) -> &'static str {
+        "Quality"
+    }
     fn applies_to(&self) -> &'static [InspectableObjectType] {
         &[
             InspectableObjectType::Symbol,
@@ -1311,11 +1362,17 @@ impl ViewDescriptorProvider for QualityProvider {
             InspectableObjectType::Rule,
         ]
     }
-    fn view_kind(&self) -> ViewKind { ViewKind::QualityHotspots }
-    fn renderer_kind(&self) -> RendererKind { RendererKind::Table }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::QualityHotspots
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Table
+    }
 }
 static QUALITY_PROVIDER: QualityProvider = QualityProvider;
-inventory::submit!(ProviderWrapper { provider: &QUALITY_PROVIDER as &dyn ViewDescriptorProvider });
+inventory::submit!(ProviderWrapper {
+    provider: &QUALITY_PROVIDER as &dyn ViewDescriptorProvider
+});
 
 // ============================================================================
 // Phase 2 — ViewExecutor implementations for the 4 built-in capabilities
@@ -1327,26 +1384,42 @@ inventory::submit!(ProviderWrapper { provider: &QUALITY_PROVIDER as &dyn ViewDes
 /// Overview capability — applies to Symbol, File, Scope.
 pub struct OverviewExecutor;
 impl ViewDescriptor for OverviewExecutor {
-    fn id(&self) -> &'static str { "overview" }
-    fn title(&self) -> &'static str { "Overview" }
-    fn applies_to(&self) -> &'static [InspectableObjectType] {
-        &[InspectableObjectType::Symbol, InspectableObjectType::File, InspectableObjectType::Scope]
+    fn id(&self) -> &'static str {
+        "overview"
     }
-    fn view_kind(&self) -> ViewKind { ViewKind::VerticalSlice }
-    fn renderer_kind(&self) -> RendererKind { RendererKind::Json }
+    fn title(&self) -> &'static str {
+        "Overview"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[
+            InspectableObjectType::Symbol,
+            InspectableObjectType::File,
+            InspectableObjectType::Scope,
+        ]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::VerticalSlice
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Json
+    }
 }
 
 #[async_trait]
 impl ViewExecutor for OverviewExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Symbol(symbol) => Ok(build_overview(symbol, ctx.repo, ctx.graph_query)),
+            InspectionTarget::Symbol(symbol) => {
+                Ok(build_overview(symbol, ctx.repo, ctx.graph_query))
+            }
             InspectionTarget::File { path, symbols } => {
                 Ok(build_file_overview(symbols, path, ctx.reader))
             }
-            InspectionTarget::Scope { path, files, symbols } => {
-                Ok(build_scope_overview(path, files, symbols))
-            }
+            InspectionTarget::Scope {
+                path,
+                files,
+                symbols,
+            } => Ok(build_scope_overview(path, files, symbols)),
             InspectionTarget::Issue(_) | InspectionTarget::Rule { .. } => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
@@ -1360,13 +1433,21 @@ impl ViewExecutor for OverviewExecutor {
 /// CallGraph capability — applies to Symbol.
 pub struct CallGraphExecutor;
 impl ViewDescriptor for CallGraphExecutor {
-    fn id(&self) -> &'static str { "call-graph" }
-    fn title(&self) -> &'static str { "Call Graph" }
+    fn id(&self) -> &'static str {
+        "call-graph"
+    }
+    fn title(&self) -> &'static str {
+        "Call Graph"
+    }
     fn applies_to(&self) -> &'static [InspectableObjectType] {
         &[InspectableObjectType::Symbol]
     }
-    fn view_kind(&self) -> ViewKind { ViewKind::CallGraph }
-    fn renderer_kind(&self) -> RendererKind { RendererKind::Graph }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::CallGraph
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Graph
+    }
 }
 
 #[async_trait]
@@ -1387,13 +1468,21 @@ impl ViewExecutor for CallGraphExecutor {
 /// Source capability — applies to Symbol.
 pub struct SourceExecutor;
 impl ViewDescriptor for SourceExecutor {
-    fn id(&self) -> &'static str { "source" }
-    fn title(&self) -> &'static str { "Source" }
+    fn id(&self) -> &'static str {
+        "source"
+    }
+    fn title(&self) -> &'static str {
+        "Source"
+    }
     fn applies_to(&self) -> &'static [InspectableObjectType] {
         &[InspectableObjectType::Symbol]
     }
-    fn view_kind(&self) -> ViewKind { ViewKind::SourceView }
-    fn renderer_kind(&self) -> RendererKind { RendererKind::Code }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::SourceView
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Code
+    }
 }
 
 #[async_trait]
@@ -1412,8 +1501,12 @@ impl ViewExecutor for SourceExecutor {
 /// Quality capability — applies to Symbol, File, Scope, QualityIssue, Rule.
 pub struct QualityExecutor;
 impl ViewDescriptor for QualityExecutor {
-    fn id(&self) -> &'static str { "quality" }
-    fn title(&self) -> &'static str { "Quality" }
+    fn id(&self) -> &'static str {
+        "quality"
+    }
+    fn title(&self) -> &'static str {
+        "Quality"
+    }
     fn applies_to(&self) -> &'static [InspectableObjectType] {
         &[
             InspectableObjectType::Symbol,
@@ -1423,27 +1516,29 @@ impl ViewDescriptor for QualityExecutor {
             InspectableObjectType::Rule,
         ]
     }
-    fn view_kind(&self) -> ViewKind { ViewKind::QualityHotspots }
-    fn renderer_kind(&self) -> RendererKind { RendererKind::Table }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::QualityHotspots
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Table
+    }
 }
 
 #[async_trait]
 impl ViewExecutor for QualityExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::Symbol(symbol) => {
-                Ok(build_symbol_quality_view(symbol, ctx.quality))
-            }
+            InspectionTarget::Symbol(symbol) => Ok(build_symbol_quality_view(symbol, ctx.quality)),
             InspectionTarget::File { path, symbols: _ } => {
                 Ok(build_file_quality_view(path, ctx.quality))
             }
-            InspectionTarget::Scope { path, files: _, symbols: _ } => {
-                Ok(build_scope_quality_view(path, ctx.quality))
-            }
+            InspectionTarget::Scope {
+                path,
+                files: _,
+                symbols: _,
+            } => Ok(build_scope_quality_view(path, ctx.quality)),
             InspectionTarget::Issue(issue) => Ok(build_issue_detail(issue)),
-            InspectionTarget::Rule { rule_id } => {
-                Ok(build_rule_detail(rule_id, ctx.quality))
-            }
+            InspectionTarget::Rule { rule_id } => Ok(build_rule_detail(rule_id, ctx.quality)),
         }
     }
 }
@@ -1456,13 +1551,21 @@ impl ViewExecutor for QualityExecutor {
 /// Absorbs the private `build_evidence_view` from service.rs.
 pub struct EvidenceExecutor;
 impl ViewDescriptor for EvidenceExecutor {
-    fn id(&self) -> &'static str { "evidence" }
-    fn title(&self) -> &'static str { "Evidence" }
+    fn id(&self) -> &'static str {
+        "evidence"
+    }
+    fn title(&self) -> &'static str {
+        "Evidence"
+    }
     fn applies_to(&self) -> &'static [InspectableObjectType] {
         &[InspectableObjectType::Symbol]
     }
-    fn view_kind(&self) -> ViewKind { ViewKind::EvidenceView }
-    fn renderer_kind(&self) -> RendererKind { RendererKind::Json }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::EvidenceView
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Json
+    }
 }
 
 #[async_trait]
@@ -1470,7 +1573,8 @@ impl ViewExecutor for EvidenceExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
             InspectionTarget::Symbol(resolved) => {
-                let evidence = build_evidence_blocks(resolved, ctx.repo, ctx.reader, ctx.graph_query);
+                let evidence =
+                    build_evidence_blocks(resolved, ctx.repo, ctx.reader, ctx.graph_query);
                 let blocks = vec![ViewBlock {
                     id: "evidence_summary".into(),
                     title: "Evidence blocks".into(),
@@ -1480,7 +1584,10 @@ impl ViewExecutor for EvidenceExecutor {
                     }),
                 }];
                 Ok(ContextualView {
-                    object_id: format!("symbol:{}:{}:{}", resolved.file, resolved.name, resolved.line),
+                    object_id: format!(
+                        "symbol:{}:{}:{}",
+                        resolved.file, resolved.name, resolved.line
+                    ),
                     view_id: "evidence".into(),
                     title: "Evidence".into(),
                     view_kind: ViewKind::EvidenceView,
@@ -1503,22 +1610,28 @@ impl ViewExecutor for EvidenceExecutor {
 /// Delegates to `build_file_symbols`.
 pub struct SymbolsExecutor;
 impl ViewDescriptor for SymbolsExecutor {
-    fn id(&self) -> &'static str { "symbols" }
-    fn title(&self) -> &'static str { "Symbols" }
+    fn id(&self) -> &'static str {
+        "symbols"
+    }
+    fn title(&self) -> &'static str {
+        "Symbols"
+    }
     fn applies_to(&self) -> &'static [InspectableObjectType] {
         &[InspectableObjectType::File]
     }
-    fn view_kind(&self) -> ViewKind { ViewKind::SemanticSearchResults }
-    fn renderer_kind(&self) -> RendererKind { RendererKind::Table }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::SemanticSearchResults
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Table
+    }
 }
 
 #[async_trait]
 impl ViewExecutor for SymbolsExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
-            InspectionTarget::File { path, symbols } => {
-                Ok(build_file_symbols(symbols, path))
-            }
+            InspectionTarget::File { path, symbols } => Ok(build_file_symbols(symbols, path)),
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
                 view_id: "symbols".into(),
@@ -1531,13 +1644,21 @@ impl ViewExecutor for SymbolsExecutor {
 /// Delegates to `build_scope_dependencies`.
 pub struct DependenciesExecutor;
 impl ViewDescriptor for DependenciesExecutor {
-    fn id(&self) -> &'static str { "dependencies" }
-    fn title(&self) -> &'static str { "Dependencies" }
+    fn id(&self) -> &'static str {
+        "dependencies"
+    }
+    fn title(&self) -> &'static str {
+        "Dependencies"
+    }
     fn applies_to(&self) -> &'static [InspectableObjectType] {
         &[InspectableObjectType::Scope]
     }
-    fn view_kind(&self) -> ViewKind { ViewKind::DependencyGraph }
-    fn renderer_kind(&self) -> RendererKind { RendererKind::Graph }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::DependencyGraph
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Graph
+    }
 }
 
 #[async_trait]
@@ -1561,13 +1682,21 @@ impl ViewExecutor for DependenciesExecutor {
 /// to `build_scope_hotspots`.
 pub struct HotspotsExecutor;
 impl ViewDescriptor for HotspotsExecutor {
-    fn id(&self) -> &'static str { "hotspots" }
-    fn title(&self) -> &'static str { "Hotspots" }
+    fn id(&self) -> &'static str {
+        "hotspots"
+    }
+    fn title(&self) -> &'static str {
+        "Hotspots"
+    }
     fn applies_to(&self) -> &'static [InspectableObjectType] {
         &[InspectableObjectType::Scope]
     }
-    fn view_kind(&self) -> ViewKind { ViewKind::QualityHotspots }
-    fn renderer_kind(&self) -> RendererKind { RendererKind::Table }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::QualityHotspots
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Table
+    }
 }
 
 #[async_trait]
@@ -1613,13 +1742,21 @@ pub static ARCHITECTURE_DRIFT_EXECUTOR: ArchitectureDriftExecutor = Architecture
 /// through the views API.
 pub struct ArchitectureDriftExecutor;
 impl ViewDescriptor for ArchitectureDriftExecutor {
-    fn id(&self) -> &'static str { "architecture-drift" }
-    fn title(&self) -> &'static str { "Architecture Drift" }
+    fn id(&self) -> &'static str {
+        "architecture-drift"
+    }
+    fn title(&self) -> &'static str {
+        "Architecture Drift"
+    }
     fn applies_to(&self) -> &'static [InspectableObjectType] {
         &[InspectableObjectType::Workspace]
     }
-    fn view_kind(&self) -> ViewKind { ViewKind::ArchitectureDrift }
-    fn renderer_kind(&self) -> RendererKind { RendererKind::Table }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::ArchitectureDrift
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Table
+    }
 }
 
 #[async_trait]
@@ -1984,7 +2121,9 @@ mod tests {
         let view = build_scope_dependencies("src/foo", &repo, None);
         assert_eq!(view.view_id, "dependencies");
         // Null graph_query path: no entries
-        let entries = view.blocks[0].body["entries"].as_array().expect("entries array");
+        let entries = view.blocks[0].body["entries"]
+            .as_array()
+            .expect("entries array");
         assert!(entries.is_empty());
     }
 
@@ -2511,7 +2650,9 @@ mod tests {
     #[tokio::test]
     async fn overview_capability_builds_for_symbol() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("overview").expect("overview must be registered");
+        let executor = registry
+            .get_executor("overview")
+            .expect("overview must be registered");
 
         let symbol = make_resolved("src/main.rs", "main", 1, SymbolKind::Function);
         let mut mock_repo = MockRepo::new();
@@ -2541,7 +2682,9 @@ mod tests {
     #[tokio::test]
     async fn overview_capability_builds_for_file() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("overview").expect("overview must be registered");
+        let executor = registry
+            .get_executor("overview")
+            .expect("overview must be registered");
 
         let symbols = vec![
             make_resolved("src/lib.rs", "foo", 10, SymbolKind::Function),
@@ -2568,7 +2711,9 @@ mod tests {
     #[tokio::test]
     async fn overview_capability_builds_for_scope() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("overview").expect("overview must be registered");
+        let executor = registry
+            .get_executor("overview")
+            .expect("overview must be registered");
 
         let symbols = vec![make_resolved("src/lib.rs", "foo", 10, SymbolKind::Function)];
         let target = InspectionTarget::Scope {
@@ -2593,7 +2738,9 @@ mod tests {
     #[tokio::test]
     async fn callgraph_capability_builds_for_symbol() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("call-graph").expect("call-graph must be registered");
+        let executor = registry
+            .get_executor("call-graph")
+            .expect("call-graph must be registered");
 
         let symbol = make_resolved("src/main.rs", "main", 1, SymbolKind::Function);
         let target = InspectionTarget::Symbol(symbol);
@@ -2621,7 +2768,9 @@ mod tests {
     #[tokio::test]
     async fn source_capability_builds_for_symbol() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("source").expect("source must be registered");
+        let executor = registry
+            .get_executor("source")
+            .expect("source must be registered");
 
         let symbol = make_resolved("src/main.rs", "main", 5, SymbolKind::Function);
         let target = InspectionTarget::Symbol(symbol);
@@ -2647,7 +2796,9 @@ mod tests {
     #[tokio::test]
     async fn quality_capability_builds_for_symbol() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("quality").expect("quality must be registered");
+        let executor = registry
+            .get_executor("quality")
+            .expect("quality must be registered");
 
         let symbol = make_resolved("src/main.rs", "main", 1, SymbolKind::Function);
         let target = InspectionTarget::Symbol(symbol);
@@ -2667,7 +2818,9 @@ mod tests {
     #[tokio::test]
     async fn quality_capability_builds_for_issue() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("quality").expect("quality must be registered");
+        let executor = registry
+            .get_executor("quality")
+            .expect("quality must be registered");
 
         let issue = QualityIssue {
             id: 1,
@@ -2697,9 +2850,13 @@ mod tests {
     #[tokio::test]
     async fn quality_capability_builds_for_rule() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("quality").expect("quality must be registered");
+        let executor = registry
+            .get_executor("quality")
+            .expect("quality must be registered");
 
-        let target = InspectionTarget::Rule { rule_id: "rust_lint_foo".into() };
+        let target = InspectionTarget::Rule {
+            rule_id: "rust_lint_foo".into(),
+        };
         let ctx = ViewContext {
             target: &target,
             repo: &MockRepo::new(),
@@ -2721,7 +2878,9 @@ mod tests {
     #[tokio::test]
     async fn evidence_capability_handles_symbol() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("evidence").expect("evidence must be registered");
+        let executor = registry
+            .get_executor("evidence")
+            .expect("evidence must be registered");
 
         let symbol = make_resolved("src/main.rs", "main", 1, SymbolKind::Function);
         let target = InspectionTarget::Symbol(symbol);
@@ -2742,7 +2901,11 @@ mod tests {
             "evidence view must have evidence_summary block"
         );
         // evidence.len() == 4 (symbol_metadata, call_graph, source_file, fs_index)
-        let summary_block = view.blocks.iter().find(|b| b.id == "evidence_summary").unwrap();
+        let summary_block = view
+            .blocks
+            .iter()
+            .find(|b| b.id == "evidence_summary")
+            .unwrap();
         let count = summary_block.body["count"].as_u64().expect("count field");
         assert_eq!(count, 4, "build_evidence_blocks returns 4 evidence kinds");
     }
@@ -2750,11 +2913,18 @@ mod tests {
     #[tokio::test]
     async fn evidence_capability_rejects_file() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("evidence").expect("evidence must be registered");
+        let executor = registry
+            .get_executor("evidence")
+            .expect("evidence must be registered");
 
         let target = InspectionTarget::File {
             path: "src/main.rs".into(),
-            symbols: vec![make_resolved("src/main.rs", "main", 1, SymbolKind::Function)],
+            symbols: vec![make_resolved(
+                "src/main.rs",
+                "main",
+                1,
+                SymbolKind::Function,
+            )],
         };
         let ctx = ViewContext {
             target: &target,
@@ -2770,13 +2940,18 @@ mod tests {
             "evidence capability must reject File target with error"
         );
         let err = result.unwrap_err();
-        assert!(matches!(err, crate::error::ExplorerError::ViewNotAvailable { .. }));
+        assert!(matches!(
+            err,
+            crate::error::ExplorerError::ViewNotAvailable { .. }
+        ));
     }
 
     #[tokio::test]
     async fn symbols_capability_handles_file() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("symbols").expect("symbols must be registered");
+        let executor = registry
+            .get_executor("symbols")
+            .expect("symbols must be registered");
 
         let symbols = vec![
             make_resolved("src/lib.rs", "foo", 10, SymbolKind::Function),
@@ -2807,7 +2982,9 @@ mod tests {
     #[tokio::test]
     async fn symbols_capability_rejects_symbol() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("symbols").expect("symbols must be registered");
+        let executor = registry
+            .get_executor("symbols")
+            .expect("symbols must be registered");
 
         let symbol = make_resolved("src/main.rs", "main", 1, SymbolKind::Function);
         let target = InspectionTarget::Symbol(symbol);
@@ -2825,13 +3002,18 @@ mod tests {
             "symbols capability must reject Symbol target with error"
         );
         let err = result.unwrap_err();
-        assert!(matches!(err, crate::error::ExplorerError::ViewNotAvailable { .. }));
+        assert!(matches!(
+            err,
+            crate::error::ExplorerError::ViewNotAvailable { .. }
+        ));
     }
 
     #[tokio::test]
     async fn dependencies_capability_handles_scope() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("dependencies").expect("dependencies must be registered");
+        let executor = registry
+            .get_executor("dependencies")
+            .expect("dependencies must be registered");
 
         let symbols = vec![make_resolved("src/lib.rs", "foo", 10, SymbolKind::Function)];
         let target = InspectionTarget::Scope {
@@ -2858,11 +3040,18 @@ mod tests {
     #[tokio::test]
     async fn dependencies_capability_rejects_file() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("dependencies").expect("dependencies must be registered");
+        let executor = registry
+            .get_executor("dependencies")
+            .expect("dependencies must be registered");
 
         let target = InspectionTarget::File {
             path: "src/main.rs".into(),
-            symbols: vec![make_resolved("src/main.rs", "main", 1, SymbolKind::Function)],
+            symbols: vec![make_resolved(
+                "src/main.rs",
+                "main",
+                1,
+                SymbolKind::Function,
+            )],
         };
         let ctx = ViewContext {
             target: &target,
@@ -2878,7 +3067,10 @@ mod tests {
             "dependencies capability must reject File target with error"
         );
         let err = result.unwrap_err();
-        assert!(matches!(err, crate::error::ExplorerError::ViewNotAvailable { .. }));
+        assert!(matches!(
+            err,
+            crate::error::ExplorerError::ViewNotAvailable { .. }
+        ));
     }
 
     #[tokio::test]
@@ -2897,7 +3089,11 @@ mod tests {
         let symbols = vec![low.clone(), medium.clone(), high.clone()];
         let target = InspectionTarget::Scope {
             path: "src".into(),
-            files: vec!["src/low.rs".into(), "src/med.rs".into(), "src/high.rs".into()],
+            files: vec![
+                "src/low.rs".into(),
+                "src/med.rs".into(),
+                "src/high.rs".into(),
+            ],
             symbols,
         };
         let ctx = ViewContext {
@@ -2909,24 +3105,35 @@ mod tests {
         };
 
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("hotspots").expect("hotspots must be registered");
+        let executor = registry
+            .get_executor("hotspots")
+            .expect("hotspots must be registered");
         let view = executor.build(&ctx).await.expect("build must succeed");
 
         assert_eq!(view.view_id, "hotspots");
         assert_eq!(view.title, "Scope hotspots");
         // Without graph_query, fan_in is 0 for all — items may be in any order
-        let items = view.blocks[0].body["items"].as_array().expect("items array");
+        let items = view.blocks[0].body["items"]
+            .as_array()
+            .expect("items array");
         assert_eq!(items.len(), 3);
     }
 
     #[tokio::test]
     async fn hotspots_capability_rejects_file() {
         let registry = crate::registry::ViewRegistry::new(None);
-        let executor = registry.get_executor("hotspots").expect("hotspots must be registered");
+        let executor = registry
+            .get_executor("hotspots")
+            .expect("hotspots must be registered");
 
         let target = InspectionTarget::File {
             path: "src/main.rs".into(),
-            symbols: vec![make_resolved("src/main.rs", "main", 1, SymbolKind::Function)],
+            symbols: vec![make_resolved(
+                "src/main.rs",
+                "main",
+                1,
+                SymbolKind::Function,
+            )],
         };
         let ctx = ViewContext {
             target: &target,
@@ -2942,7 +3149,10 @@ mod tests {
             "hotspots capability must reject File target with error"
         );
         let err = result.unwrap_err();
-        assert!(matches!(err, crate::error::ExplorerError::ViewNotAvailable { .. }));
+        assert!(matches!(
+            err,
+            crate::error::ExplorerError::ViewNotAvailable { .. }
+        ));
     }
 }
 
@@ -3132,7 +3342,4 @@ mod view_seam_tests {
             "get_executor for unknown id must return None"
         );
     }
-
 }
-
-

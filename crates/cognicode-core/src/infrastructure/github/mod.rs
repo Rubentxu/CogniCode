@@ -13,10 +13,10 @@
 
 #[cfg(feature = "multimodal")]
 pub mod client;
-#[cfg(feature = "multimodal")]
-pub mod octocrab_client;
 #[cfg(all(test, feature = "multimodal"))]
 pub mod mock_client;
+#[cfg(feature = "multimodal")]
+pub mod octocrab_client;
 
 #[cfg(feature = "multimodal")]
 pub use client::{GitHubClient, GitHubError, IssueState, RawIssue};

@@ -51,7 +51,10 @@ pub async fn extract_entities(
     let mut follow_ups: Vec<FollowUp> = Vec::new();
 
     for token in tokens {
-        let hits = search.spotter_search(&token, None).await.unwrap_or_default();
+        let hits = search
+            .spotter_search(&token, None)
+            .await
+            .unwrap_or_default();
         // The spec threshold is 0.6.
         let candidates: Vec<EntityCandidate> = hits
             .into_iter()

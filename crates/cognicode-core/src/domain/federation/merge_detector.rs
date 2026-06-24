@@ -104,9 +104,7 @@ fn score_pair(left: &FederatedNode, right: &FederatedNode) -> Option<MergeCandid
     if score > 1.0 {
         score = 1.0;
     }
-    Some(
-        MergeCandidate::new(left.clone(), right.clone(), score, reasons).with_clamped_confidence(),
-    )
+    Some(MergeCandidate::new(left.clone(), right.clone(), score, reasons).with_clamped_confidence())
 }
 
 /// Normalise a label for label-matching: lowercase, trim,
@@ -146,19 +144,16 @@ fn property_overlap(a: &GraphNode, b: &GraphNode) -> bool {
 mod tests {
     use super::*;
     use crate::domain::aggregates::generic_graph::GraphNode;
-    use crate::domain::value_objects::node_kind::NodeKind;
     use crate::domain::value_objects::SpaceId;
     use crate::domain::value_objects::SymbolKind;
+    use crate::domain::value_objects::node_kind::NodeKind;
 
     fn make_node(id: &str, label: &str, kind: NodeKind) -> GraphNode {
         GraphNode::builder(id, kind).label(label).build()
     }
 
     fn make_fnode(space: &str, id: &str, label: &str, kind: NodeKind) -> FederatedNode {
-        FederatedNode::new(
-            make_node(id, label, kind),
-            SpaceId::try_new(space).unwrap(),
-        )
+        FederatedNode::new(make_node(id, label, kind), SpaceId::try_new(space).unwrap())
     }
 
     /// `normalize_label` lowercases and strips whitespace.
@@ -180,8 +175,18 @@ mod tests {
     /// Label match alone produces 0.5 + 0.3 = 0.8 (the threshold).
     #[test]
     fn scoring_label_only_returns_0_8() {
-        let a = make_fnode("a", "file:a:1", "User", NodeKind::Symbol(SymbolKind::Function));
-        let b = make_fnode("b", "file:b:1", "user", NodeKind::Symbol(SymbolKind::Function));
+        let a = make_fnode(
+            "a",
+            "file:a:1",
+            "User",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
+        let b = make_fnode(
+            "b",
+            "file:b:1",
+            "user",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
         // Same label, same kind — wait, that gives 0.8 + 0.2 = 1.0.
         // To isolate the label-only score, use DIFFERENT kinds.
         let c = make_fnode("b", "file:c:1", "user", NodeKind::Decision);
@@ -198,7 +203,12 @@ mod tests {
     /// Kind match alone produces 0.5 + 0.2 = 0.7.
     #[test]
     fn scoring_kind_only_returns_0_7() {
-        let a = make_fnode("a", "file:a:1", "Alpha", NodeKind::Symbol(SymbolKind::Function));
+        let a = make_fnode(
+            "a",
+            "file:a:1",
+            "Alpha",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
         let b = make_fnode(
             "b",
             "file:b:1",
@@ -218,8 +228,18 @@ mod tests {
     /// Full match (label + kind + property overlap) caps at 1.0.
     #[test]
     fn scoring_full_match_returns_1_0_capped() {
-        let mut a = make_fnode("a", "file:a:1", "User", NodeKind::Symbol(SymbolKind::Function));
-        let mut b = make_fnode("b", "file:b:1", "user", NodeKind::Symbol(SymbolKind::Function));
+        let mut a = make_fnode(
+            "a",
+            "file:a:1",
+            "User",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
+        let mut b = make_fnode(
+            "b",
+            "file:b:1",
+            "user",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
         a.node.properties.insert("k".to_string(), "v".to_string());
         b.node.properties.insert("k".to_string(), "v".to_string());
         let cand = score_pair(&a, &b).expect("score");
@@ -236,7 +256,12 @@ mod tests {
     /// different kinds, 0 properties.
     #[test]
     fn scoring_base_only_returns_0_5() {
-        let a = make_fnode("a", "file:a:1", "Alpha", NodeKind::Symbol(SymbolKind::Function));
+        let a = make_fnode(
+            "a",
+            "file:a:1",
+            "Alpha",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
         let b = make_fnode("b", "file:b:1", "Beta", NodeKind::Decision);
         let cand = score_pair(&a, &b).expect("score");
         assert!(
@@ -253,8 +278,18 @@ mod tests {
     fn scoring_caps_at_1_0_when_property_overlap_fires() {
         // 3 components firing = 1.0 (capped). We assert the
         // cap behaviour directly via MergeCandidate.
-        let left = make_fnode("a", "file:a:1", "User", NodeKind::Symbol(SymbolKind::Function));
-        let right = make_fnode("b", "file:b:1", "user", NodeKind::Symbol(SymbolKind::Function));
+        let left = make_fnode(
+            "a",
+            "file:a:1",
+            "User",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
+        let right = make_fnode(
+            "b",
+            "file:b:1",
+            "user",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
         // Without property overlap, the score is 0.5 + 0.3 + 0.2 = 1.0
         // exactly. Adding property overlap pushes it to 1.1 → capped to 1.0.
         let cand = score_pair(&left, &right).expect("score");
@@ -265,8 +300,18 @@ mod tests {
     /// emitted for them).
     #[test]
     fn same_space_pair_filtered_out() {
-        let a = make_fnode("a", "file:a:1", "User", NodeKind::Symbol(SymbolKind::Function));
-        let b = make_fnode("a", "file:a:2", "User", NodeKind::Symbol(SymbolKind::Function));
+        let a = make_fnode(
+            "a",
+            "file:a:1",
+            "User",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
+        let b = make_fnode(
+            "a",
+            "file:a:2",
+            "User",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
         let det = MergeDetector::new();
         let out = det.detect(&[a, b]);
         assert!(out.is_empty(), "same-space pair must be filtered");
@@ -275,8 +320,18 @@ mod tests {
     /// Pairs below the threshold are excluded.
     #[test]
     fn below_threshold_excluded() {
-        let a = make_fnode("a", "file:a:1", "Alpha", NodeKind::Symbol(SymbolKind::Function));
-        let b = make_fnode("b", "file:b:1", "Beta", NodeKind::Symbol(SymbolKind::Function));
+        let a = make_fnode(
+            "a",
+            "file:a:1",
+            "Alpha",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
+        let b = make_fnode(
+            "b",
+            "file:b:1",
+            "Beta",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
         let det = MergeDetector::new();
         let out = det.detect(&[a, b]);
         // Score = 0.5 (base) — below threshold.
@@ -293,7 +348,12 @@ mod tests {
     /// Label-only match produces a `LabelMatch` reason.
     #[test]
     fn reasons_populated_for_label_only_match() {
-        let a = make_fnode("a", "file:a:1", "User", NodeKind::Symbol(SymbolKind::Function));
+        let a = make_fnode(
+            "a",
+            "file:a:1",
+            "User",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
         let b = make_fnode("b", "file:b:1", "user", NodeKind::Decision);
         let det = MergeDetector::new();
         let out = det.detect(&[a, b]);
@@ -304,8 +364,18 @@ mod tests {
     /// Full match populates all three reasons.
     #[test]
     fn reasons_populated_for_full_match() {
-        let mut a = make_fnode("a", "file:a:1", "User", NodeKind::Symbol(SymbolKind::Function));
-        let mut b = make_fnode("b", "file:b:1", "user", NodeKind::Symbol(SymbolKind::Function));
+        let mut a = make_fnode(
+            "a",
+            "file:a:1",
+            "User",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
+        let mut b = make_fnode(
+            "b",
+            "file:b:1",
+            "user",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
         a.node.properties.insert("k".to_string(), "v".to_string());
         b.node.properties.insert("k".to_string(), "v".to_string());
         let det = MergeDetector::new();
@@ -320,9 +390,24 @@ mod tests {
     /// Three-space cluster: 3 pairs total (1-2, 1-3, 2-3).
     #[test]
     fn three_space_cluster_produces_three_pairs() {
-        let a = make_fnode("a", "file:a:1", "User", NodeKind::Symbol(SymbolKind::Function));
-        let b = make_fnode("b", "file:b:1", "user", NodeKind::Symbol(SymbolKind::Function));
-        let c = make_fnode("c", "file:c:1", "USER", NodeKind::Symbol(SymbolKind::Function));
+        let a = make_fnode(
+            "a",
+            "file:a:1",
+            "User",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
+        let b = make_fnode(
+            "b",
+            "file:b:1",
+            "user",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
+        let c = make_fnode(
+            "c",
+            "file:c:1",
+            "USER",
+            NodeKind::Symbol(SymbolKind::Function),
+        );
         let det = MergeDetector::new();
         let out = det.detect(&[a, b, c]);
         assert_eq!(out.len(), 3, "expected 3 pairs, got {}", out.len());

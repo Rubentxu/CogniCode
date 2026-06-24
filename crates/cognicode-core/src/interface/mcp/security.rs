@@ -142,11 +142,7 @@ impl InputValidator {
     /// boundary in `call_tool_handler` selects keys per-category to
     /// give "expensive" tools (graph, navigation, aix) their own
     /// namespace; this builder is the global override path.
-    pub fn with_strict_rate_limit(
-        mut self,
-        max_tokens: usize,
-        window_secs: u64,
-    ) -> Self {
+    pub fn with_strict_rate_limit(mut self, max_tokens: usize, window_secs: u64) -> Self {
         self.rate_limiter = Arc::new(RateLimiter::new(max_tokens, window_secs));
         self
     }
@@ -180,14 +176,17 @@ impl InputValidator {
             }
             if let Ok(canonical_parent) = std::fs::canonicalize(parent) {
                 // Found existing directory - append remaining path components
-                let remaining = path.strip_prefix(parent).map(|p| p.to_path_buf())
+                let remaining = path
+                    .strip_prefix(parent)
+                    .map(|p| p.to_path_buf())
                     .unwrap_or_else(|_| path.to_path_buf());
                 return canonical_parent.join(remaining);
             }
             current = parent.to_path_buf();
         }
         // No existing ancestor found - fallback to current directory
-        std::path::PathBuf::from(".").canonicalize()
+        std::path::PathBuf::from(".")
+            .canonicalize()
             .unwrap_or_else(|_| std::path::PathBuf::from("."))
     }
 
@@ -1358,8 +1357,7 @@ mod tests {
         // M3.3: with_strict_rate_limit() should swap in a stricter limiter
         // with the requested max_tokens and window_secs. The previous
         // limiter is replaced (its per-key state is gone).
-        let validator = InputValidator::new()
-            .with_strict_rate_limit(2, 60);
+        let validator = InputValidator::new().with_strict_rate_limit(2, 60);
         let limiter = validator.rate_limiter();
         // Stricter cap: only 2 tokens per window.
         assert!(limiter.check_with_key("tool:graph_pagerank"));

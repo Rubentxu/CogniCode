@@ -43,8 +43,13 @@ pub async fn handle_read_file(
     ctx: &HandlerContext,
     input: ReadFileInput,
 ) -> HandlerResult<ReadFileOutput> {
-    let service = ctx.file_ops_service.clone()
-        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone(), Arc::new(RustVerifier::new()))));
+    let service = ctx.file_ops_service.clone().unwrap_or_else(|| {
+        Arc::new(FileOperationsService::new(
+            ctx.working_dir.to_string_lossy().as_ref(),
+            ctx.validator.clone(),
+            Arc::new(RustVerifier::new()),
+        ))
+    });
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
@@ -91,8 +96,13 @@ pub async fn handle_write_file(
     ctx: &HandlerContext,
     input: WriteFileInput,
 ) -> HandlerResult<WriteFileOutput> {
-    let service = ctx.file_ops_service.clone()
-        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone(), Arc::new(RustVerifier::new()))));
+    let service = ctx.file_ops_service.clone().unwrap_or_else(|| {
+        Arc::new(FileOperationsService::new(
+            ctx.working_dir.to_string_lossy().as_ref(),
+            ctx.validator.clone(),
+            Arc::new(RustVerifier::new()),
+        ))
+    });
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
@@ -136,8 +146,13 @@ pub async fn handle_edit_file(
     ctx: &HandlerContext,
     input: EditFileInput,
 ) -> HandlerResult<EditFileOutput> {
-    let service = ctx.file_ops_service.clone()
-        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone(), Arc::new(RustVerifier::new()))));
+    let service = ctx.file_ops_service.clone().unwrap_or_else(|| {
+        Arc::new(FileOperationsService::new(
+            ctx.working_dir.to_string_lossy().as_ref(),
+            ctx.validator.clone(),
+            Arc::new(RustVerifier::new()),
+        ))
+    });
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
@@ -186,8 +201,13 @@ pub async fn handle_search_content(
     ctx: &HandlerContext,
     input: SearchContentInput,
 ) -> HandlerResult<SearchContentOutput> {
-    let service = ctx.file_ops_service.clone()
-        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone(), Arc::new(RustVerifier::new()))));
+    let service = ctx.file_ops_service.clone().unwrap_or_else(|| {
+        Arc::new(FileOperationsService::new(
+            ctx.working_dir.to_string_lossy().as_ref(),
+            ctx.validator.clone(),
+            Arc::new(RustVerifier::new()),
+        ))
+    });
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
@@ -234,8 +254,13 @@ pub async fn handle_list_files(
     ctx: &HandlerContext,
     input: ListFilesInput,
 ) -> HandlerResult<ListFilesOutput> {
-    let service = ctx.file_ops_service.clone()
-        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone(), Arc::new(RustVerifier::new()))));
+    let service = ctx.file_ops_service.clone().unwrap_or_else(|| {
+        Arc::new(FileOperationsService::new(
+            ctx.working_dir.to_string_lossy().as_ref(),
+            ctx.validator.clone(),
+            Arc::new(RustVerifier::new()),
+        ))
+    });
     let metrics = match get_global_metrics() {
         Some(m) => m,
         None => {
@@ -287,8 +312,13 @@ pub async fn handle_retrieve_and_verify(
         ));
     }
 
-    let service = ctx.file_ops_service.clone()
-        .unwrap_or_else(|| Arc::new(FileOperationsService::new(ctx.working_dir.to_string_lossy().as_ref(), ctx.validator.clone(), Arc::new(RustVerifier::new()))));
+    let service = ctx.file_ops_service.clone().unwrap_or_else(|| {
+        Arc::new(FileOperationsService::new(
+            ctx.working_dir.to_string_lossy().as_ref(),
+            ctx.validator.clone(),
+            Arc::new(RustVerifier::new()),
+        ))
+    });
 
     // Convert MCP input to DTO
     let dto_input = crate::application::dto::RetrieveAndVerifyRequest {
@@ -357,7 +387,9 @@ mod tests {
 
     /// Helper to create a HandlerContext with workspace scoping
     fn create_test_context(temp_dir: &tempfile::TempDir) -> HandlerContext {
-        HandlerContext::builder().with_working_dir(temp_dir.path().to_path_buf()).build()
+        HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .build()
     }
 
     // ========================================================================

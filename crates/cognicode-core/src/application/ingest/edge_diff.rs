@@ -14,13 +14,15 @@ use crate::domain::value_objects::DependencyType;
 /// `old_edges`: edges from the previous scan for the changed files.
 /// `new_edges`: edges from the current scan for the changed files.
 pub fn calculate_edge_diff(
-    old_edges: &[(String, String, DependencyType)],  // (source_name, target_name, dep_type)
+    old_edges: &[(String, String, DependencyType)], // (source_name, target_name, dep_type)
     new_edges: &[(String, String, DependencyType, String)], // + file
 ) -> Vec<GraphEvent> {
     let old_set: std::collections::HashSet<(String, String, DependencyType)> =
         old_edges.iter().cloned().collect();
-    let new_set: std::collections::HashSet<(String, String, DependencyType)> =
-        new_edges.iter().map(|(s, t, d, _)| (s.clone(), t.clone(), *d)).collect();
+    let new_set: std::collections::HashSet<(String, String, DependencyType)> = new_edges
+        .iter()
+        .map(|(s, t, d, _)| (s.clone(), t.clone(), *d))
+        .collect();
 
     let mut events = Vec::new();
 
@@ -126,14 +128,24 @@ mod tests {
     #[test]
     fn test_collect_edges_for_files() {
         let mut graph = CallGraph::new();
-        let sym_main = Symbol::new("main", SymbolKind::Function, Location::new("src/main.rs", 1, 1));
-        let sym_helper = Symbol::new("helper", SymbolKind::Function, Location::new("src/main.rs", 5, 1));
+        let sym_main = Symbol::new(
+            "main",
+            SymbolKind::Function,
+            Location::new("src/main.rs", 1, 1),
+        );
+        let sym_helper = Symbol::new(
+            "helper",
+            SymbolKind::Function,
+            Location::new("src/main.rs", 5, 1),
+        );
         graph.add_symbol(sym_main);
         graph.add_symbol(sym_helper);
         // Add dependency
         let sid_main = SymbolId::new("src/main.rs:main:1");
         let sid_helper = SymbolId::new("src/main.rs:helper:5");
-        graph.add_dependency(&sid_main, &sid_helper, DependencyType::Calls).unwrap();
+        graph
+            .add_dependency(&sid_main, &sid_helper, DependencyType::Calls)
+            .unwrap();
 
         let edges = collect_edges_for_files(&graph, &["src/main.rs".to_string()]);
         assert_eq!(edges.len(), 1);

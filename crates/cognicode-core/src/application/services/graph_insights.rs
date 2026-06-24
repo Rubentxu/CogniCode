@@ -5,8 +5,8 @@
 
 use crate::application::services::community_detector::CommunityDetector;
 use crate::application::services::graph_analytics::GraphAnalyticsService;
-use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::CallGraph;
+use crate::domain::aggregates::call_graph::SymbolId;
 use crate::infrastructure::graph::CallGraphProjection;
 
 /// A complete graph insights report.
@@ -97,7 +97,7 @@ impl GraphInsightsService {
             total_symbols: projection.node_count(),
             total_edges: projection.edge_count(),
             total_communities: 0, // filled below
-            total_cycles: 0,     // filled below
+            total_cycles: 0,      // filled below
             symbols_in_cycles: 0,
         };
 
@@ -107,10 +107,8 @@ impl GraphInsightsService {
 
         // Cycles (SCCs of size > 1 are non-trivial cycles)
         let sccs = projection.strongly_connected_components();
-        let cycle_clusters: Vec<Vec<SymbolId>> = sccs
-            .into_iter()
-            .filter(|scc| scc.len() > 1)
-            .collect();
+        let cycle_clusters: Vec<Vec<SymbolId>> =
+            sccs.into_iter().filter(|scc| scc.len() > 1).collect();
         let total_cycles = cycle_clusters.len();
         let symbols_in_cycles: usize = cycle_clusters.iter().map(|c| c.len()).sum();
 
@@ -191,7 +189,12 @@ impl GraphInsightsService {
             let top_god = &god_nodes_top[0];
             suggested_questions.push(format!(
                 "'{}' is the most depended-upon symbol (score: {:.3}). Is it doing too much?",
-                top_god.0.as_str().split(':').nth(1).unwrap_or(top_god.0.as_str()),
+                top_god
+                    .0
+                    .as_str()
+                    .split(':')
+                    .nth(1)
+                    .unwrap_or(top_god.0.as_str()),
                 top_god.1
             ));
         }
@@ -301,10 +304,12 @@ mod tests {
         assert!(!report.cycle_breakers.is_empty());
         assert!(report.health_score < 100.0);
         // The cycle question should be in the suggestions.
-        assert!(report
-            .suggested_questions
-            .iter()
-            .any(|q| q.contains("circular dependency")));
+        assert!(
+            report
+                .suggested_questions
+                .iter()
+                .any(|q| q.contains("circular dependency"))
+        );
     }
 
     #[test]

@@ -76,7 +76,9 @@ fn test_versioned_cache_get_at_returns_pinned() {
     cache.insert(Arc::new(CallGraph::new()));
 
     // Pin to id 1 — the older graph with the symbol must survive.
-    let pinned = cache.get_at(CheckpointId(1)).expect("id 1 should still be in the ring");
+    let pinned = cache
+        .get_at(CheckpointId(1))
+        .expect("id 1 should still be in the ring");
     assert_eq!(pinned.symbol_count(), 1);
 
     // And the head is the empty id 2.

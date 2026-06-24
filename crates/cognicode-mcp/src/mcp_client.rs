@@ -10,12 +10,16 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use rmcp::ServiceExt;
 use rmcp::model::{CallToolRequestParams, GetPromptRequestParams, ReadResourceRequestParams};
 use rmcp::transport::TokioChildProcess;
-use rmcp::ServiceExt;
 
 #[derive(Parser, Debug)]
-#[command(name = "mcp-client", version, about = "CogniCode MCP test client (rmcp SDK)")]
+#[command(
+    name = "mcp-client",
+    version,
+    about = "CogniCode MCP test client (rmcp SDK)"
+)]
 struct Args {
     /// Path to the workspace directory (passed as --cwd to the server)
     #[arg(short, long)]
@@ -43,7 +47,10 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     if !args.workspace.exists() {
-        eprintln!("Error: workspace '{}' does not exist", args.workspace.display());
+        eprintln!(
+            "Error: workspace '{}' does not exist",
+            args.workspace.display()
+        );
         std::process::exit(1);
     }
 
@@ -55,7 +62,10 @@ async fn main() -> anyhow::Result<()> {
     });
 
     if !server_bin.exists() {
-        eprintln!("Error: server binary not found at '{}'", server_bin.display());
+        eprintln!(
+            "Error: server binary not found at '{}'",
+            server_bin.display()
+        );
         std::process::exit(1);
     }
 
@@ -83,20 +93,14 @@ async fn main() -> anyhow::Result<()> {
             serde_json::to_string_pretty(&tools)?
         }
         "tools/call" => {
-            let tool_name = params["name"]
-                .as_str()
-                .unwrap_or("unknown")
-                .to_string();
+            let tool_name = params["name"].as_str().unwrap_or("unknown").to_string();
             let arguments = params
                 .get("arguments")
                 .and_then(|v| v.as_object())
                 .cloned()
                 .unwrap_or_default();
             let tool_result = client
-                .call_tool(
-                    CallToolRequestParams::new(tool_name)
-                        .with_arguments(arguments),
-                )
+                .call_tool(CallToolRequestParams::new(tool_name).with_arguments(arguments))
                 .await?;
             serde_json::to_string_pretty(&tool_result)?
         }
@@ -105,10 +109,7 @@ async fn main() -> anyhow::Result<()> {
             serde_json::to_string_pretty(&resources)?
         }
         "resources/read" => {
-            let uri = params["uri"]
-                .as_str()
-                .unwrap_or("unknown")
-                .to_string();
+            let uri = params["uri"].as_str().unwrap_or("unknown").to_string();
             let resource = client
                 .read_resource(ReadResourceRequestParams::new(&uri))
                 .await?;
@@ -119,19 +120,14 @@ async fn main() -> anyhow::Result<()> {
             serde_json::to_string_pretty(&prompts)?
         }
         "prompts/get" => {
-            let prompt_name = params["name"]
-                .as_str()
-                .unwrap_or("unknown")
-                .to_string();
+            let prompt_name = params["name"].as_str().unwrap_or("unknown").to_string();
             let arguments = params
                 .get("arguments")
                 .and_then(|v| v.as_object())
                 .cloned()
                 .unwrap_or_default();
             let prompt = client
-                .get_prompt(
-                    GetPromptRequestParams::new(prompt_name).with_arguments(arguments),
-                )
+                .get_prompt(GetPromptRequestParams::new(prompt_name).with_arguments(arguments))
                 .await?;
             serde_json::to_string_pretty(&prompt)?
         }

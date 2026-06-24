@@ -17,8 +17,8 @@ use std::sync::Arc;
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::traits::graph_store::{GraphStore, StoreError};
-use crate::domain::value_objects::file_manifest::FileManifest;
 use crate::domain::value_objects::CheckpointId;
+use crate::domain::value_objects::file_manifest::FileManifest;
 use crate::infrastructure::graph::GraphCache;
 use crate::infrastructure::persistence::InMemoryGraphStore;
 
@@ -113,10 +113,7 @@ impl GraphStore for CachedGraphStore {
     /// ring is cold we return `Ok(None)`; otherwise a `None` from
     /// `get_at` is a true "not found" and we lift it to
     /// `Err(CheckpointNotFound)`.
-    fn checkpoint_at(
-        &self,
-        id: CheckpointId,
-    ) -> Result<Option<Arc<CallGraph>>, StoreError> {
+    fn checkpoint_at(&self, id: CheckpointId) -> Result<Option<Arc<CallGraph>>, StoreError> {
         if self.cache.current_id().is_none() {
             return Ok(None);
         }

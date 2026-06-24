@@ -14,14 +14,38 @@ pub struct BuiltinDescriptorRaw {
 /// The 8 built-in view descriptors (raw data).
 /// Keep in sync with REAL_EXECUTOR_DESCRIPTORS in explorer registry.rs.
 pub const BUILTIN_DESCRIPTORS_RAW: &[BuiltinDescriptorRaw] = &[
-    BuiltinDescriptorRaw { id: "overview", title: "Overview" },
-    BuiltinDescriptorRaw { id: "call-graph", title: "Call Graph" },
-    BuiltinDescriptorRaw { id: "source", title: "Source" },
-    BuiltinDescriptorRaw { id: "quality", title: "Quality" },
-    BuiltinDescriptorRaw { id: "evidence", title: "Evidence" },
-    BuiltinDescriptorRaw { id: "symbols", title: "Symbols" },
-    BuiltinDescriptorRaw { id: "dependencies", title: "Dependencies" },
-    BuiltinDescriptorRaw { id: "hotspots", title: "Hotspots" },
+    BuiltinDescriptorRaw {
+        id: "overview",
+        title: "Overview",
+    },
+    BuiltinDescriptorRaw {
+        id: "call-graph",
+        title: "Call Graph",
+    },
+    BuiltinDescriptorRaw {
+        id: "source",
+        title: "Source",
+    },
+    BuiltinDescriptorRaw {
+        id: "quality",
+        title: "Quality",
+    },
+    BuiltinDescriptorRaw {
+        id: "evidence",
+        title: "Evidence",
+    },
+    BuiltinDescriptorRaw {
+        id: "symbols",
+        title: "Symbols",
+    },
+    BuiltinDescriptorRaw {
+        id: "dependencies",
+        title: "Dependencies",
+    },
+    BuiltinDescriptorRaw {
+        id: "hotspots",
+        title: "Hotspots",
+    },
 ];
 
 impl BuiltinDescriptorRaw {

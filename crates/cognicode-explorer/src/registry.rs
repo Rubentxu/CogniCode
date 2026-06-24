@@ -35,7 +35,9 @@ use crate::dto::{InspectableObjectType, RendererKind, ViewDescriptorDto, ViewKin
 use cognicode_core::schemas::BUILTIN_DESCRIPTORS_RAW;
 
 /// Convert raw built-in descriptor to dto::ViewDescriptorDto.
-fn raw_to_view_descriptor(raw: &cognicode_core::schemas::BuiltinDescriptorRaw) -> ViewDescriptorDto {
+fn raw_to_view_descriptor(
+    raw: &cognicode_core::schemas::BuiltinDescriptorRaw,
+) -> ViewDescriptorDto {
     // Use the From impl for the ACL boundary.
     // The raw descriptor's to_view_descriptor() returns core_schema::ViewDescriptor,
     // which we then convert to ViewDescriptorDto.
@@ -210,11 +212,21 @@ impl ProviderExecutorAdapter {
 }
 
 impl crate::domain::views::ViewDescriptor for ProviderExecutorAdapter {
-    fn id(&self) -> &'static str { self.provider.id() }
-    fn title(&self) -> &'static str { self.provider.title() }
-    fn applies_to(&self) -> &'static [crate::dto::InspectableObjectType] { self.provider.applies_to() }
-    fn view_kind(&self) -> crate::dto::ViewKind { self.provider.view_kind() }
-    fn renderer_kind(&self) -> crate::dto::RendererKind { self.provider.renderer_kind() }
+    fn id(&self) -> &'static str {
+        self.provider.id()
+    }
+    fn title(&self) -> &'static str {
+        self.provider.title()
+    }
+    fn applies_to(&self) -> &'static [crate::dto::InspectableObjectType] {
+        self.provider.applies_to()
+    }
+    fn view_kind(&self) -> crate::dto::ViewKind {
+        self.provider.view_kind()
+    }
+    fn renderer_kind(&self) -> crate::dto::RendererKind {
+        self.provider.renderer_kind()
+    }
 }
 
 #[async_trait::async_trait]
@@ -280,7 +292,8 @@ impl ViewRegistry {
         });
 
         // Add Phase 3 executors that apply to this object type and aren't duplicates
-        let provider_ids: std::collections::HashSet<_> = descriptors.iter().map(|d| d.id.as_str()).collect();
+        let provider_ids: std::collections::HashSet<_> =
+            descriptors.iter().map(|d| d.id.as_str()).collect();
         let mut additional: Vec<ViewDescriptorDto> = Vec::new();
         for executor_desc in real_descriptors.iter() {
             if provider_ids.contains(executor_desc.id.as_str()) {
@@ -308,25 +321,74 @@ impl ViewRegistry {
     /// Phase 2 implementation: first checks real ViewExecutor implementations
     /// (OverviewExecutor, CallGraphExecutor, SourceExecutor, QualityExecutor),
     /// then falls back to ProviderExecutorAdapter for unregistered ids.
-    pub fn get_executor(&self, id: &str) -> Option<&'static dyn crate::domain::views::ViewExecutor> {
+    pub fn get_executor(
+        &self,
+        id: &str,
+    ) -> Option<&'static dyn crate::domain::views::ViewExecutor> {
         // Phase 3: all 8 real executors take priority over provider adapters.
-        static REAL_EXECUTORS: OnceLock<std::collections::HashMap<&'static str, &'static dyn crate::domain::views::ViewExecutor>> = OnceLock::new();
+        static REAL_EXECUTORS: OnceLock<
+            std::collections::HashMap<
+                &'static str,
+                &'static dyn crate::domain::views::ViewExecutor,
+            >,
+        > = OnceLock::new();
         let real = REAL_EXECUTORS.get_or_init(|| {
             std::collections::HashMap::from([
-                ("overview", &crate::domain::views::OVERVIEW_EXECUTOR as &dyn crate::domain::views::ViewExecutor),
-                ("call-graph", &crate::domain::views::CALLGRAPH_EXECUTOR as &dyn crate::domain::views::ViewExecutor),
-                ("source", &crate::domain::views::SOURCE_EXECUTOR as &dyn crate::domain::views::ViewExecutor),
-                ("quality", &crate::domain::views::QUALITY_EXECUTOR as &dyn crate::domain::views::ViewExecutor),
-                ("evidence", &crate::domain::views::EVIDENCE_EXECUTOR as &dyn crate::domain::views::ViewExecutor),
-                ("symbols", &crate::domain::views::SYMBOLS_EXECUTOR as &dyn crate::domain::views::ViewExecutor),
-                ("dependencies", &crate::domain::views::DEPENDENCIES_EXECUTOR as &dyn crate::domain::views::ViewExecutor),
-                ("hotspots", &crate::domain::views::HOTSPOTS_EXECUTOR as &dyn crate::domain::views::ViewExecutor),
-                ("architecture-drift", &crate::domain::views::ARCHITECTURE_DRIFT_EXECUTOR as &dyn crate::domain::views::ViewExecutor),
+                (
+                    "overview",
+                    &crate::domain::views::OVERVIEW_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
+                (
+                    "call-graph",
+                    &crate::domain::views::CALLGRAPH_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
+                (
+                    "source",
+                    &crate::domain::views::SOURCE_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
+                (
+                    "quality",
+                    &crate::domain::views::QUALITY_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
+                (
+                    "evidence",
+                    &crate::domain::views::EVIDENCE_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
+                (
+                    "symbols",
+                    &crate::domain::views::SYMBOLS_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
+                (
+                    "dependencies",
+                    &crate::domain::views::DEPENDENCIES_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
+                (
+                    "hotspots",
+                    &crate::domain::views::HOTSPOTS_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
+                (
+                    "architecture-drift",
+                    &crate::domain::views::ARCHITECTURE_DRIFT_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
             ])
         });
         real.get(id).copied().or_else(|| {
             // Fall back to provider adapters for any ids not covered by Phase 2 executors.
-            static EXECUTORS: OnceLock<std::collections::HashMap<&'static str, Box<dyn crate::domain::views::ViewExecutor>>> = OnceLock::new();
+            static EXECUTORS: OnceLock<
+                std::collections::HashMap<
+                    &'static str,
+                    Box<dyn crate::domain::views::ViewExecutor>,
+                >,
+            > = OnceLock::new();
             let executors = EXECUTORS.get_or_init(|| {
                 let mut map = std::collections::HashMap::new();
                 for wrapper in inventory::iter::<ProviderWrapper> {
@@ -336,12 +398,15 @@ impl ViewRegistry {
                     if real.contains_key(id) {
                         continue;
                     }
-                    let executor: Box<dyn crate::domain::views::ViewExecutor> = Box::new(ProviderExecutorAdapter { provider });
+                    let executor: Box<dyn crate::domain::views::ViewExecutor> =
+                        Box::new(ProviderExecutorAdapter { provider });
                     map.insert(id, executor);
                 }
                 map
             });
-            executors.get(id).map(|b| b.as_ref() as &dyn crate::domain::views::ViewExecutor)
+            executors
+                .get(id)
+                .map(|b| b.as_ref() as &dyn crate::domain::views::ViewExecutor)
         })
     }
 
@@ -492,12 +557,18 @@ mod tests {
     fn view_descriptor_from_provider_extracts_metadata() {
         struct MockProvider;
         impl ViewDescriptorProvider for MockProvider {
-            fn id(&self) -> &'static str { "test-view" }
-            fn title(&self) -> &'static str { "Test View" }
+            fn id(&self) -> &'static str {
+                "test-view"
+            }
+            fn title(&self) -> &'static str {
+                "Test View"
+            }
             fn applies_to(&self) -> &'static [InspectableObjectType] {
                 &[InspectableObjectType::Symbol]
             }
-            fn view_kind(&self) -> ViewKind { ViewKind::CallGraph }
+            fn view_kind(&self) -> ViewKind {
+                ViewKind::CallGraph
+            }
         }
         let provider = MockProvider;
         let descriptor = ViewDescriptorDto::from(&provider as &dyn ViewDescriptorProvider);
@@ -545,7 +616,10 @@ mod tests {
         let result = registry.list_for(InspectableObjectType::Workspace);
         // If BUILTIN_PROVIDERS is empty (not yet populated), this returns [].
         // If providers are registered, Workspace might not be in their applies_to.
-        assert!(result.is_empty(), "expected empty for Workspace, got {result:?}");
+        assert!(
+            result.is_empty(),
+            "expected empty for Workspace, got {result:?}"
+        );
     }
 
     // --- Built-in providers are registered and accessible ---

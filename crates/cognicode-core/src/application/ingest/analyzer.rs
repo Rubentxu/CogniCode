@@ -46,9 +46,7 @@ pub struct HotPath {
 
 /// Run all analysis passes on the current in-memory graph.
 /// Requires the cluster stage to have already run (for community data).
-pub async fn run_analyze(
-    cache: &GraphCache,
-) -> AnalysisSummary {
+pub async fn run_analyze(cache: &GraphCache) -> AnalysisSummary {
     let graph = cache.get();
     let symbol_count = graph.symbol_count();
     let edge_count = graph.edge_count();
@@ -73,7 +71,8 @@ pub async fn run_analyze(
     let hot_paths = compute_hot_paths(&graph, 10);
 
     // ── Dead Code ──────────────────────────────────────────────
-    let dead_code: Vec<String> = graph.find_dead_code()
+    let dead_code: Vec<String> = graph
+        .find_dead_code()
         .into_iter()
         .map(|s| s.to_string())
         .collect();
@@ -104,10 +103,7 @@ pub async fn run_analyze(
     }
 }
 
-fn compute_god_nodes(
-    graph: &crate::domain::aggregates::CallGraph,
-    top_n: usize,
-) -> Vec<GodNode> {
+fn compute_god_nodes(graph: &crate::domain::aggregates::CallGraph, top_n: usize) -> Vec<GodNode> {
     let mut scored: Vec<(String, f64, usize, usize)> = graph
         .symbol_ids()
         .map(|(sid, _sym)| {
@@ -133,10 +129,7 @@ fn compute_god_nodes(
         .collect()
 }
 
-fn compute_hot_paths(
-    graph: &crate::domain::aggregates::CallGraph,
-    top_n: usize,
-) -> Vec<HotPath> {
+fn compute_hot_paths(graph: &crate::domain::aggregates::CallGraph, top_n: usize) -> Vec<HotPath> {
     let mut scored: Vec<(String, usize)> = graph
         .symbol_ids()
         .map(|(sid, _sym)| (sid.as_str().to_string(), graph.fan_in(sid)))

@@ -16,7 +16,7 @@ use crate::application::ingest::pg_upsert_stage::pg_upsert_streaming;
 use crate::application::ingest::refresh::refresh_from_pg;
 use crate::application::ingest::report_stage::run_report;
 use crate::application::ingest::resolve::resolve_cross_file_calls;
-use crate::application::ingest::scan::{scan_for_changes, ScanEntry};
+use crate::application::ingest::scan::{ScanEntry, scan_for_changes};
 use crate::application::ingest::types::{
     ChangeKind, FailedFile, ScanProgress, ScanResult, ScanStage,
 };
@@ -100,9 +100,16 @@ pub async fn run_scan(
     }
 
     // ── Stage 3: PgUpsert (streaming) ─────────────────────────────
-    report_progress(on_progress, ScanStage::PgUpsert, 0, results.len(), failed_files.len());
+    report_progress(
+        on_progress,
+        ScanStage::PgUpsert,
+        0,
+        results.len(),
+        failed_files.len(),
+    );
     let (upsert_stats, unresolved_edges) = pg_upsert_streaming(repo, workspace_id, {
-        let (tx, rx) = tokio::sync::mpsc::channel(crate::application::ingest::pg_upsert_stage::BATCH_SIZE);
+        let (tx, rx) =
+            tokio::sync::mpsc::channel(crate::application::ingest::pg_upsert_stage::BATCH_SIZE);
         for r in results {
             let _ = tx.send(r).await;
         }
@@ -120,9 +127,21 @@ pub async fn run_scan(
 
     // ── Stage 3b: Resolve (cross-file calls) ──────────────────────
     if !unresolved_edges.is_empty() {
-        report_progress(on_progress, ScanStage::Resolve, 0, unresolved_edges.len(), 0);
+        report_progress(
+            on_progress,
+            ScanStage::Resolve,
+            0,
+            unresolved_edges.len(),
+            0,
+        );
         let resolved = resolve_cross_file_calls(repo, workspace_id, &unresolved_edges).await;
-        report_progress(on_progress, ScanStage::Resolve, resolved, unresolved_edges.len(), 0);
+        report_progress(
+            on_progress,
+            ScanStage::Resolve,
+            resolved,
+            unresolved_edges.len(),
+            0,
+        );
     }
 
     // ── Stage 5: Cluster (community detection) ──────────────────
@@ -142,7 +161,10 @@ pub async fn run_scan(
 
     // Delete scan_manifest entries for files that were deleted
     let keep_paths: Vec<String> = previous.keys().cloned().collect();
-    if let Err(e) = repo.delete_scan_manifest_except(workspace_id, &keep_paths).await {
+    if let Err(e) = repo
+        .delete_scan_manifest_except(workspace_id, &keep_paths)
+        .await
+    {
         tracing::warn!("scan_manifest cleanup failed: {e}");
     }
 

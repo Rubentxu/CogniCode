@@ -220,12 +220,7 @@ impl ClusterResultDto {
     /// Build a `ClusterResultDto` from a list of strongly connected
     /// components (or undirected components).
     pub fn from_clusters(clusters: Vec<Vec<SymbolId>>) -> Self {
-        Self(
-            clusters
-                .into_iter()
-                .map(ClusterDto::from_members)
-                .collect(),
-        )
+        Self(clusters.into_iter().map(ClusterDto::from_members).collect())
     }
 }
 

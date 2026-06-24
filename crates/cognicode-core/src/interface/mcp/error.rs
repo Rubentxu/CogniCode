@@ -2,9 +2,9 @@
 //!
 //! Errors at the MCP interface layer. Preserves causal chain via thiserror's #[source].
 
-use thiserror::Error;
-use crate::interface::mcp::security::SecurityError;
 use crate::interface::mcp::handlers::HandlerError;
+use crate::interface::mcp::security::SecurityError;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum InterfaceError {
@@ -50,12 +50,8 @@ impl From<crate::domain::error::DomainError> for InterfaceError {
             crate::domain::error::DomainError::ParseError(s) => {
                 InterfaceError::InvalidInput(format!("parse error: {}", s))
             }
-            crate::domain::error::DomainError::AnalysisError(_) => {
-                InterfaceError::Domain(err)
-            }
-            crate::domain::error::DomainError::RefactoringError(_) => {
-                InterfaceError::Domain(err)
-            }
+            crate::domain::error::DomainError::AnalysisError(_) => InterfaceError::Domain(err),
+            crate::domain::error::DomainError::RefactoringError(_) => InterfaceError::Domain(err),
             crate::domain::error::DomainError::InvalidRange(s) => {
                 InterfaceError::InvalidInput(format!("invalid range: {}", s))
             }
@@ -111,9 +107,7 @@ impl From<crate::application::error::AppError> for InterfaceError {
             crate::application::error::AppError::InvalidParameter(s) => {
                 InterfaceError::InvalidInput(format!("invalid parameter: {}", s))
             }
-            crate::application::error::AppError::InternalError(s) => {
-                InterfaceError::Internal(s)
-            }
+            crate::application::error::AppError::InternalError(s) => InterfaceError::Internal(s),
             crate::application::error::AppError::NotImplemented(s) => {
                 InterfaceError::Internal(format!("not implemented: {}", s))
             }
@@ -131,7 +125,9 @@ impl From<crate::domain::traits::CodeIntelligenceError> for InterfaceError {
 
 impl From<crate::domain::traits::RefactorError> for InterfaceError {
     fn from(err: crate::domain::traits::RefactorError) -> Self {
-        InterfaceError::Application(crate::application::error::AppError::RefactorError(err.to_string()))
+        InterfaceError::Application(crate::application::error::AppError::RefactorError(
+            err.to_string(),
+        ))
     }
 }
 

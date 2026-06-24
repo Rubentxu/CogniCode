@@ -22,9 +22,9 @@ use crate::dto::{
     DesignFinding, FindingSeverity, InspectableObjectType, LensDescriptor, LensResult,
 };
 use crate::error::ExplorerResult;
-use crate::ports::symbol_repository::{ResolvedSymbol, RelationTarget};
-use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
+use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol};
 use cognicode_core::domain::aggregates::SymbolId;
+use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 
 /// Lens id — also the `lens_id` every finding carries.
 pub const LENS_ID: &str = "hotspots";
@@ -114,7 +114,11 @@ impl Lens for HotspotsLens {
 }
 
 fn symbol_risk(symbol: &ResolvedSymbol, ctx: &LensContext) -> (f32, f32) {
-    let fan_in = ctx.graph_query.as_ref().map(|gq| gq.fan_in(&symbol.id)).unwrap_or(0) as f32;
+    let fan_in = ctx
+        .graph_query
+        .as_ref()
+        .map(|gq| gq.fan_in(&symbol.id))
+        .unwrap_or(0) as f32;
     let weighted_issues: f32 = match &ctx.quality_repo {
         Some(q) => q
             .issues_at_line(&symbol.file, symbol.line)
@@ -455,19 +459,37 @@ mod tests {
         fn fan_out(&self, _id: &SymbolId) -> usize {
             0
         }
-        fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
+        fn callers_with_metadata(
+            &self,
+            _id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::CallerWithMetadata> {
             Vec::new()
         }
-        fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
+        fn callees_with_metadata(
+            &self,
+            _id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::CalleeWithMetadata> {
             Vec::new()
         }
-        fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata> {
+        fn dependencies_with_metadata(
+            &self,
+            _id: &SymbolId,
+        ) -> Vec<cognicode_core::domain::traits::graph_query_port::RelationTargetWithMetadata>
+        {
             Vec::new()
         }
-        fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
+        fn traverse_callees(
+            &self,
+            _id: &SymbolId,
+            _max_depth: u8,
+        ) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
             Vec::new()
         }
-        fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
+        fn traverse_callers(
+            &self,
+            _id: &SymbolId,
+            _max_depth: u8,
+        ) -> Vec<cognicode_core::domain::aggregates::CallEntry> {
             Vec::new()
         }
     }
