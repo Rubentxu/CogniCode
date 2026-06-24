@@ -102,8 +102,9 @@ sdd/
 # tracked because they're first-class project documentation, not
 # workflow artifacts.
 sddk/
+.sddk/                 # Hidden directory used by some SDDK tooling (with leading dot)
 .sddk-last-cycle-complete
-.sddk-*
+.sddk-*                # Cycle markers / spike JSONs / etc. (e.g. .sddk-spike-wasm-compat.json)
 
 # Proposal documents (agent-generated, not user-requested documentation)
 docs/propuestas/
