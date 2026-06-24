@@ -17,9 +17,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  AllSimplePathsOutput,
   CommunityGodNodesOutput,
   CommunitiesOutput,
+  CondensationOutput,
+  FeedbackArcSetOutput,
   SurprisingConnectionsOutput,
+  TransitiveReductionOutput,
   WasmGodNodesOutput,
   WasmPageRankOutput,
 } from "../api/types";
@@ -44,6 +48,17 @@ type WasmModule = {
     communities: unknown,
     options: unknown
   ) => SurprisingConnectionsOutput;
+  condensation: (nodes: unknown, edges: unknown) => CondensationOutput;
+  transitive_reduction: (nodes: unknown, edges: unknown) => TransitiveReductionOutput;
+  feedback_arc_set: (nodes: unknown, edges: unknown) => FeedbackArcSetOutput;
+  all_simple_paths: (
+    nodes: unknown,
+    edges: unknown,
+    fromId: unknown,
+    toId: unknown,
+    options: unknown
+  ) => AllSimplePathsOutput;
+  cluster_components: (nodes: unknown, edges: unknown) => { clusters: string[][] };
 };
 
 type WasmState = "idle" | "loading" | "ready" | "error";
@@ -113,6 +128,62 @@ export interface UseGraphAlgorithmsResult {
     communities: string[][],
     options?: { limit?: number }
   ) => Promise<SurprisingConnectionsOutput>;
+  /**
+   * Strongly connected components via Tarjan's algorithm.
+   *
+   * @param nodes - Array of { id, label? } objects representing graph nodes.
+   * @param edges - Array of { source, target } objects representing directed edges.
+   */
+  condensation: (
+    nodes: { id: string; label?: string | null }[],
+    edges: { source: string; target: string }[]
+  ) => Promise<CondensationOutput>;
+  /**
+   * Transitive reduction — minimal edge set preserving reachability.
+   *
+   * @param nodes - Array of { id, label? } objects representing graph nodes.
+   * @param edges - Array of { source, target } objects representing directed edges.
+   */
+  transitiveReduction: (
+    nodes: { id: string; label?: string | null }[],
+    edges: { source: string; target: string }[]
+  ) => Promise<TransitiveReductionOutput>;
+  /**
+   * Feedback arc set — edges whose removal breaks all cycles.
+   *
+   * @param nodes - Array of { id, label? } objects representing graph nodes.
+   * @param edges - Array of { source, target } objects representing directed edges.
+   */
+  feedbackArcSet: (
+    nodes: { id: string; label?: string | null }[],
+    edges: { source: string; target: string }[]
+  ) => Promise<FeedbackArcSetOutput>;
+  /**
+   * All simple paths between two nodes bounded by max_hops.
+   *
+   * @param nodes - Array of { id, label? } objects representing graph nodes.
+   * @param edges - Array of { source, target } objects representing directed edges.
+   * @param fromId - Source node ID.
+   * @param toId - Target node ID.
+   * @param options - Optional { maxHops?: number } (default 10).
+   */
+  allSimplePaths: (
+    nodes: { id: string; label?: string | null }[],
+    edges: { source: string; target: string }[],
+    fromId: string,
+    toId: string,
+    options?: { maxHops?: number }
+  ) => Promise<AllSimplePathsOutput>;
+  /**
+   * Cluster components — SCC + weakly connected components combined.
+   *
+   * @param nodes - Array of { id, label? } objects representing graph nodes.
+   * @param edges - Array of { source, target } objects representing directed edges.
+   */
+  clusterComponents: (
+    nodes: { id: string; label?: string | null }[],
+    edges: { source: string; target: string }[]
+  ) => Promise<ClusterComponentsOutput>;
   /** WASM module load state. */
   state: WasmState;
   /** Error if state === 'error'. */
@@ -282,12 +353,105 @@ export function useGraphAlgorithms(): UseGraphAlgorithmsResult {
     [loadModule]
   );
 
+  const condensationFn = useCallback(
+    async (
+      nodes: { id: string; label?: string | null }[],
+      edges: { source: string; target: string }[]
+    ): Promise<CondensationOutput> => {
+      if (!WASM_ENABLED) {
+        throw new Error(
+          "WASM condensation is disabled (VITE_ENABLE_WASM!==true). " +
+            "Use the backend endpoint /api/graph/:id/condensation instead."
+        );
+      }
+      const mod = await loadModule();
+      return mod.condensation(nodes, edges);
+    },
+    [loadModule]
+  );
+
+  const transitiveReductionFn = useCallback(
+    async (
+      nodes: { id: string; label?: string | null }[],
+      edges: { source: string; target: string }[]
+    ): Promise<TransitiveReductionOutput> => {
+      if (!WASM_ENABLED) {
+        throw new Error(
+          "WASM transitive_reduction is disabled (VITE_ENABLE_WASM!==true). " +
+            "Use the backend endpoint /api/graph/:id/transitive-reduction instead."
+        );
+      }
+      const mod = await loadModule();
+      return mod.transitive_reduction(nodes, edges);
+    },
+    [loadModule]
+  );
+
+  const feedbackArcSetFn = useCallback(
+    async (
+      nodes: { id: string; label?: string | null }[],
+      edges: { source: string; target: string }[]
+    ): Promise<FeedbackArcSetOutput> => {
+      if (!WASM_ENABLED) {
+        throw new Error(
+          "WASM feedback_arc_set is disabled (VITE_ENABLE_WASM!==true). " +
+            "Use the backend endpoint /api/graph/:id/feedback-arc-set instead."
+        );
+      }
+      const mod = await loadModule();
+      return mod.feedback_arc_set(nodes, edges);
+    },
+    [loadModule]
+  );
+
+  const allSimplePathsFn = useCallback(
+    async (
+      nodes: { id: string; label?: string | null }[],
+      edges: { source: string; target: string }[],
+      fromId: string,
+      toId: string,
+      options?: { maxHops?: number }
+    ): Promise<AllSimplePathsOutput> => {
+      if (!WASM_ENABLED) {
+        throw new Error(
+          "WASM all_simple_paths is disabled (VITE_ENABLE_WASM!==true). " +
+            "Use the backend endpoint /api/graph/:id/all-simple-paths instead."
+        );
+      }
+      const mod = await loadModule();
+      return mod.all_simple_paths(nodes, edges, fromId, toId, options ?? {});
+    },
+    [loadModule]
+  );
+
+  const clusterComponentsFn = useCallback(
+    async (
+      nodes: { id: string; label?: string | null }[],
+      edges: { source: string; target: string }[]
+    ): Promise<ClusterComponentsOutput> => {
+      if (!WASM_ENABLED) {
+        throw new Error(
+          "WASM cluster_components is disabled (VITE_ENABLE_WASM!==true). " +
+            "Use the backend endpoint /api/graph/:id/cluster-components instead."
+        );
+      }
+      const mod = await loadModule();
+      return mod.cluster_components(nodes, edges);
+    },
+    [loadModule]
+  );
+
   return {
     pagerank: pagerankFn,
     godNodes: godNodesFn,
     communities: communitiesFn,
     communityGodNodes: communityGodNodesFn,
     surprisingConnections: surprisingConnectionsFn,
+    condensation: condensationFn,
+    transitiveReduction: transitiveReductionFn,
+    feedbackArcSet: feedbackArcSetFn,
+    allSimplePaths: allSimplePathsFn,
+    clusterComponents: clusterComponentsFn,
     state,
     error,
     enabled: WASM_ENABLED,
