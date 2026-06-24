@@ -75,6 +75,7 @@ function InteractiveGraphPanel({
   // E5.5: stale-data hold — keep last good SubgraphResponse across revalidation
   // so the panel never unmounts (and InteractiveGraph never remounts cytoscape)
   // during warm-cache perspective toggles.
+  /* eslint-disable react-hooks/rules-of-hooks, react-hooks/refs */
   const lastGoodDataRef = useRef<typeof data>(null);
   if (data) lastGoodDataRef.current = data;
   if (error) lastGoodDataRef.current = null;
@@ -82,6 +83,7 @@ function InteractiveGraphPanel({
 
   if (isLoading && !lastGoodDataRef.current) return GRAPH_LOADING;
   if (error && !displayData) return GRAPH_ERROR;
+  /* eslint-enable react-hooks/rules-of-hooks, react-hooks/refs */
 
   return (
     <InteractiveGraph

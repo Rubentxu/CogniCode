@@ -30,12 +30,13 @@ import {
   spotterResultsFixture,
 } from "../mocks/fixtures";
 
-let fetchCount = 0;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally stubbed
+let _fetchCount = 0;
 let spotterFetchCount = 0;
 let artifactFetchCount = 0;
 
 beforeEach(() => {
-  fetchCount = 0;
+  _fetchCount = 0;
   spotterFetchCount = 0;
   artifactFetchCount = 0;
   server.resetHandlers();

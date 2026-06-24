@@ -24,7 +24,8 @@ describe("PaneStackView", () => {
 
     function Harness() {
       const [st] = useReducer(
-        (_prev: AppState) => state,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
+        (_: AppState) => state,
         state,
       );
       return (

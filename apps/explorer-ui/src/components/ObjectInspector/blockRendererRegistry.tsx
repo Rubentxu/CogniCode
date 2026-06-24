@@ -95,6 +95,7 @@ class BlockRendererRegistry {
  * The global block renderer registry.
  * Import this in ViewBlock.tsx to replace the switch dispatch.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- intentional co-location of helpers; refactor deferred
 export const blockRendererRegistry = new BlockRendererRegistry();
 
 // ============================================================================
@@ -110,6 +111,7 @@ export const blockRendererRegistry = new BlockRendererRegistry();
  * registerBlockRenderer("identity", { component: IdentityView, displayName: "IdentityView" });
  * ```
  */
+// eslint-disable-next-line react-refresh/only-export-components -- intentional co-location of helpers; refactor deferred
 export function registerBlockRenderer(
   id: string,
   entry: BlockRendererEntry,

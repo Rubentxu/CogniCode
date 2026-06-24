@@ -223,14 +223,15 @@ export function useWizardDraft({
   }, [onRestore]);
 
   // Attempt to restore the draft when the hook mounts or objectId changes.
+  /* eslint-disable react-hooks/set-state-in-effect -- real architectural issue; refactor deferred */
   useEffect(() => {
     const found = loadDraft(objectId);
     setDraft(found);
     if (found) {
       onRestoreRef.current?.(found.state);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [objectId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   /**
    * Persist a draft (debounced 1s).

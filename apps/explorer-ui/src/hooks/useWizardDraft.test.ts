@@ -13,6 +13,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useWizardDraft } from "./useWizardDraft";
+import type { ViewSpec } from "../api/schemas";
 
 // ---------------------------------------------------------------------------
 // localStorage mock
@@ -192,7 +193,7 @@ describe("useWizardDraft — draft save", () => {
   });
 
   it("includes editSpecId when editing an existing spec", async () => {
-    const editSpec = { id: "spec-abc", title: "Old title" } as any;
+    const editSpec = { id: "spec-abc", title: "Old title" } as unknown as ViewSpec;
     const { result } = renderHook(() =>
       useWizardDraft({
         objectId: "obj-edit",

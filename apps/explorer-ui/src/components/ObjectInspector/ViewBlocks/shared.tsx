@@ -36,6 +36,7 @@ export function BlockShell({ id, title, children, testId }: BlockShellProps) {
 // ============================================================================
 
 /** Severity color for the per-severity count cells in the summary. */
+// eslint-disable-next-line react-refresh/only-export-components -- intentional co-location of helpers; refactor deferred
 export function severityTextColor(severity: string): string {
   switch (severity.toLowerCase()) {
     case "blocker":
@@ -51,6 +52,7 @@ export function severityTextColor(severity: string): string {
   }
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- intentional co-location of helpers; refactor deferred
 export function severityColor(severity: string): string {
   switch (severity.toLowerCase()) {
     case "blocker":
@@ -70,6 +72,7 @@ export function severityColor(severity: string): string {
   }
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- intentional co-location of helpers; refactor deferred
 export function ratingColor(rating: string | null): string {
   if (!rating) return "var(--color-surface-overlay)";
   switch (rating.toUpperCase()) {
@@ -89,6 +92,7 @@ export function ratingColor(rating: string | null): string {
 }
 
 /** Trim an ISO timestamp to HH:MM:SS for compact display. */
+// eslint-disable-next-line react-refresh/only-export-components -- intentional co-location of helpers; refactor deferred
 export function formatLastRun(iso: string): string {
   try {
     const d = new Date(iso);

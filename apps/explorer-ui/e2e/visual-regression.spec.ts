@@ -285,7 +285,6 @@ test.describe("Explorer error states — Visual Regression", () => {
 
     // The graph-landing should render without throwing
     // If MSW provides landing fixture, the graph-landing canvas should be visible
-    const graphLanding = page.getByTestId("graph-landing");
     // It may take a moment to load
     await page.waitForTimeout(1000);
 

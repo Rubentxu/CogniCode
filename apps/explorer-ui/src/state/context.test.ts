@@ -7,6 +7,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { appReducer, initialState, initialStateWithFocus } from "./context";
+import type { ContextualView } from "../api/types";
 
 describe("initialStateWithFocus", () => {
   it("builds a pane-stack state with the object as the active pane", () => {
@@ -58,7 +59,7 @@ describe("appReducer — navigation", () => {
   it("SET_ACTIVE_VIEW updates the active pane", () => {
     let s = initialState;
     s = appReducer(s, { type: "PUSH_PANE", payload: { objectId: "a", kind: "symbol" } });
-    const view = { object_id: "a", view_id: "call-graph" } as any;
+    const view = { object_id: "a", view_id: "call-graph" } as unknown as ContextualView;
     const next = appReducer(s, { type: "SET_ACTIVE_VIEW", payload: view });
     expect(next.navigation.panes[0]!.activeViewId).toBe("call-graph");
   });

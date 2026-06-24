@@ -6,7 +6,7 @@
  * When `onClose` is provided, a close button appears (pane-stack only).
  */
 import { useEffect, useState } from "react";
-import { useApp, useAppDispatch } from "../../state/context";
+import { useAppDispatch } from "../../state/context";
 import { useObject } from "../../hooks/useObject";
 import { useAvailableViews, useViews } from "../../hooks/useViews";
 import { useAsk } from "../../hooks/useAsk";
@@ -48,7 +48,6 @@ type PaneInspectorProps = {
 export function PaneInspector({
   objectId,
   viewId,
-  lensId: _lensId,
   activeView: _activeView,
   onClose,
   onScroll,

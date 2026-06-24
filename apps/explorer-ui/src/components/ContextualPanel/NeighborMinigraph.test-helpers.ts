@@ -22,7 +22,6 @@ export type CyMock = {
 };
 
 declare global {
-  // eslint-disable-next-line no-var
   var __cyInstances: CyMock[] | undefined;
 }
 globalThis.__cyInstances = [];
