@@ -206,6 +206,64 @@ export interface SurprisingConnectionsOptions {
   limit?: number; // default 10
 }
 
+// ---- SCC and path algorithms (v0.15.0) ----
+
+/**
+ * Output for `condensation` — strongly connected components.
+ * Matches Rust `CondensationOutput` from `protocol.rs`.
+ */
+export interface CondensationOutput {
+  components: string[][];
+}
+
+/**
+ * A directed edge in transitive reduction / feedback arc set output.
+ * Matches Rust `TransitiveReductionEdge` from `protocol.rs`.
+ */
+export interface TransitiveReductionEdge {
+  source_id: string;
+  target_id: string;
+}
+
+/**
+ * Output for `transitive_reduction`.
+ * Matches Rust `TransitiveReductionOutput` from `protocol.rs`.
+ */
+export interface TransitiveReductionOutput {
+  edges: TransitiveReductionEdge[];
+}
+
+/**
+ * Output for `feedback_arc_set`.
+ * Matches Rust `FeedbackArcSetOutput` from `protocol.rs`.
+ */
+export interface FeedbackArcSetOutput {
+  edges: TransitiveReductionEdge[];
+}
+
+/**
+ * Options for `all_simple_paths`.
+ */
+export interface AllSimplePathsOptions {
+  maxHops?: number; // default 10
+}
+
+/**
+ * Output for `all_simple_paths`.
+ * Matches Rust `AllSimplePathsOutput` from `protocol.rs`.
+ */
+export interface AllSimplePathsOutput {
+  paths: string[][];
+}
+
+/**
+ * Output for `cluster_components`.
+ * Matches Rust `ClusterComponentsOutput` from `protocol.rs`.
+ */
+export interface ClusterComponentsOutput {
+  clusters: string[][];
+}
+
 export {
   graphStatusSchema,
   inspectableObjectTypeSchema,
