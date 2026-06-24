@@ -2,7 +2,7 @@
 
 CogniCode exposes a comprehensive set of MCP (Model Context Protocol) tools that let AI agents inspect, analyze, and navigate a code graph stored in PostgreSQL. This document catalogs every available tool, when to use it, and what it returns.
 
-> **Total tools shipped: 46** (as of v0.18.0)
+> **Total tools shipped: 49** (as of v0.19.0)
 >
 > Tools are grouped by purpose. Each entry lists the canonical tool name (used in `tools/call`), a one-line purpose, key parameters, and a short usage note.
 
@@ -174,6 +174,43 @@ Top-N symbols by PageRank across the full graph, relative to an anchoring object
 **Returns**: `{ hotspots: [{ symbol_id, label, pagerank, in_degree, out_degree }], method: "page_rank" }`.
 
 **Use when**: "which symbols should I worry about first?" — surfaces the most depended-upon code.
+
+### `find_dead_code_v2`
+
+Workspace-wide dead-code analysis with a confidence threshold filter. Wraps the internal MCP's `find_dead_code` and adds confidence gating so callers can request only high-confidence dead candidates.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `limit` | integer | no | Maximum entries returned (default 100). |
+| `confidence_threshold` | number | no | Minimum confidence score (default 0.0, max 1.0). |
+
+**Returns**: `{ dead_code: [{ symbol_id, kind, file, line, confidence }], total_dead, dead_code_percent, confidence_threshold }`.
+
+**Use when**: you want confidence-filtered dead code (vs `lens_find_dead_code` which is hard-filtered to callable + type definitions).
+
+### `find_cycles`
+
+Find strongly-connected components (cycles) in the graph using Tarjan's SCC algorithm.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `min_scc_size` | integer | no | Minimum SCC size to report (default 2, suppresses singletons). |
+
+**Returns**: `{ cycles: [[symbol_id, ...], ...], total_cycles, longest_cycle_length }`.
+
+**Use when**: "what circular dependencies exist?" — useful for planning refactors.
+
+### `health_dashboard`
+
+Single-call summary of the workspace's graph health. Returns total symbol/edge counts, dead-code percent, cycle count, and a derived health score (0.0–1.0).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `workspace_id` | string | no | Optional workspace scope. |
+
+**Returns**: `{ symbols: { total, indexed, stale }, edges: { total }, health_score: 0.0..=1.0, findings: [{ title, severity }] }`.
+
+**Use when**: dashboarding, monitoring, or quick project health checks.
 
 ---
 
@@ -521,9 +558,10 @@ Tools never panic; all errors are caught and returned through the envelope.
 | Impact | `impact_radius`, `impact_forward_radius`, `impact_has_path`, `impact_shortest_path`, `impact_detect_cycles`, `impact_component` | 6 |
 | Graph analysis (v0.16.0) | `graph_pagerank`, `graph_god_nodes`, `graph_communities`, `graph_community_god_nodes`, `graph_surprising_connections`, `graph_transitive_reduction`, `graph_feedback_arc_set`, `graph_all_simple_paths` | 8 |
 | Lens analysis (v0.18.0) | `lens_find_dead_code`, `lens_find_intersection`, `lens_hotspots` | 3 |
+| Workspace health (v0.19.0) | `find_dead_code_v2`, `find_cycles`, `health_dashboard` | 3 |
 | Multimodal ingest | `docs_ingest`, `issues_ingest` | 2 |
 | View management | `view_save`, `view_load`, `view_list`, `view_delete` | 4 |
-| **Total** | | **46** |
+| **Total** | | **49** |
 
 ---
 
