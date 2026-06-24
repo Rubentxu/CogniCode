@@ -125,11 +125,18 @@ impl ToolHandler for FindDeadCodeHandler {
         let limit = args.limit.unwrap_or(50);
 
         // When custom entry points are provided, treat them as the only
-        // roots for reachability. Otherwise use the graph's natural roots.
+        // roots for reachability. The caller may pass either a full
+        // `file:name:line` FQN or a short `name`; resolve short forms
+        // against the graph so the BFS reaches the intended symbols.
         let has_custom_entries = args.entry_points.is_some();
-        let roots: Vec<String> = match args.entry_points {
+        let raw_eps: Vec<String> = match args.entry_points {
             Some(eps) if !eps.is_empty() => eps,
             _ => g.roots().into_iter().map(|s| s.to_string()).collect(),
+        };
+        let roots: Vec<String> = if has_custom_entries {
+            resolve_entry_points(g, &raw_eps)
+        } else {
+            raw_eps
         };
 
         // Use the existing CallGraph::find_dead_code (uses graph roots).
@@ -221,6 +228,38 @@ fn compute_dead_from_entries(
             }
         })
         .collect()
+}
+
+/// Resolve user-supplied entry-point strings to the graph's canonical
+/// `file:name:line` FQNs. Accepts:
+/// - exact FQN: `"file:name:line"` (passed through)
+/// - bare name: `"name"` (matches any FQN whose name segment is `name`)
+/// - any segment match: `"lvl4"` matches `"lvl4.rs:lvl4:1"` because
+///   `lvl4` appears in any colon-separated segment
+fn resolve_entry_points(
+    g: &cognicode_core::domain::aggregates::CallGraph,
+    raw: &[String],
+) -> Vec<String> {
+    let mut resolved: Vec<String> = Vec::new();
+    for needle in raw {
+        let mut matched = false;
+        for (id, _) in g.symbol_ids() {
+            let id_str = id.to_string();
+            let is_match = id_str == *needle
+                || id_str.split(':').any(|seg| seg == needle.as_str());
+            if is_match && !resolved.contains(&id_str) {
+                resolved.push(id_str);
+                matched = true;
+            }
+        }
+        // Always include the raw input even if no match — preserves
+        // user intent when they explicitly typed an unknown id (the
+        // downstream BFS will simply find no reachable symbols).
+        if !matched && !resolved.contains(needle) {
+            resolved.push(needle.clone());
+        }
+    }
+    resolved
 }
 
 // ============================================================================
@@ -499,11 +538,33 @@ impl ToolHandler for HotspotsHandler {
         use cognicode_core::application::services::graph_analytics::GraphAnalyticsService;
         let scores = GraphAnalyticsService::page_rank(g, 0.85_f64, 100);
 
-        // Convert to ranked list (highest score first), skip the anchor.
-        let anchor = SymbolId::new(args.object_id.clone());
+        // Resolve the anchor to a real graph symbol when possible —
+        // SymbolIds stored in the graph are FQNs like `file:name:line`,
+        // but the caller may have passed a short form like `name`.
+        // We collect every FQN in the graph whose name (or any colon-
+        // separated segment) matches the caller's input, so any of them
+        // is excluded.
+        let anchor_fqns: Vec<SymbolId> = {
+            let needle = args.object_id.as_str();
+            g.symbol_ids()
+                .filter_map(|(id, _)| {
+                    let id_str = id.to_string();
+                    if id_str == needle
+                        || id_str.split(':').any(|seg| seg == needle)
+                    {
+                        Some(id.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
+
+        // Convert to ranked list (highest score first), skip the anchor
+        // (matched against any resolved FQN, not just the literal input).
         let mut ranked: Vec<(SymbolId, f64)> = scores
             .into_iter()
-            .filter(|(id, _)| id != &anchor)
+            .filter(|(id, _)| !anchor_fqns.iter().any(|a| a == id))
             .collect();
         ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 

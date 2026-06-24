@@ -22,7 +22,10 @@ mod graph;
 mod graph_analyze;
 mod impact;
 mod ingest;
-mod lens_mcp;
+// `lens_mcp` is `pub` so integration tests in `tests/` can register
+// its handlers into a fresh registry. Internal callers still go
+// through `register_lens_mcp_handlers`.
+pub mod lens_mcp;
 mod named_views;
 mod search;
 mod sessions;
