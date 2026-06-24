@@ -128,4 +128,4 @@ mod json_graph {
 }
 
 // Re-export for use in lib.rs
-pub use json_graph::JsonGraph;
+pub use json_graph::{JsonGraph, JsonNode};
