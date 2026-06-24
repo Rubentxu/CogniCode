@@ -130,6 +130,82 @@ export interface WasmGodNodesOutput {
   nodes: WasmGodNodeEntry[];
 }
 
+// ---- Community detection types (ADR-048) ----
+// These match the Rust protocol types in `crates/cognicode-graph-wasm/src/protocol.rs`.
+
+/**
+ * A single community — list of node IDs.
+ * Matches Rust `Community` from `protocol.rs`.
+ */
+export interface Community {
+  node_ids: string[];
+}
+
+/**
+ * Output shape for `communities` from the WASM module.
+ * Matches Rust `CommunitiesOutput` from `protocol.rs`.
+ */
+export interface CommunitiesOutput {
+  communities: Community[];
+}
+
+/**
+ * A god node within a specific community.
+ * Matches Rust `CommunityGodNode` from `protocol.rs`.
+ */
+export interface CommunityGodNode {
+  community_index: number;
+  id: string;
+  score: number;
+}
+
+/**
+ * Output shape for `community_god_nodes` from the WASM module.
+ * Matches Rust `CommunityGodNodesOutput` from `protocol.rs`.
+ */
+export interface CommunityGodNodesOutput {
+  nodes: CommunityGodNode[];
+}
+
+/**
+ * A surprising cross-community edge.
+ * Matches Rust `SurprisingEdge` from `protocol.rs`.
+ */
+export interface SurprisingEdge {
+  source_id: string;
+  target_id: string;
+  score: number;
+}
+
+/**
+ * Output shape for `surprising_connections` from the WASM module.
+ * Matches Rust `SurprisingConnectionsOutput` from `protocol.rs`.
+ */
+export interface SurprisingConnectionsOutput {
+  edges: SurprisingEdge[];
+}
+
+/**
+ * Options for `communities` (Label Propagation).
+ */
+export interface CommunitiesOptions {
+  maxIterations?: number; // default 100
+}
+
+/**
+ * Options for `community_god_nodes`.
+ */
+export interface CommunityGodNodesOptions {
+  percentile?: number; // default 0.95
+}
+
+/**
+ * Options for `surprising_connections`.
+ */
+export interface SurprisingConnectionsOptions {
+  limit?: number; // default 10
+}
+
 export {
   graphStatusSchema,
   inspectableObjectTypeSchema,
