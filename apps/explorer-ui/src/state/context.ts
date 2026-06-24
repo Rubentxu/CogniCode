@@ -21,7 +21,7 @@ import {
   type NavigationAction,
   type NavigationState,
   type ViewportState,
-} from "./navigation";
+} from "./slices/navigation";
 import {
   rootReducer,
   type LensSidebarAction,

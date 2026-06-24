@@ -8,7 +8,7 @@
  * - Focus tracking: getActiveFocus returns the active pane.
  */
 import { describe, it, expect } from "vitest";
-import { apply, getActiveFocus, hasFocus, MAX_PANES } from "./paneStack";
+import { apply, getActiveFocus, hasFocus, MAX_PANES } from "./reducer";
 import { makeInitialNavigationState } from "./types";
 import type { ContextualView } from "../../api/types";
 

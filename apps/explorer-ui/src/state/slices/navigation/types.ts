@@ -1,7 +1,7 @@
 /**
  * Navigation state types — pane-stack only (column mode removed, ADR-039 E3).
  */
-import type { ContextualView } from "../../api/types";
+import type { ContextualView } from "../../../api/types";
 
 // ============================================================================
 // Shared types

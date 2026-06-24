@@ -5,7 +5,7 @@
  * via `useAppDispatch`. Pass a custom adapter when testing or when
  * the component is used outside the Explorer shell.
  */
-import type { ViewportState } from "../../state/navigation/types";
+import type { ViewportState } from "../../state/slices/navigation/types";
 import type { Action } from "../../state/context";
 
 export interface RoutingAdapter {
