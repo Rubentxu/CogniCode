@@ -2,7 +2,7 @@
 
 CogniCode exposes a comprehensive set of MCP (Model Context Protocol) tools that let AI agents inspect, analyze, and navigate a code graph stored in PostgreSQL. This document catalogs every available tool, when to use it, and what it returns.
 
-> **Total tools shipped: 43** (as of v0.16.0)
+> **Total tools shipped: 46** (as of v0.18.0)
 >
 > Tools are grouped by purpose. Each entry lists the canonical tool name (used in `tools/call`), a one-line purpose, key parameters, and a short usage note.
 
@@ -133,6 +133,47 @@ List the views available for an object (`get_views`) or materialize a specific v
 List available lenses for an object (`get_lenses`) or apply one (`apply_lens`) — lenses are reusable analyses (e.g. `hotspots`, `dead_code`, `complexity_hotspots`).
 
 **Use when**: you want a typed analysis rather than raw data.
+
+### `lens_find_dead_code`
+
+Find symbols not reachable from any entry point (root symbols). Useful for identifying candidates for deletion. Uses the existing `CallGraph::find_dead_code()` algorithm and supports custom entry points.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `limit` | integer | no | Maximum dead symbols returned (default 50). Total count is always reported. |
+| `entry_points` | string[] | no | Explicit entry points. Defaults to graph roots (symbols with no incoming edges). |
+
+**Returns**: `{ total_symbols, total_dead, dead_code_percent, dead_symbols: [...], entry_points }`.
+
+**Use when**: "what code can I safely delete?" or "audit code coverage from entry points".
+
+### `lens_find_intersection`
+
+Run multiple lenses against the same object and return findings that appear in 2+ lenses (cross-cutting concerns that multiple analyses agree on).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `object_id` | string | yes | Object to analyze. |
+| `lens_ids` | string[] | yes | 2-5 lens ids to cross-reference. |
+| `min_consensus` | integer | no | Minimum lenses that must agree (default 2). |
+
+**Returns**: `{ findings: [{ finding_id, title, hypothesis, severity, confidence, contributing_lenses }], per_lens_counts }`.
+
+**Use when**: filtering signal from noise — findings confirmed by multiple analyses are higher confidence.
+
+### `lens_hotspots`
+
+Top-N symbols by PageRank across the full graph, relative to an anchoring object. Complements `graph_god_nodes` (subgraph-scoped) by being graph-wide and rank-N.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `object_id` | string | yes | Anchor object (excluded from results). |
+| `top_n` | integer | no | Top symbols to return (default 10, max 100). |
+| `max_depth` | integer | no | Max BFS depth (default 3, currently unused — full-graph PageRank). |
+
+**Returns**: `{ hotspots: [{ symbol_id, label, pagerank, in_degree, out_degree }], method: "page_rank" }`.
+
+**Use when**: "which symbols should I worry about first?" — surfaces the most depended-upon code.
 
 ---
 
@@ -479,9 +520,10 @@ Tools never panic; all errors are caught and returned through the envelope.
 | Graph traversal | `graph_subgraph`, `graph_cluster`, `graph_explain`, `detect_architecture_drift` | 4 |
 | Impact | `impact_radius`, `impact_forward_radius`, `impact_has_path`, `impact_shortest_path`, `impact_detect_cycles`, `impact_component` | 6 |
 | Graph analysis (v0.16.0) | `graph_pagerank`, `graph_god_nodes`, `graph_communities`, `graph_community_god_nodes`, `graph_surprising_connections`, `graph_transitive_reduction`, `graph_feedback_arc_set`, `graph_all_simple_paths` | 8 |
+| Lens analysis (v0.18.0) | `lens_find_dead_code`, `lens_find_intersection`, `lens_hotspots` | 3 |
 | Multimodal ingest | `docs_ingest`, `issues_ingest` | 2 |
 | View management | `view_save`, `view_load`, `view_list`, `view_delete` | 4 |
-| **Total** | | **43** |
+| **Total** | | **46** |
 
 ---
 
