@@ -25,12 +25,7 @@ import { useLenses } from "../hooks/useLenses";
 import { useLensResult } from "../hooks/useLensResult";
 import { LoadingTier } from "./LoadingTier";
 import { ErrorBoundary } from "./ErrorBoundary";
-import {
-  DeadCodeSunburst,
-  HotspotTreemap,
-  type SunburstData,
-  type TreemapData,
-} from "./AnalyticsViews";
+import { LensResultView } from "./LensPanel/LensResultView";
 import type { DesignFinding, FindingSeverity } from "../api/types";
 import type { ShellViewport } from "./viewport";
 
@@ -460,10 +455,8 @@ function LensFindingsView({
   }, [findings, blockerOnly]);
 
   const grouped = useMemo(() => groupBySeverity(filtered), [filtered]);
-  const visualization = useMemo(
-    () => buildLensVisualization(lensId, activeObjectId, findings),
-    [lensId, activeObjectId, findings],
-  );
+
+  const result = { findings, summary };
 
   return (
     <div
@@ -483,15 +476,13 @@ function LensFindingsView({
           {summary}
         </p>
       )}
-      {visualization && (
-        <div
-          data-testid="lens-visualization"
-          className="border-b p-3"
-          style={{ borderColor: "var(--color-border)" }}
-        >
-          {visualization}
-        </div>
-      )}
+      <div
+        data-testid="lens-visualization"
+        className="border-b p-3"
+        style={{ borderColor: "var(--color-border)" }}
+      >
+        <LensResultView lensId={lensId} result={result} />
+      </div>
       <div
         data-testid="lens-result-groups"
         tabIndex={0}
@@ -517,93 +508,6 @@ function LensFindingsView({
       </div>
     </div>
   );
-}
-
-// ============================================================================
-// LensVisualization — D3-powered analytic views per lens
-// ============================================================================
-
-/**
- * Mock data for the hotspots treemap. The real backend integration
- * is a separate concern; for now we ship a small representative
- * sample so the LensPanel has something to render in the explorer.
- * Each cell has a value (call count) and a complexity score in
- * 0..1 (the colour ramp input).
- */
-const HOTSPOT_TREEMAP_FIXTURE: TreemapData = {
-  name: "crates/cognicode-explorer/src",
-  children: [
-    { name: "build_overview", value: 140, complexity: 0.92 },
-    { name: "spotter", value: 96, complexity: 0.74 },
-    { name: "save_exploration", value: 72, complexity: 0.58 },
-    { name: "resolve_path", value: 60, complexity: 0.46 },
-    { name: "render_block", value: 48, complexity: 0.31 },
-    { name: "fetch_object", value: 36, complexity: 0.22 },
-    { name: "merge_blocks", value: 24, complexity: 0.14 },
-    { name: "format_label", value: 18, complexity: 0.08 },
-  ],
-};
-
-/**
- * Mock data for the dead-code sunburst. Same caveat as the
- * treemap — these are placeholders until the backend exposes a
- * coverage endpoint. `alive === false` segments render in the
- * warm palette.
- */
-const DEAD_CODE_SUNBURST_FIXTURE: SunburstData = {
-  name: "crates/cognicode-explorer/src",
-  children: [
-    { name: "api", size: 120, alive: true },
-    { name: "db", size: 90, alive: true },
-    { name: "lib", size: 80, alive: true },
-    { name: "view_block", size: 64, alive: true },
-    { name: "legacy_parser", size: 48, alive: false },
-    { name: "compat_shim", size: 32, alive: false },
-    { name: "unused_format", size: 20, alive: false },
-    { name: "orphan_helper", size: 12, alive: false },
-  ],
-};
-
-/**
- * Build the D3 visualization for a given lens id. Returns `null`
- * for lenses that don't have a specialized view — the regular
- * findings list still renders below.
- */
-function buildLensVisualization(
-  lensId: string,
-  activeObjectId: string,
-  findings: DesignFinding[],
-): ReactNode | null {
-  // The mock data is keyed off the active object so the user can
-  // tell the cells apart when navigating between scopes.
-  const root = activeObjectId || "scope";
-  if (lensId === "lens.hotspots") {
-    return <HotspotTreemap data={withRootLabel(HOTSPOT_TREEMAP_FIXTURE, root, findings)} />;
-  }
-  if (lensId === "lens.dead-code") {
-    return <DeadCodeSunburst data={withSunburstLabel(DEAD_CODE_SUNBURST_FIXTURE, root)} />;
-  }
-  return null;
-}
-
-/**
- * Override the treemap's root label to surface the active scope.
- * Real backend data will provide this directly; the mock gets a
- * friendly label until then.
- */
-function withRootLabel(
-  base: TreemapData,
-  rootLabel: string,
-  findings: DesignFinding[],
-): TreemapData {
-  // If the lens returned findings, prefer their titles to derive
-  // additional cells; otherwise fall back to the static fixture.
-  if (findings.length === 0) return base;
-  return { ...base, name: rootLabel };
-}
-
-function withSunburstLabel(base: SunburstData, rootLabel: string): SunburstData {
-  return { ...base, name: rootLabel };
 }
 
 // ============================================================================
