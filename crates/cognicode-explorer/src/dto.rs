@@ -796,7 +796,22 @@ pub struct LandingPayload {
     pub suggested_questions: Vec<String>,
     /// Current graph status (even when missing/indexing).
     pub graph_status: GraphStatus,
+    /// Whether the landing payload was truncated to fit `LANDING_NODE_CAP`.
+    /// `true` when the source collection (e.g. `entry_points`) exceeded
+    /// the cap; `false` otherwise. Always present from v0.24.2 onward.
+    pub truncated: bool,
+    /// Reason for truncation when `truncated` is `true`. Currently the
+    /// only reason is `"node_cap"`. Always present from v0.24.2 onward
+    /// (`Some("node_cap")` when truncated, `None` otherwise).
+    pub truncated_reason: Option<String>,
 }
+
+/// Maximum number of `entry_points` (and similar root-level collections)
+/// included in `LandingPayload` before truncation kicks in. The value is
+/// a UX choice (how many nodes fit on one screen at default zoom), not a
+/// performance knob. See `e8b-landing-payload-truncation/spec.md`
+/// Requirement 9.
+pub const LANDING_NODE_CAP: usize = 50;
 
 /// A god node entry — a high PageRank symbol with its score.
 #[derive(Debug, Clone, Serialize, Deserialize)]

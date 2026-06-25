@@ -11,8 +11,8 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::dto::{
-    GenerateArtifactRequest, GodNodeEntry, LandingPayload, OpenWorkspaceRequest,
-    SaveExplorationSessionRequest, SubgraphResponse,
+    GenerateArtifactRequest, GodNodeEntry, LANDING_NODE_CAP, LandingPayload,
+    OpenWorkspaceRequest, SaveExplorationSessionRequest, SubgraphResponse,
 };
 use crate::error::ExplorerError;
 use crate::facades::{
@@ -159,6 +159,25 @@ impl SubgraphQuery {
             )));
         }
         Ok((depth, direction, max_nodes))
+    }
+}
+
+/// Single source of truth for the landing-page truncation policy.
+///
+/// Returns `(truncated, truncated_reason)` for a collection of size
+/// `total`. Boundary: `total <= LANDING_NODE_CAP` is **not** truncated;
+/// `total > LANDING_NODE_CAP` is truncated with reason `"node_cap"`.
+///
+/// Pure function — no I/O. The `landing_handler` MUST call this
+/// helper rather than re-implementing the comparison inline.
+///
+/// See `openspec/changes/e8b-landing-payload-truncation/specs/graphlanding-affordances/spec.md`
+/// Requirement 9 for the contract.
+pub fn apply_landing_cap(total: usize) -> (bool, Option<String>) {
+    if total > LANDING_NODE_CAP {
+        (true, Some("node_cap".to_string()))
+    } else {
+        (false, None)
     }
 }
 
@@ -667,8 +686,12 @@ async fn landing_handler(
     };
 
     // Build the landing payload with empty stubs for now.
-    // TODO: Wire get_entry_points, get_hot_paths, graph_insights from the
-    // analysis service once those methods are available on a facade.
+    // TODO (e10-landing-real-data): Wire get_entry_points, get_hot_paths,
+    // graph_insights from the analysis service once those methods are
+    // available on a facade. The truncation hook (apply_landing_cap) is
+    // already wired below — once `entry_points` is populated with real
+    // data, replace the `0` with `entry_points.len()`.
+    let (truncated, truncated_reason) = apply_landing_cap(0);
     let payload = LandingPayload {
         workspace: crate::dto::WorkspaceSummary {
             id: workspace.id.clone(),
@@ -685,6 +708,8 @@ async fn landing_handler(
         god_nodes: Vec::new(),
         suggested_questions: Vec::new(),
         graph_status,
+        truncated,
+        truncated_reason,
     };
 
     Ok(Json(payload).into_response())
