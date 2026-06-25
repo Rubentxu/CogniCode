@@ -29,9 +29,9 @@ use serde_json::{json, Value};
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::{
-    McpContext, TOOL_FIND_QUALITY_ISSUES, TOOL_QUALITY_GATE,
+    McpContext, TOOL_FIND_QUALITY_ISSUES, TOOL_INGEST_QUALITY_ISSUES, TOOL_QUALITY_GATE,
 };
-use crate::ports::quality_repository::{QualityIssue, RuleSummary};
+use crate::ports::quality_repository::{NewIssue, QualityIssue, QualityWritePort, RuleSummary};
 
 // ============================================================================
 // require_quality — shared guard
@@ -381,6 +381,94 @@ impl ToolHandler for QualityGateHandler {
 }
 
 // ============================================================================
+// Tool 3: ingest_quality_issues
+// ============================================================================
+
+/// Input for `ingest_quality_issues`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct QualityIngestArgs {
+    workspace_id: String,
+    issues: Vec<NewIssue>,
+}
+
+struct IngestQualityIssuesHandler;
+
+#[async_trait]
+impl ToolHandler for IngestQualityIssuesHandler {
+    fn name(&self) -> &'static str {
+        TOOL_INGEST_QUALITY_ISSUES
+    }
+
+    fn arg_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "workspace_id": {
+                    "type": "string",
+                    "description": "Workspace identifier for the issues."
+                },
+                "issues": {
+                    "type": "array",
+                    "description": "Batch of quality issues to upsert.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "rule_id": { "type": "string" },
+                            "severity": { "type": "string" },
+                            "category": { "type": "string" },
+                            "file_path": { "type": "string" },
+                            "line": { "type": "integer" },
+                            "message": { "type": "string" },
+                            "status": { "type": "string" }
+                        },
+                        "required": ["rule_id", "severity", "category", "file_path", "line", "message", "status"]
+                    }
+                }
+            },
+            "required": ["workspace_id", "issues"]
+        })
+    }
+
+    async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
+        let args: QualityIngestArgs = match serde_json::from_value(params) {
+            Ok(a) => a,
+            Err(e) => {
+                return err_envelope(
+                    TOOL_INGEST_QUALITY_ISSUES,
+                    "invalid_args",
+                    &format!("{TOOL_INGEST_QUALITY_ISSUES}: invalid args: {e}"),
+                );
+            }
+        };
+
+        let Some(q_write) = ctx.quality_write.as_ref() else {
+            return err_envelope(
+                TOOL_INGEST_QUALITY_ISSUES,
+                "quality_write_unavailable",
+                "QualityWritePort not wired in context",
+            );
+        };
+
+        match q_write.insert_issues(&args.issues) {
+            Ok(summary) => ok_envelope(
+                TOOL_INGEST_QUALITY_ISSUES,
+                &serde_json::json!({
+                    "inserted": summary.inserted,
+                    "updated": summary.updated,
+                    "workspace_id": args.workspace_id,
+                }),
+            ),
+            Err(e) => err_envelope(
+                TOOL_INGEST_QUALITY_ISSUES,
+                "quality_ingest_failed",
+                &e.to_string(),
+            ),
+        }
+    }
+}
+
+// ============================================================================
 // Registry
 // ============================================================================
 
@@ -388,6 +476,7 @@ impl ToolHandler for QualityGateHandler {
 pub fn register_quality_mcp_handlers(registry: &mut crate::mcp::handler::ToolHandlerRegistry) {
     registry.register(FindQualityIssuesHandler);
     registry.register(QualityGateHandler);
+    registry.register(IngestQualityIssuesHandler);
 }
 
 // Suppress unused warnings for the helper reference used by callers

@@ -151,7 +151,7 @@ pub trait QualityRepository: Send + Sync {
 /// Insert DTO — mirror of `QualityIssue` minus `id` (DB-assigned), plus
 /// explicit `workspace_id` (the read struct carries no workspace field
 /// because reads are scoped by method arg, not by row ownership).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct NewIssue {
     pub workspace_id: String,
     pub rule_id: String,
