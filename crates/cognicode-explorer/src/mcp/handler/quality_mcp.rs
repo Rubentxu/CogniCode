@@ -306,6 +306,7 @@ struct QualityGateArgs {
 /// Output for `quality_gate`.
 #[derive(Debug, Serialize)]
 struct QualityGateResult {
+    workspace_id: Option<String>,
     rating: Option<String>,
     total_issues: usize,
     blockers: usize,
@@ -329,19 +330,30 @@ impl ToolHandler for QualityGateHandler {
             "properties": {
                 "workspace_id": {
                     "type": "string",
-                    "description": "Workspace id (reserved; currently unused)."
+                    "description": "Optional workspace id; omit for aggregate across all workspaces."
                 }
             }
         })
     }
 
-    async fn handle(&self, ctx: &McpContext, _params: Value) -> CallToolResult {
+    async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
+        let args: QualityGateArgs = match serde_json::from_value(params) {
+            Ok(a) => a,
+            Err(e) => {
+                return err_envelope(
+                    TOOL_QUALITY_GATE,
+                    "invalid_args",
+                    &format!("{TOOL_QUALITY_GATE}: invalid args: {e}"),
+                );
+            }
+        };
         let q = match require_quality(ctx, TOOL_QUALITY_GATE) {
             Ok(q) => q,
             Err(e) => return e,
         };
 
-        let gate = match q.quality_gate() {
+        let ws = args.workspace_id.as_deref();
+        let gate = match q.quality_gate(ws) {
             Ok(g) => g,
             Err(e) => {
                 return err_envelope(
@@ -352,9 +364,10 @@ impl ToolHandler for QualityGateHandler {
             }
         };
 
-        let open = q.open_issues_count().unwrap_or(0);
+        let open = q.open_issues_count(ws).unwrap_or(0);
 
         let result = QualityGateResult {
+            workspace_id: args.workspace_id,
             rating: gate.rating,
             total_issues: gate.total_issues,
             blockers: gate.blockers,
@@ -467,10 +480,10 @@ mod tests {
                 open_count: 0,
             })
         }
-        fn quality_gate(&self) -> ExplorerResult<QualityGateSummary> {
+        fn quality_gate(&self, _workspace_id: Option<&str>) -> ExplorerResult<QualityGateSummary> {
             Ok(self.gate.clone())
         }
-        fn open_issues_count(&self) -> ExplorerResult<usize> {
+        fn open_issues_count(&self, _workspace_id: Option<&str>) -> ExplorerResult<usize> {
             Ok(self.open_total)
         }
         fn issues_for_workspace(
@@ -587,6 +600,7 @@ mod tests {
     #[test]
     fn quality_gate_result_round_trip() {
         let result = QualityGateResult {
+            workspace_id: Some("ws-a".to_string()),
             rating: Some("B".to_string()),
             total_issues: 50,
             blockers: 0,
@@ -596,6 +610,7 @@ mod tests {
             open_issues_count: 18,
         };
         let v = serde_json::to_value(&result).unwrap();
+        assert_eq!(v["workspace_id"], "ws-a");
         assert_eq!(v["rating"], "B");
         assert_eq!(v["total_issues"], 50);
         assert_eq!(v["open_issues_count"], 18);

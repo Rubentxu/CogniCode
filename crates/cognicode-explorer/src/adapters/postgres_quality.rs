@@ -236,17 +236,31 @@ impl QualityRepository for PostgresQualityRepository {
         })
     }
 
-    fn quality_gate(&self) -> ExplorerResult<QualityGateSummary> {
+    fn quality_gate(&self, workspace_id: Option<&str>) -> ExplorerResult<QualityGateSummary> {
         let pool = &self.pool;
+        let ws = workspace_id.map(|s| s.to_string());
         let row: Option<BaselineRow> = block_on(async move {
-            sqlx::query_as::<_, BaselineRow>(
-                r#"SELECT rating, total_issues, blockers, criticals, debt_minutes, snapshot_at
-                   FROM baselines
-                   ORDER BY snapshot_at DESC
-                   LIMIT 1"#,
-            )
-            .fetch_optional(pool)
-            .await
+            if let Some(ref w) = ws {
+                sqlx::query_as::<_, BaselineRow>(
+                    r#"SELECT rating, total_issues, blockers, criticals, debt_minutes, snapshot_at
+                       FROM baselines
+                       WHERE workspace_id = $1
+                       ORDER BY snapshot_at DESC
+                       LIMIT 1"#,
+                )
+                .bind(w)
+                .fetch_optional(pool)
+                .await
+            } else {
+                sqlx::query_as::<_, BaselineRow>(
+                    r#"SELECT rating, total_issues, blockers, criticals, debt_minutes, snapshot_at
+                       FROM baselines
+                       ORDER BY snapshot_at DESC
+                       LIMIT 1"#,
+                )
+                .fetch_optional(pool)
+                .await
+            }
         })
         .map_err(|e| crate::error::ExplorerError::Anyhow(anyhow::anyhow!("quality_gate: {e}")))?;
 
@@ -263,13 +277,22 @@ impl QualityRepository for PostgresQualityRepository {
         })
     }
 
-    fn open_issues_count(&self) -> ExplorerResult<usize> {
+    fn open_issues_count(&self, workspace_id: Option<&str>) -> ExplorerResult<usize> {
         let pool = self.pool.clone();
+        let ws = workspace_id.map(|s| s.to_string());
         let count: i64 = block_on(async move {
-            sqlx::query(r#"SELECT COUNT(*) FROM issues WHERE status = 'open'"#)
-                .fetch_one(&pool)
-                .await?
-                .try_get::<i64, _>(0)
+            if let Some(ref w) = ws {
+                sqlx::query(r#"SELECT COUNT(*) FROM issues WHERE workspace_id = $1 AND status = 'open'"#)
+                    .bind(w)
+                    .fetch_one(&pool)
+                    .await?
+                    .try_get::<i64, _>(0)
+            } else {
+                sqlx::query(r#"SELECT COUNT(*) FROM issues WHERE status = 'open'"#)
+                    .fetch_one(&pool)
+                    .await?
+                    .try_get::<i64, _>(0)
+            }
         })
         .map_err(|e| crate::error::ExplorerError::Anyhow(anyhow::anyhow!("open_issues_count: {e}")))?;
         Ok(count.max(0) as usize)
