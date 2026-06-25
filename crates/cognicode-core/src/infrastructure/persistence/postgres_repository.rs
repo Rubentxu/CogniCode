@@ -56,6 +56,15 @@ const SCHEMA_SQL_PIPELINE: &str = include_str!("m0010_pipeline_schema.sql");
 #[cfg(all(feature = "postgres", feature = "multimodal"))]
 const SCHEMA_SQL_MULTIMODAL: &str = include_str!("m0009_graph_nodes_edges.sql");
 
+/// Quality data DDL — issues + baselines + rules. Embedded when
+/// the `postgres` feature is enabled (not gated behind `multimodal`).
+/// Backed by the `QualityRepository` port in
+/// `cognicode-explorer/src/ports/quality_repository.rs`; see the
+/// migration header for the design rationale and the connection to
+/// the 2026-06-25 architecture review.
+#[cfg(feature = "postgres")]
+const SCHEMA_SQL_QUALITY: &str = include_str!("m0011_quality.sql");
+
 /// PostgreSQL-backed implementation of the async [`Repository`]
 /// trait. Owns its [`PgPool`]; consumers that want shared
 /// ownership can wrap in `Arc<PostgresRepository>`.
@@ -96,17 +105,20 @@ impl PostgresRepository {
         &self.pool
     }
 
-    /// Execute the embedded schema DDL.
-    ///
-    /// Runs three DDL blocks in order:
-    /// 1. Base schema (`schema_postgres.sql`) — legacy named_views, view_specs.
-    /// 2. Pipeline schema (`m0010_pipeline_schema.sql`) — graph_nodes,
-    ///    graph_edges, scan_manifest, graph_reports, VIEWs, trigger.
-    /// 3. Multimodal schema (`m0009_graph_nodes_edges.sql`) — only when
-    ///    the `multimodal` feature is on.
-    ///
-    /// All blocks are idempotent (`IF NOT EXISTS` / `CREATE OR REPLACE`).
-    pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
+/// Execute the embedded schema DDL.
+///
+/// Runs four DDL blocks in order:
+/// 1. Base schema (`schema_postgres.sql`) — legacy named_views, view_specs.
+/// 2. Pipeline schema (`m0010_pipeline_schema.sql`) — graph_nodes,
+///    graph_edges, scan_manifest, graph_reports, VIEWs, trigger.
+/// 3. Multimodal schema (`m0009_graph_nodes_edges.sql`) — only when
+///    the `multimodal` feature is on.
+/// 4. Quality schema (`m0011_quality.sql`) — issues, baselines, rules.
+///    Backed by the `QualityRepository` port. Added in 2026-06-25 as
+///    part of the Postgres-canonical quality stack rebuild.
+///
+/// All blocks are idempotent (`IF NOT EXISTS` / `CREATE OR REPLACE`).
+pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
         // 1. Base schema
         sqlx::raw_sql(SCHEMA_SQL)
             .execute(&self.pool)
@@ -129,6 +141,16 @@ impl PostgresRepository {
                 .await
                 .map_err(|e| RepositoryError::Store(format!("multimodal migration: {e}")))?;
         }
+
+        // 4. Quality schema (issues + baselines + rules). Always
+        //    loaded when the `postgres` feature is on — backs the
+        //    `QualityRepository` port introduced alongside this
+        //    migration in PR #54.
+        sqlx::raw_sql(SCHEMA_SQL_QUALITY)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("quality migration: {e}")))?;
+
         Ok(())
     }
 
