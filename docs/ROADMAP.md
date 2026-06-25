@@ -1,12 +1,23 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-25
+Last updated: 2026-06-25 (session end — clean handover for tomorrow)
 
 ## Active
 
 | Change | Branch | Semver target | Notes |
 |--------|--------|---------------|-------|
 | _none_ | — | — | Repo is clean post-hygiene; pick next cycle from the [Future] section or open a new proposal |
+
+## Session Handover 2026-06-25
+
+This was the last session of the day. Resume with:
+
+```
+1. `mem_context` → reload the 2026-06-25 session summary.
+2. Verify `git log --oneline -1` matches `15914fc`.
+3. Open `docs/adr/ADR-002-moldable-exploration-parity-program.md` for the strategic plan.
+4. Pick the next cycle from the [Future] section.
+```
 
 ## Hygiene 2026-06-25
 
