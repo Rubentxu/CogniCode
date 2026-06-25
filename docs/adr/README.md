@@ -5,6 +5,7 @@ This directory holds the architecture decision records (ADRs) for the CogniCode 
 | Number | Title | Status | Date |
 |--------|-------|--------|------|
 | [ADR-001](./ADR-001-parked-crates.md) | Parked Crates — Activation Criterion | ACCEPTED | 2026-06-25 |
+| [ADR-002](./ADR-002-moldable-exploration-parity-program.md) | Moldable Exploration Parity Program | PROPOSED | 2026-06-25 |
 
 ## Format
 

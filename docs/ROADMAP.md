@@ -36,6 +36,87 @@ Follow-ups explicitly queued by cycles closed today. Each will need its own prop
 | `e9-landing-perf` | E8 v0.24.1 follow-up | PATCH | The fallback node-list renders one `<button>` per node (`GraphLanding.tsx:243-273`). For workspaces >500 nodes, this is 500+ DOM elements. Flagged as W-3 in `openspec/changes/archive/e8-graphlanding-affordances/verify-report.md`. Virtualise if real-world usage shows DOM bloat. |
 | `e11-context-response-field-naming` | E8b v0.24.2 follow-up | PATCH | Two existing endpoints use different field names for the same concept: `SubgraphResponse.truncated_reason` (no extra 'i') vs `ContextualGraphResponse.truncation_reason` (extra 'i'). The landing uses `truncated_reason` to align with `SubgraphResponse`. Widening this inconsistency to a third name was rejected in E8b D-1; a proper harmonisation needs its own ADR and a wire-compat migration plan. |
 
+## Strategic program: moldable exploration parity
+
+Source of truth: [ADR-002](./adr/ADR-002-moldable-exploration-parity-program.md).
+
+This program does **not** promise Smalltalk/Pharo image-level parity with
+GToolkit. It targets **functional parity in exploration workflows**:
+
+- objects are inspectable as first-class entities,
+- each object has multiple contextual representations,
+- navigation preserves narrative and supports drill-down,
+- discovery is context-driven rather than menu-driven,
+- durable explanations exist as executable or object-backed narratives.
+
+### Current proven state
+
+What is already implemented today:
+
+- backend `ViewRegistry` + `ViewExecutor` + `ViewSpecStore`
+- frontend `RendererRegistry` + `PaneStackView` + `PaneInspector`
+- `MoldQL` execution + JSONata preview
+- `Spotter` + `EntryPoint` / `ResolvedEntryPoint`
+- WASM graph tooling (`god_nodes`, PageRank, SCC, etc.)
+
+What is **not** implemented yet:
+
+- Lepiter-equivalent runtime (`ProjectDiary`, `ComposedNarrative`, `ExampleObject`)
+- universal Spotter (today it returns only `Symbol` and `ViewSpec`)
+- contextual editor beyond the JSONata textarea
+- most catalogued `ViewKind`s as real executors (today 9 executors are wired; the catalog is much broader)
+
+### Program phases
+
+| Phase | Candidate | Semver target | Primary crates | Goal |
+|---|---|---|---|---|
+| 0 | `e10-landing-real-data` | MINOR | `cognicode-explorer`, `cognicode-core` | Wire real `entry_points` / `hot_paths` into landing so E8/E8b banner can activate on real data |
+| 0 | `e9-landing-perf` | PATCH | `cognicode-explorer` | Virtualise the fallback node list if large workspaces cause DOM bloat |
+| 0 | `e11-context-response-field-naming` | PATCH | `cognicode-explorer` | Harmonise `truncated_reason` vs `truncation_reason` naming without breaking the wire contract |
+| 1 | `e12-viewkind-realization` | MINOR | `cognicode-explorer`, `cognicode-core`, `cognicode-graph-algos` | Convert high-value catalogued `ViewKind`s into real executors and renderers |
+| 2 | `e13-universal-spotter` | MINOR | `cognicode-explorer`, `cognicode-core` | Expand Spotter to docs, ADRs, evidence, issues, saved explorations, narratives, examples, and more object families |
+| 3 | `e14-narrative-runtime` | MAJOR | `cognicode-explorer`, `cognicode-core` | Implement `ProjectDiary`, `ComposedNarrative`, and `ExampleObject` as runtime artifacts, not just catalog entries |
+| 4 | `e15-contextual-editor` | MINOR or MAJOR | `cognicode-explorer`, `cognicode-core` | Add a real contextual editor with references, completion, peek, and graph-aware edit workflows |
+| 5 | `e16-federated-runtime-objects` | MAJOR | `cognicode-explorer`, `cognicode-core`, `cognicode-graph-algos` | Make more runtime/domain objects explorable and passable to agents as structured objects |
+
+### View-coverage reality check
+
+The parity gap is not abstract — it is measurable:
+
+- `ViewRegistry.known_view_kinds()` exposes a broad catalog including
+  `ComposedNarrative`, `ProjectDiary`, `ExampleObject`, `ConceptMap`,
+  `EvidencePack`, `UsageExamples`, `ApiSurface`, `DocCodeAlignment`,
+  `TestSlice`, `DebugSlice`, `OwnershipMap`, `RiskMap`, and more.
+- The currently wired real executors in
+  `crates/cognicode-explorer/src/registry.rs:336-382` are only:
+  `overview`, `call-graph`, `source`, `quality`, `evidence`, `symbols`,
+  `dependencies`, `hotspots`, `architecture-drift`.
+
+`e12-viewkind-realization` should therefore begin by shipping executors for
+the highest-leverage missing views:
+
+1. `usage_examples`
+2. `api_surface`
+3. `doc_code_alignment`
+4. `ownership_map`
+5. `test_slice`
+6. `debug_slice`
+7. `concept_map`
+8. `evidence_pack`
+
+### Definition of parity for planning purposes
+
+We may only claim **similar moldable exploration functionality** when all of
+the following are true:
+
+1. High-value catalogued `ViewKind`s have real executors.
+2. Spotter is universal across the main object families.
+3. `ProjectDiary`, `ComposedNarrative`, and `ExampleObject` are runtime
+   capabilities, not just enum values and wizard options.
+4. There is at least one contextual editor experience beyond a textarea.
+5. Exploration outputs can be turned into durable narratives that survive
+   across sessions and can be inspected by both humans and AI.
+
 The 3 previously-listed items (`cognicode-axiom`, `cognicode-quality`, `cognicode-rule-test-harness` re-activation) were **archived** on 2026-06-25 per ADR-001 trigger (b) — moved to `docs/parked-crates/` rather than revived. See ADR-001 §Archive Action. The C5 rename, multi-workspace `quality_gate`, and quality agent ingest items shipped in v0.24.0.
 
 ## Conventions
