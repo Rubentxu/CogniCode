@@ -255,14 +255,22 @@ describe("Shell", () => {
     await waitFor(() => {
       expect(screen.getByTestId("pane-stack-empty")).toBeInTheDocument();
     });
-    // Graph loading / empty / resolved should be present in the left zone
-    const hasGraph =
-      document.querySelector('[data-testid="interactive-graph"]') !== null;
-    const hasEmpty =
-      document.querySelector('[data-testid="interactive-graph-empty"]') !== null;
-    const hasLoading =
-      document.querySelector('[data-testid="interactive-graph-loading"]') !== null;
-    expect(hasGraph || hasEmpty || hasLoading).toBe(true);
+    // Graph/landing zone should eventually render in the left zone
+    await waitFor(() => {
+      const hasGraph =
+        document.querySelector('[data-testid="interactive-graph"]') !== null;
+      const hasEmpty =
+        document.querySelector('[data-testid="interactive-graph-empty"]') !== null;
+      const hasLoading =
+        document.querySelector('[data-testid="interactive-graph-loading"]') !== null;
+      const hasLanding =
+        document.querySelector('[data-testid="graph-landing"]') !== null;
+      const hasLandingLoading =
+        document.querySelector('[data-testid="graph-landing-loading"]') !== null;
+      expect(
+        hasGraph || hasEmpty || hasLoading || hasLanding || hasLandingLoading,
+      ).toBe(true);
+    });
   });
 
   it("small viewport renders graph full-width with bottom-sheet overlay", async () => {

@@ -13,7 +13,7 @@
  * Clicking a node dispatches `SELECT_OBJECT { objectId, viewId: "overview" }`
  * which opens the pane stack.
  */
-import { useEffect, useRef, lazy, Suspense, useState } from "react";
+import { useEffect, useRef, lazy, Suspense, useState, useCallback } from "react";
 import cytoscape, { type Core } from "cytoscape";
 
 import { useAppDispatch, useAppState } from "../../state/context";
@@ -92,6 +92,13 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
   // Use WASM god_nodes if available, otherwise fall back to backend
   const godNodes = wasmGodNodesResult ?? landingData?.god_nodes ?? [];
 
+  const selectObject = useCallback((objectId: string) => {
+    dispatch({
+      type: "SELECT_OBJECT",
+      payload: { objectId, viewId: "overview" },
+    });
+  }, [dispatch]);
+
   // Mount cytoscape when data arrives
   useEffect(() => {
     if (!data || !containerRef.current) return;
@@ -136,10 +143,7 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
       if (target && typeof target === "object" && "id" in target) {
         const id = String((target as cytoscape.NodeSingular).id());
         if (id) {
-          dispatch({
-            type: "SELECT_OBJECT",
-            payload: { objectId: id, viewId: "overview" },
-          });
+          selectObject(id);
         }
       }
     };
@@ -155,7 +159,7 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
       cy.destroy();
       cyRef.current = null;
     };
-  }, [data, dispatch, isGraph, landingData, godNodes]);
+  }, [data, isGraph, landingData, godNodes, selectObject]);
 
   if (isLoading) {
     return (
@@ -209,12 +213,64 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
         </Suspense>
       )}
 
+      {Boolean((data as { truncated?: boolean }).truncated) && (
+        <div
+          data-testid="graph-landing-warning"
+          className="px-4 py-2 text-xs"
+          style={{
+            backgroundColor: "rgba(210, 153, 34, 0.12)",
+            color: "var(--color-warning)",
+            borderBottom: "1px solid var(--color-border)",
+          }}
+        >
+          Showing a truncated landing graph{(data as { truncated_reason?: string | null }).truncated_reason
+            ? ` (${(data as { truncated_reason?: string | null }).truncated_reason})`
+            : ""}
+          . Refine the focus to inspect the full graph.
+        </div>
+      )}
+
       {/* Graph canvas */}
       <div
         ref={containerRef}
         data-testid="graph-landing-canvas"
+        role="application"
+        aria-label={`${perspective === "c4" ? "Architecture" : "Workspace"} landing graph`}
+        tabIndex={0}
         style={{ flex: "1 1 auto", minHeight: 0 }}
       />
+
+      {/* Accessible + testable fallback list for canvas-backed landing graphs */}
+      <div
+        data-testid="graph-landing-node-list"
+        className="flex flex-wrap gap-2 px-3 py-2"
+        style={{
+          backgroundColor: "var(--color-surface-raised)",
+          borderTop: "1px solid var(--color-border)",
+        }}
+      >
+        {data.nodes.map((node) => (
+          <button
+            key={node.id}
+            type="button"
+            data-testid={`graph-node-${node.id}`}
+            data-kind={node.kind}
+            className={node.style_class ?? undefined}
+            onClick={() => selectObject(node.id)}
+            style={{
+              padding: "4px 8px",
+              borderRadius: 6,
+              border: "1px solid var(--color-border)",
+              backgroundColor: "var(--color-surface-overlay)",
+              color: "var(--color-text-secondary)",
+              fontSize: 11,
+              cursor: "pointer",
+            }}
+          >
+            {node.label}
+          </button>
+        ))}
+      </div>
 
       {/* Suggestion strip — only for graph perspective */}
       {!showC4Header && landingData && (

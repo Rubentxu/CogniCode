@@ -1226,6 +1226,8 @@ export const landingPayloadSchema = z.object({
   god_nodes: z.array(godNodeEntrySchema),
   suggested_questions: z.array(z.string()),
   graph_status: graphStatusSchema,
+  truncated: z.boolean().optional(),
+  truncated_reason: z.string().nullable().optional(),
 });
 export type LandingPayload = z.infer<typeof landingPayloadSchema>;
 

@@ -117,4 +117,6 @@ export const landingFixture: LandingPayload = {
     "What modules have the most dependencies?",
   ],
   graph_status: "ready",
+  truncated: false,
+  truncated_reason: null,
 };
