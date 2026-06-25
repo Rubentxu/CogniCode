@@ -17,6 +17,9 @@ use std::collections::HashMap;
 
 // Declare handler submodules. Each file implements one tool family.
 mod ask;
+// `context_builder` is `pub` so integration tests in `tests/` can
+// register its handlers into a fresh registry.
+pub mod context_builder;
 mod drift;
 mod graph;
 mod graph_analyze;
@@ -146,6 +149,7 @@ fn unknown_tool_error(name: &str) -> CallToolResult {
 
 // Re-export registration functions from submodules for ergonomic external use.
 pub use ask::register_ask_handlers;
+pub use context_builder::register_context_builder_handlers;
 pub use drift::register_drift_handlers;
 pub use graph::register_graph_handlers;
 pub use graph_analyze::register_graph_analyze_handlers;
