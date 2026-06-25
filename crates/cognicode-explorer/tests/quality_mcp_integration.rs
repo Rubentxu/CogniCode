@@ -118,10 +118,10 @@ impl QualityRepository for InMemoryQuality {
             open_count: 0,
         })
     }
-    fn quality_gate(&self) -> ExplorerResult<QualityGateSummary> {
+    fn quality_gate(&self, _workspace_id: Option<&str>) -> ExplorerResult<QualityGateSummary> {
         Ok(self.gate.clone())
     }
-    fn open_issues_count(&self) -> ExplorerResult<usize> {
+    fn open_issues_count(&self, _workspace_id: Option<&str>) -> ExplorerResult<usize> {
         Ok(self.open_total)
     }
     fn issues_for_workspace(
@@ -138,7 +138,7 @@ impl QualityRepository for InMemoryQuality {
             .filter(|i| filter.status.as_deref().is_none_or(|s| i.status == s))
             .filter(|i| match &filter.file_prefix {
                 None => true,
-                Some(p) => i.file == *p || i.file.starts_with(&format!("{p}/")),
+                Some(p) => i.file_path == *p || i.file_path.starts_with(&format!("{p}/")),
             })
             .collect();
         if let Some(n) = filter.limit {

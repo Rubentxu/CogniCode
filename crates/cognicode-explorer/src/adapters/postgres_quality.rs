@@ -42,7 +42,8 @@ use cognicode_core::infrastructure::persistence::PostgresRepository;
 use crate::error::ExplorerResult;
 #[cfg(feature = "postgres")]
 use crate::ports::quality_repository::{
-    IssueFilter, QualityGateSummary, QualityIssue, QualityRepository, RuleSummary,
+    IssueFilter, NewIssue, QualityGateSummary, QualityIssue, QualityRepository,
+    QualityWritePort, RuleSummary, UpsertSummary,
 };
 
 #[cfg(feature = "postgres")]
@@ -355,6 +356,90 @@ impl QualityRepository for PostgresQualityRepository {
         let rows = block_on(async move { query.fetch_all(&self.pool).await })
             .map_err(|e| crate::error::ExplorerError::Anyhow(anyhow::anyhow!("issues_for_workspace: {e}")))?;
         Ok(rows.into_iter().map(QualityIssue::from).collect())
+    }
+}
+
+// =============================================================================
+// QualityWritePort impl — write-path for quality agent ingest (WU-3)
+// =============================================================================
+
+#[cfg(feature = "postgres")]
+impl QualityWritePort for PostgresQualityRepository {
+    fn insert_issues(&self, issues: &[NewIssue]) -> ExplorerResult<UpsertSummary> {
+        if issues.is_empty() {
+            return Ok(UpsertSummary::default());
+        }
+        let pool = self.pool.clone();
+        let (inserted, updated): (usize, usize) = block_on(async move {
+            let mut tx = pool.begin().await?;
+
+            let mut qb = sqlx::QueryBuilder::new(
+                "INSERT INTO issues \
+                 (workspace_id, rule_id, severity, category, file_path, line, message, status) ",
+            );
+            qb.push_values(issues.iter(), |mut b, i| {
+                b.push_bind(&i.workspace_id)
+                    .push_bind(&i.rule_id)
+                    .push_bind(&i.severity)
+                    .push_bind(&i.category)
+                    .push_bind(&i.file_path)
+                    .push_bind(i.line as i32)
+                    .push_bind(&i.message)
+                    .push_bind(&i.status);
+            });
+            qb.push(" ON CONFLICT (workspace_id, rule_id, file_path, line) DO UPDATE SET \
+                     severity = EXCLUDED.severity, category = EXCLUDED.category, \
+                     message = EXCLUDED.message, status = EXCLUDED.status, \
+                     updated_at = now() \
+                     RETURNING (xmax = 0) AS inserted");
+
+            let rows = qb.build().fetch_all(&mut *tx).await?;
+
+            let mut inserted = 0usize;
+            let mut updated = 0usize;
+            for row in &rows {
+                let was_inserted: bool =
+                    sqlx::Row::try_get::<bool, _>(row, "inserted").unwrap_or(false);
+                if was_inserted {
+                    inserted += 1;
+                } else {
+                    updated += 1;
+                }
+            }
+            tx.commit().await?;
+            Ok::<_, sqlx::Error>((inserted, updated))
+        })
+        .map_err(|e| crate::error::ExplorerError::Anyhow(anyhow::anyhow!("insert_issues: {e}")))?;
+        Ok(UpsertSummary { inserted, updated })
+    }
+
+    fn delete_issue(
+        &self,
+        workspace_id: &str,
+        rule_id: &str,
+        file_path: &str,
+        line: u32,
+    ) -> ExplorerResult<bool> {
+        let pool = self.pool.clone();
+        let ws = workspace_id.to_string();
+        let rid = rule_id.to_string();
+        let fp = file_path.to_string();
+        let ln = line as i32;
+        let deleted = block_on(async move {
+            let res = sqlx::query(
+                "DELETE FROM issues \
+                 WHERE workspace_id = $1 AND rule_id = $2 AND file_path = $3 AND line = $4",
+            )
+            .bind(&ws)
+            .bind(&rid)
+            .bind(&fp)
+            .bind(ln)
+            .execute(&pool)
+            .await?;
+            Ok::<_, sqlx::Error>(res.rows_affected() as i64)
+        })
+        .map_err(|e| crate::error::ExplorerError::Anyhow(anyhow::anyhow!("delete_issue: {e}")))?;
+        Ok(deleted > 0)
     }
 }
 

@@ -102,3 +102,12 @@ CREATE TABLE IF NOT EXISTS rules (
     category    TEXT,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- =============================================================================
+-- Idempotency natural key (D-3 — quality-stack-evolution WU-3)
+-- Enables INSERT ... ON CONFLICT DO UPDATE for agent ingest.
+-- IF NOT EXISTS keeps the migration idempotent on re-run.
+-- =============================================================================
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_issues_natural_key
+    ON issues (workspace_id, rule_id, file_path, line);
