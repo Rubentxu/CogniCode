@@ -160,16 +160,6 @@ impl CallGraph {
         self.symbols.get(id)
     }
 
-    /// Returns a mutable reference to a symbol by its ID.
-    ///
-    /// This is needed by `graph_analyze::build_subgraph_callgraph` to restore
-    /// the original FQN after `add_symbol` computes it from Location (which
-    /// cannot represent the symbol name). Ideally the fqn would be preserved
-    /// during `add_symbol`, but until that refactor this accessor is needed.
-    pub fn get_symbol_mut(&mut self, id: &SymbolId) -> Option<&mut Symbol> {
-        self.symbols.get_mut(id)
-    }
-
     /// Returns all symbols matching the given name (case-insensitive)
     pub fn find_by_name(&self, name: &str) -> Vec<&Symbol> {
         let name_lower = name.to_lowercase();
