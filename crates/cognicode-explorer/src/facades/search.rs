@@ -443,7 +443,7 @@ fn inspect_quality_issue_impl(
                 },
                 Property {
                     key: "file".into(),
-                    value: serde_json::Value::String(i.file.clone()),
+                    value: serde_json::Value::String(i.file_path.clone()),
                     value_type: "string".into(),
                     source: "QualityRepository".into(),
                 },
@@ -463,7 +463,7 @@ fn inspect_quality_issue_impl(
             properties.sort_by(|a, b| a.key.cmp(&b.key));
             (
                 format!("{}: {}", i.rule_id, i.message),
-                format!("{} at {}:{}", i.severity, i.file, i.line),
+                format!("{} at {}:{}", i.severity, i.file_path, i.line),
                 properties,
             )
         }

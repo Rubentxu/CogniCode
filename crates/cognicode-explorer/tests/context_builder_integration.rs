@@ -360,7 +360,7 @@ fn issue(id: i64, severity: &str, file: &str, msg: &str, line: u32) -> QualityIs
         rule_id: format!("R{id}"),
         severity: severity.to_string(),
         category: "complexity".to_string(),
-        file: file.to_string(),
+        file_path: file.to_string(),
         line,
         message: msg.to_string(),
         status: "open".to_string(),

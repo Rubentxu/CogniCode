@@ -550,7 +550,7 @@ mod tests {
                 .filter(|i| filter.status.as_deref().is_none_or(|s| i.status == s))
                 .filter(|i| match &filter.file_prefix {
                     None => true,
-                    Some(p) => i.file == *p || i.file.starts_with(&format!("{p}/")),
+                    Some(p) => i.file_path == *p || i.file_path.starts_with(&format!("{p}/")),
                 })
                 .collect();
             if let Some(n) = filter.limit {
@@ -566,7 +566,7 @@ mod tests {
             rule_id: "test".into(),
             severity: sev.into(),
             category: "test".into(),
-            file: file.into(),
+            file_path: file.into(),
             line,
             message: "test".into(),
             status: "open".into(),

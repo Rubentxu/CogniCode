@@ -93,7 +93,7 @@ impl From<IssueRow> for QualityIssue {
             rule_id: r.rule_id,
             severity: r.severity,
             category: r.category,
-            file: r.file_path, // column→field mapping (candidate 5: future rename)
+            file_path: r.file_path,
             line: r.line.max(0) as u32,
             message: r.message,
             status: r.status,
@@ -345,7 +345,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn issue_row_to_dto_maps_file_path_to_file() {
+    fn issue_row_to_dto_maps_file_path() {
         let row = IssueRow {
             id: 7,
             rule_id: "S107".to_string(),
@@ -358,7 +358,7 @@ mod tests {
         };
         let dto: QualityIssue = row.into();
         assert_eq!(dto.id, 7);
-        assert_eq!(dto.file, "src/auth/login.rs");
+        assert_eq!(dto.file_path, "src/auth/login.rs");
         assert_eq!(dto.line, 42);
     }
 

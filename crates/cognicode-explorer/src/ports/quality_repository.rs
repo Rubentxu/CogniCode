@@ -18,21 +18,21 @@
 //! underlying DB is missing (return empty / zero, never an error).
 
 use crate::error::ExplorerResult;
+use serde::Serialize;
 
 /// A single quality finding, lifted from the `issues` table.
 ///
-/// `file` is the struct-side name (the column is `file_path` in the
-/// schema); the adapter does the column→field mapping so callers do
-/// not have to know the SQL column name. Candidate 5 of the 2026-06-25
-/// architecture review proposes renaming this field to `file_path` for
-/// symmetry — tracked as future work.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// `file_path` is the struct-side name, matching the DB column
+/// `issues.file_path`. The adapter does the column→field mapping so
+/// callers do not have to know the SQL column name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct QualityIssue {
     pub id: i64,
     pub rule_id: String,
     pub severity: String,
     pub category: String,
-    pub file: String,
+    #[serde(rename = "file_path", alias = "file")]
+    pub file_path: String,
     pub line: u32,
     pub message: String,
     pub status: String,
