@@ -965,7 +965,7 @@ mod tests {
         fn issues_for_workspace(
             &self,
             _workspace_id: Option<&str>,
-            _filter: &crate::ports::IssueFilter,
+            _filter: &crate::ports::quality_repository::IssueFilter,
         ) -> ExplorerResult<Vec<crate::ports::QualityIssue>> {
             Ok(Vec::new())
         }
@@ -1031,7 +1031,7 @@ mod tests {
         fn issues_for_workspace(
             &self,
             _workspace_id: Option<&str>,
-            filter: &crate::ports::IssueFilter,
+            filter: &crate::ports::quality_repository::IssueFilter,
         ) -> ExplorerResult<Vec<crate::ports::QualityIssue>> {
             let mut out: Vec<crate::ports::QualityIssue> = self
                 .issues

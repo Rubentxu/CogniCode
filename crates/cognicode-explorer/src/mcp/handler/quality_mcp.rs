@@ -390,7 +390,7 @@ mod tests {
     use super::*;
     use crate::error::{ExplorerError, ExplorerResult};
     use crate::ports::quality_repository::{
-        QualityGateSummary, QualityRepository, RuleSummary,
+        IssueFilter, QualityGateSummary, QualityIssue, QualityRepository, RuleSummary,
     };
     use async_trait::async_trait;
     use std::collections::HashMap;
@@ -471,6 +471,28 @@ mod tests {
         }
         fn open_issues_count(&self) -> ExplorerResult<usize> {
             Ok(self.open_total)
+        }
+        fn issues_for_workspace(
+            &self,
+            _workspace_id: Option<&str>,
+            filter: &IssueFilter,
+        ) -> ExplorerResult<Vec<QualityIssue>> {
+            let mut out: Vec<QualityIssue> = self
+                .by_file
+                .values()
+                .flat_map(|v| v.iter().cloned())
+                .filter(|i| filter.severity.as_deref().is_none_or(|s| i.severity == s))
+                .filter(|i| filter.category.as_deref().is_none_or(|c| i.category == c))
+                .filter(|i| filter.status.as_deref().is_none_or(|s| i.status == s))
+                .filter(|i| match &filter.file_prefix {
+                    None => true,
+                    Some(p) => i.file == *p || i.file.starts_with(&format!("{p}/")),
+                })
+                .collect();
+            if let Some(n) = filter.limit {
+                out.truncate(n);
+            }
+            Ok(out)
         }
     }
 
