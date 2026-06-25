@@ -253,13 +253,13 @@ async fn find_quality_issues_aggregates_across_files() {
         .await;
     let payload = ok_payload(&result);
 
-    // v1 limitation: handler can't enumerate files, so the in-memory
-    // issues are NOT returned by `find_quality_issues` (only filters
-    // against an empty aggregation). The total should be 0.
+    // With the WU-2 refactor, `issues_for_workspace` now returns issues
+    // across all files when no file_prefix filter is applied. The mock
+    // returns 4 issues across 3 files, so total should be 4.
     assert_eq!(
         payload["total"].as_u64(),
-        Some(0),
-        "v1 port exposes no file index — find_quality_issues returns 0: {payload}"
+        Some(4),
+        "issues_for_workspace aggregates across files when no filter applied: {payload}"
     );
 }
 
