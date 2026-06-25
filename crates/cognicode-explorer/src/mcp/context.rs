@@ -17,7 +17,7 @@ use cognicode_core::domain::traits::GraphQueryPort;
 use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
 };
-use crate::ports::QualityRepository;
+use crate::ports::{QualityRepository, QualityWritePort};
 use crate::session::SessionRegistry;
 
 /// Optional Generic Graph Layer port for multimodal queries.
@@ -62,6 +62,10 @@ pub struct McpContext {
     /// `quality_gate`). Gracefully degrades to empty results when not
     /// wired (e.g. no quality DB present).
     pub quality: Option<Arc<dyn QualityRepository>>,
+    /// Quality write port — write-path for the `issues` table.
+    /// Used by `ingest_quality_issues` to persist agent findings.
+    /// Gracefully degrades to an error envelope when not wired.
+    pub quality_write: Option<Arc<dyn QualityWritePort>>,
 }
 
 impl McpContext {
@@ -80,6 +84,7 @@ impl McpContext {
             graph_query: None,
             graph_service: None,
             quality: None,
+            quality_write: None,
         }
     }
 
@@ -130,6 +135,12 @@ impl McpContext {
         self.quality = Some(q);
         self
     }
+
+    /// Wire a `QualityWritePort` into the context.
+    pub fn with_quality_write(mut self, qw: Arc<dyn QualityWritePort>) -> Self {
+        self.quality_write = Some(qw);
+        self
+    }
 }
 
 /// Builder for [`McpContext`].
@@ -144,6 +155,7 @@ pub struct McpContextBuilder {
     graph_query: Option<Arc<dyn GraphQueryPort>>,
     graph_service: Option<Arc<dyn GraphService>>,
     quality: Option<Arc<dyn QualityRepository>>,
+    quality_write: Option<Arc<dyn QualityWritePort>>,
     #[cfg(feature = "multimodal")]
     graph_repo: Option<Option<Arc<dyn crate::ports::graph_repository::GraphRepository>>>,
 }
@@ -161,6 +173,7 @@ impl McpContextBuilder {
             graph_query: None,
             graph_service: None,
             quality: None,
+            quality_write: None,
             #[cfg(feature = "multimodal")]
             graph_repo: Some(None),
         }
@@ -226,6 +239,12 @@ impl McpContextBuilder {
         self
     }
 
+    /// Wire a `QualityWritePort` into the context.
+    pub fn with_quality_write(mut self, quality_write: Arc<dyn QualityWritePort>) -> Self {
+        self.quality_write = Some(quality_write);
+        self
+    }
+
     /// Wire an optional `GraphQueryPort` into the context (Phase 4).
     /// Passes through `None` when `graph_query` is `None`.
     pub fn with_optional_graph_query(
@@ -260,6 +279,7 @@ impl McpContextBuilder {
             graph_query: self.graph_query,
             graph_service: self.graph_service,
             quality: self.quality,
+            quality_write: self.quality_write,
         }
     }
 }

@@ -221,6 +221,11 @@ pub const TOOL_FIND_QUALITY_ISSUES: &str = "find_quality_issues";
 /// Wraps `QualityRepository::quality_gate()`.
 pub const TOOL_QUALITY_GATE: &str = "quality_gate";
 
+/// `ingest_quality_issues` — persist a batch of quality findings into the
+/// quality stack. Implements natural-key idempotency via
+/// `ON CONFLICT DO UPDATE`. Wraps `QualityWritePort::insert_issues()`.
+pub const TOOL_INGEST_QUALITY_ISSUES: &str = "ingest_quality_issues";
+
 /// `build_context` — consolidates object inspection + lens findings +
 /// quality issues + graph neighbors into a context blob for LLM
 /// agent consumption. Returns both Markdown and JSON representations.
@@ -336,7 +341,7 @@ impl ExplorerMcpHandler {
 ///   quality-MCP tools (`find_quality_issues`, `quality_gate`) and the
 ///   internal lenses that surface quality findings. Wired from
 ///   `cognicode-runtime` via `PostgresQualityRepository` (PG-canonical).
-#[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub fn with_graph(
         symbol_repo: Arc<dyn SymbolRepository>,
         source_reader: Arc<dyn SourceReader>,
@@ -345,6 +350,7 @@ impl ExplorerMcpHandler {
         cwd: PathBuf,
         graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>>,
         quality_repo: Option<Arc<dyn crate::ports::QualityRepository>>,
+        quality_write: Option<Arc<dyn crate::ports::QualityWritePort>>,
     ) -> Self {
         // GraphQueryPort may be None when no call graph is loaded.
         let graph_query: Option<Arc<dyn GraphQueryPort>> = graph.as_ref().map(|g| {
@@ -414,6 +420,9 @@ impl ExplorerMcpHandler {
             .with_graph_service(graph_facade.clone());
         if let Some(q) = quality_repo {
             ctx_builder = ctx_builder.with_quality(q);
+        }
+        if let Some(qw) = quality_write {
+            ctx_builder = ctx_builder.with_quality_write(qw);
         }
         let ctx = ctx_builder.build();
 
@@ -587,9 +596,10 @@ pub const TOOL_NAMES: &[&str] = &[
     TOOL_FIND_DEAD_CODE_V2,
     TOOL_FIND_INTERSECTION,
     TOOL_HOTSPOTS,
-    TOOL_FIND_QUALITY_ISSUES,
-    TOOL_QUALITY_GATE,
-    TOOL_BUILD_CONTEXT,
+        TOOL_FIND_QUALITY_ISSUES,
+        TOOL_QUALITY_GATE,
+        TOOL_INGEST_QUALITY_ISSUES,
+        TOOL_BUILD_CONTEXT,
 ];
 
 /// Names of tools that are only available with the `multimodal` feature.

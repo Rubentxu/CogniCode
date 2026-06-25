@@ -204,6 +204,11 @@ impl Runtime {
         #[cfg(not(feature = "postgres"))]
         let quality = quality_repo_arc();
 
+        #[cfg(feature = "postgres")]
+        let quality_write = quality_write_repo_arc(self.pg_repo.as_ref());
+        #[cfg(not(feature = "postgres"))]
+        let quality_write = quality_write_repo_arc();
+
         cognicode_explorer::mcp::ExplorerMcpHandler::with_graph(
             self.symbol_repo,
             self.source_reader,
@@ -212,6 +217,7 @@ impl Runtime {
             self.cwd,
             self.graph,
             quality,
+            quality_write,
         )
     }
 }
@@ -236,5 +242,25 @@ fn quality_repo_arc(
 
 #[cfg(not(feature = "postgres"))]
 fn quality_repo_arc() -> Option<Arc<dyn cognicode_explorer::ports::QualityRepository>> {
+    None
+}
+
+/// Build a `PostgresQualityRepository` wired as a `QualityWritePort`.
+///
+/// Mirrors `quality_repo_arc` but returns the write port instead of the
+/// read port. Both are backed by the same `PostgresQualityRepository`
+/// value — the read/write split is purely at the trait level (ISP).
+#[cfg(feature = "postgres")]
+fn quality_write_repo_arc(
+    pg_repo: Option<&Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
+) -> Option<Arc<dyn cognicode_explorer::ports::QualityWritePort>> {
+    let pg = pg_repo?;
+    Some(Arc::new(
+        cognicode_explorer::adapters::PostgresQualityRepository::new(pg),
+    ))
+}
+
+#[cfg(not(feature = "postgres"))]
+fn quality_write_repo_arc() -> Option<Arc<dyn cognicode_explorer::ports::QualityWritePort>> {
     None
 }
