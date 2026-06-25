@@ -47,3 +47,7 @@ src/wasm/**/*.d.ts
 
 # Explorer E2E campaign artifacts
 e2e-runs/
+
+# Benchmark artifacts (runtime output, not source)
+# See openspec/changes/e8-graphlanding-affordances/exploration.md §"Benchmark artifacts"
+artifacts/
