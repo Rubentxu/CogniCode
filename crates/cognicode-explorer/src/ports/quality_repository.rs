@@ -18,7 +18,7 @@
 //! underlying DB is missing (return empty / zero, never an error).
 
 use crate::error::ExplorerResult;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A single quality finding, lifted from the `issues` table.
 ///
@@ -142,4 +142,47 @@ pub trait QualityRepository: Send + Sync {
         workspace_id: Option<&str>,
         filter: &IssueFilter,
     ) -> ExplorerResult<Vec<QualityIssue>>;
+}
+
+// =============================================================================
+// QualityWritePort — write-path for quality agent ingest (WU-3)
+// =============================================================================
+
+/// Insert DTO — mirror of `QualityIssue` minus `id` (DB-assigned), plus
+/// explicit `workspace_id` (the read struct carries no workspace field
+/// because reads are scoped by method arg, not by row ownership).
+#[derive(Debug, Clone, Deserialize)]
+pub struct NewIssue {
+    pub workspace_id: String,
+    pub rule_id: String,
+    pub severity: String,
+    pub category: String,
+    pub file_path: String,
+    pub line: u32,
+    pub message: String,
+    pub status: String,
+}
+
+/// Summary of an upsert operation — counts of inserted vs updated rows.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct UpsertSummary {
+    pub inserted: usize,
+    pub updated: usize,
+}
+
+/// Write port for the `issues` table. Separate from `QualityRepository`
+/// (read-only) per D-2 — preserves the read-only invariant.
+///
+/// Unlike the read port, write methods DO error on I/O failure (a failed
+/// write is a real error, not an empty result).
+pub trait QualityWritePort: Send + Sync {
+    fn insert_issues(&self, issues: &[NewIssue]) -> ExplorerResult<UpsertSummary>;
+
+    fn delete_issue(
+        &self,
+        workspace_id: &str,
+        rule_id: &str,
+        file_path: &str,
+        line: u32,
+    ) -> ExplorerResult<bool>;
 }

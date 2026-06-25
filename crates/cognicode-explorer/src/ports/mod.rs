@@ -12,7 +12,10 @@ pub mod symbol_repository;
 
 #[cfg(feature = "multimodal")]
 pub use graph_repository::{GraphRepository, SearchPage};
-pub use quality_repository::{QualityGateSummary, QualityIssue, QualityRepository, RuleSummary};
+pub use quality_repository::{
+    QualityGateSummary, QualityIssue, QualityRepository, QualityWritePort, RuleSummary,
+};
+pub use quality_repository::{NewIssue, UpsertSummary};
 pub use search_repository::{SearchHit, SearchRepository};
 pub use source_reader::SourceReader;
 pub use symbol_repository::{GraphStats, ResolvedSymbol, SymbolRepository};

@@ -166,7 +166,7 @@ async fn issues_for_workspace_returns_seeded_rows() {
 #[tokio::test]
 async fn quality_gate_returns_default_when_baselines_empty() {
     let Some(()) = with_test_db("quality_gate_empty", |adapter| async move {
-        let gate = adapter.quality_gate().expect("query should succeed");
+        let gate = adapter.quality_gate(None).expect("query should succeed");
         assert!(gate.rating.is_none());
         assert_eq!(gate.total_issues, 0);
         assert_eq!(gate.blockers, 0);
@@ -185,7 +185,7 @@ async fn quality_gate_returns_default_when_baselines_empty() {
 async fn open_issues_count_returns_zero_for_empty_db() {
     let Some(()) = with_test_db("open_issues_empty", |adapter| async move {
         let count = adapter
-            .open_issues_count()
+            .open_issues_count(None)
             .expect("query should succeed");
         assert_eq!(count, 0);
     })
