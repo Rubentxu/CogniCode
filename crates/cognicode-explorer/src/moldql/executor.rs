@@ -956,10 +956,10 @@ mod tests {
                 open_count: 0,
             })
         }
-        fn quality_gate(&self) -> ExplorerResult<crate::ports::QualityGateSummary> {
+        fn quality_gate(&self, _workspace_id: Option<&str>) -> ExplorerResult<crate::ports::QualityGateSummary> {
             Ok(crate::ports::QualityGateSummary::default())
         }
-        fn open_issues_count(&self) -> ExplorerResult<usize> {
+        fn open_issues_count(&self, _workspace_id: Option<&str>) -> ExplorerResult<usize> {
             Ok(0)
         }
         fn issues_for_workspace(
@@ -1022,10 +1022,10 @@ mod tests {
                 open_count: count,
             })
         }
-        fn quality_gate(&self) -> ExplorerResult<crate::ports::QualityGateSummary> {
+        fn quality_gate(&self, _workspace_id: Option<&str>) -> ExplorerResult<crate::ports::QualityGateSummary> {
             Ok(crate::ports::QualityGateSummary::default())
         }
-        fn open_issues_count(&self) -> ExplorerResult<usize> {
+        fn open_issues_count(&self, _workspace_id: Option<&str>) -> ExplorerResult<usize> {
             Ok(self.issues.len())
         }
         fn issues_for_workspace(

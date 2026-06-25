@@ -528,10 +528,10 @@ mod tests {
         fn rule_summary(&self, _r: &str) -> ExplorerResult<RuleSummary> {
             unimplemented!()
         }
-        fn quality_gate(&self) -> ExplorerResult<QualityGateSummary> {
+        fn quality_gate(&self, _workspace_id: Option<&str>) -> ExplorerResult<QualityGateSummary> {
             unimplemented!()
         }
-        fn open_issues_count(&self) -> ExplorerResult<usize> {
+        fn open_issues_count(&self, _workspace_id: Option<&str>) -> ExplorerResult<usize> {
             Ok(0)
         }
         fn issues_for_workspace(

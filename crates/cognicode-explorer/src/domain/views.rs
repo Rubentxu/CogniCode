@@ -406,7 +406,7 @@ pub fn build_file_quality_view(
         .map(|q| q.issues_for_file(file_path).unwrap_or_default())
         .unwrap_or_default();
     let gate = quality
-        .map(|q| q.quality_gate().unwrap_or_default())
+        .map(|q| q.quality_gate(None).unwrap_or_default())
         .unwrap_or_default();
 
     let relations: Vec<TypedRelation> = issues
@@ -494,7 +494,7 @@ pub fn build_scope_quality_view(
         .map(|q| q.issues_for_scope(scope_path).unwrap_or_default())
         .unwrap_or_default();
     let gate = quality
-        .map(|q| q.quality_gate().unwrap_or_default())
+        .map(|q| q.quality_gate(None).unwrap_or_default())
         .unwrap_or_default();
 
     let relations: Vec<TypedRelation> = issues
@@ -2247,10 +2247,10 @@ mod tests {
                     open_count: 0,
                 }))
         }
-        fn quality_gate(&self) -> ExplorerResult<QualityGateSummary> {
+        fn quality_gate(&self, _workspace_id: Option<&str>) -> ExplorerResult<QualityGateSummary> {
             Ok(self.gate.clone())
         }
-        fn open_issues_count(&self) -> ExplorerResult<usize> {
+        fn open_issues_count(&self, _workspace_id: Option<&str>) -> ExplorerResult<usize> {
             Ok(self.open_count)
         }
         fn issues_for_workspace(

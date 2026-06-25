@@ -112,13 +112,15 @@ pub trait QualityRepository: Send + Sync {
     /// `open_count` is 0 when the rule has no open issues.
     fn rule_summary(&self, rule_id: &str) -> ExplorerResult<RuleSummary>;
 
-    /// Latest quality gate snapshot. Returns the default (all zeros,
-    /// `None` rating) when no baseline has been recorded yet.
-    fn quality_gate(&self) -> ExplorerResult<QualityGateSummary>;
+    /// Latest quality gate snapshot. When `workspace_id` is `Some`, returns
+    /// the latest baseline for that workspace only. When `None`, returns
+    /// the latest baseline across all workspaces.
+    fn quality_gate(&self, workspace_id: Option<&str>) -> ExplorerResult<QualityGateSummary>;
 
-    /// Total count of issues with `status = 'open'`. Used by the
-    /// workspace summary's "open quality issues" indicator.
-    fn open_issues_count(&self) -> ExplorerResult<usize>;
+    /// Total count of issues with `status = 'open'`. When `workspace_id`
+    /// is `Some`, counts only that workspace's open issues. When `None`,
+    /// counts across all workspaces.
+    fn open_issues_count(&self, workspace_id: Option<&str>) -> ExplorerResult<usize>;
 
     /// Workspace-wide issue scan with optional filters.
     ///
