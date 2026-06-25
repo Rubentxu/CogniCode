@@ -17,14 +17,13 @@ Last updated: 2026-06-25
 
 ## Future
 
-| Change | Description | Source |
-|--------|-------------|--------|
-| `cognicode-axiom` re-activation | Trigger: fresh ADL for rule layer + storage adapter, OR explicit archive | `docs/adr/ADR-001-parked-crates.md` |
-| `cognicode-quality` re-activation | Depends on axiom; archive if axiom archived | `docs/adr/ADR-001-parked-crates.md` |
-| `cognicode-rule-test-harness` re-activation | Depends on axiom; deletable (no independent value) | `docs/adr/ADR-001-parked-crates.md` |
+_(none — all roadmap items closed)_
+
+The 3 previously-listed items (`cognicode-axiom`, `cognicode-quality`, `cognicode-rule-test-harness` re-activation) were **archived** on 2026-06-25 per ADR-001 trigger (b) — moved to `docs/parked-crates/` rather than revived. See ADR-001 §Archive Action. The C5 rename, multi-workspace `quality_gate`, and quality agent ingest items shipped in v0.24.0.
 
 ## Conventions
 
 - Roadmap entries are **date-sorted descending** within each section.
 - Each entry links to: branch (Active), tag + PR (Completed), or ADR/scenario (Future).
 - The `quality-stack-pg-canonical` entry includes a follow-up commit (`ad35e06`) that landed AFTER the original PR merged; both are part of the same change for the purposes of this roadmap.
+- When an item shifts from Future to Completed (or to Archived), the entry is moved and the source ADR/spec is cited.

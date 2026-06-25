@@ -1,6 +1,6 @@
 # ADR-001: Parked Crates — Activation Criterion
 
-- **Status**: ACCEPTED
+- **Status**: SUPERSEDED (2026-06-25 archive action — see §Archive Action below)
 - **Date**: 2026-06-25
 - **Deciders**: Orchestrator + user (during `quality-stack-pg-canonical` cycle)
 
@@ -87,4 +87,18 @@ Each parked crate has its own activation criterion. The criterion is intentional
 
 ## Status
 
-ACCEPTED on 2026-06-25 as part of the `quality-stack-pg-canonical` cycle closure. Linked from `sddk/quality-stack-pg-canonical-v2/verify-report.md` Issue #1.
+SUPERSEDED on 2026-06-25 by the **archive action** described below. The three crates are no longer "parked" — they are **archived** under `docs/parked-crates/`. ADR-001's original trigger (a) "fresh ADL for the rule layer" was not exercised; trigger (b) "explicit decision to retire the rule system and archive the crate" was chosen instead because v0.24.0 (`quality-stack-evolution`) already delivered the postgres-canonical write-path for quality issues, leaving no user-facing consumer for axiom's 600+ SonarQube rules.
+
+## Archive Action (2026-06-25)
+
+Following ADR-001's archive-vs-delete criterion (archive, never delete), the three crates were moved to:
+
+- `docs/parked-crates/cognicode-axiom/` (sources, 310 rule files, 18 documented built-ins + many more)
+- `docs/parked-crates/cognicode-quality/` (sources, including `incremental.rs` with `#[deprecated]` attrs from v0.23.0)
+- `docs/parked-crates/cognicode-rule-test-harness/` (sources)
+
+The `git mv` commands preserve history (file moves appear in `git log --follow`). The sources remain available for:
+- Retrospective audits (per ADR-001's archive rationale)
+- Future revival if a quality-agent design emerges that can consume the rules
+
+The `Cargo.toml` workspace now comments them out permanently (no longer "parked for revival" — explicitly archived).

@@ -8,15 +8,16 @@ members = [
     "crates/cognicode-sandbox",
     "crates/cognicode-graph-algos",
     "crates/cognicode-graph-wasm",
-
+ 
     "crates/cognicode-macros",
-    # "crates/cognicode-axiom",       # PARKED — era agentic rules redesign pending deep review
-    # "crates/cognicode-quality",      # PARKED — depends on axiom
-    # "crates/cognicode-rule-test-harness", # PARKED — depends on axiom
+    # Archived crates — see docs/adr/ADR-001-parked-crates.md (trigger b, 2026-06-25)
+    # cognicode-axiom → docs/parked-crates/cognicode-axiom/
+    # cognicode-quality → docs/parked-crates/cognicode-quality/
+    # cognicode-rule-test-harness → docs/parked-crates/cognicode-rule-test-harness/
     "crates/cognicode-explorer",
     "crates/cognicode-core-mock",
     "crates/cognicode-runtime",
-]
+]  
 
 [workspace.package]
 version = "0.5.0"
