@@ -8,8 +8,8 @@ use cognicode_core::domain::aggregates::SymbolId;
 use cognicode_core::domain::traits::GraphQueryPort;
 
 use crate::dto::{
-    DriftFinding, DriftKind, DriftReport, ExpectedArchitecture, ExpectedContainer, GraphEdge,
-    GraphNode, SubgraphResponse,
+    DriftFinding, DriftKind, DriftReport, ExpectedArchitecture,
+    ExpectedContainer, GodNodeEntry, GraphEdge, GraphNode, SubgraphResponse,
 };
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::GraphService;
@@ -55,6 +55,13 @@ fn symbol_to_node(id: &str, s: &ResolvedSymbol, _style_hint: &str) -> GraphNode 
         line: Some(s.line),
         style_class: crate::api::style_class_for(&kind_label).to_string(),
     }
+}
+
+fn stable_symbol_order(a: &ResolvedSymbol, b: &ResolvedSymbol) -> std::cmp::Ordering {
+    a.file
+        .cmp(&b.file)
+        .then(a.line.cmp(&b.line))
+        .then(a.name.cmp(&b.name))
 }
 
 #[async_trait]
@@ -218,6 +225,89 @@ impl GraphService for GraphServiceImpl {
                 "compare_architecture requires multimodal feature".into(),
             ))
         }
+    }
+
+    async fn landing_entry_points(
+        &self,
+        limit: usize,
+    ) -> ExplorerResult<(Vec<ResolvedSymbol>, usize)> {
+        let all = self.symbol_repo.all_symbols().map_err(map_repo_unavailable)?;
+        let Some(graph_query) = self.graph_query() else {
+            return Ok((Vec::new(), 0));
+        };
+
+        let mut roots: Vec<ResolvedSymbol> = all
+            .into_iter()
+            .filter(|sym| graph_query.fan_in(&sym.id) == 0)
+            .collect();
+
+        roots.sort_by(stable_symbol_order);
+        let total = roots.len();
+        roots.truncate(limit);
+        Ok((roots, total))
+    }
+
+    async fn landing_hot_paths(
+        &self,
+        limit: usize,
+        min_fan_in: usize,
+    ) -> ExplorerResult<Vec<ResolvedSymbol>> {
+        let all = self.symbol_repo.all_symbols().map_err(map_repo_unavailable)?;
+        let Some(graph_query) = self.graph_query() else {
+            return Ok(Vec::new());
+        };
+
+        let mut ranked: Vec<(ResolvedSymbol, usize)> = all
+            .into_iter()
+            .map(|sym| {
+                let fan_in = graph_query.fan_in(&sym.id);
+                (sym, fan_in)
+            })
+            .filter(|(_, fan_in)| *fan_in > 0 && *fan_in >= min_fan_in)
+            .collect();
+
+        ranked.sort_by(|(a, fan_in_a), (b, fan_in_b)| {
+            fan_in_b
+                .cmp(fan_in_a)
+                .then_with(|| stable_symbol_order(a, b))
+        });
+
+        Ok(ranked.into_iter().take(limit).map(|(sym, _)| sym).collect())
+    }
+
+    async fn landing_god_nodes(&self, limit: usize) -> ExplorerResult<Vec<GodNodeEntry>> {
+        let all = self.symbol_repo.all_symbols().map_err(map_repo_unavailable)?;
+        let symbol_count = all.len().max(1) as f64;
+        let Some(graph_query) = self.graph_query() else {
+            return Ok(Vec::new());
+        };
+
+        let mut ranked: Vec<(ResolvedSymbol, f64)> = all
+            .into_iter()
+            .map(|sym| {
+                let fan_in = graph_query.fan_in(&sym.id) as f64;
+                let score = fan_in / symbol_count;
+                (sym, score)
+            })
+            .filter(|(_, score)| *score > 0.0)
+            .collect();
+
+        ranked.sort_by(|(a, score_a), (b, score_b)| {
+            score_b
+                .partial_cmp(score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| stable_symbol_order(a, b))
+        });
+
+        Ok(ranked
+            .into_iter()
+            .take(limit)
+            .map(|(sym, score)| GodNodeEntry {
+                id: sym.id.to_string(),
+                label: sym.name,
+                score,
+            })
+            .collect())
     }
 }
 
