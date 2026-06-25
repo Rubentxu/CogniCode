@@ -117,13 +117,24 @@ test.describe("Phase 1: Landing page (8 tests)", () => {
   });
 
   test("P1.7 Landing error state when fetch fails", async ({ page }) => {
-    // Override the landing endpoint to return 500
-    await page.route("**/api/workspaces/*/landing**", async (route) => {
-      await route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: JSON.stringify({ error: "Internal server error" }),
-      });
+    // MSW handles browser requests inside the page, so use an init-script
+    // fetch override instead of Playwright's route interception.
+    await page.addInitScript(() => {
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+        if (url.includes("/api/workspaces/") && url.includes("/landing")) {
+          return new Response(JSON.stringify({ error: "Internal server error" }), {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return originalFetch(input, init);
+      };
     });
 
     await page.goto("/");
@@ -134,11 +145,21 @@ test.describe("Phase 1: Landing page (8 tests)", () => {
   });
 
   test("P1.8 Landing loading state during fetch", async ({ page }) => {
-    // Add a deliberate delay to the landing endpoint so the loading
-    // state is observable.
-    await page.route("**/api/workspaces/*/landing**", async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      await route.continue();
+    // MSW handles browser requests inside the page, so use an init-script
+    // fetch override instead of Playwright's route interception.
+    await page.addInitScript(() => {
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+        if (url.includes("/api/workspaces/") && url.includes("/landing")) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+        return originalFetch(input, init);
+      };
     });
 
     await page.goto("/");

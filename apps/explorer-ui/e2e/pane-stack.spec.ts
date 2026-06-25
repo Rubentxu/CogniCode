@@ -23,7 +23,10 @@ import { test, expect } from "@playwright/test";
  * Helper: open a Spotter result and select it to create a new pane.
  * Returns the first Spotter result testid.
  */
-async function openFirstSpotterResult(page: import("@playwright/test").Page) {
+async function openSpotterResult(
+  page: import("@playwright/test").Page,
+  resultIndex = 0,
+) {
   await page.waitForTimeout(1500); // wait for keyboard listener
   await page.keyboard.press("Meta+k");
   await expect(page.getByTestId("spotter")).toBeVisible({ timeout: 10_000 });
@@ -34,7 +37,7 @@ async function openFirstSpotterResult(page: import("@playwright/test").Page) {
     .getByTestId("spotter-results")
     .getByTestId(/^spotter-item-/);
   await expect(firstResult.first()).toBeVisible({ timeout: 5_000 });
-  await firstResult.first().click();
+  await firstResult.nth(resultIndex).click();
   await expect(page.getByTestId("spotter")).toBeHidden();
   await expect(page.getByTestId("object-inspector")).toBeVisible({ timeout: 5_000 });
 }
@@ -55,7 +58,7 @@ test.describe("Phase 3: Pane-Stack (8 tests)", () => {
     await expect(page.getByTestId("pane-stack-empty")).toBeVisible({ timeout: 5_000 });
 
     // Open the first object via Spotter
-    await openFirstSpotterResult(page);
+    await openSpotterResult(page);
 
     // Pane-stack replaces the empty state
     await expect(page.getByTestId("pane-stack-view")).toBeVisible({ timeout: 5_000 });
@@ -73,11 +76,11 @@ test.describe("Phase 3: Pane-Stack (8 tests)", () => {
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
     // Open the first object
-    await openFirstSpotterResult(page);
+    await openSpotterResult(page);
     await expect(paneTabs(page)).toHaveCount(1);
 
     // Open a second object (different query to get a different result)
-    await openFirstSpotterResult(page);
+    await openSpotterResult(page, 1);
 
     // Now two pane tabs exist
     await expect(paneTabs(page)).toHaveCount(2);
@@ -88,8 +91,8 @@ test.describe("Phase 3: Pane-Stack (8 tests)", () => {
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
     // Open two objects
-    await openFirstSpotterResult(page);
-    await openFirstSpotterResult(page);
+    await openSpotterResult(page);
+    await openSpotterResult(page, 1);
     await expect(paneTabs(page)).toHaveCount(2);
 
     // Get the two tabs
@@ -117,7 +120,7 @@ test.describe("Phase 3: Pane-Stack (8 tests)", () => {
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
     // Open one object
-    await openFirstSpotterResult(page);
+    await openSpotterResult(page);
     await expect(paneTabs(page)).toHaveCount(1);
 
     // Close the pane via the inspector's close button
@@ -140,7 +143,7 @@ test.describe("Phase 3: Pane-Stack (8 tests)", () => {
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
     // Open and close one object
-    await openFirstSpotterResult(page);
+    await openSpotterResult(page);
     await expect(page.getByTestId("pane-stack-view")).toBeVisible();
 
     const closeBtn = page
@@ -161,7 +164,7 @@ test.describe("Phase 3: Pane-Stack (8 tests)", () => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
-    await openFirstSpotterResult(page);
+    await openSpotterResult(page);
 
     // The active pane tab shows the object label
     const activeTab = paneTabs(page).first();
@@ -176,7 +179,7 @@ test.describe("Phase 3: Pane-Stack (8 tests)", () => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
-    await openFirstSpotterResult(page);
+    await openSpotterResult(page);
 
     // The inspector renders view tabs (getByTestId="view-tabs")
     const viewTabs = page.getByTestId("view-tabs");
@@ -192,7 +195,7 @@ test.describe("Phase 3: Pane-Stack (8 tests)", () => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
-    await openFirstSpotterResult(page);
+    await openSpotterResult(page);
 
     const viewTabs = page.getByTestId("view-tabs");
     const tabs = viewTabs.getByRole("tab");

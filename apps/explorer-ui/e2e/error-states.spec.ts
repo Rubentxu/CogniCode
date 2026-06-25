@@ -19,13 +19,12 @@ import { test, expect } from "@playwright/test";
 
 test.describe("Phase 5: Error & Edge Cases (6 tests)", () => {
   test("P5.1 Connection gate: backend unreachable", async ({ page }) => {
-    // Override ALL api endpoints with 503 to simulate backend down
-    await page.route("**/api/**", async (route) => {
-      await route.fulfill({
-        status: 503,
-        contentType: "application/json",
-        body: JSON.stringify({ error: "Service Unavailable" }),
-      });
+    await page.addInitScript(() => {
+      window.fetch = async () =>
+        new Response(JSON.stringify({ error: "Service Unavailable" }), {
+          status: 503,
+          headers: { "content-type": "application/json" },
+        });
     });
 
     await page.goto("/");
@@ -48,13 +47,22 @@ test.describe("Phase 5: Error & Edge Cases (6 tests)", () => {
   });
 
   test("P5.3 Empty workspace: 'open workspace' prompt", async ({ page }) => {
-    // Override the workspace list endpoint to return empty
-    await page.route("**/api/workspaces**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify([]),
-      });
+    await page.addInitScript(() => {
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+        if (url.endsWith("/api/workspaces")) {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return originalFetch(input, init);
+      };
     });
 
     await page.goto("/");
@@ -70,39 +78,59 @@ test.describe("Phase 5: Error & Edge Cases (6 tests)", () => {
   });
 
   test("P5.4 >500 nodes shows warning", async ({ page }) => {
-    // Override the landing endpoint to return 600 root nodes
-    await page.route("**/api/workspaces/*/landing**", async (route) => {
-      const nodes = Array.from({ length: 600 }, (_, i) => ({
-        id: `node-${i}`,
-        label: `Node ${i}`,
-        kind: "symbol",
-        layer: "core",
-      }));
-      const edges = Array.from({ length: 1200 }, (_, i) => ({
-        id: `edge-${i}`,
-        source: `node-${i % 600}`,
-        target: `node-${(i + 1) % 600}`,
-        kind: "calls",
-        confidence: 0.8,
-      }));
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          workspace: { id: "ws-test-001", name: "Large" },
-          root_nodes: nodes,
-          edges,
-          truncated: true,
-          size_warning: "Showing 600 nodes (truncated)",
-        }),
-      });
+    await page.addInitScript(() => {
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+        if (url.includes("/api/workspaces/") && url.includes("/landing")) {
+          const nodes = Array.from({ length: 600 }, (_, i) => ({
+            id: `node-${i}`,
+            label: `Node ${i}`,
+            kind: "symbol",
+            style_class: "function",
+          }));
+          const edges = Array.from({ length: 1200 }, (_, i) => ({
+            source: `node-${i % 600}`,
+            target: `node-${(i + 1) % 600}`,
+            relation: "calls",
+            style_class: "edge.calls",
+          }));
+          return new Response(JSON.stringify({
+            workspace: {
+              id: "ws-test-001",
+              root_path: "/tmp/large-workspace",
+              graph_status: "ready",
+              indexed_at: new Date().toISOString(),
+              symbol_count: 600,
+              relation_count: 1200,
+              last_scan_at: new Date().toISOString(),
+            },
+            nodes,
+            edges,
+            entry_points: [],
+            hot_paths: [],
+            god_nodes: [],
+            suggested_questions: [],
+            graph_status: "ready",
+            truncated: true,
+            truncated_reason: "max_nodes_exceeded",
+          }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return originalFetch(input, init);
+      };
     });
 
     await page.goto("/");
 
     // Landing renders the warning
-    const warning = page.locator("text=/truncated|warning|exceeds/i");
-    await expect(warning.first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("graph-landing-warning")).toBeVisible({ timeout: 15_000 });
   });
 
   test("P5.5 Object not found → 404 message", async ({ page }) => {

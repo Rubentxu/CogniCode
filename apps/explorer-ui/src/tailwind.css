@@ -44,7 +44,7 @@
   /* ── Syntax highlighting tokens (dark theme) ─────────────────────────── */
   --color-syntax-keyword: #ff7b72;     /* fn, let, const, if, else, return... */
   --color-syntax-string: #a5d6ff;       /* "hello", 'world', `template` */
-  --color-syntax-comment: #8b949e;      /* // comment, /* block */ */
+  --color-syntax-comment: #8b949e;      /* line and block comments */
   --color-syntax-function: #d2a8ff;    /* functionName, method calls */
   --color-syntax-number: #79c0ff;      /* 42, 3.14, 0xFF */
   --color-syntax-operator: #ff7b72;     /* +, -, *, /, =, ==, => */
