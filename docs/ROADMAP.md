@@ -6,7 +6,16 @@ Last updated: 2026-06-25
 
 | Change | Branch | Semver target | Notes |
 |--------|--------|---------------|-------|
-| _none_ | — | — | All active work in progress; see git branches |
+| _none_ | — | — | Repo is clean post-hygiene; pick next cycle from the [Future] section or open a new proposal |
+
+## Hygiene 2026-06-25
+
+Closed before resuming new cycles:
+
+- **Stashes**: 11 → 0. All 11 stashes dropped; patches preserved at `/tmp/stash-dump-2026-06-25/` (`00-refactor-error-enum.patch` ... `06-main-wip-aa8b951-e2e.patch`, 248 KB total). Notable discarded: `sdd/postgres-default-config` multimodal-docs-source (2358 insertions — was a Phase 4 spike, not aligned with current architecture).
+- **Openspec changes**: 29 stale proposals moved to `openspec/changes/archive/`. Mix of incomplete proposals (no `proposal.md`) and old March/April context proposals (LSP, perf, refactoring suite, etc.). If any of those themes need to come back, they should be re-proposed with current context.
+- **Branch `feat/e7-renderer-scale-evaluation`**: archived. The branch diverged from `main` by 1044 files (84811 insertions / 31801 deletions) and 0 of its commits had landed in `main`. The branch claimed "E7 is COMPLETED, WebGL adopted" but that work was never integrated; if WebGL adoption or renderer scale evaluation is needed, it should be re-scoped as a new cycle against current `main`.
+- **Working tree**: clean. No uncommitted code; no untracked artifacts in `apps/explorer-ui/`.
 
 ## Completed
 
