@@ -8,7 +8,7 @@ pub mod refactor;
 pub mod symbol;
 
 // `CallGraphV1` is intentionally deprecated; it is re-exported only so
-// downstream migration code (e.g. `cognicode-db`) can import the
+// downstream migration code can import the
 // shadow type from the canonical location. The re-export is *not* an
 // API for new consumers.
 #[allow(deprecated)]

@@ -962,6 +962,13 @@ mod tests {
         fn open_issues_count(&self) -> ExplorerResult<usize> {
             Ok(0)
         }
+        fn issues_for_workspace(
+            &self,
+            _workspace_id: Option<&str>,
+            _filter: &crate::ports::IssueFilter,
+        ) -> ExplorerResult<Vec<crate::ports::QualityIssue>> {
+            Ok(Vec::new())
+        }
     }
 
     /// Test quality repo that returns a hand-picked list. Used by
@@ -1020,6 +1027,28 @@ mod tests {
         }
         fn open_issues_count(&self) -> ExplorerResult<usize> {
             Ok(self.issues.len())
+        }
+        fn issues_for_workspace(
+            &self,
+            _workspace_id: Option<&str>,
+            filter: &crate::ports::IssueFilter,
+        ) -> ExplorerResult<Vec<crate::ports::QualityIssue>> {
+            let mut out: Vec<crate::ports::QualityIssue> = self
+                .issues
+                .iter()
+                .filter(|i| filter.severity.as_deref().is_none_or(|s| i.severity == s))
+                .filter(|i| filter.category.as_deref().is_none_or(|c| i.category == c))
+                .filter(|i| filter.status.as_deref().is_none_or(|s| i.status == s))
+                .filter(|i| match &filter.file_prefix {
+                    None => true,
+                    Some(p) => i.file == *p || i.file.starts_with(&format!("{p}/")),
+                })
+                .cloned()
+                .collect();
+            if let Some(n) = filter.limit {
+                out.truncate(n);
+            }
+            Ok(out)
         }
     }
 

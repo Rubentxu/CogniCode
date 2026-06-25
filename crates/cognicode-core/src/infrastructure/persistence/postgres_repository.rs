@@ -1765,6 +1765,11 @@ impl Repository for PostgresRepository {
 // `postgres://user:pass@host:5432`. The test runner will create
 // databases named `cognicode_test_<pid>_<test_name>` and drop
 // them on completion. CI must provide a PostgreSQL service.
+//
+// Historical note: the workspace's earlier in-memory persistence
+// path (which used a different embedded DB engine) was removed in
+// the Graph Intelligence v2 cleanup (verify report archived as
+// engram obs #1829). The PG-canonical policy remains in force.
 // -----------------------------------------------------------------
 #[cfg(all(test, feature = "postgres"))]
 mod tests {

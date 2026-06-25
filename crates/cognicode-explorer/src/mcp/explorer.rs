@@ -332,11 +332,11 @@ impl ExplorerMcpHandler {
     ///
     /// * `symbol_repo` — Symbol resolution port.
     /// * `source_reader` — Source file read port.
-    /// * `view_registry` — Registry of built-in + runtime views.
-    /// * `lens_registry` — Registry of design lenses.
-    /// * `cwd` — Current working directory (used to resolve relative paths).
-    /// * `graph` — Optional call graph (enables impact / graph tools).
-    #[allow(clippy::too_many_arguments)]
+    /// * `quality_repo` — Optional `QualityRepository` port backing the
+///   quality-MCP tools (`find_quality_issues`, `quality_gate`) and the
+///   internal lenses that surface quality findings. Wired from
+///   `cognicode-runtime` via `PostgresQualityRepository` (PG-canonical).
+#[allow(clippy::too_many_arguments)]
     pub fn with_graph(
         symbol_repo: Arc<dyn SymbolRepository>,
         source_reader: Arc<dyn SourceReader>,
@@ -344,6 +344,7 @@ impl ExplorerMcpHandler {
         lens_registry: crate::domain::lens::LensRegistry,
         cwd: PathBuf,
         graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>>,
+        quality_repo: Option<Arc<dyn crate::ports::QualityRepository>>,
     ) -> Self {
         // GraphQueryPort may be None when no call graph is loaded.
         let graph_query: Option<Arc<dyn GraphQueryPort>> = graph.as_ref().map(|g| {
@@ -361,14 +362,14 @@ impl ExplorerMcpHandler {
             None, // search_repo
             view_registry.clone(),
             None, // view_spec_store
-            None, // quality_repo
+            quality_repo.clone(),
         ));
 
         // View facade (also provides LensExecutor for MoldQL).
         let view_impl: Arc<ViewServiceImpl> = Arc::new(ViewServiceImpl::new(
             symbol_repo.clone(),
             source_reader.clone(),
-            None, // quality_repo
+            quality_repo.clone(),
             lens_registry,
             graph_query.clone(),
             view_registry.clone(),
@@ -390,7 +391,7 @@ impl ExplorerMcpHandler {
         // MoldQL facade.
         let moldql: Arc<dyn MoldQLService> = Arc::new(MoldQLServiceImpl::new(
             symbol_repo.clone(),
-            None, // quality_repo
+            quality_repo.clone(),
             source_reader,
             lens_executor,
             #[cfg(feature = "multimodal")]
@@ -402,7 +403,7 @@ impl ExplorerMcpHandler {
             Arc::new(GraphServiceImpl::new(symbol_repo.clone(), graph_query));
 
         // Build McpContext with all facades wired.
-        let ctx = McpContext::builder()
+        let mut ctx_builder = McpContext::builder()
             .with_graph(graph)
             .with_session_registry(SessionRegistry::new())
             .with_workspace(workspace.clone())
@@ -410,8 +411,11 @@ impl ExplorerMcpHandler {
             .with_view(view.clone())
             .with_moldql(moldql.clone())
             .with_persistence(persistence)
-            .with_graph_service(graph_facade.clone())
-            .build();
+            .with_graph_service(graph_facade.clone());
+        if let Some(q) = quality_repo {
+            ctx_builder = ctx_builder.with_quality(q);
+        }
+        let ctx = ctx_builder.build();
 
         // Build registry and register all handlers.
         let mut registry = ToolHandlerRegistry::new();

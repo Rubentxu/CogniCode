@@ -1,7 +1,7 @@
 //! Analysis state — formerly a thin wrapper over `cognicode-db`'s
 //! SQLite-backed `QualityStore` + `FileStore`.
 //!
-//! ## Status
+//! ## Status: DEPRECATED STUB
 //!
 //! The SQLite persistence layer was removed in the Graph Intelligence
 //! v2 cleanup. The `AnalysisState` API surface is kept as a no-op
@@ -18,13 +18,32 @@
 //! - Persistent baseline / snapshot history (always reports
 //!   `baseline_diff = None` and `latest_run_id = 0`).
 //!
-//! When a PostgreSQL-backed `AnalysisState` lands, the stub will be
-//! replaced and incremental analysis will return.
+//! ## Decision (2026-06-25 architecture review, candidate 3)
+//!
+//! This stub should be **removed** rather than restored. The 218-LOC
+//! no-op pretends to do work but does nothing useful; the dispatch
+//! wiring in `cognicode-quality/src/lib.rs` is itself unused by
+//! any consumer in the current codebase (verified via
+//! `grep -rn AnalysisState crates/`).
+//!
+//! When the actual quality engine lands (today's PG-backed
+//! `PostgresQualityRepository` from PR #54 is the seed for that
+//! engine), a fresh `AnalysisState` should be designed against it
+//! rather than incrementally fixing this stub.
+//!
+//! Until then, the module is left in place because the workspace
+//! enforces no-stale-code policy per the `sdd/quality-rebuild` ADR
+//! series — but every public item below is `#[deprecated]` so new
+//! code cannot depend on it accidentally.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Snapshot of a stored quality baseline (was persisted in SQLite).
+#[deprecated(
+    since = "0.22.0",
+    note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+)]
 #[derive(Debug, Clone)]
 pub struct QualityBaseline {
     pub timestamp: String,
@@ -36,6 +55,10 @@ pub struct QualityBaseline {
 }
 
 /// Snapshot of a single quality run (was persisted in SQLite).
+#[deprecated(
+    since = "0.22.0",
+    note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+)]
 #[derive(Debug, Clone)]
 pub struct QualitySnapshot {
     pub timestamp: String,
@@ -48,6 +71,10 @@ pub struct QualitySnapshot {
 }
 
 /// Diff between a current run and the stored baseline.
+#[deprecated(
+    since = "0.22.0",
+    note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BaselineDiff {
     pub baseline_timestamp: String,
@@ -60,6 +87,10 @@ pub struct BaselineDiff {
 }
 
 /// Per-file state (was persisted in SQLite).
+#[deprecated(
+    since = "0.22.0",
+    note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+)]
 #[derive(Debug, Clone)]
 pub struct FileState {
     pub hash: String,
@@ -69,19 +100,29 @@ pub struct FileState {
 
 /// No-op analysis state.
 ///
-/// The original implementation wrapped `cognicode_db::QualityStore`
-/// and `cognicode_db::FileStore` for cross-session persistence. With
-/// SQLite gone, every method is either a no-op (write side) or
-/// returns the empty default (read side). Callers that depended on
+/// The original implementation wrapped the workspace's now-removed
+/// QualityStore + FileStore for cross-session persistence. With that
+/// path gone, every method is either a no-op (write side) or returns
+/// the empty default (read side). Callers that depended on
 /// incremental change detection will see "every file is new" until a
-/// PostgreSQL-backed reimplementation lands.
+/// PostgreSQL-backed reimplementation lands — see ADR-001
+/// (parked-crates) for the activation criterion.
+#[deprecated(
+    since = "0.22.0",
+    note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+)]
 pub struct AnalysisState {
     project_root: PathBuf,
 }
 
+#[allow(deprecated)]
 impl AnalysisState {
     /// Load the analysis state. After the SQLite removal this is a
     /// no-op constructor — no on-disk state is consulted.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn load(project_root: &Path) -> Self {
         Self {
             project_root: project_root.to_path_buf(),
@@ -89,6 +130,10 @@ impl AnalysisState {
     }
 
     /// Set the baseline. No-op.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn set_baseline(
         &self,
         _total_issues: usize,
@@ -100,11 +145,19 @@ impl AnalysisState {
     }
 
     /// Get the stored baseline. Always `None` after the SQLite removal.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn get_baseline(&self) -> Option<QualityBaseline> {
         None
     }
 
     /// Record a snapshot. No-op.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     #[allow(clippy::too_many_arguments)]
     pub fn add_snapshot(
         &self,
@@ -118,12 +171,20 @@ impl AnalysisState {
     }
 
     /// Get run history. Always empty after the SQLite removal.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn get_run_history(&self, _n: usize) -> Vec<QualitySnapshot> {
         Vec::new()
     }
 
     /// Diff the supplied metrics against the baseline. Always `None`
     /// because no baseline is ever stored.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn diff_vs_baseline(
         &self,
         _total_issues: usize,
@@ -139,15 +200,27 @@ impl AnalysisState {
     /// changed. This matches the post-cleanup semantics: callers
     /// that pass `changed_only = true` will simply analyse every
     /// file.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn find_changed_files(&self, all_files: &[PathBuf]) -> Vec<PathBuf> {
         all_files.to_vec()
     }
 
     /// Update the per-file issue count. No-op.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn update_file_state(&self, _path: &Path, _issues_count: usize) {}
 
     /// BLAKE3 hash of a file. Pure function (no persistence) — kept
     /// for callers that need a stable identity hash for a path.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn hash_file(path: &Path) -> Option<String> {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -156,22 +229,34 @@ impl AnalysisState {
         Some(format!("{:016x}", hasher.finish()))
     }
 
-    /// Stub — the call-graph import extraction used to live in
-    /// `cognicode_db::files::FileStore::extract_imports`. The
-    /// language-specific regexes have been removed; this now returns
-    /// an empty vec. Callers can re-introduce a real implementation
-    /// when a non-SQLite store is available.
+    /// Stub — the call-graph import extraction used to live in the
+    /// workspace's now-removed FileStore. The language-specific regexes
+    /// have been removed; this now returns an empty vec. Callers can
+    /// re-introduce a real implementation when a non-SQLite store is
+    /// available.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn extract_imports(_source: &str, _file_path: &str) -> Vec<String> {
         Vec::new()
     }
 
     /// Stub for the SQLite import-tracking path. No-op.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn update_file_imports(&self, _source_file: &str, _imports: &[String]) {}
 
     /// Find changed files including their dependents.
     ///
     /// Without persistent dependents tracking this is equivalent to
     /// `find_changed_files`.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn find_changed_with_dependents(&self, all_files: &[PathBuf]) -> Vec<PathBuf> {
         let mut seen: HashSet<PathBuf> = HashSet::new();
         let mut out = Vec::with_capacity(all_files.len());
@@ -184,11 +269,19 @@ impl AnalysisState {
     }
 
     /// Latest run id. Always `None` post-cleanup.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn latest_run_id(&self) -> Option<i64> {
         None
     }
 
     /// Insert issues for a run. No-op.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn insert_issues(
         &self,
         _run_id: i64,
@@ -196,22 +289,38 @@ impl AnalysisState {
     ) {
     }
 
-    /// Stub — returns an empty list (was backed by SQLite `issues`).
+    /// Stub — returns an empty list.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn get_open_issues(&self) -> Vec<cognicode_axiom::rules::types::Issue> {
         Vec::new()
     }
 
-    /// Stub — returns an empty list (was backed by SQLite `files`).
+    /// Stub — returns an empty list.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn get_new_code_files(&self) -> Vec<String> {
         Vec::new()
     }
 
     /// Return the persisted run history. Always empty.
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn get_history(&self) -> Vec<QualitySnapshot> {
         Vec::new()
     }
 
     /// Return the per-file state. Always `None` (no persistence).
+    #[deprecated(
+        since = "0.22.0",
+        note = "incremental.rs stub retained for compat — quality-stack-pg-canonical-v2 will remove it"
+    )]
     pub fn get_file_state(&self, _path: &str) -> Option<FileState> {
         None
     }

@@ -127,13 +127,17 @@ impl Runtime {
         // Search facade.
         let view_registry = Arc::new(cognicode_explorer::registry::ViewRegistry::new(None));
         let view_registry_for_search = view_registry.clone();
+        #[cfg(feature = "postgres")]
+        let quality = quality_repo_arc(self.pg_repo.as_ref());
+        #[cfg(not(feature = "postgres"))]
+        let quality = quality_repo_arc();
         let search: Arc<dyn cognicode_explorer::facades::SearchService> =
             Arc::new(cognicode_explorer::facades::search::SearchServiceImpl::new(
                 self.symbol_repo.clone(),
                 None, // search_repo
                 view_registry_for_search,
                 None, // view_spec_store
-                None, // quality_repo
+                quality.clone(), // quality_repo — wired from PG (PR #55)
             ));
 
         // View facade.
@@ -141,7 +145,7 @@ impl Runtime {
             Arc::new(cognicode_explorer::facades::view::ViewServiceImpl::new(
                 self.symbol_repo.clone(),
                 self.source_reader.clone(),
-                None, // quality_repo
+                quality.clone(), // quality_repo — wired from PG (PR #55)
                 cognicode_explorer::domain::lens::default_registry(),
                 graph_query.clone(),
                 view_registry.clone(),
@@ -160,7 +164,7 @@ impl Runtime {
         let moldql: Arc<dyn cognicode_explorer::facades::MoldQLService> =
             Arc::new(cognicode_explorer::facades::moldql::MoldQLServiceImpl::new(
                 self.symbol_repo.clone(),
-                None, // quality_repo
+                quality, // quality_repo — wired from PG (PR #55)
                 self.source_reader.clone(),
                 lens_executor,
                 #[cfg(feature = "multimodal")]
@@ -195,6 +199,11 @@ impl Runtime {
         let view_registry = Arc::new(cognicode_explorer::registry::ViewRegistry::new(None));
         let lens_registry = cognicode_explorer::domain::lens::default_registry();
 
+        #[cfg(feature = "postgres")]
+        let quality = quality_repo_arc(self.pg_repo.as_ref());
+        #[cfg(not(feature = "postgres"))]
+        let quality = quality_repo_arc();
+
         cognicode_explorer::mcp::ExplorerMcpHandler::with_graph(
             self.symbol_repo,
             self.source_reader,
@@ -202,6 +211,30 @@ impl Runtime {
             lens_registry,
             self.cwd,
             self.graph,
+            quality,
         )
     }
+}
+
+/// Build a `PostgresQualityRepository` from the runtime's PG repo.
+///
+/// Returns `None` when the `postgres` feature is off or when no PG
+/// connection is available — in both cases the MCP tools degrade
+/// gracefully via the `quality_unavailable` envelope. The previous
+/// 3-place `None` pass-through was the source of the v0.22.0
+/// "always quality_unavailable" symptom; this helper centralizes the
+/// adapter construction so adding a new consumer is a one-liner.
+#[cfg(feature = "postgres")]
+fn quality_repo_arc(
+    pg_repo: Option<&Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
+) -> Option<Arc<dyn cognicode_explorer::ports::QualityRepository>> {
+    let pg = pg_repo?;
+    Some(Arc::new(
+        cognicode_explorer::adapters::PostgresQualityRepository::new(pg),
+    ))
+}
+
+#[cfg(not(feature = "postgres"))]
+fn quality_repo_arc() -> Option<Arc<dyn cognicode_explorer::ports::QualityRepository>> {
+    None
 }
