@@ -1239,6 +1239,410 @@ impl GraphQueryPort for WideGraphQueryPort {
     }
 }
 
+// ============================================================================
+// landing handler
+// ============================================================================
+
+#[derive(Clone)]
+struct LandingWorkspaceService;
+
+#[async_trait]
+impl WorkspaceService for LandingWorkspaceService {
+    async fn open_workspace(
+        &self,
+        _request: crate::dto::OpenWorkspaceRequest,
+    ) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
+        Ok(crate::dto::WorkspaceSummary {
+            id: "workspace:test".into(),
+            root_path: "/tmp/test-workspace".into(),
+            graph_status: crate::dto::GraphStatus::Ready,
+            indexed_at: None,
+            symbol_count: 0,
+            relation_count: 0,
+        })
+    }
+
+    fn current_workspace(&self) -> crate::ExplorerResult<crate::dto::WorkspaceSummary> {
+        Ok(crate::dto::WorkspaceSummary {
+            id: "workspace:test".into(),
+            root_path: "/tmp/test-workspace".into(),
+            graph_status: crate::dto::GraphStatus::Ready,
+            indexed_at: None,
+            symbol_count: 0,
+            relation_count: 0,
+        })
+    }
+}
+
+struct LandingRepo;
+
+impl SymbolRepository for LandingRepo {
+    fn resolve(&self, id: &SymbolId) -> crate::error::ExplorerResult<Option<ResolvedSymbol>> {
+        let sym = match id.as_str() {
+            "src/a.rs:alpha:1" => Some(ResolvedSymbol {
+                id: id.clone(),
+                name: "alpha".to_string(),
+                kind: SymbolKind::Function,
+                file: "src/a.rs".to_string(),
+                line: 1,
+                signature: Some("fn alpha()".to_string()),
+            }),
+            "src/b.rs:beta:2" => Some(ResolvedSymbol {
+                id: id.clone(),
+                name: "beta".to_string(),
+                kind: SymbolKind::Function,
+                file: "src/b.rs".to_string(),
+                line: 2,
+                signature: Some("fn beta()".to_string()),
+            }),
+            "src/core.rs:core:10" => Some(ResolvedSymbol {
+                id: id.clone(),
+                name: "core".to_string(),
+                kind: SymbolKind::Function,
+                file: "src/core.rs".to_string(),
+                line: 10,
+                signature: Some("fn core()".to_string()),
+            }),
+            "src/helper.rs:helper:20" => Some(ResolvedSymbol {
+                id: id.clone(),
+                name: "helper".to_string(),
+                kind: SymbolKind::Function,
+                file: "src/helper.rs".to_string(),
+                line: 20,
+                signature: Some("fn helper()".to_string()),
+            }),
+            _ => None,
+        };
+        Ok(sym)
+    }
+
+    fn find_symbols_by_name(
+        &self,
+        _name: &str,
+    ) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> {
+        Ok(Vec::new())
+    }
+
+    fn find_symbols_by_file(
+        &self,
+        file: &str,
+    ) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> {
+        let all = self.all_symbols()?;
+        Ok(all.into_iter().filter(|s| s.file == file).collect())
+    }
+
+    fn module_list(&self) -> Vec<String> {
+        vec!["src".to_string()]
+    }
+
+    fn all_symbols(&self) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> {
+        Ok(vec![
+            self.resolve(&SymbolId::new("src/a.rs:alpha:1"))?.unwrap(),
+            self.resolve(&SymbolId::new("src/b.rs:beta:2"))?.unwrap(),
+            self.resolve(&SymbolId::new("src/core.rs:core:10"))?.unwrap(),
+            self.resolve(&SymbolId::new("src/helper.rs:helper:20"))?.unwrap(),
+        ])
+    }
+
+    fn graph_stats(&self) -> GraphStats {
+        GraphStats {
+            symbol_count: 4,
+            relation_count: 3,
+        }
+    }
+}
+
+struct LandingGraphQueryPort;
+
+impl GraphQueryPort for LandingGraphQueryPort {
+    fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
+        match id.as_str() {
+            "src/core.rs:core:10" => vec![
+                RelationTarget {
+                    id: SymbolId::new("src/a.rs:alpha:1"),
+                    name: "alpha".to_string(),
+                    kind: SymbolKind::Function,
+                    file: "src/a.rs".to_string(),
+                    line: 1,
+                    signature: Some("fn alpha()".to_string()),
+                },
+                RelationTarget {
+                    id: SymbolId::new("src/b.rs:beta:2"),
+                    name: "beta".to_string(),
+                    kind: SymbolKind::Function,
+                    file: "src/b.rs".to_string(),
+                    line: 2,
+                    signature: Some("fn beta()".to_string()),
+                },
+            ],
+            "src/helper.rs:helper:20" => vec![RelationTarget {
+                id: SymbolId::new("src/core.rs:core:10"),
+                name: "core".to_string(),
+                kind: SymbolKind::Function,
+                file: "src/core.rs".to_string(),
+                line: 10,
+                signature: Some("fn core()".to_string()),
+            }],
+            _ => Vec::new(),
+        }
+    }
+
+    fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
+        match id.as_str() {
+            "src/a.rs:alpha:1" => vec![RelationTarget {
+                id: SymbolId::new("src/core.rs:core:10"),
+                name: "core".to_string(),
+                kind: SymbolKind::Function,
+                file: "src/core.rs".to_string(),
+                line: 10,
+                signature: Some("fn core()".to_string()),
+            }],
+            "src/b.rs:beta:2" => vec![RelationTarget {
+                id: SymbolId::new("src/core.rs:core:10"),
+                name: "core".to_string(),
+                kind: SymbolKind::Function,
+                file: "src/core.rs".to_string(),
+                line: 10,
+                signature: Some("fn core()".to_string()),
+            }],
+            "src/core.rs:core:10" => vec![RelationTarget {
+                id: SymbolId::new("src/helper.rs:helper:20"),
+                name: "helper".to_string(),
+                kind: SymbolKind::Function,
+                file: "src/helper.rs".to_string(),
+                line: 20,
+                signature: Some("fn helper()".to_string()),
+            }],
+            _ => Vec::new(),
+        }
+    }
+
+    fn fan_in(&self, id: &SymbolId) -> usize {
+        match id.as_str() {
+            "src/a.rs:alpha:1" => 0,
+            "src/b.rs:beta:2" => 0,
+            "src/core.rs:core:10" => 2,
+            "src/helper.rs:helper:20" => 1,
+            _ => 0,
+        }
+    }
+
+    fn fan_out(&self, id: &SymbolId) -> usize {
+        match id.as_str() {
+            "src/a.rs:alpha:1" => 1,
+            "src/b.rs:beta:2" => 1,
+            "src/core.rs:core:10" => 1,
+            "src/helper.rs:helper:20" => 0,
+            _ => 0,
+        }
+    }
+
+    fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<CallerWithMetadata> {
+        Vec::new()
+    }
+
+    fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<CalleeWithMetadata> {
+        Vec::new()
+    }
+
+    fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<RelationTargetWithMetadata> {
+        Vec::new()
+    }
+
+    fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+        Vec::new()
+    }
+
+    fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+        Vec::new()
+    }
+}
+
+fn landing_app() -> axum::Router {
+    let repo = Arc::new(LandingRepo);
+    let graph_query = Some(Arc::new(LandingGraphQueryPort) as Arc<dyn GraphQueryPort>);
+    let graph = Arc::new(GraphServiceImpl::new(repo.clone(), graph_query.clone()));
+    let view_registry = Arc::new(crate::registry::ViewRegistry::new(None));
+    let search = Arc::new(crate::facades::search::SearchServiceImpl::new(
+        repo.clone(),
+        None,
+        view_registry,
+        None,
+        None,
+    ));
+    let state = ApiState::new(
+        Arc::new(LandingWorkspaceService),
+        search,
+        Arc::new(MockViewService),
+        Arc::new(MockPersistenceService::new()),
+        Arc::new(MockMoldQLService),
+        graph,
+    );
+    router(state)
+}
+
+#[tokio::test]
+async fn landing_handler_returns_real_semantic_payload() {
+    let app = landing_app();
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/workspaces/ws-1/landing")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("body");
+    let json: serde_json::Value = serde_json::from_slice(&body).expect("json");
+
+    assert_eq!(json["truncated"], false);
+    assert!(json["truncated_reason"].is_null());
+    assert_eq!(json["entry_points"].as_array().unwrap().len(), 2);
+    assert_eq!(json["hot_paths"].as_array().unwrap().len(), 1);
+    assert!(!json["god_nodes"].as_array().unwrap().is_empty());
+    assert!(!json["nodes"].as_array().unwrap().is_empty());
+    assert!(!json["edges"].as_array().unwrap().is_empty());
+
+    let entry_labels: Vec<&str> = json["entry_points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|ep| ep["label"].as_str().unwrap())
+        .collect();
+    assert!(entry_labels.contains(&"alpha"));
+    assert!(entry_labels.contains(&"beta"));
+
+    let hot_labels: Vec<&str> = json["hot_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|hp| hp["label"].as_str().unwrap())
+        .collect();
+    assert_eq!(hot_labels, vec!["core"]);
+}
+
+#[tokio::test]
+async fn landing_handler_edges_have_no_dangling_endpoints() {
+    let app = landing_app();
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/workspaces/ws-1/landing")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.expect("response");
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("body");
+    let json: serde_json::Value = serde_json::from_slice(&body).expect("json");
+    let ids: std::collections::HashSet<String> = json["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n["id"].as_str().unwrap().to_string())
+        .collect();
+    for e in json["edges"].as_array().unwrap() {
+        let src = e["source"].as_str().unwrap().to_string();
+        let tgt = e["target"].as_str().unwrap().to_string();
+        assert!(ids.contains(&src), "dangling source: {src}");
+        assert!(ids.contains(&tgt), "dangling target: {tgt}");
+    }
+}
+
+struct WideLandingRepo;
+
+impl SymbolRepository for WideLandingRepo {
+    fn resolve(&self, id: &SymbolId) -> crate::error::ExplorerResult<Option<ResolvedSymbol>> {
+        Ok(Some(ResolvedSymbol {
+            id: id.clone(),
+            name: id.as_str().to_string(),
+            kind: SymbolKind::Function,
+            file: "wide.rs".to_string(),
+            line: id
+                .as_str()
+                .rsplit(':')
+                .next()
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(1),
+            signature: None,
+        }))
+    }
+    fn find_symbols_by_name(&self, _name: &str) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> { Ok(Vec::new()) }
+    fn find_symbols_by_file(&self, _file: &str) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> { Ok(Vec::new()) }
+    fn module_list(&self) -> Vec<String> { vec!["wide.rs".into()] }
+    fn all_symbols(&self) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> {
+        Ok((0..75)
+            .map(|i| ResolvedSymbol {
+                id: SymbolId::new(format!("wide.rs:root_{i}:{}", i + 1)),
+                name: format!("root_{i}"),
+                kind: SymbolKind::Function,
+                file: "wide.rs".into(),
+                line: i + 1,
+                signature: None,
+            })
+            .collect())
+    }
+    fn graph_stats(&self) -> GraphStats { GraphStats { symbol_count: 75, relation_count: 0 } }
+}
+
+struct WideLandingGraphQueryPort;
+
+impl GraphQueryPort for WideLandingGraphQueryPort {
+    fn callers(&self, _id: &SymbolId) -> Vec<RelationTarget> { Vec::new() }
+    fn callees(&self, _id: &SymbolId) -> Vec<RelationTarget> { Vec::new() }
+    fn fan_in(&self, _id: &SymbolId) -> usize { 0 }
+    fn fan_out(&self, _id: &SymbolId) -> usize { 0 }
+    fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<CallerWithMetadata> { Vec::new() }
+    fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<CalleeWithMetadata> { Vec::new() }
+    fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<RelationTargetWithMetadata> { Vec::new() }
+    fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> { Vec::new() }
+    fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> { Vec::new() }
+}
+
+fn wide_landing_app() -> axum::Router {
+    let repo = Arc::new(WideLandingRepo);
+    let graph = Arc::new(GraphServiceImpl::new(
+        repo.clone(),
+        Some(Arc::new(WideLandingGraphQueryPort)),
+    ));
+    let view_registry = Arc::new(crate::registry::ViewRegistry::new(None));
+    let search = Arc::new(crate::facades::search::SearchServiceImpl::new(
+        repo.clone(),
+        None,
+        view_registry,
+        None,
+        None,
+    ));
+    let state = ApiState::new(
+        Arc::new(LandingWorkspaceService),
+        search,
+        Arc::new(MockViewService),
+        Arc::new(MockPersistenceService::new()),
+        Arc::new(MockMoldQLService),
+        graph,
+    );
+    router(state)
+}
+
+#[tokio::test]
+async fn landing_handler_truncates_when_entry_points_exceed_cap() {
+    let app = wide_landing_app();
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/workspaces/ws-wide/landing")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 4 * 1024 * 1024)
+        .await
+        .expect("body");
+    let json: serde_json::Value = serde_json::from_slice(&body).expect("json");
+    assert_eq!(json["truncated"], true);
+    assert_eq!(json["truncated_reason"], "node_cap");
+    assert_eq!(json["entry_points"].as_array().unwrap().len(), crate::dto::LANDING_NODE_CAP);
+}
+
 fn wide_app() -> axum::Router {
     let repo = Arc::new(WideRepo);
     let state = make_test_api_state(repo, Some(Arc::new(WideGraphQueryPort)));

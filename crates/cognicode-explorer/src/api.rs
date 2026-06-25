@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -19,6 +20,7 @@ use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService,
     SubgraphDirection as FacadeSubgraphDirection, ViewService, WorkspaceService,
 };
+use crate::ports::symbol_repository::ResolvedSymbol;
 #[cfg(feature = "multimodal")]
 use crate::ports::graph_repository::GraphRepository;
 
@@ -104,6 +106,22 @@ pub fn edge_style_class_for(relation: &str) -> &'static str {
         "deployed_as" => "edge-deployed-as",
         "in_system" => "edge-in-system",
         _ => "edge.calls",
+    }
+}
+
+fn resolved_symbol_to_mvp(resolved: &ResolvedSymbol) -> String {
+    format!("symbol:{}:{}:{}", resolved.file, resolved.name, resolved.line)
+}
+
+fn resolved_symbol_to_graph_node(resolved: &ResolvedSymbol) -> crate::dto::GraphNode {
+    let kind_label = format!("{:?}", resolved.kind).to_lowercase();
+    crate::dto::GraphNode {
+        id: resolved_symbol_to_mvp(resolved),
+        label: resolved.name.clone(),
+        kind: kind_label.clone(),
+        file: Some(resolved.file.clone()),
+        line: Some(resolved.line),
+        style_class: style_class_for(&kind_label).to_string(),
     }
 }
 
@@ -685,13 +703,114 @@ async fn landing_handler(
         (0, 0, crate::dto::GraphStatus::Missing)
     };
 
-    // Build the landing payload with empty stubs for now.
-    // TODO (e10-landing-real-data): Wire get_entry_points, get_hot_paths,
-    // graph_insights from the analysis service once those methods are
-    // available on a facade. The truncation hook (apply_landing_cap) is
-    // already wired below — once `entry_points` is populated with real
-    // data, replace the `0` with `entry_points.len()`.
-    let (truncated, truncated_reason) = apply_landing_cap(0);
+    // Landing semantic seeds.
+    // NOTE: `GraphService` computes these from the Explorer seam
+    // (`all_symbols()` + `GraphQueryPort`) rather than leaking
+    // `WorkspaceSession` into the HTTP layer.
+    let (entry_point_symbols, total_entry_points) = state
+        .graph
+        .landing_entry_points(LANDING_NODE_CAP)
+        .await
+        .map_err(ApiError)?;
+    let hot_path_symbols = state
+        .graph
+        .landing_hot_paths(10, 2)
+        .await
+        .map_err(ApiError)?;
+    let god_nodes = state.graph.landing_god_nodes(10).await.map_err(ApiError)?;
+
+    let (truncated, truncated_reason) = apply_landing_cap(total_entry_points);
+
+    // Materialise entry_points / hot_paths summaries via the existing Search
+    // facade so we reuse the canonical `InspectableObjectSummary` shape.
+    let mut entry_points = Vec::with_capacity(entry_point_symbols.len());
+    for sym in &entry_point_symbols {
+        let mvp_id = resolved_symbol_to_mvp(sym);
+        entry_points.push(state.search.inspect_object(&mvp_id).await.map_err(ApiError)?);
+    }
+
+    let mut hot_paths = Vec::with_capacity(hot_path_symbols.len());
+    for sym in &hot_path_symbols {
+        let mvp_id = resolved_symbol_to_mvp(sym);
+        hot_paths.push(state.search.inspect_object(&mvp_id).await.map_err(ApiError)?);
+    }
+
+    // Deduplicate landing nodes by canonical symbol id, then render them as
+    // MVP ids so the frontend can feed them back into `inspect_object()`.
+    let mut selected_symbols = Vec::<ResolvedSymbol>::new();
+    let mut seen = HashSet::<String>::new();
+    for sym in entry_point_symbols.iter().chain(hot_path_symbols.iter()) {
+        let key = sym.id.to_string();
+        if seen.insert(key) {
+            selected_symbols.push(sym.clone());
+        }
+    }
+    for god in &god_nodes {
+        if seen.insert(god.id.clone())
+            && let Some(sym) = state.graph.resolve_symbol(&god.id).await.map_err(ApiError)?
+        {
+            selected_symbols.push(sym);
+        }
+    }
+
+    let nodes: Vec<crate::dto::GraphNode> = selected_symbols
+        .iter()
+        .map(resolved_symbol_to_graph_node)
+        .collect();
+
+    // Edges only between selected nodes; no dangling endpoints.
+    let selected_mvp_ids: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
+    let Some(graph_query) = state.graph.graph_query() else {
+        let payload = LandingPayload {
+            workspace: crate::dto::WorkspaceSummary {
+                id: workspace.id.clone(),
+                root_path: workspace.root_path.clone(),
+                graph_status,
+                indexed_at: None,
+                symbol_count,
+                relation_count,
+            },
+            nodes,
+            edges: Vec::new(),
+            entry_points,
+            hot_paths,
+            god_nodes,
+            suggested_questions: Vec::new(),
+            graph_status,
+            truncated,
+            truncated_reason,
+        };
+        return Ok(Json(payload).into_response());
+    };
+
+    let mut edges = Vec::<crate::dto::GraphEdge>::new();
+    let mut seen_edges = HashSet::<(String, String)>::new();
+    for sym in &selected_symbols {
+        let src_mvp = resolved_symbol_to_mvp(sym);
+        for callee in graph_query.callees(&sym.id) {
+            let tgt_resolved = ResolvedSymbol {
+                id: callee.id.clone(),
+                name: callee.name.clone(),
+                kind: callee.kind,
+                file: callee.file.clone(),
+                line: callee.line,
+                signature: callee.signature.clone(),
+            };
+            let tgt_mvp = resolved_symbol_to_mvp(&tgt_resolved);
+            if selected_mvp_ids.contains(&src_mvp)
+                && selected_mvp_ids.contains(&tgt_mvp)
+                && seen_edges.insert((src_mvp.clone(), tgt_mvp.clone()))
+            {
+                edges.push(crate::dto::GraphEdge {
+                    source: src_mvp.clone(),
+                    target: tgt_mvp,
+                    relation: "calls".to_string(),
+                    style_class: edge_style_class_for("calls").to_string(),
+                });
+            }
+        }
+    }
+
     let payload = LandingPayload {
         workspace: crate::dto::WorkspaceSummary {
             id: workspace.id.clone(),
@@ -701,11 +820,11 @@ async fn landing_handler(
             symbol_count,
             relation_count,
         },
-        nodes: Vec::new(),
-        edges: Vec::new(),
-        entry_points: Vec::new(),
-        hot_paths: Vec::new(),
-        god_nodes: Vec::new(),
+        nodes,
+        edges,
+        entry_points,
+        hot_paths,
+        god_nodes,
         suggested_questions: Vec::new(),
         graph_status,
         truncated,

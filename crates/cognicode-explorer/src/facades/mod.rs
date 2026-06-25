@@ -29,9 +29,10 @@ use cognicode_core::domain::traits::GraphQueryPort;
 
 use crate::dto::{
     ContextualGraphResponse, ContextualView, DecisionArtifactSummary, DriftReport,
-    ExplorationSession, GenerateArtifactRequest, GraphNode, InspectableObjectSummary,
-    LensDescriptor, LensResult, SpotterResult, SpotterSearchResult, SubgraphResponse,
-    ViewDescriptorDto, ViewSpec, WorkspaceSummary,
+    ExplorationSession, GenerateArtifactRequest, GodNodeEntry, GraphNode,
+    InspectableObjectSummary, LensDescriptor, LensResult, SpotterResult,
+    SpotterSearchResult, SubgraphResponse, ViewDescriptorDto, ViewSpec,
+    WorkspaceSummary,
 };
 use crate::error::ExplorerResult;
 use crate::moldql::MoldQLResult;
@@ -78,6 +79,28 @@ pub trait GraphService: Send + Sync {
     /// Compare the inferred architecture against `.cognicode/expected-architecture.yaml`.
     /// Returns a drift report if the file exists; empty report otherwise.
     async fn compare_architecture(&self, root_path: &str) -> ExplorerResult<DriftReport>;
+
+    /// Return landing entry points (roots) limited to `limit`, plus the total
+    /// count before truncation. Mirrors the semantics of
+    /// `AnalysisService::get_entry_points()` in `cognicode-core` but stays
+    /// inside the Explorer seam.
+    async fn landing_entry_points(
+        &self,
+        limit: usize,
+    ) -> ExplorerResult<(Vec<ResolvedSymbol>, usize)>;
+
+    /// Return landing hot paths, ranked by `fan_in` descending and filtered by
+    /// `min_fan_in`. Mirrors `CallGraphAnalyzer::find_hot_paths()` semantics.
+    async fn landing_hot_paths(
+        &self,
+        limit: usize,
+        min_fan_in: usize,
+    ) -> ExplorerResult<Vec<ResolvedSymbol>>;
+
+    /// Return landing god nodes with a deterministic backend score suitable for
+    /// the landing summary. MVP semantics are acceptable; exact PageRank parity
+    /// with future analytics services is not required here.
+    async fn landing_god_nodes(&self, limit: usize) -> ExplorerResult<Vec<GodNodeEntry>>;
 }
 
 // ============================================================================
