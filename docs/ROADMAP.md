@@ -28,7 +28,13 @@ Closed before resuming new cycles:
 
 ## Future
 
-_(none — all roadmap items closed)_
+Follow-ups explicitly queued by cycles closed today. Each will need its own proposal + spec before becoming Active.
+
+| Candidate | Source cycle | Semver target | Why it exists |
+|---|---|---|---|
+| `e10-landing-real-data` | E8b v0.24.2 follow-up | MINOR | Wire real `entry_points` / `hot_paths` data through the `Graph` facade. The handler still returns empty stubs (TODO at `crates/cognicode-explorer/src/api.rs:670-671`). The truncation contract is closed but the banner stays dormant in production until this lands. Needs an ADR on whether `InspectableObjectSummary` is the right shape for landing, or whether a leaner landing-specific summary struct is warranted. |
+| `e9-landing-perf` | E8 v0.24.1 follow-up | PATCH | The fallback node-list renders one `<button>` per node (`GraphLanding.tsx:243-273`). For workspaces >500 nodes, this is 500+ DOM elements. Flagged as W-3 in `openspec/changes/archive/e8-graphlanding-affordances/verify-report.md`. Virtualise if real-world usage shows DOM bloat. |
+| `e11-context-response-field-naming` | E8b v0.24.2 follow-up | PATCH | Two existing endpoints use different field names for the same concept: `SubgraphResponse.truncated_reason` (no extra 'i') vs `ContextualGraphResponse.truncation_reason` (extra 'i'). The landing uses `truncated_reason` to align with `SubgraphResponse`. Widening this inconsistency to a third name was rejected in E8b D-1; a proper harmonisation needs its own ADR and a wire-compat migration plan. |
 
 The 3 previously-listed items (`cognicode-axiom`, `cognicode-quality`, `cognicode-rule-test-harness` re-activation) were **archived** on 2026-06-25 per ADR-001 trigger (b) — moved to `docs/parked-crates/` rather than revived. See ADR-001 §Archive Action. The C5 rename, multi-workspace `quality_gate`, and quality agent ingest items shipped in v0.24.0.
 
