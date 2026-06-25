@@ -17,6 +17,7 @@ use cognicode_core::domain::traits::GraphQueryPort;
 use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
 };
+use crate::ports::QualityRepository;
 use crate::session::SessionRegistry;
 
 /// Optional Generic Graph Layer port for multimodal queries.
@@ -56,6 +57,11 @@ pub struct McpContext {
     pub graph_query: Option<Arc<dyn GraphQueryPort>>,
     /// Graph service facade — provides build_architecture and compare_architecture.
     pub graph_service: Option<Arc<dyn GraphService>>,
+    /// Quality repository — read-only port for the `issues` table.
+    /// Used by the quality-MCP handlers (`find_quality_issues`,
+    /// `quality_gate`). Gracefully degrades to empty results when not
+    /// wired (e.g. no quality DB present).
+    pub quality: Option<Arc<dyn QualityRepository>>,
 }
 
 impl McpContext {
@@ -73,6 +79,7 @@ impl McpContext {
             persistence: None,
             graph_query: None,
             graph_service: None,
+            quality: None,
         }
     }
 
@@ -117,6 +124,12 @@ impl McpContext {
         self.persistence = Some(p);
         self
     }
+
+    /// Wire a `QualityRepository` into the context.
+    pub fn with_quality(mut self, q: Arc<dyn QualityRepository>) -> Self {
+        self.quality = Some(q);
+        self
+    }
 }
 
 /// Builder for [`McpContext`].
@@ -130,6 +143,7 @@ pub struct McpContextBuilder {
     persistence: Option<Arc<dyn PersistenceService>>,
     graph_query: Option<Arc<dyn GraphQueryPort>>,
     graph_service: Option<Arc<dyn GraphService>>,
+    quality: Option<Arc<dyn QualityRepository>>,
     #[cfg(feature = "multimodal")]
     graph_repo: Option<Option<Arc<dyn crate::ports::graph_repository::GraphRepository>>>,
 }
@@ -146,6 +160,7 @@ impl McpContextBuilder {
             persistence: None,
             graph_query: None,
             graph_service: None,
+            quality: None,
             #[cfg(feature = "multimodal")]
             graph_repo: Some(None),
         }
@@ -205,6 +220,12 @@ impl McpContextBuilder {
         self
     }
 
+    /// Wire a `QualityRepository` into the context.
+    pub fn with_quality(mut self, quality: Arc<dyn QualityRepository>) -> Self {
+        self.quality = Some(quality);
+        self
+    }
+
     /// Wire an optional `GraphQueryPort` into the context (Phase 4).
     /// Passes through `None` when `graph_query` is `None`.
     pub fn with_optional_graph_query(
@@ -238,6 +259,7 @@ impl McpContextBuilder {
             persistence: self.persistence,
             graph_query: self.graph_query,
             graph_service: self.graph_service,
+            quality: self.quality,
         }
     }
 }

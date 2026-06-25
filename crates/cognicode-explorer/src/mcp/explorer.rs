@@ -211,6 +211,16 @@ pub const TOOL_FIND_CYCLES: &str = "find_cycles";
 /// (derives health score from graph metrics).
 pub const TOOL_HEALTH_DASHBOARD: &str = "health_dashboard";
 
+/// `find_quality_issues` — workspace-wide quality findings with filters
+/// (severity, category, file prefix, status). Wraps the
+/// `QualityRepository` port.
+pub const TOOL_FIND_QUALITY_ISSUES: &str = "find_quality_issues";
+
+/// `quality_gate` — single-shot snapshot of the workspace quality gate
+/// (rating, total issues, blockers, criticals, debt_minutes, last_run).
+/// Wraps `QualityRepository::quality_gate()`.
+pub const TOOL_QUALITY_GATE: &str = "quality_gate";
+
 // ============================================================================
 // Result envelope types
 // ============================================================================
@@ -409,6 +419,7 @@ impl ExplorerMcpHandler {
         crate::mcp::handler::register_internal_mcp_handlers(&mut registry);
         crate::mcp::handler::register_lens_mcp_handlers(&mut registry);
         crate::mcp::handler::register_named_views_handlers(&mut registry);
+        crate::mcp::handler::register_quality_mcp_handlers(&mut registry);
         crate::mcp::handler::register_search_handlers(&mut registry);
         crate::mcp::handler::register_session_handlers(&mut registry);
         crate::mcp::handler::register_view_handlers(&mut registry);
@@ -566,6 +577,8 @@ pub const TOOL_NAMES: &[&str] = &[
     TOOL_FIND_DEAD_CODE_V2,
     TOOL_FIND_INTERSECTION,
     TOOL_HOTSPOTS,
+    TOOL_FIND_QUALITY_ISSUES,
+    TOOL_QUALITY_GATE,
 ];
 
 /// Names of tools that are only available with the `multimodal` feature.
