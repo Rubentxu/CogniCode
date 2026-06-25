@@ -372,7 +372,7 @@ mod tests {
     use crate::adapters::FsSourceReader;
     use crate::dto::InspectableObjectType;
     use crate::ports::quality_repository::{
-        QualityGateSummary, QualityIssue, QualityRepository, RuleSummary,
+        IssueFilter, QualityGateSummary, QualityIssue, QualityRepository, RuleSummary,
     };
     use crate::ports::symbol_repository::{
         GraphStats, RelationTarget, ResolvedSymbol, SymbolRepository,
@@ -533,6 +533,30 @@ mod tests {
         }
         fn open_issues_count(&self) -> ExplorerResult<usize> {
             Ok(0)
+        }
+        fn issues_for_workspace(
+            &self,
+            _workspace_id: Option<&str>,
+            filter: &IssueFilter,
+        ) -> ExplorerResult<Vec<QualityIssue>> {
+            let mut out: Vec<QualityIssue> = self
+                .by_file
+                .values()
+                .chain(self.by_scope.values())
+                .chain(self.by_line.values())
+                .flat_map(|v| v.iter().cloned())
+                .filter(|i| filter.severity.as_deref().is_none_or(|s| i.severity == s))
+                .filter(|i| filter.category.as_deref().is_none_or(|c| i.category == c))
+                .filter(|i| filter.status.as_deref().is_none_or(|s| i.status == s))
+                .filter(|i| match &filter.file_prefix {
+                    None => true,
+                    Some(p) => i.file == *p || i.file.starts_with(&format!("{p}/")),
+                })
+                .collect();
+            if let Some(n) = filter.limit {
+                out.truncate(n);
+            }
+            Ok(out)
         }
     }
 

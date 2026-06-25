@@ -1,12 +1,12 @@
 //! `EdgeMetadata` — value object representing a call-graph edge with
 //! provenance and confidence metadata.
 //!
-//! This is the **domain projection** of a row in either the SQLite
-//! `call_edges` table (defined in `crates/cognicode-db/src/schema.rs`)
-//! or the PostgreSQL `call_edges` table (defined in
+//! This is the **domain projection** of a row in the PostgreSQL
+//! `call_edges` table (defined in
 //! `crates/cognicode-core/src/infrastructure/persistence/schema_postgres.sql`).
-//! Both schemas intentionally model the same seven data columns so
-//! that downstream code can switch backends without reshaping edges.
+//! The schema models seven data columns; downstream code that needs
+//! to reshape edges can use the `From` impls in
+//! `cognicode-core::interface::mcp::handlers`.
 //!
 //! The struct is intentionally **ungated** — it is reachable from a
 //! default build (no `postgres` feature required). The only place

@@ -11,6 +11,12 @@ use crate::domain::services::{ConfidenceRules, ExtractionContext};
 use crate::domain::value_objects::{DependencyType, Provenance};
 
 /// Represents a call entry in traversal results
+///
+/// Loaded from the PostgreSQL `call_edges` table (see
+/// `crates/cognicode-core/src/infrastructure/persistence/schema_postgres.sql`).
+/// The SQLite equivalent in the now-removed `cognicode-db` crate is
+/// gone — the canonical store is PG-canonical since the `postgres-canonical`
+/// cleanup (verify report archived as engram obs #1829).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallEntry {
     /// Symbol ID of the caller/callee
@@ -239,7 +245,8 @@ impl CallGraph {
 
     /// Returns an iterator over every edge in the graph with full metadata.
     ///
-    /// Used by the persistence layer (cognicode-db) and the explorer
+    /// Used by the persistence layer (PostgreSQL via
+    /// `cognicode-core::infrastructure::persistence`) and the explorer
     /// adapter. The order is unspecified.
     pub fn edges_with_metadata(
         &self,
@@ -1098,7 +1105,7 @@ pub struct CallGraphV1 {
 #[allow(deprecated)]
 impl CallGraphV1 {
     /// Construct an empty `CallGraphV1`. Visible so migration tests
-    /// (in `cognicode-db` and `cognicode-core`) can hand-craft a v1
+    /// (in the persistence layer and `cognicode-core`) can hand-craft a v1
     /// graph and roundtrip it through the v2 read path.
     pub fn new() -> Self {
         Self {

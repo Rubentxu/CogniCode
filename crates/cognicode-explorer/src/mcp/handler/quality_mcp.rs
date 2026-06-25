@@ -190,32 +190,40 @@ impl ToolHandler for FindQualityIssuesHandler {
         let category = args.category.as_deref().map(str::to_lowercase);
         let status = args.status.as_deref().map(str::to_lowercase);
 
-        // Workspace-wide aggregation: enumerate files the repo knows
-        // about. The QualityRepository is keyed by exact file path, so
-        // we use the open-issues count to decide whether to deep-walk.
-        // For a v1 surface this walks the repo file-by-file using
-        // `issues_for_file`; a future v2 can add a workspace-aware
-        // listing to the port to avoid the per-file round trips.
+        // Workspace-wide aggregation: delegate to the port's
+        // `issues_for_workspace` (introduced in v2). The PG adapter
+        // does the `WHERE workspace_id = $1` index seek and applies
+        // filters at the DB. The previous `list_known_files` stub
+        // (which always returned empty under the SQLite backend) is
+        // no longer needed.
         //
-        // Note: when `file_prefix` is provided, we filter by it after
-        // retrieval (the port doesn't expose a prefix scan).
+        // v2 note: `workspace_id` is left as `None` so the adapter
+        // scans across all workspaces (v1 contract). Multi-workspace
+        // scoping is a future enhancement (the args parser already
+        // reserves `workspace_id` as an optional field).
         let prefix = args.file_prefix.as_deref();
 
-        let mut all: Vec<QualityIssue> = Vec::new();
-        if let Ok(known_files) = list_known_files(q) {
-            for file in known_files {
-                if let Ok(mut issues) = q.issues_for_file(&file) {
-                    all.append(&mut issues);
-                }
+        let filter = crate::ports::quality_repository::IssueFilter {
+            severity: args.severity.clone(),
+            category: args.category.clone(),
+            status: args.status.clone(),
+            file_prefix: args.file_prefix.clone(),
+            limit: Some(limit),
+        };
+        let all = match q.issues_for_workspace(None, &filter) {
+            Ok(v) => v,
+            Err(e) => {
+                return err_envelope(
+                    TOOL_FIND_QUALITY_ISSUES,
+                    "service_error",
+                    &format!("{TOOL_FIND_QUALITY_ISSUES}: issues_for_workspace failed: {e}"),
+                );
             }
-        }
+        };
 
-        // If `list_known_files` is not available (default empty impl),
-        // fall back to `issues_for_scope` with a broad prefix.
-        // This is intentionally a no-op when the repo doesn't expose
-        // a file index — the aggregation layer is left to the repo.
-
-        // Post-filter
+        // Post-filter (defensive — the PG adapter should already have
+        // applied these; kept for parity with the SQLite fallback
+        // and as a contract guard against future adapter regressions).
         let filtered: Vec<QualityIssue> = all
             .into_iter()
             .filter(|i| match &severity {
@@ -271,6 +279,14 @@ fn list_known_files(
     // the underlying port has no file enumeration.
     Ok(Vec::new())
 }
+
+/// v1 helper: tried to enumerate files the quality repo had indexed.
+/// Removed in v2 (`quality-stack-pg-canonical-v2`) because
+/// `find_quality_issues` now delegates to `issues_for_workspace`
+/// instead of per-file walks. The aggregation path is now a single
+/// index seek at the PG layer, not a Rust-side fan-out.
+
+/// v2 helper: removed entirely. See git history for the v1 version.
 
 // ============================================================================
 // Tool 2: quality_gate
@@ -374,7 +390,7 @@ mod tests {
     use super::*;
     use crate::error::{ExplorerError, ExplorerResult};
     use crate::ports::quality_repository::{
-        QualityGateSummary, QualityRepository, RuleSummary,
+        IssueFilter, QualityGateSummary, QualityIssue, QualityRepository, RuleSummary,
     };
     use async_trait::async_trait;
     use std::collections::HashMap;
@@ -455,6 +471,28 @@ mod tests {
         }
         fn open_issues_count(&self) -> ExplorerResult<usize> {
             Ok(self.open_total)
+        }
+        fn issues_for_workspace(
+            &self,
+            _workspace_id: Option<&str>,
+            filter: &IssueFilter,
+        ) -> ExplorerResult<Vec<QualityIssue>> {
+            let mut out: Vec<QualityIssue> = self
+                .by_file
+                .values()
+                .flat_map(|v| v.iter().cloned())
+                .filter(|i| filter.severity.as_deref().is_none_or(|s| i.severity == s))
+                .filter(|i| filter.category.as_deref().is_none_or(|c| i.category == c))
+                .filter(|i| filter.status.as_deref().is_none_or(|s| i.status == s))
+                .filter(|i| match &filter.file_prefix {
+                    None => true,
+                    Some(p) => i.file == *p || i.file.starts_with(&format!("{p}/")),
+                })
+                .collect();
+            if let Some(n) = filter.limit {
+                out.truncate(n);
+            }
+            Ok(out)
         }
     }
 

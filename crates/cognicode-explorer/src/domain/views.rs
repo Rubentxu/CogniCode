@@ -2169,7 +2169,7 @@ mod tests {
     // Phase 3 — Quality view builders
     // -----------------------------------------------------------------------
 
-    use crate::ports::quality_repository::{QualityGateSummary, QualityRepository};
+    use crate::ports::quality_repository::{IssueFilter, QualityGateSummary, QualityRepository};
     use std::collections::HashMap as StdHashMap;
 
     /// Hand-rolled mock quality repository. Returns pre-baked answers
@@ -2252,6 +2252,30 @@ mod tests {
         }
         fn open_issues_count(&self) -> ExplorerResult<usize> {
             Ok(self.open_count)
+        }
+        fn issues_for_workspace(
+            &self,
+            _workspace_id: Option<&str>,
+            filter: &IssueFilter,
+        ) -> ExplorerResult<Vec<QualityIssue>> {
+            let mut out: Vec<QualityIssue> = self
+                .by_file
+                .values()
+                .chain(self.by_scope.values())
+                .flat_map(|v| v.iter().cloned())
+                .chain(self.by_id.values().cloned())
+                .filter(|i| filter.severity.as_deref().is_none_or(|s| i.severity == s))
+                .filter(|i| filter.category.as_deref().is_none_or(|c| i.category == c))
+                .filter(|i| filter.status.as_deref().is_none_or(|s| i.status == s))
+                .filter(|i| match &filter.file_prefix {
+                    None => true,
+                    Some(p) => i.file == *p || i.file.starts_with(&format!("{p}/")),
+                })
+                .collect();
+            if let Some(n) = filter.limit {
+                out.truncate(n);
+            }
+            Ok(out)
         }
     }
 
