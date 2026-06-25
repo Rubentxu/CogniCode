@@ -232,6 +232,49 @@ Workspace-wide quality findings with optional filters. Wraps the `QualityReposit
 
 **Errors**: `quality_unavailable` (no `QualityRepository` wired), `invalid_args` (malformed input).
 
+### `build_context`
+
+Consolidates object inspection + lens findings + quality issues + graph neighbors into a single context blob designed for **LLM agent consumption**. Returns **both** a Markdown body and a structured JSON body so callers can use whichever is most convenient.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `object_id` | string | yes | Object id to build context for. Accepts any `InspectableObjectType` id (symbol, file, scope, etc.). |
+| `lenses` | array of strings | no | Lens ids to apply. Default: `["lens_find_dead_code", "lens_hotspots"]`. |
+| `depth` | integer | no | Maximum BFS depth for graph neighbors (default 1, max 3). |
+| `include_source` | boolean | no | Include a source stub block in the markdown (default false). |
+
+**Returns**:
+```json
+{
+  "summary": "# main",
+  "json": {
+    "object_id": "main.rs:main:1",
+    "object_type": "symbol",
+    "label": "main",
+    "subtitle": "main.rs:1",
+    "properties": [{ "key": "file", "value": "main.rs" }, ...],
+    "lenses": { "requested": [...], "applied": [...], "results": [{ "lens_id", "summary", "findings": [...] }] },
+    "quality": { "file": "main.rs", "issues": [...], "total": 3 },
+    "graph": { "callers": [...], "callees": [...], "caller_count", "callee_count", "unique_neighbor_count" },
+    "include_source": false,
+    "depth": 1
+  },
+  "markdown": { "body": "# main\n\n_src/main.rs:1_\n\n..." },
+  "metadata": {
+    "version": "0.5.0",
+    "generated_at": "2026-06-25T...",
+    "sources_consulted": ["search", "lenses", "quality", "graph"],
+    "sources_skipped": []
+  }
+}
+```
+
+**Use when**: feeding LLM agents with structured code intelligence before asking them to reason about an object (e.g. "explain this function", "what could go wrong here", "summarize the design trade-offs").
+
+**Graceful degradation**: each source (lenses, quality, graph) is consulted only if its port is wired. Unwired ports appear in `metadata.sources_skipped` with a reason (e.g. `"quality: no QualityRepository wired"`).
+
+**Errors**: `service_unavailable` (no SearchService), `service_error` (inspect failed), `missing_required_arg` (empty object_id), `invalid_args` (malformed input).
+
 ### `quality_gate`
 
 Single-shot snapshot of the workspace quality gate: rating, total issues, blockers, criticals, debt minutes, last run timestamp.

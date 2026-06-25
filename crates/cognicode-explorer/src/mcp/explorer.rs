@@ -221,6 +221,11 @@ pub const TOOL_FIND_QUALITY_ISSUES: &str = "find_quality_issues";
 /// Wraps `QualityRepository::quality_gate()`.
 pub const TOOL_QUALITY_GATE: &str = "quality_gate";
 
+/// `build_context` — consolidates object inspection + lens findings +
+/// quality issues + graph neighbors into a context blob for LLM
+/// agent consumption. Returns both Markdown and JSON representations.
+pub const TOOL_BUILD_CONTEXT: &str = "build_context";
+
 // ============================================================================
 // Result envelope types
 // ============================================================================
@@ -411,6 +416,7 @@ impl ExplorerMcpHandler {
         // Build registry and register all handlers.
         let mut registry = ToolHandlerRegistry::new();
         crate::mcp::handler::register_ask_handlers(&mut registry);
+        crate::mcp::handler::register_context_builder_handlers(&mut registry);
         crate::mcp::handler::register_drift_handlers(&mut registry);
         crate::mcp::handler::register_graph_handlers(&mut registry);
         crate::mcp::handler::register_graph_analyze_handlers(&mut registry);
@@ -579,6 +585,7 @@ pub const TOOL_NAMES: &[&str] = &[
     TOOL_HOTSPOTS,
     TOOL_FIND_QUALITY_ISSUES,
     TOOL_QUALITY_GATE,
+    TOOL_BUILD_CONTEXT,
 ];
 
 /// Names of tools that are only available with the `multimodal` feature.
