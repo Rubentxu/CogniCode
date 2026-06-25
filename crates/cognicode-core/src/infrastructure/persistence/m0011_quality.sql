@@ -1,15 +1,15 @@
 -- Migration `m0011_quality` — Quality data tables for the
 -- `QualityRepository` port in `cognicode-explorer`.
 --
--- Backstory: the v1 schema (when `cognicode-db` was alive) stored
--- quality issues in SQLite. The `postgres-canonical` cleanup
--- (`verify-report` archived as engram obs #1829, 2026-06-13)
--- removed `cognicode-db` and its `rusqlite` adapters. The
--- `QualityRepository` port survived in `cognicode-explorer` with a
--- stale doc-comment claiming ownership by the removed crate —
--- that comment is the source of confusion flagged in the
--- 2026-06-25 architecture review (see candidate 2: cleanup of
--- 8 dead `cognicode-db` references).
+-- Backstory: the v1 schema (when the workspace-internal SQLite-backed
+-- persistence layer was alive) stored quality issues in SQLite.
+-- The `postgres-canonical` cleanup (`verify-report` archived as
+-- engram obs #1829, 2026-06-13) removed that layer and its
+-- SQLite-backed adapters. The `QualityRepository` port survived in
+-- `cognicode-explorer` with a stale doc-comment claiming ownership by
+-- the removed layer — that comment is the source of confusion flagged
+-- in the 2026-06-25 architecture review (see candidate 2: cleanup of
+-- the 8 dead references to the retired persistence layer).
 --
 -- This migration restores the quality tables in PostgreSQL so the
 -- port can be backed by a real adapter (`PostgresQualityRepository`,

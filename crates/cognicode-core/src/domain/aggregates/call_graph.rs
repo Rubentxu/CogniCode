@@ -14,8 +14,8 @@ use crate::domain::value_objects::{DependencyType, Provenance};
 ///
 /// Loaded from the PostgreSQL `call_edges` table (see
 /// `crates/cognicode-core/src/infrastructure/persistence/schema_postgres.sql`).
-/// The SQLite equivalent in the now-removed `cognicode-db` crate is
-/// gone — the canonical store is PG-canonical since the `postgres-canonical`
+/// The SQLite equivalent in the retired workspace-internal persistence
+/// layer is gone — the canonical store is PG-canonical since the `postgres-canonical`
 /// cleanup (verify report archived as engram obs #1829).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallEntry {
@@ -1092,9 +1092,10 @@ pub enum CallGraphError {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CallGraphV1 {
     // `pub` because the only consumer is migration code (e.g.
-    // `cognicode-db::VersionedBlob::decode`) plus integration tests
-    // that need to hand-craft v1 blobs. Keeping the fields public lets
-    // those tests build a v1 graph directly without exposing a builder
+    // `VersionedBlob::decode` from the retired workspace-internal
+    // SQLite-backed persistence layer) plus integration tests that
+    // need to hand-craft v1 blobs. Keeping the fields public lets those
+    // tests build a v1 graph directly without exposing a builder
     // API that will be deleted in one release cycle anyway.
     pub symbols: HashMap<SymbolId, Symbol>,
     pub edges: HashMap<SymbolId, HashSet<(SymbolId, DependencyType)>>,

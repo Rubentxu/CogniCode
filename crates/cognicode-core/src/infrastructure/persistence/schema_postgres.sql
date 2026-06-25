@@ -6,11 +6,12 @@
 -- `refinery` / `sqlx-cli` for this 2-table slice. Switch to a
 -- migration framework once the table count exceeds 3.
 --
--- The DDL is column-for-column compatible with the SQLite `symbols`
--- and `call_edges` tables defined in
--- `crates/cognicode-db/src/schema.rs` so that query projections
--- are portable between backends. The `call_edges` column `dependency_type`
--- (NOT `dep_type`) is the canonical name shared with SQLite v2.
+-- The DDL is column-for-column compatible with the pre-cleanup SQLite
+-- `symbols` and `call_edges` tables (defined in the workspace-internal
+-- persistence layer that was retired during the Graph Intelligence v2
+-- cleanup) so that query projections are portable between backends. The
+-- `call_edges` column `dependency_type` (NOT `dep_type`) is the canonical
+-- name shared with the legacy SQLite v2 schema.
 
 CREATE TABLE IF NOT EXISTS symbols (
     id          SERIAL PRIMARY KEY,

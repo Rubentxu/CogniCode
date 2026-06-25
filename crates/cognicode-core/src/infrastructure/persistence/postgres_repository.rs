@@ -1758,8 +1758,10 @@ impl Repository for PostgresRepository {
 // provided by a tiny manual fixture (each test creates its own
 // uniquely-named database) instead of the `#[sqlx::test]` macro.
 // We avoid that macro because its `migrate` feature pulls
-// `sqlx-sqlite`, which conflicts with the workspace's `rusqlite`.
-// Same isolation guarantee, no extra features.
+// `sqlx-sqlite`, which conflicts with the workspace's
+// Postgres-canonical policy (Cargo.toml workspace.lints — no SQLite
+// drivers in the dependency graph). Same isolation guarantee, no extra
+// features.
 //
 // Prerequisite: set `TEST_DATABASE_URL` to a base URL like
 // `postgres://user:pass@host:5432`. The test runner will create
