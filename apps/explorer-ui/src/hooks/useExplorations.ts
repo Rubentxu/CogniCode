@@ -178,7 +178,7 @@ export function useArtifact(
 ) {
   return useSWR<DecisionArtifactSummary, ApiError>(
     explorationId && format
-      ? `/explorations/${encodeURIComponent(explorationId)}/artifacts/${format}`
+      ? `/exploration-sessions/${encodeURIComponent(explorationId)}/artifacts/${format}`
       : null,
     artifactFetcher,
   );

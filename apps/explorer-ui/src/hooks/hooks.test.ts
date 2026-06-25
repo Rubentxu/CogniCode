@@ -331,7 +331,7 @@ describe("generateArtifact", () => {
   it("posts the format and returns the artifact summary", async () => {
     server.use(
       http.post(
-        "/api/explorations/:exploration_id/artifacts",
+        "*/api/exploration-sessions/:exploration_id/artifacts",
         async ({ request }) => {
           artifactFetchCount += 1;
           const body = (await request.json()) as { format: string };
