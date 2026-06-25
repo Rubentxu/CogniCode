@@ -333,7 +333,7 @@ pub fn build_symbol_quality_view(
             relation_type: "FOUND_AT".to_string(),
             direction: RelationDirection::Incoming,
             target_object_id: format!("issue:{}", i.id),
-            target_label: format!("{}: {} ({} L{})", i.severity, i.rule_id, i.file, i.line),
+            target_label: format!("{}: {} ({} L{})", i.severity, i.rule_id, i.file_path, i.line),
             evidence_ids: vec![evidence_id.clone()],
             provenance: None,
             confidence: None,
@@ -503,7 +503,7 @@ pub fn build_scope_quality_view(
             relation_type: "FOUND_IN".to_string(),
             direction: RelationDirection::Outgoing,
             target_object_id: format!("issue:{}", i.id),
-            target_label: format!("{}: {} ({} L{})", i.severity, i.rule_id, i.file, i.line),
+            target_label: format!("{}: {} ({} L{})", i.severity, i.rule_id, i.file_path, i.line),
             evidence_ids: vec![evidence_id.clone()],
             provenance: None,
             confidence: None,
@@ -590,8 +590,8 @@ pub fn build_issue_detail(issue: &QualityIssue) -> ContextualView {
         TypedRelation {
             relation_type: "FOUND_IN".to_string(),
             direction: RelationDirection::Outgoing,
-            target_object_id: format!("file:{}", issue.file),
-            target_label: format!("{} (L{})", issue.file, issue.line),
+            target_object_id: format!("file:{}", issue.file_path),
+            target_label: format!("{} (L{})", issue.file_path, issue.line),
             evidence_ids: vec![evidence_id.clone()],
             provenance: None,
             confidence: None,
@@ -623,7 +623,7 @@ pub fn build_issue_detail(issue: &QualityIssue) -> ContextualView {
             id: "issue_location".into(),
             title: "Location".into(),
             body: json!({
-                "file": issue.file,
+                "file": issue.file_path,
                 "line": issue.line,
             }),
         },
@@ -640,7 +640,7 @@ pub fn build_issue_detail(issue: &QualityIssue) -> ContextualView {
         id: evidence_id,
         kind: "quality_finding".into(),
         title: format!("Quality issue #{}", issue.id),
-        file: Some(issue.file.clone()),
+        file: Some(issue.file_path.clone()),
         line_range: Some(LineRange {
             start: issue.line,
             end: issue.line,
@@ -705,7 +705,7 @@ pub fn build_rule_detail(rule_id: &str, quality: Option<&dyn QualityRepository>)
             relation_type: "APPLIES_TO".to_string(),
             direction: RelationDirection::Outgoing,
             target_object_id: format!("issue:{}", i.id),
-            target_label: format!("{}: {} ({} L{})", i.severity, i.rule_id, i.file, i.line),
+            target_label: format!("{}: {} ({} L{})", i.severity, i.rule_id, i.file_path, i.line),
             evidence_ids: vec![evidence_id.clone()],
             provenance: None,
             confidence: None,
@@ -768,7 +768,7 @@ fn issue_summary(i: &QualityIssue) -> serde_json::Value {
         "rule_id": i.rule_id,
         "severity": i.severity,
         "category": i.category,
-        "file": i.file,
+        "file": i.file_path,
         "line": i.line,
         "message": i.message,
         "status": i.status,
@@ -2269,7 +2269,7 @@ mod tests {
                 .filter(|i| filter.status.as_deref().is_none_or(|s| i.status == s))
                 .filter(|i| match &filter.file_prefix {
                     None => true,
-                    Some(p) => i.file == *p || i.file.starts_with(&format!("{p}/")),
+                    Some(p) => i.file_path == *p || i.file_path.starts_with(&format!("{p}/")),
                 })
                 .collect();
             if let Some(n) = filter.limit {
@@ -2285,7 +2285,7 @@ mod tests {
             rule_id: rule.to_string(),
             severity: severity.to_string(),
             category: "CodeSmell".to_string(),
-            file: file.to_string(),
+            file_path: file.to_string(),
             line,
             message: format!("test message for issue {id}"),
             status: "open".to_string(),
@@ -2851,7 +2851,7 @@ mod tests {
             rule_id: "rust_lint_foo".into(),
             severity: "warning".into(),
             category: "lint".into(),
-            file: "src/main.rs".into(),
+            file_path: "src/main.rs".into(),
             line: 10,
             message: "test issue".into(),
             status: "open".into(),

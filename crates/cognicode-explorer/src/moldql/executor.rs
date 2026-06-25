@@ -495,7 +495,7 @@ impl<'a> MoldQLExecutor<'a> {
             "severity" => Some(Value::String(issue.severity.clone())),
             "rule" | "rule_id" => Some(Value::String(issue.rule_id.clone())),
             "category" => Some(Value::String(issue.category.clone())),
-            "file" | "path" => Some(Value::String(issue.file.clone())),
+            "file" | "path" => Some(Value::String(issue.file_path.clone())),
             "line" => Some(Value::Number(issue.line as f64)),
             "id" => Some(Value::Number(issue.id as f64)),
             _ => None,
@@ -987,7 +987,7 @@ mod tests {
             Ok(self
                 .issues
                 .iter()
-                .filter(|i| i.file == file)
+                .filter(|i| i.file_path == file)
                 .cloned()
                 .collect())
         }
@@ -995,7 +995,7 @@ mod tests {
             Ok(self
                 .issues
                 .iter()
-                .filter(|i| i.file == scope || i.file.starts_with(&format!("{scope}/")))
+                .filter(|i| i.file_path == scope || i.file_path.starts_with(&format!("{scope}/")))
                 .cloned()
                 .collect())
         }
@@ -1007,7 +1007,7 @@ mod tests {
             Ok(self
                 .issues
                 .iter()
-                .filter(|i| i.file == file && i.line == line)
+                .filter(|i| i.file_path == file && i.line == line)
                 .cloned()
                 .collect())
         }
@@ -1041,7 +1041,7 @@ mod tests {
                 .filter(|i| filter.status.as_deref().is_none_or(|s| i.status == s))
                 .filter(|i| match &filter.file_prefix {
                     None => true,
-                    Some(p) => i.file == *p || i.file.starts_with(&format!("{p}/")),
+                    Some(p) => i.file_path == *p || i.file_path.starts_with(&format!("{p}/")),
                 })
                 .cloned()
                 .collect();
@@ -1333,7 +1333,7 @@ mod tests {
                 rule_id: "rust:S100".into(),
                 severity: "Critical".into(),
                 category: "smells".into(),
-                file: "src/a.rs".into(),
+                file_path: "src/a.rs".into(),
                 line: 1,
                 message: "msg".into(),
                 status: "open".into(),
@@ -1343,7 +1343,7 @@ mod tests {
                 rule_id: "rust:S101".into(),
                 severity: "Major".into(),
                 category: "smells".into(),
-                file: "src/a.rs".into(),
+                file_path: "src/a.rs".into(),
                 line: 2,
                 message: "msg".into(),
                 status: "open".into(),
@@ -1353,7 +1353,7 @@ mod tests {
                 rule_id: "rust:S102".into(),
                 severity: "Info".into(),
                 category: "smells".into(),
-                file: "src/b.rs".into(),
+                file_path: "src/b.rs".into(),
                 line: 1,
                 message: "msg".into(),
                 status: "open".into(),

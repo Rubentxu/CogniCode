@@ -80,13 +80,14 @@ struct FindQualityIssuesArgs {
 }
 
 /// A single issue as it appears in the MCP payload.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct QualityIssueDto {
     id: i64,
     rule_id: String,
     severity: String,
     category: String,
-    file: String,
+    #[serde(rename = "file_path", alias = "file")]
+    file_path: String,
     line: u32,
     message: String,
     status: String,
@@ -99,7 +100,7 @@ impl From<&QualityIssue> for QualityIssueDto {
             rule_id: i.rule_id.clone(),
             severity: i.severity.clone(),
             category: i.category.clone(),
-            file: i.file.clone(),
+            file_path: i.file_path.clone(),
             line: i.line,
             message: i.message.clone(),
             status: i.status.clone(),
@@ -239,7 +240,7 @@ impl ToolHandler for FindQualityIssuesHandler {
                 None => true,
             })
             .filter(|i| match prefix {
-                Some(p) => i.file.starts_with(p),
+                Some(p) => i.file_path.starts_with(p),
                 None => true,
             })
             .take(limit)
@@ -486,7 +487,7 @@ mod tests {
                 .filter(|i| filter.status.as_deref().is_none_or(|s| i.status == s))
                 .filter(|i| match &filter.file_prefix {
                     None => true,
-                    Some(p) => i.file == *p || i.file.starts_with(&format!("{p}/")),
+                    Some(p) => i.file_path == *p || i.file_path.starts_with(&format!("{p}/")),
                 })
                 .collect();
             if let Some(n) = filter.limit {
@@ -502,7 +503,7 @@ mod tests {
             rule_id: format!("R{id}"),
             severity: severity.to_string(),
             category: category.to_string(),
-            file: file.to_string(),
+            file_path: file.to_string(),
             line: 1,
             message: format!("msg {id}"),
             status: status.to_string(),
@@ -560,7 +561,23 @@ mod tests {
         assert_eq!(v["id"], 7);
         assert_eq!(v["rule_id"], "R7");
         assert_eq!(v["severity"], "critical");
-        assert_eq!(v["file"], "src/x.rs");
+        assert_eq!(v["file_path"], "src/x.rs");
+    }
+
+    #[test]
+    fn quality_issue_dto_accepts_legacy_file_alias() {
+        let json = serde_json::json!({
+            "id": 7,
+            "rule_id": "R7",
+            "severity": "critical",
+            "category": "complexity",
+            "file": "src/x.rs",
+            "line": 1,
+            "message": "msg 7",
+            "status": "open"
+        });
+        let dto: QualityIssueDto = serde_json::from_value(json).unwrap();
+        assert_eq!(dto.file_path, "src/x.rs");
     }
 
     // ---------------------------------------------------------------------

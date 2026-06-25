@@ -44,7 +44,7 @@ fn issue(id: i64, severity: &str, category: &str, file: &str, status: &str) -> Q
         rule_id: format!("R{id:03}"),
         severity: severity.to_string(),
         category: category.to_string(),
-        file: file.to_string(),
+        file_path: file.to_string(),
         line: 1,
         message: format!("issue {id}"),
         status: status.to_string(),
