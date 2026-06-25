@@ -21,6 +21,7 @@ Closed before resuming new cycles:
 
 | Change | Tag | Closed | PR | Notes |
 |--------|-----|--------|----|----|
+| `e10-landing-real-data` | v0.25.0 | 2026-06-25 | [#60](https://github.com/Rubentxu/CogniCode/pull/60) | Landing backend now returns real semantic workspace seeds instead of empty stubs: `entry_points`, `hot_paths`, `god_nodes`, `nodes`, and `edges`. Implemented entirely through the Explorer seam (`GraphService` over `all_symbols()` + `GraphQueryPort`) without injecting `WorkspaceSession` into `ApiState`. `apply_landing_cap(total_entry_points)` now runs on real data, so the E8/E8b banner can activate on wide workspaces. 3 new landing integration tests; `api_graph_tests` 59/59 green; frontend vitest 671/671 unchanged. |
 | `e8b-landing-payload-truncation` | v0.24.2 | 2026-06-25 | [#59](https://github.com/Rubentxu/CogniCode/pull/59) | Backend `LandingPayload` DTO: `+truncated: bool`, `+truncated_reason: Option<String>`. `LANDING_NODE_CAP = 50` constant. `apply_landing_cap(total)` pure helper as single source of truth. `landing_handler` calls `apply_landing_cap(0)` (handler still returns empty stubs; data wiring deferred to `e10-landing-real-data`). 9 new tests in `api_landing_truncation.rs` (5 helper boundary + 4 DTO serde), strict TDD. Banner remains dormant in production until `e10` wires real `entry_points` data through the `Graph` facade. |
 | `e8-graphlanding-affordances` | v0.24.1 | 2026-06-25 | [#56](https://github.com/Rubentxu/CogniCode/pull/56) + [#57](https://github.com/Rubentxu/CogniCode/pull/57) + [#58](https://github.com/Rubentxu/CogniCode/pull/58) + [snapshot re-baseline `78b12eb`](https://github.com/Rubentxu/CogniCode/commit/78b12eb) | GraphLanding: truncation banner (dormant, awaiting `e8b`), canvas a11y (`role="application"` + `aria-label` + `tabIndex={0}`), node-list fallback of buttons, `selectObject` memoized via `useCallback`. Artifact endpoint: `/explorations/` → `/api/exploration-sessions/` aligned with ADR-040 Wave 3 (fixes pre-existing `generateArtifact` test failure). E2E: `page.route` → `addInitScript` for MSW compatibility; 24 visual-regression snapshots re-baselined. |
 | `quality-stack-evolution` | v0.24.0 | 2026-06-25 | [#55](https://github.com/Rubentxu/CogniCode/pull/55) | C5 rename (`QualityIssue.file → file_path` with serde wire compat per D-1 B.1) + multi-workspace `quality_gate` scoping (`workspace_id: Option<&str>` per D-2) + quality agent ingest write-path (`QualityWritePort` trait + `PostgresQualityRepository` impl + `ingest_quality_issues` MCP tool with natural-key idempotency per D-3) |
@@ -32,7 +33,6 @@ Follow-ups explicitly queued by cycles closed today. Each will need its own prop
 
 | Candidate | Source cycle | Semver target | Why it exists |
 |---|---|---|---|
-| `e10-landing-real-data` | E8b v0.24.2 follow-up | MINOR | Wire real `entry_points` / `hot_paths` data through the `Graph` facade. The handler still returns empty stubs (TODO at `crates/cognicode-explorer/src/api.rs:670-671`). The truncation contract is closed but the banner stays dormant in production until this lands. Needs an ADR on whether `InspectableObjectSummary` is the right shape for landing, or whether a leaner landing-specific summary struct is warranted. |
 | `e9-landing-perf` | E8 v0.24.1 follow-up | PATCH | The fallback node-list renders one `<button>` per node (`GraphLanding.tsx:243-273`). For workspaces >500 nodes, this is 500+ DOM elements. Flagged as W-3 in `openspec/changes/archive/e8-graphlanding-affordances/verify-report.md`. Virtualise if real-world usage shows DOM bloat. |
 | `e11-context-response-field-naming` | E8b v0.24.2 follow-up | PATCH | Two existing endpoints use different field names for the same concept: `SubgraphResponse.truncated_reason` (no extra 'i') vs `ContextualGraphResponse.truncation_reason` (extra 'i'). The landing uses `truncated_reason` to align with `SubgraphResponse`. Widening this inconsistency to a third name was rejected in E8b D-1; a proper harmonisation needs its own ADR and a wire-compat migration plan. |
 
@@ -58,6 +58,7 @@ What is already implemented today:
 - `MoldQL` execution + JSONata preview
 - `Spotter` + `EntryPoint` / `ResolvedEntryPoint`
 - WASM graph tooling (`god_nodes`, PageRank, SCC, etc.)
+- real landing workspace overview (`entry_points`, `hot_paths`, `god_nodes`, nodes, edges)
 
 What is **not** implemented yet:
 
@@ -70,7 +71,6 @@ What is **not** implemented yet:
 
 | Phase | Candidate | Semver target | Primary crates | Goal |
 |---|---|---|---|---|
-| 0 | `e10-landing-real-data` | MINOR | `cognicode-explorer`, `cognicode-core` | Wire real `entry_points` / `hot_paths` into landing so E8/E8b banner can activate on real data |
 | 0 | `e9-landing-perf` | PATCH | `cognicode-explorer` | Virtualise the fallback node list if large workspaces cause DOM bloat |
 | 0 | `e11-context-response-field-naming` | PATCH | `cognicode-explorer` | Harmonise `truncated_reason` vs `truncation_reason` naming without breaking the wire contract |
 | 1 | `e12-viewkind-realization` | MINOR | `cognicode-explorer`, `cognicode-core`, `cognicode-graph-algos` | Convert high-value catalogued `ViewKind`s into real executors and renderers |
