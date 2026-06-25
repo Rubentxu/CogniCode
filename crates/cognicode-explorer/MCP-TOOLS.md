@@ -212,6 +212,40 @@ Single-call summary of the workspace's graph health. Returns total symbol/edge c
 
 **Use when**: dashboarding, monitoring, or quick project health checks.
 
+### `find_quality_issues`
+
+Workspace-wide quality findings with optional filters. Wraps the `QualityRepository` port.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `severity` | string | no | Severity filter (e.g. `critical`, `warning`, `info`). Case-insensitive. |
+| `category` | string | no | Category filter (e.g. `complexity`, `duplication`). Case-insensitive. |
+| `file_prefix` | string | no | Only return issues whose `file` starts with this prefix. |
+| `status` | string | no | Status filter (e.g. `open`, `resolved`). Case-insensitive. |
+| `limit` | integer | no | Maximum number of issues to return (default 100). |
+
+**Returns**: `{ issues: [{ id, rule_id, severity, category, file, line, message, status }], total, filters_applied: { severity, category, file_prefix, status, limit } }`.
+
+**Use when**: listing quality findings for a scope, severity-driven triage, or pre-merge gating.
+
+> **Note (v1)**: The current `QualityRepository` port does not expose a workspace-wide file index, so `find_quality_issues` returns an empty aggregation. A v2 port should expose `files()` or `issues_for_workspace()` to enable workspace-wide listings. Use `file_prefix` to narrow scope.
+
+**Errors**: `quality_unavailable` (no `QualityRepository` wired), `invalid_args` (malformed input).
+
+### `quality_gate`
+
+Single-shot snapshot of the workspace quality gate: rating, total issues, blockers, criticals, debt minutes, last run timestamp.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `workspace_id` | string | no | Reserved; currently unused. |
+
+**Returns**: `{ rating: string \| null, total_issues, blockers, criticals, debt_minutes, last_run: string \| null, open_issues_count }`.
+
+**Use when**: dashboards, pre-commit gates, or reporting.
+
+**Errors**: `quality_unavailable` (no `QualityRepository` wired).
+
 ---
 
 ## 4. Graph Traversal & Impact

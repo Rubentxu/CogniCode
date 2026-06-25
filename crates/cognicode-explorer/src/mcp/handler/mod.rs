@@ -28,6 +28,9 @@ pub mod internal_mcp;
 // its handlers into a fresh registry. Internal callers still go
 // through `register_lens_mcp_handlers`.
 pub mod lens_mcp;
+// `quality_mcp` is `pub` for the same reason — integration tests need
+// to register the handlers into a fresh registry.
+pub mod quality_mcp;
 mod named_views;
 mod search;
 mod sessions;
@@ -150,6 +153,7 @@ pub use impact::register_impact_handlers;
 pub use ingest::register_ingest_handlers;
 pub use internal_mcp::register_internal_mcp_handlers;
 pub use lens_mcp::register_lens_mcp_handlers;
+pub use quality_mcp::register_quality_mcp_handlers;
 pub use named_views::register_named_views_handlers;
 pub use search::register_search_handlers;
 pub use sessions::register_session_handlers;
