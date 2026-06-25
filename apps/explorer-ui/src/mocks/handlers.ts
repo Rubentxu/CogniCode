@@ -95,6 +95,36 @@ export const handlers = [
   }),
 
   // -----------------------------------------------------------------------
+  // 2d. Workspace quality summary
+  // -----------------------------------------------------------------------
+  http.get("/api/workspaces/:workspace_id/quality-summary", async () => {
+    await delay(LATENCY_MS);
+    return HttpResponse.json({
+      summary: {
+        scope: "workspace",
+        rating: "B",
+        total_issues: 3,
+        debt_minutes: 60,
+        by_severity: { blocker: 0, critical: 1, major: 1, minor: 1, info: 0 },
+        last_run: "2026-06-07T09:00:00Z",
+      },
+      issues: [
+        {
+          id: 1,
+          rule_id: "rust:S100",
+          severity: "critical",
+          category: "safety",
+          file: "src/lib.rs",
+          line: 42,
+          message: "Critical safety issue",
+          status: "open",
+          object_id: "issue:1",
+        },
+      ],
+    });
+  }),
+
+  // -----------------------------------------------------------------------
   // 3. Index workspace — backend returns 501 today
   // -----------------------------------------------------------------------
   http.post("/api/workspaces/:workspace_id/index", async () => {
@@ -239,7 +269,7 @@ export const handlers = [
   // -----------------------------------------------------------------------
   // 11. Generate artifact
   // -----------------------------------------------------------------------
-  http.post("/api/explorations/:exploration_id/artifacts", async ({ request }) => {
+  http.post("*/api/exploration-sessions/:exploration_id/artifacts", async ({ request }) => {
     await delay(LATENCY_MS);
     const body = (await request.json()) as { format: string };
     return HttpResponse.json({
