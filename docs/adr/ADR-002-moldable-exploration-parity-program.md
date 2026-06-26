@@ -194,10 +194,11 @@ Registry entry + static instance added.
 
 Wave 1 remaining (reordered 2026-06-26):
 
-- `e12c-test-slice` — TestSlice as 12th executor. Shows test functions that call a given symbol. Uses `GraphQueryPort.callers()` + test-path heuristics (files named `_test.rs` or paths containing `/tests/`). DocCodeAlignment is deferred: `EntryPoint::Doc` is not wired to any `InspectionTarget`, and there is no DocService or `ObjectIdentity::Doc` — implementing it now would return `ViewNotAvailable` always.
-- `OwnershipMap`
-- `DebugSlice`
-- `DocCodeAlignment` — deferred to after Doc infrastructure is built (Phase 2+)
+- `e12c-test-slice` — TestSlice ✅ (v0.27.2, PR #65)
+- `e12d-debug-slice` — DebugSlice as 13th executor. Shows debug-relevant callers of a symbol using source context and callers graph. Uses `GraphQueryPort.callers()` + source reader for context. Renderer: graph.
+- `OwnershipMap` — deferred: no ownership signal in graph (git blame / author attribution not wired as node property)
+- `DocCodeAlignment` — deferred: `EntryPoint::Doc` not wired to any `InspectionTarget`, no DocService (Phase 2+)
+- `DebugSlice` — deferred (moved to e12d above)
 
 Success criterion: the number of real executors grows materially beyond the
 current 9, and every newly exposed view kind is reachable from the inspector.

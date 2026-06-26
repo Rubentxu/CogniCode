@@ -45,7 +45,7 @@ Follow-ups explicitly queued by cycles closed today. Each will need its own prop
 
 | Candidate | Source cycle | Semver target | Why it exists |
 |-----------|---|---|---|
-| `e12d-ownership-map` | ADR-002 Phase 1 | MINOR | `OwnershipMapExecutor` as 13th executor. Shows module ownership via graph traversal. Next in priority after TestSlice. |
+| `e12d-debug-slice` | ADR-002 Phase 1 | MINOR | `DebugSliceExecutor` as 13th executor. Shows debug-relevant callers of a symbol (source context + caller graph). Uses existing source reader + callers. Reorders: OwnershipMap deferred (no ownership signal in graph), DocCodeAlignment deferred (no Doc infrastructure). |
 
 ## Strategic program: moldable exploration parity
 
