@@ -1180,7 +1180,7 @@ export type SameLevelSection = z.infer<typeof sameLevelSectionSchema>;
 /**
  * Top-level response for `GET /api/graph/:id/contextual`.
  *
- * `truncationReason` is `null` (or absent) when nothing was clipped;
+ * `truncatedReason` is `null` (or absent) when nothing was clipped;
  * `"max_nodes_exceeded"` when the children / same-level combined
  * set was trimmed to fit the cap.
  */
@@ -1191,7 +1191,10 @@ export const contextualGraphResponseSchema = z.object({
   sameLevel: sameLevelSectionSchema,
   level: z.string(),
   truncated: z.boolean(),
-  truncationReason: z.string().nullable().optional(),
+  // e11: renamed from `truncationReason` → `truncatedReason` (aligned with LandingPayload).
+  // Backend serializes `truncatedReason`; accepts `truncationReason` alias on input for
+  // wire-compatible migration (until next MAJOR).
+  truncatedReason: z.string().nullable().optional(),
 });
 export type ContextualGraphResponse = z.infer<
   typeof contextualGraphResponseSchema

@@ -266,7 +266,7 @@ impl ViewServiceImpl {
             && same_nodes.len() >= remaining_cap
             && (fan_in + fan_out) > remaining_cap as usize;
         let truncated = children_clipped || bfs_clipped;
-        let truncation_reason = if truncated {
+        let truncated_reason = if truncated {
             Some("max_nodes_exceeded".to_string())
         } else {
             None
@@ -282,7 +282,7 @@ impl ViewServiceImpl {
             },
             level: "file".to_string(),
             truncated,
-            truncation_reason,
+            truncated_reason,
         })
     }
 }

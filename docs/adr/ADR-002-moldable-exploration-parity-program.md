@@ -166,11 +166,11 @@ implemented.
 
 The roadmap program is:
 
-#### Phase 0 — Foundation closures (already queued)
+#### Phase 0 — Foundation closures (completed)
 
-- `e10-landing-real-data` — wire real entry points/hot paths into landing.
-- `e9-landing-perf` — virtualise node-list fallback.
-- `e11-context-response-field-naming` — harmonise truncation field names.
+- `e10-landing-real-data` ✅ — wire real entry points/hot paths into landing.
+- `e9-landing-perf` ✅ — virtualise node-list fallback (windowed list > 200 nodes).
+- `e11-context-response-field-naming` ✅ — harmonise truncation field names.
 
 These are not the parity program itself, but they remove local defects and
 prepare exploration surfaces for Phase 1.
@@ -179,10 +179,13 @@ prepare exploration surfaces for Phase 1.
 
 Goal: convert high-value catalogued `ViewKind`s into real executors/renderers.
 
-Wave 1 should prioritize:
+**e12a-usage-examples** (in progress 2026-06-26): `UsageExamplesExecutor` wired as the 10th
+real executor. `build_usage_examples` returns callers + callees as Table blocks.
+`renderer_kind: RendererKind::Table`. Frontend already has Table renderer.
+
+Wave 1 remaining:
 
 - `ApiSurface`
-- `UsageExamples`
 - `DocCodeAlignment`
 - `OwnershipMap`
 - `TestSlice`
@@ -332,6 +335,28 @@ targeting **functional exploration parity**, not reflective image-level parity.
 - Update the roadmap after every phase with real counts (executors shipped,
   Spotter result families, narratives enabled, etc.).
 - Prefer proof-driven language in docs and PRs.
+
+## e11 Field Naming (PATCH — completed 2026-06-26)
+
+`ContextualGraphResponse` used `truncation_reason` (extra 'i') while
+`LandingPayload` and `SubgraphResponse` used `truncated_reason` (no 'i').
+Both carried the same semantic meaning.
+
+Resolution: renamed `ContextualGraphResponse.truncation_reason` →
+`truncated_reason`. Wire format: `truncationReason` → `truncatedReason`.
+The old `truncationReason` camelCase alias is accepted on deserialisation
+(serde `alias = "truncationReason"`) for wire-compatible migration.
+Remove the alias in the next MAJOR release.
+
+Files changed:
+- `crates/cognicode-explorer/src/dto.rs` — renamed field + alias
+- `crates/cognicode-explorer/src/facades/view.rs` — variable rename
+- `crates/cognicode-explorer/src/dto_tests.rs` — updated + backwards-compat test
+- `crates/cognicode-explorer/src/api_graph_tests.rs` — updated
+- `apps/explorer-ui/src/api/schemas.ts` — Zod field rename
+- `apps/explorer-ui/src/components/ContextualPanel/index.tsx` — property access
+- `apps/explorer-ui/src/components/ContextualPanel/ContextualPanel.test.tsx` — test data
+- `apps/explorer-ui/src/mocks/handlers.ts` — mock response update
 
 ## References
 

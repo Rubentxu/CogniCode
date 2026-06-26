@@ -452,7 +452,7 @@ impl TestContextualViewService {
             },
             level: level.to_string(),
             truncated,
-            truncation_reason: if truncated {
+            truncated_reason: if truncated {
                 Some("max_nodes_exceeded".to_string())
             } else {
                 None

@@ -837,7 +837,7 @@ pub struct GodNodeEntry {
 //
 // Truncation contract: `truncated=true` means `len(children.nodes) +
 // len(same_level.nodes)` would have exceeded `max_nodes` and we
-// trimmed it; `truncation_reason` carries the cause for the UI.
+// trimmed it; `truncated_reason` carries the cause for the UI.
 
 /// Response payload of `GET /api/graph/:id/contextual`.
 ///
@@ -865,8 +865,14 @@ pub struct ContextualGraphResponse {
     pub truncated: bool,
     /// Reason for truncation, when `truncated` is `true`. Typically
     /// `"max_nodes_exceeded"`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub truncation_reason: Option<String>,
+    /// Wire format: `truncatedReason` (camelCase). Accepts `truncationReason`
+    /// (the old misspelled alias) for backwards compatibility until next MAJOR.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "truncationReason"
+    )]
+    pub truncated_reason: Option<String>,
 }
 
 /// `parent` section — the file the focus symbol lives in, plus the
