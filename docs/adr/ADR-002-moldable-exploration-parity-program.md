@@ -195,10 +195,9 @@ Registry entry + static instance added.
 Wave 1 remaining (reordered 2026-06-26):
 
 - `e12c-test-slice` — TestSlice ✅ (v0.27.2, PR #65)
-- `e12d-debug-slice` — DebugSlice as 13th executor. Shows debug-relevant callers of a symbol using source context and callers graph. Uses `GraphQueryPort.callers()` + source reader for context. Renderer: graph.
-- `OwnershipMap` — deferred: no ownership signal in graph (git blame / author attribution not wired as node property)
+- `e12d-debug-slice` — DebugSlice ✅ (v0.27.3, PR #66). 13th executor. Shows debug-relevant callers/callees filtered by name heuristic (`debug`, `log`, `error`, `panic`, `dbg`, `trace`, `assert`, `check`, `verify`, `test`, `_test`). Renderer: graph.
+- `OwnershipMap` — deferred: no ownership/author attribution in graph
 - `DocCodeAlignment` — deferred: `EntryPoint::Doc` not wired to any `InspectionTarget`, no DocService (Phase 2+)
-- `DebugSlice` — deferred (moved to e12d above)
 
 Success criterion: the number of real executors grows materially beyond the
 current 9, and every newly exposed view kind is reachable from the inspector.

@@ -394,6 +394,11 @@ impl ViewRegistry {
                     &crate::domain::views::TEST_SLICE_EXECUTOR
                         as &dyn crate::domain::views::ViewExecutor,
                 ),
+                (
+                    "debug-slice",
+                    &crate::domain::views::DEBUG_SLICE_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
             ])
         });
         real.get(id).copied().or_else(|| {
