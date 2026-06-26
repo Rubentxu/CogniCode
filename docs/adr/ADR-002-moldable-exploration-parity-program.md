@@ -176,7 +176,7 @@ The roadmap program is:
 These are not the parity program itself, but they remove local defects and
 prepare exploration surfaces for Phase 1.
 
-#### Phase 1 — View coverage realization (`e12a-*` through `e12h-*`)
+#### Phase 1 — View coverage realization (e12a–e12h)
 
 Goal: convert high-value catalogued `ViewKind`s into real executors/renderers.
 
@@ -186,10 +186,16 @@ Table blocks. `renderer_kind: RendererKind::Table`. Frontend already has Table r
 Gracefully degrades when `graph_query` is None (empty blocks). 4 new tests in
 `views.rs`. `registry.rs` entry added.
 
-Wave 1 remaining (e12b and beyond):
+**e12b-api-surface** ✅ (completed 2026-06-26, v0.27.1, PR #64): `ApiSurfaceExecutor`
+wired as the 11th real executor. `build_api_surface` returns all scope symbols sorted
+by name as Table blocks. Columns: name, kind, file, line. V1 pragmatic: shows all
+symbols (no visibility filter — `ResolvedSymbol` has no visibility field). 4 new tests.
+Registry entry + static instance added.
 
-- `e12b-api-surface` — ApiSurface as 11th executor
-- `DocCodeAlignment`
+Wave 1 remaining:
+
+- `e12c-doc-code-alignment` — DocCodeAlignment as 12th executor
+- `OwnershipMap`
 - `OwnershipMap`
 - `TestSlice`
 - `DebugSlice`
