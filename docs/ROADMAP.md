@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-26 (e9 + e11 + e12 + e12b completed and merged)
+Last updated: 2026-06-26 (e9 + e11 + e12 + e12b + e12c completed and merged)
 
 ## Active
 
@@ -18,6 +18,7 @@ Continuing from 2026-06-25. Closed e9 (landing virtualization), e11 (truncation 
 | `e11-truncation-field-naming` | v0.26.1 | 2026-06-26 | Backend: renamed `ContextualGraphResponse.truncation_reason` → `truncated_reason`. Serde alias for backwards compat. Frontend: Zod schema + usage updated. 602 Rust + 671 vitest pass. ADR-002 updated. |
 | `e12-viewkind-realization` | v0.27.0 | 2026-06-26 | UsageExamplesExecutor as 10th executor. `build_usage_examples` returns callers + callees as Table blocks. Gracefully degrades when graph_query is None. 4 new tests. Registry entry + static instance. |
 | `e12b-api-surface` | v0.27.1 | 2026-06-26 | ApiSurfaceExecutor as 11th executor. Shows all scope symbols sorted by name as Table. Columns: name, kind, file, line. V1 pragmatic: no visibility filter (ResolvedSymbol has no visibility field). 4 new tests. |
+| `e12c-test-slice` | v0.27.2 | 2026-06-26 | TestSliceExecutor as 12th executor. Shows test callers of a symbol via GraphQueryPort.callers() filtered by is_test_file heuristic. DocCodeAlignment deferred to Phase 2+ (EntryPoint::Doc not wired). 4 new tests. |
 
 ## Hygiene 2026-06-25
 
@@ -44,7 +45,7 @@ Follow-ups explicitly queued by cycles closed today. Each will need its own prop
 
 | Candidate | Source cycle | Semver target | Why it exists |
 |-----------|---|---|---|
-| `e12c-test-slice` | ADR-002 Phase 1 | MINOR | `TestSliceExecutor` as 12th executor. Shows test functions that call a symbol. Uses GraphQueryPort.callers() + test-path heuristics. Replaces DocCodeAlignment (requires Doc infrastructure not yet wired). |
+| `e12d-ownership-map` | ADR-002 Phase 1 | MINOR | `OwnershipMapExecutor` as 13th executor. Shows module ownership via graph traversal. Next in priority after TestSlice. |
 
 ## Strategic program: moldable exploration parity
 
