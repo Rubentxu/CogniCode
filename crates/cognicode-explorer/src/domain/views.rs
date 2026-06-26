@@ -1570,6 +1570,82 @@ fn build_usage_examples(
     }
 }
 
+/// ApiSurface capability — applies to Scope.
+/// Shows all symbols defined within a scope as a navigable table.
+pub struct ApiSurfaceExecutor;
+impl ViewDescriptor for ApiSurfaceExecutor {
+    fn id(&self) -> &'static str {
+        "api-surface"
+    }
+    fn title(&self) -> &'static str {
+        "API Surface"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Scope]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::ApiSurface
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Table
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for ApiSurfaceExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match &ctx.target {
+            InspectionTarget::Scope { path, symbols, .. } => {
+                Ok(build_api_surface(path, symbols))
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "api-surface".into(),
+            }),
+        }
+    }
+}
+
+/// Build the API Surface view: all symbols in a scope as a table.
+fn build_api_surface(scope_path: &str, symbols: &[ResolvedSymbol]) -> ContextualView {
+    // Sort symbols by name for consistent display.
+    let mut sorted: Vec<&ResolvedSymbol> = symbols.iter().collect();
+    sorted.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let rows: Vec<serde_json::Value> = sorted
+        .iter()
+        .map(|s| {
+            json!({
+                "name": s.name,
+                "kind": s.kind.name(),
+                "file": s.file,
+                "line": s.line,
+            })
+        })
+        .collect();
+
+    let blocks = vec![ViewBlock {
+        id: "api_surface".into(),
+        title: scope_path.to_string(),
+        body: json!({
+            "columns": ["name", "kind", "file", "line"],
+            "rows": rows,
+        }),
+    }];
+
+    ContextualView {
+        object_id: format!("scope:{scope_path}"),
+        view_id: "api-surface".into(),
+        title: "API Surface".into(),
+        blocks,
+        relations: Vec::new(),
+        evidence: Vec::new(),
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Table,
+        ..Default::default()
+    }
+}
+
 /// Source capability — applies to Symbol.
 pub struct SourceExecutor;
 impl ViewDescriptor for SourceExecutor {
@@ -1839,6 +1915,7 @@ pub static DEPENDENCIES_EXECUTOR: DependenciesExecutor = DependenciesExecutor;
 pub static HOTSPOTS_EXECUTOR: HotspotsExecutor = HotspotsExecutor;
 pub static ARCHITECTURE_DRIFT_EXECUTOR: ArchitectureDriftExecutor = ArchitectureDriftExecutor;
 pub static USAGE_EXAMPLES_EXECUTOR: UsageExamplesExecutor = UsageExamplesExecutor;
+pub static API_SURFACE_EXECUTOR: ApiSurfaceExecutor = ApiSurfaceExecutor;
 
 /// Architecture drift capability — applies to Workspace.
 ///
@@ -3323,6 +3400,58 @@ mod tests {
         let sym = make_resolved("src/foo.rs", "bar", 42, SymbolKind::Function);
         let view = build_usage_examples(&sym, None);
         assert_eq!(view.renderer_kind, RendererKind::Table);
+    }
+
+    // =========================================================================
+    // ApiSurface tests
+    // =========================================================================
+
+    #[test]
+    fn api_surface_returns_all_symbols_sorted_by_name() {
+        let sym1 = make_resolved("src/lib.rs", "zebra", 10, SymbolKind::Function);
+        let sym2 = make_resolved("src/lib.rs", "alpha", 20, SymbolKind::Function);
+        let sym3 = make_resolved("src/lib.rs", "beta", 30, SymbolKind::Function);
+        let symbols = vec![sym1, sym2, sym3];
+        let view = build_api_surface("src/lib.rs", &symbols);
+
+        assert_eq!(view.view_id, "api-surface");
+        assert_eq!(view.blocks.len(), 1);
+        let block = &view.blocks[0];
+        assert_eq!(block.id, "api_surface");
+        assert_eq!(block.title, "src/lib.rs");
+        // Sorted by name: alpha, beta, zebra
+        let rows = block.body.get("rows").unwrap().as_array().unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].get("name").unwrap().as_str().unwrap(), "alpha");
+        assert_eq!(rows[1].get("name").unwrap().as_str().unwrap(), "beta");
+        assert_eq!(rows[2].get("name").unwrap().as_str().unwrap(), "zebra");
+    }
+
+    #[test]
+    fn api_surface_empty_scope_returns_empty_table() {
+        let symbols: Vec<ResolvedSymbol> = vec![];
+        let view = build_api_surface("src/empty.rs", &symbols);
+
+        assert_eq!(view.view_id, "api-surface");
+        assert_eq!(view.blocks.len(), 1);
+        let block = &view.blocks[0];
+        let rows = block.body.get("rows").unwrap().as_array().unwrap();
+        assert_eq!(rows.len(), 0);
+    }
+
+    #[test]
+    fn api_surface_renderer_kind_is_table() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let view = build_api_surface("src/lib.rs", &[sym]);
+        assert_eq!(view.renderer_kind, RendererKind::Table);
+    }
+
+    #[test]
+    fn api_surface_view_id_and_title() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let view = build_api_surface("src/lib.rs", &[sym]);
+        assert_eq!(view.view_id, "api-surface");
+        assert_eq!(view.title, "API Surface");
     }
 }
 
