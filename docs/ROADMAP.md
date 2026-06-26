@@ -1,12 +1,10 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-26 (e9 + e11 + e12 spec completed)
+Last updated: 2026-06-26 (e9 + e11 + e12 completed and merged)
 
 ## Active
 
-| Change | Branch | Semver target | Notes |
-|--------|--------|---------------|-------|
-| `e12-viewkind-realization` | (local) | MINOR | UsageExamplesExecutor wired (10th executor). build_usage_examples with callers + callees as Table blocks. Registry + static declared. Tests: 602+9+671 pass. Spec + explore + proposal in openspec. |
+_(none — all cycles closed)_
 
 ## Session Handover 2026-06-26
 
@@ -16,8 +14,9 @@ Continuing from 2026-06-25. Closed e9 (landing virtualization), e11 (truncation 
 
 | Change | Tag | Closed | Notes |
 |--------|-----|--------|-------|
-| `e9-landing-perf` | (unreleased PATCH) | 2026-06-26 | Frontend-only: windowed virtualization of node-list fallback in `GraphLanding` when nodes > 200. Simple scroll-based window (ITEM_H=28px, 8 cols, 4 visible rows). Preserves all `data-testid` attributes and visual styling. 671 vitest + 602 Rust tests pass. |
-| `e11-truncation-field-naming` | (unreleased PATCH) | 2026-06-26 | Backend: renamed `ContextualGraphResponse.truncation_reason` → `truncated_reason`. Serde alias for backwards compat. Frontend: Zod schema + usage updated. 602 Rust + 671 vitest pass. ADR-002 updated. |
+| `e9-landing-perf` | v0.26.0 | 2026-06-26 | Frontend-only: windowed virtualization of node-list fallback in `GraphLanding` when nodes > 200. Simple scroll-based window (ITEM_H=28px, 8 cols, 4 visible rows). Preserves all `data-testid` attributes and visual styling. 671 vitest + 602 Rust tests pass. |
+| `e11-truncation-field-naming` | v0.26.1 | 2026-06-26 | Backend: renamed `ContextualGraphResponse.truncation_reason` → `truncated_reason`. Serde alias for backwards compat. Frontend: Zod schema + usage updated. 602 Rust + 671 vitest pass. ADR-002 updated. |
+| `e12-viewkind-realization` | v0.27.0 | 2026-06-26 | UsageExamplesExecutor as 10th executor. `build_usage_examples` returns callers + callees as Table blocks. Gracefully degrades when graph_query is None. 4 new tests. Registry entry + static instance. |
 
 ## Hygiene 2026-06-25
 
@@ -44,7 +43,7 @@ Follow-ups explicitly queued by cycles closed today. Each will need its own prop
 
 | Candidate | Source cycle | Semver target | Why it exists |
 |-----------|---|---|---|
-| `e12-viewkind-realization` | ADR-002 strategic program | MINOR | Convert catalogued ViewKinds into real executors. Suggested priority order: `usage_examples`, `api_surface`, `doc_code_alignment`, `ownership_map`, `test_slice`, `debug_slice`, `concept_map`, `evidence_pack`. Currently 9 executors wired; catalog lists 34+. Explore phase needed to prioritise. |
+| `e12b-api-surface` | ADR-002 Phase 1 | MINOR | `ApiSurfaceExecutor` as 11th executor. Shows public API surface of a crate/module. Next in priority after UsageExamples. |
 
 ## Strategic program: moldable exploration parity
 

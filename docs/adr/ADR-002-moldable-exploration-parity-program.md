@@ -169,23 +169,26 @@ The roadmap program is:
 #### Phase 0 — Foundation closures (completed)
 
 - `e10-landing-real-data` ✅ — wire real entry points/hot paths into landing.
-- `e9-landing-perf` ✅ — virtualise node-list fallback (windowed list > 200 nodes).
-- `e11-context-response-field-naming` ✅ — harmonise truncation field names.
+- `e9-landing-perf` ✅ (v0.26.0, PR #61) — virtualise node-list fallback (windowed list > 200 nodes).
+- `e11-context-response-field-naming` ✅ (v0.26.1, PR #62) — harmonise truncation field names.
+- `e12a-usage-examples` ✅ (v0.27.0, PR #63) — UsageExamplesExecutor wired as 10th executor (Phase 1).
 
 These are not the parity program itself, but they remove local defects and
 prepare exploration surfaces for Phase 1.
 
-#### Phase 1 — View coverage realization (`e12-*`)
+#### Phase 1 — View coverage realization (`e12a-*` through `e12h-*`)
 
 Goal: convert high-value catalogued `ViewKind`s into real executors/renderers.
 
-**e12a-usage-examples** (in progress 2026-06-26): `UsageExamplesExecutor` wired as the 10th
-real executor. `build_usage_examples` returns callers + callees as Table blocks.
-`renderer_kind: RendererKind::Table`. Frontend already has Table renderer.
+**e12a-usage-examples** ✅ (completed 2026-06-26, v0.27.0, PR #63): `UsageExamplesExecutor`
+wired as the 10th real executor. `build_usage_examples` returns callers + callees as
+Table blocks. `renderer_kind: RendererKind::Table`. Frontend already has Table renderer.
+Gracefully degrades when `graph_query` is None (empty blocks). 4 new tests in
+`views.rs`. `registry.rs` entry added.
 
-Wave 1 remaining:
+Wave 1 remaining (e12b and beyond):
 
-- `ApiSurface`
+- `e12b-api-surface` — ApiSurface as 11th executor
 - `DocCodeAlignment`
 - `OwnershipMap`
 - `TestSlice`
