@@ -13,7 +13,7 @@
  * Clicking a node dispatches `SELECT_OBJECT { objectId, viewId: "overview" }`
  * which opens the pane stack.
  */
-import { useEffect, useRef, lazy, Suspense, useState, useCallback } from "react";
+import { useEffect, useRef, lazy, Suspense, useState, useCallback, useMemo } from "react";
 import cytoscape, { type Core } from "cytoscape";
 
 import { useAppDispatch, useAppState } from "../../state/context";
@@ -44,7 +44,9 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
   const dispatch = useAppDispatch();
   const { perspective } = useAppState();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const listContainerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
+  const [listScrollTop, setListScrollTop] = useState(0);
 
   // WASM god_nodes integration (ADR-047 §Integration)
   // When VITE_ENABLE_WASM=true, we compute god_nodes in the browser via WASM.
@@ -241,36 +243,106 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
       />
 
       {/* Accessible + testable fallback list for canvas-backed landing graphs */}
-      <div
-        data-testid="graph-landing-node-list"
-        className="flex flex-wrap gap-2 px-3 py-2"
-        style={{
-          backgroundColor: "var(--color-surface-raised)",
-          borderTop: "1px solid var(--color-border)",
-        }}
-      >
-        {data.nodes.map((node) => (
-          <button
-            key={node.id}
-            type="button"
-            data-testid={`graph-node-${node.id}`}
-            data-kind={node.kind}
-            className={node.style_class ?? undefined}
-            onClick={() => selectObject(node.id)}
+      {/* Virtualized when nodes > 200 to prevent DOM bloat (e9). */}
+      {(() => {
+        const THRESHOLD = 200;
+        const ITEM_H = 28; // estimated px per button row
+        const GAP = 8;
+        const VISIBLE = 4; // visible rows
+        const COLS = 8;
+        const BUFFER = COLS * 2; // render 2 extra rows above/below
+        const useVirt = data.nodes.length > THRESHOLD;
+
+        if (!useVirt) {
+          return (
+            <div
+              data-testid="graph-landing-node-list"
+              className="flex flex-wrap gap-2 px-3 py-2"
+              style={{
+                backgroundColor: "var(--color-surface-raised)",
+                borderTop: "1px solid var(--color-border)",
+              }}
+            >
+              {data.nodes.map((node) => (
+                <button
+                  key={node.id}
+                  type="button"
+                  data-testid={`graph-node-${node.id}`}
+                  data-kind={node.kind}
+                  className={node.style_class ?? undefined}
+                  onClick={() => selectObject(node.id)}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 6,
+                    border: "1px solid var(--color-border)",
+                    backgroundColor: "var(--color-surface-overlay)",
+                    color: "var(--color-text-secondary)",
+                    fontSize: 11,
+                    cursor: "pointer",
+                  }}
+                >
+                  {node.label}
+                </button>
+              ))}
+            </div>
+          );
+        }
+
+        // Windowed rendering: render only a slice of nodes around the scroll position.
+        // The outer container has maxHeight + overflow-y so the browser scrollbar
+        // reflects totalHeight. We don't try to estimate padding precisely — we
+        // just over-render (ITEM_H * 2 extra rows) and let the scrollbar be accurate
+        // enough. This is a best-effort virtualization; DOM nodes are ~50 instead
+        // of ~300+, which is the goal.
+        const totalRows = Math.ceil(data.nodes.length / COLS);
+        const totalH = totalRows * (ITEM_H + GAP);
+        const startRow = Math.max(0, Math.floor(listScrollTop / (ITEM_H + GAP)) - 2);
+        const endRow = Math.min(totalRows, startRow + VISIBLE + 4);
+        const startIdx = startRow * COLS;
+        const endIdx = Math.min(data.nodes.length, endRow * COLS);
+        const topSpacer = startRow * (ITEM_H + GAP);
+        const botSpacer = Math.max(0, totalH - topSpacer - (endIdx - startIdx) / COLS * (ITEM_H + GAP));
+
+        return (
+          <div
+            data-testid="graph-landing-node-list"
+            className="flex flex-wrap gap-2 px-3 py-2"
             style={{
-              padding: "4px 8px",
-              borderRadius: 6,
-              border: "1px solid var(--color-border)",
-              backgroundColor: "var(--color-surface-overlay)",
-              color: "var(--color-text-secondary)",
-              fontSize: 11,
-              cursor: "pointer",
+              backgroundColor: "var(--color-surface-raised)",
+              borderTop: "1px solid var(--color-border)",
+              maxHeight: VISIBLE * (ITEM_H + GAP),
+              overflowY: "auto",
             }}
+            ref={listContainerRef}
+            onScroll={(e) => setListScrollTop((e.currentTarget as HTMLDivElement).scrollTop)}
           >
-            {node.label}
-          </button>
-        ))}
-      </div>
+            {topSpacer > 0 && <div style={{ height: topSpacer, width: "100%", flexBasis: "100%" }} />}
+            {data.nodes.slice(startIdx, endIdx).map((node) => (
+              <button
+                key={node.id}
+                type="button"
+                data-testid={`graph-node-${node.id}`}
+                data-kind={node.kind}
+                className={node.style_class ?? undefined}
+                onClick={() => selectObject(node.id)}
+                style={{
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  border: "1px solid var(--color-border)",
+                  backgroundColor: "var(--color-surface-overlay)",
+                  color: "var(--color-text-secondary)",
+                  fontSize: 11,
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+              >
+                {node.label}
+              </button>
+            ))}
+            {botSpacer > 0 && <div style={{ height: botSpacer, width: "100%", flexBasis: "100%" }} />}
+          </div>
+        );
+      })()}
 
       {/* Suggestion strip — only for graph perspective */}
       {!showC4Header && landingData && (
