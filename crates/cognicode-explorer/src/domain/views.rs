@@ -1747,6 +1747,164 @@ fn build_test_slice(
     }
 }
 
+/// DebugSlice capability — applies to Symbol.
+/// Shows debug-relevant callers and callees of a symbol as a graph neighborhood.
+pub struct DebugSliceExecutor;
+impl ViewDescriptor for DebugSliceExecutor {
+    fn id(&self) -> &'static str {
+        "debug-slice"
+    }
+    fn title(&self) -> &'static str {
+        "Debug Slice"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Symbol]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::DebugSlice
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Graph
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for DebugSliceExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match &ctx.target {
+            InspectionTarget::Symbol(symbol) => Ok(build_debug_slice(symbol, ctx.graph_query)),
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "debug-slice".into(),
+            }),
+        }
+    }
+}
+
+/// Returns true if the symbol name suggests a debug/test/logging function.
+fn is_debug_relevant(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.contains("debug")
+        || lower.contains("log")
+        || lower.contains("error")
+        || lower.contains("panic")
+        || lower.contains("dbg")
+        || lower.contains("trace")
+        || lower.contains("assert")
+        || lower.contains("check")
+        || lower.contains("verify")
+        || lower.contains("test")
+        || lower.contains("_test")
+        || lower.ends_with("test")
+        || lower.ends_with("tests")
+}
+
+/// Build the Debug Slice view: debug-relevant callers and callees of a symbol.
+fn build_debug_slice(
+    symbol: &ResolvedSymbol,
+    graph_query: Option<&dyn GraphQueryPort>,
+) -> ContextualView {
+    let all_callers = graph_query
+        .as_ref()
+        .map(|gq| gq.callers(&symbol.id))
+        .unwrap_or_default();
+    let all_callees = graph_query
+        .as_ref()
+        .map(|gq| gq.callees(&symbol.id))
+        .unwrap_or_default();
+
+    let debug_callers: Vec<_> = all_callers
+        .into_iter()
+        .filter(|c| is_debug_relevant(&c.name))
+        .collect();
+    let debug_callees: Vec<_> = all_callees
+        .into_iter()
+        .filter(|c| is_debug_relevant(&c.name))
+        .collect();
+
+    let evidence_id = "evidence:debug_slice".to_string();
+    let mut relations: Vec<TypedRelation> = Vec::new();
+
+    for c in &debug_callers {
+        relations.push(TypedRelation {
+            relation_type: "DEBUG_CALLER".to_string(),
+            direction: RelationDirection::Incoming,
+            target_object_id: mvp_id_from_target(c),
+            target_label: format!("{} ⚠️ (debug caller)", c.name),
+            evidence_ids: vec![evidence_id.clone()],
+            provenance: None,
+            confidence: None,
+        });
+    }
+    for c in &debug_callees {
+        relations.push(TypedRelation {
+            relation_type: "DEBUG_CALLEE".to_string(),
+            direction: RelationDirection::Outgoing,
+            target_object_id: mvp_id_from_target(c),
+            target_label: format!("{} ⚠️ (debug callee)", c.name),
+            evidence_ids: vec![evidence_id.clone()],
+            provenance: None,
+            confidence: None,
+        });
+    }
+
+    let blocks = vec![
+        ViewBlock {
+            id: "debug_callers".into(),
+            title: format!("Debug Callers ({})", debug_callers.len()),
+            body: json!({
+                "columns": ["name", "file", "line", "kind"],
+                "rows": debug_callers.iter().map(|c| json!({
+                    "name": c.name,
+                    "file": c.file,
+                    "line": c.line,
+                    "kind": c.kind.name(),
+                })).collect::<Vec<_>>(),
+            }),
+        },
+        ViewBlock {
+            id: "debug_callees".into(),
+            title: format!("Debug Callees ({})", debug_callees.len()),
+            body: json!({
+                "columns": ["name", "file", "line", "kind"],
+                "rows": debug_callees.iter().map(|c| json!({
+                    "name": c.name,
+                    "file": c.file,
+                    "line": c.line,
+                    "kind": c.kind.name(),
+                })).collect::<Vec<_>>(),
+            }),
+        },
+    ];
+
+    let evidence = vec![EvidenceBlock {
+        id: evidence_id,
+        kind: "debug_slice".into(),
+        title: format!("Debug slice: {}", symbol.name),
+        file: Some(symbol.file.clone()),
+        line_range: Some(LineRange {
+            start: symbol.line,
+            end: symbol.line,
+        }),
+        source_tool_or_query: "GraphQueryPort::callers/callees + is_debug_relevant".into(),
+        confidence: None,
+        freshness: Some("unknown".into()),
+        provenance: None,
+    }];
+
+    ContextualView {
+        object_id: mvp_id(symbol),
+        view_id: "debug-slice".into(),
+        title: "Debug Slice".into(),
+        blocks,
+        relations,
+        evidence,
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Graph,
+        ..Default::default()
+    }
+}
+
 /// Source capability — applies to Symbol.
 pub struct SourceExecutor;
 impl ViewDescriptor for SourceExecutor {
@@ -2018,6 +2176,7 @@ pub static ARCHITECTURE_DRIFT_EXECUTOR: ArchitectureDriftExecutor = Architecture
 pub static USAGE_EXAMPLES_EXECUTOR: UsageExamplesExecutor = UsageExamplesExecutor;
 pub static API_SURFACE_EXECUTOR: ApiSurfaceExecutor = ApiSurfaceExecutor;
 pub static TEST_SLICE_EXECUTOR: TestSliceExecutor = TestSliceExecutor;
+pub static DEBUG_SLICE_EXECUTOR: DebugSliceExecutor = DebugSliceExecutor;
 
 /// Architecture drift capability — applies to Workspace.
 ///
@@ -3598,6 +3757,32 @@ mod tests {
         let view = build_test_slice(&sym, None);
         assert_eq!(view.view_id, "test-slice");
         assert_eq!(view.title, "Test Slice");
+    }
+
+    #[test]
+    fn debug_slice_view_id_and_title() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let view = build_debug_slice(&sym, None);
+        assert_eq!(view.view_id, "debug-slice");
+        assert_eq!(view.title, "Debug Slice");
+    }
+
+    #[test]
+    fn debug_slice_renderer_kind_is_graph() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let view = build_debug_slice(&sym, None);
+        assert_eq!(view.renderer_kind, RendererKind::Graph);
+    }
+
+    #[test]
+    fn debug_slice_empty_when_no_debug_relevant() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let view = build_debug_slice(&sym, None);
+        assert_eq!(view.blocks.len(), 2);
+        let caller_rows = view.blocks[0].body.get("rows").unwrap().as_array().unwrap();
+        let callee_rows = view.blocks[1].body.get("rows").unwrap().as_array().unwrap();
+        assert_eq!(caller_rows.len(), 0);
+        assert_eq!(callee_rows.len(), 0);
     }
 }
 
