@@ -399,6 +399,11 @@ impl ViewRegistry {
                     &crate::domain::views::DEBUG_SLICE_EXECUTOR
                         as &dyn crate::domain::views::ViewExecutor,
                 ),
+                (
+                    "change-impact-story",
+                    &crate::domain::views::CHANGE_IMPACT_STORY_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
             ])
         });
         real.get(id).copied().or_else(|| {
