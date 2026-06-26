@@ -76,7 +76,7 @@ fn sample_response(
         same_level,
         level: "file".to_string(),
         truncated: false,
-        truncation_reason: None,
+        truncated_reason: None,
     }
 }
 
@@ -146,11 +146,28 @@ fn contextual_response_with_null_children_round_trips() {
 fn contextual_response_truncated_flag_serializes() {
     let mut resp = sample_response(None, None);
     resp.truncated = true;
-    resp.truncation_reason = Some("max_nodes_exceeded".to_string());
+    resp.truncated_reason = Some("max_nodes_exceeded".to_string());
     let json = serde_json::to_string(&resp).expect("serialize");
     let v: serde_json::Value = serde_json::from_str(&json).expect("parse");
     assert_eq!(v["truncated"], true);
-    assert_eq!(v["truncationReason"], "max_nodes_exceeded");
+    assert_eq!(v["truncatedReason"], "max_nodes_exceeded");
+}
+
+// e11: backwards-compat — old `truncationReason` alias still deserialises
+#[test]
+fn contextual_response_accepts_deprecated_truncation_reason_alias() {
+    let json = r#"{
+        "focusNode": {"id": "sym:a:b:c", "label": "a", "kind": "function", "style_class": "function", "score": 1.0},
+        "parent": null,
+        "children": null,
+        "sameLevel": {"nodes": [], "edges": []},
+        "level": "file",
+        "truncated": true,
+        "truncationReason": "max_nodes_exceeded"
+    }"#;
+    let resp: ContextualGraphResponse =
+        serde_json::from_str(json).expect("parse old truncationReason field");
+    assert_eq!(resp.truncated_reason, Some("max_nodes_exceeded".to_string()));
 }
 
 #[test]

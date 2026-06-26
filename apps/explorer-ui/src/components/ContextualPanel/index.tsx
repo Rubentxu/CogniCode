@@ -112,7 +112,7 @@ export function ContextualPanel({
       }}
     >
       {data.truncated && (
-        <TruncationBanner reason={data.truncationReason ?? "max_nodes_exceeded"} />
+        <TruncationBanner reason={data.truncatedReason ?? "max_nodes_exceeded"} />
       )}
       <FocusCard focus={data.focusNode} />
       {data.parent && <ParentBreadcrumb parent={data.parent.node} onFocus={onFocus} />}

@@ -179,7 +179,7 @@ describe("ContextualPanel", () => {
           sameLevel: { nodes: [], edges: [] },
           level: "file",
           truncated: false,
-          truncationReason: null,
+          truncatedReason: null,
         });
       }),
     );
@@ -208,7 +208,7 @@ describe("ContextualPanel", () => {
           sameLevel: { nodes: [], edges: [] },
           level: "file",
           truncated: true,
-          truncationReason: "max_nodes_exceeded",
+          truncatedReason: "max_nodes_exceeded",
         });
       }),
     );

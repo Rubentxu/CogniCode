@@ -412,7 +412,7 @@ export const handlers = [
       },
       level: "file",
       truncated,
-      truncationReason: truncated ? "max_nodes_exceeded" : null,
+      truncatedReason: truncated ? "max_nodes_exceeded" : null,
     });
   }),
 
