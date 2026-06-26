@@ -44,7 +44,7 @@ Follow-ups explicitly queued by cycles closed today. Each will need its own prop
 
 | Candidate | Source cycle | Semver target | Why it exists |
 |-----------|---|---|---|
-| `e12c-doc-code-alignment` | ADR-002 Phase 1 | MINOR | `DocCodeAlignmentExecutor` as 12th executor. Shows alignment between docs/ADRs and code. Next in priority after ApiSurface. |
+| `e12c-test-slice` | ADR-002 Phase 1 | MINOR | `TestSliceExecutor` as 12th executor. Shows test functions that call a symbol. Uses GraphQueryPort.callers() + test-path heuristics. Replaces DocCodeAlignment (requires Doc infrastructure not yet wired). |
 
 ## Strategic program: moldable exploration parity
 

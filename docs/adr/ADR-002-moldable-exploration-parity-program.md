@@ -192,13 +192,12 @@ by name as Table blocks. Columns: name, kind, file, line. V1 pragmatic: shows al
 symbols (no visibility filter — `ResolvedSymbol` has no visibility field). 4 new tests.
 Registry entry + static instance added.
 
-Wave 1 remaining:
+Wave 1 remaining (reordered 2026-06-26):
 
-- `e12c-doc-code-alignment` — DocCodeAlignment as 12th executor
+- `e12c-test-slice` — TestSlice as 12th executor. Shows test functions that call a given symbol. Uses `GraphQueryPort.callers()` + test-path heuristics (files named `_test.rs` or paths containing `/tests/`). DocCodeAlignment is deferred: `EntryPoint::Doc` is not wired to any `InspectionTarget`, and there is no DocService or `ObjectIdentity::Doc` — implementing it now would return `ViewNotAvailable` always.
 - `OwnershipMap`
-- `OwnershipMap`
-- `TestSlice`
 - `DebugSlice`
+- `DocCodeAlignment` — deferred to after Doc infrastructure is built (Phase 2+)
 
 Success criterion: the number of real executors grows materially beyond the
 current 9, and every newly exposed view kind is reachable from the inspector.
