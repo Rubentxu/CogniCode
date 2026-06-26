@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-26 (e9 + e11 + e12 + e12b + e12c + e12d completed and merged)
+Last updated: 2026-06-26 (e9 + e11 + e12 + e12b + e12c + e12d + e12e completed; e12e PR open)
 
 ## Active
 
@@ -20,6 +20,7 @@ Continuing from 2026-06-25. Closed e9 (landing virtualization), e11 (truncation 
 | `e12b-api-surface` | v0.27.1 | 2026-06-26 | ApiSurfaceExecutor as 11th executor. Shows all scope symbols sorted by name as Table. Columns: name, kind, file, line. V1 pragmatic: no visibility filter (ResolvedSymbol has no visibility field). 4 new tests. |
 | `e12c-test-slice` | v0.27.2 | 2026-06-26 | TestSliceExecutor as 12th executor. Shows test callers of a symbol via GraphQueryPort.callers() filtered by is_test_file heuristic. DocCodeAlignment deferred to Phase 2+ (EntryPoint::Doc not wired). 4 new tests. |
 | `e12d-debug-slice` | v0.27.3 | 2026-06-26 | DebugSliceExecutor as 13th executor. Shows debug-relevant callers/callees filtered by name heuristic (debug,log,error,panic,dbg,trace,assert,check,verify,test,_test). Renderer: graph. 3 new tests. |
+| `e12e-change-impact-story` | v0.27.4 | 2026-06-26 | ChangeImpactStoryExecutor as 15th executor. BFS upstream (callers) + downstream (callees) up to depth 3 as Table blocks. Renderer: Table. 4 new tests. PR #67 open. |
 
 ## Hygiene 2026-06-25
 
@@ -46,7 +47,9 @@ Follow-ups explicitly queued by cycles closed today. Each will need its own prop
 
 | Candidate | Source cycle | Semver target | Why it exists |
 |-----------|---|---|---|
-| `e12e-ownership-map` | ADR-002 Phase 1 | MINOR | OwnershipMap deferred: no ownership/author attribution in graph. Needs git blame or author annotation as node property. |
+| `e12f-ownership-map` | ADR-002 Phase 1 | MINOR | OwnershipMap deferred: no ownership/author attribution in graph. Needs git blame or author annotation as node property. |
+| `e12g-risk-map` | ADR-002 Phase 1 | MINOR | RiskMap deferred: needs quality/hotspots data wired to graph. |
+| `e12h-decision-trace` | ADR-002 Phase 1 | MINOR | DecisionTrace deferred: needs ADR/doc infrastructure. |
 
 ## Strategic program: moldable exploration parity
 
