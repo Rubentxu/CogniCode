@@ -379,6 +379,11 @@ impl ViewRegistry {
                     &crate::domain::views::ARCHITECTURE_DRIFT_EXECUTOR
                         as &dyn crate::domain::views::ViewExecutor,
                 ),
+                (
+                    "usage-examples",
+                    &crate::domain::views::USAGE_EXAMPLES_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
             ])
         });
         real.get(id).copied().or_else(|| {
