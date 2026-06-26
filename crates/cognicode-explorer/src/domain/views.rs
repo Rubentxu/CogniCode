@@ -1465,6 +1465,111 @@ impl ViewExecutor for CallGraphExecutor {
     }
 }
 
+/// UsageExamples capability — applies to Symbol.
+/// Shows callers and callees as a navigable table (complement to CallGraph's graph view).
+pub struct UsageExamplesExecutor;
+impl ViewDescriptor for UsageExamplesExecutor {
+    fn id(&self) -> &'static str {
+        "usage-examples"
+    }
+    fn title(&self) -> &'static str {
+        "Usage Examples"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Symbol]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::UsageExamples
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Table
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for UsageExamplesExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match &ctx.target {
+            InspectionTarget::Symbol(symbol) => Ok(build_usage_examples(symbol, ctx.graph_query)),
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "usage-examples".into(),
+            }),
+        }
+    }
+}
+
+/// Build the Usage Examples view: callers + callees as a table.
+fn build_usage_examples(
+    symbol: &ResolvedSymbol,
+    graph_query: Option<&dyn GraphQueryPort>,
+) -> ContextualView {
+    let callers = graph_query
+        .as_ref()
+        .map(|gq| gq.callers(&symbol.id))
+        .unwrap_or_default();
+    let callees = graph_query
+        .as_ref()
+        .map(|gq| gq.callees(&symbol.id))
+        .unwrap_or_default();
+
+    let caller_rows: Vec<serde_json::Value> = callers
+        .iter()
+        .map(|t| {
+            json!({
+                "object_id": mvp_id_from_target(t),
+                "name": t.name,
+                "file": t.file,
+                "line": t.line,
+                "kind": t.kind.name(),
+            })
+        })
+        .collect();
+    let callee_rows: Vec<serde_json::Value> = callees
+        .iter()
+        .map(|t| {
+            json!({
+                "object_id": mvp_id_from_target(t),
+                "name": t.name,
+                "file": t.file,
+                "line": t.line,
+                "kind": t.kind.name(),
+            })
+        })
+        .collect();
+
+    let blocks = vec![
+        ViewBlock {
+            id: "callers".into(),
+            title: format!("Called by ({})", callers.len()),
+            body: json!({
+                "columns": ["name", "file", "line", "kind"],
+                "rows": caller_rows,
+            }),
+        },
+        ViewBlock {
+            id: "callees".into(),
+            title: format!("Calls ({})", callees.len()),
+            body: json!({
+                "columns": ["name", "file", "line", "kind"],
+                "rows": callee_rows,
+            }),
+        },
+    ];
+
+    ContextualView {
+        object_id: mvp_id(symbol),
+        view_id: "usage-examples".into(),
+        title: "Usage Examples".into(),
+        blocks,
+        relations: Vec::new(),
+        evidence: Vec::new(),
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Table,
+        ..Default::default()
+    }
+}
+
 /// Source capability — applies to Symbol.
 pub struct SourceExecutor;
 impl ViewDescriptor for SourceExecutor {
@@ -1733,6 +1838,7 @@ pub static SYMBOLS_EXECUTOR: SymbolsExecutor = SymbolsExecutor;
 pub static DEPENDENCIES_EXECUTOR: DependenciesExecutor = DependenciesExecutor;
 pub static HOTSPOTS_EXECUTOR: HotspotsExecutor = HotspotsExecutor;
 pub static ARCHITECTURE_DRIFT_EXECUTOR: ArchitectureDriftExecutor = ArchitectureDriftExecutor;
+pub static USAGE_EXAMPLES_EXECUTOR: UsageExamplesExecutor = UsageExamplesExecutor;
 
 /// Architecture drift capability — applies to Workspace.
 ///
@@ -3177,6 +3283,46 @@ mod tests {
             err,
             crate::error::ExplorerError::ViewNotAvailable { .. }
         ));
+    }
+
+    // =========================================================================
+    // UsageExamples tests
+    // =========================================================================
+
+    #[test]
+    fn usage_examples_returns_callers_and_callees_blocks() {
+        // With graph_query = None (mock path), both blocks are empty.
+        let sym = make_resolved("src/foo.rs", "bar", 42, SymbolKind::Function);
+        let view = build_usage_examples(&sym, None);
+
+        assert_eq!(view.view_id, "usage-examples");
+        assert_eq!(view.blocks.len(), 2);
+        // First block: callers
+        let callers_block = &view.blocks[0];
+        assert_eq!(callers_block.id, "callers");
+        assert!(callers_block.title.contains("0")); // 0 callers in mock path
+        // Second block: callees
+        let callees_block = &view.blocks[1];
+        assert_eq!(callees_block.id, "callees");
+        assert!(callees_block.title.contains("0")); // 0 callees in mock path
+    }
+
+    #[test]
+    fn usage_examples_graceful_degradation_with_no_graph_query() {
+        let sym = make_resolved("src/foo.rs", "bar", 42, SymbolKind::Function);
+        let view = build_usage_examples(&sym, None);
+
+        assert_eq!(view.blocks.len(), 2);
+        assert_eq!(view.blocks[0].id, "callers");
+        assert_eq!(view.blocks[1].id, "callees");
+        // No panic, no error
+    }
+
+    #[test]
+    fn usage_examples_renderer_kind_is_table() {
+        let sym = make_resolved("src/foo.rs", "bar", 42, SymbolKind::Function);
+        let view = build_usage_examples(&sym, None);
+        assert_eq!(view.renderer_kind, RendererKind::Table);
     }
 }
 

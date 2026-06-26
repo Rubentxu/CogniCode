@@ -1,23 +1,23 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-25 (session end — clean handover for tomorrow)
+Last updated: 2026-06-26 (e9 + e11 + e12 spec completed)
 
 ## Active
 
 | Change | Branch | Semver target | Notes |
 |--------|--------|---------------|-------|
-| _none_ | — | — | Repo is clean post-hygiene; pick next cycle from the [Future] section or open a new proposal |
+| `e12-viewkind-realization` | (local) | MINOR | UsageExamplesExecutor wired (10th executor). build_usage_examples with callers + callees as Table blocks. Registry + static declared. Tests: 602+9+671 pass. Spec + explore + proposal in openspec. |
 
-## Session Handover 2026-06-25
+## Session Handover 2026-06-26
 
-This was the last session of the day. Resume with:
+Continuing from 2026-06-25. Closed e9 (landing virtualization), e11 (truncation field naming), and started e12 (viewkind realization).
 
-```
-1. `mem_context` → reload the 2026-06-25 session summary.
-2. Verify `git log --oneline -1` matches `15914fc`.
-3. Open `docs/adr/ADR-002-moldable-exploration-parity-program.md` for the strategic plan.
-4. Pick the next cycle from the [Future] section.
-```
+## Completed
+
+| Change | Tag | Closed | Notes |
+|--------|-----|--------|-------|
+| `e9-landing-perf` | (unreleased PATCH) | 2026-06-26 | Frontend-only: windowed virtualization of node-list fallback in `GraphLanding` when nodes > 200. Simple scroll-based window (ITEM_H=28px, 8 cols, 4 visible rows). Preserves all `data-testid` attributes and visual styling. 671 vitest + 602 Rust tests pass. |
+| `e11-truncation-field-naming` | (unreleased PATCH) | 2026-06-26 | Backend: renamed `ContextualGraphResponse.truncation_reason` → `truncated_reason`. Serde alias for backwards compat. Frontend: Zod schema + usage updated. 602 Rust + 671 vitest pass. ADR-002 updated. |
 
 ## Hygiene 2026-06-25
 
@@ -43,9 +43,8 @@ Closed before resuming new cycles:
 Follow-ups explicitly queued by cycles closed today. Each will need its own proposal + spec before becoming Active.
 
 | Candidate | Source cycle | Semver target | Why it exists |
-|---|---|---|---|
-| `e9-landing-perf` | E8 v0.24.1 follow-up | PATCH | The fallback node-list renders one `<button>` per node (`GraphLanding.tsx:243-273`). For workspaces >500 nodes, this is 500+ DOM elements. Flagged as W-3 in `openspec/changes/archive/e8-graphlanding-affordances/verify-report.md`. Virtualise if real-world usage shows DOM bloat. |
-| `e11-context-response-field-naming` | E8b v0.24.2 follow-up | PATCH | Two existing endpoints use different field names for the same concept: `SubgraphResponse.truncated_reason` (no extra 'i') vs `ContextualGraphResponse.truncation_reason` (extra 'i'). The landing uses `truncated_reason` to align with `SubgraphResponse`. Widening this inconsistency to a third name was rejected in E8b D-1; a proper harmonisation needs its own ADR and a wire-compat migration plan. |
+|-----------|---|---|---|
+| `e12-viewkind-realization` | ADR-002 strategic program | MINOR | Convert catalogued ViewKinds into real executors. Suggested priority order: `usage_examples`, `api_surface`, `doc_code_alignment`, `ownership_map`, `test_slice`, `debug_slice`, `concept_map`, `evidence_pack`. Currently 9 executors wired; catalog lists 34+. Explore phase needed to prioritise. |
 
 ## Strategic program: moldable exploration parity
 
