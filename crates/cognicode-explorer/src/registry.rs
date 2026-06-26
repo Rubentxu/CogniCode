@@ -384,6 +384,11 @@ impl ViewRegistry {
                     &crate::domain::views::USAGE_EXAMPLES_EXECUTOR
                         as &dyn crate::domain::views::ViewExecutor,
                 ),
+                (
+                    "api-surface",
+                    &crate::domain::views::API_SURFACE_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
             ])
         });
         real.get(id).copied().or_else(|| {
