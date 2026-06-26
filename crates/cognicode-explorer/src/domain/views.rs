@@ -1905,6 +1905,165 @@ fn build_debug_slice(
     }
 }
 
+/// ChangeImpactStory capability — applies to Symbol.
+/// Shows the upstream (who depends on this symbol) and downstream (what this symbol depends on)
+/// call graph as a BFS traversal, formatted as a change impact table.
+pub struct ChangeImpactStoryExecutor;
+impl ViewDescriptor for ChangeImpactStoryExecutor {
+    fn id(&self) -> &'static str {
+        "change-impact-story"
+    }
+    fn title(&self) -> &'static str {
+        "Change Impact Story"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Symbol]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::ChangeImpactStory
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Table
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for ChangeImpactStoryExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match &ctx.target {
+            InspectionTarget::Symbol(symbol) => Ok(build_change_impact_story(symbol, ctx.graph_query)),
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "change-impact-story".into(),
+            }),
+        }
+    }
+}
+
+/// Maximum traversal depth for change impact BFS. Caps at 3 to keep the view usable.
+const CHANGE_IMPACT_MAX_DEPTH: u8 = 3;
+
+/// Build the Change Impact Story: BFS callers (upstream) and callees (downstream) up to max depth.
+fn build_change_impact_story(
+    symbol: &ResolvedSymbol,
+    graph_query: Option<&dyn GraphQueryPort>,
+) -> ContextualView {
+    const MAX_DEPTH: u8 = CHANGE_IMPACT_MAX_DEPTH;
+
+    let upstream: Vec<ChangeImpactEntry> = graph_query
+        .as_ref()
+        .map(|gq| {
+            gq.traverse_callers(&symbol.id, MAX_DEPTH)
+                .into_iter()
+                .map(|e| ChangeImpactEntry {
+                    name: e.symbol_name,
+                    file: e.file,
+                    line: e.line,
+                    depth: e.depth,
+                    direction: ImpactDirection::Upstream,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let downstream: Vec<ChangeImpactEntry> = graph_query
+        .as_ref()
+        .map(|gq| {
+            gq.traverse_callees(&symbol.id, MAX_DEPTH)
+                .into_iter()
+                .map(|e| ChangeImpactEntry {
+                    name: e.symbol_name,
+                    file: e.file,
+                    line: e.line,
+                    depth: e.depth,
+                    direction: ImpactDirection::Downstream,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let upstream_rows: serde_json::Value = serde_json::json!(
+        upstream.iter().map(|e| json!({
+            "name": e.name,
+            "file": e.file,
+            "line": e.line,
+            "depth": e.depth,
+            "relationship": if e.depth == 1 { "direct caller" } else { "transitive caller" }
+        })).collect::<Vec<_>>()
+    );
+
+    let downstream_rows: serde_json::Value = serde_json::json!(
+        downstream.iter().map(|e| json!({
+            "name": e.name,
+            "file": e.file,
+            "line": e.line,
+            "depth": e.depth,
+            "relationship": if e.depth == 1 { "direct callee" } else { "transitive callee" }
+        })).collect::<Vec<_>>()
+    );
+
+    let blocks = vec![
+        ViewBlock {
+            id: "upstream".into(),
+            title: format!("Upstream — Who is affected by changes to `{}` ({})", symbol.name, upstream.len()),
+            body: json!({
+                "columns": ["name", "file", "line", "depth", "relationship"],
+                "rows": upstream_rows,
+            }),
+        },
+        ViewBlock {
+            id: "downstream".into(),
+            title: format!("Downstream — What `{}` affects ({})", symbol.name, downstream.len()),
+            body: json!({
+                "columns": ["name", "file", "line", "depth", "relationship"],
+                "rows": downstream_rows,
+            }),
+        },
+    ];
+
+    let evidence_id = "evidence:change_impact_story".to_string();
+    let evidence = vec![EvidenceBlock {
+        id: evidence_id,
+        kind: "change_impact_story".into(),
+        title: format!("Change impact story: {}", symbol.name),
+        file: Some(symbol.file.clone()),
+        line_range: Some(LineRange {
+            start: symbol.line,
+            end: symbol.line,
+        }),
+        source_tool_or_query: format!("GraphQueryPort::traverse_callers/traverse_callees (max_depth={})", MAX_DEPTH),
+        confidence: None,
+        freshness: Some("unknown".into()),
+        provenance: None,
+    }];
+
+    ContextualView {
+        object_id: mvp_id(symbol),
+        view_id: "change-impact-story".into(),
+        title: "Change Impact Story".into(),
+        blocks,
+        relations: Vec::new(),
+        evidence,
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Table,
+        ..Default::default()
+    }
+}
+
+#[derive(Clone)]
+enum ImpactDirection {
+    Upstream,
+    Downstream,
+}
+
+struct ChangeImpactEntry {
+    name: String,
+    file: String,
+    line: u32,
+    depth: u8,
+    direction: ImpactDirection,
+}
+
 /// Source capability — applies to Symbol.
 pub struct SourceExecutor;
 impl ViewDescriptor for SourceExecutor {
@@ -2177,6 +2336,7 @@ pub static USAGE_EXAMPLES_EXECUTOR: UsageExamplesExecutor = UsageExamplesExecuto
 pub static API_SURFACE_EXECUTOR: ApiSurfaceExecutor = ApiSurfaceExecutor;
 pub static TEST_SLICE_EXECUTOR: TestSliceExecutor = TestSliceExecutor;
 pub static DEBUG_SLICE_EXECUTOR: DebugSliceExecutor = DebugSliceExecutor;
+pub static CHANGE_IMPACT_STORY_EXECUTOR: ChangeImpactStoryExecutor = ChangeImpactStoryExecutor;
 
 /// Architecture drift capability — applies to Workspace.
 ///
@@ -3783,6 +3943,40 @@ mod tests {
         let callee_rows = view.blocks[1].body.get("rows").unwrap().as_array().unwrap();
         assert_eq!(caller_rows.len(), 0);
         assert_eq!(callee_rows.len(), 0);
+    }
+
+    #[test]
+    fn change_impact_story_view_id_and_title() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let view = build_change_impact_story(&sym, None);
+        assert_eq!(view.view_id, "change-impact-story");
+        assert_eq!(view.title, "Change Impact Story");
+    }
+
+    #[test]
+    fn change_impact_story_renderer_kind_is_table() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let view = build_change_impact_story(&sym, None);
+        assert_eq!(view.renderer_kind, RendererKind::Table);
+    }
+
+    #[test]
+    fn change_impact_story_two_blocks_upstream_downstream() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let view = build_change_impact_story(&sym, None);
+        assert_eq!(view.blocks.len(), 2);
+        assert_eq!(view.blocks[0].id, "upstream");
+        assert_eq!(view.blocks[1].id, "downstream");
+    }
+
+    #[test]
+    fn change_impact_story_empty_when_no_graph_query() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let view = build_change_impact_story(&sym, None);
+        let upstream_rows = view.blocks[0].body.get("rows").unwrap().as_array().unwrap();
+        let downstream_rows = view.blocks[1].body.get("rows").unwrap().as_array().unwrap();
+        assert_eq!(upstream_rows.len(), 0);
+        assert_eq!(downstream_rows.len(), 0);
     }
 }
 
