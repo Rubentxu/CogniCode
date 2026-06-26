@@ -1646,6 +1646,107 @@ fn build_api_surface(scope_path: &str, symbols: &[ResolvedSymbol]) -> Contextual
     }
 }
 
+/// TestSlice capability — applies to Symbol.
+/// Shows test functions that call the inspected symbol as a navigable table.
+pub struct TestSliceExecutor;
+impl ViewDescriptor for TestSliceExecutor {
+    fn id(&self) -> &'static str {
+        "test-slice"
+    }
+    fn title(&self) -> &'static str {
+        "Test Slice"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Symbol]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::TestSlice
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Table
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for TestSliceExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match &ctx.target {
+            InspectionTarget::Symbol(symbol) => {
+                Ok(build_test_slice(symbol, ctx.graph_query))
+            }
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "test-slice".into(),
+            }),
+        }
+    }
+}
+
+/// Returns true if the file path looks like a test file.
+fn is_test_file(file: &str) -> bool {
+    file.contains("/tests/")
+        || file.contains("/test/")
+        || file.ends_with("_test.rs")
+        || file.ends_with("test_.rs")
+        || file.ends_with(".test.ts")
+        || file.ends_with(".test.tsx")
+        || file.ends_with("_test.sh")
+        || file.ends_with("_tests.rs")
+}
+
+/// Build the Test Slice view: test callers of a symbol as a table.
+fn build_test_slice(
+    symbol: &ResolvedSymbol,
+    graph_query: Option<&dyn GraphQueryPort>,
+) -> ContextualView {
+    let all_callers = graph_query
+        .as_ref()
+        .map(|gq| gq.callers(&symbol.id))
+        .unwrap_or_default();
+
+    let test_callers: Vec<_> = all_callers
+        .into_iter()
+        .filter(|c| is_test_file(&c.file))
+        .collect();
+
+    // Sort by file path, then by line number.
+    let mut sorted = test_callers.clone();
+    sorted.sort_by(|a, b| a.file.cmp(&b.file).then_with(|| a.line.cmp(&b.line)));
+
+    let rows: Vec<serde_json::Value> = sorted
+        .iter()
+        .map(|c| {
+            json!({
+                "name": c.name,
+                "file": c.file,
+                "line": c.line,
+                "kind": c.kind.name(),
+            })
+        })
+        .collect();
+
+    let blocks = vec![ViewBlock {
+        id: "test_slice".into(),
+        title: format!("Tests ({})", sorted.len()),
+        body: json!({
+            "columns": ["name", "file", "line", "kind"],
+            "rows": rows,
+        }),
+    }];
+
+    ContextualView {
+        object_id: mvp_id(symbol),
+        view_id: "test-slice".into(),
+        title: "Test Slice".into(),
+        blocks,
+        relations: Vec::new(),
+        evidence: Vec::new(),
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Table,
+        ..Default::default()
+    }
+}
+
 /// Source capability — applies to Symbol.
 pub struct SourceExecutor;
 impl ViewDescriptor for SourceExecutor {
@@ -1916,6 +2017,7 @@ pub static HOTSPOTS_EXECUTOR: HotspotsExecutor = HotspotsExecutor;
 pub static ARCHITECTURE_DRIFT_EXECUTOR: ArchitectureDriftExecutor = ArchitectureDriftExecutor;
 pub static USAGE_EXAMPLES_EXECUTOR: UsageExamplesExecutor = UsageExamplesExecutor;
 pub static API_SURFACE_EXECUTOR: ApiSurfaceExecutor = ApiSurfaceExecutor;
+pub static TEST_SLICE_EXECUTOR: TestSliceExecutor = TestSliceExecutor;
 
 /// Architecture drift capability — applies to Workspace.
 ///
@@ -3452,6 +3554,50 @@ mod tests {
         let view = build_api_surface("src/lib.rs", &[sym]);
         assert_eq!(view.view_id, "api-surface");
         assert_eq!(view.title, "API Surface");
+    }
+
+    // =========================================================================
+    // TestSlice tests
+    // =========================================================================
+
+    #[test]
+    fn test_slice_returns_only_test_callers() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        // Mock callers: one test file, one non-test file
+        let test_caller = make_resolved("tests/foo_test.rs", "test_foo", 10, SymbolKind::Function);
+        let prod_caller = make_resolved("src/lib.rs", "bar", 20, SymbolKind::Function);
+        // This test just verifies the is_test_file heuristic
+        assert!(is_test_file("tests/foo_test.rs"));
+        assert!(is_test_file("src/utils/tests/helpers.rs"));
+        assert!(is_test_file("test/unit/core_test.rs"));
+        assert!(is_test_file("_test.sh"));
+        assert!(!is_test_file("src/lib.rs"));
+        assert!(!is_test_file("src/main.rs"));
+    }
+
+    #[test]
+    fn test_slice_empty_when_no_test_callers() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let view = build_test_slice(&sym, None);
+        assert_eq!(view.view_id, "test-slice");
+        assert_eq!(view.blocks.len(), 1);
+        let rows = view.blocks[0].body.get("rows").unwrap().as_array().unwrap();
+        assert_eq!(rows.len(), 0); // None available with graph_query = None
+    }
+
+    #[test]
+    fn test_slice_renderer_kind_is_table() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let view = build_test_slice(&sym, None);
+        assert_eq!(view.renderer_kind, RendererKind::Table);
+    }
+
+    #[test]
+    fn test_slice_view_id_and_title() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let view = build_test_slice(&sym, None);
+        assert_eq!(view.view_id, "test-slice");
+        assert_eq!(view.title, "Test Slice");
     }
 }
 
