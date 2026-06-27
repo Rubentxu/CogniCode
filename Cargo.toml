@@ -112,8 +112,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Regex
 regex = "1"
 
+# OpenAPI 3.1 parser — used by cognicode-explorer for cycle e15.5
+# (cross-service protocol edge ingestion). Only the JSON support
+# (`default-features = false`) is enabled — YAML is not required for
+# the OpenAPI ingestion handler since most production specs are
+# emitted as JSON by utoipa, tsoa, and NestJS.
+oas3 = { version = "0.22", default-features = false }
+
 # Base64
 base64 = "0.22"
+# Hex encoding (used by edge-emitter for SHA256 spec hashes).
+hex = "0.4"
 
 # Constant-time comparison (M3.5 Bearer-token auth middleware).
 # `subtle` is a tiny `no_std`-friendly crate that gives us
