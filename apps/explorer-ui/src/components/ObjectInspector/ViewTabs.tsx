@@ -28,6 +28,7 @@ export interface ViewTabsProps {
     is_builtin?: boolean;
     /** Source discriminator: "runtime" for user-defined specs, null for built-ins. */
     source?: string | null;
+    renderer_kind?: string | null;
   }>;
   /** The currently active view id. `null` when nothing is selected. */
   activeViewId: string | null;
@@ -166,6 +167,7 @@ export function ViewTabs({
               data-testid={`view-tab-${view.id}`}
               data-view-id={view.id}
               data-active={isActive ? "true" : "false"}
+              data-renderer-kind={view.renderer_kind ?? undefined}
               data-source={view.is_builtin === false ? "runtime" : undefined}
               onClick={() => onChange(view.id)}
               className="rounded-md px-2 py-1 text-xs font-medium transition-colors"
