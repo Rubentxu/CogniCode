@@ -65,6 +65,15 @@ const SCHEMA_SQL_MULTIMODAL: &str = include_str!("m0009_graph_nodes_edges.sql");
 #[cfg(feature = "postgres")]
 const SCHEMA_SQL_QUALITY: &str = include_str!("m0011_quality.sql");
 
+/// API routes DDL — `api_routes` + `api_route_edges` tables. Embedded
+/// when the `postgres` feature is enabled (not gated behind
+/// `multimodal`). Backed by the `EdgeEmitter` port in
+/// `cognicode-explorer/src/ports/edge_emitter.rs`; introduced in
+/// cycle e15.5 to support OpenAPI / GraphQL / gRPC / tRPC route
+/// ingestion. See the migration header for the design rationale.
+#[cfg(feature = "postgres")]
+const SCHEMA_SQL_ROUTES: &str = include_str!("m0012_route_nodes_protocol_edges.sql");
+
 /// PostgreSQL-backed implementation of the async [`Repository`]
 /// trait. Owns its [`PgPool`]; consumers that want shared
 /// ownership can wrap in `Arc<PostgresRepository>`.
@@ -107,7 +116,7 @@ impl PostgresRepository {
 
 /// Execute the embedded schema DDL.
 ///
-/// Runs four DDL blocks in order:
+/// Runs five DDL blocks in order:
 /// 1. Base schema (`schema_postgres.sql`) — legacy named_views, view_specs.
 /// 2. Pipeline schema (`m0010_pipeline_schema.sql`) — graph_nodes,
 ///    graph_edges, scan_manifest, graph_reports, VIEWs, trigger.
@@ -116,43 +125,56 @@ impl PostgresRepository {
 /// 4. Quality schema (`m0011_quality.sql`) — issues, baselines, rules.
 ///    Backed by the `QualityRepository` port. Added in 2026-06-25 as
 ///    part of the Postgres-canonical quality stack rebuild.
+/// 5. Routes schema (`m0012_route_nodes_protocol_edges.sql`) —
+///    api_routes + api_route_edges. Added in cycle e15.5 for
+///    cross-service protocol edge ingestion. Backed by the
+///    `EdgeEmitter` port in `cognicode-explorer/src/ports/edge_emitter.rs`.
 ///
 /// All blocks are idempotent (`IF NOT EXISTS` / `CREATE OR REPLACE`).
 pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
-        // 1. Base schema
-        sqlx::raw_sql(SCHEMA_SQL)
+    // 1. Base schema
+    sqlx::raw_sql(SCHEMA_SQL)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("migration: {e}")))?;
+
+    // 2. Pipeline schema (always loaded — graph_nodes/graph_edges
+    //    are the canonical graph store for the ingest pipeline)
+    sqlx::raw_sql(SCHEMA_SQL_PIPELINE)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("pipeline migration: {e}")))?;
+
+    // 3. Multimodal DDL (optional — adds multimodal-specific
+    //    indexes/constraints on top of the base graph tables)
+    #[cfg(feature = "multimodal")]
+    {
+        sqlx::raw_sql(SCHEMA_SQL_MULTIMODAL)
             .execute(&self.pool)
             .await
-            .map_err(|e| RepositoryError::Store(format!("migration: {e}")))?;
-
-        // 2. Pipeline schema (always loaded — graph_nodes/graph_edges
-        //    are the canonical graph store for the ingest pipeline)
-        sqlx::raw_sql(SCHEMA_SQL_PIPELINE)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| RepositoryError::Store(format!("pipeline migration: {e}")))?;
-
-        // 3. Multimodal DDL (optional — adds multimodal-specific
-        //    indexes/constraints on top of the base graph tables)
-        #[cfg(feature = "multimodal")]
-        {
-            sqlx::raw_sql(SCHEMA_SQL_MULTIMODAL)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| RepositoryError::Store(format!("multimodal migration: {e}")))?;
-        }
-
-        // 4. Quality schema (issues + baselines + rules). Always
-        //    loaded when the `postgres` feature is on — backs the
-        //    `QualityRepository` port introduced alongside this
-        //    migration in PR #54.
-        sqlx::raw_sql(SCHEMA_SQL_QUALITY)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| RepositoryError::Store(format!("quality migration: {e}")))?;
-
-        Ok(())
+            .map_err(|e| RepositoryError::Store(format!("multimodal migration: {e}")))?;
     }
+
+    // 4. Quality schema (issues + baselines + rules). Always
+    //    loaded when the `postgres` feature is on — backs the
+    //    `QualityRepository` port introduced alongside this
+    //    migration in PR #54.
+    sqlx::raw_sql(SCHEMA_SQL_QUALITY)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("quality migration: {e}")))?;
+
+    // 5. Routes schema (api_routes + api_route_edges). Always loaded
+    //    when the `postgres` feature is on. Backs the `EdgeEmitter`
+    //    port added in cycle e15.5. Pure additive migration — no
+    //    ALTER on existing tables.
+    sqlx::raw_sql(SCHEMA_SQL_ROUTES)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("routes migration: {e}")))?;
+
+    Ok(())
+}
 
     /// Insert a single call-graph edge into the `call_edges` table.
     ///

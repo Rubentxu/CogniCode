@@ -22,6 +22,10 @@
 //!          | PartOf             #[cfg(feature = "multimodal")]
 //!          | DeployedAs         #[cfg(feature = "multimodal")]
 //!          | InSystem           #[cfg(feature = "multimodal")]
+//!          | HttpCalls          #[cfg(feature = "multimodal")]  // e15.5
+//!          | GraphqlCalls       #[cfg(feature = "multimodal")]  // e16.5
+//!          | GrpcCalls          #[cfg(feature = "multimodal")]  // e17.5
+//!          | TrpcCalls          #[cfg(feature = "multimodal")]  // e19
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -79,6 +83,22 @@ pub enum EdgeKind {
     /// belongs to a system). Multimodal.
     #[cfg(feature = "multimodal")]
     InSystem,
+    /// `Route` invokes `Function` (HTTP). Multimodal.
+    /// Direction: `Route -> Handler`. Phase 2 (e15.5).
+    #[cfg(feature = "multimodal")]
+    HttpCalls,
+    /// `Route` invokes `Resolver` (GraphQL). Multimodal.
+    /// Direction: `Route -> Resolver`. Phase 3 (e16.5).
+    #[cfg(feature = "multimodal")]
+    GraphqlCalls,
+    /// `Route` invokes `ServiceImpl` (gRPC). Multimodal.
+    /// Direction: `Route -> Implementation`. Phase 4 (e17.5).
+    #[cfg(feature = "multimodal")]
+    GrpcCalls,
+    /// `Route` invokes `Procedure` (tRPC). Multimodal.
+    /// Direction: `Route -> Procedure`. Phase 5 (e19, deferred).
+    #[cfg(feature = "multimodal")]
+    TrpcCalls,
 }
 
 impl FromStr for EdgeKind {
@@ -107,6 +127,11 @@ impl FromStr for EdgeKind {
             "part_of" => return Ok(EdgeKind::PartOf),
             "deployed_as" => return Ok(EdgeKind::DeployedAs),
             "in_system" => return Ok(EdgeKind::InSystem),
+            // Cross-service protocol edges (Phase 2 — e15.5)
+            "http_calls" => return Ok(EdgeKind::HttpCalls),
+            "graphql_calls" => return Ok(EdgeKind::GraphqlCalls),
+            "grpc_calls" => return Ok(EdgeKind::GrpcCalls),
+            "trpc_calls" => return Ok(EdgeKind::TrpcCalls),
             _ => {}
         }
         if let Some(rest) = s.strip_prefix("dependency.") {
@@ -147,6 +172,15 @@ impl EdgeKind {
             EdgeKind::DeployedAs => "deployed_as".to_string(),
             #[cfg(feature = "multimodal")]
             EdgeKind::InSystem => "in_system".to_string(),
+            // Cross-service protocol edges (Phase 2 — e15.5)
+            #[cfg(feature = "multimodal")]
+            EdgeKind::HttpCalls => "http_calls".to_string(),
+            #[cfg(feature = "multimodal")]
+            EdgeKind::GraphqlCalls => "graphql_calls".to_string(),
+            #[cfg(feature = "multimodal")]
+            EdgeKind::GrpcCalls => "grpc_calls".to_string(),
+            #[cfg(feature = "multimodal")]
+            EdgeKind::TrpcCalls => "trpc_calls".to_string(),
         }
     }
 
@@ -199,7 +233,9 @@ mod tests {
     /// The four multimodal variants must exist and round-trip through
     /// JSON when the `multimodal` feature is enabled. Phase 1 of the
     /// C4 architecture change adds three more (`PartOf`, `DeployedAs`,
-    /// `InSystem`) for a total of 7.
+    /// `InSystem`) for a total of 7. Phase 2 (e15.5) adds four more
+    /// cross-service protocol edges (`HttpCalls`, `GraphqlCalls`,
+    /// `GrpcCalls`, `TrpcCalls`) for a total of 11.
     #[test]
     #[cfg(feature = "multimodal")]
     fn edge_kind_multimodal_variants() {
@@ -211,6 +247,10 @@ mod tests {
             EdgeKind::PartOf,
             EdgeKind::DeployedAs,
             EdgeKind::InSystem,
+            EdgeKind::HttpCalls,
+            EdgeKind::GraphqlCalls,
+            EdgeKind::GrpcCalls,
+            EdgeKind::TrpcCalls,
         ] {
             assert!(kind.is_multimodal());
             let json = serde_json::to_string(&kind).expect("serialize");
@@ -254,6 +294,11 @@ mod tests {
             assert_eq!(format!("{}", EdgeKind::PartOf), "part_of");
             assert_eq!(format!("{}", EdgeKind::DeployedAs), "deployed_as");
             assert_eq!(format!("{}", EdgeKind::InSystem), "in_system");
+            // Cross-service protocol edges (Phase 2 — e15.5)
+            assert_eq!(format!("{}", EdgeKind::HttpCalls), "http_calls");
+            assert_eq!(format!("{}", EdgeKind::GraphqlCalls), "graphql_calls");
+            assert_eq!(format!("{}", EdgeKind::GrpcCalls), "grpc_calls");
+            assert_eq!(format!("{}", EdgeKind::TrpcCalls), "trpc_calls");
         }
     }
 
@@ -297,12 +342,43 @@ mod tests {
             set.insert(EdgeKind::PartOf);
             set.insert(EdgeKind::DeployedAs);
             set.insert(EdgeKind::InSystem);
+            // Cross-service protocol edges (Phase 2 — e15.5)
+            set.insert(EdgeKind::HttpCalls);
+            set.insert(EdgeKind::GraphqlCalls);
+            set.insert(EdgeKind::GrpcCalls);
+            set.insert(EdgeKind::TrpcCalls);
         }
         set.insert(EdgeKind::Dependency(DependencyType::Calls));
-        // 1 Dependency + 7 multimodal = 8 total under the feature.
+        // 1 Dependency + 11 multimodal = 12 total under the feature.
         #[cfg(feature = "multimodal")]
-        assert_eq!(set.len(), 8);
+        assert_eq!(set.len(), 12);
         #[cfg(not(feature = "multimodal"))]
         assert_eq!(set.len(), 1);
+    }
+
+    /// Cross-service protocol edges (Phase 2 — e15.5) parse from their
+    /// stable kebab-case form and round-trip through JSON.
+    #[test]
+    #[cfg(feature = "multimodal")]
+    fn edge_kind_protocol_calls_roundtrip() {
+        for (kind, str_form) in [
+            (EdgeKind::HttpCalls, "http_calls"),
+            (EdgeKind::GraphqlCalls, "graphql_calls"),
+            (EdgeKind::GrpcCalls, "grpc_calls"),
+            (EdgeKind::TrpcCalls, "trpc_calls"),
+        ] {
+            assert!(kind.is_multimodal());
+            assert_eq!(kind.as_str(), str_form);
+            assert_eq!(format!("{}", kind), str_form);
+
+            // JSON roundtrip
+            let json = serde_json::to_string(&kind).expect("serialize");
+            let parsed: EdgeKind = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(parsed, kind);
+
+            // FromStr
+            let parsed_from_str = EdgeKind::from_str(str_form).expect("parse");
+            assert_eq!(parsed_from_str, kind);
+        }
     }
 }
