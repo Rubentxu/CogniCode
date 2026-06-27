@@ -358,7 +358,14 @@ describe("SWR cache + dedup", () => {
     server.use(
       http.get("/api/workspaces/:workspace_id/spotter", () => {
         spotterFetchCount += 1;
-        return HttpResponse.json(spotterResultsFixture);
+        // Return discriminated-union format (SpotterSearchResult[]) to match
+        // the real backend. useSpotter validates and unwraps each result.
+        return HttpResponse.json(
+          spotterResultsFixture.map((hit) => ({
+            kind: "symbol",
+            result: hit,
+          })),
+        );
       }),
     );
 

@@ -145,11 +145,17 @@ export const handlers = [
     if (q.length === 0) {
       return HttpResponse.json([]);
     }
-    // Echo the query back via the match_type so the UI can confirm.
+    // Return discriminated-union format (SpotterSearchResult) to match the
+    // real backend. useSpotter validates the full union and unwraps result.
+    // Each family carries the same SpotterResult payload (object + score +
+    // match_type); only the `kind` discriminant differs.
     return HttpResponse.json(
       spotterResultsFixture.map((hit, i) => ({
-        ...hit,
-        match_type: i === 0 ? `query:${q}` : hit.match_type,
+        kind: "symbol",
+        result: {
+          ...hit,
+          match_type: i === 0 ? `query:${q}` : hit.match_type,
+        },
       })),
     );
   }),

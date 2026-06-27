@@ -153,9 +153,12 @@ describe("Spotter (open)", () => {
         await delay(50);
         return HttpResponse.json([
           {
-            object: inspectableObjectFixture,
-            score: 0.9,
-            match_type: "name_prefix",
+            kind: "symbol",
+            result: {
+              object: inspectableObjectFixture,
+              score: 0.9,
+              match_type: "name_prefix",
+            },
           },
         ]);
       }),
@@ -184,20 +187,26 @@ describe("Spotter (open)", () => {
         await delay(20);
         return HttpResponse.json([
           {
-            object: { ...inspectableObjectFixture, id: "sym-1" },
-            score: 0.9,
-            match_type: "name_exact",
+            kind: "symbol",
+            result: {
+              object: { ...inspectableObjectFixture, id: "sym-1" },
+              score: 0.9,
+              match_type: "name_exact",
+            },
           },
           {
-            object: {
-              ...inspectableObjectFixture,
-              id: "file-1",
-              object_type: "file",
-              label: "lib.rs",
-              subtitle: "crates/cognicode-explorer/src/lib.rs",
+            kind: "file",
+            result: {
+              object: {
+                ...inspectableObjectFixture,
+                id: "file-1",
+                object_type: "file",
+                label: "lib.rs",
+                subtitle: "crates/cognicode-explorer/src/lib.rs",
+              },
+              score: 0.7,
+              match_type: "name_exact",
             },
-            score: 0.7,
-            match_type: "name_prefix",
           },
         ]);
       }),
@@ -225,9 +234,12 @@ describe("Spotter (open)", () => {
         await delay(20);
         return HttpResponse.json([
           {
-            object: inspectableObjectFixture,
-            score: 0.9,
-            match_type: "name_exact",
+            kind: "symbol",
+            result: {
+              object: inspectableObjectFixture,
+              score: 0.9,
+              match_type: "name_exact",
+            },
           },
         ]);
       }),
@@ -306,7 +318,10 @@ describe("Spotter (open)", () => {
       http.get("/api/workspaces/:workspace_id/spotter", async () => {
         await delay(10);
         return HttpResponse.json([
-          { object: inspectableObjectFixture, score: 0.9, match_type: "x" },
+          {
+            kind: "symbol",
+            result: { object: inspectableObjectFixture, score: 0.9, match_type: "x" },
+          },
         ]);
       }),
     );
@@ -326,17 +341,23 @@ describe("Spotter (open)", () => {
       http.get("/api/workspaces/:workspace_id/spotter", async () => {
         await delay(20);
         return HttpResponse.json([
-          { object: { ...inspectableObjectFixture, id: "sym-1" }, score: 0.9, match_type: "x" },
           {
-            object: {
-              ...inspectableObjectFixture,
-              id: "file-1",
-              object_type: "file",
-              label: "lib.rs",
-              subtitle: "lib.rs",
+            kind: "symbol",
+            result: { object: { ...inspectableObjectFixture, id: "sym-1" }, score: 0.9, match_type: "x" },
+          },
+          {
+            kind: "file",
+            result: {
+              object: {
+                ...inspectableObjectFixture,
+                id: "file-1",
+                object_type: "file",
+                label: "lib.rs",
+                subtitle: "lib.rs",
+              },
+              score: 0.7,
+              match_type: "x",
             },
-            score: 0.7,
-            match_type: "x",
           },
         ]);
       }),

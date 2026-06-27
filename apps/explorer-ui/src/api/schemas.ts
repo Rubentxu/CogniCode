@@ -763,8 +763,21 @@ export const viewSpecSummarySchema = z.object({
 export type ViewSpecSummary = z.infer<typeof viewSpecSummarySchema>;
 
 /**
- * Discriminated union of symbol/file hits and ViewSpec hits for Spotter.
- * Frontend switches on `kind` to render each variant appropriately.
+ * Discriminated union of all Spotter hit families returned by the backend
+ * (`SpotterSearchResult` in `dto.rs`). Each variant carries a `result`
+ * payload whose shape depends on the family:
+ *
+ * - `symbol`         → `SpotterResult` (symbol graph hit)
+ * - `file`           → `SpotterResult` (grouped symbol-by-file hit)
+ * - `viewspec`       → `ViewSpecSummary` (runtime ViewSpec hit)
+ * - `saved_exploration` → `SpotterResult` (saved session hit)
+ * - `quality_issue`  → `SpotterResult` (issue-rule hit)
+ * - `rule`           → `SpotterResult` (quality rule hit)
+ *
+ * Frontend components switch on `kind` to render each variant. The
+ * `useSpotter` hook unwraps `result` before returning so callers always
+ * receive the flat `SpotterResult` shape (matching the original MVP
+ * contract before multi-family was added in e13-wave-1).
  */
 export const spotterSearchResultSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -772,8 +785,24 @@ export const spotterSearchResultSchema = z.discriminatedUnion("kind", [
     result: spotterResultSchema,
   }),
   z.object({
+    kind: z.literal("file"),
+    result: spotterResultSchema,
+  }),
+  z.object({
     kind: z.literal("viewspec"),
     result: viewSpecSummarySchema,
+  }),
+  z.object({
+    kind: z.literal("saved_exploration"),
+    result: spotterResultSchema,
+  }),
+  z.object({
+    kind: z.literal("quality_issue"),
+    result: spotterResultSchema,
+  }),
+  z.object({
+    kind: z.literal("rule"),
+    result: spotterResultSchema,
   }),
 ]);
 export type SpotterSearchResult = z.infer<typeof spotterSearchResultSchema>;

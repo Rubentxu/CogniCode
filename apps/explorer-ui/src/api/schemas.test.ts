@@ -22,9 +22,11 @@ import {
   openWorkspaceRequestSchema,
   qualityIssueItemSchema,
   spotterResultSchema,
+  spotterSearchResultSchema,
   viewBlockAnySchema,
   viewBlockSchema,
   viewDescriptorSchema,
+  viewSpecSummarySchema,
   workspaceSummarySchema,
   unknownViewBlockSchema,
 } from "./schemas";
@@ -100,6 +102,101 @@ describe("spotterResultSchema", () => {
   it("rejects a result with a non-numeric score", () => {
     const broken = { ...spotterResultsFixture[0], score: "high" };
     expect(() => spotterResultSchema.parse(broken)).toThrow();
+  });
+});
+
+/**
+ * Regression test for e13-wave-1.1: the backend `SpotterSearchResult`
+ * enum has 6 families (symbol, file, viewspec, saved_exploration,
+ * quality_issue, rule). The frontend schema must accept all of them or
+ * Zod silently drops the unrecognised variants from the parsed array.
+ *
+ * Before the fix: only "symbol" and "viewspec" were in the union.
+ * After the fix: all 6 families are accepted.
+ */
+describe("spotterSearchResultSchema", () => {
+  // Minimal valid SpotterResult payload shared by symbol/file/saved_exploration/
+  // quality_issue/rule variants.
+  const baseResult = {
+    object: inspectableObjectFixture,
+    score: 0.9,
+    match_type: "name_exact",
+  };
+
+  // Minimal valid ViewSpecSummary for the viewspec variant.
+  const baseViewSpec = {
+    id: "550e8400-e29b-41d4-a716-446655440000",
+    title: "Overview",
+    view_kind: "vertical_slice",
+    applies_to: "symbol",
+    owner: "system",
+    updated_at: "2026-06-27T00:00:00Z",
+  };
+
+  it("accepts symbol variant", () => {
+    expect(
+      spotterSearchResultSchema.parse({ kind: "symbol", result: baseResult }),
+    ).toMatchObject({ kind: "symbol", result: baseResult });
+  });
+
+  it("accepts file variant", () => {
+    expect(
+      spotterSearchResultSchema.parse({ kind: "file", result: baseResult }),
+    ).toMatchObject({ kind: "file", result: baseResult });
+  });
+
+  it("accepts viewspec variant", () => {
+    expect(
+      spotterSearchResultSchema.parse({ kind: "viewspec", result: baseViewSpec }),
+    ).toMatchObject({ kind: "viewspec", result: baseViewSpec });
+  });
+
+  it("accepts saved_exploration variant", () => {
+    expect(
+      spotterSearchResultSchema.parse({
+        kind: "saved_exploration",
+        result: baseResult,
+      }),
+    ).toMatchObject({ kind: "saved_exploration", result: baseResult });
+  });
+
+  it("accepts quality_issue variant", () => {
+    expect(
+      spotterSearchResultSchema.parse({
+        kind: "quality_issue",
+        result: baseResult,
+      }),
+    ).toMatchObject({ kind: "quality_issue", result: baseResult });
+  });
+
+  it("accepts rule variant", () => {
+    expect(
+      spotterSearchResultSchema.parse({ kind: "rule", result: baseResult }),
+    ).toMatchObject({ kind: "rule", result: baseResult });
+  });
+
+  it("accepts an array of mixed families", () => {
+    const wire = [
+      { kind: "symbol", result: baseResult },
+      { kind: "file", result: baseResult },
+      { kind: "viewspec", result: baseViewSpec },
+      { kind: "saved_exploration", result: baseResult },
+      { kind: "quality_issue", result: baseResult },
+      { kind: "rule", result: baseResult },
+    ];
+    expect(() => spotterSearchResultSchema.array().parse(wire)).not.toThrow();
+    const parsed = spotterSearchResultSchema.array().parse(wire);
+    expect(parsed).toHaveLength(6);
+  });
+
+  it("rejects unknown kind", () => {
+    const broken = { kind: "alien", result: baseResult };
+    expect(() => spotterSearchResultSchema.parse(broken)).toThrow();
+  });
+
+  it("rejects missing kind", () => {
+    const broken = { result: baseResult };
+    expect(() => spotterSearchResultSchema.parse(broken)).toThrow();
   });
 });
 
