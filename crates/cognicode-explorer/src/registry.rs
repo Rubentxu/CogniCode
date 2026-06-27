@@ -404,6 +404,11 @@ impl ViewRegistry {
                     &crate::domain::views::CHANGE_IMPACT_STORY_EXECUTOR
                         as &dyn crate::domain::views::ViewExecutor,
                 ),
+                (
+                    "ownership-map",
+                    &crate::domain::views::OWNERSHIP_MAP_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
             ])
         });
         real.get(id).copied().or_else(|| {

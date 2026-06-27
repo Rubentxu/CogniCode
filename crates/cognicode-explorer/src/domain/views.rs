@@ -2337,6 +2337,99 @@ pub static API_SURFACE_EXECUTOR: ApiSurfaceExecutor = ApiSurfaceExecutor;
 pub static TEST_SLICE_EXECUTOR: TestSliceExecutor = TestSliceExecutor;
 pub static DEBUG_SLICE_EXECUTOR: DebugSliceExecutor = DebugSliceExecutor;
 pub static CHANGE_IMPACT_STORY_EXECUTOR: ChangeImpactStoryExecutor = ChangeImpactStoryExecutor;
+pub static OWNERSHIP_MAP_EXECUTOR: OwnershipMapExecutor = OwnershipMapExecutor;
+
+/// Ownership Map capability — applies to Issue (QualityIssue).
+///
+/// Shows QualityIssue fields as ownership data since author/assignee are not
+/// present in this model. For non-Issue targets, shows "ownership unavailable".
+pub struct OwnershipMapExecutor;
+impl ViewDescriptor for OwnershipMapExecutor {
+    fn id(&self) -> &'static str {
+        "ownership-map"
+    }
+    fn title(&self) -> &'static str {
+        "Ownership Map"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::QualityIssue]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::OwnershipMap
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Table
+    }
+}
+
+#[async_trait]
+impl ViewExecutor for OwnershipMapExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match ctx.target {
+            InspectionTarget::Issue(issue) => Ok(build_ownership_map(issue)),
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "ownership-map".into(),
+            }),
+        }
+    }
+}
+
+/// Build the Ownership Map view for a QualityIssue.
+///
+/// Shows QualityIssue fields (id, rule_id, severity, category, file_path, line, message, status)
+/// as ownership data. For non-Issue targets, callers should use the ViewExecutor error path.
+pub fn build_ownership_map(issue: &QualityIssue) -> ContextualView {
+    let evidence_id = "evidence:ownership_map".to_string();
+    let mvp = format!("issue:{}", issue.id);
+
+    // Single row representing the QualityIssue as ownership data
+    // Columns: name, kind, file_path, severity, rule_id, status
+    let rows = vec![json!({
+        "name": format!("Issue #{}", issue.id),
+        "kind": "quality_issue",
+        "file_path": issue.file_path,
+        "severity": issue.severity,
+        "rule_id": issue.rule_id,
+        "status": issue.status,
+    })];
+
+    let blocks = vec![ViewBlock {
+        id: "ownership_data".into(),
+        title: "Ownership".into(),
+        body: json!({
+            "columns": ["name", "kind", "file_path", "severity", "rule_id", "status"],
+            "rows": rows,
+        }),
+    }];
+
+    let evidence = vec![EvidenceBlock {
+        id: evidence_id,
+        kind: "ownership_map".into(),
+        title: format!("Ownership map: Issue #{}", issue.id),
+        file: Some(issue.file_path.clone()),
+        line_range: Some(LineRange {
+            start: issue.line,
+            end: issue.line,
+        }),
+        source_tool_or_query: "QualityIssue fields as ownership data".into(),
+        confidence: Some(1.0),
+        freshness: Some("unknown".into()),
+        provenance: None,
+    }];
+
+    ContextualView {
+        object_id: mvp,
+        view_id: "ownership-map".into(),
+        title: "Ownership Map".into(),
+        blocks,
+        relations: Vec::new(),
+        evidence,
+        findings: Vec::new(),
+        renderer_kind: RendererKind::Table,
+        ..Default::default()
+    }
+}
 
 /// Architecture drift capability — applies to Workspace.
 ///
@@ -3977,6 +4070,130 @@ mod tests {
         let downstream_rows = view.blocks[1].body.get("rows").unwrap().as_array().unwrap();
         assert_eq!(upstream_rows.len(), 0);
         assert_eq!(downstream_rows.len(), 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // OwnershipMapExecutor tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn ownership_map_executor_registered_in_real_executors() {
+        let registry = crate::registry::ViewRegistry::new(None);
+        let executor = registry.get_executor("ownership-map");
+        assert!(
+            executor.is_some(),
+            "get_executor(\"ownership-map\") must return Some"
+        );
+        let exec = executor.unwrap();
+        assert_eq!(exec.id(), "ownership-map");
+        assert_eq!(exec.title(), "Ownership Map");
+    }
+
+    #[test]
+    fn build_ownership_map_renders_table_with_quality_issue_data() {
+        let issue = QualityIssue {
+            id: 42,
+            rule_id: "RUST-LINT-001".to_string(),
+            severity: "critical".to_string(),
+            category: "correctness".to_string(),
+            file_path: "src/lib.rs".to_string(),
+            line: 100,
+            message: "unused variable".to_string(),
+            status: "open".to_string(),
+        };
+
+        let view = build_ownership_map(&issue);
+
+        assert_eq!(view.view_id, "ownership-map");
+        assert_eq!(view.title, "Ownership Map");
+        assert_eq!(view.blocks.len(), 1);
+
+        let block = &view.blocks[0];
+        assert_eq!(block.id, "ownership_data");
+        assert_eq!(block.title, "Ownership");
+
+        let body = &block.body;
+        let columns = body.get("columns").expect("columns must exist");
+        let columns_arr = columns.as_array().expect("columns must be array");
+        assert!(columns_arr.contains(&serde_json::json!("name")));
+        assert!(columns_arr.contains(&serde_json::json!("kind")));
+        assert!(columns_arr.contains(&serde_json::json!("file_path")));
+        assert!(columns_arr.contains(&serde_json::json!("severity")));
+        assert!(columns_arr.contains(&serde_json::json!("rule_id")));
+        assert!(columns_arr.contains(&serde_json::json!("status")));
+
+        let rows = body.get("rows").expect("rows must exist");
+        let rows_arr = rows.as_array().expect("rows must be array");
+        assert_eq!(rows_arr.len(), 1);
+
+        let row = &rows_arr[0];
+        assert_eq!(row.get("name").expect("name"), &serde_json::json!("Issue #42"));
+        assert_eq!(row.get("kind").expect("kind"), &serde_json::json!("quality_issue"));
+        assert_eq!(row.get("file_path").expect("file_path"), &serde_json::json!("src/lib.rs"));
+        assert_eq!(row.get("severity").expect("severity"), &serde_json::json!("critical"));
+        assert_eq!(row.get("rule_id").expect("rule_id"), &serde_json::json!("RUST-LINT-001"));
+        assert_eq!(row.get("status").expect("status"), &serde_json::json!("open"));
+    }
+
+    #[tokio::test]
+    async fn ownership_map_executor_returns_view_not_available_for_symbol_target() {
+        let sym = make_resolved("src/lib.rs", "foo", 1, SymbolKind::Function);
+        let target = InspectionTarget::Symbol(sym);
+        let ctx = ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+        };
+
+        let executor = OwnershipMapExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, crate::error::ExplorerError::ViewNotAvailable { .. }));
+    }
+
+    #[tokio::test]
+    async fn ownership_map_executor_returns_view_not_available_for_file_target() {
+        let target = InspectionTarget::File {
+            path: "src/lib.rs".to_string(),
+            symbols: Vec::new(),
+        };
+        let ctx = ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+        };
+
+        let executor = OwnershipMapExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, crate::error::ExplorerError::ViewNotAvailable { .. }));
+    }
+
+    #[tokio::test]
+    async fn ownership_map_executor_returns_error_for_empty_graph_placeholder() {
+        // When graph_query is None (empty graph), the executor should still return
+        // ViewNotAvailable for non-Issue targets - this is the graceful error path.
+        let sym = make_resolved("src/lib.rs", "bar", 5, SymbolKind::Function);
+        let target = InspectionTarget::Symbol(sym);
+        let ctx = ViewContext {
+            target: &target,
+            repo: &MockRepo::new(),
+            reader: &MockReader::new(HashMap::new()),
+            quality: None,
+            graph_query: None,
+        };
+
+        let executor = OwnershipMapExecutor;
+        let result = executor.build(&ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, crate::error::ExplorerError::ViewNotAvailable { .. }));
     }
 }
 
