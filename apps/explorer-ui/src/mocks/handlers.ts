@@ -20,6 +20,12 @@ import {
   lensResultFixture,
   spotterResultsFixture,
   workspaceSummaryFixture,
+  // e12a–e12e Phase 1 executor fixtures
+  usageExamplesViewFixture,
+  apiSurfaceViewFixture,
+  testSliceViewFixture,
+  debugSliceViewFixture,
+  changeImpactStoryViewFixture,
 } from "./fixtures";
 import {
   largeSubgraphFixture,
@@ -45,6 +51,17 @@ function viewIdToKinds(viewId: string): { viewKind: string; rendererKind: string
       return { viewKind: "source_view", rendererKind: "code" };
     case "quality":
       return { viewKind: "quality_hotspots", rendererKind: "json" };
+    // e12a–e12e Phase 1 executors
+    case "usage-examples":
+      return { viewKind: "usage_examples", rendererKind: "table" };
+    case "api-surface":
+      return { viewKind: "api_surface", rendererKind: "table" };
+    case "test-slice":
+      return { viewKind: "test_slice", rendererKind: "table" };
+    case "debug-slice":
+      return { viewKind: "debug_slice", rendererKind: "graph" };
+    case "change-impact-story":
+      return { viewKind: "change_impact_story", rendererKind: "table" };
     case "overview":
     default:
       return { viewKind: "vertical_slice", rendererKind: "composite" };
@@ -370,6 +387,21 @@ export const handlers = [
     }
 
     const { viewKind, rendererKind } = viewIdToKinds(viewId);
+
+    // e12a–e12e: Phase 1 executor fixtures
+    switch (viewId) {
+      case "usage-examples":
+        return HttpResponse.json({ ...usageExamplesViewFixture, object_id: objectId });
+      case "api-surface":
+        return HttpResponse.json({ ...apiSurfaceViewFixture, object_id: objectId });
+      case "test-slice":
+        return HttpResponse.json({ ...testSliceViewFixture, object_id: objectId });
+      case "debug-slice":
+        return HttpResponse.json({ ...debugSliceViewFixture, object_id: objectId });
+      case "change-impact-story":
+        return HttpResponse.json({ ...changeImpactStoryViewFixture, object_id: objectId });
+    }
+
     return HttpResponse.json({
       ...contextualViewFixture,
       object_id: objectId,

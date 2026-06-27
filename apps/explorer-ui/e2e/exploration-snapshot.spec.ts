@@ -45,7 +45,7 @@ test.describe("Exploration Snapshot", () => {
     }
 
     // Wait for graph to render
-    await expect(page.getByTestId("svg-graph")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId("svg-graph-canvas")).toBeVisible({ timeout: 5_000 });
 
     // Open second pane deterministically via Spotter using the second fixture result.
     await openSpotterAndSelect(page, SPOTTER_QUERY, SECOND_RESULT_INDEX);
