@@ -25,6 +25,8 @@ mod graph;
 mod graph_analyze;
 mod impact;
 mod ingest;
+/// OpenAPI / gRPC / GraphQL / tRPC ingestion (cycle e15.5).
+pub mod ingest_openapi;
 // `internal_mcp` exposes wrappers around internal MCP logic.
 pub mod internal_mcp;
 // `lens_mcp` is `pub` so integration tests in `tests/` can register

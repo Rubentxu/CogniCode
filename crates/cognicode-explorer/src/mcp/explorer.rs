@@ -232,6 +232,22 @@ pub const TOOL_INGEST_QUALITY_ISSUES: &str = "ingest_quality_issues";
 pub const TOOL_BUILD_CONTEXT: &str = "build_context";
 
 // ============================================================================
+// Cycle e15.5 — OpenAPI / gRPC / GraphQL / tRPC ingestion
+// ============================================================================
+
+/// `ingest_openapi` — ingests an OpenAPI 3.x specification (JSON or YAML)
+/// and emits `Route` nodes and `HttpCalls` edges into the `api_routes`
+/// + `api_route_edges` tables. Accepts either a local file path or a
+/// URL. Cycle e15.5 is HTTP-only; future cycles add gRPC / GraphQL / tRPC.
+pub const TOOL_INGEST_OPENAPI: &str = "ingest_openapi";
+
+/// `trace_route` — given an HTTP method + path, finds the matching OpenAPI
+/// route entry in `api_routes` and returns its resolved handler symbol,
+/// spec source, and confidence. Used by the Explorer to jump from an
+/// HTTP entry-point to the symbol that implements it.
+pub const TOOL_TRACE_ROUTE: &str = "trace_route";
+
+// ============================================================================
 // Result envelope types
 // ============================================================================
 
@@ -351,6 +367,7 @@ impl ExplorerMcpHandler {
         graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>>,
         quality_repo: Option<Arc<dyn crate::ports::QualityRepository>>,
         quality_write: Option<Arc<dyn crate::ports::QualityWritePort>>,
+        #[cfg(feature = "multimodal")] edge_emitter: Option<Arc<dyn crate::ports::EdgeEmitter>>,
     ) -> Self {
         // GraphQueryPort may be None when no call graph is loaded.
         let graph_query: Option<Arc<dyn GraphQueryPort>> = graph.as_ref().map(|g| {
@@ -424,6 +441,10 @@ impl ExplorerMcpHandler {
         }
         if let Some(qw) = quality_write {
             ctx_builder = ctx_builder.with_quality_write(qw);
+        }
+        #[cfg(feature = "multimodal")]
+        if let Some(ee) = edge_emitter {
+            ctx_builder = ctx_builder.with_edge_emitter(ee);
         }
         let ctx = ctx_builder.build();
 
