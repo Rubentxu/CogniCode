@@ -38,6 +38,8 @@ export interface ShellLayoutProps {
    */
   secondaryContent: ReactNode;
   onSpotterOpen: () => void;
+  /** e15.5 — opens the MCP Tools modal (optional) */
+  onMcpToolsOpen?: () => void;
 }
 
 export function ShellLayout({
@@ -47,6 +49,7 @@ export function ShellLayout({
   children,
   secondaryContent,
   onSpotterOpen,
+  onMcpToolsOpen,
 }: ShellLayoutProps) {
   const activeViewport: ShellViewport = viewportOverride ?? detectViewport(
     typeof window !== "undefined" ? window.innerWidth : 1200,
@@ -84,6 +87,23 @@ export function ShellLayout({
           <ShareExplorationButton />
           <ViewSpecWizardTrigger />
           <LensSidebarToggle />
+          {onMcpToolsOpen && (
+            <button
+              type="button"
+              onClick={onMcpToolsOpen}
+              aria-label="Open MCP tools"
+              data-testid="mcp-tools-trigger"
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs"
+              style={{
+                backgroundColor: "var(--color-surface-overlay)",
+                color: "var(--color-text-secondary)",
+                border: "1px solid var(--color-border)",
+              }}
+            >
+              <span aria-hidden="true">⚙</span>
+              <span>MCP Tools</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={onSpotterOpen}

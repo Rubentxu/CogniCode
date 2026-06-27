@@ -12,7 +12,7 @@
  * and ShellLayout (pure layout). The public API (props, data-testid, data-viewport)
  * is preserved unchanged.
  */
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useState } from "react";
 
 import { useAppDispatch, useAppState } from "../state/context";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -25,6 +25,7 @@ import { useArchitecture } from "../hooks/useArchitecture";
 import { useStaleDataHold } from "../hooks/useStaleDataHold";
 import { GraphLanding } from "./GraphLanding";
 import type { ShellViewport } from "./viewport";
+import { McpToolsModal } from "./McpToolsModal";
 
 // `React.lazy` keeps the cytoscape + elkjs chunk out of the
 // initial bundle.
@@ -129,6 +130,7 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
   const dispatch = useAppDispatch();
   const appState = useAppState();
   const rootId = appState.activeObjectId;
+  const [mcpToolsOpen, setMcpToolsOpen] = useState(false);
 
   return (
     <ShellBootstrap>
@@ -140,6 +142,7 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
             onSpotterOpen={() =>
               dispatch({ type: "SET_SPOTTER", payload: { open: true } })
             }
+            onMcpToolsOpen={() => setMcpToolsOpen(true)}
             secondaryContent={
               <ErrorBoundary label="PaneStackView">
                 <PaneStackView />
@@ -157,6 +160,9 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
             </ErrorBoundary>
           </ShellLayout>
           <Spotter />
+          {mcpToolsOpen && (
+            <McpToolsModal onClose={() => setMcpToolsOpen(false)} />
+          )}
         </>
       )}
     </ShellBootstrap>

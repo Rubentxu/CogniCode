@@ -34,6 +34,7 @@ export const inspectableObjectTypeSchema = z.enum([
   "decision_artifact",
   "quality_issue",
   "rule",
+  "route",
 ]);
 export type InspectableObjectType = z.infer<typeof inspectableObjectTypeSchema>;
 
@@ -773,6 +774,7 @@ export type ViewSpecSummary = z.infer<typeof viewSpecSummarySchema>;
  * - `saved_exploration` → `SpotterResult` (saved session hit)
  * - `quality_issue`  → `SpotterResult` (issue-rule hit)
  * - `rule`           → `SpotterResult` (quality rule hit)
+ * - `route`          → `SpotterResult` (HTTP route from ingested OpenAPI/gRPC spec)
  *
  * Frontend components switch on `kind` to render each variant. The
  * `useSpotter` hook unwraps `result` before returning so callers always
@@ -802,6 +804,10 @@ export const spotterSearchResultSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("rule"),
+    result: spotterResultSchema,
+  }),
+  z.object({
+    kind: z.literal("route"),
     result: spotterResultSchema,
   }),
 ]);
@@ -1031,6 +1037,7 @@ export const nodeKindSchema = z.enum([
   "doc",
   "issue",
   "evidence",
+  "route", // e15.5: OpenAPI/gRPC/GraphQL/trRPC route nodes
 ]);
 export type NodeKind = z.infer<typeof nodeKindSchema>;
 
@@ -1045,6 +1052,11 @@ export const edgeKindSchema = z.enum([
   "justifies",
   "resolves",
   "corroborated_by",
+  // e15.5: protocol cross-service edges
+  "http_calls",
+  "graphql_calls",
+  "grpc_calls",
+  "trpc_calls",
 ]);
 export type EdgeKind = z.infer<typeof edgeKindSchema>;
 
