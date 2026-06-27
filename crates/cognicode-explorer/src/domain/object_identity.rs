@@ -8,6 +8,7 @@
 //! - `issue:{id}` — a single quality issue, by primary key.
 //! - `rule:{rule_id}` — a quality rule; `rule_id` may contain `:` so
 //!   the rest of the string after the first `:` is the literal id.
+//! - `exploration:{id}` — a saved exploration session, by session id.
 //!
 //! Unknown prefixes are rejected so the surface stays explicit and new types
 //! are added via a deliberate enum extension, not silent string matching.
@@ -39,6 +40,8 @@ pub enum ObjectIdentity {
     /// contain `:` (e.g. `rust:S100`) — the parser captures the
     /// remainder of the string after the first `:`.
     Rule { rule_id: String },
+    /// `exploration:{id}` — a saved exploration session, by session id.
+    SavedExploration { id: String },
 }
 
 impl ObjectIdentity {
@@ -73,12 +76,18 @@ impl ObjectIdentity {
         }
     }
 
+    /// Build a saved exploration identity from a session id.
+    pub fn new_saved_exploration(id: impl Into<String>) -> Self {
+        Self::SavedExploration { id: id.into() }
+    }
+
     /// Parse an MVP id. The accepted shapes are:
     /// - `symbol:{file}:{name}:{line}` (line > 0, file + name non-empty)
     /// - `file:{path}` (path non-empty)
     /// - `scope:{path}` (path non-empty)
     /// - `issue:{id}` (id > 0)
     /// - `rule:{rule_id}` (rule_id non-empty; colons allowed)
+    /// - `exploration:{id}` (id non-empty)
     ///
     /// Any other shape yields [`ExplorerError::ResolutionFailed`]. The path
     /// component of `file:` and `scope:` is everything after the first `:`
@@ -97,6 +106,7 @@ impl ObjectIdentity {
             "scope" => Self::parse_scope(rest, raw),
             "issue" => Self::parse_issue(rest, raw),
             "rule" => Self::parse_rule(rest, raw),
+            "exploration" => Self::parse_exploration(rest, raw),
             _ => Err(ExplorerError::ResolutionFailed(raw.to_string())),
         }
     }
@@ -172,8 +182,17 @@ impl ObjectIdentity {
         })
     }
 
+    fn parse_exploration(rest: &str, raw: &str) -> ExplorerResult<Self> {
+        if rest.is_empty() {
+            return Err(ExplorerError::ResolutionFailed(raw.to_string()));
+        }
+        Ok(Self::SavedExploration {
+            id: rest.to_string(),
+        })
+    }
+
     /// The lowercase tag used in MVP ids and on the wire:
-    /// `"symbol"`, `"file"`, `"scope"`, `"issue"`, or `"rule"`.
+    /// `"symbol"`, `"file"`, `"scope"`, `"issue"`, `"rule"`, or `"exploration"`.
     pub fn object_type_str(&self) -> &'static str {
         match self {
             Self::Symbol { .. } => "symbol",
@@ -181,6 +200,7 @@ impl ObjectIdentity {
             Self::Scope { .. } => "scope",
             Self::QualityIssue { .. } => "issue",
             Self::Rule { .. } => "rule",
+            Self::SavedExploration { .. } => "exploration",
         }
     }
 
@@ -193,11 +213,14 @@ impl ObjectIdentity {
     }
 
     /// The path component of a file or scope identity. Returns `None` for
-    /// symbol, issue, and rule identities.
+    /// symbol, issue, rule, and saved exploration identities.
     pub fn path(&self) -> Option<&str> {
         match self {
             Self::File { path } | Self::Scope { path } => Some(path.as_str()),
-            Self::Symbol { .. } | Self::QualityIssue { .. } | Self::Rule { .. } => None,
+            Self::Symbol { .. }
+            | Self::QualityIssue { .. }
+            | Self::Rule { .. }
+            | Self::SavedExploration { .. } => None,
         }
     }
 
@@ -226,8 +249,13 @@ impl ObjectIdentity {
         matches!(self, Self::Rule { .. })
     }
 
+    /// `true` for the saved exploration variant.
+    pub fn is_saved_exploration(&self) -> bool {
+        matches!(self, Self::SavedExploration { .. })
+    }
+
     /// Render the canonical MVP id (`symbol:...` / `file:...` /
-    /// `scope:...` / `issue:...` / `rule:...`).
+    /// `scope:...` / `issue:...` / `rule:...` / `exploration:...`).
     pub fn to_mvp_id(&self) -> String {
         match self {
             Self::Symbol { file, name, line } => format!("symbol:{file}:{name}:{line}"),
@@ -235,6 +263,7 @@ impl ObjectIdentity {
             Self::Scope { path } => format!("scope:{path}"),
             Self::QualityIssue { id } => format!("issue:{id}"),
             Self::Rule { rule_id } => format!("rule:{rule_id}"),
+            Self::SavedExploration { id } => format!("exploration:{id}"),
         }
     }
 
@@ -256,12 +285,14 @@ impl ObjectIdentity {
     /// - File / Scope → the path.
     /// - Issue → the string form of the primary key.
     /// - Rule → the rule id verbatim.
+    /// - SavedExploration → the session id verbatim.
     pub fn natural_key(&self) -> String {
         match self {
             Self::Symbol { file, name, line } => format!("{file}:{name}:{line}"),
             Self::File { path } | Self::Scope { path } => path.clone(),
             Self::QualityIssue { id } => id.to_string(),
             Self::Rule { rule_id } => rule_id.clone(),
+            Self::SavedExploration { id } => id.clone(),
         }
     }
 }
@@ -487,5 +518,30 @@ mod tests {
         assert_eq!(issue.to_mvp_id(), "issue:99");
         let rule = ObjectIdentity::new_rule("rust:S100");
         assert_eq!(rule.to_mvp_id(), "rule:rust:S100");
+        let exploration = ObjectIdentity::new_saved_exploration("abc-123");
+        assert_eq!(exploration.to_mvp_id(), "exploration:abc-123");
+    }
+
+    #[test]
+    fn parses_valid_exploration_mvp_id() {
+        let id = ObjectIdentity::parse_mvp_id("exploration:abc-123").unwrap();
+        assert_eq!(
+            id,
+            ObjectIdentity::SavedExploration {
+                id: "abc-123".into()
+            }
+        );
+        assert_eq!(id.object_type_str(), "exploration");
+        assert!(id.is_saved_exploration());
+        assert!(id.path().is_none());
+        assert_eq!(id.to_mvp_id(), "exploration:abc-123");
+        assert_eq!(id.natural_key(), "abc-123");
+        assert!(id.to_symbol_id().is_none());
+    }
+
+    #[test]
+    fn rejects_exploration_with_empty_id() {
+        let err = ObjectIdentity::parse_mvp_id("exploration:").unwrap_err();
+        assert!(matches!(err, ExplorerError::ResolutionFailed(_)));
     }
 }

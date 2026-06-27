@@ -46,17 +46,29 @@ pub struct ViewSpecSummary {
     pub updated_at: String,
 }
 
-/// Discriminated union of symbol/file hits and ViewSpec hits for Spotter results.
-/// The frontend can switch on `kind` to render each variant appropriately.
+/// Discriminated union of 6 result families for universal Spotter search.
+/// The frontend switches on `kind` to render each variant appropriately.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "result")]
 pub enum SpotterSearchResult {
-    /// A symbol or file hit from the code graph.
+    /// A symbol hit from the code graph.
     #[serde(rename = "symbol")]
     Symbol(SpotterResult),
+    /// A source file hit, derived by grouping symbols by file path.
+    #[serde(rename = "file")]
+    File(SpotterResult),
     /// A runtime ViewSpec hit from the store.
     #[serde(rename = "viewspec")]
     ViewSpec(ViewSpecSummary),
+    /// A saved exploration session hit.
+    #[serde(rename = "saved_exploration")]
+    SavedExploration(SpotterResult),
+    /// A quality issue hit (in-memory substring filter).
+    #[serde(rename = "quality_issue")]
+    QualityIssue(SpotterResult),
+    /// A quality rule hit (derived from matching issues).
+    #[serde(rename = "rule")]
+    Rule(SpotterResult),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +97,8 @@ pub enum InspectableObjectType {
     QualityIssue,
     /// A quality rule, addressed by its rule id.
     Rule,
+    /// A saved exploration session, addressed by its session id.
+    SavedExploration,
 }
 
 /// DTO for a view descriptor — the wire-compatible shape returned in list responses.
@@ -250,7 +264,7 @@ impl Default for ContextualView {
 //
 // InspectionTarget carries the pre-resolved object data passed to ViewExecutor::build().
 // The service resolves identity BEFORE calling build(); capabilities MUST NOT re-resolve.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum InspectionTarget {
     Symbol(ResolvedSymbol),
     File {
@@ -266,6 +280,7 @@ pub enum InspectionTarget {
     Rule {
         rule_id: String,
     },
+    SavedExploration(ExplorationSession),
 }
 
 /// Context passed to ViewExecutor::build(). The service populates all

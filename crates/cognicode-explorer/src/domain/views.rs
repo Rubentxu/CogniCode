@@ -1420,7 +1420,9 @@ impl ViewExecutor for OverviewExecutor {
                 files,
                 symbols,
             } => Ok(build_scope_overview(path, files, symbols)),
-            InspectionTarget::Issue(_) | InspectionTarget::Rule { .. } => {
+            InspectionTarget::Issue(_)
+            | InspectionTarget::Rule { .. }
+            | InspectionTarget::SavedExploration(_) => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "overview".into(),
@@ -2138,6 +2140,10 @@ impl ViewExecutor for QualityExecutor {
             } => Ok(build_scope_quality_view(path, ctx.quality)),
             InspectionTarget::Issue(issue) => Ok(build_issue_detail(issue)),
             InspectionTarget::Rule { rule_id } => Ok(build_rule_detail(rule_id, ctx.quality)),
+            InspectionTarget::SavedExploration(_) => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "quality".into(),
+            }),
         }
     }
 }

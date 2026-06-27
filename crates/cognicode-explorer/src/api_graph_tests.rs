@@ -1469,6 +1469,7 @@ fn landing_app() -> axum::Router {
         view_registry,
         None,
         None,
+        None,
     ));
     let state = ApiState::new(
         Arc::new(LandingWorkspaceService),
@@ -1610,6 +1611,7 @@ fn wide_landing_app() -> axum::Router {
         repo.clone(),
         None,
         view_registry,
+        None,
         None,
         None,
     ));

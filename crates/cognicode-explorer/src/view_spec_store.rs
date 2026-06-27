@@ -155,6 +155,7 @@ fn applies_to_to_string(applies_to: &InspectableObjectType) -> String {
         InspectableObjectType::DecisionArtifact => "decision_artifact".to_string(),
         InspectableObjectType::QualityIssue => "quality_issue".to_string(),
         InspectableObjectType::Rule => "rule".to_string(),
+        InspectableObjectType::SavedExploration => "saved_exploration".to_string(),
     }
 }
 
@@ -170,6 +171,7 @@ fn string_to_applies_to(s: &str) -> Option<InspectableObjectType> {
         "decision_artifact" => Some(InspectableObjectType::DecisionArtifact),
         "quality_issue" => Some(InspectableObjectType::QualityIssue),
         "rule" => Some(InspectableObjectType::Rule),
+        "saved_exploration" => Some(InspectableObjectType::SavedExploration),
         _ => None,
     }
 }
