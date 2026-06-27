@@ -1,10 +1,12 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-26 (e9 + e11 + e12 + e12b + e12c + e12d + e12e completed; e12e PR open)
+Last updated: 2026-06-27 (e15.5 E2E closed; e17 E2E coverage sprint active)
 
 ## Active
 
-_(none — all cycles closed)_
+| Change | Branch | Goal |
+|--------|--------|------|
+| `e17-e2e-coverage` | `feat/e17-e2e-coverage` | Sprint 1 E2E: Phase 1 executors (usage_examples, api_surface, test_slice, debug_slice, change_impact_story) + McpToolsModal + ViewSpec authoring. See `docs/analysis/e17-coverage-matrix.md`. |
 
 ## Session Handover 2026-06-26
 

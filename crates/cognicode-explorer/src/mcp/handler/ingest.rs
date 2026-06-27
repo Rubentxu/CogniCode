@@ -462,11 +462,15 @@ impl ToolHandler for IssuesIngestHandler {
 // ============================================================================
 
 #[cfg(feature = "multimodal")]
-/// Register all 3 multimodal ingest handlers into the registry.
+/// Register all multimodal ingest handlers into the registry.
+/// Includes the 3 existing handlers (docs, graph_search, issues) plus
+/// the 2 OpenAPI handlers from cycle e15.5.
 pub fn register_ingest_handlers(registry: &mut crate::mcp::handler::ToolHandlerRegistry) {
     registry.register(DocsIngestHandler);
     registry.register(GraphSearchHandler);
     registry.register(IssuesIngestHandler);
+    // Cycle e15.5 — OpenAPI / gRPC / GraphQL / tRPC ingestion
+    super::ingest_openapi::handlers::register_handlers(registry);
 }
 
 /// No-op fallback when the multimodal feature is not enabled.

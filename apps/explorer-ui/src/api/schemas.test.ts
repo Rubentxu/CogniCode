@@ -431,7 +431,7 @@ describe("healthResponseSchema", () => {
 });
 
 describe("inspectableObjectTypeSchema", () => {
-  it("accepts all 9 known types", () => {
+  it("accepts all 10 known types", () => {
     const types = [
       "workspace",
       "scope",
@@ -442,6 +442,7 @@ describe("inspectableObjectTypeSchema", () => {
       "decision_artifact",
       "quality_issue",
       "rule",
+      "route",
     ] as const;
     for (const t of types) {
       expect(inspectableObjectTypeSchema.parse(t)).toBe(t);

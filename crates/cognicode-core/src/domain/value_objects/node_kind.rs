@@ -21,6 +21,7 @@
 //!          | Component    #[cfg(feature = "multimodal")]
 //!          | Container    #[cfg(feature = "multimodal")]
 //!          | System       #[cfg(feature = "multimodal")]
+//!          | Route        #[cfg(feature = "multimodal")]  // e15.5
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -72,6 +73,13 @@ pub enum NodeKind {
     /// A C4-model system (boundary of related containers). Multimodal.
     #[cfg(feature = "multimodal")]
     System,
+    /// A runtime API route (HTTP, GraphQL, gRPC). Multimodal.
+    /// Stable id form:
+    /// - HTTP: `route:HTTP:{METHOD}:{path}` (e.g. `route:HTTP:POST:/api/users`)
+    /// - GraphQL: `route:GraphQL:{type}.{field}` (e.g. `route:GraphQL:Query.users`)
+    /// - gRPC: `route:gRPC:{service}.{rpc}` (e.g. `route:gRPC:UserService.GetUser`)
+    #[cfg(feature = "multimodal")]
+    Route,
 }
 
 impl FromStr for NodeKind {
@@ -102,6 +110,7 @@ impl FromStr for NodeKind {
             "container" => Ok(NodeKind::Container),
             #[cfg(feature = "multimodal")]
             "system" => Ok(NodeKind::System),
+            "route" => Ok(NodeKind::Route),
             _ => Err(NodeKindParseError::Unknown(s.to_string())),
         }
     }
@@ -128,6 +137,7 @@ impl NodeKind {
             NodeKind::Container => "container",
             #[cfg(feature = "multimodal")]
             NodeKind::System => "system",
+            NodeKind::Route => "route",
         }
     }
 
@@ -180,7 +190,8 @@ mod tests {
     /// The four multimodal variants must exist and round-trip through
     /// JSON when the `multimodal` feature is enabled. Phase 1 of the
     /// C4 architecture change adds three more (`Component`,
-    /// `Container`, `System`) for a total of 7.
+    /// `Container`, `System`) for a total of 7. Phase 2 (e15.5) adds
+    /// `Route` for API route ingestion.
     #[test]
     #[cfg(feature = "multimodal")]
     fn node_kind_multimodal_variants() {
@@ -192,6 +203,7 @@ mod tests {
             NodeKind::Component,
             NodeKind::Container,
             NodeKind::System,
+            NodeKind::Route,
         ] {
             assert!(kind.is_multimodal());
             let json = serde_json::to_string(&kind).expect("serialize");
@@ -274,13 +286,34 @@ mod tests {
             set.insert(NodeKind::Component);
             set.insert(NodeKind::Container);
             set.insert(NodeKind::System);
+            set.insert(NodeKind::Route);
         }
         // The Symbol is already present; inserting it again is a no-op.
         set.insert(NodeKind::Symbol(SymbolKind::Function));
-        // 1 Symbol + 7 multimodal = 8 total under the feature.
+        // 1 Symbol + 8 multimodal = 9 total under the feature.
         #[cfg(feature = "multimodal")]
-        assert_eq!(set.len(), 8);
+        assert_eq!(set.len(), 9);
         #[cfg(not(feature = "multimodal"))]
         assert_eq!(set.len(), 1);
+    }
+
+    /// `NodeKind::Route` is multimodal, parses from "route", and emits "route"
+    /// via `Display`. Phase 2 of e15.5 — API route ingestion.
+    #[test]
+    #[cfg(feature = "multimodal")]
+    fn node_kind_route_roundtrip() {
+        let route = NodeKind::Route;
+        assert!(route.is_multimodal());
+        assert_eq!(route.as_str(), "route");
+        assert_eq!(format!("{}", route), "route");
+
+        // JSON roundtrip
+        let json = serde_json::to_string(&route).expect("serialize");
+        let parsed: NodeKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed, route);
+
+        // FromStr
+        let parsed_from_str = NodeKind::from_str("route").expect("parse route");
+        assert_eq!(parsed_from_str, route);
     }
 }

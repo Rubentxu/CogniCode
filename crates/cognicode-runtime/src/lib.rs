@@ -211,6 +211,11 @@ impl Runtime {
         #[cfg(not(feature = "postgres"))]
         let quality_write = quality_write_repo_arc();
 
+        #[cfg(feature = "postgres")]
+        let edge_emitter = edge_emitter_repo_arc(self.pg_repo.as_ref());
+        #[cfg(not(feature = "postgres"))]
+        let edge_emitter = None;
+
         cognicode_explorer::mcp::ExplorerMcpHandler::with_graph(
             self.symbol_repo,
             self.source_reader,
@@ -220,6 +225,8 @@ impl Runtime {
             self.graph,
             quality,
             quality_write,
+            #[cfg(feature = "multimodal")]
+            edge_emitter,
         )
     }
 }
@@ -264,5 +271,27 @@ fn quality_write_repo_arc(
 
 #[cfg(not(feature = "postgres"))]
 fn quality_write_repo_arc() -> Option<Arc<dyn cognicode_explorer::ports::QualityWritePort>> {
+    None
+}
+
+/// Build a `PostgresEdgeEmitter` wired as an `EdgeEmitter` port.
+///
+/// Returns `None` when the `postgres` feature is off or when no PG
+/// connection is available — the `ingest_openapi` and `trace_route`
+/// tools degrade gracefully with a `feature_disabled` envelope.
+#[cfg(feature = "postgres")]
+fn edge_emitter_repo_arc(
+    pg_repo: Option<&Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
+) -> Option<Arc<dyn cognicode_explorer::ports::EdgeEmitter>> {
+    let pg = pg_repo?;
+    Some(Arc::new(
+        cognicode_explorer::adapters::PostgresEdgeEmitter::from_pool(pg.pool().clone()),
+    ))
+}
+
+#[cfg(not(feature = "postgres"))]
+fn edge_emitter_repo_arc(
+    _pg_repo: Option<&Arc<cognicode_core::infrastructure::persistence::PostgresRepository>>,
+) -> Option<Arc<dyn cognicode_explorer::ports::EdgeEmitter>> {
     None
 }

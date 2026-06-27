@@ -538,6 +538,8 @@ fn kind_prefix(kind: &NodeKind) -> &'static str {
         NodeKind::Component => "component",
         NodeKind::Container => "container",
         NodeKind::System => "system",
+        // e15.5 — API route ingestion produces these nodes.
+        NodeKind::Route => "route",
         NodeKind::Symbol(_) => "symbol",
     }
 }

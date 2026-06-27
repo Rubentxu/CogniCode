@@ -17,7 +17,7 @@ use cognicode_core::domain::traits::GraphQueryPort;
 use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
 };
-use crate::ports::{QualityRepository, QualityWritePort};
+use crate::ports::{EdgeEmitter, QualityRepository, QualityWritePort};
 use crate::session::SessionRegistry;
 
 /// Optional Generic Graph Layer port for multimodal queries.
@@ -66,6 +66,10 @@ pub struct McpContext {
     /// Used by `ingest_quality_issues` to persist agent findings.
     /// Gracefully degrades to an error envelope when not wired.
     pub quality_write: Option<Arc<dyn QualityWritePort>>,
+    /// Edge emitter port — write-path for route + protocol edges.
+    /// Used by `ingest_openapi` (cycle e15.5) to persist `Route` nodes
+    /// and `HttpCalls` edges into `api_routes` + `api_route_edges`.
+    pub edge_emitter: Option<Arc<dyn EdgeEmitter>>,
 }
 
 impl McpContext {
@@ -85,6 +89,7 @@ impl McpContext {
             graph_service: None,
             quality: None,
             quality_write: None,
+            edge_emitter: None,
         }
     }
 
@@ -141,6 +146,12 @@ impl McpContext {
         self.quality_write = Some(qw);
         self
     }
+
+    /// Wire an `EdgeEmitter` port into the context (cycle e15.5).
+    pub fn with_edge_emitter(mut self, edge_emitter: Arc<dyn EdgeEmitter>) -> Self {
+        self.edge_emitter = Some(edge_emitter);
+        self
+    }
 }
 
 /// Builder for [`McpContext`].
@@ -156,6 +167,7 @@ pub struct McpContextBuilder {
     graph_service: Option<Arc<dyn GraphService>>,
     quality: Option<Arc<dyn QualityRepository>>,
     quality_write: Option<Arc<dyn QualityWritePort>>,
+    edge_emitter: Option<Arc<dyn EdgeEmitter>>,
     #[cfg(feature = "multimodal")]
     graph_repo: Option<Option<Arc<dyn crate::ports::graph_repository::GraphRepository>>>,
 }
@@ -174,6 +186,7 @@ impl McpContextBuilder {
             graph_service: None,
             quality: None,
             quality_write: None,
+            edge_emitter: None,
             #[cfg(feature = "multimodal")]
             graph_repo: Some(None),
         }
@@ -245,6 +258,12 @@ impl McpContextBuilder {
         self
     }
 
+    /// Wire an `EdgeEmitter` port into the context (cycle e15.5).
+    pub fn with_edge_emitter(mut self, edge_emitter: Arc<dyn EdgeEmitter>) -> Self {
+        self.edge_emitter = Some(edge_emitter);
+        self
+    }
+
     /// Wire an optional `GraphQueryPort` into the context (Phase 4).
     /// Passes through `None` when `graph_query` is `None`.
     pub fn with_optional_graph_query(
@@ -280,6 +299,7 @@ impl McpContextBuilder {
             graph_service: self.graph_service,
             quality: self.quality,
             quality_write: self.quality_write,
+            edge_emitter: self.edge_emitter,
         }
     }
 }
