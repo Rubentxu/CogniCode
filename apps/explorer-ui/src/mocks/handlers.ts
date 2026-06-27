@@ -16,6 +16,7 @@ import {
   decisionArtifactFixture,
   explorationSessionFixture,
   inspectableObjectFixture,
+  inspectableScopeFixture,
   lensDescriptorsFixture,
   lensResultFixture,
   spotterResultsFixture,
@@ -280,11 +281,16 @@ export const handlers = [
           { key: "confidence", value: route.confidence, value_type: "number", source: "static" },
           { key: "spec_source", value: route.spec_source, value_type: "string", source: "static" },
         ],
-        available_views: [
+          available_views: [
           { id: "overview", title: "Overview", is_builtin: true, source: null },
           { id: "call-graph", title: "Call graph", is_builtin: true, source: null },
         ],
       });
+    }
+
+    // e12b: handle Scope node inspection
+    if (objectId?.startsWith("scope:")) {
+      return HttpResponse.json(inspectableScopeFixture);
     }
 
     return HttpResponse.json({
@@ -304,6 +310,9 @@ export const handlers = [
         { id: "overview", title: "Overview", is_builtin: true, source: null },
         { id: "call-graph", title: "Call graph", is_builtin: true, source: null },
       ]);
+    }
+    if (objectId?.startsWith("scope:")) {
+      return HttpResponse.json(inspectableScopeFixture.available_views);
     }
     return HttpResponse.json(inspectableObjectFixture.available_views);
   }),

@@ -62,6 +62,23 @@ export const inspectableObjectFixture: InspectableObjectSummary = {
   ],
 };
 
+/** Scope fixture for api-surface view (e12b) — a crate/module scope */
+export const inspectableScopeFixture: InspectableObjectSummary = {
+  id: SCOPE_ID,
+  object_type: "scope",
+  label: "cognicode-explorer",
+  subtitle: "crates/cognicode-explorer/src",
+  properties: [
+    { key: "kind", value: "crate", value_type: "string", source: "static" },
+    { key: "symbol_count", value: 60, value_type: "number", source: "static" },
+    { key: "file_count", value: 12, value_type: "number", source: "static" },
+  ],
+  available_views: [
+    { id: "overview", title: "Overview", is_builtin: true, source: null },
+    { id: "api-surface", title: "API Surface", is_builtin: true, source: null },
+  ],
+};
+
 export const spotterResultsFixture: SpotterResult[] = [
   {
     object: inspectableObjectFixture,
@@ -76,6 +93,12 @@ export const spotterResultsFixture: SpotterResult[] = [
       subtitle: "crates/cognicode-explorer/src/lib.rs:62",
     },
     score: 0.81,
+    match_type: "name_prefix",
+  },
+  // e12b: scope result for api-surface test
+  {
+    object: inspectableScopeFixture,
+    score: 0.75,
     match_type: "name_prefix",
   },
 ];

@@ -59,14 +59,35 @@ test.describe("Phase 1 executors (e12a–e12e)", () => {
   // G2: api_surface (e12b)
   // NOTE: api_surface is a SCOPE view, not a SYMBOL view. It appears only
   // when inspecting a Scope object (crate/module/directory), not a Symbol.
-  // The tab will not appear for Symbol context — this is correct behaviour.
-  // G2 requires a separate test that opens a Scope object via Spotter.
   // ---------------------------------------------------------------------------
-  test.skip("api-surface tab is registered and clickable", async ({ page }) => {
-    // To implement G2: open Spotter, search for a scope (e.g. "explorer" or
-    // the workspace root), select the scope object, then check for the tab.
-    await openSymbol(page);
+  test("api-surface tab is registered and clickable for Scope objects", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await expect(page.getByTestId("shell")).toBeVisible();
+    await page.waitForTimeout(1500);
 
+    // Open Spotter and search for "cogni" — only matches the scope label
+    // "cognicode-explorer", not the symbol "build_overview" or "build_callgraph"
+    const modifier = process.platform === "linux" ? "Control" : "Meta";
+    await page.keyboard.press(`${modifier}+k`);
+    const input = page.getByTestId("spotter-input");
+    await expect(input).toBeVisible({ timeout: 5_000 });
+    await input.fill("cogni");
+    // Wait for debounce + network
+    await page.waitForTimeout(800);
+
+    // The scope result should be the first (and only) match
+    const results = page.getByTestId("spotter-results");
+    await expect(results).toBeVisible({ timeout: 5_000 });
+    const scopeResult = page
+      .getByTestId("spotter-results")
+      .getByTestId(/^spotter-item-scope:/);
+    await expect(scopeResult).toBeVisible({ timeout: 5_000 });
+    await scopeResult.click();
+
+    // The inspector should show with the api-surface tab
+    await expect(page.getByTestId("object-inspector")).toBeVisible();
     const tab = page.getByTestId("view-tab-api-surface");
     await expect(tab).toBeVisible();
     await tab.click();
