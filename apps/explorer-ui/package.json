@@ -21,7 +21,10 @@
     "test:e2e:functional": "playwright test e2e/smoke.spec.ts e2e/graph.spec.ts e2e/call-graph-rendering.spec.ts e2e/error-states.spec.ts e2e/a11y.spec.ts e2e/landing.spec.ts e2e/perspective-toggle.spec.ts e2e/pane-stack.spec.ts e2e/spotter.spec.ts e2e/responsive.spec.ts",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:visual": "PW_VISUAL=true playwright test e2e/visual-regression.spec.ts e2e/exploration.spec.ts e2e/pane-stack.spec.ts e2e/responsive.spec.ts e2e/exploration-snapshot.spec.ts e2e/smoke.spec.ts e2e/a11y.spec.ts",
-    "test:e2e:visual:update": "PW_VISUAL=true playwright test e2e/visual-regression.spec.ts e2e/exploration.spec.ts e2e/pane-stack.spec.ts e2e/responsive.spec.ts e2e/exploration-snapshot.spec.ts e2e/smoke.spec.ts e2e/a11y.spec.ts --update-snapshots"
+    "test:e2e:visual:update": "PW_VISUAL=true playwright test e2e/visual-regression.spec.ts e2e/exploration.spec.ts e2e/pane-stack.spec.ts e2e/responsive.spec.ts e2e/exploration-snapshot.spec.ts e2e/smoke.spec.ts e2e/a11y.spec.ts --update-snapshots",
+    "test:e2e:coverage": "PW_VISUAL=true playwright test e2e/spotter-multifamily.spec.ts e2e/view-tabs-coverage.spec.ts e2e/pane-stack-drilldown.spec.ts e2e/viewspec-wizard-full.spec.ts e2e/landing-real-data.spec.ts e2e/exploration-share.spec.ts e2e/scan-progress.spec.ts e2e/lens-panel.spec.ts e2e/perspective-toggle-full.spec.ts e2e/responsive-full.spec.ts e2e/error-states-coverage.spec.ts e2e/call-graph-rendering-extended.spec.ts e2e/msw-fixture-consistency.spec.ts",
+    "test:e2e:coverage:update": "PW_VISUAL=true playwright test e2e/spotter-multifamily.spec.ts e2e/view-tabs-coverage.spec.ts e2e/pane-stack-drilldown.spec.ts e2e/viewspec-wizard-full.spec.ts e2e/landing-real-data.spec.ts e2e/exploration-share.spec.ts e2e/scan-progress.spec.ts e2e/lens-panel.spec.ts e2e/perspective-toggle-full.spec.ts e2e/responsive-full.spec.ts e2e/error-states-coverage.spec.ts e2e/call-graph-rendering-extended.spec.ts e2e/msw-fixture-consistency.spec.ts --update-snapshots",
+    "coverage:matrix": "tsx scripts/coverage-matrix.ts"
   },
   "dependencies": {
     "@types/d3": "^7.4.3",

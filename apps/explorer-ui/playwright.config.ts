@@ -28,6 +28,9 @@ export default defineConfig({
     baseURL: BASE_URL,
     trace: "on-first-retry",
     screenshot: "retain-on-failure",
+    // Env-var gate for screenshot capture (cycle e17).
+    // Set PW_VISUAL=true to enable `toHaveScreenshot` assertions.
+    // Default false locally so dev runs aren't blocked on baselines.
   },
   projects: [
     {
@@ -42,6 +45,14 @@ export default defineConfig({
     timeout: 60_000,
     env: {
       VITE_USE_MOCKS: "true",
+      ...(process.env["PW_VISUAL"] ? { PW_VISUAL: "true" } : {}),
     },
+  },
+  // Metadata for coverage matrix generation (cycle e17).
+  // Read by scripts/coverage-matrix.ts.
+  metadata: {
+    testDir: "./e2e",
+    coverageMatrix: "docs/inventory/e17-coverage-matrix.md",
+    cycle: "e17-e2e-coverage-audit",
   },
 });
