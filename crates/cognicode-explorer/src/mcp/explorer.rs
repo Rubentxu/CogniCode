@@ -369,6 +369,7 @@ impl ExplorerMcpHandler {
             view_registry.clone(),
             None, // view_spec_store
             quality_repo.clone(),
+            None, // persistence
         ));
 
         // View facade (also provides LensExecutor for MoldQL).

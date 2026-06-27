@@ -872,13 +872,13 @@ struct SpotterQuery {
 
 async fn spotter(
     State(state): State<ApiState>,
-    Path(_workspace_id): Path<String>,
+    Path(workspace_id): Path<String>,
     Query(query): Query<SpotterQuery>,
 ) -> Result<Response, ApiError> {
     Ok(Json(
         state
             .search
-            .spotter_search(&query.q, query.kind.as_deref())
+            .spotter_search_with_viewspecs(&query.q, query.kind.as_deref(), Some(&workspace_id))
             .await?,
     )
     .into_response())

@@ -59,6 +59,7 @@ impl ViewServiceImpl {
             ObjectIdentity::Scope { .. } => InspectableObjectType::Scope,
             ObjectIdentity::QualityIssue { .. } => InspectableObjectType::QualityIssue,
             ObjectIdentity::Rule { .. } => InspectableObjectType::Rule,
+            ObjectIdentity::SavedExploration { .. } => InspectableObjectType::SavedExploration,
         };
         Ok(self.view_registry.list_for(object_type))
     }
@@ -121,6 +122,15 @@ impl ViewServiceImpl {
             ObjectIdentity::Rule { rule_id } => Ok(InspectionTarget::Rule {
                 rule_id: rule_id.clone(),
             }),
+            // SavedExploration requires async persistence loading.
+            // For now, return a feature-disabled error since the view service
+            // doesn't have persistence wired. The spotter shows saved exploration
+            // summaries without needing to resolve them to InspectionTarget.
+            ObjectIdentity::SavedExploration { .. } => {
+                Err(ExplorerError::FeatureDisabled(
+                    "SavedExploration view resolution requires persistence (not wired)".into(),
+                ))
+            }
         }
     }
 
@@ -132,6 +142,7 @@ impl ViewServiceImpl {
             ObjectIdentity::Scope { .. } => crate::dto::InspectableObjectType::Scope,
             ObjectIdentity::QualityIssue { .. } => crate::dto::InspectableObjectType::QualityIssue,
             ObjectIdentity::Rule { .. } => crate::dto::InspectableObjectType::Rule,
+            ObjectIdentity::SavedExploration { .. } => crate::dto::InspectableObjectType::SavedExploration,
         };
         Ok(self.lens_registry.applicable_to(&object_type))
     }

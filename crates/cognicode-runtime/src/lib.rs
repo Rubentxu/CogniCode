@@ -124,6 +124,15 @@ impl Runtime {
             ),
         );
 
+        // Persistence facade — always takes 2 args; second is Some when postgres feature is enabled.
+        let persistence: Arc<dyn cognicode_explorer::facades::PersistenceService> = Arc::new(
+            cognicode_explorer::facades::persistence::PersistenceServiceImpl::new(
+                None, // view_spec_store
+                #[cfg(feature = "postgres")]
+                self.pg_repo.clone(), // postgres_repo
+            ),
+        );
+
         // Search facade.
         let view_registry = Arc::new(cognicode_explorer::registry::ViewRegistry::new(None));
         let view_registry_for_search = view_registry.clone();
@@ -138,6 +147,7 @@ impl Runtime {
                 view_registry_for_search,
                 None, // view_spec_store
                 quality.clone(), // quality_repo — wired from PG (PR #55)
+                Some(persistence.clone()), // persistence — for SavedExploration search
             ));
 
         // View facade.
@@ -153,14 +163,6 @@ impl Runtime {
         let view: Arc<dyn cognicode_explorer::facades::ViewService> = view_impl.clone();
         let lens_executor: Arc<dyn cognicode_explorer::facades::LensExecutor> = view_impl;
 
-        // Persistence facade — always takes 2 args; second is Some when postgres feature is enabled.
-        let persistence: Arc<dyn cognicode_explorer::facades::PersistenceService> = Arc::new(
-            cognicode_explorer::facades::persistence::PersistenceServiceImpl::new(
-                None, // view_spec_store
-                #[cfg(feature = "postgres")]
-                self.pg_repo.clone(), // postgres_repo
-            ),
-        );
         let moldql: Arc<dyn cognicode_explorer::facades::MoldQLService> =
             Arc::new(cognicode_explorer::facades::moldql::MoldQLServiceImpl::new(
                 self.symbol_repo.clone(),
