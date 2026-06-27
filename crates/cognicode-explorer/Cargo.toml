@@ -62,6 +62,16 @@ serde_yaml.workspace = true
 # It is NOT optional because the proc macro must always be available.
 async-trait.workspace = true
 
+# OpenAPI 3.1 parser for cycle e15.5 (`cognicode_ingest_openapi`).
+# Default-features=false keeps the dep tree lean (no YAML support;
+# JSON-only is sufficient since production specs are typically JSON).
+oas3.workspace = true
+
+# Hex encoding for SHA256 spec hashes emitted by the edge-emitter
+# adapter and surfaced by the ingest handlers.
+hex.workspace = true
+sha2.workspace = true
+
 [dev-dependencies]
 tokio-test.workspace = true
 async-trait.workspace = true
