@@ -92,6 +92,7 @@ adder.go
 # SDD / OpenSpec artifacts (agent planning data)
 .tmp-cognicode-verify-extra/
 openspec/
+plans/
 sdd/
 
 # SDDK cycle artifacts (workflow state, agent-generated planning data).
