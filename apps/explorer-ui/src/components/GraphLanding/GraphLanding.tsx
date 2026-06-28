@@ -1,6 +1,11 @@
 /**
  * `GraphLanding` — initial graph view shown when `activeObjectId === null`.
  *
+ * Note: As of E18-1 (LandingWorkbench), this component is rendered
+ * as the "Graph" tab of LandingWorkbench. It can still be rendered
+ * standalone (for tests), but the canonical shell landing mounts
+ * LandingWorkbench which embeds this component as one of 4 tabs.
+ *
  * Renders the landing page payload (nodes, edges, entry points, hot paths,
  * god nodes) as a cytoscape graph with special styling for each node type:
  * - entry_point → style_class="entry-point" (green)

@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-28 (moldable UX + C4 investigation + diagram representations program started)
+Last updated: 2026-06-28 (E18-1 closed — PASS_WITH_WARNINGS, PR #76)
 
 ## Active
 
@@ -12,12 +12,17 @@ Last updated: 2026-06-28 (moldable UX + C4 investigation + diagram representatio
 
 #### Milestone E18 — Moldable UX Foundation
 
-| Change | Goal | ADR | Priority |
-|--------|------|-----|----------|
-| `e18-1-landing-workbench` | Landing as entry-point workbench (Start from: Route / Symbol / Use case / Saved exploration) | ADR-005 | HIGH |
-| `e18-2-spotter-intent` | Spotter with intent actions (Open as call graph, vertical slice, C4 context, add to investigation) | ADR-005 | HIGH |
-| `e18-3-pane-causal-breadcrumbs` | Pane stack shows causal breadcrumbs (From / Via / Purpose) | ADR-005 | HIGH |
-| `e18-4-suggestion-verbs` | SuggestionStrip evolves to 5 investigation verbs (Understand / Trace / Compare / Explain / Save) | ADR-005 | MEDIUM |
+| Change | Goal | ADR | Status | PR |
+|--------|------|-----|--------|----|
+| `e18-1-landing-workbench` | Landing as entry-point workbench (Start from: Route / Symbol / Use case / Saved exploration) | ADR-005 | DONE (PASS_WITH_WARNINGS) | [#76](https://github.com/Rubentxu/CogniCode/pull/76) |
+| `e18-2-spotter-intent` | Spotter with intent actions (Open as call graph, vertical slice, C4 context, add to investigation) | ADR-005 | Active | — |
+| `e18-3-pane-causal-breadcrumbs` | Pane stack shows causal breadcrumbs (From / Via / Purpose) | ADR-005 | Queued | — |
+| `e18-4-suggestion-verbs` | SuggestionStrip evolves to 5 investigation verbs (Understand / Trace / Compare / Explain / Save) | ADR-005 | Queued | — |
+
+**E18-1 follow-ups (post-merge hotfix)**:
+- KindFilterChips UX bug: `Spotter.tsx` returns null when no query results, hiding the entry-point kind chip. ~5-line fix.
+- Stale visual-regression snapshots: 35 PNG baselines need regeneration.
+- Pre-existing `suggestedQuestions.test.ts` failure: InspectableObjectType route variant count mismatch (unrelated).
 
 #### Milestone E19 — C4 Investigation Model
 
@@ -62,6 +67,14 @@ E18 and E19 can start in parallel. E20 depends on E19 (C4 levels inform diagram 
 ## Session Handover 2026-06-28
 
 Closed e17 E2E coverage sprint (2 PRs, 127 E2E tests passing). Pruned 57 stale/orphaned branches. Trunk base clean.
+
+## Session Handover 2026-06-28 (E18-1)
+
+E18-1 LandingWorkbench closed via SDDK A-lite cycle:
+- ADRs 003-005 written + ROADMAP restructured into E18-E21 milestones
+- 3 stacked PRs (PR1 state, PR2 components, PR3 wiring) + 2 correction cycles
+- Final verdict: PASS_WITH_WARNINGS (1 KindFilterChips UX bug + 35 stale snapshots documented)
+- PR #76 opened, awaiting review. Follow-ups queued as hotfix PRs.
 
 ## Session Handover 2026-06-26
 

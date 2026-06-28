@@ -9,11 +9,12 @@
  */
 import type { AppState } from "../context";
 import { navigationReducer } from "./navigation";
-import { spotterReducer } from "./spotter";
+import { spotterReducer, initialSpotterState } from "./spotter";
 import { workspaceReducer } from "./workspace";
 import { perspectiveReducer } from "./perspective";
 import { lensSidebarReducer } from "./lensSidebar";
 import { viewSpecWizardReducer } from "./viewSpecWizard";
+import { landingWorkbenchReducer } from "./landingWorkbench";
 
 export type RootReducer = (state: AppState, action: import("../context").Action) => AppState;
 
@@ -29,17 +30,24 @@ export function rootReducer(state: AppState, action: import("../context").Action
     action
   );
 
+  const spotter = spotterReducer(
+    { open: state.spotterOpen, kind: state.spotterKind ?? null },
+    action
+  );
+
   return {
     workspace: workspaceReducer(state.workspace, action),
     navigation: navSlice.navigation,
     activeObjectId: navSlice.activeObjectId,
     activeViewId: navSlice.activeViewId,
     activeLensId: navSlice.activeLensId,
-    spotterOpen: spotterReducer(state.spotterOpen, action),
+    spotterOpen: spotter.open,
+    spotterKind: spotter.kind,
     activeView: navSlice.activeView,
     perspective: perspectiveReducer(state.perspective, action),
     lensSidebar: lensSidebarReducer(state.lensSidebar, action as never),
     viewSpecWizard: viewSpecWizardReducer(state.viewSpecWizard, action as never),
+    landingWorkbench: landingWorkbenchReducer(state.landingWorkbench, action),
   };
 }
 
@@ -49,6 +57,7 @@ export type { SpotterAction } from "./spotter";
 export type { WorkspaceAction } from "./workspace";
 export type { PerspectiveAction } from "./perspective";
 export type { LensSidebarAction, LensSidebarState } from "./lensSidebar";
+export type { LandingWorkbenchAction, LandingTabId } from "./landingWorkbench";
 export type {
   ViewSpecWizardAction,
   ViewSpecWizardState,

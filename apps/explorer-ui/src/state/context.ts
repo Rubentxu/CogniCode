@@ -27,6 +27,7 @@ import {
   type LensSidebarState,
   type ViewSpecWizardAction,
   type ViewSpecWizardState,
+  type LandingTabId,
 } from "./slices";
 
 // ============================================================================
@@ -51,6 +52,12 @@ export type AppState = {
   /** Whether the Spotter palette is open. */
   spotterOpen: boolean;
   /**
+   * The active kind filter hint for the Spotter palette.
+   * Set when an entry-point card scopes Spotter to a specific kind (e.g. "route").
+   * Consumed by Spotter.tsx to pre-select the kind chip.
+   */
+  spotterKind: string | null;
+  /**
    * The last fully resolved contextual view — cached so the UI can
    * re-render instantly while SWR revalidates in the background.
    */
@@ -71,6 +78,13 @@ export type AppState = {
    * PaneInspector (it needs the resolved object + workspace).
    */
   viewSpecWizard: ViewSpecWizardState;
+  /**
+   * Landing Workbench active tab — "start" | "investigations" | "resume" | "graph".
+   * The Graph tab embeds GraphLanding unchanged; other tabs are future work.
+   */
+  landingWorkbench: {
+    activeTab: LandingTabId;
+  };
 };
 
 /**
@@ -99,10 +113,12 @@ export function initialStateWithFocus(
     activeViewId: focus.viewId,
     activeLensId: focus.lensId,
     spotterOpen: false,
+    spotterKind: null,
     activeView: null,
     perspective: "graph",
     lensSidebar: { open: false },
     viewSpecWizard: { open: false },
+    landingWorkbench: { activeTab: "graph" },
   };
 }
 
@@ -128,7 +144,8 @@ export type Action =
   | { type: "SET_PANE_SCROLL"; payload: { paneId: string; scrollY: number } }
   | { type: "UPDATE_PANE_VIEWPORT"; payload: { paneId: string; viewport: ViewportState } }
   | { type: "TOGGLE_SPOTTER" }
-  | { type: "SET_SPOTTER"; payload: { open: boolean } }
+  | { type: "SET_SPOTTER"; payload: { open: boolean; kind?: string } }
+  | { type: "SET_LANDING_TAB"; payload: { tab: LandingTabId } }
   | { type: "RESET" }
   | { type: "SET_PERSPECTIVE"; payload: "graph" | "c4" }
   | { type: "TOGGLE_LENS_SIDEBAR" }
@@ -148,11 +165,13 @@ export const initialState: AppState = {
   activeObjectId: null,
   activeViewId: null,
   activeLensId: null,
-  spotterOpen: false,
-  activeView: null,
-  perspective: "graph",
+    spotterOpen: false,
+    spotterKind: null,
+    activeView: null,
+    perspective: "graph",
   lensSidebar: { open: false },
   viewSpecWizard: { open: false },
+  landingWorkbench: { activeTab: "graph" },
 };
 
 /**
