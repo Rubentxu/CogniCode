@@ -23,6 +23,8 @@ import { useApp, useAppDispatch } from "../state/context";
 import { useSpotter } from "../hooks/useSpotter";
 import { useWorkspaceList } from "../hooks/useWorkspace";
 import type { SpotterResult } from "../api/types";
+import { kindDefaultView } from "../api/kindDefaultView";
+import { IntentFooter, chipsFromResult } from "./Spotter/IntentFooter";
 
 /** Debounce window for the search input. Tuned for ~50 WPM typing. */
 const DEBOUNCE_MS = 200;
@@ -132,6 +134,16 @@ export function Spotter() {
   const [kind, setKind] = useState<KindFilter>(spotterKind ?? ALL_KINDS);
   const debouncedQuery = useDebounced(rawQuery, DEBOUNCE_MS);
 
+  /** Tracks the currently-highlighted result via Command.List onChange. */
+  const [highlightedResult, setHighlightedResult] = useState<SpotterResult | null>(null);
+
+  /**
+   * Set by IntentFooter chip click or Cmd+N when a result is highlighted.
+   * When the user presses Enter on the SAME item that has the pending chip,
+   * that chip's viewId is used instead of the kind-aware default.
+   */
+  const [pendingViewId, setPendingViewId] = useState<string | null>(null);
+
   // Reset transient state every time the palette opens. We
   // defer the setState into a microtask so the React linter does
   // not flag it as a cascading render — the open is the only
@@ -143,6 +155,8 @@ export function Spotter() {
         setRawQuery("");
         // Don't reset kind if spotterKind was set by caller
         setKind((currentKind) => spotterKind ?? currentKind ?? ALL_KINDS);
+        setHighlightedResult(null);
+        setPendingViewId(null);
       });
     }
   }, [spotterOpen, spotterKind]);
@@ -178,6 +192,18 @@ export function Spotter() {
     if (event.key === "Escape") {
       event.preventDefault();
       dispatch({ type: "SET_SPOTTER", payload: { open: false } });
+      return;
+    }
+    // Cmd+1..N: pick nth enabled chip on the highlighted result
+    if ((event.metaKey || event.ctrlKey) && /^[1-9]$/.test(event.key)) {
+      if (!highlightedResult) return;
+      event.preventDefault();
+      const chips = chipsFromResult(highlightedResult);
+      const idx = parseInt(event.key, 10) - 1;
+      const chip = chips[idx];
+      if (chip && !chip.disabled) {
+        setPendingViewId(chip.viewId);
+      }
     }
   }
 
@@ -256,6 +282,11 @@ export function Spotter() {
             className="max-h-80 overflow-y-auto p-1"
             aria-label="Search results"
             aria-busy={isValidating}
+            onChange={(value) => {
+              // cmdk sets the value to the highlighted item's `value` prop
+              const found = filteredResults.find((r) => r.object.id === value);
+              setHighlightedResult(found ?? null);
+            }}
           >
             <Command.Empty>
               <EmptyState
@@ -276,13 +307,21 @@ export function Spotter() {
                     key={hit.object.id}
                     value={hit.object.id}
                     onSelect={() => {
+                      const defaultView = kindDefaultView(hit.object.object_type);
+                      // If the highlighted result is the one we're selecting AND the
+                      // user previously picked a chip (Cmd+N), use that viewId.
+                      const viewId =
+                        highlightedResult?.object.id === hit.object.id && pendingViewId
+                          ? pendingViewId
+                          : defaultView;
                       dispatch({
                         type: "SELECT_OBJECT",
                         payload: {
                           objectId: hit.object.id,
-                          viewId: hit.object.available_views[0]?.id,
+                          viewId,
                         },
                       });
+                      setPendingViewId(null);
                       dispatch({
                         type: "SET_SPOTTER",
                         payload: { open: false },
@@ -290,7 +329,7 @@ export function Spotter() {
                     }}
                     data-testid={`spotter-item-${hit.object.id}`}
                     data-family={hit.object.object_type}
-                    data-view-id={hit.object.available_views[0]?.id}
+                    data-view-id={kindDefaultView(hit.object.object_type)}
                     className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
                   >
                     <span
@@ -328,6 +367,11 @@ export function Spotter() {
             ))}
           </Command.List>
 
+          <IntentFooter
+            result={highlightedResult}
+            onPick={(viewId) => setPendingViewId(viewId)}
+          />
+
           <footer
             className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs"
             style={{
@@ -339,7 +383,7 @@ export function Spotter() {
               {filteredResults.length}{" "}
               {filteredResults.length === 1 ? "result" : "results"}
             </span>
-            <span>↑↓ navigate · ↵ select · esc close</span>
+            <span>↑↓ navigate · ↵ select · esc close · ⌘1..N chip</span>
           </footer>
         </Command>
       </div>
