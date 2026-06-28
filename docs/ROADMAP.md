@@ -1,10 +1,63 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-28 (e17 E2E coverage sprint closed; trunk clean)
+Last updated: 2026-06-28 (moldable UX + C4 investigation + diagram representations program started)
 
 ## Active
 
-_Nothing active — trunk is clean. See Completed below._
+### Moldable UX + C4 Investigation + Diagram Representations
+
+**Strategic ADRs**: [ADR-003](./adr/ADR-003-diagram-representations.md) (diagrams), [ADR-004](./adr/ADR-004-c4-investigation-model.md) (C4), [ADR-005](./adr/ADR-005-investigation-mode.md) (investigations)
+
+**Goal**: Transform CogniCode Explorer from a multi-view inspector into a moldable-development knowledge workbench with C4 investigation, draw.io-derived diagrams, and durable knowledge artifacts.
+
+#### Milestone E18 — Moldable UX Foundation
+
+| Change | Goal | ADR | Priority |
+|--------|------|-----|----------|
+| `e18-1-landing-workbench` | Landing as entry-point workbench (Start from: Route / Symbol / Use case / Saved exploration) | ADR-005 | HIGH |
+| `e18-2-spotter-intent` | Spotter with intent actions (Open as call graph, vertical slice, C4 context, add to investigation) | ADR-005 | HIGH |
+| `e18-3-pane-causal-breadcrumbs` | Pane stack shows causal breadcrumbs (From / Via / Purpose) | ADR-005 | HIGH |
+| `e18-4-suggestion-verbs` | SuggestionStrip evolves to 5 investigation verbs (Understand / Trace / Compare / Explain / Save) | ADR-005 | MEDIUM |
+
+#### Milestone E19 — C4 Investigation Model
+
+| Change | Goal | ADR | Priority |
+|--------|------|-----|----------|
+| `e19-1-rename-c4-toggle` | Rename "C4 Components" to "Structure" (honest labeling) | ADR-004 | HIGH |
+| `e19-2-c4-level-selector` | Level selector: Context / Container / Component / Code | ADR-004 | HIGH |
+| `e19-3-c4-overlays` | Overlays: drift + hotspots on C4 nodes | ADR-004 | HIGH |
+| `e19-4-c4-dynamic-views` | Dynamic views from investigation traces (request/event flow) | ADR-004 | MEDIUM |
+| `e19-5-expected-architecture` | Expected architecture baseline + drift governance | ADR-004 | MEDIUM |
+
+#### Milestone E20 — Diagram Representations
+
+| Change | Goal | ADR | Priority |
+|--------|------|-----|----------|
+| `e20-1-mermaid-c4-export` | `to_mermaid()` for c4_context, c4_container, c4_component | ADR-003 | HIGH |
+| `e20-2-mermaid-trace-export` | Mermaid export for call_graph, impact_radius, decision_trace, vertical_slice | ADR-003 | HIGH |
+| `e20-3-drawio-action` | "Open in draw.io" action in C4 toolbar + pane inspector | ADR-003 | HIGH |
+| `e20-4-svg-snapshot` | SVG/PNG snapshot export for static documentation | ADR-003 | LOW |
+
+#### Milestone E21 — Investigation Mode
+
+| Change | Goal | ADR | Priority |
+|--------|------|-----|----------|
+| `e21-1-investigation-entity` | Investigation entity + PostgreSQL tables + API | ADR-005 | HIGH |
+| `e21-2-pin-evidence` | "Pin as evidence" action on panes + views | ADR-005 | HIGH |
+| `e21-3-evidence-pack-view` | `ViewKind::EvidencePack` executor | ADR-005 | MEDIUM |
+| `e21-4-composed-narrative` | `ViewKind::ComposedNarrative` with embedded objects + diagrams | ADR-005 | MEDIUM |
+| `e21-5-investigation-board` | Investigation board on landing page | ADR-005 | LOW |
+| `e21-6-artifacts-in-investigation` | Mermaid/draw.io/SVG artifacts embedded in investigations | ADR-003+005 | MEDIUM |
+
+#### Execution order
+
+```
+E18 (UX foundation)  ──→  E20 (diagrams)  ──→  E21 (investigations)
+         │                        ↑
+         └──→  E19 (C4)  ─────────┘
+```
+
+E18 and E19 can start in parallel. E20 depends on E19 (C4 levels inform diagram content). E21 depends on E18 + E20 (UX foundation + diagram artifacts).
 
 ## Session Handover 2026-06-28
 
