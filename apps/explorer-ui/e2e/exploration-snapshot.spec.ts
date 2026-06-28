@@ -82,7 +82,7 @@ test.describe("Exploration Snapshot", () => {
       await callGraphTab.click();
     }
 
-    await expect(page.getByTestId("svg-graph")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId("svg-graph-canvas")).toBeVisible({ timeout: 5_000 });
 
     // Perform a drag gesture on the SVG canvas to pan
     const svgCanvas = page.locator("[data-testid='svg-graph-canvas']");

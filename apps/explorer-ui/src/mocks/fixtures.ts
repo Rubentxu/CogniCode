@@ -457,20 +457,20 @@ export const decisionArtifactFixture: DecisionArtifactSummary = {
 // Phase 1 executor fixtures (e12a–e12e)
 // ============================================================================
 
-/** e12a — UsageExamplesExecutor: callers + callees as Table blocks */
+/** e12a — UsageExamplesExecutor: callers + callees via CallListView */
 export const usageExamplesViewFixture = {
   object_id: SYMBOL_ID,
   view_id: "usage-examples",
   title: "Usage Examples",
   view_kind: "usage_examples",
-  renderer_kind: "table",
+  renderer_kind: "composite",
   blocks: [
     {
       id: "callers",
       title: "Called by (2)",
       body: {
-        columns: ["name", "file", "line", "kind"],
-        rows: [
+        count: 2,
+        items: [
           { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:explore:42", name: "explore", file: "crates/cognicode-explorer/src/lib.rs", line: 42, kind: "function" },
           { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:fan_in:120", name: "fan_in", file: "crates/cognicode-explorer/src/lib.rs", line: 120, kind: "function" },
         ],
@@ -480,8 +480,8 @@ export const usageExamplesViewFixture = {
       id: "callees",
       title: "Calls (3)",
       body: {
-        columns: ["name", "file", "line", "kind"],
-        rows: [
+        count: 3,
+        items: [
           { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_symbols:55", name: "build_symbols", file: "crates/cognicode-explorer/src/lib.rs", line: 55, kind: "function" },
           { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:fan_out:124", name: "fan_out", file: "crates/cognicode-explorer/src/lib.rs", line: 124, kind: "function" },
           { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:page_rank:88", name: "page_rank", file: "crates/cognicode-explorer/src/lib.rs", line: 88, kind: "function" },
@@ -494,26 +494,26 @@ export const usageExamplesViewFixture = {
   findings: [],
 };
 
-/** e12b — ApiSurfaceExecutor: all scope symbols as Table */
+/** e12b — ApiSurfaceExecutor: all scope symbols as FileSymbolsView (registered: "symbols") */
 export const apiSurfaceViewFixture = {
   object_id: SCOPE_ID,
   view_id: "api-surface",
   title: "API Surface",
   view_kind: "api_surface",
-  renderer_kind: "table",
+  renderer_kind: "composite",
   blocks: [
     {
-      id: "api_surface",
+      id: "symbols",
       title: "crates/cognicode-explorer/src",
       body: {
-        columns: ["name", "kind", "file", "line"],
-        rows: [
-          { name: "build_overview", kind: "function", file: "crates/cognicode-explorer/src/lib.rs", line: 16 },
-          { name: "build_symbols", kind: "function", file: "crates/cognicode-explorer/src/lib.rs", line: 55 },
-          { name: "fan_in", kind: "function", file: "crates/cognicode-explorer/src/lib.rs", line: 120 },
-          { name: "fan_out", kind: "function", file: "crates/cognicode-explorer/src/lib.rs", line: 124 },
-          { name: "page_rank", kind: "function", file: "crates/cognicode-explorer/src/lib.rs", line: 88 },
-          { name: "CommunityDetection", kind: "struct", file: "crates/cognicode-explorer/src/lib.rs", line: 200 },
+        count: 6,
+        items: [
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_overview:16", name: "build_overview", kind: "function", line: 16 },
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_symbols:55", name: "build_symbols", kind: "function", line: 55 },
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:fan_in:120", name: "fan_in", kind: "function", line: 120 },
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:fan_out:124", name: "fan_out", kind: "function", line: 124 },
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:page_rank:88", name: "page_rank", kind: "function", line: 88 },
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:CommunityDetection:200", name: "CommunityDetection", kind: "struct", line: 200 },
         ],
       },
     },
@@ -523,22 +523,22 @@ export const apiSurfaceViewFixture = {
   findings: [],
 };
 
-/** e12c — TestSliceExecutor: test callers of a symbol as Table */
+/** e12c — TestSliceExecutor: test callers as CallListView (callers block ID) */
 export const testSliceViewFixture = {
   object_id: SYMBOL_ID,
   view_id: "test-slice",
   title: "Test Slice",
   view_kind: "test_slice",
-  renderer_kind: "table",
+  renderer_kind: "composite",
   blocks: [
     {
-      id: "test_slice",
+      id: "callers",
       title: "Tests (2)",
       body: {
-        columns: ["name", "file", "line", "kind"],
-        rows: [
-          { name: "test_build_overview", file: "crates/cognicode-explorer/src/lib_test.rs", line: 10, kind: "function" },
-          { name: "test_overview_fan_in", file: "crates/cognicode-explorer/src/lib_test.rs", line: 45, kind: "function" },
+        count: 2,
+        items: [
+          { object_id: "symbol:crates/cognicode-explorer/src/lib_test.rs:test_build_overview:10", name: "test_build_overview", file: "crates/cognicode-explorer/src/lib_test.rs", line: 10, kind: "function" },
+          { object_id: "symbol:crates/cognicode-explorer/src/lib_test.rs:test_overview_fan_in:45", name: "test_overview_fan_in", file: "crates/cognicode-explorer/src/lib_test.rs", line: 45, kind: "function" },
         ],
       },
     },
@@ -548,32 +548,32 @@ export const testSliceViewFixture = {
   findings: [],
 };
 
-/** e12d — DebugSliceExecutor: debug callers + callees as Graph + Table blocks */
+/** e12d — DebugSliceExecutor: debug callers + callees via CallListView (callers/callees block IDs) */
 export const debugSliceViewFixture = {
   object_id: SYMBOL_ID,
   view_id: "debug-slice",
   title: "Debug Slice",
   view_kind: "debug_slice",
-  renderer_kind: "graph",
+  renderer_kind: "composite",
   blocks: [
     {
-      id: "debug_callers",
+      id: "callers",
       title: "Debug Callers (1)",
       body: {
-        columns: ["name", "file", "line", "kind"],
-        rows: [
-          { name: "log_debug", file: "crates/cognicode-explorer/src/lib.rs", line: 77, kind: "function" },
+        count: 1,
+        items: [
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:log_debug:77", name: "log_debug", file: "crates/cognicode-explorer/src/lib.rs", line: 77, kind: "function" },
         ],
       },
     },
     {
-      id: "debug_callees",
+      id: "callees",
       title: "Debug Callees (2)",
       body: {
-        columns: ["name", "file", "line", "kind"],
-        rows: [
-          { name: "assert_eq", file: "crates/cognicode-explorer/src/lib.rs", line: 33, kind: "function" },
-          { name: "dbg_trace", file: "crates/cognicode-explorer/src/lib.rs", line: 99, kind: "function" },
+        count: 2,
+        items: [
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:assert_eq:33", name: "assert_eq", file: "crates/cognicode-explorer/src/lib.rs", line: 33, kind: "function" },
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:dbg_trace:99", name: "dbg_trace", file: "crates/cognicode-explorer/src/lib.rs", line: 99, kind: "function" },
         ],
       },
     },
@@ -609,35 +609,35 @@ export const debugSliceViewFixture = {
   findings: [],
 };
 
-/** e12e — ChangeImpactStoryExecutor: BFS upstream + downstream as Table */
+/** e12e — ChangeImpactStoryExecutor: upstream/downstream as CallListView (callers/callees block IDs) */
 export const changeImpactStoryViewFixture = {
   object_id: SYMBOL_ID,
   view_id: "change-impact-story",
   title: "Change Impact Story",
   view_kind: "change_impact_story",
-  renderer_kind: "table",
+  renderer_kind: "composite",
   blocks: [
     {
-      id: "upstream",
+      id: "callers",
       title: "Upstream — Who is affected by changes to `build_overview` (3)",
       body: {
-        columns: ["name", "file", "line", "depth", "relationship"],
-        rows: [
-          { name: "explore", file: "crates/cognicode-explorer/src/lib.rs", line: 42, depth: 1, relationship: "direct caller" },
-          { name: "fan_in", file: "crates/cognicode-explorer/src/lib.rs", line: 120, depth: 1, relationship: "direct caller" },
-          { name: "analyze_workspace", file: "crates/cognicode-explorer/src/lib.rs", line: 200, depth: 2, relationship: "transitive caller" },
+        count: 3,
+        items: [
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:explore:42", name: "explore", file: "crates/cognicode-explorer/src/lib.rs", line: 42, kind: "function" },
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:fan_in:120", name: "fan_in", file: "crates/cognicode-explorer/src/lib.rs", line: 120, kind: "function" },
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:analyze_workspace:200", name: "analyze_workspace", file: "crates/cognicode-explorer/src/lib.rs", line: 200, kind: "function" },
         ],
       },
     },
     {
-      id: "downstream",
+      id: "callees",
       title: "Downstream — What `build_overview` affects (3)",
       body: {
-        columns: ["name", "file", "line", "depth", "relationship"],
-        rows: [
-          { name: "build_symbols", file: "crates/cognicode-explorer/src/lib.rs", line: 55, depth: 1, relationship: "direct callee" },
-          { name: "page_rank", file: "crates/cognicode-explorer/src/lib.rs", line: 88, depth: 1, relationship: "direct callee" },
-          { name: "graph_stats", file: "crates/cognicode-explorer/src/lib.rs", line: 150, depth: 2, relationship: "transitive callee" },
+        count: 3,
+        items: [
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:build_symbols:55", name: "build_symbols", file: "crates/cognicode-explorer/src/lib.rs", line: 55, kind: "function" },
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:page_rank:88", name: "page_rank", file: "crates/cognicode-explorer/src/lib.rs", line: 88, kind: "function" },
+          { object_id: "symbol:crates/cognicode-explorer/src/lib.rs:graph_stats:150", name: "graph_stats", file: "crates/cognicode-explorer/src/lib.rs", line: 150, kind: "function" },
         ],
       },
     },
@@ -650,7 +650,7 @@ export const changeImpactStoryViewFixture = {
       title: "Change impact story: build_overview",
       file: "crates/cognicode-explorer/src/lib.rs",
       line_range: { start: 16, end: 16 },
-      source_tool_or_query: "GraphQueryPort::traverse_callers/traverse_callees (max_depth=3)",
+      source_tool_or_query: "GraphQueryPort::upstream_downstream_bfs",
       confidence: null,
       freshness: "unknown",
     },
