@@ -267,8 +267,10 @@ describe("Shell", () => {
         document.querySelector('[data-testid="graph-landing"]') !== null;
       const hasLandingLoading =
         document.querySelector('[data-testid="graph-landing-loading"]') !== null;
+      const hasWorkbench =
+        document.querySelector('[data-testid="landing-workbench"]') !== null;
       expect(
-        hasGraph || hasEmpty || hasLoading || hasLanding || hasLandingLoading,
+        hasGraph || hasEmpty || hasLoading || hasLanding || hasLandingLoading || hasWorkbench,
       ).toBe(true);
     });
   });
@@ -277,7 +279,7 @@ describe("Shell", () => {
     render(<ShellHarness viewport="small" />);
     // Bottom sheet should be present
     expect(screen.getByTestId("bottom-sheet")).toBeInTheDocument();
-    // Graph/landing zone should eventually render (InteractiveGraph or GraphLanding via Suspense)
+    // Graph/landing zone should eventually render (InteractiveGraph or LandingWorkbench via Suspense)
     await waitFor(() => {
       const hasGraph =
         document.querySelector('[data-testid="interactive-graph"]') !== null;
@@ -289,8 +291,10 @@ describe("Shell", () => {
         document.querySelector('[data-testid="graph-landing"]') !== null;
       const hasLandingLoading =
         document.querySelector('[data-testid="graph-landing-loading"]') !== null;
+      const hasWorkbench =
+        document.querySelector('[data-testid="landing-workbench"]') !== null;
       expect(
-        hasGraph || hasEmpty || hasLoading || hasLanding || hasLandingLoading,
+        hasGraph || hasEmpty || hasLoading || hasLanding || hasLandingLoading || hasWorkbench,
       ).toBe(true);
     });
   });
@@ -312,8 +316,10 @@ describe("Shell", () => {
         document.querySelector('[data-testid="graph-landing"]') !== null;
       const hasLandingLoading =
         document.querySelector('[data-testid="graph-landing-loading"]') !== null;
+      const hasWorkbench =
+        document.querySelector('[data-testid="landing-workbench"]') !== null;
       expect(
-        hasGraph || hasEmpty || hasLoading || hasLanding || hasLandingLoading,
+        hasGraph || hasEmpty || hasLoading || hasLanding || hasLandingLoading || hasWorkbench,
       ).toBe(true);
     });
   });
@@ -335,8 +341,10 @@ describe("Shell", () => {
         document.querySelector('[data-testid="graph-landing"]') !== null;
       const hasLandingLoading =
         document.querySelector('[data-testid="graph-landing-loading"]') !== null;
+      const hasWorkbench =
+        document.querySelector('[data-testid="landing-workbench"]') !== null;
       expect(
-        hasGraph || hasEmpty || hasLoading || hasLanding || hasLandingLoading,
+        hasGraph || hasEmpty || hasLoading || hasLanding || hasLandingLoading || hasWorkbench,
       ).toBe(true);
     });
   });
@@ -552,14 +560,16 @@ describe("InteractiveGraphPanel perspective wire-up (E5.3)", () => {
       </AppContext.Provider>,
     );
 
-    // GraphLanding should be mounted (or loading while MSW resolves), not InteractiveGraphPanel
+    // LandingWorkbench should be mounted (with C4 forcing Graph tab which renders GraphLanding)
     await waitFor(() => {
-      // Either the resolved landing or the loading state is acceptable
+      // Either LandingWorkbench or the graph-landing/graph-landing-loading inside it is acceptable
+      const hasWorkbench =
+        screen.queryByTestId("landing-workbench") !== null;
       const hasLanding =
         screen.queryByTestId("graph-landing") !== null;
       const hasLandingLoading =
         screen.queryByTestId("graph-landing-loading") !== null;
-      expect(hasLanding || hasLandingLoading).toBe(true);
+      expect(hasWorkbench || hasLanding || hasLandingLoading).toBe(true);
     });
     // useSubgraph and useArchitecture are NOT called because
     // GraphLanding uses useLanding + useArchitecture (different hooks)

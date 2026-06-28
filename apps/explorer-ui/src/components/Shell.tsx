@@ -23,7 +23,7 @@ import { ShellLayout } from "./ShellLayout";
 import { useSubgraph } from "../hooks/useSubgraph";
 import { useArchitecture } from "../hooks/useArchitecture";
 import { useStaleDataHold } from "../hooks/useStaleDataHold";
-import { GraphLanding } from "./GraphLanding";
+import { LandingWorkbench } from "./LandingWorkbench/LandingWorkbench";
 import type { ShellViewport } from "./viewport";
 import { McpToolsModal } from "./McpToolsModal";
 
@@ -152,7 +152,7 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
             <ErrorBoundary label="InteractiveGraph">
               <Suspense fallback={GRAPH_LOADING}>
                 {rootId === null && workspace ? (
-                  <GraphLanding workspaceId={workspace.id} />
+                  <LandingWorkbench workspaceId={workspace.id} />
                 ) : (
                   <InteractiveGraphPanel rootId={rootId} workspaceId={workspace?.id} />
                 )}
