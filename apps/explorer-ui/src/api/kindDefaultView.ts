@@ -1,8 +1,8 @@
 /**
- * `useKindDefaultView` — picks the best default viewId for a given object kind.
+ * `kindDefaultView` — picks the best default viewId for a given object kind.
  *
  * Used by Spotter to decide which view to open when the user picks a
- * result via Enter / click. Mappings per E18-2 spec:
+ * result via Enter / click / chip. Mappings per E18-2 spec:
  *
  *   - symbol             → call-graph (drill into calls)
  *   - route|use_case|event → vertical_slice (full flow)
@@ -12,7 +12,7 @@
  *
  * Falls back to "overview" for unknown kinds.
  */
-import type { InspectableObjectType } from "../api/types";
+import type { InspectableObjectType } from "./types";
 
 const KIND_TO_DEFAULT_VIEW: Readonly<Record<InspectableObjectType, string>> = {
   symbol: "call-graph",
@@ -29,7 +29,10 @@ const KIND_TO_DEFAULT_VIEW: Readonly<Record<InspectableObjectType, string>> = {
   rule: "quality",
 };
 
-export function useKindDefaultView(kind: InspectableObjectType | null | undefined): string {
+/**
+ * Pure lookup — no React state needed. Call at render time.
+ */
+export function kindDefaultView(kind: InspectableObjectType | null | undefined): string {
   if (!kind) return "overview";
   return KIND_TO_DEFAULT_VIEW[kind] ?? "overview";
 }
