@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-28 (E18-1 closed — PASS_WITH_WARNINGS, PR #76)
+Last updated: 2026-06-28 (E18-2 closed — PASS_WITH_WARNINGS, PR #78)
 
 ## Active
 
@@ -14,15 +14,19 @@ Last updated: 2026-06-28 (E18-1 closed — PASS_WITH_WARNINGS, PR #76)
 
 | Change | Goal | ADR | Status | PR |
 |--------|------|-----|--------|----|
-| `e18-1-landing-workbench` | Landing as entry-point workbench (Start from: Route / Symbol / Use case / Saved exploration) | ADR-005 | DONE (PASS_WITH_WARNINGS) | [#76](https://github.com/Rubentxu/CogniCode/pull/76) |
-| `e18-2-spotter-intent` | Spotter with intent actions (Open as call graph, vertical slice, C4 context, add to investigation) | ADR-005 | Active | — |
-| `e18-3-pane-causal-breadcrumbs` | Pane stack shows causal breadcrumbs (From / Via / Purpose) | ADR-005 | Queued | — |
+| `e18-1-landing-workbench` | Landing as entry-point workbench (Start from: Route / Symbol / Use case / Saved exploration) | ADR-005 | DONE | [#76](https://github.com/Rubentxu/CogniCode/pull/76) + [#77](https://github.com/Rubentxu/CogniCode/pull/77) |
+| `e18-2-spotter-intent` | Spotter with intent actions (Open as call graph, vertical slice, kind-aware defaults, Cmd+1..N) | ADR-005 | DONE | [#78](https://github.com/Rubentxu/CogniCode/pull/78) |
+| `e18-3-pane-causal-breadcrumbs` | Pane stack shows causal breadcrumbs (From / Via / Purpose) | ADR-005 | Active | — |
 | `e18-4-suggestion-verbs` | SuggestionStrip evolves to 5 investigation verbs (Understand / Trace / Compare / Explain / Save) | ADR-005 | Queued | — |
 
-**E18-1 follow-ups (post-merge hotfix)**:
-- KindFilterChips UX bug: `Spotter.tsx` returns null when no query results, hiding the entry-point kind chip. ~5-line fix.
-- Stale visual-regression snapshots: 35 PNG baselines need regeneration.
-- Pre-existing `suggestedQuestions.test.ts` failure: InspectableObjectType route variant count mismatch (unrelated).
+**E18-1 follow-ups (closed in PR #77)**:
+- KindFilterChips UX bug — fixed
+- Stale visual-regression snapshots — regenerated
+- Pre-existing `suggestedQuestions.test.ts` failure — fixed (added `route` kind)
+
+**E18-2 follow-ups (debt to address)**:
+- cmdk `vimBindings` limitation blocks interactive E2E for Cmd+N (unit tests cover)
+- 3 pre-existing Playwright failures (a11y + strict-mode close button) — technical debt
 
 #### Milestone E19 — C4 Investigation Model
 
