@@ -171,7 +171,7 @@ export const initialState: AppState = {
     perspective: "graph",
   lensSidebar: { open: false },
   viewSpecWizard: { open: false },
-  landingWorkbench: { activeTab: "start" },
+  landingWorkbench: { activeTab: "graph" },
 };
 
 /**

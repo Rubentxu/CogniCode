@@ -31,7 +31,7 @@ test.describe("G7: LandingWorkbench (e18-1)", () => {
     await expect(page.getByTestId("start-from-section")).toBeVisible();
   });
 
-  test("clicking an entry point opens Spotter", async ({ page }) => {
+  test("clicking an entry point opens Spotter with the kind chip pre-selected", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("landing-workbench")).toBeVisible({ timeout: 5_000 });
@@ -46,6 +46,11 @@ test.describe("G7: LandingWorkbench (e18-1)", () => {
     // Spotter opens
     const spotter = page.getByTestId("spotter");
     await expect(spotter).toBeVisible({ timeout: 5_000 });
+
+    // The "route" kind chip should be pre-selected (not "all kinds")
+    // Spotter's active chip uses aria-selected to indicate selection state
+    const routeChip = spotter.getByTestId("spotter-kind-route");
+    await expect(routeChip).toHaveAttribute("aria-selected", "true");
   });
 
   test("switching to Graph tab shows GraphLanding", async ({ page }) => {
@@ -70,5 +75,27 @@ test.describe("G7: LandingWorkbench (e18-1)", () => {
 
     // At least one template visible
     await expect(page.getByTestId("investigation-template-trace-request")).toBeVisible();
+  });
+
+  test("C4 perspective forces Graph tab and restores previous on exit", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("landing-workbench")).toBeVisible({ timeout: 5_000 });
+
+    // Switch to Start tab
+    await page.getByTestId("landing-tab-start").click();
+    await expect(page.getByTestId("landing-workbench")).toHaveAttribute("data-active-tab", "start");
+
+    // Toggle C4 perspective
+    await page.getByTestId("perspective-c4").click();
+
+    // Should be forced to Graph tab
+    await expect(page.getByTestId("landing-workbench")).toHaveAttribute("data-active-tab", "graph");
+
+    // Toggle back to Graph perspective
+    await page.getByTestId("perspective-graph").click();
+
+    // Should restore to Start tab
+    await expect(page.getByTestId("landing-workbench")).toHaveAttribute("data-active-tab", "start");
   });
 });
