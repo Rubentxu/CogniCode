@@ -274,6 +274,8 @@ export function Spotter() {
                       });
                     }}
                     data-testid={`spotter-item-${hit.object.id}`}
+                    data-family={hit.object.object_type}
+                    data-view-id={hit.object.available_views[0]?.id}
                     className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
                   >
                     <span
