@@ -4,10 +4,15 @@
  * Verifies: 4 tabs render, default active tab, tab switching via click
  * and keyboard (arrow navigation), and C4 forces Graph tab.
  */
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useReducer } from "react";
+
+// Stub GraphLanding to prevent canvas crashes in jsdom
+vi.mock("../GraphLanding/GraphLanding", () => ({
+  GraphLanding: () => <div data-testid="graph-landing-canvas">GraphLanding stub</div>,
+}));
 
 import { LandingWorkbench } from "./LandingWorkbench";
 import {
@@ -20,7 +25,7 @@ import { workspaceSummaryFixture } from "../../mocks/fixtures";
 import type { LandingWorkbenchState } from "../../state/slices/landingWorkbench";
 
 function LandingWorkbenchWithState({
-  landingState = { activeTab: "start" as LandingWorkbenchState["activeTab"] },
+  landingState = { activeTab: "graph" as LandingWorkbenchState["activeTab"] },
   perspective = "graph" as AppState["perspective"],
   workspaceId = "ws-test-001",
 }: {
@@ -40,7 +45,7 @@ function LandingWorkbenchWithState({
       if (a.type === "RESET") {
         return {
           ...s,
-          landingWorkbench: { activeTab: "start" },
+          landingWorkbench: { activeTab: "graph" },
         };
       }
       // Pass through for other actions
@@ -54,7 +59,7 @@ function LandingWorkbenchWithState({
       landingWorkbench: landingState,
     },
   );
-  const value: { state: AppState; dispatch: React.Dispatch<Action> } = { state, dispatch };
+  const value = { state, dispatch };
   return (
     <AppContext.Provider value={value}>
       <LandingWorkbench workspaceId={workspaceId} />
@@ -71,9 +76,9 @@ describe("LandingWorkbench component", () => {
     expect(screen.getByTestId("landing-tab-graph")).toBeVisible();
   });
 
-  it("defaults to start tab as active", () => {
+  it("defaults to graph tab as active", () => {
     render(<LandingWorkbenchWithState />);
-    expect(screen.getByTestId("landing-workbench")).toHaveAttribute("data-active-tab", "start");
+    expect(screen.getByTestId("landing-workbench")).toHaveAttribute("data-active-tab", "graph");
   });
 
   it("shows StartFromSection when start tab is active", () => {
@@ -93,7 +98,8 @@ describe("LandingWorkbench component", () => {
 
   it("clicking investigations tab dispatches SET_LANDING_TAB", async () => {
     const user = userEvent.setup();
-    render(<LandingWorkbenchWithState />);
+    // Use start tab initial state to avoid rendering GraphLanding (requires canvas)
+    render(<LandingWorkbenchWithState landingState={{ activeTab: "start" }} />);
 
     await user.click(screen.getByTestId("landing-tab-investigations"));
 
@@ -104,17 +110,24 @@ describe("LandingWorkbench component", () => {
     );
   });
 
-  it("clicking graph tab switches to graph tab", async () => {
-    const user = userEvent.setup();
-    render(<LandingWorkbenchWithState />);
+  it("clicking investigations tab from graph tab is reflected in landingWorkbench state", async () => {
+    // Start with graph tab active (default) to avoid GraphLanding canvas issue
+    render(<LandingWorkbenchWithState landingState={{ activeTab: "graph" }} />);
 
-    await user.click(screen.getByTestId("landing-tab-graph"));
-
+    // Verify graph tab is active initially
     expect(screen.getByTestId("landing-workbench")).toHaveAttribute("data-active-tab", "graph");
+
+    // Click investigations tab
+    await userEvent.click(screen.getByTestId("landing-tab-investigations"));
+
+    // Verify state updated
+    await waitFor(() => {
+      expect(screen.getByTestId("landing-workbench")).toHaveAttribute("data-active-tab", "investigations");
+    });
   });
 
   it("has correct ARIA roles on tabs", () => {
-    render(<LandingWorkbenchWithState />);
+    render(<LandingWorkbenchWithState landingState={{ activeTab: "start" }} />);
     const tablist = screen.getByRole("tablist");
     expect(tablist).toBeVisible();
     expect(screen.getAllByRole("tab")).toHaveLength(4);

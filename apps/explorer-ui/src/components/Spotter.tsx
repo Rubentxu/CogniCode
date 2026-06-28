@@ -80,7 +80,7 @@ function kindsFromResults(results: ReadonlyArray<SpotterResult>): KindFilter[] {
 export function Spotter() {
   const { state } = useApp();
   const dispatch = useAppDispatch();
-  const { spotterOpen } = state;
+  const { spotterOpen, spotterKind } = state;
 
   // -----------------------------------------------------------------
   // Global keyboard shortcuts
@@ -118,7 +118,7 @@ export function Spotter() {
   const workspaceId = workspaces?.[0]?.id ?? null;
 
   const [rawQuery, setRawQuery] = useState("");
-  const [kind, setKind] = useState<KindFilter>(ALL_KINDS);
+  const [kind, setKind] = useState<KindFilter>(spotterKind ?? ALL_KINDS);
   const debouncedQuery = useDebounced(rawQuery, DEBOUNCE_MS);
 
   // Reset transient state every time the palette opens. We
@@ -130,10 +130,11 @@ export function Spotter() {
     if (spotterOpen) {
       queueMicrotask(() => {
         setRawQuery("");
-        setKind(ALL_KINDS);
+        // Don't reset kind if spotterKind was set by caller
+        setKind((currentKind) => spotterKind ?? currentKind ?? ALL_KINDS);
       });
     }
-  }, [spotterOpen]);
+  }, [spotterOpen, spotterKind]);
 
   // SWR — only fetches when both the workspace and the (trimmed)
   // query are non-empty. `keepPreviousData` smooths the transition

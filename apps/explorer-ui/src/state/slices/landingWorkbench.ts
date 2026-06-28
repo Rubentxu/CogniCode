@@ -16,7 +16,7 @@ export interface LandingWorkbenchState {
 }
 
 export const initialLandingWorkbenchState: LandingWorkbenchState = {
-  activeTab: "start",
+  activeTab: "graph",
 };
 
 export type LandingWorkbenchAction = Extract<

@@ -9,7 +9,7 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("G7: LandingWorkbench (e18-1)", () => {
-  test("renders 4 tabs with Start From as default", async ({ page }) => {
+  test("renders 4 tabs with Graph as default", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
@@ -22,8 +22,12 @@ test.describe("G7: LandingWorkbench (e18-1)", () => {
     await expect(page.getByTestId("landing-tab-resume")).toBeVisible();
     await expect(page.getByTestId("landing-tab-graph")).toBeVisible();
 
-    // Default active tab is start
-    await expect(workbench).toHaveAttribute("data-active-tab", "start");
+    // Default active tab is graph (zero regression — existing landing tests expect this)
+    await expect(workbench).toHaveAttribute("data-active-tab", "graph");
+    await expect(page.getByTestId("graph-landing-canvas")).toBeVisible({ timeout: 5_000 });
+
+    // Can switch to Start tab
+    await page.getByTestId("landing-tab-start").click();
     await expect(page.getByTestId("start-from-section")).toBeVisible();
   });
 
@@ -31,6 +35,10 @@ test.describe("G7: LandingWorkbench (e18-1)", () => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByTestId("landing-workbench")).toBeVisible({ timeout: 5_000 });
+
+    // Switch to Start From tab (default is Graph)
+    await page.getByTestId("landing-tab-start").click();
+    await expect(page.getByTestId("start-from-section")).toBeVisible({ timeout: 5_000 });
 
     // Click a Route entry point
     await page.getByTestId("entry-point-route").click();

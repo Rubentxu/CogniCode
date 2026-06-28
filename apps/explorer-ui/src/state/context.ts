@@ -52,6 +52,12 @@ export type AppState = {
   /** Whether the Spotter palette is open. */
   spotterOpen: boolean;
   /**
+   * The active kind filter hint for the Spotter palette.
+   * Set when an entry-point card scopes Spotter to a specific kind (e.g. "route").
+   * Consumed by Spotter.tsx to pre-select the kind chip.
+   */
+  spotterKind: string | null;
+  /**
    * The last fully resolved contextual view — cached so the UI can
    * re-render instantly while SWR revalidates in the background.
    */
@@ -107,11 +113,12 @@ export function initialStateWithFocus(
     activeViewId: focus.viewId,
     activeLensId: focus.lensId,
     spotterOpen: false,
+    spotterKind: null,
     activeView: null,
     perspective: "graph",
     lensSidebar: { open: false },
     viewSpecWizard: { open: false },
-    landingWorkbench: { activeTab: "start" },
+    landingWorkbench: { activeTab: "graph" },
   };
 }
 
@@ -158,9 +165,10 @@ export const initialState: AppState = {
   activeObjectId: null,
   activeViewId: null,
   activeLensId: null,
-  spotterOpen: false,
-  activeView: null,
-  perspective: "graph",
+    spotterOpen: false,
+    spotterKind: null,
+    activeView: null,
+    perspective: "graph",
   lensSidebar: { open: false },
   viewSpecWizard: { open: false },
   landingWorkbench: { activeTab: "start" },

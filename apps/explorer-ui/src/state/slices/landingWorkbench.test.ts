@@ -10,8 +10,8 @@ import {
 } from "./landingWorkbench";
 
 describe("landingWorkbenchReducer", () => {
-  it("defaults to start tab", () => {
-    expect(initialLandingWorkbenchState.activeTab).toBe("start");
+  it("defaults to graph tab", () => {
+    expect(initialLandingWorkbenchState.activeTab).toBe("graph");
   });
 
   it("handles SET_LANDING_TAB", () => {
@@ -38,11 +38,11 @@ describe("landingWorkbenchReducer", () => {
     expect(next.activeTab).toBe("graph");
   });
 
-  it("resets to start tab on RESET", () => {
-    const dirty = { activeTab: "graph" as const };
+  it("resets to graph tab on RESET", () => {
+    const dirty = { activeTab: "start" as const };
     const next = landingWorkbenchReducer(dirty, { type: "RESET" });
     expect(next).toEqual(initialLandingWorkbenchState);
-    expect(next.activeTab).toBe("start");
+    expect(next.activeTab).toBe("graph");
   });
 
   it("ignores unknown actions", () => {

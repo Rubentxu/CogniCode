@@ -36,11 +36,21 @@ export function LandingWorkbench({ workspaceId }: LandingWorkbenchProps) {
   const dispatch = useAppDispatch();
   const { landingWorkbench, perspective } = useAppState();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const previousTabRef = useRef<LandingTabId>(landingWorkbench.activeTab);
 
-  // C4 perspective forces the Graph tab
+  // C4 perspective: stash previous tab, force Graph. Restore on exit.
   useEffect(() => {
-    if (perspective === "c4" && landingWorkbench.activeTab !== "graph") {
-      dispatch({ type: "SET_LANDING_TAB", payload: { tab: "graph" } });
+    if (perspective === "c4") {
+      // Save current tab before forcing Graph
+      if (landingWorkbench.activeTab !== "graph") {
+        previousTabRef.current = landingWorkbench.activeTab;
+        dispatch({ type: "SET_LANDING_TAB", payload: { tab: "graph" } });
+      }
+    } else {
+      // Restore previous tab when leaving C4
+      if (previousTabRef.current !== "graph" && landingWorkbench.activeTab === "graph") {
+        dispatch({ type: "SET_LANDING_TAB", payload: { tab: previousTabRef.current } });
+      }
     }
   }, [perspective, landingWorkbench.activeTab, dispatch]);
 
