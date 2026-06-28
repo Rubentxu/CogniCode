@@ -1,12 +1,14 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-27 (e15.5 E2E closed; e17 E2E coverage sprint active)
+Last updated: 2026-06-28 (e17 E2E coverage sprint closed; trunk clean)
 
 ## Active
 
-| Change | Branch | Goal |
-|--------|--------|------|
-| `e17-e2e-coverage` | `feat/e17-e2e-coverage` | Sprint 1 E2E: Phase 1 executors (usage_examples, api_surface, test_slice, debug_slice, change_impact_story) + McpToolsModal + ViewSpec authoring. See `docs/analysis/e17-coverage-matrix.md`. |
+_Nothing active — trunk is clean. See Completed below._
+
+## Session Handover 2026-06-28
+
+Closed e17 E2E coverage sprint (2 PRs, 127 E2E tests passing). Pruned 57 stale/orphaned branches. Trunk base clean.
 
 ## Session Handover 2026-06-26
 
@@ -23,6 +25,8 @@ Continuing from 2026-06-25. Closed e9 (landing virtualization), e11 (truncation 
 | `e12c-test-slice` | v0.27.2 | 2026-06-26 | TestSliceExecutor as 12th executor. Shows test callers of a symbol via GraphQueryPort.callers() filtered by is_test_file heuristic. DocCodeAlignment deferred to Phase 2+ (EntryPoint::Doc not wired). 4 new tests. |
 | `e12d-debug-slice` | v0.27.3 | 2026-06-26 | DebugSliceExecutor as 13th executor. Shows debug-relevant callers/callees filtered by name heuristic (debug,log,error,panic,dbg,trace,assert,check,verify,test,_test). Renderer: graph. 3 new tests. |
 | `e12e-change-impact-story` | v0.27.4 | 2026-06-26 | ChangeImpactStoryExecutor as 15th executor. BFS upstream (callers) + downstream (callees) up to depth 3 as Table blocks. Renderer: Table. 4 new tests. PR #67 open. |
+| `e17-e2e-coverage` | — | 2026-06-28 | E2E coverage sprint. PR #74: 13 McpToolsModal tests + ViewSpec save flow. PR #75: 13 new test specs (landing-real-data, pane-stack-drilldown, viewspec-wizard-full, view-tabs-coverage, spotter-multifamily, perspective-toggle-full, responsive-full, error-states-coverage, exploration-share, scan-progress, lens-panel, msw-fixture-consistency, call-graph-rendering-extended). 127 E2E passing. |
+| `e17-e2e-coverage-audit` | — | 2026-06-28 | Audit branch integrated into PR #75. Same 13 specs as e17 above. Trunk pruned: 57 stale/orphaned branches removed. |
 
 ## Hygiene 2026-06-25
 
