@@ -27,6 +27,7 @@ import {
   type LensSidebarState,
   type ViewSpecWizardAction,
   type ViewSpecWizardState,
+  type LandingTabId,
 } from "./slices";
 
 // ============================================================================
@@ -71,6 +72,13 @@ export type AppState = {
    * PaneInspector (it needs the resolved object + workspace).
    */
   viewSpecWizard: ViewSpecWizardState;
+  /**
+   * Landing Workbench active tab — "start" | "investigations" | "resume" | "graph".
+   * The Graph tab embeds GraphLanding unchanged; other tabs are future work.
+   */
+  landingWorkbench: {
+    activeTab: LandingTabId;
+  };
 };
 
 /**
@@ -103,6 +111,7 @@ export function initialStateWithFocus(
     perspective: "graph",
     lensSidebar: { open: false },
     viewSpecWizard: { open: false },
+    landingWorkbench: { activeTab: "start" },
   };
 }
 
@@ -128,7 +137,8 @@ export type Action =
   | { type: "SET_PANE_SCROLL"; payload: { paneId: string; scrollY: number } }
   | { type: "UPDATE_PANE_VIEWPORT"; payload: { paneId: string; viewport: ViewportState } }
   | { type: "TOGGLE_SPOTTER" }
-  | { type: "SET_SPOTTER"; payload: { open: boolean } }
+  | { type: "SET_SPOTTER"; payload: { open: boolean; kind?: string } }
+  | { type: "SET_LANDING_TAB"; payload: { tab: LandingTabId } }
   | { type: "RESET" }
   | { type: "SET_PERSPECTIVE"; payload: "graph" | "c4" }
   | { type: "TOGGLE_LENS_SIDEBAR" }
@@ -153,6 +163,7 @@ export const initialState: AppState = {
   perspective: "graph",
   lensSidebar: { open: false },
   viewSpecWizard: { open: false },
+  landingWorkbench: { activeTab: "start" },
 };
 
 /**

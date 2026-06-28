@@ -14,6 +14,7 @@ import { workspaceReducer } from "./workspace";
 import { perspectiveReducer } from "./perspective";
 import { lensSidebarReducer } from "./lensSidebar";
 import { viewSpecWizardReducer } from "./viewSpecWizard";
+import { landingWorkbenchReducer } from "./landingWorkbench";
 
 export type RootReducer = (state: AppState, action: import("../context").Action) => AppState;
 
@@ -40,6 +41,7 @@ export function rootReducer(state: AppState, action: import("../context").Action
     perspective: perspectiveReducer(state.perspective, action),
     lensSidebar: lensSidebarReducer(state.lensSidebar, action as never),
     viewSpecWizard: viewSpecWizardReducer(state.viewSpecWizard, action as never),
+    landingWorkbench: landingWorkbenchReducer(state.landingWorkbench, action),
   };
 }
 
@@ -49,6 +51,7 @@ export type { SpotterAction } from "./spotter";
 export type { WorkspaceAction } from "./workspace";
 export type { PerspectiveAction } from "./perspective";
 export type { LensSidebarAction, LensSidebarState } from "./lensSidebar";
+export type { LandingWorkbenchAction, LandingTabId } from "./landingWorkbench";
 export type {
   ViewSpecWizardAction,
   ViewSpecWizardState,
