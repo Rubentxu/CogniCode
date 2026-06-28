@@ -52,11 +52,22 @@ function useDebounced<T>(value: T, delayMs: number): T {
  * a chip. The list is stable across keystrokes (we still recompute
  * each render — cheap, and the order is deterministic because the
  * backend already returns results sorted by score).
+ *
+ * If `spotterKind` is set (caller dispatched with a kind hint), it is
+ * added to the chip set even when no query results exist yet — so the
+ * active filter is visible from the moment Spotter opens (e18-1
+ * hotfix). Once results arrive, the chips reflect the real kinds.
  */
-function kindsFromResults(results: ReadonlyArray<SpotterResult>): KindFilter[] {
+function kindsFromResults(
+  results: ReadonlyArray<SpotterResult>,
+  spotterKind: string | null = null,
+): KindFilter[] {
   const seen = new Set<string>();
   for (const r of results) {
     seen.add(r.object.object_type);
+  }
+  if (spotterKind && !seen.has(spotterKind)) {
+    seen.add(spotterKind);
   }
   return [ALL_KINDS, ...Array.from(seen).sort()];
 }
@@ -156,7 +167,10 @@ export function Spotter() {
   }, [data, kind]);
 
   const grouped = useMemo(() => groupByKind(filteredResults), [filteredResults]);
-  const kindOptions = useMemo(() => kindsFromResults(data ?? []), [data]);
+  const kindOptions = useMemo(
+    () => kindsFromResults(data ?? [], kind === ALL_KINDS ? spotterKind : kind),
+    [data, kind, spotterKind],
+  );
 
   // Close on Escape (cmdk handles this internally for the input
   // but we want it at the dialog level too).
@@ -344,7 +358,12 @@ interface KindFilterChipsProps {
 }
 
 function KindFilterChips({ options, value, onChange }: KindFilterChipsProps) {
-  if (options.length <= 1) return null;
+  // Render the chip strip whenever there is anything useful to show:
+  //   - more than one option (user can switch between filters), OR
+  //   - exactly one option but the active value is NOT the "all" sentinel
+  //     (caller dispatched with a kind hint, so we surface it even when
+  //     there are no query results yet — e18-1 hotfix)
+  if (options.length <= 1 && value === ALL_KINDS) return null;
   return (
     <div
       role="tablist"

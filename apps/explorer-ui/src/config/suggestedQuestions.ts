@@ -284,6 +284,30 @@ export const SUGGESTED_QUESTIONS: {
       requiresGraph: false,
     },
   ],
+
+  route: [
+    {
+      id: "trace-handler",
+      label: "Trace the handler",
+      tool: "cognicode_ask",
+      params: { question: "trace the handler for `{label}`" },
+      requiresGraph: true,
+    },
+    {
+      id: "related-tests",
+      label: "Show related tests",
+      tool: "explorer_get_view",
+      params: { view_id: "test_slice" },
+      requiresGraph: true,
+    },
+    {
+      id: "downstream-effects",
+      label: "What does this route trigger downstream?",
+      tool: "cognicode_ask",
+      params: { question: "what does `{label}` call?" },
+      requiresGraph: true,
+    },
+  ],
 } as const;
 
 // ---------------------------------------------------------------------------
