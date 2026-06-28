@@ -1,0 +1,45 @@
+{
+  "change": "e18-1-landing-workbench",
+  "phase": "apply",
+  "pr": 3,
+  "status": "completed",
+  "completed_tasks": [
+    "1.1 landingWorkbench.ts slice created",
+    "1.2 landingWorkbenchReducer exported from slices/index.ts",
+    "1.3 landingWorkbench registered in context.ts AppState + initialState + initialStateWithFocus",
+    "1.4 SET_SPOTTER extended with optional kind: string",
+    "1.5 LandingWorkbench/entryPointTypes.ts created with ENTRY_POINT_TYPES catalog",
+    "2.1 LandingWorkbench.tsx — 4-tab ARIA tablist with roving focus",
+    "2.2 StartFromSection.tsx — 5 entry point type cards dispatching SET_SPOTTER",
+    "2.3 InvestigationsSection.tsx — 5 common investigation templates",
+    "2.4 ResumeSection.tsx — wraps RecentExplorationsStrip with SELECT_OBJECT dispatch",
+    "3.1 Shell.tsx renders LandingWorkbench when activeObjectId === null (replaces GraphLanding)",
+    "3.2 GraphLanding unchanged — embedded as Graph tab inside LandingWorkbench",
+    "3.3 PerspectiveToggle C4 → graph tab via LandingWorkbench useEffect (verified via E2E)",
+    "4.1 landingWorkbench reducer unit test (SET_LANDING_TAB, RESET, unknown-action passthrough)",
+    "4.2 LandingWorkbench component unit test (4 tabs, default start, tab switching)",
+    "4.3 landing-workbench E2E spec (4 tabs render, entry-point click opens Spotter, Graph tab parity)",
+    "5.1 GraphLanding.tsx doc comment notes new role as LandingWorkbench sub-tab",
+    "5.2 Linter passes (pre-existing errors in other files unchanged), TypeScript passes"
+  ],
+  "files_created": [
+    "apps/explorer-ui/src/state/slices/landingWorkbench.ts",
+    "apps/explorer-ui/src/components/LandingWorkbench/entryPointTypes.ts",
+    "apps/explorer-ui/src/components/LandingWorkbench/LandingWorkbench.tsx",
+    "apps/explorer-ui/src/components/LandingWorkbench/StartFromSection.tsx",
+    "apps/explorer-ui/src/components/LandingWorkbench/InvestigationsSection.tsx",
+    "apps/explorer-ui/src/components/LandingWorkbench/ResumeSection.tsx",
+    "apps/explorer-ui/src/state/slices/landingWorkbench.test.ts",
+    "apps/explorer-ui/src/components/LandingWorkbench/LandingWorkbench.test.tsx",
+    "apps/explorer-ui/e2e/landing-workbench.spec.ts"
+  ],
+  "files_modified": [
+    "apps/explorer-ui/src/state/slices/index.ts",
+    "apps/explorer-ui/src/state/context.ts",
+    "apps/explorer-ui/src/components/Shell.tsx",
+    "apps/explorer-ui/src/components/Shell.test.tsx",
+    "apps/explorer-ui/src/components/GraphLanding/GraphLanding.tsx"
+  ],
+  "commit_sha": null,
+  "ts": "2026-06-28T00:00:00Z"
+}
