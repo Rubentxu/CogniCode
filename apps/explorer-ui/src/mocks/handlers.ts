@@ -506,6 +506,19 @@ export const handlers = [
     return HttpResponse.json([]);
   }),
 
+  // POST /api/viewspecs — create a new ViewSpec.
+  // Returns the assigned id (UUID generated server-side).
+  http.post("/api/viewspecs", async ({ request }) => {
+    await delay(LATENCY_MS);
+    const body = (await request.clone().json()) as Record<string, unknown>;
+    const spec = body["spec"] as Record<string, unknown> | undefined;
+    // Return a generated UUID for the new spec
+    const id = (spec && typeof spec === "object" && (spec as Record<string, unknown>)["id"])
+      ? String((spec as Record<string, unknown>)["id"])
+      : `00000000-0000-0000-0000-${Date.now().toString().padStart(12, "0")}`;
+    return HttpResponse.json({ id });
+  }),
+
   // -----------------------------------------------------------------------
   // 12. Subgraph (visualization-stack Phase 1)
   // -----------------------------------------------------------------------

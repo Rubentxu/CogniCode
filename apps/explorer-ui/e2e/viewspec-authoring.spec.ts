@@ -236,4 +236,38 @@ test.describe("ViewSpec Wizard (G7)", () => {
     await page.locator("textarea").first().fill("symbols where kind = 'function'");
     await expect(page.getByRole("button", { name: /next/i })).toBeEnabled();
   });
+
+  // ---------------------------------------------------------------------------
+  // G7.5: Save flow (MSW handler POST /api/viewspecs already exists)
+  // ---------------------------------------------------------------------------
+
+  test("save flow: fills title and saves successfully", async ({ page }) => {
+    await openInspectorWithObject(page);
+    await openWizard(page);
+
+    // Navigate to step 5 (Save)
+    await page.getByRole("button", { name: /vertical slice/i }).click();
+    await page.getByRole("button", { name: /next/i }).click();
+    await page.getByRole("button", { name: /graph — interactive/i }).click();
+    await page.getByRole("button", { name: /next/i }).click();
+    await page.locator("textarea").first().fill("symbols");
+    await page.getByRole("button", { name: /next/i }).click();
+    await page.getByRole("button", { name: /next/i }).click();
+    await expect(page.getByText("Step 5 of 5")).toBeVisible();
+
+    // Fill title
+    const dialog = page.getByRole("dialog", { name: /create custom view/i });
+    await dialog.getByLabel(/title/i).fill("My Vertical Slice");
+
+    // Click Save — wizard should close after success
+    await dialog.getByRole("button", { name: /save view/i }).click();
+    await expect(dialog).not.toBeVisible({ timeout: 10_000 });
+  });
+
+  // G7.5: Error state — requires ability to override MSW handler or run without mocks.
+  // Skipped in E2E (MSW-incompatible with page.route); covered in integration tests.
+  test.skip("save flow: shows error message when API fails", async ({ page }) => {
+    // This would require disabling MSW or using a test-specific handler override.
+    // Until then, the save-success test above provides the relevant coverage.
+  });
 });
