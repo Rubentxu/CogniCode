@@ -4,7 +4,7 @@
  * The map is the source of truth for "What can I do here?" prompts. It
  * is consumed by `SuggestionStrip` and `useAsk`. Every consumer relies
  * on:
- *   1. Exhaustiveness over all 9 `InspectableObjectType` variants
+ *   1. Exhaustiveness over all 10 `InspectableObjectType` variants
  *   2. Each kind having 3-5 prompts
  *   3. Every entry having a valid `tool` and a non-empty `params` object
  *   4. The map being readonly at the type level
@@ -24,7 +24,7 @@ import {
 
 const ALL_KINDS = inspectableObjectTypeSchema.options;
 
-// Sanity: the spec locks exactly 9 variants. If this fails, the backend
+// Sanity: the spec locks exactly 10 variants. If this fails, the backend
 // has added a new kind and the map MUST be updated before any consumer
 // will compile.
 const EXPECTED_KINDS: readonly InspectableObjectType[] = [
@@ -37,6 +37,7 @@ const EXPECTED_KINDS: readonly InspectableObjectType[] = [
   "decision_artifact",
   "quality_issue",
   "rule",
+  "route",
 ];
 
 const ALLOWED_TOOLS: readonly SuggestedTool[] = [
@@ -51,7 +52,7 @@ const ALLOWED_TOOLS: readonly SuggestedTool[] = [
 // ---------------------------------------------------------------------------
 
 describe("SUGGESTED_QUESTIONS — exhaustiveness", () => {
-  it("covers all 9 InspectableObjectType variants", () => {
+  it("covers all 10 InspectableObjectType variants", () => {
     expect(ALL_KINDS).toEqual(EXPECTED_KINDS);
     // The map must declare a key for every variant the schema enumerates.
     for (const kind of EXPECTED_KINDS) {
