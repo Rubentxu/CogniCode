@@ -23,6 +23,7 @@ import {
 } from "react";
 
 import { verbLabel, VERB_STUB_CONFIG, type SuggestedQuestion } from "../../config/suggestedQuestions";
+import type { GraphStatus } from "../../api/types";
 
 export interface SuggestionPopoverProps {
   prompts: readonly SuggestedQuestion[];
@@ -31,6 +32,8 @@ export interface SuggestionPopoverProps {
   ariaLabel?: string;
   /** Optional: extra className on the strip wrapper. */
   className?: string;
+  /** Graph status for stale-gating parity with SuggestionStrip. */
+  graphStatus?: GraphStatus;
 }
 
 export interface SuggestionPopoverHandle {
@@ -45,7 +48,7 @@ export interface SuggestionPopoverHandle {
 export const SuggestionPopover = forwardRef<
   SuggestionPopoverHandle,
   SuggestionPopoverProps
->(function SuggestionPopover({ prompts, onDispatch, ariaLabel, className }, ref) {
+>(function SuggestionPopover({ prompts, onDispatch, ariaLabel, className, graphStatus }, ref) {
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   // `open` mirrors the dialog's `open` attribute. We track it as
@@ -138,7 +141,7 @@ export const SuggestionPopover = forwardRef<
           {prompts.map((prompt) => {
             const disabled =
               prompt.isComingSoon ||
-              (prompt.requiresGraph && /* stale gating: see strip */ false);
+              (prompt.requiresGraph && graphStatus === "stale");
             const stubReason = prompt.isComingSoon
               ? VERB_STUB_CONFIG[prompt.verb]?.disabledReason
               : undefined;

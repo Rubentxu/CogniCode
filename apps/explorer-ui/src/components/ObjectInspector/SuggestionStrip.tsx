@@ -66,6 +66,7 @@ export function SuggestionStrip(props: SuggestionStripProps): React.ReactElement
         prompts={visiblePrompts}
         onDispatch={props.onDispatch}
         ariaLabel="What can I do here?"
+        graphStatus={props.graphStatus}
       />
     );
   }
