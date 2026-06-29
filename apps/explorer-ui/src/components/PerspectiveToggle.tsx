@@ -96,6 +96,19 @@ export function PerspectiveToggle() {
           >
             Hotspots
           </button>
+          <button
+            data-testid="c4-overlay-boundary-violations"
+            aria-pressed={c4Overlay.boundaryViolationsEnabled}
+            onClick={() => dispatch({ type: "c4-overlay/toggleBoundaryViolations" })}
+            className={
+              "text-xs px-2 py-1 rounded border transition-colors " +
+              (c4Overlay.boundaryViolationsEnabled
+                ? "bg-blue-50 border-blue-300 text-blue-700"
+                : "bg-gray-50 border-gray-200 text-gray-500")
+            }
+          >
+            Boundary Violations
+          </button>
         </div>
       )}
     </div>

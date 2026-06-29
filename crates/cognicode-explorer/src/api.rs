@@ -105,6 +105,7 @@ pub fn edge_style_class_for(relation: &str) -> &'static str {
         "part_of" => "edge-part-of",
         "deployed_as" => "edge-deployed-as",
         "in_system" => "edge-in-system",
+        "depends_on" => "edge-depends-on",
         _ => "edge.calls",
     }
 }

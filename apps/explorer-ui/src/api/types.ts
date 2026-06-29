@@ -93,7 +93,7 @@ export type {
 
 // ---- C4 Overlays (e19-3) ----
 
-export type DriftKind = "missing" | "extra" | "wrong_sub_kind";
+export type DriftKind = "missing" | "extra" | "wrong_sub_kind" | "boundary_violation";
 
 export interface DriftFinding {
   kind: DriftKind;
@@ -101,6 +101,7 @@ export interface DriftFinding {
   actual: string; // "—" if not inferred
   severity: string;
   detail: string;
+  rule_id?: string | null;
 }
 
 export interface DriftReport {
@@ -109,6 +110,7 @@ export interface DriftReport {
   missing_containers: number;
   extra_containers: number;
   wrong_sub_kinds: number;
+  boundary_violations: number;
 }
 
 // ---- WASM graph algorithm outputs (ADR-047) ----

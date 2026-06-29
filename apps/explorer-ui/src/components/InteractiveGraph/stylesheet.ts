@@ -508,7 +508,16 @@ export type ResolvedNodeStyleClass =
   // ---- Landing Page (E4 ADR-039) ----
   | "entry-point"
   | "hot"
-  | "god";
+  | "god"
+  // ---- C4 Overlays (E19-5) ----
+  | "drift-missing"
+  | "drift-extra"
+  | "drift-wrong-kind"
+  | "boundary-violation-error"
+  | "boundary-violation-warning"
+  | "boundary-violation-info"
+  | "hotspot-high"
+  | "hotspot-med";
 
 const warnedBuckets = new Set<string>();
 export function resolveNodeStyleClass(raw: string | undefined): ResolvedNodeStyleClass {

@@ -491,7 +491,7 @@ impl GraphServiceImpl {
                                         source: container_id.clone(),
                                         target: target_container_id.clone(),
                                         relation: EdgeKind::DependsOn.as_str().to_string(),
-                                        style_class: "edge-depends-on".to_string(),
+                                        style_class: crate::api::edge_style_class_for("depends_on").to_string(),
                                     });
                                 }
                             }
@@ -747,6 +747,7 @@ impl GraphServiceImpl {
                     let severity_str = match rule.severity {
                         crate::dto::Severity::Error => "error".to_string(),
                         crate::dto::Severity::Warning => "warning".to_string(),
+                        crate::dto::Severity::Info => "info".to_string(),
                     };
                     findings.push(DriftFinding {
                         kind: DriftKind::BoundaryViolation,
