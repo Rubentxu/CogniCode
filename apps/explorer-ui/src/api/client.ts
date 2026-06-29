@@ -542,6 +542,40 @@ export async function fetchArchitecture(
 }
 
 // ============================================================================
+// C4 Overlays — Drift Report (e19-3)
+// ============================================================================
+
+/**
+ * Fetch the architecture drift report for a workspace.
+ * Returns findings comparing actual code structure against expected C4 architecture.
+ * Handles 404 gracefully (no expected-architecture.yaml yet → returns empty report).
+ */
+export async function fetchDrift(
+  workspaceId: string,
+): Promise<import("./types").DriftReport> {
+  const url = buildUrl(getApiBaseUrl(), `/workspaces/${encodeURIComponent(workspaceId)}/drift`);
+  const response = await fetch(url);
+  if (response.status === 404) {
+    // No expected-architecture.yaml yet — return empty report
+    return {
+      findings: [],
+      summary: "No architecture drift detected (no expected architecture defined)",
+      missing_containers: 0,
+      extra_containers: 0,
+      wrong_sub_kinds: 0,
+    };
+  }
+  if (!response.ok) {
+    throw new ApiError({
+      message: `Drift fetch failed: ${response.status} ${response.statusText}`,
+      status: response.status,
+      url,
+    });
+  }
+  return response.json() as Promise<import("./types").DriftReport>;
+}
+
+// ============================================================================
 // Workspace Quality Summary — moldable wiring phase1 (PR #35)
 // ============================================================================
 

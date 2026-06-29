@@ -23,12 +23,14 @@ import {
   type ViewportState,
 } from "./slices/navigation";
 import { type Perspective } from "./c4Levels";
+import { type C4OverlayState, initialC4OverlayState } from "./slices/c4OverlaySlice";
 import {
   rootReducer,
   type LensSidebarState,
   type ViewSpecWizardAction,
   type ViewSpecWizardState,
   type LandingTabId,
+  type C4OverlayAction,
 } from "./slices";
 
 // ============================================================================
@@ -86,6 +88,10 @@ export type AppState = {
   landingWorkbench: {
     activeTab: LandingTabId;
   };
+  /**
+   * C4 overlay visibility toggles — drift findings and hotspot scores.
+   */
+  c4Overlay: C4OverlayState;
 };
 
 /**
@@ -120,6 +126,7 @@ export function initialStateWithFocus(
     lensSidebar: { open: false },
     viewSpecWizard: { open: false },
     landingWorkbench: { activeTab: "graph" },
+    c4Overlay: initialC4OverlayState,
   };
 }
 
@@ -153,7 +160,8 @@ export type Action =
   | { type: "SET_PERSPECTIVE"; payload: Perspective }
   | { type: "TOGGLE_LENS_SIDEBAR" }
   | { type: "SET_LENS_SIDEBAR"; payload: { open: boolean } }
-  | ViewSpecWizardAction;
+  | ViewSpecWizardAction
+  | C4OverlayAction;
 
 // ============================================================================
 // Reducer
@@ -168,13 +176,14 @@ export const initialState: AppState = {
   activeObjectId: null,
   activeViewId: null,
   activeLensId: null,
-    spotterOpen: false,
-    spotterKind: null,
-    activeView: null,
-    perspective: "graph",
+  spotterOpen: false,
+  spotterKind: null,
+  activeView: null,
+  perspective: "graph",
   lensSidebar: { open: false },
   viewSpecWizard: { open: false },
   landingWorkbench: { activeTab: "graph" },
+  c4Overlay: initialC4OverlayState,
 };
 
 /**

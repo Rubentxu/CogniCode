@@ -775,6 +775,25 @@ export const handlers = [
   }),
 
   // -------------------------------------------------------------------------
+  // C4 Overlays — Drift Report (e19-3)
+  // -------------------------------------------------------------------------
+  http.get("/api/workspaces/:workspace_id/drift", async ({ params }) => {
+    await delay(LATENCY_MS);
+    const workspaceId = params["workspace_id"] as string | undefined;
+    if (!workspaceId) {
+      return HttpResponse.json({ error: "workspace_id required" }, { status: 400 });
+    }
+    // Default: no drift (empty report for new workspaces)
+    return HttpResponse.json({
+      findings: [],
+      summary: "No architecture drift detected",
+      missing_containers: 0,
+      extra_containers: 0,
+      wrong_sub_kinds: 0,
+    });
+  }),
+
+  // -------------------------------------------------------------------------
   // e15.5 — MCP Tools (OpenAPI / gRPC / GraphQL / trPC ingestion)
   // -------------------------------------------------------------------------
   //
@@ -926,6 +945,18 @@ export const handlers = [
             matched_pattern: matchedPattern,
           },
         },
+      });
+    }
+
+    if (toolName === "lens_hotspots") {
+      const objectId = String(args["object_id"] ?? "");
+      // Return empty hotspots for now — tests can override per-case
+      return HttpResponse.json({
+        tool_name: "lens_hotspots",
+        version: "0.0.0",
+        timestamp: new Date().toISOString(),
+        provenance: null,
+        payload: [],
       });
     }
 

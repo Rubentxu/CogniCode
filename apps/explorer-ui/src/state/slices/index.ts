@@ -15,6 +15,7 @@ import { perspectiveReducer } from "./perspective";
 import { lensSidebarReducer } from "./lensSidebar";
 import { viewSpecWizardReducer } from "./viewSpecWizard";
 import { landingWorkbenchReducer } from "./landingWorkbench";
+import { c4OverlayReducer, initialC4OverlayState, type C4OverlayAction } from "./c4OverlaySlice";
 
 export type RootReducer = (state: AppState, action: import("../context").Action) => AppState;
 
@@ -48,6 +49,7 @@ export function rootReducer(state: AppState, action: import("../context").Action
     lensSidebar: lensSidebarReducer(state.lensSidebar, action as never),
     viewSpecWizard: viewSpecWizardReducer(state.viewSpecWizard, action as never),
     landingWorkbench: landingWorkbenchReducer(state.landingWorkbench, action),
+    c4Overlay: c4OverlayReducer(state.c4Overlay, action as C4OverlayAction),
   };
 }
 
@@ -62,3 +64,4 @@ export type {
   ViewSpecWizardAction,
   ViewSpecWizardState,
 } from "./viewSpecWizard";
+export type { C4OverlayAction } from "./c4OverlaySlice";
