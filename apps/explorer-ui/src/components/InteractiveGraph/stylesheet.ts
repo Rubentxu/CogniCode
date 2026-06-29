@@ -73,6 +73,10 @@ export const KNOWN_NODE_CLASSES = new Set([
   "drift-wrong-kind",
   "hotspot-high",
   "hotspot-med",
+  // ---- Boundary violation overlays (E19 Phase 3) ----
+  "boundary-violation-error",
+  "boundary-violation-warning",
+  "boundary-violation-info",
 ]);
 export const KNOWN_EDGE_CLASSES = new Set([
   "edge.calls",
@@ -87,6 +91,8 @@ export const KNOWN_EDGE_CLASSES = new Set([
   "edge-part-of",
   "edge-deployed-as",
   "edge-in-system",
+  // ---- C4 dependency edges (E19 Phase 2) ----
+  "edge-depends-on",
 ]);
 
 // Cytoscape's Css types are extremely strict (e.g. `text-max-width`
@@ -295,6 +301,31 @@ export function buildStylesheet(): (StylesheetStyle | StylesheetCSS)[] {
         "border-width": "2px",
       } as unknown as StylesheetStyle["style"],
     },
+    // ---- Boundary violation overlays (E19 Phase 3) ----
+    {
+      selector: 'node[style_class = "boundary-violation-error"]',
+      style: {
+        // Red border + background tint for error-level boundary violations
+        "border-color": "#dc2626",
+        "border-width": "3px",
+      } as unknown as StylesheetStyle["style"],
+    },
+    {
+      selector: 'node[style_class = "boundary-violation-warning"]',
+      style: {
+        // Orange border for warning-level boundary violations
+        "border-color": "#f59e0b",
+        "border-width": "3px",
+      } as unknown as StylesheetStyle["style"],
+    },
+    {
+      selector: 'node[style_class = "boundary-violation-info"]',
+      style: {
+        // Blue border for info-level boundary violations
+        "border-color": "#3b82f6",
+        "border-width": "3px",
+      } as unknown as StylesheetStyle["style"],
+    },
     {
       selector: "edge",
       style: EDGE_BASE as unknown as StylesheetStyle["style"],
@@ -388,6 +419,15 @@ export function buildStylesheet(): (StylesheetStyle | StylesheetCSS)[] {
         "line-style": "solid",
       } as unknown as StylesheetStyle["style"],
     },
+    // ---- C4 dependency edges (E19 Phase 2) ----
+    {
+      selector: 'edge[style_class = "edge-depends-on"]',
+      style: {
+        "line-color": "#8b5cf6",
+        "target-arrow-color": "#8b5cf6",
+        "line-style": "dashed",
+      } as unknown as StylesheetStyle["style"],
+    },
     {
       selector: ".selected",
       style: {
@@ -468,7 +508,16 @@ export type ResolvedNodeStyleClass =
   // ---- Landing Page (E4 ADR-039) ----
   | "entry-point"
   | "hot"
-  | "god";
+  | "god"
+  // ---- C4 Overlays (E19-5) ----
+  | "drift-missing"
+  | "drift-extra"
+  | "drift-wrong-kind"
+  | "boundary-violation-error"
+  | "boundary-violation-warning"
+  | "boundary-violation-info"
+  | "hotspot-high"
+  | "hotspot-med";
 
 const warnedBuckets = new Set<string>();
 export function resolveNodeStyleClass(raw: string | undefined): ResolvedNodeStyleClass {
@@ -506,7 +555,8 @@ export function resolveEdgeStyleClass(
   | "edge-corroborated"
   | "edge-part-of"
   | "edge-deployed-as"
-  | "edge-in-system" {
+  | "edge-in-system"
+  | "edge-depends-on" {
   if (raw && KNOWN_EDGE_CLASSES.has(raw)) {
     return raw as
       | "edge.calls"
@@ -518,7 +568,8 @@ export function resolveEdgeStyleClass(
       | "edge-corroborated"
       | "edge-part-of"
       | "edge-deployed-as"
-      | "edge-in-system";
+      | "edge-in-system"
+      | "edge-depends-on";
   }
   if (raw && !warnedEdgeBuckets.has(raw)) {
     warnedEdgeBuckets.add(raw);

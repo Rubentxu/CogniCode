@@ -18,6 +18,7 @@ const KIND_STYLES: Record<string, string> = {
   missing: "bg-red-500",
   extra: "bg-orange-500",
   wrong_sub_kind: "bg-yellow-500",
+  boundary_violation: "bg-blue-500",
 };
 
 function cn(...classes: (string | false | undefined)[]): string {

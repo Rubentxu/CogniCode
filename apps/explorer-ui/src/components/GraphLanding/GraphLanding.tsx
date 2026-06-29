@@ -72,6 +72,7 @@ export function normalizeContainerName(name: string): string {
  *
  * For "missing" findings, actual is "—" (not inferred), so we use expected.
  * For "extra" findings, expected is "—" (not expected), so we use actual.
+ * For "boundary_violation" findings, matches both source and target containers.
  */
 export function matchDriftToNodes(
   driftReport: DriftReport | undefined,
@@ -80,12 +81,50 @@ export function matchDriftToNodes(
   if (!driftReport) return new Map();
   const map = new Map<string, DriftKind>();
   for (const finding of driftReport.findings) {
-    // Use actual unless it's the placeholder "—", then use expected
-    const nameToMatch = finding.actual !== "—" ? finding.actual : finding.expected;
-    const normalizedName = normalizeContainerName(nameToMatch);
-    const node = nodes.find((n) => normalizeContainerName(n.label) === normalizedName);
-    if (node) {
-      map.set(node.id, finding.kind as DriftKind);
+    if (finding.kind === "boundary_violation") {
+      // Boundary violations match both source and target containers
+      // expected/actual are like "api -> db"
+      const parts = (finding.actual !== "—" ? finding.actual : finding.expected).split(" -> ");
+      for (const part of parts) {
+        const normalizedName = normalizeContainerName(part);
+        const node = nodes.find((n) => normalizeContainerName(n.label) === normalizedName);
+        if (node) {
+          map.set(node.id, "boundary_violation");
+        }
+      }
+    } else {
+      // Use actual unless it's the placeholder "—", then use expected
+      const nameToMatch = finding.actual !== "—" ? finding.actual : finding.expected;
+      const normalizedName = normalizeContainerName(nameToMatch);
+      const node = nodes.find((n) => normalizeContainerName(n.label) === normalizedName);
+      if (node) {
+        map.set(node.id, finding.kind as DriftKind);
+      }
+    }
+  }
+  return map;
+}
+
+/**
+ * Extract boundary violation severities for nodes involved in boundary violations.
+ * Returns a Map of nodeId → severity ("error" | "warning" | "info").
+ */
+export function matchBoundaryViolations(
+  driftReport: DriftReport | undefined,
+  nodes: GraphNode[],
+): Map<string, string> {
+  if (!driftReport) return new Map();
+  const map = new Map<string, string>();
+  for (const finding of driftReport.findings) {
+    if (finding.kind === "boundary_violation") {
+      const parts = (finding.actual !== "—" ? finding.actual : finding.expected).split(" -> ");
+      for (const part of parts) {
+        const normalizedName = normalizeContainerName(part);
+        const node = nodes.find((n) => normalizeContainerName(n.label) === normalizedName);
+        if (node) {
+          map.set(node.id, finding.severity);
+        }
+      }
     }
   }
   return map;
@@ -99,9 +138,11 @@ export function applyOverlayClass(
   node: GraphNode,
   driftMap: Map<string, DriftKind>,
   hotspotMap: Map<string, C4HotspotData>,
+  boundaryViolationSeverityMap?: Map<string, string>,
 ): GraphNode {
   const driftClass = driftMap.get(node.id);
   const hotspotData = hotspotMap.get(node.id);
+  const boundarySeverity = boundaryViolationSeverityMap?.get(node.id);
 
   // Priority: hotspot > drift
   let style_class = node.style_class;
@@ -116,6 +157,15 @@ export function applyOverlayClass(
     style_class = "drift-extra";
   } else if (driftClass === "wrong_sub_kind") {
     style_class = "drift-wrong-kind";
+  } else if (driftClass === "boundary_violation" && boundarySeverity) {
+    // Map boundary violation severity to style class
+    if (boundarySeverity === "error") {
+      style_class = "boundary-violation-error";
+    } else if (boundarySeverity === "warning") {
+      style_class = "boundary-violation-warning";
+    } else if (boundarySeverity === "info") {
+      style_class = "boundary-violation-info";
+    }
   }
 
   return { ...node, style_class };
@@ -221,13 +271,17 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
     if (!isGraph) {
       const hasDrift = c4Overlay.driftEnabled && driftReport;
       const hasHotspots = c4Overlay.hotspotsEnabled && hotspotMap;
+      const hasBoundaryViolations = c4Overlay.boundaryViolationsEnabled && driftReport;
 
-      if (hasDrift || hasHotspots) {
+      if (hasDrift || hasHotspots || hasBoundaryViolations) {
         const driftMap = hasDrift ? matchDriftToNodes(driftReport, data.nodes) : new Map<string, DriftKind>();
         const hotspotMapData = hasHotspots ? hotspotMap : new Map<string, C4HotspotData>();
+        const boundaryViolationMap = hasBoundaryViolations
+          ? matchBoundaryViolations(driftReport, data.nodes)
+          : new Map<string, string>();
 
         nodesWithStyle = nodesWithStyle.map((n) =>
-          applyOverlayClass(n, driftMap, hotspotMapData),
+          applyOverlayClass(n, driftMap, hotspotMapData, boundaryViolationMap),
         );
       }
     }
