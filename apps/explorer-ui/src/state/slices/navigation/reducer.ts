@@ -33,6 +33,10 @@ export function apply(state: NavigationState, action: NavigationAction): Navigat
   switch (action.type) {
     case "PUSH_PANE": {
       const { objectId, viewId, kind } = action.payload;
+      // Capture origin from the currently active pane (if any).
+      const activePane = state.activePaneId
+        ? state.panes.find((p) => p.id === state.activePaneId)
+        : undefined;
       const pane: Pane = {
         id: `pane-${Date.now()}-${state.panes.length}`,
         objectId,
@@ -42,6 +46,8 @@ export function apply(state: NavigationState, action: NavigationAction): Navigat
         activeView: null,
         scrollY: 0,
         localFilters: {},
+        fromObjectId: activePane?.objectId,
+        viaViewKind: activePane?.activeViewId ?? undefined,
       };
       // Drop oldest if at cap (FIFO).
       const panes = state.panes.length >= MAX_PANES
@@ -105,6 +111,16 @@ export function apply(state: NavigationState, action: NavigationAction): Navigat
         ...state,
         panes: state.panes.map((pane) =>
           pane.id === paneId ? { ...pane, viewport } : pane
+        ),
+      };
+    }
+
+    case "SET_PANE_NOTE": {
+      const { paneId, note } = action.payload;
+      return {
+        ...state,
+        panes: state.panes.map((pane) =>
+          pane.id === paneId ? { ...pane, note } : pane
         ),
       };
     }

@@ -49,6 +49,12 @@ export type Pane = {
   scrollY: number;
   viewport?: ViewportState;
   localFilters: Record<string, unknown>;
+  /** Object that was active when this pane was pushed. Undefined for the first pane. */
+  fromObjectId?: string;
+  /** View kind used to navigate to this pane (copied from prior pane's activeViewId). */
+  viaViewKind?: string;
+  /** Free-text user note explaining why this pane exists (ADR-005 Purpose). */
+  note?: string;
 };
 
 /**
@@ -92,6 +98,7 @@ export type NavigationAction =
   | { type: "REORDER_PANE"; payload: { fromIndex: number; toIndex: number } }
   | { type: "SET_PANE_SCROLL"; payload: { paneId: string; scrollY: number } }
   | { type: "UPDATE_PANE_VIEWPORT"; payload: { paneId: string; viewport: ViewportState } }
+  | { type: "SET_PANE_NOTE"; payload: { paneId: string; note: string } }
   | { type: "RESET" };
 
 // ============================================================================

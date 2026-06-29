@@ -169,4 +169,104 @@ describe("PaneStackNavigation", () => {
     expect(s.panes).toEqual([]);
     expect(s.activePaneId).toBeNull();
   });
+
+  // -------------------------------------------------------------------------
+  // Breadcrumb origin capture
+  // -------------------------------------------------------------------------
+
+  it("PUSH_PANE leaves origin undefined for the first pane", () => {
+    const s = apply(makeInitialNavigationState(), {
+      type: "PUSH_PANE",
+      payload: { objectId: "a", kind: "symbol" },
+    });
+    expect(s.panes[0]!.fromObjectId).toBeUndefined();
+    expect(s.panes[0]!.viaViewKind).toBeUndefined();
+  });
+
+  it("PUSH_PANE captures fromObjectId and viaViewKind from the active pane", () => {
+    let s = makeInitialNavigationState();
+    s = apply(s, {
+      type: "PUSH_PANE",
+      payload: { objectId: "a", viewId: "call_graph", kind: "symbol" },
+    });
+    s = apply(s, {
+      type: "PUSH_PANE",
+      payload: { objectId: "b", viewId: "source_view", kind: "symbol" },
+    });
+    // Second pane should record the first pane as its origin.
+    expect(s.panes[1]!.fromObjectId).toBe("a");
+    expect(s.panes[1]!.viaViewKind).toBe("call_graph");
+  });
+
+  it("Each push uses its own active origin, not a global first pane", () => {
+    let s = makeInitialNavigationState();
+    s = apply(s, {
+      type: "PUSH_PANE",
+      payload: { objectId: "a", viewId: "call_graph", kind: "symbol" },
+    });
+    s = apply(s, {
+      type: "PUSH_PANE",
+      payload: { objectId: "b", viewId: "dependency_graph", kind: "symbol" },
+    });
+    // Activate the first pane.
+    s = apply(s, {
+      type: "ACTIVATE_PANE",
+      payload: { paneId: s.panes[0]!.id },
+    });
+    // Push a third pane while pane A (not B) is active.
+    s = apply(s, {
+      type: "PUSH_PANE",
+      payload: { objectId: "c", viewId: "source_view", kind: "symbol" },
+    });
+    // Third pane should trace back to A, not B.
+    expect(s.panes[2]!.fromObjectId).toBe("a");
+    expect(s.panes[2]!.viaViewKind).toBe("call_graph");
+  });
+
+  // -------------------------------------------------------------------------
+  // SET_PANE_NOTE
+  // -------------------------------------------------------------------------
+
+  it("SET_PANE_NOTE updates the target pane's note", () => {
+    let s = makeInitialNavigationState();
+    s = apply(s, { type: "PUSH_PANE", payload: { objectId: "a", kind: "symbol" } });
+    const id = s.panes[0]!.id;
+    s = apply(s, {
+      type: "SET_PANE_NOTE",
+      payload: { paneId: id, note: "Check error path" },
+    });
+    expect(s.panes[0]!.note).toBe("Check error path");
+  });
+
+  it("SET_PANE_NOTE does not affect other panes", () => {
+    let s = makeInitialNavigationState();
+    s = apply(s, { type: "PUSH_PANE", payload: { objectId: "a", kind: "symbol" } });
+    s = apply(s, { type: "PUSH_PANE", payload: { objectId: "b", kind: "symbol" } });
+    const paneAId = s.panes[0]!.id;
+    const paneBId = s.panes[1]!.id;
+    s = apply(s, {
+      type: "SET_PANE_NOTE",
+      payload: { paneId: paneAId, note: "Note for A" },
+    });
+    expect(s.panes[0]!.note).toBe("Note for A");
+    expect(s.panes[1]!.note).toBeUndefined();
+    // Now set note for pane B.
+    s = apply(s, {
+      type: "SET_PANE_NOTE",
+      payload: { paneId: paneBId, note: "Note for B" },
+    });
+    expect(s.panes[0]!.note).toBe("Note for A");
+    expect(s.panes[1]!.note).toBe("Note for B");
+  });
+
+  it("SET_PANE_NOTE on a non-existent pane is a no-op", () => {
+    let s = makeInitialNavigationState();
+    s = apply(s, { type: "PUSH_PANE", payload: { objectId: "a", kind: "symbol" } });
+    const before = s.panes[0]!.note;
+    s = apply(s, {
+      type: "SET_PANE_NOTE",
+      payload: { paneId: "nonexistent", note: "Ignored" },
+    });
+    expect(s.panes[0]!.note).toBe(before);
+  });
 });
