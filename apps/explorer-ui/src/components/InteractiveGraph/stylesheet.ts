@@ -38,6 +38,17 @@
  */
 import type { Core, StylesheetCSS, StylesheetStyle } from "cytoscape";
 
+export const DRIFT_SEVERITY_COLORS = {
+  missing: "#ef4444",
+  extra: "#f59e0b",
+  wrongKind: "#eab308",
+} as const;
+
+export const HOTSPOT_SEVERITY_COLORS = {
+  high: "#dc2626",
+  med: "#f97316",
+} as const;
+
 export const KNOWN_NODE_CLASSES = new Set([
   "function",
   "module",
@@ -56,6 +67,12 @@ export const KNOWN_NODE_CLASSES = new Set([
   "entry-point",
   "hot",
   "god",
+  // ---- C4 overlays (E19 Phase 2) ----
+  "drift-missing",
+  "drift-extra",
+  "drift-wrong-kind",
+  "hotspot-high",
+  "hotspot-med",
 ]);
 export const KNOWN_EDGE_CLASSES = new Set([
   "edge.calls",
@@ -229,6 +246,53 @@ export function buildStylesheet(): (StylesheetStyle | StylesheetCSS)[] {
         // Smallest; code symbols are leaf-level entities
         width: 64,
         height: 28,
+      } as unknown as StylesheetStyle["style"],
+    },
+    // === C4 OVERLAY SELECTORS (E19 Phase 2) ===
+    // These are ADDITIVE — they only change border-color and border-width,
+    // never background-color, so the base C4 class owns the fill.
+    //
+    // Drift overlays — applied when Drift toggle is ON
+    {
+      selector: 'node[style_class = "drift-missing"]',
+      style: {
+        // Red border for missing containers (not in expected architecture)
+        "border-color": "#ef4444",
+        "border-width": "3px",
+      } as unknown as StylesheetStyle["style"],
+    },
+    {
+      selector: 'node[style_class = "drift-extra"]',
+      style: {
+        // Orange border for extra containers (in inferred but not expected)
+        "border-color": "#f59e0b",
+        "border-width": "3px",
+      } as unknown as StylesheetStyle["style"],
+    },
+    {
+      selector: 'node[style_class = "drift-wrong-kind"]',
+      style: {
+        // Yellow border for wrong sub-kind containers
+        "border-color": "#eab308",
+        "border-width": "3px",
+      } as unknown as StylesheetStyle["style"],
+    },
+    // Hotspot overlays — applied when Hotspots toggle is ON
+    // Hotspot takes PRIORITY over drift when both toggles are ON
+    {
+      selector: 'node[style_class = "hotspot-high"]',
+      style: {
+        // 4px red border for high-risk C4 nodes
+        "border-color": "#dc2626",
+        "border-width": "4px",
+      } as unknown as StylesheetStyle["style"],
+    },
+    {
+      selector: 'node[style_class = "hotspot-med"]',
+      style: {
+        // 2px amber border for medium-risk C4 nodes
+        "border-color": "#f97316",
+        "border-width": "2px",
       } as unknown as StylesheetStyle["style"],
     },
     {

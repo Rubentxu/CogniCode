@@ -14,7 +14,7 @@
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
-import { buildStylesheet, applyCorroborationStyles, KNOWN_NODE_CLASSES, KNOWN_EDGE_CLASSES } from "./stylesheet";
+import { buildStylesheet, applyCorroborationStyles, KNOWN_NODE_CLASSES, KNOWN_EDGE_CLASSES, DRIFT_SEVERITY_COLORS, HOTSPOT_SEVERITY_COLORS } from "./stylesheet";
 
 describe("buildStylesheet — T18 multimodal node blocks", () => {
   it("stylesheet_has_decision_style", () => {
@@ -203,8 +203,8 @@ describe("KNOWN_NODE_CLASSES — Phase 1 adds the 3 C4 node classes", () => {
   });
 
   // 4 C4 = component + container + system + code (code is ADR-039 C4 leaf)
-  it("total node class count is 14 (3 legacy + 4 multimodal + 4 C4 + 3 landing E4)", () => {
-    expect(KNOWN_NODE_CLASSES.size).toBe(14);
+  it("total node class count is 19 (14 prior + 5 E19 overlays)", () => {
+    expect(KNOWN_NODE_CLASSES.size).toBe(19);
   });
 });
 
@@ -335,5 +335,96 @@ describe("applyCorroborationStyles", () => {
       '[source = "a"][target = "b"]',
     );
     expect(styleMock).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================================
+// E19 Phase 2 — C4 overlay selectors
+// ============================================================================
+
+describe("buildStylesheet — E19 C4 overlay selectors", () => {
+  it("stylesheet_has_drift_missing_selector", () => {
+    const styles = buildStylesheet();
+    const entry = styles.find(
+      (s) => typeof s === "object" && "selector" in s &&
+        s.selector === 'node[style_class = "drift-missing"]',
+    );
+    expect(entry).toBeDefined();
+    const style = (entry as { style: Record<string, unknown> }).style;
+    expect(style["border-color"]).toBe("#ef4444");
+    expect(style["border-width"]).toBe("3px");
+  });
+
+  it("stylesheet_has_drift_extra_selector", () => {
+    const styles = buildStylesheet();
+    const entry = styles.find(
+      (s) => typeof s === "object" && "selector" in s &&
+        s.selector === 'node[style_class = "drift-extra"]',
+    );
+    expect(entry).toBeDefined();
+    const style = (entry as { style: Record<string, unknown> }).style;
+    expect(style["border-color"]).toBe("#f59e0b");
+    expect(style["border-width"]).toBe("3px");
+  });
+
+  it("stylesheet_has_drift_wrong_kind_selector", () => {
+    const styles = buildStylesheet();
+    const entry = styles.find(
+      (s) => typeof s === "object" && "selector" in s &&
+        s.selector === 'node[style_class = "drift-wrong-kind"]',
+    );
+    expect(entry).toBeDefined();
+    const style = (entry as { style: Record<string, unknown> }).style;
+    expect(style["border-color"]).toBe("#eab308");
+    expect(style["border-width"]).toBe("3px");
+  });
+
+  it("stylesheet_has_hotspot_high_selector", () => {
+    const styles = buildStylesheet();
+    const entry = styles.find(
+      (s) => typeof s === "object" && "selector" in s &&
+        s.selector === 'node[style_class = "hotspot-high"]',
+    );
+    expect(entry).toBeDefined();
+    const style = (entry as { style: Record<string, unknown> }).style;
+    expect(style["border-color"]).toBe("#dc2626");
+    expect(style["border-width"]).toBe("4px");
+  });
+
+  it("stylesheet_has_hotspot_med_selector", () => {
+    const styles = buildStylesheet();
+    const entry = styles.find(
+      (s) => typeof s === "object" && "selector" in s &&
+        s.selector === 'node[style_class = "hotspot-med"]',
+    );
+    expect(entry).toBeDefined();
+    const style = (entry as { style: Record<string, unknown> }).style;
+    expect(style["border-color"]).toBe("#f97316");
+    expect(style["border-width"]).toBe("2px");
+  });
+});
+
+describe("KNOWN_NODE_CLASSES — E19 adds 5 overlay classes", () => {
+  it("includes the 5 overlay node classes", () => {
+    for (const c of ["drift-missing", "drift-extra", "drift-wrong-kind", "hotspot-high", "hotspot-med"]) {
+      expect(KNOWN_NODE_CLASSES.has(c)).toBe(true);
+    }
+  });
+
+  it("total node class count is 19 (14 prior + 5 overlays)", () => {
+    expect(KNOWN_NODE_CLASSES.size).toBe(19);
+  });
+});
+
+describe("severity color exports — E19", () => {
+  it("exports DRIFT_SEVERITY_COLORS with correct values", () => {
+    expect(DRIFT_SEVERITY_COLORS.missing).toBe("#ef4444");
+    expect(DRIFT_SEVERITY_COLORS.extra).toBe("#f59e0b");
+    expect(DRIFT_SEVERITY_COLORS.wrongKind).toBe("#eab308");
+  });
+
+  it("exports HOTSPOT_SEVERITY_COLORS with correct values", () => {
+    expect(HOTSPOT_SEVERITY_COLORS.high).toBe("#dc2626");
+    expect(HOTSPOT_SEVERITY_COLORS.med).toBe("#f97316");
   });
 });

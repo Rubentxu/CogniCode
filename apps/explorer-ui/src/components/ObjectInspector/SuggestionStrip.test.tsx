@@ -204,36 +204,33 @@ describe("SuggestionStrip — verb prefix chip", () => {
     }
   });
 
-  it("changed-file pill renders aria-disabled, reduced opacity, and correct tooltip", () => {
+  it("changed-file pill is enabled (not coming-soon after compare unlock)", () => {
     render(<SuggestionStrip {...makeProps({ objectType: "file" })} />);
     const pill = screen.getByTestId("suggestion-pill-changed-file");
-    expect(pill).toHaveAttribute("aria-disabled", "true");
-    expect(pill).toHaveAttribute("title", "Available when C4 overlays exist");
-    // opacity is handled via style
-    expect(pill).toHaveStyle({ opacity: 0.5 });
+    // compare verb is unlocked — no longer disabled
+    expect(pill).not.toHaveAttribute("aria-disabled", "true");
+    expect(pill).toHaveStyle({ opacity: 1 });
   });
 
-  it("changed-scope pill renders aria-disabled, reduced opacity, and correct tooltip", () => {
+  it("changed-scope pill is enabled (not coming-soon after compare unlock)", () => {
     render(<SuggestionStrip {...makeProps({ objectType: "scope" })} />);
     const pill = screen.getByTestId("suggestion-pill-changed-scope");
-    expect(pill).toHaveAttribute("aria-disabled", "true");
-    expect(pill).toHaveAttribute("title", "Available when C4 overlays exist");
-    expect(pill).toHaveStyle({ opacity: 0.5 });
+    // compare verb is unlocked — no longer disabled
+    expect(pill).not.toHaveAttribute("aria-disabled", "true");
+    expect(pill).toHaveStyle({ opacity: 1 });
   });
 
-  it("changed-file and changed-scope pills show 'soon' text; other pills do not", () => {
+  it("changed-file and changed-scope pills do NOT show 'soon' text (compare unlocked)", () => {
     render(<SuggestionStrip {...makeProps({ objectType: "file" })} />);
-    expect(screen.getByTestId("suggestion-pill-changed-file")).toHaveTextContent("soon");
+    expect(screen.queryByTestId("suggestion-pill-changed-file")).not.toHaveTextContent("soon");
     expect(screen.queryByTestId("suggestion-pill-in-file")).not.toHaveTextContent("soon");
-    expect(screen.queryByTestId("suggestion-pill-risky-file")).not.toHaveTextContent("soon");
-    expect(screen.queryByTestId("suggestion-pill-file-where-belongs")).not.toHaveTextContent("soon");
   });
 
-  it("clicking a coming-soon pill does NOT call onDispatch", async () => {
+  it("clicking changed-file (compare) calls onDispatch", async () => {
     const onDispatch = vi.fn();
     const user = userEvent.setup();
     render(<SuggestionStrip {...makeProps({ objectType: "file", onDispatch })} />);
     await user.click(screen.getByTestId("suggestion-pill-changed-file"));
-    expect(onDispatch).not.toHaveBeenCalled();
+    expect(onDispatch).toHaveBeenCalled();
   });
 });

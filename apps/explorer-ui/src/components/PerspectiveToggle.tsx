@@ -11,9 +11,13 @@ import {
   type Perspective,
 } from "../state/c4Levels";
 
+const C4_PERSPECTIVES: Perspective[] = ["c4-context", "c4-container", "c4-component", "c4-code"];
+
 export function PerspectiveToggle() {
   const dispatch = useAppDispatch();
-  const { perspective } = useAppState();
+  const { perspective, c4Overlay } = useAppState();
+
+  const isC4Perspective = C4_PERSPECTIVES.includes(perspective as Perspective);
 
   return (
     <div
@@ -63,6 +67,37 @@ export function PerspectiveToggle() {
           </button>
         );
       })}
+      {/* C4 Overlay toggles */}
+      {isC4Perspective && (
+        <div className="flex items-center gap-1 ml-2" data-testid="c4-overlay-toggles">
+          <button
+            data-testid="c4-overlay-drift"
+            aria-pressed={c4Overlay.driftEnabled}
+            onClick={() => dispatch({ type: "c4-overlay/toggleDrift" })}
+            className={
+              "text-xs px-2 py-1 rounded border transition-colors " +
+              (c4Overlay.driftEnabled
+                ? "bg-red-50 border-red-300 text-red-700"
+                : "bg-gray-50 border-gray-200 text-gray-500")
+            }
+          >
+            Drift
+          </button>
+          <button
+            data-testid="c4-overlay-hotspots"
+            aria-pressed={c4Overlay.hotspotsEnabled}
+            onClick={() => dispatch({ type: "c4-overlay/toggleHotspots" })}
+            className={
+              "text-xs px-2 py-1 rounded border transition-colors " +
+              (c4Overlay.hotspotsEnabled
+                ? "bg-orange-50 border-orange-300 text-orange-700"
+                : "bg-gray-50 border-gray-200 text-gray-500")
+            }
+          >
+            Hotspots
+          </button>
+        </div>
+      )}
     </div>
   );
 }

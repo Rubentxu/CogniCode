@@ -91,6 +91,26 @@ export type {
   ArchitecturePayload,
 } from "./schemas";
 
+// ---- C4 Overlays (e19-3) ----
+
+export type DriftKind = "missing" | "extra" | "wrong_sub_kind";
+
+export interface DriftFinding {
+  kind: DriftKind;
+  expected: string; // "—" if not expected
+  actual: string; // "—" if not inferred
+  severity: string;
+  detail: string;
+}
+
+export interface DriftReport {
+  findings: DriftFinding[];
+  summary: string;
+  missing_containers: number;
+  extra_containers: number;
+  wrong_sub_kinds: number;
+}
+
 // ---- WASM graph algorithm outputs (ADR-047) ----
 //
 // These match the Rust `PageRankOutput` and `GodNodesOutput` structs

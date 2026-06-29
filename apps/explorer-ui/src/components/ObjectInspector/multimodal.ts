@@ -49,7 +49,7 @@ export interface MultimodalSuggestion {
  * return of [`recognizeMultimodalKind`] before accessing the map.
  */
 export const MULTIMODAL_KIND_INFO: Readonly<
-  Record<Exclude<GraphNodeStyleClass, "function" | "module" | "external" | "node-code">, MultimodalKindInfo>
+  Record<Exclude<GraphNodeStyleClass, "function" | "module" | "external" | "node-code" | "drift-missing" | "drift-extra" | "drift-wrong-kind" | "hotspot-high" | "hotspot-med">, MultimodalKindInfo>
 > = {
   "node-decision": {
     styleClass: "node-decision",
@@ -155,7 +155,7 @@ export function recognizeMultimodalKind(
   if (!styleClass) return null;
   if (styleClass in MULTIMODAL_KIND_INFO) {
     return MULTIMODAL_KIND_INFO[
-      styleClass as Exclude<GraphNodeStyleClass, "function" | "module" | "external" | "node-code">
+      styleClass as Exclude<GraphNodeStyleClass, "function" | "module" | "external" | "node-code" | "drift-missing" | "drift-extra" | "drift-wrong-kind" | "hotspot-high" | "hotspot-med">
     ];
   }
   return null;
