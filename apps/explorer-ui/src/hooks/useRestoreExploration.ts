@@ -1,7 +1,7 @@
 /**
  * useRestoreExploration — on mount, parses ?exploration=<id> from URL
- * and restores the exploration session including pane state and viewport
- * (ADR-040 Wave 3 H3 fix — was previously ignoring panes field).
+ * and restores the exploration session including pane state, viewport, and notes.
+ * Uses RESTORE_PANE to atomically restore each pane with its snapshot + note.
  */
 import { useEffect } from "react";
 import { useAppDispatch } from "../state/context";
@@ -24,25 +24,20 @@ export function useRestoreExploration() {
         // Validate response against Zod schema (defense-in-depth)
         const session = explorationSessionSchema.parse(raw);
 
-        // Restore each pane snapshot: open pane + apply viewport state
-        // (preserves zoom/pan from the saved exploration — was previously lost).
+        // Restore each pane atomically: RESTORE_PANE uses the snapshot's pane_id
+        // to construct the deterministic pane ID and applies viewport + note in one step.
         for (const paneSnapshot of session.panes) {
           dispatch({
-            type: "PUSH_PANE",
+            type: "RESTORE_PANE",
             payload: {
-              objectId: paneSnapshot.object_id,
-              viewId: paneSnapshot.view_id,
+              paneSnapshot,
+              // note is intentionally NOT sent to server (ADR-005 client-only),
+              // but is restored from the localStorage snapshot (see useSnapshotCache).
+              // During URL-based restore, we don't have the note — it will be
+              // present when restoring from the localStorage cache.
+              note: undefined,
             },
           });
-          if (paneSnapshot.viewport) {
-            dispatch({
-              type: "UPDATE_PANE_VIEWPORT",
-              payload: {
-                paneId: `pane-${paneSnapshot.pane_id}`,
-                viewport: paneSnapshot.viewport,
-              },
-            });
-          }
         }
       })
       .catch(() => {

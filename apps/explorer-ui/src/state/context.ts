@@ -144,6 +144,7 @@ export type Action =
   | { type: "SET_PANE_SCROLL"; payload: { paneId: string; scrollY: number } }
   | { type: "UPDATE_PANE_VIEWPORT"; payload: { paneId: string; viewport: ViewportState } }
   | { type: "SET_PANE_NOTE"; payload: { paneId: string; note: string } }
+  | { type: "RESTORE_PANE"; payload: { paneSnapshot: { pane_id: string; object_id: string; view_id: string; scroll_y: number; viewport: ViewportState | null }; note?: string } }
   | { type: "TOGGLE_SPOTTER" }
   | { type: "SET_SPOTTER"; payload: { open: boolean; kind?: string } }
   | { type: "SET_LANDING_TAB"; payload: { tab: LandingTabId } }

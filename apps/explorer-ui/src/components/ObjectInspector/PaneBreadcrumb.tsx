@@ -7,23 +7,27 @@
  * Also shows "n to add note" keyboard hint.
  *
  * Hidden entirely when fromObjectId is absent (legacy pane).
+ *
+ * NOTE: workspaceId is passed as a prop (not fetched internally) to ensure
+ * correct resolution in cross-workspace drill-downs. Using useWorkspaceList()[0]
+ * would silently resolve to the first workspace regardless of which workspace
+ * the pane belongs to.
  */
 import { useAppDispatch } from "../../state/context";
 import { useObject } from "../../hooks/useObject";
 import { useAvailableViews } from "../../hooks/useViews";
-import { useWorkspaceList } from "../../hooks/useWorkspace";
 
 type PaneBreadcrumbProps = {
   fromObjectId: string;
   viaViewKind: string;
+  /** Workspace ID for resolving available views — must be the workspace of the FROM object, not the active workspace. */
+  workspaceId: string | null;
 };
 
-export function PaneBreadcrumb({ fromObjectId, viaViewKind }: PaneBreadcrumbProps) {
+export function PaneBreadcrumb({ fromObjectId, viaViewKind, workspaceId }: PaneBreadcrumbProps) {
   const dispatch = useAppDispatch();
 
   const { data: fromObject } = useObject(fromObjectId);
-  const { data: workspaceList } = useWorkspaceList();
-  const workspaceId = workspaceList?.[0]?.id ?? null;
 
   // Resolve view title for viaViewKind (a view id like "call_graph").
   const { data: availableViews } = useAvailableViews(fromObjectId, workspaceId, "default");

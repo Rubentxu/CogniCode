@@ -99,6 +99,7 @@ export type NavigationAction =
   | { type: "SET_PANE_SCROLL"; payload: { paneId: string; scrollY: number } }
   | { type: "UPDATE_PANE_VIEWPORT"; payload: { paneId: string; viewport: ViewportState } }
   | { type: "SET_PANE_NOTE"; payload: { paneId: string; note: string } }
+  | { type: "RESTORE_PANE"; payload: { paneSnapshot: import("../../api/schemas").PaneSnapshotDto; note?: string } }
   | { type: "RESET" };
 
 // ============================================================================

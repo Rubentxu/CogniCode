@@ -125,6 +125,31 @@ export function apply(state: NavigationState, action: NavigationAction): Navigat
       };
     }
 
+    case "RESTORE_PANE": {
+      // Restore a pane from a session snapshot, using the snapshot's pane_id
+      // to construct a deterministic ID matching what PUSH_PANE would generate.
+      const { paneSnapshot, note } = action.payload;
+      const paneId = `pane-${paneSnapshot.pane_id}`;
+      const pane: Pane = {
+        id: paneId,
+        objectId: paneSnapshot.object_id,
+        activeViewId: paneSnapshot.view_id,
+        activeLensId: null,
+        kind: "symbol",
+        activeView: null,
+        scrollY: paneSnapshot.scroll_y,
+        localFilters: {},
+        fromObjectId: undefined,
+        viaViewKind: undefined,
+        note: note ?? undefined,
+        viewport: paneSnapshot.viewport ?? undefined,
+      };
+      const panes = state.panes.length >= MAX_PANES
+        ? [...state.panes.slice(1), pane]
+        : [...state.panes, pane];
+      return { ...state, panes, activePaneId: paneId };
+    }
+
     case "SELECT_OBJECT": {
       const { objectId, viewId, kind } = action.payload;
       const existing = state.panes.find((p) => p.objectId === objectId);

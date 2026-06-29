@@ -232,6 +232,7 @@ export function PaneInspector({
             <PaneBreadcrumb
               fromObjectId={activePane.fromObjectId}
               viaViewKind={activePane.viaViewKind}
+              workspaceId={workspaceId}
             />
           )}
 

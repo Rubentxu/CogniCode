@@ -14,10 +14,6 @@ import { PaneBreadcrumb } from "./PaneBreadcrumb";
 import React from "react";
 
 // --- Mocks must be at top level ---
-vi.mock("../../hooks/useWorkspace", () => ({
-  useWorkspaceList: () => ({ data: [{ id: "ws1" }] }),
-}));
-
 vi.mock("../../hooks/useObject", () => ({
   useObject: (objectId: string | null) => {
     if (!objectId) return { data: undefined };
@@ -60,7 +56,7 @@ describe("PaneBreadcrumb", () => {
   // its container but with empty/null inner content.
   it("renders with empty content when fromObjectId is absent", () => {
     renderWithContext(
-      <PaneBreadcrumb fromObjectId="" viaViewKind="" />,
+      <PaneBreadcrumb fromObjectId="" viaViewKind="" workspaceId="ws1" />,
     );
     // The div always renders; the From/Via labels are empty.
     const breadcrumb = screen.getByTestId("pane-breadcrumb");
@@ -71,28 +67,28 @@ describe("PaneBreadcrumb", () => {
 
   it("renders breadcrumb row when fromObjectId is set", () => {
     renderWithContext(
-      <PaneBreadcrumb fromObjectId="from-obj" viaViewKind="call_graph" />,
+      <PaneBreadcrumb fromObjectId="from-obj" viaViewKind="call_graph" workspaceId="ws1" />,
     );
     expect(screen.getByTestId("pane-breadcrumb")).toBeInTheDocument();
   });
 
   it("shows 'n to add note' hint", () => {
     renderWithContext(
-      <PaneBreadcrumb fromObjectId="from-obj" viaViewKind="call_graph" />,
+      <PaneBreadcrumb fromObjectId="from-obj" viaViewKind="call_graph" workspaceId="ws1" />,
     );
     expect(screen.getByText("n to add note")).toBeInTheDocument();
   });
 
   it("From label resolves to object label", () => {
     renderWithContext(
-      <PaneBreadcrumb fromObjectId="from-obj" viaViewKind="call_graph" />,
+      <PaneBreadcrumb fromObjectId="from-obj" viaViewKind="call_graph" workspaceId="ws1" />,
     );
     expect(screen.getByTestId("pane-breadcrumb-from")).toHaveTextContent("UserService");
   });
 
   it("Via label shows view title", () => {
     renderWithContext(
-      <PaneBreadcrumb fromObjectId="from-obj" viaViewKind="call_graph" />,
+      <PaneBreadcrumb fromObjectId="from-obj" viaViewKind="call_graph" workspaceId="ws1" />,
     );
     expect(screen.getByTestId("pane-breadcrumb-via")).toHaveTextContent("Call Graph");
   });

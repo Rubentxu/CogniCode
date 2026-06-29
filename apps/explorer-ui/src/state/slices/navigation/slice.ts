@@ -23,6 +23,7 @@ export type NavigationSliceAction = Extract<
   | { type: "SET_PANE_SCROLL" }
   | { type: "UPDATE_PANE_VIEWPORT" }
   | { type: "SET_PANE_NOTE" }
+  | { type: "RESTORE_PANE" }
   | { type: "RESET" }
 >;
 
@@ -50,6 +51,8 @@ function toNavigationAction(
       return { type: "UPDATE_PANE_VIEWPORT", payload: action.payload };
     case "SET_PANE_NOTE":
       return { type: "SET_PANE_NOTE", payload: action.payload };
+    case "RESTORE_PANE":
+      return { type: "RESTORE_PANE", payload: action.payload };
     case "RESET":
       return { type: "RESET" };
   }
@@ -99,6 +102,7 @@ function isNavigationAction(
     action.type === "SET_PANE_SCROLL" ||
     action.type === "UPDATE_PANE_VIEWPORT" ||
     action.type === "SET_PANE_NOTE" ||
+    action.type === "RESTORE_PANE" ||
     action.type === "RESET"
   );
 }
