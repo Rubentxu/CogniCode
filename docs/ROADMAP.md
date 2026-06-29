@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-29 (E18-4 closed — PASS_WITH_WARNINGS, PR #80, v0.32.0)
+Last updated: 2026-06-29 (E19-1 closed — PASS, PR #81, v0.32.1)
 
 ## Active
 
@@ -32,7 +32,7 @@ Last updated: 2026-06-29 (E18-4 closed — PASS_WITH_WARNINGS, PR #80, v0.32.0)
 
 | Change | Goal | ADR | Priority |
 |--------|------|-----|----------|
-| `e19-1-rename-c4-toggle` | Rename "C4 Components" to "Structure" (honest labeling) | ADR-004 | HIGH |
+| `e19-1-rename-c4-toggle` | Rename "C4 Components" to "Structure" (honest labeling) | ADR-004 | HIGH | [#81](https://github.com/Rubentxu/CogniCode/pull/81) |
 | `e19-2-c4-level-selector` | Level selector: Context / Container / Component / Code | ADR-004 | HIGH |
 | `e19-3-c4-overlays` | Overlays: drift + hotspots on C4 nodes | ADR-004 | HIGH |
 | `e19-4-c4-dynamic-views` | Dynamic views from investigation traces (request/event flow) | ADR-004 | MEDIUM |
