@@ -389,19 +389,7 @@ impl ExplorerMcpHandler {
             None, // persistence
         ));
 
-        // View facade (also provides LensExecutor for MoldQL).
-        let view_impl: Arc<ViewServiceImpl> = Arc::new(ViewServiceImpl::new(
-            symbol_repo.clone(),
-            source_reader.clone(),
-            quality_repo.clone(),
-            lens_registry,
-            graph_query.clone(),
-            view_registry.clone(),
-        ));
-        let view: Arc<dyn ViewService> = view_impl.clone();
-        let lens_executor: Arc<dyn LensExecutor> = view_impl;
-
-        // Persistence facade.
+        // Persistence facade (created before view_impl so it can be wired in).
         #[cfg(feature = "postgres")]
         let persistence: Arc<dyn PersistenceService> = Arc::new(PersistenceServiceImpl::new(
             None, // view_spec_store
@@ -411,6 +399,19 @@ impl ExplorerMcpHandler {
         let persistence: Arc<dyn PersistenceService> = Arc::new(PersistenceServiceImpl::new(
             None, // view_spec_store
         ));
+
+        // View facade (also provides LensExecutor for MoldQL).
+        let view_impl: Arc<ViewServiceImpl> = Arc::new(ViewServiceImpl::new(
+            symbol_repo.clone(),
+            source_reader.clone(),
+            quality_repo.clone(),
+            lens_registry,
+            graph_query.clone(),
+            view_registry.clone(),
+            Some(persistence.clone()),
+        ));
+        let view: Arc<dyn ViewService> = view_impl.clone();
+        let lens_executor: Arc<dyn LensExecutor> = view_impl;
 
         // MoldQL facade.
         let moldql: Arc<dyn MoldQLService> = Arc::new(MoldQLServiceImpl::new(

@@ -110,6 +110,7 @@ impl FromStr for NodeKind {
             "container" => Ok(NodeKind::Container),
             #[cfg(feature = "multimodal")]
             "system" => Ok(NodeKind::System),
+            #[cfg(feature = "multimodal")]
             "route" => Ok(NodeKind::Route),
             _ => Err(NodeKindParseError::Unknown(s.to_string())),
         }
@@ -137,6 +138,7 @@ impl NodeKind {
             NodeKind::Container => "container",
             #[cfg(feature = "multimodal")]
             NodeKind::System => "system",
+            #[cfg(feature = "multimodal")]
             NodeKind::Route => "route",
         }
     }

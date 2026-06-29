@@ -159,6 +159,7 @@ impl Runtime {
                 cognicode_explorer::domain::lens::default_registry(),
                 graph_query.clone(),
                 view_registry.clone(),
+                Some(persistence.clone()), // persistence — for SavedExploration view resolution
             ));
         let view: Arc<dyn cognicode_explorer::facades::ViewService> = view_impl.clone();
         let lens_executor: Arc<dyn cognicode_explorer::facades::LensExecutor> = view_impl;

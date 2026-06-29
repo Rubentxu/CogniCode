@@ -409,6 +409,11 @@ impl ViewRegistry {
                     &crate::domain::views::OWNERSHIP_MAP_EXECUTOR
                         as &dyn crate::domain::views::ViewExecutor,
                 ),
+                (
+                    "composed-narrative",
+                    &crate::domain::views::COMPOSED_NARRATIVE_EXECUTOR
+                        as &dyn crate::domain::views::ViewExecutor,
+                ),
             ])
         });
         real.get(id).copied().or_else(|| {
