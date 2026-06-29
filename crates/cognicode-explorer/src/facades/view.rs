@@ -18,6 +18,7 @@ use crate::dto::{ContextualView, ViewDescriptorDto, ViewSpec};
 use crate::dto::{InspectableObjectType, InspectionTarget, ViewContext};
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::{LensExecutor, ViewService};
+use crate::facades::PersistenceService;
 use crate::ports::quality_repository::QualityRepository;
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
@@ -30,6 +31,7 @@ pub struct ViewServiceImpl {
     lens_registry: LensRegistry,
     graph_query: Option<Arc<dyn GraphQueryPort>>,
     view_registry: Arc<ViewRegistry>,
+    persistence: Option<Arc<dyn PersistenceService>>,
 }
 
 impl ViewServiceImpl {
@@ -40,6 +42,7 @@ impl ViewServiceImpl {
         lens_registry: LensRegistry,
         graph_query: Option<Arc<dyn GraphQueryPort>>,
         view_registry: Arc<ViewRegistry>,
+        persistence: Option<Arc<dyn PersistenceService>>,
     ) -> Self {
         Self {
             repo,
@@ -48,6 +51,7 @@ impl ViewServiceImpl {
             lens_registry,
             graph_query,
             view_registry,
+            persistence,
         }
     }
 
@@ -314,7 +318,36 @@ impl ViewService for ViewServiceImpl {
         view_id: &str,
     ) -> ExplorerResult<ContextualView> {
         let identity = ObjectIdentity::parse_mvp_id(object_id)?;
-        let target = self.resolve_inspection_target(&identity)?;
+
+        // Handle SavedExploration with async persistence fetch.
+        // The target carries the full ExplorationSession (not just an ID).
+        let target = if matches!(identity, ObjectIdentity::SavedExploration { .. }) {
+            let session_id = match &identity {
+                ObjectIdentity::SavedExploration { id } => id.clone(),
+                _ => {
+                    return Err(ExplorerError::ResolutionFailed(
+                        "invalid SavedExploration identity".into(),
+                    ));
+                }
+            };
+            let persistence = self.persistence.as_ref().ok_or_else(|| {
+                ExplorerError::ResolutionFailed(
+                    "persistence not wired for SavedExploration view resolution".into(),
+                )
+            })?;
+            let session = persistence
+                .load_exploration_session(&session_id)
+                .await?
+                .ok_or_else(|| {
+                    ExplorerError::ResolutionFailed(format!(
+                        "exploration session not found: {}",
+                        session_id
+                    ))
+                })?;
+            InspectionTarget::SavedExploration(session)
+        } else {
+            self.resolve_inspection_target(&identity)?
+        };
 
         let executor = self.view_registry.get_executor(view_id).ok_or_else(|| {
             ExplorerError::ResolutionFailed(format!("view not found: {}", view_id))
@@ -544,6 +577,7 @@ mod view_service_tests {
             crate::domain::lens::default_registry(),
             None,
             view_registry,
+            None,
         )
     }
 
