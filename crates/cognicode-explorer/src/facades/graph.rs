@@ -1,6 +1,7 @@
 //! Graph facade — symbol resolution and subgraph traversal.
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -346,6 +347,10 @@ impl GraphServiceImpl {
 
         // Track container IDs for later edge creation
         let mut container_ids: HashSet<String> = HashSet::new();
+        // Track container ID -> Cargo.toml path for dependency inference
+        let mut container_toml_paths: HashMap<String, PathBuf> = HashMap::new();
+        // Track package name -> container_id for dependency resolution
+        let mut package_name_to_container_id: HashMap<String, String> = HashMap::new();
 
         // Parse workspace Cargo.toml to find members
         if let Ok(toml_content) = std::fs::read_to_string(&workspace_toml) {
@@ -388,6 +393,19 @@ impl GraphServiceImpl {
                                         };
                                         let container_id = format!("container:{}", member_path);
                                         container_ids.insert(container_id.clone());
+                                        container_toml_paths.insert(container_id.clone(), member_toml_path.clone());
+
+                                        // Extract package name and map to container_id
+                                        if let Some(package_name) = member_toml
+                                            .get("package")
+                                            .and_then(|p| p.get("name"))
+                                            .and_then(|n| n.as_str())
+                                        {
+                                            package_name_to_container_id.insert(
+                                                package_name.to_string(),
+                                                container_id.clone(),
+                                            );
+                                        }
 
                                         nodes.push(GraphNode {
                                             id: container_id.clone(),
@@ -450,6 +468,33 @@ impl GraphServiceImpl {
                                 relation: EdgeKind::PartOf.as_str().to_string(),
                                 style_class: "edge-part-of".to_string(),
                             });
+                        }
+                    }
+                }
+            }
+        }
+
+        // =========================================================================
+        // Dependency Inference — emit depends_on edges from Cargo.toml [dependencies]
+        // =========================================================================
+        for (container_id, toml_path) in &container_toml_paths {
+            if let Ok(toml_content) = std::fs::read_to_string(toml_path) {
+                if let Ok(toml_value) = toml_content.parse::<toml::Value>() {
+                    if let Some(dependencies) = toml_value.get("dependencies") {
+                        if let Some(deps) = dependencies.as_table() {
+                            for (dep_name, _dep_value) in deps {
+                                // Look up the package name to find the target container_id
+                                if let Some(target_container_id) =
+                                    package_name_to_container_id.get(dep_name)
+                                {
+                                    edges.push(GraphEdge {
+                                        source: container_id.clone(),
+                                        target: target_container_id.clone(),
+                                        relation: EdgeKind::DependsOn.as_str().to_string(),
+                                        style_class: "edge-depends-on".to_string(),
+                                    });
+                                }
+                            }
                         }
                     }
                 }
@@ -576,12 +621,14 @@ impl GraphServiceImpl {
                     e
                 ))
             })?;
-            serde_yaml::from_str(&content).map_err(|e| {
-                ExplorerError::InvalidInput(format!(
-                    "Failed to parse expected-architecture.yaml: {}",
-                    e
-                ))
-            })?
+            // Handle empty or invalid YAML gracefully - return default architecture
+            match serde_yaml::from_str::<ExpectedArchitecture>(&content) {
+                Ok(arch) => arch,
+                Err(_) => {
+                    // Graceful degradation: invalid or empty YAML means no expected architecture
+                    return Ok(DriftReport::default());
+                }
+            }
         } else {
             // Graceful degradation: no expected architecture file
             return Ok(DriftReport::default());
@@ -624,6 +671,7 @@ impl GraphServiceImpl {
                         "Expected container '{}' (sub_kind: {}) is not present in the inferred architecture",
                         container.name, container.sub_kind
                     ),
+                    rule_id: None,
                 });
             }
         }
@@ -641,6 +689,7 @@ impl GraphServiceImpl {
                         "Container '{}' (sub_kind: {}) is present but not in expected architecture",
                         name, actual_sub_kind
                     ),
+                    rule_id: None,
                 });
             }
         }
@@ -658,6 +707,57 @@ impl GraphServiceImpl {
                             "Container '{}' has sub_kind '{}' in expected but '{}' in inferred",
                             expected.name, expected.sub_kind, actual_sub_kind
                         ),
+                        rule_id: None,
+                    });
+                }
+            }
+        }
+
+        // =========================================================================
+        // Boundary violation checks — evaluate dependency rules against depends_on edges
+        // =========================================================================
+        // Collect depends_on edges from inferred architecture
+        let depends_on_edges: Vec<(&str, &str)> = inferred
+            .edges
+            .iter()
+            .filter(|e| e.relation == "depends_on")
+            .map(|e| {
+                (
+                    e.source.strip_prefix("container:").unwrap_or(&e.source),
+                    e.target.strip_prefix("container:").unwrap_or(&e.target),
+                )
+            })
+            .collect();
+
+        // Evaluate each dependency rule
+        for rule in &expected_arch.dependency_rules {
+            let from_pattern = match glob::Pattern::new(&rule.from_pattern) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let to_pattern = match glob::Pattern::new(&rule.to_pattern) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+
+            // Check each depends_on edge against the rule patterns
+            for (from, to) in &depends_on_edges {
+                if from_pattern.matches(*from) && to_pattern.matches(*to) {
+                    // Rule pattern matched this dependency - emit a violation
+                    let severity_str = match rule.severity {
+                        crate::dto::Severity::Error => "error".to_string(),
+                        crate::dto::Severity::Warning => "warning".to_string(),
+                    };
+                    findings.push(DriftFinding {
+                        kind: DriftKind::BoundaryViolation,
+                        expected: format!("{} -> {}", rule.from_pattern, rule.to_pattern),
+                        actual: format!("{} -> {}", from, to),
+                        severity: severity_str,
+                        detail: format!(
+                            "Dependency rule '{}' violated: {} depends on {}",
+                            rule.id, from, to
+                        ),
+                        rule_id: Some(rule.id.clone()),
                     });
                 }
             }
@@ -675,13 +775,17 @@ impl GraphServiceImpl {
             .iter()
             .filter(|f| f.kind == DriftKind::WrongSubKind)
             .count();
+        let boundary_violations = findings
+            .iter()
+            .filter(|f| f.kind == DriftKind::BoundaryViolation)
+            .count();
 
         let summary = if findings.is_empty() {
             "No architecture drift detected".to_string()
         } else {
             format!(
-                "Architecture drift: {} missing, {} extra, {} wrong sub_kind",
-                missing_containers, extra_containers, wrong_sub_kinds
+                "Architecture drift: {} missing, {} extra, {} wrong sub_kind, {} boundary violations",
+                missing_containers, extra_containers, wrong_sub_kinds, boundary_violations
             )
         };
 
@@ -691,6 +795,7 @@ impl GraphServiceImpl {
             missing_containers,
             extra_containers,
             wrong_sub_kinds,
+            boundary_violations,
         })
     }
 }
@@ -1110,5 +1215,359 @@ members = ["crates/test-crate"]
             "C4 code nodes must not have kind='function'; found: {:#?}",
             function_kind_nodes
         );
+    }
+
+    // =========================================================================
+    // Dependency inference tests (E19 Phase 2)
+    // =========================================================================
+
+    #[tokio::test]
+    async fn build_architecture_infers_depends_on_edges_from_cargo_toml() {
+        let tmp = TempDir::new().unwrap();
+        let workspace_toml = tmp.path().join("Cargo.toml");
+        std::fs::write(
+            &workspace_toml,
+            r#"
+[workspace]
+members = ["crates/container-a", "crates/container-b"]
+"#,
+        )
+        .unwrap();
+
+        // Create container-a that depends on container-b
+        let crate_a_dir = tmp.path().join("crates/container-a");
+        std::fs::create_dir_all(&crate_a_dir).unwrap();
+        std::fs::write(
+            crate_a_dir.join("Cargo.toml"),
+            r#"
+[package]
+name = "container-a"
+version = "0.1.0"
+[lib]
+[dependencies]
+container-b = { path = "../container-b" }
+"#,
+        )
+        .unwrap();
+
+        // Create container-b (no dependencies)
+        let crate_b_dir = tmp.path().join("crates/container-b");
+        std::fs::create_dir_all(&crate_b_dir).unwrap();
+        std::fs::write(
+            crate_b_dir.join("Cargo.toml"),
+            r#"
+[package]
+name = "container-b"
+version = "0.1.0"
+[lib]
+"#,
+        )
+        .unwrap();
+
+        let repo = make_mock_repo(vec![], vec![]);
+        let service = GraphServiceImpl::new(repo, None);
+
+        let result = service
+            .build_architecture(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
+
+        // Should have depends_on edge from container-a to container-b
+        let depends_on_edges: Vec<_> = result
+            .edges
+            .iter()
+            .filter(|e| e.relation == "depends_on")
+            .collect();
+        assert_eq!(depends_on_edges.len(), 1);
+        assert_eq!(depends_on_edges[0].source, "container:crates/container-a");
+        assert_eq!(depends_on_edges[0].target, "container:crates/container-b");
+    }
+
+    #[tokio::test]
+    async fn build_architecture_does_not_emit_external_depends_on() {
+        let tmp = TempDir::new().unwrap();
+        let workspace_toml = tmp.path().join("Cargo.toml");
+        std::fs::write(
+            &workspace_toml,
+            r#"
+[workspace]
+members = ["crates/my-crate"]
+"#,
+        )
+        .unwrap();
+
+        // Create my-crate that depends on an external crate (serde)
+        let crate_dir = tmp.path().join("crates/my-crate");
+        std::fs::create_dir_all(&crate_dir).unwrap();
+        std::fs::write(
+            crate_dir.join("Cargo.toml"),
+            r#"
+[package]
+name = "my-crate"
+version = "0.1.0"
+[lib]
+dependencies]
+serde = "1.0"
+"#,
+        )
+        .unwrap();
+
+        let repo = make_mock_repo(vec![], vec![]);
+        let service = GraphServiceImpl::new(repo, None);
+
+        let result = service
+            .build_architecture(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
+
+        // Should NOT have depends_on edge for external deps
+        let depends_on_edges: Vec<_> = result
+            .edges
+            .iter()
+            .filter(|e| e.relation == "depends_on")
+            .collect();
+        assert!(
+            depends_on_edges.is_empty(),
+            "External dependencies should not produce depends_on edges, found: {:#?}",
+            depends_on_edges
+        );
+    }
+
+    // =========================================================================
+    // Boundary rule evaluation tests (E19 Phase 3)
+    // =========================================================================
+
+    #[tokio::test]
+    async fn compare_architecture_detects_boundary_violation() {
+        let tmp = TempDir::new().unwrap();
+        let workspace_toml = tmp.path().join("Cargo.toml");
+        std::fs::write(
+            &workspace_toml,
+            r#"
+[workspace]
+members = ["crates/container-a", "crates/container-b"]
+"#,
+        )
+        .unwrap();
+
+        // Create container-a that depends on container-b
+        let crate_a_dir = tmp.path().join("crates/container-a");
+        std::fs::create_dir_all(&crate_a_dir).unwrap();
+        std::fs::write(
+            crate_a_dir.join("Cargo.toml"),
+            r#"
+[package]
+name = "container-a"
+version = "0.1.0"
+[lib]
+[dependencies]
+container-b = { path = "../container-b" }
+"#,
+        )
+        .unwrap();
+
+        let crate_b_dir = tmp.path().join("crates/container-b");
+        std::fs::create_dir_all(&crate_b_dir).unwrap();
+        std::fs::write(
+            crate_b_dir.join("Cargo.toml"),
+            r#"
+[package]
+name = "container-b"
+version = "0.1.0"
+[lib]
+"#,
+        )
+        .unwrap();
+
+        // Create expected-architecture.yaml with a rule forbidding crates/* -> crates/*
+        let expected_arch_dir = tmp.path().join(".cognicode");
+        std::fs::create_dir_all(&expected_arch_dir).unwrap();
+        std::fs::write(
+            expected_arch_dir.join("expected-architecture.yaml"),
+            r#"
+containers:
+  - name: crates/container-a
+    sub_kind: library
+  - name: crates/container-b
+    sub_kind: library
+dependency_rules:
+  - id: "no-crates-to-crates"
+    description: "Crates should not depend on other crates"
+    from_pattern: "crates/*"
+    to_pattern: "crates/*"
+    severity: error
+"#,
+        )
+        .unwrap();
+
+        let repo = make_mock_repo(vec![], vec![]);
+        let service = GraphServiceImpl::new(repo, None);
+
+        let report = service
+            .compare_architecture(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
+
+        // Should detect boundary violation
+        let violations: Vec<_> = report
+            .findings
+            .iter()
+            .filter(|f| f.kind == DriftKind::BoundaryViolation)
+            .collect();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].rule_id, Some("no-crates-to-crates".to_string()));
+        assert_eq!(violations[0].severity, "error");
+    }
+
+    #[tokio::test]
+    async fn compare_architecture_passes_when_no_boundary_violated() {
+        let tmp = TempDir::new().unwrap();
+        let workspace_toml = tmp.path().join("Cargo.toml");
+        std::fs::write(
+            &workspace_toml,
+            r#"
+[workspace]
+members = ["crates/container-a", "crates/container-b"]
+"#,
+        )
+        .unwrap();
+
+        // Create container-a that depends on container-b
+        let crate_a_dir = tmp.path().join("crates/container-a");
+        std::fs::create_dir_all(&crate_a_dir).unwrap();
+        std::fs::write(
+            crate_a_dir.join("Cargo.toml"),
+            r#"
+[package]
+name = "container-a"
+version = "0.1.0"
+[lib]
+[dependencies]
+container-b = { path = "../container-b" }
+"#,
+        )
+        .unwrap();
+
+        let crate_b_dir = tmp.path().join("crates/container-b");
+        std::fs::create_dir_all(&crate_b_dir).unwrap();
+        std::fs::write(
+            crate_b_dir.join("Cargo.toml"),
+            r#"
+[package]
+name = "container-b"
+version = "0.1.0"
+[lib]
+"#,
+        )
+        .unwrap();
+
+        // Rule allows crates/container-a -> crates/container-b
+        let expected_arch_dir = tmp.path().join(".cognicode");
+        std::fs::create_dir_all(&expected_arch_dir).unwrap();
+        std::fs::write(
+            expected_arch_dir.join("expected-architecture.yaml"),
+            r#"
+containers:
+  - name: crates/container-a
+    sub_kind: library
+  - name: crates/container-b
+    sub_kind: library
+dependency_rules:
+  - id: "allow-specific"
+    description: "container-a may depend on container-b"
+    from_pattern: "crates/container-a"
+    to_pattern: "crates/container-b"
+    severity: warning
+"#,
+        )
+        .unwrap();
+
+        let repo = make_mock_repo(vec![], vec![]);
+        let service = GraphServiceImpl::new(repo, None);
+
+        let report = service
+            .compare_architecture(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
+
+        // Should NOT detect boundary violation (rule is satisfied)
+        let violations: Vec<_> = report
+            .findings
+            .iter()
+            .filter(|f| f.kind == DriftKind::BoundaryViolation)
+            .collect();
+        assert!(violations.is_empty(), "Expected no violations, got: {:#?}", violations);
+    }
+
+    // =========================================================================
+    // Backward compatibility tests (E19 Phase 4)
+    // =========================================================================
+
+    #[tokio::test]
+    async fn compare_architecture_handles_missing_dependency_rules() {
+        let tmp = TempDir::new().unwrap();
+        let workspace_toml = tmp.path().join("Cargo.toml");
+        std::fs::write(
+            &workspace_toml,
+            r#"
+[workspace]
+members = ["crates/my-crate"]
+"#,
+        )
+        .unwrap();
+
+        let crate_dir = tmp.path().join("crates/my-crate");
+        std::fs::create_dir_all(&crate_dir).unwrap();
+        std::fs::write(crate_dir.join("Cargo.toml"), "[lib]").unwrap();
+
+        // Create expected-architecture.yaml WITHOUT dependency_rules field
+        let expected_arch_dir = tmp.path().join(".cognicode");
+        std::fs::create_dir_all(&expected_arch_dir).unwrap();
+        std::fs::write(
+            expected_arch_dir.join("expected-architecture.yaml"),
+            r#"
+containers:
+  - name: crates/my-crate
+    sub_kind: library
+"#,
+        )
+        .unwrap();
+
+        let repo = make_mock_repo(vec![], vec![]);
+        let service = GraphServiceImpl::new(repo, None);
+
+        // Should not panic or error when dependency_rules is missing
+        let report = service
+            .compare_architecture(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
+
+        // Should have no findings (container matches)
+        assert!(report.findings.is_empty(), "Expected no findings, got: {:#?}", report.findings);
+        assert_eq!(report.boundary_violations, 0);
+    }
+
+    #[tokio::test]
+    async fn compare_architecture_backward_compat_empty_yaml() {
+        let tmp = TempDir::new().unwrap();
+        let workspace_toml = tmp.path().join("Cargo.toml");
+        std::fs::write(&workspace_toml, "").unwrap();
+
+        // Create an empty expected-architecture.yaml
+        let expected_arch_dir = tmp.path().join(".cognicode");
+        std::fs::create_dir_all(&expected_arch_dir).unwrap();
+        std::fs::write(expected_arch_dir.join("expected-architecture.yaml"), "").unwrap();
+
+        let repo = make_mock_repo(vec![], vec![]);
+        let service = GraphServiceImpl::new(repo, None);
+
+        // Should gracefully handle empty YAML
+        let report = service
+            .compare_architecture(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
+
+        // Should return default report
+        assert_eq!(report.findings.len(), 0);
     }
 }

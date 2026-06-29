@@ -83,6 +83,10 @@ pub enum EdgeKind {
     /// belongs to a system). Multimodal.
     #[cfg(feature = "multimodal")]
     InSystem,
+    /// `source` depends on `target` (e.g. a container depends on
+    /// another container at the C4 level). Multimodal.
+    #[cfg(feature = "multimodal")]
+    DependsOn,
     /// `Route` invokes `Function` (HTTP). Multimodal.
     /// Direction: `Route -> Handler`. Phase 2 (e15.5).
     #[cfg(feature = "multimodal")]
@@ -127,6 +131,7 @@ impl FromStr for EdgeKind {
             "part_of" => return Ok(EdgeKind::PartOf),
             "deployed_as" => return Ok(EdgeKind::DeployedAs),
             "in_system" => return Ok(EdgeKind::InSystem),
+            "depends_on" => return Ok(EdgeKind::DependsOn),
             // Cross-service protocol edges (Phase 2 — e15.5)
             "http_calls" => return Ok(EdgeKind::HttpCalls),
             "graphql_calls" => return Ok(EdgeKind::GraphqlCalls),
@@ -172,6 +177,8 @@ impl EdgeKind {
             EdgeKind::DeployedAs => "deployed_as".to_string(),
             #[cfg(feature = "multimodal")]
             EdgeKind::InSystem => "in_system".to_string(),
+            #[cfg(feature = "multimodal")]
+            EdgeKind::DependsOn => "depends_on".to_string(),
             // Cross-service protocol edges (Phase 2 — e15.5)
             #[cfg(feature = "multimodal")]
             EdgeKind::HttpCalls => "http_calls".to_string(),

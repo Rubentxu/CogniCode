@@ -602,6 +602,7 @@ dependencies = [
  "chrono",
  "clap",
  "cognicode-core",
+ "glob",
  "hex",
  "inventory",
  "oas3",

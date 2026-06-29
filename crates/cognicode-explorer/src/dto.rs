@@ -1533,6 +1533,29 @@ fn is_valid_uuid_format(s: &str) -> bool {
 // C4 Architecture Drift Detection (E6)
 // ============================================================================
 
+/// Severity level for architecture drift or rule violation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Severity {
+    Error,
+    Warning,
+}
+
+/// One dependency rule from expected-architecture.yaml.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DependencyRule {
+    /// Unique identifier for the rule.
+    pub id: String,
+    /// Human-readable description of what this rule enforces.
+    pub description: String,
+    /// Glob pattern for the source container (e.g., "crates/*").
+    pub from_pattern: String,
+    /// Glob pattern for the target container (e.g., "apps/*").
+    pub to_pattern: String,
+    /// Severity when this rule is violated.
+    pub severity: Severity,
+}
+
 /// Kind of architecture drift detected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1543,6 +1566,8 @@ pub enum DriftKind {
     ExtraContainer,
     /// Container exists in both but sub_kind differs.
     WrongSubKind,
+    /// A depends_on edge violates a boundary rule.
+    BoundaryViolation,
 }
 
 /// One drift finding comparing expected vs inferred C4 architecture.
@@ -1558,6 +1583,9 @@ pub struct DriftFinding {
     pub severity: String,
     /// Human-readable explanation.
     pub detail: String,
+    /// Rule ID that triggered this finding (only for BoundaryViolation).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule_id: Option<String>,
 }
 
 /// Report comparing expected C4 architecture against inferred architecture.
@@ -1573,6 +1601,8 @@ pub struct DriftReport {
     pub extra_containers: usize,
     /// Count of wrong sub_kind findings.
     pub wrong_sub_kinds: usize,
+    /// Count of boundary violation findings.
+    pub boundary_violations: usize,
 }
 
 impl Default for DriftReport {
@@ -1583,6 +1613,7 @@ impl Default for DriftReport {
             missing_containers: 0,
             extra_containers: 0,
             wrong_sub_kinds: 0,
+            boundary_violations: 0,
         }
     }
 }
@@ -1600,6 +1631,8 @@ pub struct ExpectedContainer {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExpectedArchitecture {
     pub containers: Vec<ExpectedContainer>,
+    #[serde(default)]
+    pub dependency_rules: Vec<DependencyRule>,
 }
 
 // ============================================================================
