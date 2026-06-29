@@ -25,8 +25,10 @@ import { useAppDispatch, useAppState } from "../../state/context";
 import { useLanding } from "../../hooks/useLanding";
 import { useArchitecture } from "../../hooks/useArchitecture";
 import { useGraphAlgorithms } from "../../hooks/useGraphAlgorithms";
+import { useC4Hotspots } from "../../hooks/useC4Hotspots";
+import { useDrift } from "../../hooks/useDrift";
 import { isGraphPerspective, filterArchitectureByLevel } from "../../state/c4Levels";
-import type { GodNodeEntry } from "../../api/types";
+import type { GodNodeEntry, DriftReport, GraphNode } from "../../api/types";
 import { toCytoscapeElements } from "../InteractiveGraph/adapter";
 import { buildStylesheet, resolveNodeStyleClass } from "../InteractiveGraph/stylesheet";
 
@@ -46,9 +48,78 @@ const LandingHeader = lazy(() =>
   import("./LandingHeader").then((m) => ({ default: m.LandingHeader })),
 );
 
+// ============================================================================
+// C4 Overlay utilities (exported for testing)
+// ============================================================================
+
+export type DriftKind = "missing" | "extra" | "wrong_sub_kind";
+export type HotspotKind = "high" | "med";
+
+/**
+ * Normalize a container name for comparison — strips case, hyphens, underscores, spaces.
+ */
+export function normalizeContainerName(name: string): string {
+  return name.toLowerCase().replace(/[-_\s]+/g, "");
+}
+
+/**
+ * Match drift findings to C4 nodes by normalized container name.
+ * Returns a Map of nodeId → driftKind.
+ *
+ * For "missing" findings, actual is "—" (not inferred), so we use expected.
+ * For "extra" findings, expected is "—" (not expected), so we use actual.
+ */
+export function matchDriftToNodes(
+  driftReport: DriftReport | undefined,
+  nodes: GraphNode[],
+): Map<string, DriftKind> {
+  if (!driftReport) return new Map();
+  const map = new Map<string, DriftKind>();
+  for (const finding of driftReport.findings) {
+    // Use actual unless it's the placeholder "—", then use expected
+    const nameToMatch = finding.actual !== "—" ? finding.actual : finding.expected;
+    const normalizedName = normalizeContainerName(nameToMatch);
+    const node = nodes.find((n) => normalizeContainerName(n.label) === normalizedName);
+    if (node) {
+      map.set(node.id, finding.kind as DriftKind);
+    }
+  }
+  return map;
+}
+
+/**
+ * Apply overlay classes onto a node with priority: hotspot > drift.
+ * Returns a new node with the appropriate overlay style_class set.
+ */
+export function applyOverlayClass(
+  node: GraphNode,
+  driftMap: Map<string, DriftKind>,
+  hotspotMap: Map<string, HotspotKind>,
+): GraphNode {
+  const driftClass = driftMap.get(node.id);
+  const hotspotKind = hotspotMap.get(node.id);
+
+  // Priority: hotspot > drift
+  let style_class = node.style_class;
+
+  if (hotspotKind === "high") {
+    style_class = "hotspot-high";
+  } else if (hotspotKind === "med") {
+    style_class = "hotspot-med";
+  } else if (driftClass === "missing") {
+    style_class = "drift-missing";
+  } else if (driftClass === "extra") {
+    style_class = "drift-extra";
+  } else if (driftClass === "wrong_sub_kind") {
+    style_class = "drift-wrong-kind";
+  }
+
+  return { ...node, style_class };
+}
+
 export function GraphLanding({ workspaceId }: { workspaceId: string }) {
   const dispatch = useAppDispatch();
-  const { perspective } = useAppState();
+  const { perspective, c4Overlay } = useAppState();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const listContainerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
@@ -75,6 +146,10 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
   const data = isGraph ? landingData : filteredArchData ?? archData;
   const isLoading = isGraph ? isLandingLoading : isArchLoading;
   const error = isGraph ? landingError : archError;
+
+  // C4 overlay data — only fetched when in C4 perspective
+  const { data: driftReport } = useDrift(!isGraph ? workspaceId : null);
+  const { data: hotspotMap } = useC4Hotspots(!isGraph ? workspaceId : null);
 
   // Compute god_nodes via WASM when enabled (lazy — only runs once data is available)
   useEffect(() => {
@@ -138,6 +213,21 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
       });
     }
 
+    // Apply C4 overlays when in C4 perspective with overlays enabled
+    if (!isGraph) {
+      const hasDrift = c4Overlay.driftEnabled && driftReport;
+      const hasHotspots = c4Overlay.hotspotsEnabled && hotspotMap;
+
+      if (hasDrift || hasHotspots) {
+        const driftMap = hasDrift ? matchDriftToNodes(driftReport, data.nodes) : new Map<string, DriftKind>();
+        const hotspotMapData = hasHotspots ? hotspotMap : new Map<string, HotspotKind>();
+
+        nodesWithStyle = nodesWithStyle.map((n) =>
+          applyOverlayClass(n, driftMap, hotspotMapData),
+        );
+      }
+    }
+
     const elements = toCytoscapeElements(nodesWithStyle, data.edges);
 
     const cy = cytoscape({
@@ -170,7 +260,7 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
       cy.destroy();
       cyRef.current = null;
     };
-  }, [data, isGraph, landingData, godNodes, selectObject]);
+  }, [data, isGraph, landingData, godNodes, selectObject, driftReport, hotspotMap, c4Overlay]);
 
   if (isLoading) {
     return (
