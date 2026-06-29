@@ -22,7 +22,8 @@ import {
   useState,
 } from "react";
 
-import type { SuggestedQuestion } from "../../config/suggestedQuestions";
+import { verbLabel, VERB_STUB_CONFIG, type SuggestedQuestion } from "../../config/suggestedQuestions";
+import type { GraphStatus } from "../../api/types";
 
 export interface SuggestionPopoverProps {
   prompts: readonly SuggestedQuestion[];
@@ -31,6 +32,8 @@ export interface SuggestionPopoverProps {
   ariaLabel?: string;
   /** Optional: extra className on the strip wrapper. */
   className?: string;
+  /** Graph status for stale-gating parity with SuggestionStrip. */
+  graphStatus?: GraphStatus;
 }
 
 export interface SuggestionPopoverHandle {
@@ -45,7 +48,7 @@ export interface SuggestionPopoverHandle {
 export const SuggestionPopover = forwardRef<
   SuggestionPopoverHandle,
   SuggestionPopoverProps
->(function SuggestionPopover({ prompts, onDispatch, ariaLabel, className }, ref) {
+>(function SuggestionPopover({ prompts, onDispatch, ariaLabel, className, graphStatus }, ref) {
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   // `open` mirrors the dialog's `open` attribute. We track it as
@@ -135,23 +138,55 @@ export const SuggestionPopover = forwardRef<
         }}
       >
         <ul role="list" className="m-0 flex list-none flex-col gap-2 p-0">
-          {prompts.map((prompt) => (
-            <li key={prompt.id}>
-              <button
-                type="button"
-                data-testid={`suggestion-popover-item-${prompt.id}`}
-                onClick={() => handlePromptClick(prompt)}
-                disabled={prompt.requiresGraph /* see strip: stale gating */}
-                className="w-full rounded px-3 py-2 text-left text-sm"
-                style={{
-                  backgroundColor: "var(--color-surface-overlay)",
-                  color: "var(--color-text-primary)",
-                }}
-              >
-                {prompt.label}
-              </button>
-            </li>
-          ))}
+          {prompts.map((prompt) => {
+            const disabled =
+              prompt.isComingSoon ||
+              (prompt.requiresGraph && graphStatus === "stale");
+            const stubReason = prompt.isComingSoon
+              ? VERB_STUB_CONFIG[prompt.verb]?.disabledReason
+              : undefined;
+            const tooltip = disabled ? stubReason ?? "Graph is stale — re-index to refresh" : undefined;
+            return (
+              <li key={prompt.id}>
+                <button
+                  type="button"
+                  data-testid={`suggestion-popover-item-${prompt.id}`}
+                  onClick={() => {
+                    if (disabled) return;
+                    handlePromptClick(prompt);
+                  }}
+                  disabled={disabled}
+                  title={tooltip}
+                  className="w-full rounded px-3 py-2 text-left text-sm"
+                  style={{
+                    backgroundColor: "var(--color-surface-overlay)",
+                    color: "var(--color-text-primary)",
+                    opacity: disabled ? 0.5 : 1,
+                    cursor: disabled ? "not-allowed" : "pointer",
+                  }}
+                >
+                  <span
+                    data-testid={`verb-prefix-${prompt.id}`}
+                    aria-hidden="true"
+                    className="mr-1 font-mono text-[10px]"
+                    style={{ color: "var(--color-text-muted)" }}
+                  >
+                    {verbLabel(prompt.verb)}
+                  </span>
+                  {prompt.label}
+                  {prompt.isComingSoon && (
+                    <span
+                      aria-hidden="true"
+                      className="ml-1 text-[10px]"
+                      style={{ color: "var(--color-text-muted)" }}
+                    >
+                      soon
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </dialog>
     </div>

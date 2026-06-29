@@ -133,6 +133,7 @@ describe("useAsk — cognicode_ask", () => {
       tool: "cognicode_ask",
       params: { question: "who calls `{label}`?" },
       requiresGraph: true,
+      verb: "trace",
     };
 
     await act(async () => {
@@ -164,6 +165,7 @@ describe("useAsk — explorer_inspect_object", () => {
       tool: "explorer_inspect_object",
       params: { object_id: "ev:7" },
       requiresGraph: false,
+      verb: "explain",
     };
 
     act(() => {
@@ -190,6 +192,7 @@ describe("useAsk — explorer_inspect_object", () => {
         tool: "explorer_inspect_object",
         params: {},
         requiresGraph: false,
+        verb: "understand",
       });
     });
 
@@ -218,6 +221,7 @@ describe("useAsk — explorer_get_view", () => {
         tool: "explorer_get_view",
         params: { view_id: "changelog" },
         requiresGraph: false,
+        verb: "compare",
       });
     });
 
@@ -246,6 +250,7 @@ describe("useAsk — no-op", () => {
         tool: "cognicode_ask",
         params: { question: "x" },
         requiresGraph: false,
+        verb: "understand",
       });
     });
 
@@ -282,6 +287,7 @@ describe("useAsk — isDispatching", () => {
         tool: "cognicode_ask",
         params: { question: "hi" },
         requiresGraph: false,
+        verb: "understand",
       });
     });
 

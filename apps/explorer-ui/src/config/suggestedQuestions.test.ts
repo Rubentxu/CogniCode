@@ -18,6 +18,8 @@ import type { InspectableObjectType } from "../api/types";
 import {
   SUGGESTED_QUESTIONS,
   filterByGraph,
+  verbLabel,
+  type InvestigationVerb,
   type SuggestedQuestion,
   type SuggestedTool,
 } from "./suggestedQuestions";
@@ -187,5 +189,48 @@ describe("filterByGraph", () => {
     // emitted, but `useAsk` and `SuggestionStrip` should disable
     // graph-dependent ones before dispatching.
     expect(out.filter((p) => p.requiresGraph).length).toBe(fileGraph.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Investigation verb tagging
+// ---------------------------------------------------------------------------
+
+const VALID_VERBS: readonly InvestigationVerb[] = [
+  "understand",
+  "trace",
+  "compare",
+  "explain",
+  "save",
+];
+
+describe("SUGGESTED_QUESTIONS — verb tagging", () => {
+  it("every prompt carries a valid verb from InvestigationVerb", () => {
+    for (const kind of EXPECTED_KINDS) {
+      for (const prompt of SUGGESTED_QUESTIONS[kind]) {
+        expect(
+          VALID_VERBS.includes(prompt.verb),
+          `${kind}/${prompt.id} has invalid verb "${prompt.verb}"`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("verbLabel returns uppercase string for every verb", () => {
+    for (const verb of VALID_VERBS) {
+      expect(verbLabel(verb)).toBe(verb.toUpperCase());
+    }
+  });
+
+  it("isComingSoon is set only on changed-file and changed-scope", () => {
+    const comingSoonIds = new Set<string>();
+    for (const kind of EXPECTED_KINDS) {
+      for (const prompt of SUGGESTED_QUESTIONS[kind]) {
+        if (prompt.isComingSoon) {
+          comingSoonIds.add(prompt.id);
+        }
+      }
+    }
+    expect(comingSoonIds).toEqual(new Set(["changed-file", "changed-scope"]));
   });
 });
