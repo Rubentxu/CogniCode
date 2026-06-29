@@ -14,7 +14,8 @@ import {
   matchDriftToNodes,
   applyOverlayClass,
 } from "./GraphLanding";
-import type { DriftReport, GraphNode } from "../../api/types";
+import type { DriftReport, GraphNode, DriftKind } from "../../api/types";
+import type { C4HotspotData } from "../../hooks/useC4Hotspots";
 
 describe("C4 Overlay utilities", () => {
   describe("normalizeContainerName", () => {
@@ -36,9 +37,9 @@ describe("C4 Overlay utilities", () => {
 
   describe("matchDriftToNodes", () => {
     const mockNodes: GraphNode[] = [
-      { id: "n1", label: "api-service", kind: "container" },
-      { id: "n2", label: "web-frontend", kind: "container" },
-      { id: "n3", label: "backend-db", kind: "container" },
+      { id: "n1", label: "api-service", kind: "container", style_class: "node-container" },
+      { id: "n2", label: "web-frontend", kind: "container", style_class: "node-container" },
+      { id: "n3", label: "backend-db", kind: "container", style_class: "node-container" },
     ];
 
     it("returns empty map when driftReport is undefined", () => {
@@ -85,8 +86,8 @@ describe("C4 Overlay utilities", () => {
   });
 
   describe("applyOverlayClass", () => {
-    const emptyDrift = new Map<string, "missing" | "extra" | "wrong-kind">();
-    const emptyHotspot = new Map<string, "high" | "med">();
+    const emptyDrift = new Map<string, DriftKind>();
+    const emptyHotspot = new Map<string, C4HotspotData>();
 
     it("returns node unchanged when no overlays", () => {
       const node: GraphNode = { id: "n1", label: "test", kind: "container", style_class: "node-container" };
@@ -96,8 +97,8 @@ describe("C4 Overlay utilities", () => {
 
     it("applies hotspot-high when present (priority over drift)", () => {
       const node: GraphNode = { id: "n1", label: "test", kind: "container", style_class: "node-container" };
-      const hotspotMap = new Map<string, "high" | "med">([["n1", "high"]]);
-      const driftMap = new Map<string, "missing" | "extra" | "wrong-kind">([["n1", "missing"]]);
+      const hotspotMap = new Map<string, C4HotspotData>([["n1", { score: 0.9, kind: "high" }]]);
+      const driftMap = new Map<string, DriftKind>([["n1", "missing"]]);
 
       const result = applyOverlayClass(node, driftMap, hotspotMap);
       expect(result.style_class).toBe("hotspot-high");
@@ -105,8 +106,8 @@ describe("C4 Overlay utilities", () => {
 
     it("applies hotspot-med when present (priority over drift)", () => {
       const node: GraphNode = { id: "n1", label: "test", kind: "container", style_class: "node-container" };
-      const hotspotMap = new Map<string, "high" | "med">([["n1", "med"]]);
-      const driftMap = new Map<string, "missing" | "extra" | "wrong-kind">([["n1", "extra"]]);
+      const hotspotMap = new Map<string, C4HotspotData>([["n1", { score: 0.5, kind: "med" }]]);
+      const driftMap = new Map<string, DriftKind>([["n1", "extra"]]);
 
       const result = applyOverlayClass(node, driftMap, hotspotMap);
       expect(result.style_class).toBe("hotspot-med");
@@ -114,7 +115,7 @@ describe("C4 Overlay utilities", () => {
 
     it("applies drift-missing when no hotspot", () => {
       const node: GraphNode = { id: "n1", label: "test", kind: "container", style_class: "node-container" };
-      const driftMap = new Map<string, "missing" | "extra" | "wrong_sub_kind">([["n1", "missing"]]);
+      const driftMap = new Map<string, DriftKind>([["n1", "missing"]]);
 
       const result = applyOverlayClass(node, driftMap, emptyHotspot);
       expect(result.style_class).toBe("drift-missing");
@@ -122,7 +123,7 @@ describe("C4 Overlay utilities", () => {
 
     it("applies drift-extra when no hotspot", () => {
       const node: GraphNode = { id: "n1", label: "test", kind: "container", style_class: "node-container" };
-      const driftMap = new Map<string, "missing" | "extra" | "wrong_sub_kind">([["n1", "extra"]]);
+      const driftMap = new Map<string, DriftKind>([["n1", "extra"]]);
 
       const result = applyOverlayClass(node, driftMap, emptyHotspot);
       expect(result.style_class).toBe("drift-extra");
@@ -130,7 +131,7 @@ describe("C4 Overlay utilities", () => {
 
     it("applies drift-wrong-kind when no hotspot", () => {
       const node: GraphNode = { id: "n1", label: "test", kind: "container", style_class: "node-container" };
-      const driftMap = new Map<string, "missing" | "extra" | "wrong_sub_kind">([["n1", "wrong_sub_kind"]]);
+      const driftMap = new Map<string, DriftKind>([["n1", "wrong_sub_kind"]]);
 
       const result = applyOverlayClass(node, driftMap, emptyHotspot);
       expect(result.style_class).toBe("drift-wrong-kind");
@@ -138,8 +139,8 @@ describe("C4 Overlay utilities", () => {
 
     it("applies hotspot-only when both maps have entry", () => {
       const node: GraphNode = { id: "n1", label: "test", kind: "container", style_class: "node-container" };
-      const hotspotMap = new Map<string, "high" | "med">([["n1", "high"]]);
-      const driftMap = new Map<string, "missing" | "extra" | "wrong_sub_kind">([["n1", "extra"]]);
+      const hotspotMap = new Map<string, C4HotspotData>([["n1", { score: 0.9, kind: "high" }]]);
+      const driftMap = new Map<string, DriftKind>([["n1", "extra"]]);
 
       const result = applyOverlayClass(node, driftMap, hotspotMap);
       expect(result.style_class).toBe("hotspot-high");
@@ -147,8 +148,8 @@ describe("C4 Overlay utilities", () => {
 
     it("node without any overlay entry keeps original style_class", () => {
       const node: GraphNode = { id: "n1", label: "test", kind: "container", style_class: "node-component" };
-      const hotspotMap = new Map<string, "high" | "med">([["other-node", "high"]]);
-      const driftMap = new Map<string, "missing" | "extra" | "wrong_sub_kind">([["other-node", "missing"]]);
+      const hotspotMap = new Map<string, C4HotspotData>([["other-node", { score: 0.9, kind: "high" }]]);
+      const driftMap = new Map<string, DriftKind>([["other-node", "missing"]]);
 
       const result = applyOverlayClass(node, driftMap, hotspotMap);
       expect(result.style_class).toBe("node-component");
@@ -156,7 +157,7 @@ describe("C4 Overlay utilities", () => {
 
     it("returns a new object, not mutating the original", () => {
       const node: GraphNode = { id: "n1", label: "test", kind: "container", style_class: "node-container" };
-      const hotspotMap = new Map<string, "high" | "med">([["n1", "high"]]);
+      const hotspotMap = new Map<string, C4HotspotData>([["n1", { score: 0.9, kind: "high" }]]);
 
       const result = applyOverlayClass(node, emptyDrift, hotspotMap);
       expect(result).not.toBe(node);

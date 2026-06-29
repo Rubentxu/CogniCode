@@ -986,6 +986,12 @@ export const graphNodeStyleClassSchema = z.enum([
   "entry-point",
   "hot",
   "god",
+  // ---- C4 Overlays (E19-3) ----
+  "drift-missing",
+  "drift-extra",
+  "drift-wrong-kind",
+  "hotspot-high",
+  "hotspot-med",
 ]);
 export type GraphNodeStyleClass = z.infer<typeof graphNodeStyleClassSchema>;
 

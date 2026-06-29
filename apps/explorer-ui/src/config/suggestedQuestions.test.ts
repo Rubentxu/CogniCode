@@ -222,7 +222,8 @@ describe("SUGGESTED_QUESTIONS — verb tagging", () => {
     }
   });
 
-  it("isComingSoon is set only on changed-file and changed-scope", () => {
+  it("no compare verb questions have isComingSoon (they are unlocked)", () => {
+    // PR4: compare verb is now unlocked — isComingSoon removed from all compare questions
     const comingSoonIds = new Set<string>();
     for (const kind of EXPECTED_KINDS) {
       for (const prompt of SUGGESTED_QUESTIONS[kind]) {
@@ -231,6 +232,10 @@ describe("SUGGESTED_QUESTIONS — verb tagging", () => {
         }
       }
     }
-    expect(comingSoonIds).toEqual(new Set(["changed-file", "changed-scope"]));
+    // After unlocking compare, no compare questions should have isComingSoon
+    const compareQuestionsWithComingSoon = [...comingSoonIds].filter(id =>
+      id.startsWith("changed-") || id.includes("compare")
+    );
+    expect(compareQuestionsWithComingSoon).toHaveLength(0);
   });
 });

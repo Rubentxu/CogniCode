@@ -18,7 +18,7 @@
  * Clicking a node dispatches `SELECT_OBJECT { objectId, viewId: "overview" }`
  * which opens the pane stack.
  */
-import { useEffect, useRef, lazy, Suspense, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, lazy, Suspense, useState, useCallback } from "react";
 import cytoscape, { type Core } from "cytoscape";
 
 import { useAppDispatch, useAppState } from "../../state/context";
@@ -28,7 +28,8 @@ import { useGraphAlgorithms } from "../../hooks/useGraphAlgorithms";
 import { useC4Hotspots } from "../../hooks/useC4Hotspots";
 import { useDrift } from "../../hooks/useDrift";
 import { isGraphPerspective, filterArchitectureByLevel } from "../../state/c4Levels";
-import type { GodNodeEntry, DriftReport, GraphNode } from "../../api/types";
+import type { GodNodeEntry, DriftReport, GraphNode, DriftKind } from "../../api/types";
+import type { C4HotspotData } from "../../hooks/useC4Hotspots";
 import { toCytoscapeElements } from "../InteractiveGraph/adapter";
 import { buildStylesheet, resolveNodeStyleClass } from "../InteractiveGraph/stylesheet";
 
@@ -56,7 +57,6 @@ const DriftSummaryPanel = lazy(() =>
 // C4 Overlay utilities (exported for testing)
 // ============================================================================
 
-export type DriftKind = "missing" | "extra" | "wrong_sub_kind";
 export type HotspotKind = "high" | "med";
 
 /**
@@ -98,17 +98,17 @@ export function matchDriftToNodes(
 export function applyOverlayClass(
   node: GraphNode,
   driftMap: Map<string, DriftKind>,
-  hotspotMap: Map<string, HotspotKind>,
+  hotspotMap: Map<string, C4HotspotData>,
 ): GraphNode {
   const driftClass = driftMap.get(node.id);
-  const hotspotKind = hotspotMap.get(node.id);
+  const hotspotData = hotspotMap.get(node.id);
 
   // Priority: hotspot > drift
   let style_class = node.style_class;
 
-  if (hotspotKind === "high") {
+  if (hotspotData?.kind === "high") {
     style_class = "hotspot-high";
-  } else if (hotspotKind === "med") {
+  } else if (hotspotData?.kind === "med") {
     style_class = "hotspot-med";
   } else if (driftClass === "missing") {
     style_class = "drift-missing";
@@ -224,7 +224,7 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
 
       if (hasDrift || hasHotspots) {
         const driftMap = hasDrift ? matchDriftToNodes(driftReport, data.nodes) : new Map<string, DriftKind>();
-        const hotspotMapData = hasHotspots ? hotspotMap : new Map<string, HotspotKind>();
+        const hotspotMapData = hasHotspots ? hotspotMap : new Map<string, C4HotspotData>();
 
         nodesWithStyle = nodesWithStyle.map((n) =>
           applyOverlayClass(n, driftMap, hotspotMapData),
