@@ -2565,7 +2565,7 @@ pub fn build_composed_narrative(session: &ExplorationSession) -> ContextualView 
 
 /// Inventory provider for ComposedNarrative — used by list_for().
 pub struct ComposedNarrativeProvider;
-impl ViewDescriptor for ComposedNarrativeProvider {
+impl ViewDescriptorProvider for ComposedNarrativeProvider {
     fn id(&self) -> &'static str {
         "composed-narrative"
     }
@@ -2582,10 +2582,10 @@ impl ViewDescriptor for ComposedNarrativeProvider {
         RendererKind::Composite
     }
 }
+static COMPOSED_NARRATIVE_PROVIDER: ComposedNarrativeProvider = ComposedNarrativeProvider;
 inventory::submit!(ProviderWrapper {
     provider: &COMPOSED_NARRATIVE_PROVIDER as &dyn ViewDescriptorProvider
 });
-static COMPOSED_NARRATIVE_PROVIDER: ComposedNarrativeProvider = ComposedNarrativeProvider;
 
 /// ViewExecutor for ComposedNarrative — receives the full ExplorationSession
 /// via InspectionTarget::SavedExploration and delegates to the pure shaper.
@@ -2613,8 +2613,8 @@ impl ViewExecutor for ComposedNarrativeExecutor {
         match ctx.target {
             InspectionTarget::SavedExploration(session) => Ok(build_composed_narrative(session)),
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
                 view_id: "composed-narrative".into(),
-                reason: "ComposedNarrative is only available for SavedExploration".into(),
             }),
         }
     }
