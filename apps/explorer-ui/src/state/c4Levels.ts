@@ -25,7 +25,7 @@ export type Perspective = "graph" | C4Level;
  */
 export const C4_LEVEL_NODE_CLASSES: Readonly<Record<C4Level, ReadonlySet<string>>> = {
   "c4-context":   new Set(["node-system"]),
-  "c4-container":  new Set(["node-system", "node-container"]),
+  "c4-container": new Set(["node-system", "node-container", "node-component"]),
   "c4-component": new Set(["node-system", "node-container", "node-component"]),
   "c4-code":      new Set(["node-system", "node-container", "node-component", "node-code"]),
 };
@@ -44,7 +44,7 @@ export interface PerspectiveOption {
 export const PERSPECTIVE_OPTIONS: readonly PerspectiveOption[] = [
   { id: "graph",        label: "Graph",      badge: null } as const,
   { id: "c4-context",  label: "Context",   badge: null } as const,
-  { id: "c4-container",label: "Container", badge: null } as const,
+  { id: "c4-container",label: "Container", badge: "basic" } as const,
   { id: "c4-component",label: "Component", badge: "basic" } as const,
   { id: "c4-code",     label: "Code",      badge: "basic" } as const,
 ] as const;

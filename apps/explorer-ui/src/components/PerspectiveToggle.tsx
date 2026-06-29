@@ -7,7 +7,6 @@
  */
 import { useAppDispatch, useAppState } from "../state/context";
 import {
-  isGraphPerspective,
   PERSPECTIVE_OPTIONS,
   type Perspective,
 } from "../state/c4Levels";

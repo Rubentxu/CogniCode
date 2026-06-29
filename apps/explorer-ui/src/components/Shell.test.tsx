@@ -411,9 +411,9 @@ describe("PerspectiveToggle", () => {
     expect(screen.getByTestId("perspective-c4-container")).toHaveTextContent("Container");
     expect(screen.getByTestId("perspective-c4-component")).toHaveTextContent("Component");
     expect(screen.getByTestId("perspective-c4-code")).toHaveTextContent("Code");
-    // Component and Code each show "basic" badge (two badges total)
+    // Component, Container, and Code show "basic" badge (three badges total)
     const badges = screen.getAllByTestId("perspective-basic-badge");
-    expect(badges).toHaveLength(2);
+    expect(badges).toHaveLength(3);
   });
 
   it('dispatches SET_PERSPECTIVE with "c4-component" when Component button is clicked', async () => {
