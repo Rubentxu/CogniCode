@@ -1,5 +1,5 @@
 /**
- * `PerspectiveToggle` — Graph ↔ C4 Components toggle button group.
+ * `PerspectiveToggle` — Graph ↔ Structure toggle button group.
  *
  * Renders in the Shell header. Dispatches `SET_PERSPECTIVE` to switch
  * the landing graph canvas between graph (entry points) and C4 (component
@@ -62,7 +62,7 @@ export function PerspectiveToggle() {
               }
         }
       >
-        C4 Components
+        Structure
       </button>
     </div>
   );

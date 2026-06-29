@@ -401,13 +401,13 @@ describe("SkipLink", () => {
 });
 
 describe("PerspectiveToggle", () => {
-  it("renders the toggle with Graph and C4 Components labels", async () => {
+  it("renders the toggle with Graph and Structure labels", async () => {
     render(<ShellHarness viewport="desktop" />);
     await waitFor(() => {
       expect(screen.getByTestId("perspective-toggle")).toBeInTheDocument();
     });
     expect(screen.getByTestId("perspective-graph")).toHaveTextContent("Graph");
-    expect(screen.getByTestId("perspective-c4")).toHaveTextContent("C4 Components");
+    expect(screen.getByTestId("perspective-c4")).toHaveTextContent("Structure");
   });
 
   it('dispatches SET_PERSPECTIVE with "c4" when C4 button is clicked', async () => {
