@@ -16,7 +16,7 @@ import userEvent from "@testing-library/user-event";
 import { createRef } from "react";
 
 import { SuggestionPopover } from "./SuggestionPopover";
-import type { SuggestedQuestion } from "../../config/suggestedQuestions";
+import { verbLabel, type SuggestedQuestion } from "../../config/suggestedQuestions";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -29,6 +29,7 @@ const SAMPLE_PROMPTS: SuggestedQuestion[] = [
     tool: "cognicode_ask",
     params: { question: "who calls `{label}`?" },
     requiresGraph: true,
+    verb: "trace",
   },
   {
     id: "risky",
@@ -36,6 +37,7 @@ const SAMPLE_PROMPTS: SuggestedQuestion[] = [
     tool: "cognicode_ask",
     params: { question: "is `{label}` risky?" },
     requiresGraph: true,
+    verb: "explain",
   },
   {
     id: "justifies",
@@ -43,6 +45,7 @@ const SAMPLE_PROMPTS: SuggestedQuestion[] = [
     tool: "explorer_inspect_object",
     params: { object_id: "ev:1" },
     requiresGraph: false,
+    verb: "explain",
   },
 ];
 
@@ -242,6 +245,68 @@ describe("SuggestionPopover — imperative handle", () => {
       open: boolean;
     };
     expect(dialog.open).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Verb prefix chip
+// ---------------------------------------------------------------------------
+
+describe("SuggestionPopover — verb prefix chip", () => {
+  const PROMPTS_WITH_COMING_SOON: SuggestedQuestion[] = [
+    {
+      id: "changed-file",
+      label: "What changed in this file?",
+      tool: "explorer_get_view",
+      params: { view_id: "changelog" },
+      requiresGraph: false,
+      verb: "compare",
+      isComingSoon: true,
+    },
+    {
+      id: "in-file",
+      label: "What is in this file?",
+      tool: "explorer_inspect_object",
+      params: { object_id: "{id}" },
+      requiresGraph: false,
+      verb: "understand",
+    },
+  ];
+
+  it("renders a verb-prefix span for each item", async () => {
+    const user = userEvent.setup();
+    render(
+      <SuggestionPopover
+        prompts={SAMPLE_PROMPTS}
+        onDispatch={vi.fn()}
+        ariaLabel="What can I do here?"
+      />,
+    );
+    await user.click(screen.getByTestId("suggestion-popover-trigger"));
+    for (const prompt of SAMPLE_PROMPTS) {
+      const chip = screen.getByTestId(`verb-prefix-${prompt.id}`);
+      expect(chip).toHaveTextContent(verbLabel(prompt.verb));
+    }
+  });
+
+  it("coming-soon items are disabled and show 'soon' text", async () => {
+    const user = userEvent.setup();
+    render(
+      <SuggestionPopover
+        prompts={PROMPTS_WITH_COMING_SOON}
+        onDispatch={vi.fn()}
+        ariaLabel="What can I do here?"
+      />,
+    );
+    await user.click(screen.getByTestId("suggestion-popover-trigger"));
+
+    const comingSoonItem = screen.getByTestId("suggestion-popover-item-changed-file");
+    expect(comingSoonItem).toBeDisabled();
+    expect(comingSoonItem).toHaveTextContent("soon");
+
+    const activeItem = screen.getByTestId("suggestion-popover-item-in-file");
+    expect(activeItem).not.toBeDisabled();
+    expect(activeItem).not.toHaveTextContent("soon");
   });
 });
 

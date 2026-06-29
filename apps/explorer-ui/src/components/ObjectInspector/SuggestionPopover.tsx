@@ -22,7 +22,7 @@ import {
   useState,
 } from "react";
 
-import type { SuggestedQuestion } from "../../config/suggestedQuestions";
+import { verbLabel, type InvestigationVerb, type SuggestedQuestion } from "../../config/suggestedQuestions";
 
 export interface SuggestionPopoverProps {
   prompts: readonly SuggestedQuestion[];
@@ -135,23 +135,60 @@ export const SuggestionPopover = forwardRef<
         }}
       >
         <ul role="list" className="m-0 flex list-none flex-col gap-2 p-0">
-          {prompts.map((prompt) => (
-            <li key={prompt.id}>
-              <button
-                type="button"
-                data-testid={`suggestion-popover-item-${prompt.id}`}
-                onClick={() => handlePromptClick(prompt)}
-                disabled={prompt.requiresGraph /* see strip: stale gating */}
-                className="w-full rounded px-3 py-2 text-left text-sm"
-                style={{
-                  backgroundColor: "var(--color-surface-overlay)",
-                  color: "var(--color-text-primary)",
-                }}
-              >
-                {prompt.label}
-              </button>
-            </li>
-          ))}
+          {prompts.map((prompt) => {
+            const disabled =
+              prompt.isComingSoon ||
+              (prompt.requiresGraph && /* stale gating: see strip */ false);
+            const isCompare = prompt.verb === "compare";
+            const isSave = prompt.verb === "save";
+            const tooltip = disabled && prompt.isComingSoon
+              ? isCompare
+                ? "Available when C4 overlays exist"
+                : isSave
+                  ? "Available when investigations exist"
+                  : undefined
+              : undefined;
+            return (
+              <li key={prompt.id}>
+                <button
+                  type="button"
+                  data-testid={`suggestion-popover-item-${prompt.id}`}
+                  onClick={() => {
+                    if (disabled) return;
+                    handlePromptClick(prompt);
+                  }}
+                  disabled={disabled}
+                  title={tooltip}
+                  className="w-full rounded px-3 py-2 text-left text-sm"
+                  style={{
+                    backgroundColor: "var(--color-surface-overlay)",
+                    color: "var(--color-text-primary)",
+                    opacity: disabled ? 0.5 : 1,
+                    cursor: disabled ? "not-allowed" : "pointer",
+                  }}
+                >
+                  <span
+                    data-testid={`verb-prefix-${prompt.id}`}
+                    aria-hidden="true"
+                    className="mr-1 font-mono text-[10px]"
+                    style={{ color: "var(--color-text-muted)" }}
+                  >
+                    {verbLabel(prompt.verb)}
+                  </span>
+                  {prompt.label}
+                  {prompt.isComingSoon && (
+                    <span
+                      aria-hidden="true"
+                      className="ml-1 text-[10px]"
+                      style={{ color: "var(--color-text-muted)" }}
+                    >
+                      soon
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </dialog>
     </div>

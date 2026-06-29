@@ -1,8 +1,9 @@
 # ADR-005: Investigation Mode — Knowledge Artifacts as First-Class Entities
 
-**Status**: PROPOSED  
-**Date**: 2026-06-28  
-**Deciders**: User, orchestrator session 2026-06-28
+**Status**: ACCEPTED (amended 2026-06-29 — verb taxonomy added)  
+**Date**: 2026-06-28 (original), 2026-06-29 (amendment)  
+**Deciders**: User, orchestrator session 2026-06-28  
+**Amender**: orchestrator session 2026-06-29 — added §7 verb taxonomy, updated Status
 
 ## Context
 
@@ -181,6 +182,63 @@ This closes the loop: **investigation → knowledge → governance**.
 | INV-5 | Investigation Board on landing |
 | INV-6 | Diagram artifacts embedded in investigations |
 | INV-7 | Expected architecture from completed investigation |
+
+### 7. Investigation verb taxonomy (amended 2026-06-29)
+
+The Investigation Mode introduces **five mental operations** that users perform during code exploration. Each verb maps to one or more ViewKinds or actions. The `SuggestionStrip` is the primary UX surface for verb dispatch.
+
+#### Verb definitions
+
+| Verb | Mental question | ViewKinds produced | Example prompt |
+|------|---------------|-------------------|----------------|
+| **Understand** | "What is this?" | `source_view`, `overview`, default | "Show me the source", "What is in this file?" |
+| **Trace** | "How does it work?" | `call_graph`, `vertical_slice`, `data_flow`, `impact_radius` | "Who calls this?", "What does this call?", "Trace the handler" |
+| **Compare** | "What is different?" | `diff_view`, `changelog` | "What changed in this file?", "What contradicts this?" |
+| **Explain** | "Why does it exist?" | `architecture_rationale`, `decision_graph`, ADR views | "What justifies this?", "What does this ADR argue?", "Where does this belong?" |
+| **Save** | "I want to remember this" | pins to Investigation, generates Artifact | "Pin as evidence", "Add to investigation", "Generate diagram" |
+
+#### Existing prompts mapped to verbs
+
+The current `SUGGESTED_QUESTIONS` config (defined in `apps/explorer-ui/src/config/suggestedQuestions.ts`) maps to verbs as follows:
+
+| Prompt ID | Verb | View/Action |
+|-----------|------|-------------|
+| `who-calls` | Trace | `cognicode_ask` — "who calls `{label}`?" |
+| `what-does-call` | Trace | `cognicode_ask` — "what does `{label}` call?" |
+| `risky-here` | Explain | `cognicode_ask` — "is `{label}` risky to change?" |
+| `where-belongs` | Explain | `cognicode_ask` — "where does `{label}` belong?" |
+| `what-justifies` | Explain | `explorer_inspect_object` — resolves to decision/evidence |
+| `in-file` | Understand | `explorer_inspect_object` |
+| `changed-file` | Compare | `explorer_get_view` → `changelog` |
+| `lives-here` | Understand | `explorer_inspect_object` |
+| `depends-on` | Trace | `cognicode_ask` — "who depends on `{label}`?" |
+| `changed-scope` | Compare | `explorer_get_view` → `changelog` |
+| `moving-parts` | Understand | `cognicode_ask` |
+| `shape` | Understand | `cognicode_ask` — architecture shape |
+| `where-start` | Understand | `cognicode_ask` |
+| `inspect-context` | Understand | `explorer_inspect_object` |
+| `cites` | Trace | `explorer_get_view` → `cited-by` |
+| `contradicts` | Compare | `explorer_get_view` → `evidence` |
+| `violations` | Trace | `explorer_get_view` → `violations` |
+| `examples` | Understand | `explorer_get_view` → `examples` |
+| `trace-handler` | Trace | `cognicode_ask` |
+| `related-tests` | Trace | `explorer_get_view` → `test_slice` |
+| `downstream-effects` | Trace | `cognicode_ask` |
+
+**Stub verbs** (not yet implemented — placeholder UI only):
+
+| Verb | Stub implementation | When available |
+|------|--------------------|--------------------|
+| Compare | "Compare with..." dropdown | E19+ (C4 overlays + diff view) |
+| Save | "Pin as evidence" → Investigation entity | E21-2 (INV-2) |
+
+#### E18-4: Tag existing prompts with verbs
+
+E18-4 adds a `verb: InvestigationVerb` field to `SuggestedQuestion` in `suggestedQuestions.ts`. No new prompts, no new MCP tools — just taxonomy tagging. The `SuggestionStrip` renders a verb prefix chip per prompt. This creates the UX foundation for the full verb taxonomy without requiring backend changes.
+
+#### Future: Verb router (E21)
+
+When the Investigation entity exists (INV-1), the `Save` verb will dispatch to `PinEvidence` action rather than a ViewKind. The `Explain` verb will be enhanced with ADR-linked views. These deeper integrations are deferred to E21.
 
 ## References
 

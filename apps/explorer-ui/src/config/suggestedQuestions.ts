@@ -27,6 +27,8 @@ import type { GraphStatus, InspectableObjectType } from "../api/types";
 // Public types
 // ---------------------------------------------------------------------------
 
+export type InvestigationVerb = "understand" | "trace" | "compare" | "explain" | "save";
+
 export type SuggestedTool =
   | "cognicode_ask"
   | "explorer_inspect_object"
@@ -39,6 +41,13 @@ export interface SuggestedQuestion {
   readonly tool: SuggestedTool;
   readonly params: Readonly<Record<string, string>>;
   readonly requiresGraph: boolean;
+  readonly verb: InvestigationVerb;
+  readonly isComingSoon?: boolean;
+}
+
+/** Uppercase label for each InvestigationVerb, e.g. "trace" → "TRACE" */
+export function verbLabel(v: InvestigationVerb): string {
+  return v.toUpperCase();
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +64,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "cognicode_ask",
       params: { question: "who calls `{label}`?" },
       requiresGraph: true,
+      verb: "trace",
     },
     {
       id: "what-does-call",
@@ -62,6 +72,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "cognicode_ask",
       params: { question: "what does `{label}` call?" },
       requiresGraph: true,
+      verb: "trace",
     },
     {
       id: "risky-here",
@@ -69,6 +80,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "cognicode_ask",
       params: { question: "is `{label}` risky to change?" },
       requiresGraph: true,
+      verb: "explain",
     },
     {
       id: "where-belongs",
@@ -76,6 +88,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "cognicode_ask",
       params: { question: "where does `{label}` belong?" },
       requiresGraph: true,
+      verb: "explain",
     },
     {
       id: "what-justifies",
@@ -83,6 +96,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_inspect_object",
       params: { object_id: "{id}" },
       requiresGraph: false,
+      verb: "explain",
     },
   ],
 
@@ -93,6 +107,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_inspect_object",
       params: { object_id: "{id}" },
       requiresGraph: false,
+      verb: "understand",
     },
     {
       id: "risky-file",
@@ -100,6 +115,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "cognicode_ask",
       params: { question: "is `{label}` risky?" },
       requiresGraph: true,
+      verb: "explain",
     },
     {
       id: "changed-file",
@@ -107,6 +123,8 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_get_view",
       params: { view_id: "changelog" },
       requiresGraph: false,
+      verb: "compare",
+      isComingSoon: true,
     },
     {
       id: "file-where-belongs",
@@ -114,6 +132,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_inspect_object",
       params: { object_id: "{id}" },
       requiresGraph: false,
+      verb: "explain",
     },
   ],
 
@@ -124,6 +143,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_inspect_object",
       params: { object_id: "{id}" },
       requiresGraph: false,
+      verb: "understand",
     },
     {
       id: "depends-on",
@@ -131,6 +151,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "cognicode_ask",
       params: { question: "who depends on `{label}`?" },
       requiresGraph: true,
+      verb: "trace",
     },
     {
       id: "changed-scope",
@@ -138,6 +159,8 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_get_view",
       params: { view_id: "changelog" },
       requiresGraph: false,
+      verb: "compare",
+      isComingSoon: true,
     },
   ],
 
@@ -148,6 +171,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_inspect_object",
       params: { object_id: "{id}" },
       requiresGraph: false,
+      verb: "understand",
     },
     {
       id: "depends-on",
@@ -155,6 +179,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "cognicode_ask",
       params: { question: "who depends on `{label}`?" },
       requiresGraph: true,
+      verb: "trace",
     },
     {
       id: "changed-scope",
@@ -162,6 +187,8 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_get_view",
       params: { view_id: "changelog" },
       requiresGraph: false,
+      verb: "compare",
+      isComingSoon: true,
     },
   ],
 
@@ -172,6 +199,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "cognicode_ask",
       params: { question: "what are the moving parts of `{label}`?" },
       requiresGraph: false,
+      verb: "understand",
     },
     {
       id: "shape",
@@ -179,6 +207,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "cognicode_ask",
       params: { question: "architecture shape of `{label}`?" },
       requiresGraph: true,
+      verb: "understand",
     },
     {
       id: "where-start",
@@ -186,6 +215,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "cognicode_ask",
       params: { question: "where to start in `{label}`?" },
       requiresGraph: true,
+      verb: "understand",
     },
   ],
 
@@ -196,6 +226,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_inspect_object",
       params: { object_id: "{id}" },
       requiresGraph: false,
+      verb: "understand",
     },
     {
       id: "cites",
@@ -203,6 +234,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_get_view",
       params: { view_id: "cited-by" },
       requiresGraph: false,
+      verb: "trace",
     },
     {
       id: "justifies",
@@ -210,6 +242,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_get_view",
       params: { view_id: "justifies" },
       requiresGraph: false,
+      verb: "explain",
     },
   ],
 
@@ -220,6 +253,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_inspect_object",
       params: { object_id: "{id}" },
       requiresGraph: false,
+      verb: "explain",
     },
     {
       id: "contradicts",
@@ -227,6 +261,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_get_view",
       params: { view_id: "evidence" },
       requiresGraph: false,
+      verb: "compare",
     },
     {
       id: "inspect-context",
@@ -234,6 +269,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_inspect_object",
       params: { object_id: "{id}" },
       requiresGraph: false,
+      verb: "understand",
     },
   ],
 
@@ -244,6 +280,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_get_view",
       params: { view_id: "resolves" },
       requiresGraph: false,
+      verb: "understand",
     },
     {
       id: "cites",
@@ -251,6 +288,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_get_view",
       params: { view_id: "cited-by" },
       requiresGraph: false,
+      verb: "trace",
     },
     {
       id: "inspect-context",
@@ -258,6 +296,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_inspect_object",
       params: { object_id: "{id}" },
       requiresGraph: false,
+      verb: "understand",
     },
   ],
 
@@ -268,6 +307,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_inspect_object",
       params: { object_id: "{id}" },
       requiresGraph: false,
+      verb: "understand",
     },
     {
       id: "violations",
@@ -275,6 +315,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_get_view",
       params: { view_id: "violations" },
       requiresGraph: false,
+      verb: "trace",
     },
     {
       id: "examples",
@@ -282,6 +323,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_get_view",
       params: { view_id: "examples" },
       requiresGraph: false,
+      verb: "understand",
     },
   ],
 
@@ -292,6 +334,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "cognicode_ask",
       params: { question: "trace the handler for `{label}`" },
       requiresGraph: true,
+      verb: "trace",
     },
     {
       id: "related-tests",
@@ -299,6 +342,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "explorer_get_view",
       params: { view_id: "test_slice" },
       requiresGraph: true,
+      verb: "trace",
     },
     {
       id: "downstream-effects",
@@ -306,6 +350,7 @@ export const SUGGESTED_QUESTIONS: {
       tool: "cognicode_ask",
       params: { question: "what does `{label}` call?" },
       requiresGraph: true,
+      verb: "trace",
     },
   ],
 } as const;

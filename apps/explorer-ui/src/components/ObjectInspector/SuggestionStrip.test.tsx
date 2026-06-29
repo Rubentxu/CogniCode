@@ -18,7 +18,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { SuggestionStrip } from "./SuggestionStrip";
-import { SUGGESTED_QUESTIONS } from "../../config/suggestedQuestions";
+import { SUGGESTED_QUESTIONS, verbLabel } from "../../config/suggestedQuestions";
 import type { InspectableObjectType, GraphStatus } from "../../api/types";
 
 // ---------------------------------------------------------------------------
@@ -186,5 +186,54 @@ describe("SuggestionStrip — ARIA", () => {
     render(<SuggestionStrip {...makeProps()} />);
     const strip = screen.getByTestId("suggestion-strip");
     expect(strip.tagName.toLowerCase()).toBe("aside");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Verb prefix chip
+// ---------------------------------------------------------------------------
+
+describe("SuggestionStrip — verb prefix chip", () => {
+  it("renders a verb-prefix chip for each visible pill with correct text", () => {
+    render(<SuggestionStrip {...makeProps({ objectType: "symbol" })} />);
+    const strip = screen.getByTestId("suggestion-strip");
+    const prompts = SUGGESTED_QUESTIONS.symbol;
+    for (const prompt of prompts) {
+      const chip = within(strip).getByTestId(`verb-prefix-${prompt.id}`);
+      expect(chip).toHaveTextContent(verbLabel(prompt.verb));
+    }
+  });
+
+  it("changed-file pill renders aria-disabled, reduced opacity, and correct tooltip", () => {
+    render(<SuggestionStrip {...makeProps({ objectType: "file" })} />);
+    const pill = screen.getByTestId("suggestion-pill-changed-file");
+    expect(pill).toHaveAttribute("aria-disabled", "true");
+    expect(pill).toHaveAttribute("title", "Available when C4 overlays exist");
+    // opacity is handled via style
+    expect(pill).toHaveStyle({ opacity: 0.5 });
+  });
+
+  it("changed-scope pill renders aria-disabled, reduced opacity, and correct tooltip", () => {
+    render(<SuggestionStrip {...makeProps({ objectType: "scope" })} />);
+    const pill = screen.getByTestId("suggestion-pill-changed-scope");
+    expect(pill).toHaveAttribute("aria-disabled", "true");
+    expect(pill).toHaveAttribute("title", "Available when C4 overlays exist");
+    expect(pill).toHaveStyle({ opacity: 0.5 });
+  });
+
+  it("changed-file and changed-scope pills show 'soon' text; other pills do not", () => {
+    render(<SuggestionStrip {...makeProps({ objectType: "file" })} />);
+    expect(screen.getByTestId("suggestion-pill-changed-file")).toHaveTextContent("soon");
+    expect(screen.queryByTestId("suggestion-pill-in-file")).not.toHaveTextContent("soon");
+    expect(screen.queryByTestId("suggestion-pill-risky-file")).not.toHaveTextContent("soon");
+    expect(screen.queryByTestId("suggestion-pill-file-where-belongs")).not.toHaveTextContent("soon");
+  });
+
+  it("clicking a coming-soon pill does NOT call onDispatch", async () => {
+    const onDispatch = vi.fn();
+    const user = userEvent.setup();
+    render(<SuggestionStrip {...makeProps({ objectType: "file", onDispatch })} />);
+    await user.click(screen.getByTestId("suggestion-pill-changed-file"));
+    expect(onDispatch).not.toHaveBeenCalled();
   });
 });

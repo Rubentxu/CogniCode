@@ -26,7 +26,13 @@ import { useMemo } from "react";
 import type React from "react";
 
 import type { GraphStatus, InspectableObjectType } from "../../api/types";
-import { SUGGESTED_QUESTIONS, filterByGraph, type SuggestedQuestion } from "../../config/suggestedQuestions";
+import {
+  SUGGESTED_QUESTIONS,
+  filterByGraph,
+  verbLabel,
+  type InvestigationVerb,
+  type SuggestedQuestion,
+} from "../../config/suggestedQuestions";
 import { SuggestionPopover } from "./SuggestionPopover";
 import type { ShellViewport } from "../viewport";
 
@@ -72,10 +78,21 @@ export function SuggestionStrip(props: SuggestionStripProps): React.ReactElement
       style={{ borderBottom: "1px solid var(--color-border)" }}
     >
       {visiblePrompts.map((prompt) => {
-        // Stale + graph-dependent → disabled. We render the pill but
-        // block the click handler so the hook is never reached.
+        // isComingSoon || (stale + graph-dependent) → disabled.
         const disabled =
-          prompt.requiresGraph && props.graphStatus === "stale";
+          prompt.isComingSoon ||
+          (prompt.requiresGraph && props.graphStatus === "stale");
+        const isCompare = prompt.verb === "compare";
+        const isSave = prompt.verb === "save";
+        const tooltip = disabled
+          ? prompt.isComingSoon
+            ? isCompare
+              ? "Available when C4 overlays exist"
+              : isSave
+                ? "Available when investigations exist"
+                : "Graph is stale — re-index to refresh"
+            : "Graph is stale — re-index to refresh"
+          : undefined;
         return (
           <button
             key={prompt.id}
@@ -84,7 +101,7 @@ export function SuggestionStrip(props: SuggestionStripProps): React.ReactElement
             data-suggestion-pill=""
             aria-disabled={disabled ? "true" : undefined}
             disabled={disabled}
-            title={disabled ? "Graph is stale — re-index to refresh" : undefined}
+            title={tooltip}
             onClick={() => {
               if (disabled) return;
               props.onDispatch(prompt);
@@ -97,7 +114,24 @@ export function SuggestionStrip(props: SuggestionStripProps): React.ReactElement
               cursor: disabled ? "not-allowed" : "pointer",
             }}
           >
+            <span
+              data-testid={`verb-prefix-${prompt.id}`}
+              aria-hidden="true"
+              className="mr-1 font-mono text-[10px]"
+              style={{ color: "var(--color-text-muted)" }}
+            >
+              {verbLabel(prompt.verb)}
+            </span>
             {prompt.label}
+            {prompt.isComingSoon && (
+              <span
+                aria-hidden="true"
+                className="ml-1 text-[10px]"
+                style={{ color: "var(--color-text-muted)" }}
+              >
+                soon
+              </span>
+            )}
           </button>
         );
       })}
