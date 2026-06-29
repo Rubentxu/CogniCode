@@ -25,6 +25,7 @@ import { useAppDispatch, useAppState } from "../../state/context";
 import { useLanding } from "../../hooks/useLanding";
 import { useArchitecture } from "../../hooks/useArchitecture";
 import { useGraphAlgorithms } from "../../hooks/useGraphAlgorithms";
+import { isGraphPerspective, filterArchitectureByLevel } from "../../state/c4Levels";
 import type { GodNodeEntry } from "../../api/types";
 import { toCytoscapeElements } from "../InteractiveGraph/adapter";
 import { buildStylesheet, resolveNodeStyleClass } from "../InteractiveGraph/stylesheet";
@@ -60,7 +61,7 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
   const [wasmGodNodesResult, setWasmGodNodesResult] = useState<GodNodeEntry[] | null>(null);
 
   // Choose data source based on perspective
-  const isGraph = perspective === "graph";
+  const isGraph = isGraphPerspective(perspective);
   const { data: landingData, isLoading: isLandingLoading, error: landingError } = useLanding(
     isGraph ? workspaceId : null,
   );
@@ -68,7 +69,10 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
     !isGraph ? workspaceId : null,
   );
 
-  const data = isGraph ? landingData : archData;
+  // C4 levels: client-side filter over the same useArchitecture() payload
+  const filteredArchData =
+    !isGraph && archData ? filterArchitectureByLevel(archData, perspective) : null;
+  const data = isGraph ? landingData : filteredArchData ?? archData;
   const isLoading = isGraph ? isLandingLoading : isArchLoading;
   const error = isGraph ? landingError : archError;
 
@@ -242,7 +246,7 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
         ref={containerRef}
         data-testid="graph-landing-canvas"
         role="application"
-        aria-label={`${perspective === "c4" ? "Architecture" : "Workspace"} landing graph`}
+        aria-label={`${!isGraphPerspective(perspective) ? "Architecture" : "Workspace"} landing graph`}
         tabIndex={0}
         style={{ flex: "1 1 auto", minHeight: 0 }}
       />

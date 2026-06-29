@@ -16,6 +16,7 @@ import {
   type Action,
   type AppState,
 } from "../../state/context";
+import type { Perspective } from "../../state/c4Levels";
 import { workspaceSummaryFixture } from "../../mocks/fixtures";
 
 /**
@@ -25,7 +26,7 @@ function GraphLandingWithState({
   perspective = "graph",
   workspaceId = "ws-test-001",
 }: {
-  perspective?: "graph" | "c4";
+  perspective?: Perspective;
   workspaceId?: string;
 }) {
   const [state, dispatch] = useReducer(
@@ -56,7 +57,7 @@ describe("GraphLanding perspective integration", () => {
   });
 
   it('shows loading state when no SWR data is available (c4 perspective)', async () => {
-    render(<GraphLandingWithState perspective="c4" />);
+    render(<GraphLandingWithState perspective="c4-component" />);
     // Without MSW handlers, component shows loading state
     await waitFor(() => {
       const loading = screen.queryByTestId("graph-landing-loading");

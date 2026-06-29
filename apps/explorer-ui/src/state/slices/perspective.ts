@@ -1,9 +1,10 @@
 /**
- * Perspective slice — landing page view mode (graph or c4).
+ * Perspective slice — landing page view mode (graph or c4 level).
  *
  * Handles: SET_PERSPECTIVE, RESET
  */
 import type { Action } from "../context";
+import type { Perspective } from "../c4Levels";
 
 export type PerspectiveAction = Extract<
   Action,
@@ -11,9 +12,9 @@ export type PerspectiveAction = Extract<
 >;
 
 export function perspectiveReducer(
-  state: "graph" | "c4",
+  state: Perspective,
   action: Action
-): "graph" | "c4" {
+): Perspective {
   switch (action.type) {
     case "SET_PERSPECTIVE":
       return action.payload;
