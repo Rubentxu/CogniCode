@@ -15,6 +15,7 @@
  */
 import { useCallback, useEffect, useRef, type KeyboardEvent } from "react";
 import { useAppDispatch, useAppState } from "../../state/context";
+import { isGraphPerspective } from "../../state/c4Levels";
 import type { LandingTabId } from "../../state/slices/landingWorkbench";
 import { GraphLanding } from "../GraphLanding/GraphLanding";
 import { StartFromSection } from "./StartFromSection";
@@ -40,7 +41,7 @@ export function LandingWorkbench({ workspaceId }: LandingWorkbenchProps) {
 
   // C4 perspective: stash previous tab, force Graph. Restore on exit.
   useEffect(() => {
-    if (perspective === "c4") {
+    if (!isGraphPerspective(perspective)) {
       // Save current tab before forcing Graph
       if (landingWorkbench.activeTab !== "graph") {
         previousTabRef.current = landingWorkbench.activeTab;

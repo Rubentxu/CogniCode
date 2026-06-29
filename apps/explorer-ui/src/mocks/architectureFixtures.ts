@@ -10,6 +10,30 @@ export const architectureFixture: ArchitecturePayload = {
   root: "architecture",
   nodes: [
     {
+      id: "system:cognicode",
+      label: "CogniCode",
+      kind: "system",
+      file: undefined,
+      line: undefined,
+      style_class: "node-system",
+    },
+    {
+      id: "container:api",
+      label: "cognicode-explorer (API)",
+      kind: "container",
+      file: undefined,
+      line: undefined,
+      style_class: "node-container",
+    },
+    {
+      id: "container:ui",
+      label: "explorer-ui",
+      kind: "container",
+      file: undefined,
+      line: undefined,
+      style_class: "node-container",
+    },
+    {
       id: "component:crates",
       label: "crates",
       kind: "component",
@@ -49,8 +73,34 @@ export const architectureFixture: ArchitecturePayload = {
       line: undefined,
       style_class: "node-component",
     },
+    {
+      id: "code:fn:analyze",
+      label: "analyze()",
+      kind: "code",
+      file: undefined,
+      line: undefined,
+      style_class: "node-code",
+    },
   ],
   edges: [
+    {
+      source: "container:api",
+      target: "system:cognicode",
+      relation: "part_of",
+      style_class: "edge-part-of",
+    },
+    {
+      source: "container:ui",
+      target: "system:cognicode",
+      relation: "part_of",
+      style_class: "edge-part-of",
+    },
+    {
+      source: "component:crates",
+      target: "container:api",
+      relation: "part_of",
+      style_class: "edge-part-of",
+    },
     {
       source: "component:crates/cognicode-explorer",
       target: "component:crates",
@@ -66,6 +116,12 @@ export const architectureFixture: ArchitecturePayload = {
     {
       source: "component:apps/explorer-ui",
       target: "component:apps",
+      relation: "part_of",
+      style_class: "edge-part-of",
+    },
+    {
+      source: "code:fn:analyze",
+      target: "component:crates/cognicode-core",
       relation: "part_of",
       style_class: "edge-part-of",
     },

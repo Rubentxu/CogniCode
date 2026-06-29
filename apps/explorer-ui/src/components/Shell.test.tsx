@@ -401,16 +401,22 @@ describe("SkipLink", () => {
 });
 
 describe("PerspectiveToggle", () => {
-  it("renders the toggle with Graph and Structure labels", async () => {
+  it("renders 5 level buttons with correct labels and badges", async () => {
     render(<ShellHarness viewport="desktop" />);
     await waitFor(() => {
       expect(screen.getByTestId("perspective-toggle")).toBeInTheDocument();
     });
     expect(screen.getByTestId("perspective-graph")).toHaveTextContent("Graph");
-    expect(screen.getByTestId("perspective-c4")).toHaveTextContent("Structure");
+    expect(screen.getByTestId("perspective-c4-context")).toHaveTextContent("Context");
+    expect(screen.getByTestId("perspective-c4-container")).toHaveTextContent("Container");
+    expect(screen.getByTestId("perspective-c4-component")).toHaveTextContent("Component");
+    expect(screen.getByTestId("perspective-c4-code")).toHaveTextContent("Code");
+    // Component and Code each show "basic" badge (two badges total)
+    const badges = screen.getAllByTestId("perspective-basic-badge");
+    expect(badges).toHaveLength(2);
   });
 
-  it('dispatches SET_PERSPECTIVE with "c4" when C4 button is clicked', async () => {
+  it('dispatches SET_PERSPECTIVE with "c4-component" when Component button is clicked', async () => {
     const dispatch = vi.fn();
     render(
       <AppContext.Provider value={{ state: initialState, dispatch }}>
@@ -418,16 +424,16 @@ describe("PerspectiveToggle", () => {
       </AppContext.Provider>,
     );
     await waitFor(() => {
-      expect(screen.getByTestId("perspective-c4")).toBeInTheDocument();
+      expect(screen.getByTestId("perspective-c4-component")).toBeInTheDocument();
     });
     dispatch.mockClear();
-    screen.getByTestId("perspective-c4").click();
-    expect(dispatch).toHaveBeenCalledWith({ type: "SET_PERSPECTIVE", payload: "c4" });
+    screen.getByTestId("perspective-c4-component").click();
+    expect(dispatch).toHaveBeenCalledWith({ type: "SET_PERSPECTIVE", payload: "c4-component" });
   });
 
   it('dispatches SET_PERSPECTIVE with "graph" when Graph button is clicked', async () => {
     const dispatch = vi.fn();
-    const stateWithC4 = { ...initialState, perspective: "c4" as const };
+    const stateWithC4 = { ...initialState, perspective: "c4-component" as const };
     render(
       <AppContext.Provider value={{ state: stateWithC4, dispatch }}>
         <Shell viewport="desktop" />
@@ -447,11 +453,11 @@ describe("PerspectiveToggle", () => {
       expect(screen.getByTestId("perspective-graph")).toBeInTheDocument();
     });
     expect(screen.getByTestId("perspective-graph")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByTestId("perspective-c4")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("perspective-c4-context")).toHaveAttribute("aria-pressed", "false");
   });
 
-  it('c4 button is aria-pressed when perspective is "c4"', async () => {
-    const stateWithC4 = { ...initialState, perspective: "c4" as const };
+  it('c4-component button is aria-pressed when perspective is "c4-component"', async () => {
+    const stateWithC4 = { ...initialState, perspective: "c4-component" as const };
     const dispatch = vi.fn();
     render(
       <AppContext.Provider value={{ state: stateWithC4, dispatch }}>
@@ -459,9 +465,9 @@ describe("PerspectiveToggle", () => {
       </AppContext.Provider>,
     );
     await waitFor(() => {
-      expect(screen.getByTestId("perspective-c4")).toBeInTheDocument();
+      expect(screen.getByTestId("perspective-c4-component")).toBeInTheDocument();
     });
-    expect(screen.getByTestId("perspective-c4")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("perspective-c4-component")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("perspective-graph")).toHaveAttribute("aria-pressed", "false");
   });
 });
@@ -511,8 +517,8 @@ describe("InteractiveGraphPanel perspective wire-up (E5.3)", () => {
     });
   });
 
-  // Scenario B: rootId set + perspective "c4" → useArchitecture fetches, useSubgraph idle
-  it("feeds useArchitecture when perspective is c4 with a selected symbol", async () => {
+  // Scenario B: rootId set + non-graph perspective → useArchitecture fetches, useSubgraph idle
+  it("feeds useArchitecture when perspective is c4-component with a selected symbol", async () => {
     useSubgraphSpy.mockReturnValue({
       data: null,
       isLoading: false,
@@ -527,7 +533,7 @@ describe("InteractiveGraphPanel perspective wire-up (E5.3)", () => {
     const stateWithSymbol = {
       ...initialState,
       activeObjectId: "sym-123",
-      perspective: "c4" as const,
+      perspective: "c4-component" as const,
       workspace: { ...workspaceSummaryFixture, id: "ws-42" },
     };
     const dispatch = vi.fn();
@@ -544,12 +550,12 @@ describe("InteractiveGraphPanel perspective wire-up (E5.3)", () => {
     });
   });
 
-  // Scenario C: rootId null + perspective "c4" → GraphLanding branch (not InteractiveGraphPanel)
+  // Scenario C: rootId null + non-graph perspective → GraphLanding branch (not InteractiveGraphPanel)
   it("renders GraphLanding (not InteractiveGraphPanel) when no symbol selected and c4 perspective", async () => {
     const stateNoSymbol = {
       ...initialState,
       activeObjectId: null,
-      perspective: "c4" as const,
+      perspective: "c4-component" as const,
       workspace: { ...workspaceSummaryFixture, id: "ws-42" },
     };
     const dispatch = vi.fn();
