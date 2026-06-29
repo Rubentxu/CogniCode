@@ -51,6 +51,7 @@ export function useSnapshotCache(
     activeViewId: string | null;
     viewport?: ViewportState;
     scrollY: number;
+    note?: string;
   }>,
 ) {
   useEffect(() => {
@@ -63,6 +64,7 @@ export function useSnapshotCache(
         view_id: pane.activeViewId ?? "overview",
         scroll_y: pane.scrollY,
         viewport: pane.viewport,
+        note: pane.note ?? null,
       }));
       localStorage.setItem(key, JSON.stringify(snapshot));
     } catch (err) {
@@ -120,6 +122,7 @@ export async function saveExplorationSession(
     activeViewId: string | null;
     scrollY: number;
     viewport?: ViewportState;
+    note?: string;
   }>,
 ): Promise<ExplorationSessionDto> {
   const panesSnapshot = panes.map((pane) => ({
@@ -128,6 +131,7 @@ export async function saveExplorationSession(
     view_id: pane.activeViewId ?? "overview",
     scroll_y: pane.scrollY,
     viewport: pane.viewport ?? null,
+    note: pane.note ?? null,
   }));
 
   const body = {

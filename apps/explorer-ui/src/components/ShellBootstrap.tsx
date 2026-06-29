@@ -27,14 +27,6 @@ export function ShellBootstrap({ children }: ShellBootstrapProps) {
   // Restore exploration from ?exploration=<id> on mount (ADR-016 Fase 4).
   useRestoreExploration();
 
-  // Cache exploration snapshot to localStorage on every pane change (ADR-040 Wave 3).
-  // Wired here so any change (pan/zoom, drill, close) is persisted before the
-  // user navigates away. The sessionId is a fixed "current" for single-session
-  // cache per workspace.
-  const sessionId = "current";
-  const workspaceId = appState.workspace?.id ?? null;
-  useSnapshotCache(workspaceId, sessionId, appState.navigation.panes);
-
   // Bootstrap workspace — auto-select first workspace from list so GraphLanding
   // renders (without this, workspace stays null).
   const { data: workspaceList } = useWorkspaceList();
@@ -43,6 +35,14 @@ export function ShellBootstrap({ children }: ShellBootstrapProps) {
       dispatch({ type: "SET_WORKSPACE", payload: workspaceList[0] });
     }
   }, [workspaceList, appState.workspace, dispatch]);
+
+  // Cache exploration snapshot to localStorage on every pane change (ADR-040 Wave 3).
+  // Wired here so any change (pan/zoom, drill, close) is persisted before the
+  // user navigates away. The sessionId is a fixed "current" for single-session
+  // cache per workspace.
+  const sessionId = "current";
+  const workspaceId = appState.workspace?.id ?? null;
+  useSnapshotCache(workspaceId, sessionId, appState.navigation.panes);
 
   return children({ workspace: appState.workspace });
 }
