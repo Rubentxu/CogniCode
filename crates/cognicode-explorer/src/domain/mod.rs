@@ -4,6 +4,7 @@
 //! views, and assembling evidence. No I/O lives here — adapters and ports
 //! are wired in by the application service.
 
+pub mod c4_mermaid;
 pub mod entry_point;
 pub mod evidence;
 pub mod lens;

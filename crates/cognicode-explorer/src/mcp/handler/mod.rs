@@ -21,6 +21,8 @@ mod ask;
 // register its handlers into a fresh registry.
 pub mod context_builder;
 mod drift;
+/// C4 Mermaid export handler.
+pub mod export;
 mod graph;
 mod graph_analyze;
 mod impact;
@@ -153,6 +155,7 @@ fn unknown_tool_error(name: &str) -> CallToolResult {
 pub use ask::register_ask_handlers;
 pub use context_builder::register_context_builder_handlers;
 pub use drift::register_drift_handlers;
+pub use export::register_export_handlers;
 pub use graph::register_graph_handlers;
 pub use graph_analyze::register_graph_analyze_handlers;
 pub use impact::register_impact_handlers;

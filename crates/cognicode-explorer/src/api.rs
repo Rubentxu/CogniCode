@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
+use axum::http::header;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -21,6 +22,7 @@ use crate::facades::{
     SubgraphDirection as FacadeSubgraphDirection, ViewService, WorkspaceService,
 };
 use crate::ports::symbol_repository::ResolvedSymbol;
+use crate::domain::c4_mermaid::{self, C4Level};
 #[cfg(feature = "multimodal")]
 use crate::ports::graph_repository::GraphRepository;
 
@@ -516,6 +518,10 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/api/graph/:id/subgraph", get(subgraph_handler))
         .route("/api/graph/:id/contextual", get(contextual_handler))
         .route("/api/graph/:id/rationale", get(rationale_handler))
+        .route(
+            "/api/workspaces/:workspace_id/architecture/mermaid",
+            get(mermaid_handler),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -574,6 +580,10 @@ pub fn router(state: ApiState) -> Router {
             get(rationale_handler),
             #[cfg(not(feature = "multimodal"))]
             get(not_found_stub),
+        )
+        .route(
+            "/api/workspaces/:workspace_id/architecture/mermaid",
+            get(mermaid_handler),
         )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -863,6 +873,46 @@ async fn drift_handler(
         .compare_architecture(&workspace.root_path)
         .await?;
     Ok(Json(report).into_response())
+}
+
+// ============================================================================
+// Mermaid C4 export — `GET /api/workspaces/:workspace_id/architecture/mermaid`
+// ============================================================================
+
+/// Query params accepted by `GET /api/workspaces/:workspace_id/architecture/mermaid`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MermaidQuery {
+    /// C4 diagram level: "context" | "container" | "component".
+    /// Defaults to "context".
+    pub level: Option<String>,
+}
+
+impl MermaidQuery {
+    /// Parse and validate the level, defaulting to "context".
+    pub fn validated(&self) -> Result<C4Level, ExplorerError> {
+        let level = self.level.as_deref().unwrap_or("context");
+        C4Level::parse(level).map_err(|e| ExplorerError::InvalidQuery(e.to_string()))
+    }
+}
+
+/// Handler for `GET /api/workspaces/:workspace_id/architecture/mermaid`.
+///
+/// Renders the C4 architecture as a Mermaid C4 diagram string.
+/// Returns `text/plain` content type.
+async fn mermaid_handler(
+    State(state): State<ApiState>,
+    Path(_workspace_id): Path<String>,
+    Query(q): Query<MermaidQuery>,
+) -> Result<Response, ApiError> {
+    let level = q.validated().map_err(ApiError)?;
+    let workspace = state.workspace.current_workspace().map_err(ApiError)?;
+    let architecture = state.graph.build_architecture(&workspace.root_path).await?;
+    let mermaid = c4_mermaid::c4_to_mermaid(&architecture.nodes, &architecture.edges, level);
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        mermaid,
+    ).into_response())
 }
 
 #[derive(Debug, Deserialize)]
