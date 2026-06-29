@@ -22,6 +22,7 @@ import {
   type NavigationState,
   type ViewportState,
 } from "./slices/navigation";
+import { type Perspective } from "./c4Levels";
 import {
   rootReducer,
   type LensSidebarState,
@@ -67,7 +68,7 @@ export type AppState = {
    * or c4 (workspace-wide components via useArchitecture).
    * Perspective morphs the canvas regardless of object selection (ADR-039 §3/§4).
    */
-  perspective: "graph" | "c4";
+  perspective: Perspective;
   /**
    * LensPanel sidebar visibility.
    */
@@ -149,7 +150,7 @@ export type Action =
   | { type: "SET_SPOTTER"; payload: { open: boolean; kind?: string } }
   | { type: "SET_LANDING_TAB"; payload: { tab: LandingTabId } }
   | { type: "RESET" }
-  | { type: "SET_PERSPECTIVE"; payload: "graph" | "c4" }
+  | { type: "SET_PERSPECTIVE"; payload: Perspective }
   | { type: "TOGGLE_LENS_SIDEBAR" }
   | { type: "SET_LENS_SIDEBAR"; payload: { open: boolean } }
   | ViewSpecWizardAction;

@@ -74,16 +74,16 @@ describe("appReducer — navigation", () => {
 });
 
 describe("appReducer — perspective", () => {
-  it("SET_PERSPECTIVE to 'c4' updates perspective", () => {
+  it("SET_PERSPECTIVE to 'c4-component' updates perspective", () => {
     const next = appReducer(initialState, {
       type: "SET_PERSPECTIVE",
-      payload: "c4",
+      payload: "c4-component",
     });
-    expect(next.perspective).toBe("c4");
+    expect(next.perspective).toBe("c4-component");
   });
 
   it("SET_PERSPECTIVE to 'graph' updates perspective", () => {
-    const stateWithC4 = { ...initialState, perspective: "c4" as const };
+    const stateWithC4 = { ...initialState, perspective: "c4-component" as const };
     const next = appReducer(stateWithC4, {
       type: "SET_PERSPECTIVE",
       payload: "graph",
@@ -92,7 +92,7 @@ describe("appReducer — perspective", () => {
   });
 
   it("RESET returns perspective to 'graph'", () => {
-    const stateWithC4 = { ...initialState, perspective: "c4" as const };
+    const stateWithC4 = { ...initialState, perspective: "c4-component" as const };
     const next = appReducer(stateWithC4, { type: "RESET" });
     expect(next.perspective).toBe("graph");
   });
