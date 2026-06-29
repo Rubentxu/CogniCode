@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-29 (E19-4 closed — PASS, PR #84, v0.34.0)
+Last updated: 2026-06-29 (E19-5 closed — PASS, PR #85, v0.35.0)
 
 ## Active
 
@@ -36,7 +36,7 @@ Last updated: 2026-06-29 (E19-4 closed — PASS, PR #84, v0.34.0)
 | `e19-2-c4-level-selector` | Level selector: Context / Container / Component / Code | ADR-004 | HIGH | [#82](https://github.com/Rubentxu/CogniCode/pull/82) |
 | `e19-3-c4-overlays` | Overlays: drift + hotspots on C4 nodes | ADR-004 | HIGH | [#83](https://github.com/Rubentxu/CogniCode/pull/83) |
 | `e19-4-c4-dynamic-views` | Dynamic views from investigation traces (request/event flow) | ADR-004 | MEDIUM | DONE | [#84](https://github.com/Rubentxu/CogniCode/pull/84) |
-| `e19-5-expected-architecture` | Expected architecture baseline + drift governance | ADR-004 | MEDIUM |
+| `e19-5-expected-architecture` | Expected architecture baseline + drift governance | ADR-004 | MEDIUM | DONE | [#85](https://github.com/Rubentxu/CogniCode/pull/85) |
 
 #### Milestone E20 — Diagram Representations
 
