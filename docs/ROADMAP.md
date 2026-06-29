@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-29 (E18-3 closed — PASS_WITH_WARNINGS, PR #79, v0.31.0)
+Last updated: 2026-06-29 (E18-4 closed — PASS_WITH_WARNINGS, PR #80, v0.32.0)
 
 ## Active
 
@@ -17,7 +17,7 @@ Last updated: 2026-06-29 (E18-3 closed — PASS_WITH_WARNINGS, PR #79, v0.31.0)
 | `e18-1-landing-workbench` | Landing as entry-point workbench (Start from: Route / Symbol / Use case / Saved exploration) | ADR-005 | DONE | [#76](https://github.com/Rubentxu/CogniCode/pull/76) + [#77](https://github.com/Rubentxu/CogniCode/pull/77) |
 | `e18-2-spotter-intent` | Spotter with intent actions (Open as call graph, vertical slice, kind-aware defaults, Cmd+1..N) | ADR-005 | DONE | [#78](https://github.com/Rubentxu/CogniCode/pull/78) |
 | `e18-3-pane-causal-breadcrumbs` | Pane stack shows causal breadcrumbs (From / Via / Purpose) | ADR-005 | DONE | [#79](https://github.com/Rubentxu/CogniCode/pull/79) |
-| `e18-4-suggestion-verbs` | SuggestionStrip evolves to 5 investigation verbs (Understand / Trace / Compare / Explain / Save) | ADR-005 | Queued | — |
+| `e18-4-suggestion-verbs` | SuggestionStrip evolves to 5 investigation verbs (Understand / Trace / Compare / Explain / Save) | ADR-005 | DONE | [#80](https://github.com/Rubentxu/CogniCode/pull/80) |
 
 **E18-1 follow-ups (closed in PR #77)**:
 - KindFilterChips UX bug — fixed
