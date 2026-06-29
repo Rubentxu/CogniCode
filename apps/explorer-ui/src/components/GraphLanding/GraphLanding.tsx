@@ -48,6 +48,10 @@ const LandingHeader = lazy(() =>
   import("./LandingHeader").then((m) => ({ default: m.LandingHeader })),
 );
 
+const DriftSummaryPanel = lazy(() =>
+  import("./DriftSummaryPanel").then((m) => ({ default: m.DriftSummaryPanel })),
+);
+
 // ============================================================================
 // C4 Overlay utilities (exported for testing)
 // ============================================================================
@@ -340,6 +344,16 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
         tabIndex={0}
         style={{ flex: "1 1 auto", minHeight: 0 }}
       />
+
+      {/* Drift summary — only for C4 perspective */}
+      {showC4Header && c4Overlay.driftEnabled && driftReport && (
+        <Suspense fallback={null}>
+          <DriftSummaryPanel
+            driftReport={driftReport}
+            c4NodeLabels={data.nodes.map((n) => n.label)}
+          />
+        </Suspense>
+      )}
 
       {/* Accessible + testable fallback list for canvas-backed landing graphs */}
       {/* Virtualized when nodes > 200 to prevent DOM bloat (e9). */}

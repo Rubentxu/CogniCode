@@ -58,7 +58,7 @@ export function verbLabel(v: InvestigationVerb): string {
 export const VERB_STUB_CONFIG: Readonly<Record<InvestigationVerb, { disabledReason?: string }>> = {
   understand: {},
   trace: {},
-  compare: { disabledReason: "Available when C4 overlays exist" },
+  compare: {},
   explain: {},
   save: { disabledReason: "Available when investigations exist" },
 } as const;
@@ -137,7 +137,6 @@ export const SUGGESTED_QUESTIONS: {
       params: { view_id: "changelog" },
       requiresGraph: false,
       verb: "compare",
-      isComingSoon: true,
     },
     {
       id: "file-where-belongs",
@@ -173,7 +172,6 @@ export const SUGGESTED_QUESTIONS: {
       params: { view_id: "changelog" },
       requiresGraph: false,
       verb: "compare",
-      isComingSoon: true,
     },
   ],
 
@@ -201,7 +199,6 @@ export const SUGGESTED_QUESTIONS: {
       params: { view_id: "changelog" },
       requiresGraph: false,
       verb: "compare",
-      isComingSoon: true,
     },
   ],
 
