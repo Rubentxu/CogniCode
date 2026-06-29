@@ -1227,7 +1227,7 @@ fn other_scope(current_scope: &str, other_file: &str) -> String {
 //   ViewDescriptor  — metadata-only, object-safe (no async, no build)
 //   ViewExecutor    — ViewDescriptor + async build()
 
-use crate::dto::{InspectableObjectType, RendererKind, ViewKind};
+use crate::dto::{ExplorationSession, InspectableObjectType, RendererKind, ViewKind};
 use crate::error::ExplorerResult;
 use async_trait::async_trait;
 
@@ -2344,6 +2344,7 @@ pub static TEST_SLICE_EXECUTOR: TestSliceExecutor = TestSliceExecutor;
 pub static DEBUG_SLICE_EXECUTOR: DebugSliceExecutor = DebugSliceExecutor;
 pub static CHANGE_IMPACT_STORY_EXECUTOR: ChangeImpactStoryExecutor = ChangeImpactStoryExecutor;
 pub static OWNERSHIP_MAP_EXECUTOR: OwnershipMapExecutor = OwnershipMapExecutor;
+pub static COMPOSED_NARRATIVE_EXECUTOR: ComposedNarrativeExecutor = ComposedNarrativeExecutor;
 
 /// Ownership Map capability — applies to Issue (QualityIssue).
 ///
@@ -2512,6 +2513,110 @@ impl ViewExecutor for ArchitectureDriftExecutor {
         Err(crate::error::ExplorerError::NotImplemented(
             "Architecture drift requires the /api/workspaces/{id}/drift endpoint".into(),
         ))
+    }
+}
+
+// ============================================================================
+// ComposedNarrative — replay ExplorationSession as a navigable narrative
+// ============================================================================
+
+/// Pure shaper — no I/O, no async. Shapes an ExplorationSession into a
+/// ContextualView with one ViewBlock per navigation event.
+pub fn build_composed_narrative(session: &ExplorationSession) -> ContextualView {
+    let blocks = if session.events.is_empty() {
+        vec![ViewBlock {
+            id: "empty".into(),
+            title: "No events".into(),
+            body: json!({ "message": "No events in this exploration" }),
+        }]
+    } else {
+        session
+            .events
+            .iter()
+            .enumerate()
+            .map(|(i, e)| {
+                let view_id_label = e.view_id.as_deref().unwrap_or("default view");
+                ViewBlock {
+                    id: format!("{}:{}", session.id, i),
+                    title: e.object_id.clone(),
+                    body: json!({
+                        "object_id": e.object_id,
+                        "view_id": view_id_label,
+                        "query": e.query,
+                        "ts": e.ts,
+                    }),
+                }
+            })
+            .collect()
+    };
+
+    ContextualView {
+        object_id: session.id.clone(),
+        view_id: "composed-narrative".into(),
+        title: "Composed Narrative".into(),
+        view_kind: ViewKind::ComposedNarrative,
+        renderer_kind: RendererKind::Composite,
+        blocks,
+        relations: vec![],
+        evidence: vec![],
+        findings: vec![],
+    }
+}
+
+/// Inventory provider for ComposedNarrative — used by list_for().
+pub struct ComposedNarrativeProvider;
+impl ViewDescriptor for ComposedNarrativeProvider {
+    fn id(&self) -> &'static str {
+        "composed-narrative"
+    }
+    fn title(&self) -> &'static str {
+        "Composed Narrative"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::SavedExploration]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::ComposedNarrative
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Composite
+    }
+}
+inventory::submit!(ProviderWrapper {
+    provider: &COMPOSED_NARRATIVE_PROVIDER as &dyn ViewDescriptorProvider
+});
+static COMPOSED_NARRATIVE_PROVIDER: ComposedNarrativeProvider = ComposedNarrativeProvider;
+
+/// ViewExecutor for ComposedNarrative — receives the full ExplorationSession
+/// via InspectionTarget::SavedExploration and delegates to the pure shaper.
+pub struct ComposedNarrativeExecutor;
+impl ViewDescriptor for ComposedNarrativeExecutor {
+    fn id(&self) -> &'static str {
+        "composed-narrative"
+    }
+    fn title(&self) -> &'static str {
+        "Composed Narrative"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::SavedExploration]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::ComposedNarrative
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Composite
+    }
+}
+#[async_trait]
+impl ViewExecutor for ComposedNarrativeExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match ctx.target {
+            InspectionTarget::SavedExploration(session) => Ok(build_composed_narrative(session)),
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                view_id: "composed-narrative".into(),
+                reason: "ComposedNarrative is only available for SavedExploration".into(),
+            }),
+        }
     }
 }
 
