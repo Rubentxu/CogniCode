@@ -50,6 +50,19 @@ export function verbLabel(v: InvestigationVerb): string {
   return v.toUpperCase();
 }
 
+/**
+ * Per-verb stub configuration — drives disabled-reason text in the UI.
+ * `disabledReason` is shown when `isComingSoon=true`.
+ * @ponytail: ceiling=E21-2/INV-2, upgrade=first save prompt added
+ */
+export const VERB_STUB_CONFIG: Readonly<Record<InvestigationVerb, { disabledReason?: string }>> = {
+  understand: {},
+  trace: {},
+  compare: { disabledReason: "Available when C4 overlays exist" },
+  explain: {},
+  save: { disabledReason: "Available when investigations exist" },
+} as const;
+
 // ---------------------------------------------------------------------------
 // Static map
 // ---------------------------------------------------------------------------

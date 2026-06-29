@@ -30,7 +30,7 @@ import {
   SUGGESTED_QUESTIONS,
   filterByGraph,
   verbLabel,
-  type InvestigationVerb,
+  VERB_STUB_CONFIG,
   type SuggestedQuestion,
 } from "../../config/suggestedQuestions";
 import { SuggestionPopover } from "./SuggestionPopover";
@@ -82,16 +82,11 @@ export function SuggestionStrip(props: SuggestionStripProps): React.ReactElement
         const disabled =
           prompt.isComingSoon ||
           (prompt.requiresGraph && props.graphStatus === "stale");
-        const isCompare = prompt.verb === "compare";
-        const isSave = prompt.verb === "save";
+        const stubReason = prompt.isComingSoon
+          ? VERB_STUB_CONFIG[prompt.verb]?.disabledReason
+          : undefined;
         const tooltip = disabled
-          ? prompt.isComingSoon
-            ? isCompare
-              ? "Available when C4 overlays exist"
-              : isSave
-                ? "Available when investigations exist"
-                : "Graph is stale — re-index to refresh"
-            : "Graph is stale — re-index to refresh"
+          ? stubReason ?? "Graph is stale — re-index to refresh"
           : undefined;
         return (
           <button

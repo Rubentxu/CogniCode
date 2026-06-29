@@ -22,7 +22,7 @@ import {
   useState,
 } from "react";
 
-import { verbLabel, type InvestigationVerb, type SuggestedQuestion } from "../../config/suggestedQuestions";
+import { verbLabel, VERB_STUB_CONFIG, type SuggestedQuestion } from "../../config/suggestedQuestions";
 
 export interface SuggestionPopoverProps {
   prompts: readonly SuggestedQuestion[];
@@ -139,15 +139,10 @@ export const SuggestionPopover = forwardRef<
             const disabled =
               prompt.isComingSoon ||
               (prompt.requiresGraph && /* stale gating: see strip */ false);
-            const isCompare = prompt.verb === "compare";
-            const isSave = prompt.verb === "save";
-            const tooltip = disabled && prompt.isComingSoon
-              ? isCompare
-                ? "Available when C4 overlays exist"
-                : isSave
-                  ? "Available when investigations exist"
-                  : undefined
+            const stubReason = prompt.isComingSoon
+              ? VERB_STUB_CONFIG[prompt.verb]?.disabledReason
               : undefined;
+            const tooltip = disabled ? stubReason ?? "Graph is stale — re-index to refresh" : undefined;
             return (
               <li key={prompt.id}>
                 <button
