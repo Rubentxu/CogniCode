@@ -15,7 +15,7 @@ import { perspectiveReducer } from "./perspective";
 import { lensSidebarReducer } from "./lensSidebar";
 import { viewSpecWizardReducer } from "./viewSpecWizard";
 import { landingWorkbenchReducer } from "./landingWorkbench";
-import { c4OverlayReducer, initialC4OverlayState, type C4OverlayAction } from "./c4OverlaySlice";
+import { c4OverlayReducer, type C4OverlayAction } from "./c4OverlaySlice";
 
 export type RootReducer = (state: AppState, action: import("../context").Action) => AppState;
 

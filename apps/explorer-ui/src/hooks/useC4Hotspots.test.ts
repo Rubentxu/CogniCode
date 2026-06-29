@@ -7,7 +7,7 @@
  * - Med threshold classification
  * - Null for unmapped symbols
  */
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { server } from "../mocks/node";
@@ -138,6 +138,42 @@ describe("useC4Hotspots", () => {
       const hotspots = result.current.data;
       const graphHotspot = hotspots.get("component:crates/cognicode-graph-algos");
       expect(graphHotspot?.kind).toBe("med");
+    });
+
+    it("low-score symbol is omitted from hotspot map", async () => {
+      // Score = pagerank * 0.4 + in_degree * 0.6
+      // Example: pagerank=0.2, in_degree=0.3 → 0.2*0.4 + 0.3*0.6 = 0.26 (< 0.4 MED threshold)
+      // Per spec Req 2: Container with all-low-risk children is OMITTED
+      const hotspotEntries = [
+        {
+          symbol_id: "file:apps/explorer-ui/src/main.ts:name:1",
+          label: "main",
+          pagerank: 0.2,
+          in_degree: 0.3,
+          out_degree: 1,
+        },
+      ];
+
+      server.use(
+        http.post("/api/mcp/tools/call", async () => {
+          return HttpResponse.json({
+            tool_name: "lens_hotspots",
+            version: "0.0.0",
+            timestamp: new Date().toISOString(),
+            provenance: null,
+            payload: hotspotEntries,
+          });
+        }),
+      );
+
+      const { result } = renderHook(() => useC4Hotspots("workspace-hotspot-low"));
+
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(false);
+      });
+
+      // Low-score hotspot should NOT appear in the map
+      expect(result.current.data.size).toBe(0);
     });
 
     it("returns empty for unmapped symbols (no prefix match)", async () => {

@@ -27,15 +27,6 @@ interface HotspotEntryDto {
   out_degree: number;
 }
 
-/** Response envelope for MCP tool calls. */
-interface McpToolEnvelope {
-  tool_name: string;
-  version: string;
-  timestamp: string;
-  provenance: unknown | null;
-  payload: unknown;
-}
-
 // ---------------------------------------------------------------------------
 // File path → C4 node mapping
 // ---------------------------------------------------------------------------
@@ -58,7 +49,7 @@ const FILE_PATH_PREFIXES: Array<{ prefix: string; c4NodeId: string }> = [
  */
 function extractFilePath(symbolId: string): string {
   const parts = symbolId.split(":");
-  if (parts.length >= 2) {
+  if (parts.length >= 2 && parts[1] != null) {
     return parts[1];
   }
   return symbolId;
@@ -92,11 +83,11 @@ function findC4NodeForSymbol(symbolId: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Score thresholds
+// Score thresholds (exported for use in tests)
 // ---------------------------------------------------------------------------
 
-const HOTSPOT_HIGH_THRESHOLD = 0.7;
-const HOTSPOT_MED_THRESHOLD = 0.4;
+export const HOTSPOT_HIGH_THRESHOLD = 0.7;
+export const HOTSPOT_MED_THRESHOLD = 0.4;
 
 /** Aggregated hotspot data for a C4 node. */
 export interface C4HotspotData {
@@ -118,23 +109,32 @@ export function useC4Hotspots(workspaceId: string | null) {
     async () => {
       if (!workspaceId) throw new Error("missing workspaceId");
 
-      const envelope = await apiPost<McpToolEnvelope>(
+      const mcpEnvelopeSchema = z.object({
+        tool_name: z.string(),
+        version: z.string(),
+        timestamp: z.string(),
+        provenance: z.unknown().nullable(),
+        payload: z.array(
+          z.object({
+            symbol_id: z.string(),
+            label: z.string(),
+            pagerank: z.number(),
+            in_degree: z.number(),
+            out_degree: z.number(),
+          }),
+        ),
+      });
+
+      const envelope = await apiPost(
         "/mcp/tools/call",
         {
           name: "lens_hotspots",
           args: { object_id: `workspace:${workspaceId}` },
         },
-        z.object({
-          tool_name: z.string(),
-          version: z.string(),
-          timestamp: z.string(),
-          provenance: z.unknown().nullable(),
-          payload: z.unknown(),
-        }),
+        mcpEnvelopeSchema,
       );
 
-      // Payload is HotspotEntryDto[]
-      return envelope.payload as HotspotEntryDto[];
+      return envelope.payload;
     },
     {
       revalidateOnFocus: false,
@@ -165,10 +165,12 @@ export function useC4Hotspots(workspaceId: string | null) {
     }
 
     // Compute aggregated hotspot data per C4 node
+    // Per spec Req 2: Container with all-low-risk children is OMITTED
     for (const [c4NodeId, scores] of scoresByNode) {
       // Use max score for the node (represents the most risky hotspot)
       const maxScore = Math.max(...scores);
-      const kind = maxScore >= HOTSPOT_HIGH_THRESHOLD ? "high" : maxScore >= HOTSPOT_MED_THRESHOLD ? "med" : "low";
+      if (maxScore < HOTSPOT_MED_THRESHOLD) continue; // omit low entries
+      const kind: "high" | "med" = maxScore >= HOTSPOT_HIGH_THRESHOLD ? "high" : "med";
       result.set(c4NodeId, { score: maxScore, kind });
     }
 

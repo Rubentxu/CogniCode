@@ -7,7 +7,7 @@
  * - Returns empty report on 404
  * - Reuses cache on re-mount
  */
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { server } from "../mocks/node";
