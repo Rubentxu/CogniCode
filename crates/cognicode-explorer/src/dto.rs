@@ -1539,6 +1539,7 @@ fn is_valid_uuid_format(s: &str) -> bool {
 pub enum Severity {
     Error,
     Warning,
+    Info,
 }
 
 /// One dependency rule from expected-architecture.yaml.

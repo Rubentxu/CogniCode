@@ -1461,7 +1461,9 @@ version = "0.1.0"
         )
         .unwrap();
 
-        // Rule allows crates/container-a -> crates/container-b
+        // Rule allows crates/container-b -> crates/container-a (inverse direction,
+        // so it does NOT match the actual container-a -> container-b dependency,
+        // giving us a "no boundary violated" scenario per deny-list semantics).
         let expected_arch_dir = tmp.path().join(".cognicode");
         std::fs::create_dir_all(&expected_arch_dir).unwrap();
         std::fs::write(
@@ -1474,9 +1476,9 @@ containers:
     sub_kind: library
 dependency_rules:
   - id: "allow-specific"
-    description: "container-a may depend on container-b"
-    from_pattern: "crates/container-a"
-    to_pattern: "crates/container-b"
+    description: "container-b may depend on container-a"
+    from_pattern: "crates/container-b"
+    to_pattern: "crates/container-a"
     severity: warning
 "#,
         )

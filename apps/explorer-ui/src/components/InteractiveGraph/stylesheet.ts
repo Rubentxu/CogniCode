@@ -76,6 +76,7 @@ export const KNOWN_NODE_CLASSES = new Set([
   // ---- Boundary violation overlays (E19 Phase 3) ----
   "boundary-violation-error",
   "boundary-violation-warning",
+  "boundary-violation-info",
 ]);
 export const KNOWN_EDGE_CLASSES = new Set([
   "edge.calls",
@@ -314,6 +315,14 @@ export function buildStylesheet(): (StylesheetStyle | StylesheetCSS)[] {
       style: {
         // Orange border for warning-level boundary violations
         "border-color": "#f59e0b",
+        "border-width": "3px",
+      } as unknown as StylesheetStyle["style"],
+    },
+    {
+      selector: 'node[style_class = "boundary-violation-info"]',
+      style: {
+        // Blue border for info-level boundary violations
+        "border-color": "#3b82f6",
         "border-width": "3px",
       } as unknown as StylesheetStyle["style"],
     },
