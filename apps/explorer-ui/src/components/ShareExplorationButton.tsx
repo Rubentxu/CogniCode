@@ -24,6 +24,10 @@ export function ShareExplorationButton() {
 
     // Build exploration events from current state.
     // Each pane becomes an event (active pane first).
+    // NOTE: Pane `note` field is intentionally excluded here — notes are
+    // private (ADR-005) and must never reach share URLs. The structural
+    // breadcrumb fields (fromObjectId, viaViewKind) MAY be added later
+    // but notes MUST remain client-only.
     const events = navigation.panes.map((pane) => ({
       object_id: pane.objectId,
       view_id: pane.activeViewId,

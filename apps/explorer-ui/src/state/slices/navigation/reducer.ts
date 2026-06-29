@@ -33,6 +33,10 @@ export function apply(state: NavigationState, action: NavigationAction): Navigat
   switch (action.type) {
     case "PUSH_PANE": {
       const { objectId, viewId, kind } = action.payload;
+      // Capture origin from the currently active pane (if any).
+      const activePane = state.activePaneId
+        ? state.panes.find((p) => p.id === state.activePaneId)
+        : undefined;
       const pane: Pane = {
         id: `pane-${Date.now()}-${state.panes.length}`,
         objectId,
@@ -42,6 +46,8 @@ export function apply(state: NavigationState, action: NavigationAction): Navigat
         activeView: null,
         scrollY: 0,
         localFilters: {},
+        fromObjectId: activePane?.objectId,
+        viaViewKind: activePane?.activeViewId ?? undefined,
       };
       // Drop oldest if at cap (FIFO).
       const panes = state.panes.length >= MAX_PANES
@@ -107,6 +113,41 @@ export function apply(state: NavigationState, action: NavigationAction): Navigat
           pane.id === paneId ? { ...pane, viewport } : pane
         ),
       };
+    }
+
+    case "SET_PANE_NOTE": {
+      const { paneId, note } = action.payload;
+      return {
+        ...state,
+        panes: state.panes.map((pane) =>
+          pane.id === paneId ? { ...pane, note } : pane
+        ),
+      };
+    }
+
+    case "RESTORE_PANE": {
+      // Restore a pane from a session snapshot, using the snapshot's pane_id
+      // to construct a deterministic ID matching what PUSH_PANE would generate.
+      const { paneSnapshot, note } = action.payload;
+      const paneId = `pane-${paneSnapshot.pane_id}`;
+      const pane: Pane = {
+        id: paneId,
+        objectId: paneSnapshot.object_id,
+        activeViewId: paneSnapshot.view_id,
+        activeLensId: null,
+        kind: "symbol",
+        activeView: null,
+        scrollY: paneSnapshot.scroll_y,
+        localFilters: {},
+        fromObjectId: undefined,
+        viaViewKind: undefined,
+        note: note ?? undefined,
+        viewport: paneSnapshot.viewport ?? undefined,
+      };
+      const panes = state.panes.length >= MAX_PANES
+        ? [...state.panes.slice(1), pane]
+        : [...state.panes, pane];
+      return { ...state, panes, activePaneId: paneId };
     }
 
     case "SELECT_OBJECT": {

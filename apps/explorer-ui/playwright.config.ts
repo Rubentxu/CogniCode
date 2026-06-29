@@ -38,7 +38,11 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        // Allow clipboard API for Share button E2E tests (privacy gate).
+        permissions: ["clipboard-read", "clipboard-write"],
+      },
     },
   ],
   webServer: {

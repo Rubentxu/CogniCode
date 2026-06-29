@@ -51,18 +51,23 @@ export function useSnapshotCache(
     activeViewId: string | null;
     viewport?: ViewportState;
     scrollY: number;
+    note?: string;
   }>,
 ) {
   useEffect(() => {
     if (!workspaceId || panes.length === 0) return;
     const key = `cognicode.exploration.snapshot.${workspaceId}.${sessionId}`;
     try {
+      // NOTE: `viewport` is always `null` when absent (not undefined) to match the
+      // server-side PaneSnapshotDto schema. `note` is included only in the localStorage
+      // snapshot (client-only per ADR-005) and is never sent to the server.
       const snapshot = panes.map((pane) => ({
         pane_id: pane.id,
         object_id: pane.objectId,
         view_id: pane.activeViewId ?? "overview",
         scroll_y: pane.scrollY,
-        viewport: pane.viewport,
+        viewport: pane.viewport ?? null,
+        note: pane.note ?? null,
       }));
       localStorage.setItem(key, JSON.stringify(snapshot));
     } catch (err) {
@@ -120,8 +125,11 @@ export async function saveExplorationSession(
     activeViewId: string | null;
     scrollY: number;
     viewport?: ViewportState;
+    note?: string;
   }>,
 ): Promise<ExplorationSessionDto> {
+  // NOTE: `note` is intentionally omitted — notes are client-only (ADR-005).
+  // They are stored in the Redux snapshot (localStorage) but never sent to the server.
   const panesSnapshot = panes.map((pane) => ({
     pane_id: pane.id,
     object_id: pane.objectId,

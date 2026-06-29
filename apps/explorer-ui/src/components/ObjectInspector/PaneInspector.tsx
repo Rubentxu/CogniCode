@@ -5,7 +5,7 @@
  *
  * When `onClose` is provided, a close button appears (pane-stack only).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useAppDispatch, useAppState } from "../../state/context";
 import { useObject } from "../../hooks/useObject";
 import { useAvailableViews, useViews } from "../../hooks/useViews";
@@ -19,6 +19,8 @@ import { Blocks } from "./ViewBlock";
 import { ViewSpecWizard } from "./ViewSpecWizard";
 import { multimodalLabelForObjectType } from "./multimodal";
 import { GraphView } from "../GraphView/GraphView";
+import { PaneBreadcrumb } from "./PaneBreadcrumb";
+import { NoteEditor } from "./NoteEditor";
 
 // Graph-shaped ViewKinds that route to GraphViewRenderer
 function isGraphViewKind(kind: string | undefined): boolean {
@@ -53,7 +55,33 @@ export function PaneInspector({
   onScroll,
 }: PaneInspectorProps) {
   const dispatch = useAppDispatch();
-  const { viewSpecWizard } = useAppState();
+  const { navigation, viewSpecWizard } = useAppState();
+
+  // Active pane from the navigation state (for breadcrumb + note editor).
+  const activePane = navigation.panes.find((p) => p.id === navigation.activePaneId);
+
+  // Note editor open state.
+  const [noteEditorOpen, setNoteEditorOpen] = useState(false);
+
+  // 'n' shortcut scoped to the pane header — matches ViewTabs ARIA pattern.
+  const handleHeaderKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== "n" && e.key !== "N") return;
+      if (!activePane?.fromObjectId) return; // 'n' is inert when no breadcrumb.
+      e.preventDefault();
+      setNoteEditorOpen((prev) => !prev);
+    },
+    [activePane?.fromObjectId],
+  );
+
+  function handleNoteSave(paneId: string, note: string) {
+    dispatch({ type: "SET_PANE_NOTE", payload: { paneId, note } });
+    setNoteEditorOpen(false);
+  }
+
+  function handleNoteClose() {
+    setNoteEditorOpen(false);
+  }
 
   // Object summary
   const {
@@ -149,6 +177,7 @@ export function PaneInspector({
           <header
             className="flex items-center justify-between gap-2 px-4 py-2"
             style={{ borderBottom: "1px solid var(--color-border)" }}
+            onKeyDown={handleHeaderKeyDown}
           >
             <div className="flex min-w-0 items-center gap-2">
               <h2
@@ -197,6 +226,27 @@ export function PaneInspector({
               )}
             </div>
           </header>
+
+          {/* Causal breadcrumb row — only shown when fromObjectId is set. */}
+          {activePane?.fromObjectId && activePane.viaViewKind && (
+            <PaneBreadcrumb
+              fromObjectId={activePane.fromObjectId}
+              viaViewKind={activePane.viaViewKind}
+              workspaceId={workspaceId}
+            />
+          )}
+
+          {/* Note editor popover — rendered at the header level for proper stacking. */}
+          {noteEditorOpen && activePane && (
+            <div className="relative">
+              <NoteEditor
+                pane={activePane}
+                onSave={handleNoteSave}
+                onClose={handleNoteClose}
+              />
+            </div>
+          )}
+
           {object && (
             <SuggestionStrip
               objectType={object.object_type}
