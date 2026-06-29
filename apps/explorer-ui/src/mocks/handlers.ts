@@ -949,7 +949,6 @@ export const handlers = [
     }
 
     if (toolName === "lens_hotspots") {
-      const objectId = String(args["object_id"] ?? "");
       // Return empty hotspots for now — tests can override per-case
       return HttpResponse.json({
         tool_name: "lens_hotspots",
