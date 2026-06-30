@@ -12,6 +12,7 @@ pub mod lenses;
 pub mod mermaid_util;
 pub mod object_identity;
 pub mod snapshot;
+pub mod snapshot_dispatch;
 pub mod trace_mermaid;
 pub mod views;
 

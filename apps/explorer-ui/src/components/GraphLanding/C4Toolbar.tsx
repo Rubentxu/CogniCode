@@ -9,21 +9,8 @@ import { useAppState } from "../../state/context";
 import { NotificationContext } from "../Notifications/NotificationProvider";
 import { fetchC4Mermaid, fetchSnapshot } from "../../api/client";
 import { handleOpenInDrawIo } from "../../utils/drawio";
+import { downloadSnapshot } from "../../utils/download";
 import type { C4Level } from "../../state/c4Levels";
-
-/**
- * Trigger a browser download from a blob.
- */
-function triggerDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = window.document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  window.document.body.appendChild(a);
-  a.click();
-  window.document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
 
 const C4_TOOLBAR_PERSPECTIVES: C4Level[] = ["c4-context", "c4-container", "c4-component"];
 
@@ -65,7 +52,7 @@ export function C4Toolbar({ workspaceId }: { workspaceId: string }) {
         const blob = await fetchSnapshot(workspaceId, viewKind, format, ".");
         const extension = format === "png" ? ".png" : ".svg";
         const filename = `c4-diagram${extension}`;
-        triggerDownload(blob, filename);
+        await downloadSnapshot(blob, filename);
         showNotification(`Downloaded ${format.toUpperCase()} snapshot`);
       } catch (err) {
         console.error("[C4Toolbar] Failed to download snapshot:", err);

@@ -32,6 +32,7 @@ use crate::domain::trace_mermaid::decision_trace_to_mermaid;
 #[cfg(feature = "multimodal")]
 use crate::ports::graph_repository::GraphRepository;
 use crate::domain::snapshot::{SnapshotError as SnapshotRenderError, SnapshotFormat, SnapshotService};
+use crate::domain::snapshot_dispatch::{emit_c4_mermaid, emit_trace_mermaid, SnapshotViewKind};
 
 // ============================================================================
 // Style-class taxonomy
@@ -1058,43 +1059,17 @@ impl SnapshotQuery {
         };
 
         // Validate view_kind whitelist
-        if !SNAPSHOT_VIEW_KINDS.contains(&self.view_kind.as_str()) {
+        if !crate::domain::snapshot_dispatch::SNAPSHOT_VIEW_KINDS.contains(&self.view_kind.as_str()) {
             return Err(ExplorerError::InvalidQuery(format!(
                 "invalid view_kind: {} (expected: {})",
                 self.view_kind,
-                SNAPSHOT_VIEW_KINDS.join(", ")
+                crate::domain::snapshot_dispatch::SNAPSHOT_VIEW_KINDS.join(", ")
             )));
         }
 
-        let view_kind = SnapshotViewKind::from_str(&self.view_kind)?;
+        let view_kind = SnapshotViewKind::from_str(&self.view_kind)
+            .map_err(|s| ExplorerError::InvalidQuery(format!("unknown snapshot view_kind: {s}")))?;
         Ok((format, view_kind))
-    }
-}
-
-/// Snapshot view kinds supported for rendering.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SnapshotViewKind {
-    C4Context,
-    C4Container,
-    C4Component,
-    CallGraph,
-    ImpactRadius,
-    VerticalSlice,
-}
-
-impl SnapshotViewKind {
-    fn from_str(s: &str) -> Result<Self, ExplorerError> {
-        match s {
-            "c4_context" => Ok(Self::C4Context),
-            "c4_container" => Ok(Self::C4Container),
-            "c4_component" => Ok(Self::C4Component),
-            "call_graph" => Ok(Self::CallGraph),
-            "impact_radius" => Ok(Self::ImpactRadius),
-            "vertical_slice" => Ok(Self::VerticalSlice),
-            other => Err(ExplorerError::InvalidQuery(format!(
-                "unknown snapshot view_kind: {other}"
-            ))),
-        }
     }
 }
 
@@ -1152,65 +1127,20 @@ async fn emit_mermaid_for_snapshot(
     view_kind: &SnapshotViewKind,
     target: Option<&str>,
 ) -> Result<String, ExplorerError> {
-    match view_kind {
-        SnapshotViewKind::C4Context | SnapshotViewKind::C4Container | SnapshotViewKind::C4Component => {
-            // C4 diagram — use c4_to_mermaid
-            let level = match view_kind {
-                SnapshotViewKind::C4Context => C4Level::Context,
-                SnapshotViewKind::C4Container => C4Level::Container,
-                SnapshotViewKind::C4Component => C4Level::Component,
-                _ => unreachable!(),
-            };
-            let workspace = state.workspace.current_workspace()?;
-            let architecture = state.graph.build_architecture(&workspace.root_path).await?;
-            Ok(c4_mermaid::c4_to_mermaid(
-                &architecture.nodes,
-                &architecture.edges,
-                level,
-            ))
-        }
-        SnapshotViewKind::CallGraph | SnapshotViewKind::ImpactRadius | SnapshotViewKind::VerticalSlice => {
-            // Trace diagram — use trace emitters
-            let target = target.ok_or_else(|| {
-                ExplorerError::InvalidQuery("target is required for trace view kinds".to_string())
-            })?;
+    let graph_svc: &dyn GraphService = &*state.graph;
+    let workspace_svc: &dyn WorkspaceService = &*state.workspace;
 
-            let graph_query = state
-                .graph
-                .graph_query()
-                .ok_or_else(|| {
-                    ExplorerError::GraphUnavailable("call graph not loaded".to_string())
-                })?;
-
-            let resolved = state
-                .graph
-                .resolve_symbol(target)
-                .await?
-                .ok_or_else(|| {
-                    ExplorerError::SymbolNotFound(format!("target not found: {}", target))
-                })?;
-
-            let inspection_target = InspectionTarget::Symbol(resolved);
-            let trace_ctx = TraceEmitContext {
-                graph_query: graph_query.as_ref(),
-                target: &inspection_target,
-            };
-
-            let mermaid = match view_kind {
-                SnapshotViewKind::CallGraph => {
-                    call_graph_to_mermaid(&trace_ctx, target)
-                }
-                SnapshotViewKind::ImpactRadius => {
-                    impact_radius_to_mermaid(&trace_ctx, target)
-                }
-                SnapshotViewKind::VerticalSlice => {
-                    vertical_slice_to_mermaid(&trace_ctx, target)
-                }
-                _ => unreachable!(),
-            };
-
-            Ok(mermaid)
-        }
+    if view_kind.is_trace_kind() {
+        let target = target.ok_or_else(|| {
+            ExplorerError::InvalidQuery("target is required for trace view kinds".to_string())
+        })?;
+        emit_trace_mermaid(graph_svc, workspace_svc, *view_kind, target)
+            .await
+            .map_err(ExplorerError::InvalidQuery)
+    } else {
+        emit_c4_mermaid(graph_svc, workspace_svc, *view_kind)
+            .await
+            .map_err(ExplorerError::InvalidQuery)
     }
 }
 
