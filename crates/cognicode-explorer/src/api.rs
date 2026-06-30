@@ -32,7 +32,7 @@ use crate::domain::trace_mermaid::decision_trace_to_mermaid;
 #[cfg(feature = "multimodal")]
 use crate::ports::graph_repository::GraphRepository;
 use crate::domain::snapshot::{SnapshotError as SnapshotRenderError, SnapshotFormat, SnapshotService};
-use crate::domain::snapshot_dispatch::{SnapshotViewKind, SNAPSHOT_VIEW_KINDS};
+use crate::domain::snapshot_dispatch::SnapshotViewKind;
 
 // ============================================================================
 // Style-class taxonomy
@@ -1037,25 +1037,13 @@ pub struct SnapshotQuery {
 impl SnapshotQuery {
     /// Validate and parse the query params.
     pub fn validated(&self) -> Result<(SnapshotFormat, SnapshotViewKind), ExplorerError> {
-        // Parse format
-        let format = match self.format.as_deref() {
-            None | Some("png") => SnapshotFormat::Png,
-            Some("svg") => SnapshotFormat::Svg,
-            Some(other) => {
-                return Err(ExplorerError::InvalidQuery(format!(
-                    "invalid format: {other} (expected: png, svg)"
-                )));
-            }
-        };
-
-        // Validate view_kind whitelist
-        if !crate::domain::snapshot_dispatch::SNAPSHOT_VIEW_KINDS.contains(&self.view_kind.as_str()) {
-            return Err(ExplorerError::InvalidQuery(format!(
-                "invalid view_kind: {} (expected: {})",
-                self.view_kind,
-                crate::domain::snapshot_dispatch::SNAPSHOT_VIEW_KINDS.join(", ")
-            )));
-        }
+        let format = self
+            .format
+            .as_deref()
+            .map(SnapshotFormat::parse)
+            .transpose()
+            .map_err(|e| ExplorerError::InvalidQuery(e.to_string()))?
+            .unwrap_or(SnapshotFormat::Png);
 
         let view_kind = SnapshotViewKind::from_str(&self.view_kind)
             .map_err(|s| ExplorerError::InvalidQuery(format!("unknown snapshot view_kind: {s}")))?;
