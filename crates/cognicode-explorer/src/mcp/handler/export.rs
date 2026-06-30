@@ -6,23 +6,20 @@
 //!   decision-trace, vertical-slice) as a Mermaid `flowchart` diagram
 
 use async_trait::async_trait;
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::CallToolResult;
 use serde_json::Value;
-use std::sync::Arc;
 
-use crate::dto::{InspectionTarget, SubgraphResponse, ViewContext};
+use crate::dto::{InspectionTarget, SubgraphResponse};
 use crate::domain::c4_mermaid::{c4_to_mermaid, C4Level};
 use crate::domain::trace_mermaid::{
-    call_graph_to_mermaid, decision_trace_to_mermaid, impact_radius_to_mermaid,
-    vertical_slice_to_mermaid, TraceMermaidViewKind,
+    call_graph_to_mermaid, impact_radius_to_mermaid,
+    vertical_slice_to_mermaid, TraceEmitContext, TraceMermaidViewKind,
 };
+#[cfg(feature = "multimodal")]
+use crate::domain::trace_mermaid::decision_trace_to_mermaid;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::{McpContext, TOOL_EXPORT_C4_MERMAID, TOOL_EXPORT_TRACE_MERMAID};
-use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
-use crate::ports::source_reader::SourceReader;
-use cognicode_core::domain::aggregates::SymbolId;
-use cognicode_core::domain::traits::GraphQueryPort;
 
 // ============================================================================
 // ToolHandler implementation
@@ -138,50 +135,6 @@ impl ToolHandler for ExportC4MermaidHandler {
 
 struct ExportTraceMermaidHandler;
 
-/// Noop source reader — trace emitters don't actually read source.
-struct NoopSourceReader;
-
-impl SourceReader for NoopSourceReader {
-    fn read_source(&self, _file: &str) -> crate::error::ExplorerResult<String> {
-        Ok(String::new())
-    }
-    fn read_lines(
-        &self,
-        _file: &str,
-        _start: u32,
-        _end: u32,
-    ) -> crate::error::ExplorerResult<Vec<(u32, String)>> {
-        Ok(vec![])
-    }
-}
-
-/// Noop symbol repository — trace emitters don't use it; they use graph_query directly.
-struct NoopSymbolRepository;
-
-impl SymbolRepository for NoopSymbolRepository {
-    fn resolve(&self, _id: &SymbolId) -> crate::error::ExplorerResult<Option<ResolvedSymbol>> {
-        Ok(None)
-    }
-    fn find_symbols_by_name(&self, _name: &str) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> {
-        Ok(vec![])
-    }
-    fn find_symbols_by_file(&self, _file: &str) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> {
-        Ok(vec![])
-    }
-    fn module_list(&self) -> Vec<String> {
-        vec![]
-    }
-    fn all_symbols(&self) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> {
-        Ok(vec![])
-    }
-    fn graph_stats(&self) -> crate::ports::symbol_repository::GraphStats {
-        crate::ports::symbol_repository::GraphStats {
-            symbol_count: 0,
-            relation_count: 0,
-        }
-    }
-}
-
 #[async_trait]
 impl ToolHandler for ExportTraceMermaidHandler {
     fn name(&self) -> &'static str {
@@ -189,13 +142,21 @@ impl ToolHandler for ExportTraceMermaidHandler {
     }
 
     fn arg_schema(&self) -> Value {
+        // decision_trace is only available when multimodal feature is enabled
+        #[cfg(feature = "multimodal")]
+        let view_kind_enum = serde_json::json!([
+            "call_graph", "impact_radius", "decision_trace", "vertical_slice"
+        ]);
+        #[cfg(not(feature = "multimodal"))]
+        let view_kind_enum = serde_json::json!(["call_graph", "impact_radius", "vertical_slice"]);
+
         serde_json::json!({
             "type": "object",
             "properties": {
                 "view_kind": {
                     "type": "string",
-                    "enum": ["call_graph", "impact_radius", "decision_trace", "vertical_slice"],
-                    "description": "Trace view kind (call_graph | impact_radius | decision_trace | vertical_slice)"
+                    "enum": view_kind_enum,
+                    "description": "Trace view kind"
                 },
                 "target": {
                     "type": "string",
@@ -232,16 +193,6 @@ impl ToolHandler for ExportTraceMermaidHandler {
                 return err_envelope(TOOL_EXPORT_TRACE_MERMAID, "invalid_view_kind", &e);
             }
         };
-
-        // Gate decision_trace behind multimodal feature
-        #[cfg(not(feature = "multimodal"))]
-        if view_kind == TraceMermaidViewKind::DecisionTrace {
-            return err_envelope(
-                TOOL_EXPORT_TRACE_MERMAID,
-                "feature_disabled",
-                "decision_trace requires the `multimodal` feature",
-            );
-        }
 
         let graph_svc = match ctx.graph_service.as_ref() {
             Some(gs) => gs,
@@ -285,22 +236,20 @@ impl ToolHandler for ExportTraceMermaidHandler {
         };
 
         let target = InspectionTarget::Symbol(resolved);
-        let view_ctx = ViewContext {
+        let trace_ctx = TraceEmitContext {
+            graph_query: graph_query.as_ref(),
             target: &target,
-            repo: &NoopSymbolRepository,
-            reader: &NoopSourceReader,
-            quality: None,
-            graph_query: Some(graph_query.as_ref()),
         };
 
         let mermaid = match view_kind {
-            TraceMermaidViewKind::CallGraph => call_graph_to_mermaid(&view_ctx, &args.target),
-            TraceMermaidViewKind::ImpactRadius => impact_radius_to_mermaid(&view_ctx, &args.target),
+            TraceMermaidViewKind::CallGraph => call_graph_to_mermaid(&trace_ctx, &args.target),
+            TraceMermaidViewKind::ImpactRadius => impact_radius_to_mermaid(&trace_ctx, &args.target),
+            #[cfg(feature = "multimodal")]
             TraceMermaidViewKind::DecisionTrace => {
-                decision_trace_to_mermaid(&view_ctx, &args.target)
+                decision_trace_to_mermaid(&trace_ctx, &args.target)
             }
             TraceMermaidViewKind::VerticalSlice => {
-                vertical_slice_to_mermaid(&view_ctx, &args.target)
+                vertical_slice_to_mermaid(&trace_ctx, &args.target)
             }
         };
 
@@ -326,11 +275,11 @@ pub fn register_export_handlers(registry: &mut crate::mcp::handler::ToolHandlerR
 mod tests {
     use super::*;
 
-    use crate::dto::{SubgraphResponse, ViewContext};
+    use crate::dto::SubgraphResponse;
     use crate::error::{ExplorerError, ExplorerResult};
     use crate::facades::GraphService;
     use crate::mcp::handler::ToolHandlerRegistry;
-    use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol};
+    use crate::ports::symbol_repository::ResolvedSymbol;
     use crate::session::SessionRegistry;
     use async_trait::async_trait;
     use cognicode_core::domain::aggregates::{CallEntry, SymbolId};
@@ -747,16 +696,17 @@ mod tests {
             )
             .await;
 
-        // In non-multimodal builds, this should be a feature_disabled error
+        // In non-multimodal builds, decision_trace is not in the schema enum,
+        // so from_str returns invalid_view_kind error
         #[cfg(not(feature = "multimodal"))]
         {
-            assert_eq!(err_code(&result), "feature_disabled");
+            assert_eq!(err_code(&result), "invalid_view_kind");
         }
         // In multimodal builds, it should return a result (placeholder is fine)
         #[cfg(feature = "multimodal")]
         {
-            // Should not be a feature_disabled error
-            assert_ne!(err_code(&result), "feature_disabled");
+            // Should not be an error
+            assert_eq!(result.is_error, Some(false));
         }
     }
 

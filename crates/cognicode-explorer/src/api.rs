@@ -14,20 +14,21 @@ use tower_http::trace::TraceLayer;
 
 use crate::dto::{
     GenerateArtifactRequest, GodNodeEntry, InspectionTarget, LANDING_NODE_CAP, LandingPayload,
-    OpenWorkspaceRequest, SaveExplorationSessionRequest, SubgraphResponse, ViewContext,
+    OpenWorkspaceRequest, SaveExplorationSessionRequest, SubgraphResponse,
 };
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService,
     SubgraphDirection as FacadeSubgraphDirection, ViewService, WorkspaceService,
 };
-use crate::ports::source_reader::SourceReader;
-use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
+use crate::ports::symbol_repository::ResolvedSymbol;
 use crate::domain::c4_mermaid::{self, C4Level};
 use crate::domain::trace_mermaid::{
-    self, call_graph_to_mermaid, decision_trace_to_mermaid, impact_radius_to_mermaid,
-    vertical_slice_to_mermaid, TraceMermaidViewKind,
+    call_graph_to_mermaid, impact_radius_to_mermaid,
+    vertical_slice_to_mermaid, TraceEmitContext, TraceMermaidViewKind,
 };
+#[cfg(feature = "multimodal")]
+use crate::domain::trace_mermaid::decision_trace_to_mermaid;
 #[cfg(feature = "multimodal")]
 use crate::ports::graph_repository::GraphRepository;
 
@@ -949,45 +950,6 @@ impl TraceMermaidQuery {
     }
 }
 
-/// Noop source reader — trace emitters don't read source files.
-struct NoopSourceReader;
-
-impl SourceReader for NoopSourceReader {
-    fn read_source(&self, _file: &str) -> ExplorerResult<String> {
-        Ok(String::new())
-    }
-    fn read_lines(&self, _file: &str, _start: u32, _end: u32) -> ExplorerResult<Vec<(u32, String)>> {
-        Ok(vec![])
-    }
-}
-
-/// Noop symbol repository — trace emitters use graph_query directly.
-struct NoopSymbolRepository;
-
-impl SymbolRepository for NoopSymbolRepository {
-    fn resolve(&self, _id: &cognicode_core::domain::aggregates::SymbolId) -> ExplorerResult<Option<ResolvedSymbol>> {
-        Ok(None)
-    }
-    fn find_symbols_by_name(&self, _name: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
-        Ok(vec![])
-    }
-    fn find_symbols_by_file(&self, _file: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
-        Ok(vec![])
-    }
-    fn module_list(&self) -> Vec<String> {
-        vec![]
-    }
-    fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> {
-        Ok(vec![])
-    }
-    fn graph_stats(&self) -> crate::ports::symbol_repository::GraphStats {
-        crate::ports::symbol_repository::GraphStats {
-            symbol_count: 0,
-            relation_count: 0,
-        }
-    }
-}
-
 /// Handler for `GET /api/workspaces/:workspace_id/mermaid/trace`.
 ///
 /// Renders a trace (call-graph, impact-radius, decision-trace, vertical-slice)
@@ -998,17 +960,7 @@ async fn trace_mermaid_handler(
     Path(_workspace_id): Path<String>,
     Query(q): Query<TraceMermaidQuery>,
 ) -> Result<Response, ApiError> {
-    use cognicode_core::domain::aggregates::SymbolId;
-
     let view_kind = q.validated().map_err(ApiError)?;
-
-    // Gate decision_trace behind multimodal feature
-    #[cfg(not(feature = "multimodal"))]
-    if view_kind == TraceMermaidViewKind::DecisionTrace {
-        return Err(ApiError(ExplorerError::FeatureDisabled(
-            "decision_trace requires the `multimodal` feature".to_string(),
-        )));
-    }
 
     let graph_query = state
         .graph
@@ -1029,19 +981,17 @@ async fn trace_mermaid_handler(
         })?;
 
     let target = InspectionTarget::Symbol(resolved);
-    let view_ctx = ViewContext {
+    let trace_ctx = TraceEmitContext {
+        graph_query: graph_query.as_ref(),
         target: &target,
-        repo: &NoopSymbolRepository,
-        reader: &NoopSourceReader,
-        quality: None,
-        graph_query: Some(graph_query.as_ref()),
     };
 
     let mermaid = match view_kind {
-        TraceMermaidViewKind::CallGraph => call_graph_to_mermaid(&view_ctx, &q.target),
-        TraceMermaidViewKind::ImpactRadius => impact_radius_to_mermaid(&view_ctx, &q.target),
-        TraceMermaidViewKind::DecisionTrace => decision_trace_to_mermaid(&view_ctx, &q.target),
-        TraceMermaidViewKind::VerticalSlice => vertical_slice_to_mermaid(&view_ctx, &q.target),
+        TraceMermaidViewKind::CallGraph => call_graph_to_mermaid(&trace_ctx, &q.target),
+        TraceMermaidViewKind::ImpactRadius => impact_radius_to_mermaid(&trace_ctx, &q.target),
+        #[cfg(feature = "multimodal")]
+        TraceMermaidViewKind::DecisionTrace => decision_trace_to_mermaid(&trace_ctx, &q.target),
+        TraceMermaidViewKind::VerticalSlice => vertical_slice_to_mermaid(&trace_ctx, &q.target),
     };
 
     Ok((
