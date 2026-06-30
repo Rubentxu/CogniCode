@@ -195,6 +195,9 @@ pub const TOOL_GRAPH_SEARCH: &str = "graph_search";
 /// `issues_ingest` — ingest GitHub issues from a repository (multimodal).
 pub const TOOL_ISSUES_INGEST: &str = "issues_ingest";
 
+/// `export_snapshot` — render a C4 or trace diagram as PNG or SVG (multimodal).
+pub const TOOL_EXPORT_SNAPSHOT: &str = "export_snapshot";
+
 /// `lens_find_dead_code` — symbols not reachable from any entry point.
 pub const TOOL_FIND_DEAD_CODE: &str = "lens_find_dead_code";
 
@@ -475,6 +478,9 @@ impl ExplorerMcpHandler {
         crate::mcp::handler::register_view_handlers(&mut registry);
         crate::mcp::handler::register_workspace_handlers(&mut registry);
 
+        #[cfg(feature = "multimodal")]
+        crate::mcp::handler::register_snapshot_handlers(&mut registry);
+
         Self::new(registry, ctx)
     }
 
@@ -644,6 +650,7 @@ pub const TOOL_NAMES_MULTIMODAL: &[&str] = &[
     TOOL_DOCS_INGEST,
     TOOL_GRAPH_SEARCH,
     TOOL_ISSUES_INGEST,
+    TOOL_EXPORT_SNAPSHOT,
 ];
 
 /// All tool names for the current build variant.
