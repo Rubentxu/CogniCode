@@ -21,8 +21,6 @@
 
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
-
 // ============================================================================
 // TraceMermaidViewKind — enum for MCP + REST validation
 // ============================================================================
@@ -32,8 +30,7 @@ use serde::{Deserialize, Serialize};
 /// Used by the MCP tool `export_trace_mermaid` and the REST endpoint
 /// `GET /api/workspaces/:workspace_id/mermaid/trace` to validate the
 /// `view_kind` query parameter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TraceMermaidViewKind {
     /// Call-graph view (caller → target → callees).
     CallGraph,
@@ -91,16 +88,9 @@ impl TraceMermaidViewKind {
     }
 }
 
-impl fmt::Display for TraceMermaidViewKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
 use cognicode_core::domain::aggregates::{CallEntry, SymbolId};
 
 use crate::dto::InspectionTarget;
-use crate::ports::symbol_repository::SymbolRepository;
 
 // ============================================================================
 // TraceEmitContext — narrow port for trace emitters
@@ -110,11 +100,11 @@ use crate::ports::symbol_repository::SymbolRepository;
 ///
 /// Emitters only need the graph query capability and the resolved target.
 /// This avoids stamp-coupling via `ViewContext` which carries 4 unrelated fields.
-pub struct TraceEmitContext<'a> {
+pub(crate) struct TraceEmitContext<'a> {
     /// Graph query port for callers/callees traversal.
-    pub graph_query: &'a dyn cognicode_core::domain::traits::GraphQueryPort,
+    pub(crate) graph_query: &'a dyn cognicode_core::domain::traits::GraphQueryPort,
     /// The resolved inspection target (always `InspectionTarget::Symbol` for traces).
-    pub target: &'a InspectionTarget,
+    pub(crate) target: &'a InspectionTarget,
 }
 
 // Re-export from shared mermaid_util
