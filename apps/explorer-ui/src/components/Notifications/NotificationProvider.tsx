@@ -10,8 +10,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { Toast } from "./Toast";
 
-export interface Toast {
+export interface ToastItem {
   id: string;
   message: string;
 }
@@ -27,7 +28,7 @@ export const NotificationContext = createContext<NotificationContextValue>({
 });
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const showNotification = useCallback((message: string) => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -56,20 +57,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         }}
       >
         {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            style={{
-              backgroundColor: "var(--color-surface-overlay, #1e1e2e)",
-              color: "var(--color-text-primary, #cdd6f4)",
-              padding: "8px 16px",
-              borderRadius: 6,
-              fontSize: 13,
-              boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-              border: "1px solid var(--color-border, #313244)",
-            }}
-          >
-            {toast.message}
-          </div>
+          <Toast key={toast.id} message={toast.message} />
         ))}
       </div>
     </NotificationContext.Provider>
