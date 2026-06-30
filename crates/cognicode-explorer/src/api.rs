@@ -31,6 +31,7 @@ use crate::domain::trace_mermaid::{
 use crate::domain::trace_mermaid::decision_trace_to_mermaid;
 #[cfg(feature = "multimodal")]
 use crate::ports::graph_repository::GraphRepository;
+use crate::domain::snapshot::{SnapshotError as SnapshotRenderError, SnapshotFormat, SnapshotService};
 
 // ============================================================================
 // Style-class taxonomy
@@ -434,6 +435,8 @@ pub struct ApiState {
     pub graph_repo: Option<Arc<dyn GraphRepository>>,
     /// Optional ingest controller for pipeline scan operations.
     pub ingest: Option<Arc<cognicode_core::application::ingest::IngestController>>,
+    /// Optional snapshot rendering service (requires mmdc on PATH).
+    pub snapshot: Option<Arc<SnapshotService>>,
 }
 
 impl ApiState {
@@ -455,6 +458,7 @@ impl ApiState {
             #[cfg(feature = "multimodal")]
             graph_repo: None,
             ingest: None,
+            snapshot: None,
         }
     }
 
@@ -472,6 +476,11 @@ impl ApiState {
     pub fn with_graph_repo(mut self, repo: Arc<dyn GraphRepository>) -> Self {
         self.graph_repo = Some(repo);
         self
+    }
+
+    /// Wire a snapshot rendering service for diagram export.
+    pub fn with_snapshot(self, snapshot: Arc<SnapshotService>) -> Self {
+        Self { snapshot: Some(snapshot), ..self }
     }
 }
 
@@ -531,6 +540,10 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route(
             "/api/workspaces/:workspace_id/mermaid/trace",
             get(trace_mermaid_handler),
+        )
+        .route(
+            "/api/workspaces/:workspace_id/snapshot",
+            get(snapshot_handler),
         )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -598,6 +611,10 @@ pub fn router(state: ApiState) -> Router {
         .route(
             "/api/workspaces/:workspace_id/mermaid/trace",
             get(trace_mermaid_handler),
+        )
+        .route(
+            "/api/workspaces/:workspace_id/snapshot",
+            get(snapshot_handler),
         )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -999,6 +1016,258 @@ async fn trace_mermaid_handler(
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
         mermaid,
     ).into_response())
+}
+
+// ============================================================================
+// Snapshot — `GET /api/workspaces/:workspace_id/snapshot`
+// ============================================================================
+
+/// Whitelist of view kinds that support snapshot rendering.
+const SNAPSHOT_VIEW_KINDS: &[&str] = &[
+    "c4_context",
+    "c4_container",
+    "c4_component",
+    "call_graph",
+    "impact_radius",
+    "vertical_slice",
+];
+
+/// Query params for `GET /api/workspaces/:workspace_id/snapshot`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SnapshotQuery {
+    /// View kind: "c4_context" | "c4_container" | "c4_component" | "call_graph" | "impact_radius" | "vertical_slice".
+    pub view_kind: String,
+    /// Target symbol id or entry point id.
+    pub target: Option<String>,
+    /// Output format: "png" or "svg". Defaults to "png".
+    pub format: Option<String>,
+}
+
+impl SnapshotQuery {
+    /// Validate and parse the query params.
+    pub fn validated(&self) -> Result<(SnapshotFormat, SnapshotViewKind), ExplorerError> {
+        // Parse format
+        let format = match self.format.as_deref() {
+            None | Some("png") => SnapshotFormat::Png,
+            Some("svg") => SnapshotFormat::Svg,
+            Some(other) => {
+                return Err(ExplorerError::InvalidQuery(format!(
+                    "invalid format: {other} (expected: png, svg)"
+                )));
+            }
+        };
+
+        // Validate view_kind whitelist
+        if !SNAPSHOT_VIEW_KINDS.contains(&self.view_kind.as_str()) {
+            return Err(ExplorerError::InvalidQuery(format!(
+                "invalid view_kind: {} (expected: {})",
+                self.view_kind,
+                SNAPSHOT_VIEW_KINDS.join(", ")
+            )));
+        }
+
+        let view_kind = SnapshotViewKind::from_str(&self.view_kind)?;
+        Ok((format, view_kind))
+    }
+}
+
+/// Snapshot view kinds supported for rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnapshotViewKind {
+    C4Context,
+    C4Container,
+    C4Component,
+    CallGraph,
+    ImpactRadius,
+    VerticalSlice,
+}
+
+impl SnapshotViewKind {
+    fn from_str(s: &str) -> Result<Self, ExplorerError> {
+        match s {
+            "c4_context" => Ok(Self::C4Context),
+            "c4_container" => Ok(Self::C4Container),
+            "c4_component" => Ok(Self::C4Component),
+            "call_graph" => Ok(Self::CallGraph),
+            "impact_radius" => Ok(Self::ImpactRadius),
+            "vertical_slice" => Ok(Self::VerticalSlice),
+            other => Err(ExplorerError::InvalidQuery(format!(
+                "unknown snapshot view_kind: {other}"
+            ))),
+        }
+    }
+}
+
+/// Handler for `GET /api/workspaces/:workspace_id/snapshot`.
+///
+/// Renders a diagram (C4 or trace) as a PNG or SVG image using mmdc.
+/// Returns `image/png` or `image/svg+xml` with `Content-Disposition: attachment`.
+async fn snapshot_handler(
+    State(state): State<ApiState>,
+    Path(_workspace_id): Path<String>,
+    Query(q): Query<SnapshotQuery>,
+) -> Result<Response, SnapshotApiError> {
+    let (format, view_kind) = q.validated().map_err(SnapshotApiError::from)?;
+
+    // Require snapshot service to be wired
+    let snapshot = state.snapshot.as_ref().ok_or(SnapshotApiError::FeatureDisabled)?;
+
+    // Emit Mermaid text based on view_kind
+    let mermaid = emit_mermaid_for_snapshot(&state, &view_kind, q.target.as_deref())
+        .await
+        .map_err(SnapshotApiError::from)?;
+
+    // Render to image
+    let bytes = snapshot
+        .render(&mermaid, format)
+        .await
+        .map_err(SnapshotApiError::from)?;
+
+    // Sanitize filename: lowercase alphanumeric + underscores only
+    let safe_name = q
+        .view_kind
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect::<String>()
+        .to_lowercase();
+
+    let filename = format!("{}.{}", safe_name, format.extension());
+
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, format.content_type()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{}\"", filename).as_str(),
+            ),
+        ],
+        bytes,
+    ).into_response())
+}
+
+/// Emit Mermaid text for a given snapshot view kind.
+async fn emit_mermaid_for_snapshot(
+    state: &ApiState,
+    view_kind: &SnapshotViewKind,
+    target: Option<&str>,
+) -> Result<String, ExplorerError> {
+    match view_kind {
+        SnapshotViewKind::C4Context | SnapshotViewKind::C4Container | SnapshotViewKind::C4Component => {
+            // C4 diagram — use c4_to_mermaid
+            let level = match view_kind {
+                SnapshotViewKind::C4Context => C4Level::Context,
+                SnapshotViewKind::C4Container => C4Level::Container,
+                SnapshotViewKind::C4Component => C4Level::Component,
+                _ => unreachable!(),
+            };
+            let workspace = state.workspace.current_workspace()?;
+            let architecture = state.graph.build_architecture(&workspace.root_path).await?;
+            Ok(c4_mermaid::c4_to_mermaid(
+                &architecture.nodes,
+                &architecture.edges,
+                level,
+            ))
+        }
+        SnapshotViewKind::CallGraph | SnapshotViewKind::ImpactRadius | SnapshotViewKind::VerticalSlice => {
+            // Trace diagram — use trace emitters
+            let target = target.ok_or_else(|| {
+                ExplorerError::InvalidQuery("target is required for trace view kinds".to_string())
+            })?;
+
+            let graph_query = state
+                .graph
+                .graph_query()
+                .ok_or_else(|| {
+                    ExplorerError::GraphUnavailable("call graph not loaded".to_string())
+                })?;
+
+            let resolved = state
+                .graph
+                .resolve_symbol(target)
+                .await?
+                .ok_or_else(|| {
+                    ExplorerError::SymbolNotFound(format!("target not found: {}", target))
+                })?;
+
+            let inspection_target = InspectionTarget::Symbol(resolved);
+            let trace_ctx = TraceEmitContext {
+                graph_query: graph_query.as_ref(),
+                target: &inspection_target,
+            };
+
+            let mermaid = match view_kind {
+                SnapshotViewKind::CallGraph => {
+                    call_graph_to_mermaid(&trace_ctx, target)
+                }
+                SnapshotViewKind::ImpactRadius => {
+                    impact_radius_to_mermaid(&trace_ctx, target)
+                }
+                SnapshotViewKind::VerticalSlice => {
+                    vertical_slice_to_mermaid(&trace_ctx, target)
+                }
+                _ => unreachable!(),
+            };
+
+            Ok(mermaid)
+        }
+    }
+}
+
+/// API error type for snapshot endpoint with richer status mapping.
+enum SnapshotApiError {
+    /// Snapshot service not wired (mmdc not configured).
+    FeatureDisabled,
+    /// Mermaid rendering error.
+    Render(SnapshotRenderError),
+    /// Explorer domain error during Mermaid emission.
+    Explorer(ExplorerError),
+}
+
+impl From<ExplorerError> for SnapshotApiError {
+    fn from(err: ExplorerError) -> Self {
+        SnapshotApiError::Explorer(err)
+    }
+}
+
+impl From<SnapshotRenderError> for SnapshotApiError {
+    fn from(err: SnapshotRenderError) -> Self {
+        SnapshotApiError::Render(err)
+    }
+}
+
+impl IntoResponse for SnapshotApiError {
+    fn into_response(self) -> Response {
+        let (status, error_msg) = match &self {
+            SnapshotApiError::FeatureDisabled => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "snapshot feature not available (mmdc not configured)".to_string(),
+            ),
+            SnapshotApiError::Render(err) => {
+                let status = match err {
+                    SnapshotRenderError::MermaidEmpty => StatusCode::BAD_REQUEST,
+                    SnapshotRenderError::SizeLimitExceeded { .. } => StatusCode::PAYLOAD_TOO_LARGE,
+                    SnapshotRenderError::MmdcNotFound => StatusCode::SERVICE_UNAVAILABLE,
+                    SnapshotRenderError::RenderFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                    SnapshotRenderError::Timeout(_) => StatusCode::GATEWAY_TIMEOUT,
+                };
+                (status, err.to_string())
+            }
+            SnapshotApiError::Explorer(err) => {
+                // Map ExplorerError to appropriate status
+                let status = match err {
+                    ExplorerError::SymbolNotFound(_) => StatusCode::NOT_FOUND,
+                    ExplorerError::GraphUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+                    ExplorerError::InvalidQuery(_) => StatusCode::BAD_REQUEST,
+                    _ => StatusCode::INTERNAL_SERVER_ERROR,
+                };
+                (status, err.to_string())
+            }
+        };
+
+        let body = serde_json::json!({ "error": error_msg });
+        (status, Json(body)).into_response()
+    }
 }
 
 #[derive(Debug, Deserialize)]
