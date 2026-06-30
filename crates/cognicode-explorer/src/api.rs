@@ -13,16 +13,22 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::dto::{
-    GenerateArtifactRequest, GodNodeEntry, LANDING_NODE_CAP, LandingPayload,
+    GenerateArtifactRequest, GodNodeEntry, InspectionTarget, LANDING_NODE_CAP, LandingPayload,
     OpenWorkspaceRequest, SaveExplorationSessionRequest, SubgraphResponse,
 };
-use crate::error::ExplorerError;
+use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService,
     SubgraphDirection as FacadeSubgraphDirection, ViewService, WorkspaceService,
 };
 use crate::ports::symbol_repository::ResolvedSymbol;
 use crate::domain::c4_mermaid::{self, C4Level};
+use crate::domain::trace_mermaid::{
+    call_graph_to_mermaid, impact_radius_to_mermaid,
+    vertical_slice_to_mermaid, TraceEmitContext, TraceMermaidViewKind,
+};
+#[cfg(feature = "multimodal")]
+use crate::domain::trace_mermaid::decision_trace_to_mermaid;
 #[cfg(feature = "multimodal")]
 use crate::ports::graph_repository::GraphRepository;
 
@@ -522,6 +528,10 @@ pub fn router_with_state(state: ApiState) -> Router {
             "/api/workspaces/:workspace_id/architecture/mermaid",
             get(mermaid_handler),
         )
+        .route(
+            "/api/workspaces/:workspace_id/mermaid/trace",
+            get(trace_mermaid_handler),
+        )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -584,6 +594,10 @@ pub fn router(state: ApiState) -> Router {
         .route(
             "/api/workspaces/:workspace_id/architecture/mermaid",
             get(mermaid_handler),
+        )
+        .route(
+            "/api/workspaces/:workspace_id/mermaid/trace",
+            get(trace_mermaid_handler),
         )
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -908,6 +922,78 @@ async fn mermaid_handler(
     let workspace = state.workspace.current_workspace().map_err(ApiError)?;
     let architecture = state.graph.build_architecture(&workspace.root_path).await?;
     let mermaid = c4_mermaid::c4_to_mermaid(&architecture.nodes, &architecture.edges, level);
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        mermaid,
+    ).into_response())
+}
+
+// ============================================================================
+// Mermaid trace export — `GET /api/workspaces/:workspace_id/mermaid/trace`
+// ============================================================================
+
+/// Query params accepted by `GET /api/workspaces/:workspace_id/mermaid/trace`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TraceMermaidQuery {
+    /// Trace view kind: "call_graph" | "impact_radius" | "decision_trace" | "vertical_slice".
+    pub view_kind: String,
+    /// Target symbol id or decision id.
+    pub target: String,
+}
+
+impl TraceMermaidQuery {
+    /// Parse and validate the view_kind.
+    pub fn validated(&self) -> Result<TraceMermaidViewKind, ExplorerError> {
+        TraceMermaidViewKind::from_str(&self.view_kind)
+            .map_err(|e| ExplorerError::InvalidQuery(e))
+    }
+}
+
+/// Handler for `GET /api/workspaces/:workspace_id/mermaid/trace`.
+///
+/// Renders a trace (call-graph, impact-radius, decision-trace, vertical-slice)
+/// as a Mermaid `flowchart` diagram string.
+/// Returns `text/plain` content type, or `400` for invalid view_kind.
+async fn trace_mermaid_handler(
+    State(state): State<ApiState>,
+    Path(_workspace_id): Path<String>,
+    Query(q): Query<TraceMermaidQuery>,
+) -> Result<Response, ApiError> {
+    let view_kind = q.validated().map_err(ApiError)?;
+
+    let graph_query = state
+        .graph
+        .graph_query()
+        .ok_or_else(|| ApiError(ExplorerError::GraphUnavailable("call graph not loaded".to_string())))?;
+
+    // Resolve the target symbol
+    let resolved = state
+        .graph
+        .resolve_symbol(&q.target)
+        .await
+        .map_err(ApiError)?
+        .ok_or_else(|| {
+            ApiError(ExplorerError::SymbolNotFound(format!(
+                "target not found: {}",
+                q.target
+            )))
+        })?;
+
+    let target = InspectionTarget::Symbol(resolved);
+    let trace_ctx = TraceEmitContext {
+        graph_query: graph_query.as_ref(),
+        target: &target,
+    };
+
+    let mermaid = match view_kind {
+        TraceMermaidViewKind::CallGraph => call_graph_to_mermaid(&trace_ctx, &q.target),
+        TraceMermaidViewKind::ImpactRadius => impact_radius_to_mermaid(&trace_ctx, &q.target),
+        #[cfg(feature = "multimodal")]
+        TraceMermaidViewKind::DecisionTrace => decision_trace_to_mermaid(&trace_ctx, &q.target),
+        TraceMermaidViewKind::VerticalSlice => vertical_slice_to_mermaid(&trace_ctx, &q.target),
+    };
+
     Ok((
         StatusCode::OK,
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],

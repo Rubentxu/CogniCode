@@ -30,7 +30,7 @@ use tower::ServiceExt;
 
 use crate::api::ApiState;
 use crate::api::router;
-use crate::error::ExplorerError;
+use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::graph::GraphServiceImpl;
 use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
@@ -2164,6 +2164,226 @@ async fn generate_artifact_returns_decision_artifact_summary() {
     );
     assert_eq!(artifact.format, crate::dto::ArtifactFormat::Markdown);
     assert!(!artifact.title.is_empty());
+}
+
+// ============================================================================
+// GET /api/workspaces/:workspace_id/mermaid/trace
+// ============================================================================
+
+/// Repo that resolves "sym:test::fn:1" for trace_mermaid REST tests.
+#[derive(Clone)]
+struct TraceMermaidRepo;
+
+impl SymbolRepository for TraceMermaidRepo {
+    fn resolve(&self, id: &SymbolId) -> ExplorerResult<Option<ResolvedSymbol>> {
+        if id.as_str() == "sym:test::fn:1" {
+            return Ok(Some(ResolvedSymbol {
+                id: id.clone(),
+                name: "test_fn".to_string(),
+                kind: SymbolKind::Function,
+                file: "test.rs".to_string(),
+                line: 1,
+                signature: Some("fn test_fn()".to_string()),
+            }));
+        }
+        Ok(None)
+    }
+    fn find_symbols_by_name(&self, _name: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
+        Ok(vec![])
+    }
+    fn find_symbols_by_file(&self, _file: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
+        Ok(vec![])
+    }
+    fn module_list(&self) -> Vec<String> {
+        vec![]
+    }
+    fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> {
+        Ok(vec![])
+    }
+    fn graph_stats(&self) -> GraphStats {
+        GraphStats {
+            symbol_count: 0,
+            relation_count: 0,
+        }
+    }
+}
+
+/// Graph query port for trace_mermaid REST tests — returns callers for sym:test::fn:1.
+#[derive(Clone)]
+struct TraceMermaidGraphQueryPort;
+
+impl GraphQueryPort for TraceMermaidGraphQueryPort {
+    fn callers(&self, id: &SymbolId) -> Vec<RelationTarget> {
+        if id.as_str() == "sym:test::fn:1" {
+            vec![RelationTarget {
+                id: SymbolId::new("sym:test::caller:1"),
+                name: "caller_fn".to_string(),
+                kind: SymbolKind::Function,
+                file: "test.rs".to_string(),
+                line: 10,
+                signature: Some("fn caller_fn()".to_string()),
+            }]
+        } else {
+            vec![]
+        }
+    }
+    fn callees(&self, id: &SymbolId) -> Vec<RelationTarget> {
+        if id.as_str() == "sym:test::fn:1" {
+            vec![RelationTarget {
+                id: SymbolId::new("sym:test::callee:1"),
+                name: "callee_fn".to_string(),
+                kind: SymbolKind::Function,
+                file: "test.rs".to_string(),
+                line: 20,
+                signature: Some("fn callee_fn()".to_string()),
+            }]
+        } else {
+            vec![]
+        }
+    }
+    fn fan_in(&self, _id: &SymbolId) -> usize {
+        0
+    }
+    fn fan_out(&self, _id: &SymbolId) -> usize {
+        0
+    }
+    fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<CallerWithMetadata> {
+        vec![]
+    }
+    fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<CalleeWithMetadata> {
+        vec![]
+    }
+    fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<RelationTargetWithMetadata> {
+        vec![]
+    }
+    fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+        vec![]
+    }
+    fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+        vec![]
+    }
+}
+
+fn trace_mermaid_app() -> axum::Router {
+    let symbol_repo = Arc::new(TraceMermaidRepo);
+    let graph_query: Arc<dyn GraphQueryPort> = Arc::new(TraceMermaidGraphQueryPort);
+    let state = make_test_api_state(symbol_repo, Some(graph_query));
+    router(state)
+}
+
+#[tokio::test]
+async fn trace_mermaid_returns_200_with_call_graph() {
+    let app = trace_mermaid_app();
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/workspaces/ws-1/mermaid/trace?view_kind=call_graph&target=sym:test::fn:1")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("body");
+    let text = std::str::from_utf8(&body).expect("valid UTF-8");
+    assert!(
+        text.contains("flowchart TD"),
+        "should contain flowchart TD"
+    );
+    assert!(
+        text.contains("subgraph call_graph"),
+        "should contain call_graph subgraph"
+    );
+}
+
+#[tokio::test]
+async fn trace_mermaid_returns_200_with_impact_radius() {
+    let app = trace_mermaid_app();
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/workspaces/ws-1/mermaid/trace?view_kind=impact_radius&target=sym:test::fn:1")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("body");
+    let text = std::str::from_utf8(&body).expect("valid UTF-8");
+    assert!(
+        text.contains("flowchart TD"),
+        "should contain flowchart TD"
+    );
+    assert!(
+        text.contains("subgraph impact_radius"),
+        "should contain impact_radius subgraph"
+    );
+}
+
+#[tokio::test]
+async fn trace_mermaid_returns_200_with_vertical_slice() {
+    let app = trace_mermaid_app();
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/workspaces/ws-1/mermaid/trace?view_kind=vertical_slice&target=sym:test::fn:1")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("body");
+    let text = std::str::from_utf8(&body).expect("valid UTF-8");
+    assert!(
+        text.contains("flowchart TD"),
+        "should contain flowchart TD"
+    );
+    assert!(
+        text.contains("subgraph vertical_slice"),
+        "should contain vertical_slice subgraph"
+    );
+}
+
+#[tokio::test]
+async fn trace_mermaid_returns_400_for_invalid_view_kind() {
+    let app = trace_mermaid_app();
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/workspaces/ws-1/mermaid/trace?view_kind=invalid_kind&target=sym:test::fn:1")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.expect("response");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn trace_mermaid_returns_400_for_missing_target() {
+    let app = trace_mermaid_app();
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/workspaces/ws-1/mermaid/trace?view_kind=call_graph")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.expect("response");
+    // Missing required query param results in 400
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn trace_mermaid_returns_404_for_symbol_not_found() {
+    let app = trace_mermaid_app();
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/workspaces/ws-1/mermaid/trace?view_kind=call_graph&target=nonexistent")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.expect("response");
+    // Symbol not found should return 404 or 400
+    assert!(
+        response.status() == StatusCode::NOT_FOUND
+            || response.status() == StatusCode::BAD_REQUEST,
+        "expected 404 or 400, got {}",
+        response.status()
+    );
 }
 
 // Suppress unused-import warnings when other tests in the file move

@@ -17,6 +17,7 @@ import { highlightCode } from "../utils/highlight";
 import type { RendererKind } from "../api/schemas";
 import type { ContextualView } from "../api/types";
 import { GraphView } from "./GraphView/GraphView";
+import { MermaidRenderer } from "./MermaidRenderer";
 
 // ============================================================================
 // Renderer id type — first-class catalog from ADR-008
@@ -227,6 +228,16 @@ class RendererRegistry {
     this.register("composite", {
       label: "Composite",
       render: (body) => <CompositeRenderer body={body} registry={this} />,
+    });
+
+    // `mermaid` — renders Mermaid diagram text as HTML.
+    // Props accepted: `{ mermaidText?: string, viewKind?: string }`.
+    this.register("mermaid", {
+      label: "Mermaid",
+      render: (body) => {
+        const b = body as { mermaidText?: string; viewKind?: string } | null;
+        return <MermaidRenderer mermaidText={b?.mermaidText ?? ""} viewKind={b?.viewKind} />;
+      },
     });
   }
 

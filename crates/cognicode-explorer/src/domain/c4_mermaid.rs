@@ -70,48 +70,8 @@ impl fmt::Display for C4ParseError {
 
 impl std::error::Error for C4ParseError {}
 
-/// Sanitise a string into a valid Mermaid identifier.
-///
-/// Replaces special characters (`:`, `/`, `(`, `)`, `.`, `-`, ` `) with underscores,
-/// then collapses consecutive underscores.
-pub fn sanitize_id(id: &str) -> String {
-    let mut result = String::with_capacity(id.len());
-    let mut last_was_underscore = false;
-    for ch in id.chars() {
-        if ch.is_alphanumeric() || ch == '_' {
-            result.push(ch);
-            last_was_underscore = ch == '_';
-        } else {
-            if !last_was_underscore {
-                result.push('_');
-            }
-            last_was_underscore = true;
-        }
-    }
-    // Trim leading/trailing underscores
-    result.trim_matches('_').to_string()
-}
-
-/// Deduplicate a list of IDs by appending `_2`, `_3`, … suffixes as needed.
-///
-/// Preserves insertion order. The first occurrence of a base ID is unchanged;
-/// subsequent duplicates get numeric suffixes. IDs are sanitised before deduplication.
-pub fn deduplicate_ids<T: AsRef<str>>(ids: &[T]) -> Vec<String> {
-    let mut seen: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
-    ids.iter()
-        .map(|id| {
-            let raw = id.as_ref();
-            let base = sanitize_id(raw);
-            let counter = seen.entry(base.clone()).or_insert(0);
-            *counter += 1;
-            if *counter == 1 {
-                base
-            } else {
-                format!("{}_{}", base, counter)
-            }
-        })
-        .collect()
-}
+// Re-export from shared mermaid_util so c4_mermaid remains a drop-in replacement
+pub use super::mermaid_util::{deduplicate_ids, sanitize_id};
 
 /// Render a C4 diagram as a Mermaid string.
 ///

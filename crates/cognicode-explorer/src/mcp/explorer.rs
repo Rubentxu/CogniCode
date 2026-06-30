@@ -140,6 +140,10 @@ pub const TOOL_DETECT_ARCHITECTURE_DRIFT: &str = "detect_architecture_drift";
 /// `export_c4_mermaid` — render C4-level architecture as a Mermaid C4 diagram.
 pub const TOOL_EXPORT_C4_MERMAID: &str = "export_c4_mermaid";
 
+/// `export_trace_mermaid` — render a trace (call-graph, impact-radius,
+/// decision-trace, or vertical-slice) as a Mermaid `flowchart` diagram.
+pub const TOOL_EXPORT_TRACE_MERMAID: &str = "export_trace_mermaid";
+
 /// `cognicode_ask` — natural-language front-end that classifies a question.
 pub const TOOL_ASK: &str = "cognicode_ask";
 
@@ -608,6 +612,7 @@ pub const TOOL_NAMES: &[&str] = &[
     TOOL_HEALTH_DASHBOARD,
     TOOL_DETECT_ARCHITECTURE_DRIFT,
     TOOL_EXPORT_C4_MERMAID,
+    TOOL_EXPORT_TRACE_MERMAID,
     TOOL_ASK,
     TOOL_BRAIN_OPEN,
     TOOL_BRAIN_ATTACH,
