@@ -11,6 +11,7 @@ pub mod lens;
 pub mod lenses;
 pub mod mermaid_util;
 pub mod object_identity;
+pub mod trace_mermaid;
 pub mod views;
 
 pub use entry_point::{EntryPoint, EntryPointParseError, ResolvedEntryPoint};
