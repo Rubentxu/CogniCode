@@ -32,7 +32,9 @@ use crate::domain::trace_mermaid::decision_trace_to_mermaid;
 #[cfg(feature = "multimodal")]
 use crate::ports::graph_repository::GraphRepository;
 use crate::domain::snapshot::{SnapshotError as SnapshotRenderError, SnapshotFormat, SnapshotService};
-use crate::domain::snapshot_dispatch::{emit_c4_mermaid, emit_trace_mermaid, SnapshotViewKind};
+use crate::domain::snapshot_dispatch::{
+    emit_c4_mermaid, emit_trace_mermaid, SnapshotViewKind, SNAPSHOT_VIEW_KINDS,
+};
 
 // ============================================================================
 // Style-class taxonomy
@@ -1022,16 +1024,6 @@ async fn trace_mermaid_handler(
 // ============================================================================
 // Snapshot — `GET /api/workspaces/:workspace_id/snapshot`
 // ============================================================================
-
-/// Whitelist of view kinds that support snapshot rendering.
-const SNAPSHOT_VIEW_KINDS: &[&str] = &[
-    "c4_context",
-    "c4_container",
-    "c4_component",
-    "call_graph",
-    "impact_radius",
-    "vertical_slice",
-];
 
 /// Query params for `GET /api/workspaces/:workspace_id/snapshot`.
 #[derive(Debug, Clone, Deserialize)]

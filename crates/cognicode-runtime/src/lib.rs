@@ -195,6 +195,13 @@ impl Runtime {
             state = state.with_ingest(ingest_controller);
         }
 
+        #[cfg(feature = "multimodal")]
+        {
+            let snapshot_service =
+                Arc::new(cognicode_explorer::domain::snapshot::SnapshotService::new());
+            state = state.with_snapshot(snapshot_service);
+        }
+
         state
     }
 

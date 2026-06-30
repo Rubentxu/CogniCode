@@ -6,21 +6,14 @@
 //! This tool is gated by the `multimodal` feature because it depends on
 //! `SnapshotService` which requires `mmdc` (Mermaid CLI) to be installed.
 
-#[cfg(feature = "multimodal")]
-
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rmcp::model::CallToolResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::domain::c4_mermaid::{c4_to_mermaid, C4Level};
 use crate::domain::snapshot::{SnapshotError, SnapshotFormat, SnapshotService};
 use crate::domain::snapshot_dispatch::{emit_c4_mermaid, emit_trace_mermaid, SnapshotViewKind};
-use crate::domain::trace_mermaid::{
-    call_graph_to_mermaid, impact_radius_to_mermaid, vertical_slice_to_mermaid, TraceEmitContext,
-};
-use crate::dto::InspectionTarget;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::McpContext;
