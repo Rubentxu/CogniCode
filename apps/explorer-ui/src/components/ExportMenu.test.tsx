@@ -2,7 +2,7 @@
  * Unit tests for ExportMenu component.
  *
  * Verifies: render, dropdown toggle, "Open in draw.io" action,
- * Mermaid extraction from view blocks.
+ * Mermaid extraction from view blocks, and download PNG/SVG options.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 
 import { ExportMenu } from "./ExportMenu";
 import { handleOpenInDrawIo } from "../utils/drawio";
+import { fetchSnapshot } from "../api/client";
 import type { ContextualView } from "../api/types";
 
 vi.mock("../utils/drawio", () => ({
@@ -18,6 +19,10 @@ vi.mock("../utils/drawio", () => ({
     options?.notify?.("Mermaid copied! In draw.io: Arrange > Insert > Mermaid");
     return Promise.resolve();
   }),
+}));
+
+vi.mock("../api/client", () => ({
+  fetchSnapshot: vi.fn().mockResolvedValue(new Blob(["fake-image-data"], { type: "image/png" })),
 }));
 
 const mockViewWithMermaid: ContextualView = {
@@ -57,13 +62,15 @@ const mockViewWithoutMermaid: ContextualView = {
 
 function ExportMenuWithContext({
   view = null,
+  workspaceId = "test-workspace-id",
   onShowNotification = vi.fn(),
 }: {
   view?: ContextualView | null;
+  workspaceId?: string;
   onShowNotification?: typeof vi.fn;
 }) {
   return (
-    <ExportMenu view={view} onShowNotification={onShowNotification} />
+    <ExportMenu view={view} workspaceId={workspaceId} onShowNotification={onShowNotification} />
   );
 }
 
@@ -176,6 +183,110 @@ describe("ExportMenu component", () => {
     expect(screen.getByTestId("export-menu-dropdown")).toBeVisible();
 
     await user.click(screen.getByTestId("export-menu-open-drawio"));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("export-menu-dropdown")).toBeNull();
+    });
+  });
+
+  it('shows "Download as PNG" option in dropdown', async () => {
+    const user = userEvent.setup();
+    render(<ExportMenuWithContext view={mockViewWithMermaid} />);
+
+    await user.click(screen.getByTestId("export-menu-trigger"));
+
+    expect(screen.getByTestId("export-menu-download-png")).toHaveTextContent("Download as PNG");
+  });
+
+  it('shows "Download as SVG" option in dropdown', async () => {
+    const user = userEvent.setup();
+    render(<ExportMenuWithContext view={mockViewWithMermaid} />);
+
+    await user.click(screen.getByTestId("export-menu-trigger"));
+
+    expect(screen.getByTestId("export-menu-download-svg")).toHaveTextContent("Download as SVG");
+  });
+
+  it("calls fetchSnapshot with correct params when Download PNG is clicked", async () => {
+    const user = userEvent.setup();
+    render(<ExportMenuWithContext view={mockViewWithMermaid} workspaceId="ws-123" />);
+
+    await user.click(screen.getByTestId("export-menu-trigger"));
+    await user.click(screen.getByTestId("export-menu-download-png"));
+
+    await waitFor(() => {
+      expect(fetchSnapshot).toHaveBeenCalledWith(
+        "ws-123",
+        "call_graph",
+        "png",
+        "obj-1",
+      );
+    });
+  });
+
+  it("calls fetchSnapshot with correct params when Download SVG is clicked", async () => {
+    const user = userEvent.setup();
+    render(<ExportMenuWithContext view={mockViewWithMermaid} workspaceId="ws-456" />);
+
+    await user.click(screen.getByTestId("export-menu-trigger"));
+    await user.click(screen.getByTestId("export-menu-download-svg"));
+
+    await waitFor(() => {
+      expect(fetchSnapshot).toHaveBeenCalledWith(
+        "ws-456",
+        "call_graph",
+        "svg",
+        "obj-1",
+      );
+    });
+  });
+
+  it("shows notification when view_kind is missing on download", async () => {
+    const user = userEvent.setup();
+    const onShowNotification = vi.fn();
+    const viewWithoutKind: ContextualView = {
+      ...mockViewWithMermaid,
+      view_kind: undefined,
+    };
+
+    render(
+      <ExportMenuWithContext
+        view={viewWithoutKind}
+        workspaceId="ws-123"
+        onShowNotification={onShowNotification}
+      />,
+    );
+
+    await user.click(screen.getByTestId("export-menu-trigger"));
+    await user.click(screen.getByTestId("export-menu-download-png"));
+
+    await waitFor(() => {
+      expect(onShowNotification).toHaveBeenCalledWith("Cannot download: view kind not available");
+    });
+  });
+
+  it("closes dropdown after selecting Download PNG", async () => {
+    const user = userEvent.setup();
+    render(<ExportMenuWithContext view={mockViewWithMermaid} />);
+
+    await user.click(screen.getByTestId("export-menu-trigger"));
+    expect(screen.getByTestId("export-menu-dropdown")).toBeVisible();
+
+    await user.click(screen.getByTestId("export-menu-download-png"));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("export-menu-dropdown")).toBeNull();
+    });
+  });
+
+  it("closes dropdown after selecting Download SVG", async () => {
+    const user = userEvent.setup();
+    render(<ExportMenuWithContext view={mockViewWithMermaid} />);
+
+    await user.click(screen.getByTestId("export-menu-trigger"));
+    expect(screen.getByTestId("export-menu-dropdown")).toBeVisible();
+
+    await user.click(screen.getByTestId("export-menu-download-svg"));
 
     await waitFor(() => {
       expect(screen.queryByTestId("export-menu-dropdown")).toBeNull();

@@ -204,7 +204,7 @@ export function PaneInspector({
               )}
             </div>
             <div className="flex items-center gap-2">
-              <ExportMenu view={display} onShowNotification={showNotification} />
+              <ExportMenu view={display} workspaceId={workspaceId ?? ""} onShowNotification={showNotification} />
               <span
                 className="rounded-full px-2 py-0.5 text-xs"
                 style={{
