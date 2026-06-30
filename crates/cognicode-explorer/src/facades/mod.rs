@@ -16,11 +16,15 @@
 //! PR 1 wires [`WorkspaceService`] and [`SearchService`].
 
 pub mod graph;
+pub mod investigation;
 pub mod moldql;
 pub mod persistence;
 pub mod search;
 pub mod view;
 pub mod workspace;
+
+// Re-export investigation types used by api.rs
+pub use investigation::{InvestigationFacade, InvestigationServiceImpl};
 
 use std::sync::Arc;
 

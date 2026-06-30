@@ -18,6 +18,8 @@ pub mod federation;
 #[cfg(feature = "multimodal")]
 pub mod ports;
 pub mod services;
+pub mod investigation;
+pub mod investigation_store;
 pub mod traits;
 pub mod value_objects;
 

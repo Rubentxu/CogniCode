@@ -6,7 +6,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::header;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use serde::Deserialize;
 use tower_http::cors::CorsLayer;
@@ -16,9 +16,12 @@ use crate::dto::{
     GenerateArtifactRequest, GodNodeEntry, InspectionTarget, LANDING_NODE_CAP, LandingPayload,
     OpenWorkspaceRequest, SaveExplorationSessionRequest, SubgraphResponse,
 };
+use crate::facades::investigation::{
+    CreateInvestigationRequest, Investigation, UpdateInvestigationRequest,
+};
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::{
-    GraphService, MoldQLService, PersistenceService, SearchService,
+    GraphService, InvestigationFacade, MoldQLService, PersistenceService, SearchService,
     SubgraphDirection as FacadeSubgraphDirection, ViewService, WorkspaceService,
 };
 use crate::ports::symbol_repository::ResolvedSymbol;
@@ -432,6 +435,7 @@ pub struct ApiState {
     pub persistence: Arc<dyn PersistenceService>,
     pub moldql: Arc<dyn MoldQLService>,
     pub graph: Arc<dyn GraphService>,
+    pub investigation: Option<Arc<dyn InvestigationFacade>>,
     #[cfg(feature = "multimodal")]
     pub graph_repo: Option<Arc<dyn GraphRepository>>,
     /// Optional ingest controller for pipeline scan operations.
@@ -456,6 +460,7 @@ impl ApiState {
             persistence,
             moldql,
             graph,
+            investigation: None,
             #[cfg(feature = "multimodal")]
             graph_repo: None,
             ingest: None,
@@ -482,6 +487,11 @@ impl ApiState {
     /// Wire a snapshot rendering service for diagram export.
     pub fn with_snapshot(self, snapshot: Arc<SnapshotService>) -> Self {
         Self { snapshot: Some(snapshot), ..self }
+    }
+
+    /// Wire an investigation service (ADR-005 INV-1).
+    pub fn with_investigation(self, investigation: Arc<dyn InvestigationFacade>) -> Self {
+        Self { investigation: Some(investigation), ..self }
     }
 }
 
@@ -546,6 +556,12 @@ pub fn router_with_state(state: ApiState) -> Router {
             "/api/workspaces/:workspace_id/snapshot",
             get(snapshot_handler),
         )
+        // Investigation CRUD — ADR-005 INV-1
+        .route("/api/investigations", post(create_investigation))
+        .route("/api/investigations", get(list_investigations))
+        .route("/api/investigations/:id", get(get_investigation))
+        .route("/api/investigations/:id", put(update_investigation))
+        .route("/api/investigations/:id", delete(delete_investigation))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -617,6 +633,12 @@ pub fn router(state: ApiState) -> Router {
             "/api/workspaces/:workspace_id/snapshot",
             get(snapshot_handler),
         )
+        // Investigation CRUD — ADR-005 INV-1
+        .route("/api/investigations", post(create_investigation))
+        .route("/api/investigations", get(list_investigations))
+        .route("/api/investigations/:id", get(get_investigation))
+        .route("/api/investigations/:id", put(update_investigation))
+        .route("/api/investigations/:id", delete(delete_investigation))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -1294,6 +1316,119 @@ async fn generate_artifact(
         .generate_artifact(&session_id, request)
         .await?;
     Ok(Json(artifact).into_response())
+}
+
+// ============================================================================
+// Investigation handlers — ADR-005 INV-1
+// ============================================================================
+
+/// POST /api/investigations — create a new investigation.
+async fn create_investigation(
+    State(state): State<ApiState>,
+    Json(request): Json<CreateInvestigationRequest>,
+) -> Result<Response, ApiError> {
+    let investigation = state
+        .investigation
+        .as_ref()
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
+        .create_investigation(&request.workspace_id, &request.title, &request.goal)
+        .await?;
+    Ok(Json(investigation).into_response())
+}
+
+/// GET /api/investigations — list investigations for a workspace.
+async fn list_investigations(
+    State(state): State<ApiState>,
+    Query(params): Query<ListInvestigationsQuery>,
+) -> Result<Response, ApiError> {
+    let investigations = state
+        .investigation
+        .as_ref()
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
+        .list_investigations(&params.workspace_id)
+        .await?;
+    Ok(Json(investigations).into_response())
+}
+
+#[derive(serde::Deserialize)]
+struct ListInvestigationsQuery {
+    workspace_id: String,
+}
+
+/// GET /api/investigations/:id — get an investigation by id.
+async fn get_investigation(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    let investigation = state
+        .investigation
+        .as_ref()
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
+        .get_investigation(&id)
+        .await?;
+    match investigation {
+        Some(inv) => Ok(Json(inv).into_response()),
+        None => Err(ApiError(ExplorerError::NotFound(format!(
+            "investigation {id} not found"
+        )))),
+    }
+}
+
+/// PUT /api/investigations/:id — update an existing investigation.
+async fn update_investigation(
+    State(state): State<ApiState>,
+    Json(request): Json<UpdateInvestigationRequest>,
+) -> Result<Response, ApiError> {
+    // Fetch existing to preserve created_at and workspace_id.
+    let existing = state
+        .investigation
+        .as_ref()
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
+        .get_investigation(&request.id)
+        .await?
+        .ok_or_else(|| {
+            ApiError(ExplorerError::NotFound(format!(
+                "investigation {} not found",
+                request.id
+            )))
+        })?;
+
+    let investigation = Investigation {
+        id: request.id,
+        workspace_id: request.workspace_id,
+        title: request.title,
+        goal: request.goal,
+        status: request.status.into(),
+        entry_point: request.entry_point,
+        panes: request.panes,
+        evidence: request.evidence,
+        artifacts: request.artifacts,
+        narrative: request.narrative,
+        related_adrs: request.related_adrs,
+        created_at: existing.created_at,
+        updated_at: time::OffsetDateTime::now_utc(),
+    };
+    state
+        .investigation
+        .as_ref()
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
+        .update_investigation(investigation)
+        .await?;
+    Ok(Json(serde_json::json!({ "ok": true })).into_response())
+}
+
+/// DELETE /api/investigations/:id — delete an investigation.
+async fn delete_investigation(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    state
+        .investigation
+        .as_ref()
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
+        .delete_investigation(&id)
+        .await?;
+    Ok(Json(serde_json::json!({ "ok": true })).into_response())
 }
 
 struct ApiError(ExplorerError);

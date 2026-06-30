@@ -22,12 +22,18 @@ pub use cached_graph_store::CachedGraphStore;
 #[cfg(feature = "postgres")]
 pub mod postgres_iac_repository;
 #[cfg(feature = "postgres")]
+pub mod postgres_investigation_store;
+#[cfg(feature = "postgres")]
 pub mod postgres_repository;
 
 #[cfg(feature = "postgres")]
 pub use postgres_repository::{
-    ExplorationSessionRow, NamedViewRow, PostgresRepository, ScanManifestRow, ViewSpecRow,
+    ExplorationSessionRow, InvestigationArtifactRow, InvestigationEvidenceRow,
+    InvestigationRow, NamedViewRow, PostgresRepository, ScanManifestRow, ViewSpecRow,
 };
+
+#[cfg(feature = "postgres")]
+pub use postgres_investigation_store::PostgresInvestigationStore;
 
 // IaC repository stub — re-export the concrete PG-backed implementation
 // alongside the trait so callers can `use ...::persistence::PostgresIacRepository`
