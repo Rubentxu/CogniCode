@@ -1,7 +1,7 @@
 /**
  * Toast — a simple toast notification component.
  *
- * Auto-dismisses after 3 seconds. Uses raw CSS variables for v1
+ * Auto-dismisses after 6 seconds. Uses raw CSS variables for v1
  * compatibility (no design tokens dependency).
  */
 export interface ToastProps {

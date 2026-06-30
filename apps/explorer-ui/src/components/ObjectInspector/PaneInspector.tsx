@@ -5,7 +5,7 @@
  *
  * When `onClose` is provided, a close button appears (pane-stack only).
  */
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useContext } from "react";
 import { useAppDispatch, useAppState } from "../../state/context";
 import { useObject } from "../../hooks/useObject";
 import { useAvailableViews, useViews } from "../../hooks/useViews";
@@ -21,6 +21,8 @@ import { multimodalLabelForObjectType } from "./multimodal";
 import { GraphView } from "../GraphView/GraphView";
 import { PaneBreadcrumb } from "./PaneBreadcrumb";
 import { NoteEditor } from "./NoteEditor";
+import { ExportMenu } from "../ExportMenu";
+import { NotificationContext } from "../Notifications/NotificationProvider";
 
 // Graph-shaped ViewKinds that route to GraphViewRenderer
 function isGraphViewKind(kind: string | undefined): boolean {
@@ -56,6 +58,7 @@ export function PaneInspector({
 }: PaneInspectorProps) {
   const dispatch = useAppDispatch();
   const { navigation, viewSpecWizard } = useAppState();
+  const { showNotification } = useContext(NotificationContext);
 
   // Active pane from the navigation state (for breadcrumb + note editor).
   const activePane = navigation.panes.find((p) => p.id === navigation.activePaneId);
@@ -201,6 +204,7 @@ export function PaneInspector({
               )}
             </div>
             <div className="flex items-center gap-2">
+              <ExportMenu view={display} onShowNotification={showNotification} />
               <span
                 className="rounded-full px-2 py-0.5 text-xs"
                 style={{

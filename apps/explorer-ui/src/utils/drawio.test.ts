@@ -39,15 +39,49 @@ describe("handleOpenInDrawIo", () => {
     expect(mockOpen).toHaveBeenCalledWith("https://app.diagrams.net/");
   });
 
-  it("returns a toast message ID for confirmation", async () => {
+  it("calls notify callback when provided", async () => {
     vi.stubGlobal("navigator", {
       clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
     });
     vi.stubGlobal("window", { open: vi.fn() });
 
-    const result = await handleOpenInDrawIo("graph TD\n  A --> B");
+    const notifyMock = vi.fn();
+    await handleOpenInDrawIo("graph TD\n  A --> B", { notify: notifyMock });
 
-    expect(result).toBe("drawio-opened");
+    expect(notifyMock).toHaveBeenCalledOnce();
+    expect(notifyMock).toHaveBeenCalledWith("Mermaid copied! In draw.io: Arrange > Insert > Mermaid");
+  });
+
+  it("does not call notify when not provided", async () => {
+    vi.stubGlobal("navigator", {
+      clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    vi.stubGlobal("window", { open: vi.fn() });
+
+    // Should not throw even without notify callback
+    await expect(handleOpenInDrawIo("graph TD\n  A --> B")).resolves.toBeUndefined();
+  });
+
+  it("throws error for empty mermaid text", async () => {
+    vi.stubGlobal("navigator", {
+      clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    vi.stubGlobal("window", { open: vi.fn() });
+
+    await expect(handleOpenInDrawIo("")).rejects.toThrow(
+      "Cannot open empty Mermaid diagram in draw.io",
+    );
+  });
+
+  it("throws error for whitespace-only mermaid text", async () => {
+    vi.stubGlobal("navigator", {
+      clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    vi.stubGlobal("window", { open: vi.fn() });
+
+    await expect(handleOpenInDrawIo("   ")).rejects.toThrow(
+      "Cannot open empty Mermaid diagram in draw.io",
+    );
   });
 
   it("propagates clipboard API errors", async () => {

@@ -23,17 +23,16 @@ export function C4Toolbar({ workspaceId }: { workspaceId: string }) {
 
   const handleOpenDrawIo = useCallback(async () => {
     try {
-      // Fetch C4 Mermaid diagram
-      const mermaidText = await fetchC4Mermaid(workspaceId, ".");
+      // Fetch C4 Mermaid diagram at the current C4 level
+      const mermaidText = await fetchC4Mermaid(workspaceId, ".", perspective as C4Level);
       // Open in draw.io
-      await handleOpenInDrawIo(mermaidText);
-      // Show confirmation
-      showNotification("Mermaid diagram copied to clipboard and opened in draw.io");
+      await handleOpenInDrawIo(mermaidText, { notify: showNotification });
+      // Show confirmation (handleOpenInDrawIo handles this via notify callback)
     } catch (err) {
       console.error("[C4Toolbar] Failed to open in draw.io:", err);
       showNotification("Failed to open diagram in draw.io");
     }
-  }, [workspaceId, showNotification]);
+  }, [workspaceId, perspective, showNotification]);
 
   if (!isC4ToolbarPerspective) {
     return null;

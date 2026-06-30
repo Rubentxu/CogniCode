@@ -20,6 +20,7 @@ import { Spotter } from "./Spotter";
 import { PaneStackView } from "./PaneStackView";
 import { ShellBootstrap } from "./ShellBootstrap";
 import { ShellLayout } from "./ShellLayout";
+import { NotificationProvider } from "./Notifications/NotificationProvider";
 import { useSubgraph } from "../hooks/useSubgraph";
 import { useArchitecture } from "../hooks/useArchitecture";
 import { useStaleDataHold } from "../hooks/useStaleDataHold";
@@ -133,38 +134,40 @@ export function Shell({ viewport: viewportOverride }: ShellProps = {}) {
   const [mcpToolsOpen, setMcpToolsOpen] = useState(false);
 
   return (
-    <ShellBootstrap>
-      {({ workspace }) => (
-        <>
-          <ShellLayout
-            viewport={viewportOverride}
-            workspace={workspace}
-            onSpotterOpen={() =>
-              dispatch({ type: "SET_SPOTTER", payload: { open: true } })
-            }
-            onMcpToolsOpen={() => setMcpToolsOpen(true)}
-            secondaryContent={
-              <ErrorBoundary label="PaneStackView">
-                <PaneStackView />
+    <NotificationProvider>
+      <ShellBootstrap>
+        {({ workspace }) => (
+          <>
+            <ShellLayout
+              viewport={viewportOverride}
+              workspace={workspace}
+              onSpotterOpen={() =>
+                dispatch({ type: "SET_SPOTTER", payload: { open: true } })
+              }
+              onMcpToolsOpen={() => setMcpToolsOpen(true)}
+              secondaryContent={
+                <ErrorBoundary label="PaneStackView">
+                  <PaneStackView />
+                </ErrorBoundary>
+              }
+            >
+              <ErrorBoundary label="InteractiveGraph">
+                <Suspense fallback={GRAPH_LOADING}>
+                  {rootId === null && workspace ? (
+                    <LandingWorkbench workspaceId={workspace.id} />
+                  ) : (
+                    <InteractiveGraphPanel rootId={rootId} workspaceId={workspace?.id} />
+                  )}
+                </Suspense>
               </ErrorBoundary>
-            }
-          >
-            <ErrorBoundary label="InteractiveGraph">
-              <Suspense fallback={GRAPH_LOADING}>
-                {rootId === null && workspace ? (
-                  <LandingWorkbench workspaceId={workspace.id} />
-                ) : (
-                  <InteractiveGraphPanel rootId={rootId} workspaceId={workspace?.id} />
-                )}
-              </Suspense>
-            </ErrorBoundary>
-          </ShellLayout>
-          <Spotter />
-          {mcpToolsOpen && (
-            <McpToolsModal onClose={() => setMcpToolsOpen(false)} />
-          )}
-        </>
-      )}
-    </ShellBootstrap>
+            </ShellLayout>
+            <Spotter />
+            {mcpToolsOpen && (
+              <McpToolsModal onClose={() => setMcpToolsOpen(false)} />
+            )}
+          </>
+        )}
+      </ShellBootstrap>
+    </NotificationProvider>
   );
 }

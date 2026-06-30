@@ -34,10 +34,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     setToasts((prev) => [...prev, { id, message }]);
 
-    // Auto-dismiss after 3 seconds
+    // Auto-dismiss after 6 seconds
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3000);
+    }, 6000);
   }, []);
 
   return (
