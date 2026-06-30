@@ -41,6 +41,7 @@ use crate::facades::{
 };
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::SymbolRepository;
+use crate::domain::snapshot::SnapshotService;
 use crate::session::SessionRegistry;
 
 /// Sentinel value for `max_depth` when none is supplied.
@@ -456,6 +457,11 @@ impl ExplorerMcpHandler {
         #[cfg(feature = "multimodal")]
         if let Some(ee) = edge_emitter {
             ctx_builder = ctx_builder.with_edge_emitter(ee);
+        }
+        #[cfg(feature = "multimodal")]
+        {
+            let snapshot = Arc::new(SnapshotService::new());
+            ctx_builder = ctx_builder.with_snapshot(snapshot);
         }
         let ctx = ctx_builder.build();
 

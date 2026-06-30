@@ -16,6 +16,7 @@ use serde_json::Value;
 
 use crate::domain::c4_mermaid::{c4_to_mermaid, C4Level};
 use crate::domain::snapshot::{SnapshotError, SnapshotFormat, SnapshotService};
+use crate::domain::snapshot_dispatch::{emit_c4_mermaid, emit_trace_mermaid, SnapshotViewKind};
 use crate::domain::trace_mermaid::{
     call_graph_to_mermaid, impact_radius_to_mermaid, vertical_slice_to_mermaid, TraceEmitContext,
 };
@@ -28,46 +29,7 @@ use crate::mcp::McpContext;
 use crate::mcp::TOOL_EXPORT_SNAPSHOT;
 
 /// Whitelist of view kinds that support snapshot rendering.
-const SNAPSHOT_VIEW_KINDS: &[&str] = &[
-    "c4_context",
-    "c4_container",
-    "c4_component",
-    "call_graph",
-    "impact_radius",
-    "vertical_slice",
-];
-
-/// Snapshot-specific view kinds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SnapshotViewKind {
-    C4Context,
-    C4Container,
-    C4Component,
-    CallGraph,
-    ImpactRadius,
-    VerticalSlice,
-}
-
-impl SnapshotViewKind {
-    fn from_str(s: &str) -> Result<Self, String> {
-        match s {
-            "c4_context" => Ok(Self::C4Context),
-            "c4_container" => Ok(Self::C4Container),
-            "c4_component" => Ok(Self::C4Component),
-            "call_graph" => Ok(Self::CallGraph),
-            "impact_radius" => Ok(Self::ImpactRadius),
-            "vertical_slice" => Ok(Self::VerticalSlice),
-            other => Err(other.to_string()),
-        }
-    }
-
-    fn is_trace_kind(&self) -> bool {
-        matches!(
-            self,
-            Self::CallGraph | Self::ImpactRadius | Self::VerticalSlice
-        )
-    }
-}
+const SNAPSHOT_VIEW_KINDS: &[&str] = crate::domain::snapshot_dispatch::SNAPSHOT_VIEW_KINDS;
 
 /// Payload returned on success — base64-encoded image bytes + format field.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -180,7 +142,13 @@ impl ToolHandler for ExportSnapshotHandler {
         };
 
         // Render to PNG/SVG via SnapshotService
-        let snapshot_svc = SnapshotService::new();
+        let snapshot_svc = ctx.snapshot.as_ref().ok_or_else(|| {
+            err_envelope(
+                TOOL_EXPORT_SNAPSHOT,
+                "snapshot_not_configured",
+                "snapshot service not configured (mmdc may not be installed)",
+            )
+        })?;
         let bytes = match snapshot_svc.render(&mermaid_text, format).await {
             Ok(data) => data,
             Err(e) => {
@@ -207,72 +175,20 @@ async fn emit_mermaid_for_snapshot(
     view_kind: SnapshotViewKind,
     target: Option<&str>,
 ) -> Result<String, String> {
+    let graph_svc = ctx
+        .graph_service
+        .as_ref()
+        .ok_or_else(|| "graph service not wired")?;
+    let workspace_svc = ctx
+        .workspace
+        .as_ref()
+        .ok_or_else(|| "workspace service not wired")?;
+
     if view_kind.is_trace_kind() {
-        // Trace diagram — use trace emitters
         let target = target.ok_or_else(|| "target is required for trace view kinds")?;
-
-        let graph_svc = ctx
-            .graph_service
-            .as_ref()
-            .ok_or_else(|| "graph service not wired")?;
-
-        let graph_query = graph_svc
-            .graph_query()
-            .ok_or_else(|| "call graph not loaded")?;
-
-        let resolved = graph_svc
-            .resolve_symbol(target)
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("target not found: {target}"))?;
-
-        let inspection_target = InspectionTarget::Symbol(resolved);
-        let trace_ctx = TraceEmitContext {
-            graph_query: graph_query.as_ref(),
-            target: &inspection_target,
-        };
-
-        let mermaid = match view_kind {
-            SnapshotViewKind::CallGraph => call_graph_to_mermaid(&trace_ctx, target),
-            SnapshotViewKind::ImpactRadius => impact_radius_to_mermaid(&trace_ctx, target),
-            SnapshotViewKind::VerticalSlice => vertical_slice_to_mermaid(&trace_ctx, target),
-            _ => unreachable!(),
-        };
-
-        Ok(mermaid)
+        emit_trace_mermaid(graph_svc, workspace_svc, view_kind, target).await
     } else {
-        // C4 diagram — use c4_to_mermaid
-        let level = match view_kind {
-            SnapshotViewKind::C4Context => C4Level::Context,
-            SnapshotViewKind::C4Container => C4Level::Container,
-            SnapshotViewKind::C4Component => C4Level::Component,
-            _ => unreachable!(),
-        };
-
-        let workspace_svc = ctx
-            .workspace
-            .as_ref()
-            .ok_or_else(|| "workspace service not wired")?;
-
-        let workspace = workspace_svc
-            .current_workspace()
-            .map_err(|e| e.to_string())?;
-
-        let graph_svc = ctx
-            .graph_service
-            .as_ref()
-            .ok_or_else(|| "graph service not wired")?;
-
-        let architecture = graph_svc
-            .build_architecture(&workspace.root_path)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        Ok(c4_to_mermaid(
-            &architecture.nodes,
-            &architecture.edges,
-            level,
-        ))
+        emit_c4_mermaid(graph_svc, workspace_svc, view_kind).await
     }
 }
 

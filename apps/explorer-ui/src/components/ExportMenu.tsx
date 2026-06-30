@@ -10,25 +10,12 @@ import { useState, useRef, useEffect } from "react";
 import type { ContextualView } from "../api/types";
 import { fetchSnapshot } from "../api/client";
 import { handleOpenInDrawIo } from "../utils/drawio";
+import { downloadSnapshot } from "../utils/download";
 
 export interface ExportMenuProps {
   view: ContextualView | null;
   workspaceId: string;
   onShowNotification?: (message: string) => void;
-}
-
-/**
- * Trigger a browser download from a blob.
- */
-function triggerDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = window.document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  window.document.body.appendChild(a);
-  a.click();
-  window.document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 /**
@@ -89,7 +76,7 @@ export function ExportMenu({ view, workspaceId, onShowNotification }: ExportMenu
       const blob = await fetchSnapshot(workspaceId, view.view_kind, format, target);
       const extension = format === "png" ? ".png" : ".svg";
       const filename = `diagram${extension}`;
-      triggerDownload(blob, filename);
+      await downloadSnapshot(blob, filename);
       onShowNotification?.(`Downloaded ${format.toUpperCase()}`);
     } catch {
       onShowNotification?.(`Failed to download ${format.toUpperCase()}`);
