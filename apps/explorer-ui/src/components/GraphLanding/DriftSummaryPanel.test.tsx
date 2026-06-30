@@ -12,6 +12,7 @@ const mockDriftReport = (findings: DriftReport["findings"]): DriftReport => ({
   missing_containers: findings.filter((f) => f.kind === "missing").length,
   extra_containers: findings.filter((f) => f.kind === "extra").length,
   wrong_sub_kinds: findings.filter((f) => f.kind === "wrong_sub_kind").length,
+  boundary_violations: 0,
 });
 
 describe("DriftSummaryPanel", () => {

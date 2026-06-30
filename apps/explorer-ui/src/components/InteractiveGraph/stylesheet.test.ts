@@ -203,8 +203,9 @@ describe("KNOWN_NODE_CLASSES — Phase 1 adds the 3 C4 node classes", () => {
   });
 
   // 4 C4 = component + container + system + code (code is ADR-039 C4 leaf)
-  it("total node class count is 19 (14 prior + 5 E19 overlays)", () => {
-    expect(KNOWN_NODE_CLASSES.size).toBe(19);
+  // Total: 14 prior + 5 E19 overlays + 3 boundary violations + 4 C4 = 22
+  it("total node class count is 22 (14 prior + 5 E19 overlays + 3 boundary violations + 4 C4)", () => {
+    expect(KNOWN_NODE_CLASSES.size).toBe(22);
   });
 });
 
@@ -219,8 +220,9 @@ describe("KNOWN_EDGE_CLASSES — Phase 1 adds the 3 C4 edge classes", () => {
     }
   });
 
-  it("total edge class count is 10 (3 legacy + 4 multimodal + 3 C4)", () => {
-    expect(KNOWN_EDGE_CLASSES.size).toBe(10);
+  // 3 legacy + 4 multimodal + 3 C4 + 1 E19 depends-on = 11
+  it("total edge class count is 11 (3 legacy + 4 multimodal + 3 C4 + 1 E19 depends-on)", () => {
+    expect(KNOWN_EDGE_CLASSES.size).toBe(11);
   });
 });
 
@@ -411,8 +413,8 @@ describe("KNOWN_NODE_CLASSES — E19 adds 5 overlay classes", () => {
     }
   });
 
-  it("total node class count is 19 (14 prior + 5 overlays)", () => {
-    expect(KNOWN_NODE_CLASSES.size).toBe(19);
+  it("total node class count is 22 (14 prior + 5 overlays + 3 boundary violations + 4 C4)", () => {
+    expect(KNOWN_NODE_CLASSES.size).toBe(22);
   });
 });
 

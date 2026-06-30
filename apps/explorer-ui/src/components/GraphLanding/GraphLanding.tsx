@@ -53,6 +53,10 @@ const DriftSummaryPanel = lazy(() =>
   import("./DriftSummaryPanel").then((m) => ({ default: m.DriftSummaryPanel })),
 );
 
+const C4Toolbar = lazy(() =>
+  import("./C4Toolbar").then((m) => ({ default: m.C4Toolbar })),
+);
+
 // ============================================================================
 // C4 Overlay utilities (exported for testing)
 // ============================================================================
@@ -387,6 +391,13 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
             : ""}
           . Refine the focus to inspect the full graph.
         </div>
+      )}
+
+      {/* C4 Toolbar — visible for all C4 perspectives */}
+      {showC4Header && (
+        <Suspense fallback={null}>
+          <C4Toolbar workspaceId={workspaceId} />
+        </Suspense>
       )}
 
       {/* Graph canvas */}

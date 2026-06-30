@@ -1,0 +1,184 @@
+/**
+ * Unit tests for ExportMenu component.
+ *
+ * Verifies: render, dropdown toggle, "Open in draw.io" action,
+ * Mermaid extraction from view blocks.
+ */
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+import { ExportMenu } from "./ExportMenu";
+import { handleOpenInDrawIo } from "../utils/drawio";
+import type { ContextualView } from "../api/types";
+
+vi.mock("../utils/drawio", () => ({
+  handleOpenInDrawIo: vi.fn().mockImplementation((_mermaidText, options) => {
+    // Simulate the real behavior: call the notify callback if provided
+    options?.notify?.("Mermaid copied! In draw.io: Arrange > Insert > Mermaid");
+    return Promise.resolve();
+  }),
+}));
+
+const mockViewWithMermaid: ContextualView = {
+  object_id: "obj-1",
+  view_id: "call-graph",
+  title: "Call Graph",
+  view_kind: "call_graph",
+  blocks: [
+    {
+      id: "mermaid-block",
+      title: "Mermaid Diagram",
+      body: { mermaidText: "graph TD\n  A --> B" },
+    },
+  ],
+  relations: [],
+  evidence: [],
+  findings: [],
+  renderer_kind: "graph",
+};
+
+const mockViewWithoutMermaid: ContextualView = {
+  object_id: "obj-2",
+  view_id: "overview",
+  title: "Overview",
+  blocks: [
+    {
+      id: "identity-block",
+      title: "Identity",
+      body: { label: "SomeSymbol" },
+    },
+  ],
+  relations: [],
+  evidence: [],
+  findings: [],
+  renderer_kind: "json",
+};
+
+function ExportMenuWithContext({
+  view = null,
+  onShowNotification = vi.fn(),
+}: {
+  view?: ContextualView | null;
+  onShowNotification?: typeof vi.fn;
+}) {
+  return (
+    <ExportMenu view={view} onShowNotification={onShowNotification} />
+  );
+}
+
+describe("ExportMenu component", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders the export trigger button", () => {
+    render(<ExportMenuWithContext view={null} />);
+    expect(screen.getByTestId("export-menu-trigger")).toBeVisible();
+    expect(screen.getByTestId("export-menu-trigger")).toHaveTextContent("Export");
+  });
+
+  it("opens dropdown menu on click", async () => {
+    const user = userEvent.setup();
+    render(<ExportMenuWithContext view={null} />);
+
+    await user.click(screen.getByTestId("export-menu-trigger"));
+
+    expect(screen.getByTestId("export-menu-dropdown")).toBeVisible();
+    expect(screen.getByTestId("export-menu-open-drawio")).toBeVisible();
+  });
+
+  it("closes dropdown when clicking outside", async () => {
+    const user = userEvent.setup();
+    render(<ExportMenuWithContext view={null} />);
+
+    await user.click(screen.getByTestId("export-menu-trigger"));
+    expect(screen.getByTestId("export-menu-dropdown")).toBeVisible();
+
+    // Click outside the menu
+    await user.click(document.body);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("export-menu-dropdown")).toBeNull();
+    });
+  });
+
+  it('shows "Open in draw.io" option in dropdown', async () => {
+    const user = userEvent.setup();
+    render(<ExportMenuWithContext view={mockViewWithMermaid} />);
+
+    await user.click(screen.getByTestId("export-menu-trigger"));
+
+    expect(screen.getByTestId("export-menu-open-drawio")).toHaveTextContent("Open in draw.io");
+  });
+
+  it("extracts mermaidText from view blocks and calls handleOpenInDrawIo", async () => {
+    const user = userEvent.setup();
+    render(<ExportMenuWithContext view={mockViewWithMermaid} />);
+
+    await user.click(screen.getByTestId("export-menu-trigger"));
+    await user.click(screen.getByTestId("export-menu-open-drawio"));
+
+    await waitFor(() => {
+      expect(handleOpenInDrawIo).toHaveBeenCalledWith(
+        "graph TD\n  A --> B",
+        expect.objectContaining({ notify: expect.any(Function) }),
+      );
+    });
+  });
+
+  it("shows notification when no Mermaid is available", async () => {
+    const user = userEvent.setup();
+    const onShowNotification = vi.fn();
+
+    render(
+      <ExportMenuWithContext
+        view={mockViewWithoutMermaid}
+        onShowNotification={onShowNotification}
+      />,
+    );
+
+    await user.click(screen.getByTestId("export-menu-trigger"));
+    await user.click(screen.getByTestId("export-menu-open-drawio"));
+
+    await waitFor(() => {
+      expect(onShowNotification).toHaveBeenCalledWith("No Mermaid diagram available in this view");
+    });
+    expect(handleOpenInDrawIo).not.toHaveBeenCalled();
+  });
+
+  it("shows notification on successful draw.io open", async () => {
+    const user = userEvent.setup();
+    const onShowNotification = vi.fn();
+
+    render(
+      <ExportMenuWithContext
+        view={mockViewWithMermaid}
+        onShowNotification={onShowNotification}
+      />,
+    );
+
+    await user.click(screen.getByTestId("export-menu-trigger"));
+    await user.click(screen.getByTestId("export-menu-open-drawio"));
+
+    await waitFor(() => {
+      expect(onShowNotification).toHaveBeenCalledWith(
+        "Mermaid copied! In draw.io: Arrange > Insert > Mermaid",
+      );
+    });
+  });
+
+  it("closes dropdown after selecting Open in draw.io", async () => {
+    const user = userEvent.setup();
+    render(<ExportMenuWithContext view={mockViewWithMermaid} />);
+
+    await user.click(screen.getByTestId("export-menu-trigger"));
+    expect(screen.getByTestId("export-menu-dropdown")).toBeVisible();
+
+    await user.click(screen.getByTestId("export-menu-open-drawio"));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("export-menu-dropdown")).toBeNull();
+    });
+  });
+});
