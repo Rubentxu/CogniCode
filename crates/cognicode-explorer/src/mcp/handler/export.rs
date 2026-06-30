@@ -1,17 +1,28 @@
-//! C4 Mermaid export tool handler.
+//! C4 and trace Mermaid export tool handlers.
 //!
-//! Implements 1 MCP tool:
+//! Implements 2 MCP tools:
 //! - `export_c4_mermaid` — render a C4-level architecture as a Mermaid C4 diagram
+//! - `export_trace_mermaid` — render a trace (call-graph, impact-radius,
+//!   decision-trace, vertical-slice) as a Mermaid `flowchart` diagram
 
 use async_trait::async_trait;
 use rmcp::model::{CallToolResult, Content};
 use serde_json::Value;
+use std::sync::Arc;
 
-use crate::dto::SubgraphResponse;
+use crate::dto::{InspectionTarget, SubgraphResponse, ViewContext};
 use crate::domain::c4_mermaid::{c4_to_mermaid, C4Level};
+use crate::domain::trace_mermaid::{
+    call_graph_to_mermaid, decision_trace_to_mermaid, impact_radius_to_mermaid,
+    vertical_slice_to_mermaid, TraceMermaidViewKind,
+};
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
-use crate::mcp::{McpContext, TOOL_EXPORT_C4_MERMAID};
+use crate::mcp::{McpContext, TOOL_EXPORT_C4_MERMAID, TOOL_EXPORT_TRACE_MERMAID};
+use crate::ports::symbol_repository::{ResolvedSymbol, SymbolRepository};
+use crate::ports::source_reader::SourceReader;
+use cognicode_core::domain::aggregates::SymbolId;
+use cognicode_core::domain::traits::GraphQueryPort;
 
 // ============================================================================
 // ToolHandler implementation
@@ -122,10 +133,644 @@ impl ToolHandler for ExportC4MermaidHandler {
 }
 
 // ============================================================================
+// ExportTraceMermaidHandler
+// ============================================================================
+
+struct ExportTraceMermaidHandler;
+
+/// Noop source reader — trace emitters don't actually read source.
+struct NoopSourceReader;
+
+impl SourceReader for NoopSourceReader {
+    fn read_source(&self, _file: &str) -> crate::error::ExplorerResult<String> {
+        Ok(String::new())
+    }
+    fn read_lines(
+        &self,
+        _file: &str,
+        _start: u32,
+        _end: u32,
+    ) -> crate::error::ExplorerResult<Vec<(u32, String)>> {
+        Ok(vec![])
+    }
+}
+
+/// Noop symbol repository — trace emitters don't use it; they use graph_query directly.
+struct NoopSymbolRepository;
+
+impl SymbolRepository for NoopSymbolRepository {
+    fn resolve(&self, _id: &SymbolId) -> crate::error::ExplorerResult<Option<ResolvedSymbol>> {
+        Ok(None)
+    }
+    fn find_symbols_by_name(&self, _name: &str) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> {
+        Ok(vec![])
+    }
+    fn find_symbols_by_file(&self, _file: &str) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> {
+        Ok(vec![])
+    }
+    fn module_list(&self) -> Vec<String> {
+        vec![]
+    }
+    fn all_symbols(&self) -> crate::error::ExplorerResult<Vec<ResolvedSymbol>> {
+        Ok(vec![])
+    }
+    fn graph_stats(&self) -> crate::ports::symbol_repository::GraphStats {
+        crate::ports::symbol_repository::GraphStats {
+            symbol_count: 0,
+            relation_count: 0,
+        }
+    }
+}
+
+#[async_trait]
+impl ToolHandler for ExportTraceMermaidHandler {
+    fn name(&self) -> &'static str {
+        TOOL_EXPORT_TRACE_MERMAID
+    }
+
+    fn arg_schema(&self) -> Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "view_kind": {
+                    "type": "string",
+                    "enum": ["call_graph", "impact_radius", "decision_trace", "vertical_slice"],
+                    "description": "Trace view kind (call_graph | impact_radius | decision_trace | vertical_slice)"
+                },
+                "target": {
+                    "type": "string",
+                    "description": "Target symbol id or decision id"
+                }
+            },
+            "required": ["view_kind", "target"]
+        })
+    }
+
+    async fn handle(&self, ctx: &McpContext, params: Value) -> CallToolResult {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        struct Args {
+            view_kind: String,
+            target: String,
+        }
+
+        let args: Args = match serde_json::from_value(params) {
+            Ok(a) => a,
+            Err(e) => {
+                return err_envelope(
+                    TOOL_EXPORT_TRACE_MERMAID,
+                    "invalid_args",
+                    &format!("{TOOL_EXPORT_TRACE_MERMAID}: invalid args: {e}"),
+                );
+            }
+        };
+
+        // Parse and validate view_kind
+        let view_kind = match TraceMermaidViewKind::from_str(&args.view_kind) {
+            Ok(vk) => vk,
+            Err(e) => {
+                return err_envelope(TOOL_EXPORT_TRACE_MERMAID, "invalid_view_kind", &e);
+            }
+        };
+
+        // Gate decision_trace behind multimodal feature
+        #[cfg(not(feature = "multimodal"))]
+        if view_kind == TraceMermaidViewKind::DecisionTrace {
+            return err_envelope(
+                TOOL_EXPORT_TRACE_MERMAID,
+                "feature_disabled",
+                "decision_trace requires the `multimodal` feature",
+            );
+        }
+
+        let graph_svc = match ctx.graph_service.as_ref() {
+            Some(gs) => gs,
+            None => {
+                return err_envelope(
+                    TOOL_EXPORT_TRACE_MERMAID,
+                    "facade_unavailable",
+                    "graph service not wired",
+                );
+            }
+        };
+
+        let graph_query = match graph_svc.graph_query() {
+            Some(gq) => gq,
+            None => {
+                return err_envelope(
+                    TOOL_EXPORT_TRACE_MERMAID,
+                    "graph_unavailable",
+                    "call graph not loaded",
+                );
+            }
+        };
+
+        // Resolve the target symbol
+        let resolved = match graph_svc.resolve_symbol(&args.target).await {
+            Ok(Some(r)) => r,
+            Ok(None) => {
+                return err_envelope(
+                    TOOL_EXPORT_TRACE_MERMAID,
+                    "symbol_not_found",
+                    &format!("target not found: {}", args.target),
+                );
+            }
+            Err(e) => {
+                return err_envelope(
+                    TOOL_EXPORT_TRACE_MERMAID,
+                    "resolution_failed",
+                    &e.to_string(),
+                );
+            }
+        };
+
+        let target = InspectionTarget::Symbol(resolved);
+        let view_ctx = ViewContext {
+            target: &target,
+            repo: &NoopSymbolRepository,
+            reader: &NoopSourceReader,
+            quality: None,
+            graph_query: Some(graph_query.as_ref()),
+        };
+
+        let mermaid = match view_kind {
+            TraceMermaidViewKind::CallGraph => call_graph_to_mermaid(&view_ctx, &args.target),
+            TraceMermaidViewKind::ImpactRadius => impact_radius_to_mermaid(&view_ctx, &args.target),
+            TraceMermaidViewKind::DecisionTrace => {
+                decision_trace_to_mermaid(&view_ctx, &args.target)
+            }
+            TraceMermaidViewKind::VerticalSlice => {
+                vertical_slice_to_mermaid(&view_ctx, &args.target)
+            }
+        };
+
+        ok_envelope(TOOL_EXPORT_TRACE_MERMAID, &mermaid)
+    }
+}
+
+// ============================================================================
 // Registry builder
 // ============================================================================
 
-/// Register the export-family handler into the registry.
+/// Register the export-family handlers into the registry.
 pub fn register_export_handlers(registry: &mut crate::mcp::handler::ToolHandlerRegistry) {
     registry.register(ExportC4MermaidHandler);
+    registry.register(ExportTraceMermaidHandler);
+}
+
+// ============================================================================
+// Integration tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::dto::{SubgraphResponse, ViewContext};
+    use crate::error::{ExplorerError, ExplorerResult};
+    use crate::facades::GraphService;
+    use crate::mcp::handler::ToolHandlerRegistry;
+    use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol};
+    use crate::session::SessionRegistry;
+    use async_trait::async_trait;
+    use cognicode_core::domain::aggregates::{CallEntry, SymbolId};
+    use cognicode_core::domain::traits::{
+        CalleeWithMetadata, CallerWithMetadata, GraphQueryPort, RelationTarget,
+        RelationTargetWithMetadata,
+    };
+    use cognicode_core::domain::value_objects::SymbolKind;
+    use rmcp::model::CallToolResult;
+    use serde_json::{json, Value};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    // ------------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------------
+
+    fn extract_env(result: &CallToolResult) -> Value {
+        let text = result
+            .content
+            .first()
+            .and_then(|c| c.raw.as_text())
+            .map(|t| t.text.as_str())
+            .expect("CallToolResult should contain a text content");
+        serde_json::from_str(text).expect("response text must be JSON")
+    }
+
+    fn ok_payload(result: &CallToolResult) -> Value {
+        assert_eq!(
+            result.is_error,
+            Some(false),
+            "expected ok envelope, got: {result:?}"
+        );
+        extract_env(result)["payload"].clone()
+    }
+
+    fn err_code(result: &CallToolResult) -> String {
+        assert_eq!(
+            result.is_error,
+            Some(true),
+            "expected err envelope, got: {result:?}"
+        );
+        let env = extract_env(result);
+        env["payload"]["error_code"]
+            .as_str()
+            .expect("err envelope payload must have `error_code`")
+            .to_string()
+    }
+
+    fn build_registry() -> ToolHandlerRegistry {
+        let mut r = ToolHandlerRegistry::new();
+        register_export_handlers(&mut r);
+        r
+    }
+
+    // ------------------------------------------------------------------------
+    // Mock GraphQueryPort for trace handler tests
+    // ------------------------------------------------------------------------
+
+    #[derive(Clone)]
+    struct MockGraphQueryPort {
+        callers_result: Vec<RelationTarget>,
+        callees_result: Vec<RelationTarget>,
+        traverse_callers_result: Vec<CallEntry>,
+        traverse_callees_result: Vec<CallEntry>,
+    }
+
+    impl MockGraphQueryPort {
+        fn new() -> Self {
+            Self {
+                callers_result: vec![],
+                callees_result: vec![],
+                traverse_callers_result: vec![],
+                traverse_callees_result: vec![],
+            }
+        }
+        fn with_callers(mut self, callers: Vec<RelationTarget>) -> Self {
+            self.callers_result = callers;
+            self
+        }
+        fn with_callees(mut self, callees: Vec<RelationTarget>) -> Self {
+            self.callees_result = callees;
+            self
+        }
+        fn with_traverse_callers(mut self, entries: Vec<CallEntry>) -> Self {
+            self.traverse_callers_result = entries;
+            self
+        }
+        fn with_traverse_callees(mut self, entries: Vec<CallEntry>) -> Self {
+            self.traverse_callees_result = entries;
+            self
+        }
+    }
+
+    impl GraphQueryPort for MockGraphQueryPort {
+        fn callers(&self, _id: &SymbolId) -> Vec<RelationTarget> {
+            self.callers_result.clone()
+        }
+        fn callees(&self, _id: &SymbolId) -> Vec<RelationTarget> {
+            self.callees_result.clone()
+        }
+        fn fan_in(&self, _id: &SymbolId) -> usize {
+            0
+        }
+        fn fan_out(&self, _id: &SymbolId) -> usize {
+            0
+        }
+        fn callers_with_metadata(&self, _id: &SymbolId) -> Vec<CallerWithMetadata> {
+            vec![]
+        }
+        fn callees_with_metadata(&self, _id: &SymbolId) -> Vec<CalleeWithMetadata> {
+            vec![]
+        }
+        fn dependencies_with_metadata(&self, _id: &SymbolId) -> Vec<RelationTargetWithMetadata> {
+            vec![]
+        }
+        fn traverse_callees(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+            self.traverse_callees_result.clone()
+        }
+        fn traverse_callers(&self, _id: &SymbolId, _max_depth: u8) -> Vec<CallEntry> {
+            self.traverse_callers_result.clone()
+        }
+    }
+
+    fn make_relation_target(id: &str, name: &str) -> RelationTarget {
+        RelationTarget {
+            id: SymbolId::new(id.to_string()),
+            name: name.to_string(),
+            kind: SymbolKind::Function,
+            file: "test.rs".to_string(),
+            line: 1,
+            signature: None,
+        }
+    }
+
+    fn make_call_entry(id: &str, name: &str, depth: u8) -> CallEntry {
+        CallEntry {
+            symbol_id: SymbolId::new(id.to_string()),
+            symbol_name: name.to_string(),
+            file: "test.rs".to_string(),
+            line: 1,
+            column: 1,
+            depth,
+        }
+    }
+
+    fn make_resolved_symbol(id: &str, name: &str) -> ResolvedSymbol {
+        ResolvedSymbol {
+            id: SymbolId::new(id.to_string()),
+            name: name.to_string(),
+            kind: SymbolKind::Function,
+            file: "test.rs".to_string(),
+            line: 1,
+            signature: None,
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockGraphService {
+        resolved_symbols: HashMap<String, ResolvedSymbol>,
+        graph_query: Arc<MockGraphQueryPort>,
+    }
+
+    impl MockGraphService {
+        fn new(graph_query: MockGraphQueryPort) -> Self {
+            Self {
+                resolved_symbols: HashMap::new(),
+                graph_query: Arc::new(graph_query),
+            }
+        }
+        fn with_symbol(mut self, id: &str, symbol: ResolvedSymbol) -> Self {
+            self.resolved_symbols.insert(id.to_string(), symbol);
+            self
+        }
+    }
+
+    #[async_trait]
+    impl GraphService for MockGraphService {
+        async fn resolve_symbol(
+            &self,
+            id: &str,
+        ) -> ExplorerResult<Option<ResolvedSymbol>> {
+            Ok(self.resolved_symbols.get(id).cloned())
+        }
+        fn graph_query(&self) -> Option<Arc<dyn GraphQueryPort>> {
+            Some(self.graph_query.clone() as Arc<dyn GraphQueryPort>)
+        }
+        async fn build_subgraph(
+            &self,
+            _root_id: &str,
+            _depth: u8,
+            _direction: crate::facades::SubgraphDirection,
+            _max_nodes: u32,
+        ) -> ExplorerResult<SubgraphResponse> {
+            Ok(SubgraphResponse {
+                root: String::new(),
+                nodes: vec![],
+                edges: vec![],
+                truncated: false,
+                truncated_reason: None,
+                corroboration_scores: std::collections::HashMap::new(),
+            })
+        }
+        async fn build_architecture(
+            &self,
+            _root_path: &str,
+        ) -> ExplorerResult<SubgraphResponse> {
+            Ok(SubgraphResponse {
+                root: String::new(),
+                nodes: vec![],
+                edges: vec![],
+                truncated: false,
+                truncated_reason: None,
+                corroboration_scores: std::collections::HashMap::new(),
+            })
+        }
+        async fn compare_architecture(
+            &self,
+            _root_path: &str,
+        ) -> ExplorerResult<crate::dto::DriftReport> {
+            Ok(crate::dto::DriftReport {
+                findings: vec![],
+                summary: String::new(),
+                missing_containers: 0,
+                extra_containers: 0,
+                wrong_sub_kinds: 0,
+                boundary_violations: 0,
+            })
+        }
+        async fn landing_entry_points(
+            &self,
+            _limit: usize,
+        ) -> ExplorerResult<(Vec<ResolvedSymbol>, usize)> {
+            Ok((vec![], 0))
+        }
+        async fn landing_hot_paths(
+            &self,
+            _limit: usize,
+            _min_fan_in: usize,
+        ) -> ExplorerResult<Vec<ResolvedSymbol>> {
+            Ok(vec![])
+        }
+        async fn landing_god_nodes(
+            &self,
+            _limit: usize,
+        ) -> ExplorerResult<Vec<crate::dto::GodNodeEntry>> {
+            Ok(vec![])
+        }
+    }
+
+    fn make_ctx(graph_svc: MockGraphService) -> McpContext {
+        McpContext::builder()
+            .with_graph(None)
+            .with_session_registry(SessionRegistry::new())
+            .with_graph_service(Arc::new(graph_svc) as Arc<dyn GraphService>)
+            .build()
+    }
+
+    // ------------------------------------------------------------------------
+    // export_trace_mermaid — happy path
+    // ------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn export_trace_mermaid_call_graph_ok() {
+        let mock_gq = MockGraphQueryPort::new()
+            .with_callers(vec![make_relation_target("caller1", "caller_one")])
+            .with_callees(vec![make_relation_target("callee1", "callee_one")]);
+
+        let graph_svc = MockGraphService::new(mock_gq)
+            .with_symbol("symbol:test:fn:1", make_resolved_symbol("symbol:test:fn:1", "my_function"));
+
+        let ctx = make_ctx(graph_svc);
+        let handler = ExportTraceMermaidHandler;
+        let result = handler
+            .handle(
+                &ctx,
+                json!({"view_kind": "call_graph", "target": "symbol:test:fn:1"}),
+            )
+            .await;
+
+        let payload = ok_payload(&result);
+        assert!(payload.is_string(), "payload should be mermaid string");
+        let s = payload.as_str().unwrap();
+        assert!(s.contains("flowchart TD"), "should be flowchart TD");
+        assert!(s.contains("subgraph call_graph"), "should have call_graph subgraph");
+    }
+
+    #[tokio::test]
+    async fn export_trace_mermaid_impact_radius_ok() {
+        let mock_gq = MockGraphQueryPort::new()
+            .with_traverse_callers(vec![
+                make_call_entry("caller1", "direct_caller", 1),
+                make_call_entry("caller2", "indirect_caller", 2),
+            ]);
+
+        let graph_svc = MockGraphService::new(mock_gq)
+            .with_symbol("symbol:test:fn:1", make_resolved_symbol("symbol:test:fn:1", "target_fn"));
+
+        let ctx = make_ctx(graph_svc);
+        let handler = ExportTraceMermaidHandler;
+        let result = handler
+            .handle(
+                &ctx,
+                json!({"view_kind": "impact_radius", "target": "symbol:test:fn:1"}),
+            )
+            .await;
+
+        let payload = ok_payload(&result);
+        let s = payload.as_str().unwrap();
+        assert!(s.contains("flowchart TD"), "should be flowchart TD");
+        assert!(
+            s.contains("subgraph impact_radius"),
+            "should have impact_radius subgraph"
+        );
+    }
+
+    #[tokio::test]
+    async fn export_trace_mermaid_vertical_slice_ok() {
+        let mock_gq = MockGraphQueryPort::new()
+            .with_traverse_callees(vec![
+                make_call_entry("usecase1", "create_user", 1),
+                make_call_entry("domain1", "user_entity", 2),
+            ]);
+
+        let graph_svc = MockGraphService::new(mock_gq)
+            .with_symbol("symbol:test:handle:1", make_resolved_symbol("symbol:test:handle:1", "handle_request"));
+
+        let ctx = make_ctx(graph_svc);
+        let handler = ExportTraceMermaidHandler;
+        let result = handler
+            .handle(
+                &ctx,
+                json!({"view_kind": "vertical_slice", "target": "symbol:test:handle:1"}),
+            )
+            .await;
+
+        let payload = ok_payload(&result);
+        let s = payload.as_str().unwrap();
+        assert!(s.contains("flowchart TD"), "should be flowchart TD");
+        assert!(
+            s.contains("subgraph vertical_slice"),
+            "should have vertical_slice subgraph"
+        );
+    }
+
+    // ------------------------------------------------------------------------
+    // export_trace_mermaid — invalid args
+    // ------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn export_trace_mermaid_invalid_view_kind() {
+        let mock_gq = MockGraphQueryPort::new();
+        let graph_svc = MockGraphService::new(mock_gq);
+        let ctx = make_ctx(graph_svc);
+
+        let handler = ExportTraceMermaidHandler;
+        let result = handler
+            .handle(
+                &ctx,
+                json!({"view_kind": "invalid_view", "target": "symbol:test:fn:1"}),
+            )
+            .await;
+
+        assert_eq!(err_code(&result), "invalid_view_kind");
+    }
+
+    #[tokio::test]
+    async fn export_trace_mermaid_missing_target() {
+        let mock_gq = MockGraphQueryPort::new();
+        let graph_svc = MockGraphService::new(mock_gq);
+        let ctx = make_ctx(graph_svc);
+
+        let handler = ExportTraceMermaidHandler;
+        let result = handler
+            .handle(&ctx, json!({"view_kind": "call_graph"}))
+            .await;
+
+        assert_eq!(err_code(&result), "invalid_args");
+    }
+
+    #[tokio::test]
+    async fn export_trace_mermaid_symbol_not_found() {
+        let mock_gq = MockGraphQueryPort::new();
+        let graph_svc = MockGraphService::new(mock_gq);
+        let ctx = make_ctx(graph_svc);
+
+        let handler = ExportTraceMermaidHandler;
+        let result = handler
+            .handle(
+                &ctx,
+                json!({"view_kind": "call_graph", "target": "nonexistent"}),
+            )
+            .await;
+
+        assert_eq!(err_code(&result), "symbol_not_found");
+    }
+
+    // ------------------------------------------------------------------------
+    // export_trace_mermaid — decision_trace multimodal gate
+    // ------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn export_trace_mermaid_decision_trace_requires_multimodal() {
+        let mock_gq = MockGraphQueryPort::new();
+        let graph_svc = MockGraphService::new(mock_gq)
+            .with_symbol("symbol:test:fn:1", make_resolved_symbol("symbol:test:fn:1", "test_fn"));
+
+        let ctx = make_ctx(graph_svc);
+        let handler = ExportTraceMermaidHandler;
+        let result = handler
+            .handle(
+                &ctx,
+                json!({"view_kind": "decision_trace", "target": "symbol:test:fn:1"}),
+            )
+            .await;
+
+        // In non-multimodal builds, this should be a feature_disabled error
+        #[cfg(not(feature = "multimodal"))]
+        {
+            assert_eq!(err_code(&result), "feature_disabled");
+        }
+        // In multimodal builds, it should return a result (placeholder is fine)
+        #[cfg(feature = "multimodal")]
+        {
+            // Should not be a feature_disabled error
+            assert_ne!(err_code(&result), "feature_disabled");
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // export_trace_mermaid — tool in registry
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn export_trace_mermaid_registered_in_registry() {
+        let mut registry = ToolHandlerRegistry::new();
+        register_export_handlers(&mut registry);
+
+        let handler = registry.get(TOOL_EXPORT_TRACE_MERMAID);
+        assert!(handler.is_some(), "export_trace_mermaid should be registered");
+        assert_eq!(handler.unwrap().name(), TOOL_EXPORT_TRACE_MERMAID);
+    }
 }

@@ -21,6 +21,68 @@
 
 use std::fmt::{self, Write};
 
+use serde::{Deserialize, Serialize};
+
+// ============================================================================
+// TraceMermaidViewKind — enum for MCP + REST validation
+// ============================================================================
+
+/// Supported view kinds for trace-to-Mermaid export.
+///
+/// Used by the MCP tool `export_trace_mermaid` and the REST endpoint
+/// `GET /api/workspaces/:workspace_id/mermaid/trace` to validate the
+/// `view_kind` query parameter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TraceMermaidViewKind {
+    /// Call-graph view (caller → target → callees).
+    CallGraph,
+    /// Impact-radius view (reverse BFS of callers up to depth 3).
+    ImpactRadius,
+    /// Decision-trace view (ADR → code → evidence). Gated behind `multimodal`.
+    DecisionTrace,
+    /// Full vertical slice (entry point → use case → domain → repo → DB).
+    VerticalSlice,
+}
+
+impl TraceMermaidViewKind {
+    /// Parse a view kind from a string slice.
+    ///
+    /// Accepts `snake_case` variant names (e.g. `"call_graph"`, `"decision_trace"`).
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "call_graph" => Ok(Self::CallGraph),
+            "impact_radius" => Ok(Self::ImpactRadius),
+            "decision_trace" => Ok(Self::DecisionTrace),
+            "vertical_slice" => Ok(Self::VerticalSlice),
+            _ => Err(format!(
+                "unknown view_kind: {s}. Expected one of: call_graph, impact_radius, decision_trace, vertical_slice"
+            )),
+        }
+    }
+
+    /// Return the snake_case string representation.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::CallGraph => "call_graph",
+            Self::ImpactRadius => "impact_radius",
+            Self::DecisionTrace => "decision_trace",
+            Self::VerticalSlice => "vertical_slice",
+        }
+    }
+
+    /// Returns true if this variant requires the `multimodal` feature.
+    pub fn requires_multimodal(&self) -> bool {
+        matches!(self, Self::DecisionTrace)
+    }
+}
+
+impl fmt::Display for TraceMermaidViewKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 use cognicode_core::domain::aggregates::{CallEntry, SymbolId};
 
 use crate::dto::{InspectionTarget, ViewContext};
