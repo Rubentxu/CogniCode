@@ -45,7 +45,7 @@ Last updated: 2026-06-29 (E20-1 closed — PASS, PR #86, v0.36.0)
 | `e20-1-mermaid-c4-export` | `to_mermaid()` for c4_context, c4_container, c4_component | ADR-003 | HIGH | DONE | [#86](https://github.com/Rubentxu/CogniCode/pull/86) |
 | `e20-2-mermaid-trace-export` | Mermaid export for call_graph, impact_radius, decision_trace, vertical_slice | ADR-003 | HIGH | DONE | [#87](https://github.com/Rubentxu/CogniCode/pull/87) |
 | `e20-3-drawio-action` | "Open in draw.io" action in C4 toolbar + pane inspector | ADR-003 | HIGH | DONE | [#88](https://github.com/Rubentxu/CogniCode/pull/88) |
-| `e20-4-svg-snapshot` | SVG/PNG snapshot export for static documentation | ADR-003 | LOW |
+| `e20-4-svg-snapshot` | SVG/PNG snapshot export for static documentation | ADR-003 | LOW | DONE | [#89](https://github.com/Rubentxu/CogniCode/pull/89) |
 
 #### Milestone E21 — Investigation Mode
 
