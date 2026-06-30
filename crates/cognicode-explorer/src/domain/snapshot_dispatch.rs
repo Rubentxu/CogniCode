@@ -85,19 +85,6 @@ pub const SNAPSHOT_VIEW_KINDS: &[&str] = &[
 // Mermaid emission traits
 // ============================================================================
 
-/// Port for emitting Mermaid text for a snapshot view kind.
-///
-/// Abstracts over the API state (`ApiState`) and MCP context (`McpContext`)
-/// so the dispatch logic is written once.
-pub trait SnapshotMermaidEmitter {
-    /// Emit Mermaid text for the given view kind and optional target.
-    fn emit_mermaid(
-        &self,
-        view_kind: SnapshotViewKind,
-        target: Option<&str>,
-    ) -> impl std::future::Future<Output = Result<String, String>> + Send;
-}
-
 // ============================================================================
 // Mermaid emission for trace-based view kinds (call graph / impact radius /
 // vertical slice).
