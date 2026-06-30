@@ -49,14 +49,20 @@ Last updated: 2026-06-29 (E20-1 closed — PASS, PR #86, v0.36.0)
 
 #### Milestone E21 — Investigation Mode
 
-| Change | Goal | ADR | Priority |
-|--------|------|-----|----------|
-| `e21-1-investigation-entity` | Investigation entity + PostgreSQL tables + API | ADR-005 | HIGH |
-| `e21-2-pin-evidence` | "Pin as evidence" action on panes + views | ADR-005 | HIGH |
-| `e21-3-evidence-pack-view` | `ViewKind::EvidencePack` executor | ADR-005 | MEDIUM |
-| `e21-4-composed-narrative` | `ViewKind::ComposedNarrative` with embedded objects + diagrams | ADR-005 | MEDIUM |
-| `e21-5-investigation-board` | Investigation board on landing page | ADR-005 | LOW |
-| `e21-6-artifacts-in-investigation` | Mermaid/draw.io/SVG artifacts embedded in investigations | ADR-003+005 | MEDIUM |
+| Change | Goal | ADR | Priority | Status |
+|--------|------|-----|----------|--------|
+| `e21-1-investigation-entity` | Investigation entity + PostgreSQL tables + API | ADR-005 | HIGH | PR1✅ PR2✅ (PR3 pending) |
+| `e21-2-pin-evidence` | "Pin as evidence" action on panes + views | ADR-005 | HIGH | |
+| `e21-3-evidence-pack-view` | `ViewKind::EvidencePack` executor | ADR-005 | MEDIUM | |
+| `e21-4-composed-narrative` | `ViewKind::ComposedNarrative` with embedded objects + diagrams | ADR-005 | MEDIUM | |
+| `e21-5-investigation-board` | Investigation board on landing page | ADR-005 | LOW | |
+| `e21-6-artifacts-in-investigation` | Mermaid/draw.io/SVG artifacts embedded in investigations | ADR-003+005 | MEDIUM | |
+
+**E21-1 PR details** (branch `feat/e21-1-investigation-entity`):
+- PR1 ✅: PostgreSQL schema (m0013) + repo methods (`save_investigation_tx`, `load_investigation`, etc.)
+- PR2 ✅: Domain entity + InvestigationStore trait + PostgresInvestigationStore + InvestigationService facade + REST API
+- PR3 🔲: Explorer UI pane + ViewSpec integration (pending)
+- **Debt**: m0014 migration needed for `exploration_sessions.investigation_id` column
 
 #### Execution order
 
@@ -67,6 +73,39 @@ E18 (UX foundation)  ──→  E20 (diagrams)  ──→  E21 (investigations)
 ```
 
 E18 and E19 can start in parallel. E20 depends on E19 (C4 levels inform diagram content). E21 depends on E18 + E20 (UX foundation + diagram artifacts).
+
+## Session Handover 2026-06-30
+
+**E21-1 PR1 + PR2 completed**. Branch `feat/e21-1-investigation-entity` has 2 commits:
+- d76ace4 ✅: Schema + repo methods (merged to main)
+- 9113671 ✅: Domain + Store + Service + REST API (committed, needs PR + review)
+
+**Architecture stack** (ADR-005 INV-1):
+```
+PostgreSQL tables (m0013)
+  → PostgresRepository (existing methods)
+    → PostgresInvestigationStore
+      → InvestigationService<S> (core facade)
+        → InvestigationFacade (explorer trait)
+          → InvestigationServiceImpl (explorer wrapper)
+            → REST handlers (api.rs)
+              → ApiState.with_investigation() (runtime wiring)
+```
+
+**Key decisions made**:
+- Facade trait renamed `InvestigationFacade` to avoid name conflict with core `InvestigationService`
+- `time::OffsetDateTime` in domain entity (with serde+formatting+parsing features)
+- `String` timestamps in repo rows (RFC 3339 format)
+- `created_at` preserved on update (fetch-then-patch pattern)
+- `time` crate added to workspace + cognicode-explorer dependencies
+
+**Open debts**:
+- m0014 migration: add `investigation_id` column to `exploration_sessions` table
+- PR3: Explorer UI pane + ViewSpec integration
+
+**Tests**: 1386 core + 723 explorer lib tests passing.
+
+---
 
 ## Session Handover 2026-06-29
 
