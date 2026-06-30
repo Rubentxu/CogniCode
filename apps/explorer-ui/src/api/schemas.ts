@@ -990,6 +990,9 @@ export const graphNodeStyleClassSchema = z.enum([
   "drift-missing",
   "drift-extra",
   "drift-wrong-kind",
+  "boundary-violation-error",
+  "boundary-violation-warning",
+  "boundary-violation-info",
   "hotspot-high",
   "hotspot-med",
 ]);

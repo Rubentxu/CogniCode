@@ -49,7 +49,7 @@ export interface MultimodalSuggestion {
  * return of [`recognizeMultimodalKind`] before accessing the map.
  */
 export const MULTIMODAL_KIND_INFO: Readonly<
-  Record<Exclude<GraphNodeStyleClass, "function" | "module" | "external" | "node-code" | "drift-missing" | "drift-extra" | "drift-wrong-kind" | "hotspot-high" | "hotspot-med">, MultimodalKindInfo>
+  Record<Exclude<GraphNodeStyleClass, "function" | "module" | "external" | "node-code" | "drift-missing" | "drift-extra" | "drift-wrong-kind" | "boundary-violation-error" | "boundary-violation-warning" | "boundary-violation-info" | "hotspot-high" | "hotspot-med">, MultimodalKindInfo>
 > = {
   "node-decision": {
     styleClass: "node-decision",
@@ -142,6 +142,30 @@ export const MULTIMODAL_KIND_INFO: Readonly<
       { id: "god-fanout", label: "Analyze fan-out", question: "show all dependencies of this god node" },
     ],
   },
+  "boundary-violation-error": {
+    styleClass: "boundary-violation-error",
+    badgeLabel: "Boundary Violation",
+    palette: { background: "#dc2626", foreground: "#450a0a" },
+    suggestions: [
+      { id: "bv-explore", label: "Explore violation", question: "show the boundary violation details" },
+    ],
+  },
+  "boundary-violation-warning": {
+    styleClass: "boundary-violation-warning",
+    badgeLabel: "Boundary Violation",
+    palette: { background: "#f59e0b", foreground: "#78350f" },
+    suggestions: [
+      { id: "bv-explore", label: "Explore violation", question: "show the boundary violation details" },
+    ],
+  },
+  "boundary-violation-info": {
+    styleClass: "boundary-violation-info",
+    badgeLabel: "Boundary Violation",
+    palette: { background: "#3b82f6", foreground: "#1e3a8a" },
+    suggestions: [
+      { id: "bv-explore", label: "Explore violation", question: "show the boundary violation details" },
+    ],
+  },
 };
 
 /**
@@ -155,7 +179,7 @@ export function recognizeMultimodalKind(
   if (!styleClass) return null;
   if (styleClass in MULTIMODAL_KIND_INFO) {
     return MULTIMODAL_KIND_INFO[
-      styleClass as Exclude<GraphNodeStyleClass, "function" | "module" | "external" | "node-code" | "drift-missing" | "drift-extra" | "drift-wrong-kind" | "hotspot-high" | "hotspot-med">
+      styleClass as Exclude<GraphNodeStyleClass, "function" | "module" | "external" | "node-code" | "drift-missing" | "drift-extra" | "drift-wrong-kind" | "boundary-violation-error" | "boundary-violation-warning" | "boundary-violation-info" | "hotspot-high" | "hotspot-med">
     ];
   }
   return null;

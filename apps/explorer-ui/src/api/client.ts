@@ -563,6 +563,7 @@ export async function fetchDrift(
       missing_containers: 0,
       extra_containers: 0,
       wrong_sub_kinds: 0,
+      boundary_violations: 0,
     };
   }
   if (!response.ok) {

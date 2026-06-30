@@ -48,7 +48,7 @@ describe("C4 Overlay utilities", () => {
     });
 
     it("returns empty map when driftReport has no findings", () => {
-      const report: DriftReport = { findings: [], summary: "", missing_containers: 0, extra_containers: 0, wrong_sub_kinds: 0 };
+      const report: DriftReport = { findings: [], summary: "", missing_containers: 0, extra_containers: 0, wrong_sub_kinds: 0, boundary_violations: 0 };
       const result = matchDriftToNodes(report, mockNodes);
       expect(result.size).toBe(0);
     });
@@ -63,6 +63,7 @@ describe("C4 Overlay utilities", () => {
         missing_containers: 1,
         extra_containers: 1,
         wrong_sub_kinds: 0,
+        boundary_violations: 0,
       };
       const result = matchDriftToNodes(report, mockNodes);
       expect(result.get("n1")).toBe("missing");
@@ -79,6 +80,7 @@ describe("C4 Overlay utilities", () => {
         missing_containers: 0,
         extra_containers: 0,
         wrong_sub_kinds: 1,
+        boundary_violations: 0,
       };
       const result = matchDriftToNodes(report, mockNodes);
       expect(result.get("n1")).toBe("wrong_sub_kind");
