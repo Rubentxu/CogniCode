@@ -19,7 +19,7 @@
 //! are replaced with underscores. Duplicated IDs receive numeric suffixes (`_2`, `_3`).
 //! Reuses [`sanitize_id`] and [`deduplicate_ids`] from [`mermaid_util`](super::mermaid_util).
 
-use std::fmt::{self, Write};
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +40,7 @@ pub enum TraceMermaidViewKind {
     /// Impact-radius view (reverse BFS of callers up to depth 3).
     ImpactRadius,
     /// Decision-trace view (ADR → code → evidence). Gated behind `multimodal`.
+    #[cfg(feature = "multimodal")]
     DecisionTrace,
     /// Full vertical slice (entry point → use case → domain → repo → DB).
     VerticalSlice,
@@ -49,14 +50,19 @@ impl TraceMermaidViewKind {
     /// Parse a view kind from a string slice.
     ///
     /// Accepts `snake_case` variant names (e.g. `"call_graph"`, `"decision_trace"`).
+    /// When `multimodal` is disabled, `decision_trace` returns an error indicating
+    /// the feature is not enabled.
     pub fn from_str(s: &str) -> Result<Self, String> {
         match s {
             "call_graph" => Ok(Self::CallGraph),
             "impact_radius" => Ok(Self::ImpactRadius),
+            #[cfg(feature = "multimodal")]
             "decision_trace" => Ok(Self::DecisionTrace),
+            #[cfg(not(feature = "multimodal"))]
+            "decision_trace" => Err("decision_trace requires the `multimodal` feature".to_string()),
             "vertical_slice" => Ok(Self::VerticalSlice),
             _ => Err(format!(
-                "unknown view_kind: {s}. Expected one of: call_graph, impact_radius, decision_trace, vertical_slice"
+                "unknown view_kind: {s}. Expected one of: call_graph, impact_radius, vertical_slice"
             )),
         }
     }
@@ -66,6 +72,7 @@ impl TraceMermaidViewKind {
         match self {
             Self::CallGraph => "call_graph",
             Self::ImpactRadius => "impact_radius",
+            #[cfg(feature = "multimodal")]
             Self::DecisionTrace => "decision_trace",
             Self::VerticalSlice => "vertical_slice",
         }
@@ -73,7 +80,14 @@ impl TraceMermaidViewKind {
 
     /// Returns true if this variant requires the `multimodal` feature.
     pub fn requires_multimodal(&self) -> bool {
-        matches!(self, Self::DecisionTrace)
+        #[cfg(feature = "multimodal")]
+        {
+            matches!(self, Self::DecisionTrace)
+        }
+        #[cfg(not(feature = "multimodal"))]
+        {
+            false
+        }
     }
 }
 
@@ -85,8 +99,23 @@ impl fmt::Display for TraceMermaidViewKind {
 
 use cognicode_core::domain::aggregates::{CallEntry, SymbolId};
 
-use crate::dto::{InspectionTarget, ViewContext};
+use crate::dto::InspectionTarget;
 use crate::ports::symbol_repository::SymbolRepository;
+
+// ============================================================================
+// TraceEmitContext — narrow port for trace emitters
+// ============================================================================
+
+/// Narrow context port passed to trace-to-Mermaid emitters.
+///
+/// Emitters only need the graph query capability and the resolved target.
+/// This avoids stamp-coupling via `ViewContext` which carries 4 unrelated fields.
+pub struct TraceEmitContext<'a> {
+    /// Graph query port for callers/callees traversal.
+    pub graph_query: &'a dyn cognicode_core::domain::traits::GraphQueryPort,
+    /// The resolved inspection target (always `InspectionTarget::Symbol` for traces).
+    pub target: &'a InspectionTarget,
+}
 
 // Re-export from shared mermaid_util
 pub use super::mermaid_util::{deduplicate_ids, sanitize_id};
@@ -97,9 +126,8 @@ pub use super::mermaid_util::{deduplicate_ids, sanitize_id};
 
 /// Render a call graph as a Mermaid `flowchart TD` diagram.
 ///
-/// `ctx` provides the [`SymbolRepository`] for resolving symbol IDs to display
-/// names, and the [`GraphQueryPort`](cognicode_core::domain::traits::graph_query_port::GraphQueryPort)
-/// for callers/callees data.
+/// `ctx` provides the [`GraphQueryPort`](cognicode_core::domain::traits::graph_query_port::GraphQueryPort)
+/// for callers/callees data, and the resolved `target` symbol.
 ///
 /// `symbol` is the target symbol's string identifier.
 ///
@@ -112,12 +140,8 @@ pub use super::mermaid_util::{deduplicate_ids, sanitize_id};
 ///         ...
 ///     end
 /// ```
-///
-/// Returns a placeholder comment when no graph query is available.
-pub fn call_graph_to_mermaid(ctx: &ViewContext, symbol: &str) -> String {
-    let Some(graph_query) = ctx.graph_query else {
-        return "// graph_query not available".to_string();
-    };
+pub fn call_graph_to_mermaid(ctx: &TraceEmitContext, symbol: &str) -> String {
+    let graph_query = ctx.graph_query;
 
     let Some(InspectionTarget::Symbol(target_symbol)) = Option::from(ctx.target) else {
         return "// InspectionTarget::Symbol required".to_string();
@@ -169,17 +193,16 @@ pub fn call_graph_to_mermaid(ctx: &ViewContext, symbol: &str) -> String {
 
 /// Render an impact-radius (reverse BFS of callers) as a Mermaid `flowchart TD`.
 ///
-/// `ctx` provides the [`SymbolRepository`] for resolving symbol IDs to display
-/// names, and the [`GraphQueryPort`](cognicode_core::domain::traits::graph_query_port::GraphQueryPort)
-/// for BFS traversal.
+/// `ctx` provides the [`GraphQueryPort`](cognicode_core::domain::traits::graph_query_port::GraphQueryPort)
+/// for BFS traversal and the resolved `target` symbol.
 ///
 /// `symbol` is the root symbol's string identifier.
 ///
 /// Uses `traverse_callers` (reverse BFS) to find all callers up to depth 3.
-pub fn impact_radius_to_mermaid(ctx: &ViewContext, symbol: &str) -> String {
-    let Some(graph_query) = ctx.graph_query else {
-        return "// graph_query not available".to_string();
-    };
+/// Renders actual BFS tree structure: depth-N nodes connect to depth-(N-1) nodes,
+/// not directly to the center (which would be a star topology).
+pub fn impact_radius_to_mermaid(ctx: &TraceEmitContext, symbol: &str) -> String {
+    let graph_query = ctx.graph_query;
 
     let Some(InspectionTarget::Symbol(target_symbol)) = Option::from(ctx.target) else {
         return "// InspectionTarget::Symbol required".to_string();
@@ -205,44 +228,51 @@ pub fn impact_radius_to_mermaid(ctx: &ViewContext, symbol: &str) -> String {
     let center_id = sanitize_id(symbol);
     lines.push(format!("        {}[{}]", center_id, target_symbol.name));
 
-    // Deduplicate and render reachable nodes
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    seen.insert(center_id.clone());
-
-    // Group entries by depth (depth is implicit in the BFS ordering)
-    // We render level-by-level: depth 1 callers, then depth 2, etc.
-    let mut current_depth_nodes: Vec<&cognicode_core::domain::aggregates::CallEntry> = Vec::new();
-    let mut next_depth_nodes: Vec<&cognicode_core::domain::aggregates::CallEntry> = Vec::new();
-    let mut current_depth = 1;
-
-    // First pass: collect depth-1 callers
+    // Group entries by depth level
+    let mut depth_map: std::collections::BTreeMap<u8, Vec<&CallEntry>> =
+        std::collections::BTreeMap::new();
     for entry in &entries {
-        if entry.depth == 1 {
-            current_depth_nodes.push(entry);
-        }
+        depth_map.entry(entry.depth).or_default().push(entry);
     }
 
-    // Render depth 1 (direct callers) on the left
-    for entry in &current_depth_nodes {
-        let entry_id = sanitize_id(entry.symbol_id.as_str());
-        if seen.insert(entry_id.clone()) {
-            lines.push(format!("        {}[{}]", entry_id, entry.symbol_name));
-            lines.push(format!("        {} --> {}", entry_id, center_id));
-        }
-    }
+    // Track nodes per depth for BFS edge rendering
+    let mut nodes_by_depth: std::collections::HashMap<u8, Vec<String>> =
+        std::collections::HashMap::new();
 
-    // For higher depths, we process remaining entries
-    // Note: traverse_callers returns CallEntry with depth information
-    let mut max_depth_shown = 1;
-    for entry in &entries {
-        if entry.depth > max_depth_shown && entry.depth <= 3 {
-            max_depth_shown = entry.depth;
+    // Render each depth level
+    for (depth, nodes_at_depth) in &depth_map {
+        let depth_label = match *depth {
+            1 => "direct callers",
+            2 => "indirect callers",
+            _ => "distant callers",
+        };
+
+        let mut node_ids_at_this_depth = Vec::new();
+
+        for entry in nodes_at_depth {
             let entry_id = sanitize_id(entry.symbol_id.as_str());
-            if seen.insert(entry_id.clone()) {
-                lines.push(format!("        {}[{}]", entry_id, entry.symbol_name));
-                lines.push(format!("        {} -.-> {}", entry_id, center_id));
+            lines.push(format!(
+                "        {}[\"{}\\n({})\"]",
+                entry_id,
+                entry.symbol_name,
+                depth_label
+            ));
+
+            // BFS tree edge: connect to nodes at previous depth (or center for depth 1)
+            if *depth == 1 {
+                lines.push(format!("        {} --> {}", entry_id, center_id));
+            } else if let Some(prev_depth) = depth.checked_sub(1) {
+                if let Some(prev_nodes) = nodes_by_depth.get(&prev_depth) {
+                    for prev_id in prev_nodes {
+                        lines.push(format!("        {} --> {}", prev_id, entry_id));
+                    }
+                }
             }
+
+            node_ids_at_this_depth.push(entry_id);
         }
+
+        nodes_by_depth.insert(*depth, node_ids_at_this_depth);
     }
 
     lines.push("    end".to_string());
@@ -255,7 +285,7 @@ pub fn impact_radius_to_mermaid(ctx: &ViewContext, symbol: &str) -> String {
 
 /// Render a decision trace as a Mermaid `flowchart LR` diagram.
 ///
-/// `ctx` provides ADR/graph data for the decision trace.
+/// `ctx` provides the narrow port for the decision trace.
 ///
 /// `decision_id` is the decision UUID.
 ///
@@ -263,9 +293,10 @@ pub fn impact_radius_to_mermaid(ctx: &ViewContext, symbol: &str) -> String {
 ///
 /// ## Feature gate
 ///
-/// Requires the `multimodal` feature to be enabled.
+/// This function is only callable when the `multimodal` feature is enabled.
+/// The MCP tool and REST endpoint gate the `decision_trace` variant behind this feature.
 #[cfg(feature = "multimodal")]
-pub fn decision_trace_to_mermaid(ctx: &ViewContext, decision_id: &str) -> String {
+pub fn decision_trace_to_mermaid(_ctx: &TraceEmitContext, decision_id: &str) -> String {
     // TODO: When DecisionTrace executor is implemented, extract data from ctx
     // For now, return a placeholder that shows the expected structure
     format!(
@@ -274,33 +305,20 @@ pub fn decision_trace_to_mermaid(ctx: &ViewContext, decision_id: &str) -> String
     )
 }
 
-#[cfg(not(feature = "multimodal"))]
-pub fn decision_trace_to_mermaid(_ctx: &ViewContext, _decision_id: &str) -> String {
-    "// decision_trace_to_mermaid requires the `multimodal` feature".to_string()
-}
-
 // ============================================================================
 // vertical_slice_to_mermaid
 // ============================================================================
 
 /// Render a vertical slice (full entry-point trace) as a Mermaid `flowchart TD`.
 ///
-/// `ctx` provides the data for building the vertical slice.
+/// `ctx` provides the [`GraphQueryPort`](cognicode_core::domain::traits::graph_query_port::GraphQueryPort)
+/// for forward traversal and the resolved `target` symbol.
 ///
 /// `entry_point` is the entry point identifier (HTTP route, CLI command, etc.).
 ///
 /// Full vertical trace: HTTP → use case → domain → repo → DB
-pub fn vertical_slice_to_mermaid(ctx: &ViewContext, entry_point: &str) -> String {
-    // Vertical slice traces the full path from entry point through all layers.
-    // When we have the target symbol, we can trace its call graph.
-    let Some(graph_query) = ctx.graph_query else {
-        return format!(
-            "flowchart TD\n    subgraph vertical_slice[\"vertical_slice: {}\"]\n        direction TD\n        {}[{}]\n    end",
-            sanitize_id(entry_point),
-            sanitize_id(entry_point),
-            sanitize_id(entry_point)
-        );
-    };
+pub fn vertical_slice_to_mermaid(ctx: &TraceEmitContext, entry_point: &str) -> String {
+    let graph_query = ctx.graph_query;
 
     let Some(InspectionTarget::Symbol(target_symbol)) = Option::from(ctx.target) else {
         return format!(
@@ -337,7 +355,7 @@ pub fn vertical_slice_to_mermaid(ctx: &ViewContext, entry_point: &str) -> String
     seen.insert(center_id.clone());
 
     // Group by depth
-    let mut depth_nodes: std::collections::HashMap<u8, Vec<&cognicode_core::domain::aggregates::CallEntry>> =
+    let mut depth_nodes: std::collections::HashMap<u8, Vec<&CallEntry>> =
         std::collections::HashMap::new();
     for entry in &entries {
         depth_nodes.entry(entry.depth).or_default().push(entry);
@@ -381,55 +399,15 @@ pub fn vertical_slice_to_mermaid(ctx: &ViewContext, entry_point: &str) -> String
 mod tests {
     use super::*;
 
-    use crate::dto::{InspectionTarget, ViewContext};
-    use crate::error::ExplorerResult;
-    use crate::ports::symbol_repository::{GraphStats, ResolvedSymbol};
-    use crate::ports::source_reader::SourceReader;
+    use crate::dto::InspectionTarget;
+    use crate::ports::symbol_repository::ResolvedSymbol;
     use cognicode_core::domain::aggregates::CallEntry;
     use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
     use cognicode_core::domain::value_objects::SymbolKind;
-    use std::sync::Arc;
 
     // ------------------------------------------------------------------------
-    // Mock implementations for testing
+    // Mock GraphQueryPort for testing
     // ------------------------------------------------------------------------
-
-    struct NoopSourceReader;
-
-    impl SourceReader for NoopSourceReader {
-        fn read_source(&self, _file: &str) -> ExplorerResult<String> {
-            Ok(String::new())
-        }
-        fn read_lines(&self, _file: &str, _start: u32, _end: u32) -> ExplorerResult<Vec<(u32, String)>> {
-            Ok(vec![])
-        }
-    }
-
-    struct MockSymbolRepository;
-
-    impl SymbolRepository for MockSymbolRepository {
-        fn resolve(&self, _id: &SymbolId) -> ExplorerResult<Option<ResolvedSymbol>> {
-            Ok(None)
-        }
-        fn find_symbols_by_name(&self, _name: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
-            Ok(vec![])
-        }
-        fn find_symbols_by_file(&self, _file: &str) -> ExplorerResult<Vec<ResolvedSymbol>> {
-            Ok(vec![])
-        }
-        fn module_list(&self) -> Vec<String> {
-            vec![]
-        }
-        fn all_symbols(&self) -> ExplorerResult<Vec<ResolvedSymbol>> {
-            Ok(vec![])
-        }
-        fn graph_stats(&self) -> GraphStats {
-            GraphStats {
-                symbol_count: 0,
-                relation_count: 0,
-            }
-        }
-    }
 
     struct MockGraphQueryPort {
         callers_result: Vec<cognicode_core::domain::traits::graph_query_port::RelationTarget>,
@@ -538,14 +516,10 @@ mod tests {
 
         let target = make_target_symbol("my_function");
         let inspection_target = InspectionTarget::Symbol(target);
-        let ctx = ViewContext {
+        let ctx = TraceEmitContext {
+            graph_query: &mock_gq,
             target: &inspection_target,
-            repo: &MockSymbolRepository,
-            reader: &NoopSourceReader,
-            quality: None,
-            graph_query: Some(&mock_gq),
         };
-
         let result = call_graph_to_mermaid(&ctx, "symbol:test:my_function:1");
 
         assert!(result.contains("flowchart TD"));
@@ -562,14 +536,10 @@ mod tests {
         let mock_gq = MockGraphQueryPort::new();
         let target = make_target_symbol("orphan_fn");
         let inspection_target = InspectionTarget::Symbol(target);
-        let ctx = ViewContext {
+        let ctx = TraceEmitContext {
+            graph_query: &mock_gq,
             target: &inspection_target,
-            repo: &MockSymbolRepository,
-            reader: &NoopSourceReader,
-            quality: None,
-            graph_query: Some(&mock_gq),
         };
-
         let result = call_graph_to_mermaid(&ctx, "symbol:test:orphan_fn:1");
 
         assert!(result.contains("flowchart TD"));
@@ -582,12 +552,9 @@ mod tests {
         let mock_gq = MockGraphQueryPort::new();
         let target = make_target_symbol("fn_with_special");
         let inspection_target = InspectionTarget::Symbol(target);
-        let ctx = ViewContext {
+        let ctx = TraceEmitContext {
+            graph_query: &mock_gq,
             target: &inspection_target,
-            repo: &MockSymbolRepository,
-            reader: &NoopSourceReader,
-            quality: None,
-            graph_query: Some(&mock_gq),
         };
 
         // Symbol ID with special characters
@@ -614,20 +581,20 @@ mod tests {
 
         let target = make_target_symbol("target_fn");
         let inspection_target = InspectionTarget::Symbol(target);
-        let ctx = ViewContext {
+        let ctx = TraceEmitContext {
+            graph_query: &mock_gq,
             target: &inspection_target,
-            repo: &MockSymbolRepository,
-            reader: &NoopSourceReader,
-            quality: None,
-            graph_query: Some(&mock_gq),
         };
-
         let result = impact_radius_to_mermaid(&ctx, "symbol:test:target_fn:1");
 
         assert!(result.contains("flowchart TD"));
         assert!(result.contains("subgraph impact_radius"));
         assert!(result.contains("direct_caller"));
         assert!(result.contains("indirect_caller"));
+        // Verify BFS tree structure: depth-2 entry should have "indirect callers" label
+        assert!(result.contains("indirect callers"));
+        // Verify edges go depth-1 --> depth-2 (BFS tree), not depth-2 --> center (star)
+        // The Mermaid should show a chain structure
     }
 
     #[test]
@@ -635,14 +602,10 @@ mod tests {
         let mock_gq = MockGraphQueryPort::new();
         let target = make_target_symbol("leaf_fn");
         let inspection_target = InspectionTarget::Symbol(target);
-        let ctx = ViewContext {
+        let ctx = TraceEmitContext {
+            graph_query: &mock_gq,
             target: &inspection_target,
-            repo: &MockSymbolRepository,
-            reader: &NoopSourceReader,
-            quality: None,
-            graph_query: Some(&mock_gq),
         };
-
         let result = impact_radius_to_mermaid(&ctx, "symbol:test:leaf_fn:1");
 
         assert!(result.contains("flowchart TD"));
@@ -655,14 +618,10 @@ mod tests {
         let mock_gq = MockGraphQueryPort::new();
         let target = make_target_symbol("target");
         let inspection_target = InspectionTarget::Symbol(target);
-        let ctx = ViewContext {
+        let ctx = TraceEmitContext {
+            graph_query: &mock_gq,
             target: &inspection_target,
-            repo: &MockSymbolRepository,
-            reader: &NoopSourceReader,
-            quality: None,
-            graph_query: Some(&mock_gq),
         };
-
         let result = impact_radius_to_mermaid(&ctx, "symbol:test:fn(path):1");
 
         assert!(result.contains("flowchart TD"));
@@ -673,30 +632,19 @@ mod tests {
     // decision_trace_to_mermaid — multimodal feature gate
     // ------------------------------------------------------------------------
 
+    #[cfg(feature = "multimodal")]
     #[test]
-    fn decision_trace_requires_multimodal_feature() {
-        let ctx = ViewContext {
-            target: &InspectionTarget::Symbol(make_target_symbol("test")),
-            repo: &MockSymbolRepository,
-            reader: &NoopSourceReader,
-            quality: None,
-            graph_query: None,
+    fn decision_trace_returns_placeholder_when_multimodal_enabled() {
+        let mock_gq = MockGraphQueryPort::new();
+        let target = make_target_symbol("test");
+        let inspection_target = InspectionTarget::Symbol(target);
+        let ctx = TraceEmitContext {
+            graph_query: &mock_gq,
+            target: &inspection_target,
         };
-
         let result = decision_trace_to_mermaid(&ctx, "decision-uuid-123");
-
-        #[cfg(feature = "multimodal")]
-        {
-            assert!(result.contains("flowchart LR"));
-            assert!(result.contains("decision_trace"));
-        }
-
-        #[cfg(not(feature = "multimodal"))]
-        {
-            // The non-multimodal version returns a message indicating the feature is required
-            assert!(result.contains("multimodal"));
-            assert!(result.contains("requires"));
-        }
+        assert!(result.contains("flowchart LR"));
+        assert!(result.contains("decision_trace"));
     }
 
     // ------------------------------------------------------------------------
@@ -716,14 +664,10 @@ mod tests {
 
         let target = make_target_symbol("handle_request");
         let inspection_target = InspectionTarget::Symbol(target);
-        let ctx = ViewContext {
+        let ctx = TraceEmitContext {
+            graph_query: &mock_gq,
             target: &inspection_target,
-            repo: &MockSymbolRepository,
-            reader: &NoopSourceReader,
-            quality: None,
-            graph_query: Some(&mock_gq),
         };
-
         let result = vertical_slice_to_mermaid(&ctx, "POST /api/users");
 
         assert!(result.contains("flowchart TD"));
@@ -738,14 +682,10 @@ mod tests {
         let mock_gq = MockGraphQueryPort::new();
         let target = make_target_symbol("entry");
         let inspection_target = InspectionTarget::Symbol(target);
-        let ctx = ViewContext {
+        let ctx = TraceEmitContext {
+            graph_query: &mock_gq,
             target: &inspection_target,
-            repo: &MockSymbolRepository,
-            reader: &NoopSourceReader,
-            quality: None,
-            graph_query: Some(&mock_gq),
         };
-
         let result = vertical_slice_to_mermaid(&ctx, "entry_point");
 
         assert!(result.contains("flowchart TD"));
@@ -758,14 +698,10 @@ mod tests {
         let mock_gq = MockGraphQueryPort::new();
         let target = make_target_symbol("handler");
         let inspection_target = InspectionTarget::Symbol(target);
-        let ctx = ViewContext {
+        let ctx = TraceEmitContext {
+            graph_query: &mock_gq,
             target: &inspection_target,
-            repo: &MockSymbolRepository,
-            reader: &NoopSourceReader,
-            quality: None,
-            graph_query: Some(&mock_gq),
         };
-
         let result = vertical_slice_to_mermaid(&ctx, "GET /api/items/:id");
 
         assert!(result.contains("flowchart TD"));
