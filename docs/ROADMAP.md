@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-06-29 (E19-5 closed — PASS, PR #85, v0.35.0)
+Last updated: 2026-06-29 (E20-1 closed — PASS, PR #86, v0.36.0)
 
 ## Active
 
@@ -32,9 +32,9 @@ Last updated: 2026-06-29 (E19-5 closed — PASS, PR #85, v0.35.0)
 
 | Change | Goal | ADR | Priority |
 |--------|------|-----|----------|
-| `e19-1-rename-c4-toggle` | Rename "C4 Components" to "Structure" (honest labeling) | ADR-004 | HIGH | [#81](https://github.com/Rubentxu/CogniCode/pull/81) |
-| `e19-2-c4-level-selector` | Level selector: Context / Container / Component / Code | ADR-004 | HIGH | [#82](https://github.com/Rubentxu/CogniCode/pull/82) |
-| `e19-3-c4-overlays` | Overlays: drift + hotspots on C4 nodes | ADR-004 | HIGH | [#83](https://github.com/Rubentxu/CogniCode/pull/83) |
+| `e19-1-rename-c4-toggle` | Rename "C4 Components" to "Structure" (honest labeling) | ADR-004 | HIGH | DONE | [#81](https://github.com/Rubentxu/CogniCode/pull/81) |
+| `e19-2-c4-level-selector` | Level selector: Context / Container / Component / Code | ADR-004 | HIGH | DONE | [#82](https://github.com/Rubentxu/CogniCode/pull/82) |
+| `e19-3-c4-overlays` | Overlays: drift + hotspots on C4 nodes | ADR-004 | HIGH | DONE | [#83](https://github.com/Rubentxu/CogniCode/pull/83) |
 | `e19-4-c4-dynamic-views` | Dynamic views from investigation traces (request/event flow) | ADR-004 | MEDIUM | DONE | [#84](https://github.com/Rubentxu/CogniCode/pull/84) |
 | `e19-5-expected-architecture` | Expected architecture baseline + drift governance | ADR-004 | MEDIUM | DONE | [#85](https://github.com/Rubentxu/CogniCode/pull/85) |
 
@@ -42,7 +42,7 @@ Last updated: 2026-06-29 (E19-5 closed — PASS, PR #85, v0.35.0)
 
 | Change | Goal | ADR | Priority |
 |--------|------|-----|----------|
-| `e20-1-mermaid-c4-export` | `to_mermaid()` for c4_context, c4_container, c4_component | ADR-003 | HIGH |
+| `e20-1-mermaid-c4-export` | `to_mermaid()` for c4_context, c4_container, c4_component | ADR-003 | HIGH | DONE | [#86](https://github.com/Rubentxu/CogniCode/pull/86) |
 | `e20-2-mermaid-trace-export` | Mermaid export for call_graph, impact_radius, decision_trace, vertical_slice | ADR-003 | HIGH |
 | `e20-3-drawio-action` | "Open in draw.io" action in C4 toolbar + pane inspector | ADR-003 | HIGH |
 | `e20-4-svg-snapshot` | SVG/PNG snapshot export for static documentation | ADR-003 | LOW |
@@ -67,6 +67,32 @@ E18 (UX foundation)  ──→  E20 (diagrams)  ──→  E21 (investigations)
 ```
 
 E18 and E19 can start in parallel. E20 depends on E19 (C4 levels inform diagram content). E21 depends on E18 + E20 (UX foundation + diagram artifacts).
+
+## Session Handover 2026-06-29
+
+Closed E19 milestone (C4 Investigation Model) + E20-1:
+- E19-1 ✅ (PR #81) — Rename C4 Components → Structure
+- E19-2 ✅ (PR #82) — 5-button level selector
+- E19-3 ✅ (PR #83) — C4 overlays (drift + hotspots)
+- E19-4 ✅ (PR #84, v0.34.0) — ComposedNarrativeExecutor
+- E19-5 ✅ (PR #85, v0.35.0) — Expected architecture + boundary violation detection
+- E20-1 ✅ (PR #86, v0.36.0) — C4 Mermaid export
+
+### Pending
+- E20-2: Mermaid trace export (call_graph, impact_radius, decision_trace, vertical_slice)
+- E20-3: draw.io action
+- E20-4: SVG/PNG snapshot
+- E21-1: Investigation entity + PostgreSQL
+
+### Key fixes applied
+- NodeKind::Route #[cfg(multimodal)] guards in cognicode-core (pre-existing bug)
+- Severity::Info match arm in graph.rs (cargo check --features multimodal)
+- boundary_violation overlay wiring in GraphLanding.tsx (dead frontend plumbing)
+- edge_style_class_for("depends_on") missing arm
+
+### Technical debt
+- PersistenceService ISP wide port (8 methods, 1 used) — pre-existing
+- c4OverlaySlice.test.ts not extended for toggleBoundaryViolations
 
 ## Session Handover 2026-06-28
 

@@ -9,6 +9,7 @@ pub mod entry_point;
 pub mod evidence;
 pub mod lens;
 pub mod lenses;
+pub mod mermaid_util;
 pub mod object_identity;
 pub mod views;
 
