@@ -135,13 +135,16 @@ impl ToolHandler for ExportSnapshotHandler {
         };
 
         // Render to PNG/SVG via SnapshotService
-        let snapshot_svc = ctx.snapshot.as_ref().ok_or_else(|| {
-            err_envelope(
-                TOOL_EXPORT_SNAPSHOT,
-                "snapshot_not_configured",
-                "snapshot service not configured (mmdc may not be installed)",
-            )
-        })?;
+        let snapshot_svc = match ctx.snapshot.as_ref() {
+            Some(s) => s,
+            None => {
+                return err_envelope(
+                    TOOL_EXPORT_SNAPSHOT,
+                    "snapshot_not_configured",
+                    "snapshot service not configured (mmdc may not be installed)",
+                );
+            }
+        };
         let bytes = match snapshot_svc.render(&mermaid_text, format).await {
             Ok(data) => data,
             Err(e) => {
@@ -179,9 +182,9 @@ async fn emit_mermaid_for_snapshot(
 
     if view_kind.is_trace_kind() {
         let target = target.ok_or_else(|| "target is required for trace view kinds")?;
-        emit_trace_mermaid(graph_svc, workspace_svc, view_kind, target).await
+        emit_trace_mermaid(&**graph_svc, &**workspace_svc, view_kind, target).await
     } else {
-        emit_c4_mermaid(graph_svc, workspace_svc, view_kind).await
+        emit_c4_mermaid(&**graph_svc, &**workspace_svc, view_kind).await
     }
 }
 
