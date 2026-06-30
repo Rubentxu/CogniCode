@@ -74,6 +74,13 @@ const SCHEMA_SQL_QUALITY: &str = include_str!("m0011_quality.sql");
 #[cfg(feature = "postgres")]
 const SCHEMA_SQL_ROUTES: &str = include_str!("m0012_route_nodes_protocol_edges.sql");
 
+/// Investigation entity DDL — ADR-005 Phase INV-1.
+/// Creates `investigations`, `investigation_evidence`, and
+/// `investigation_artifacts` tables. Always loaded when `postgres`
+/// feature is enabled.
+#[cfg(feature = "postgres")]
+const SCHEMA_SQL_INVESTIGATION: &str = include_str!("m0013_investigation.sql");
+
 /// PostgreSQL-backed implementation of the async [`Repository`]
 /// trait. Owns its [`PgPool`]; consumers that want shared
 /// ownership can wrap in `Arc<PostgresRepository>`.
@@ -172,6 +179,14 @@ pub async fn run_migrations(&self) -> Result<(), RepositoryError> {
         .execute(&self.pool)
         .await
         .map_err(|e| RepositoryError::Store(format!("routes migration: {e}")))?;
+
+    // 6. Investigation entity (investigations + evidence + artifacts).
+    //    Always loaded when `postgres` feature is on. Backs the
+    //    Investigation entity from ADR-005 Phase INV-1.
+    sqlx::raw_sql(SCHEMA_SQL_INVESTIGATION)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("investigation migration: {e}")))?;
 
     Ok(())
 }
@@ -1122,6 +1137,52 @@ pub struct ExplorationSessionRow {
     pub created_at: String,
 }
 
+// Investigation entity row types — ADR-005 INV-1.
+// These use manual From<sqlx::Row> conversion because TIMESTAMPTZ and
+// JSONB require explicit type coercion in the query (sqlx::FromRow
+// infers TEXT for JSONB which does not round-trip cleanly).
+
+/// Row type for the `investigations` table.
+#[derive(Debug, Clone)]
+pub struct InvestigationRow {
+    pub id: String,
+    pub workspace_id: String,
+    pub title: String,
+    pub goal: String,
+    pub status: String,
+    pub entry_point: Option<String>,
+    pub panes: serde_json::Value,
+    pub narrative: String,
+    pub related_adrs: serde_json::Value,
+    /// PG `TIMESTAMPTZ` -> RFC 3339 string.
+    pub created_at: String,
+    /// PG `TIMESTAMPTZ` -> RFC 3339 string.
+    pub updated_at: String,
+}
+
+/// Row type for the `investigation_evidence` table.
+#[derive(Debug, Clone)]
+pub struct InvestigationEvidenceRow {
+    pub id: String,
+    pub investigation_id: String,
+    pub object_id: String,
+    pub view_id: Option<String>,
+    pub note: String,
+    /// PG `TIMESTAMPTZ` -> RFC 3339 string.
+    pub pinned_at: String,
+}
+
+/// Row type for the `investigation_artifacts` table.
+#[derive(Debug, Clone)]
+pub struct InvestigationArtifactRow {
+    pub id: String,
+    pub investigation_id: String,
+    pub kind: String,
+    pub title: String,
+    pub content: String,
+    pub generated_from: Option<String>,
+}
+
 /// Split a `file:name:line` qualified name into its components.
 ///
 /// `file` itself may legitimately contain `:` (Windows drive
@@ -1771,6 +1832,249 @@ impl Repository for PostgresRepository {
             .try_get("n")
             .map_err(|e| RepositoryError::Store(format!("count_edges column: {e}")))?;
         Ok(n.max(0) as usize)
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl PostgresRepository {
+    // -------------------------------------------------------------------------
+    // Investigation entity — ADR-005 INV-1
+    // -------------------------------------------------------------------------
+
+    /// Save an investigation with its evidence and artifacts in a single
+    /// atomic transaction.
+    ///
+    /// If the investigation id already exists it is updated (upsert).
+    /// Evidence and artifacts are deleted first then re-inserted (replace
+    /// strategy) so the caller passes the complete desired state.
+    ///
+    /// Transaction: BEGIN … COMMIT. On any error the entire operation
+    /// rolls back automatically.
+    pub async fn save_investigation_tx(
+        &self,
+        investigation: &InvestigationRow,
+        evidence: &[InvestigationEvidenceRow],
+        artifacts: &[InvestigationArtifactRow],
+    ) -> Result<(), RepositoryError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| RepositoryError::Store(format!("save_investigation begin: {e}")))?;
+
+        // Upsert the investigation row.
+        sqlx::query(
+            "INSERT INTO investigations \
+             (id, workspace_id, title, goal, status, entry_point, panes, narrative, related_adrs, created_at, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) \
+             ON CONFLICT (id) DO UPDATE SET \
+               title = EXCLUDED.title, \
+               goal = EXCLUDED.goal, \
+               status = EXCLUDED.status, \
+               entry_point = EXCLUDED.entry_point, \
+               panes = EXCLUDED.panes, \
+               narrative = EXCLUDED.narrative, \
+               related_adrs = EXCLUDED.related_adrs, \
+               updated_at = EXCLUDED.updated_at",
+        )
+        .bind(&investigation.id)
+        .bind(&investigation.workspace_id)
+        .bind(&investigation.title)
+        .bind(&investigation.goal)
+        .bind(&investigation.status)
+        .bind(&investigation.entry_point)
+        .bind(&investigation.panes)
+        .bind(&investigation.narrative)
+        .bind(&investigation.related_adrs)
+        .bind(&investigation.created_at)
+        .bind(&investigation.updated_at)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("save_investigation insert: {e}")))?;
+
+        // Delete existing evidence and artifacts (replace strategy).
+        sqlx::query("DELETE FROM investigation_evidence WHERE investigation_id = $1")
+            .bind(&investigation.id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("save_investigation delete evidence: {e}")))?;
+
+        sqlx::query("DELETE FROM investigation_artifacts WHERE investigation_id = $1")
+            .bind(&investigation.id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("save_investigation delete artifacts: {e}")))?;
+
+        // Re-insert evidence.
+        for ev in evidence {
+            sqlx::query(
+                "INSERT INTO investigation_evidence \
+                 (id, investigation_id, object_id, view_id, note, pinned_at) \
+                 VALUES ($1, $2, $3, $4, $5, $6)",
+            )
+            .bind(&ev.id)
+            .bind(&ev.investigation_id)
+            .bind(&ev.object_id)
+            .bind(&ev.view_id)
+            .bind(&ev.note)
+            .bind(&ev.pinned_at)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("save_investigation insert evidence: {e}")))?;
+        }
+
+        // Re-insert artifacts.
+        for art in artifacts {
+            sqlx::query(
+                "INSERT INTO investigation_artifacts \
+                 (id, investigation_id, kind, title, content, generated_from) \
+                 VALUES ($1, $2, $3, $4, $5, $6)",
+            )
+            .bind(&art.id)
+            .bind(&art.investigation_id)
+            .bind(&art.kind)
+            .bind(&art.title)
+            .bind(&art.content)
+            .bind(&art.generated_from)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("save_investigation insert artifact: {e}")))?;
+        }
+
+        tx.commit()
+            .await
+            .map_err(|e| RepositoryError::Store(format!("save_investigation commit: {e}")))?;
+        Ok(())
+    }
+
+    /// Load a single investigation by id. Returns `Ok(None)` when not found.
+    pub async fn load_investigation(
+        &self,
+        id: &str,
+    ) -> Result<Option<InvestigationRow>, RepositoryError> {
+        let row = sqlx::query(
+            "SELECT id, workspace_id, title, goal, status, entry_point, \
+             panes, narrative, related_adrs, created_at, updated_at \
+             FROM investigations WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("load_investigation: {e}")))?;
+
+        Ok(row.map(|r| InvestigationRow {
+            id: r.get("id"),
+            workspace_id: r.get("workspace_id"),
+            title: r.get("title"),
+            goal: r.get("goal"),
+            status: r.get("status"),
+            entry_point: r.get("entry_point"),
+            panes: r.get("panes"),
+            narrative: r.get("narrative"),
+            related_adrs: r.get("related_adrs"),
+            created_at: r.get("created_at"),
+            updated_at: r.get("updated_at"),
+        }))
+    }
+
+    /// List all investigations for a workspace, ordered by updated_at desc.
+    pub async fn list_investigations(
+        &self,
+        workspace_id: &str,
+    ) -> Result<Vec<InvestigationRow>, RepositoryError> {
+        let rows = sqlx::query(
+            "SELECT id, workspace_id, title, goal, status, entry_point, \
+             panes, narrative, related_adrs, created_at, updated_at \
+             FROM investigations WHERE workspace_id = $1 \
+             ORDER BY updated_at DESC",
+        )
+        .bind(workspace_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("list_investigations: {e}")))?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| InvestigationRow {
+                id: r.get("id"),
+                workspace_id: r.get("workspace_id"),
+                title: r.get("title"),
+                goal: r.get("goal"),
+                status: r.get("status"),
+                entry_point: r.get("entry_point"),
+                panes: r.get("panes"),
+                narrative: r.get("narrative"),
+                related_adrs: r.get("related_adrs"),
+                created_at: r.get("created_at"),
+                updated_at: r.get("updated_at"),
+            })
+            .collect())
+    }
+
+    /// Delete an investigation and all its evidence and artifacts.
+    /// The FK cascade handles evidence and artifacts automatically.
+    pub async fn delete_investigation(&self, id: &str) -> Result<(), RepositoryError> {
+        sqlx::query("DELETE FROM investigations WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| RepositoryError::Store(format!("delete_investigation: {e}")))?;
+        Ok(())
+    }
+
+    /// Load all evidence items for an investigation.
+    pub async fn load_investigation_evidence(
+        &self,
+        investigation_id: &str,
+    ) -> Result<Vec<InvestigationEvidenceRow>, RepositoryError> {
+        let rows = sqlx::query(
+            "SELECT id, investigation_id, object_id, view_id, note, pinned_at \
+             FROM investigation_evidence WHERE investigation_id = $1 \
+             ORDER BY pinned_at ASC",
+        )
+        .bind(investigation_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("load_investigation_evidence: {e}")))?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| InvestigationEvidenceRow {
+                id: r.get("id"),
+                investigation_id: r.get("investigation_id"),
+                object_id: r.get("object_id"),
+                view_id: r.get("view_id"),
+                note: r.get("note"),
+                pinned_at: r.get("pinned_at"),
+            })
+            .collect())
+    }
+
+    /// Load all artifacts for an investigation.
+    pub async fn load_investigation_artifacts(
+        &self,
+        investigation_id: &str,
+    ) -> Result<Vec<InvestigationArtifactRow>, RepositoryError> {
+        let rows = sqlx::query(
+            "SELECT id, investigation_id, kind, title, content, generated_from \
+             FROM investigation_artifacts WHERE investigation_id = $1",
+        )
+        .bind(investigation_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("load_investigation_artifacts: {e}")))?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| InvestigationArtifactRow {
+                id: r.get("id"),
+                investigation_id: r.get("investigation_id"),
+                kind: r.get("kind"),
+                title: r.get("title"),
+                content: r.get("content"),
+                generated_from: r.get("generated_from"),
+            })
+            .collect())
     }
 }
 
