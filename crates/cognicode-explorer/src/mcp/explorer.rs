@@ -41,6 +41,7 @@ use crate::facades::{
 };
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::SymbolRepository;
+use crate::domain::snapshot::SnapshotService;
 use crate::session::SessionRegistry;
 
 /// Sentinel value for `max_depth` when none is supplied.
@@ -194,6 +195,9 @@ pub const TOOL_GRAPH_SEARCH: &str = "graph_search";
 
 /// `issues_ingest` — ingest GitHub issues from a repository (multimodal).
 pub const TOOL_ISSUES_INGEST: &str = "issues_ingest";
+
+/// `export_snapshot` — render a C4 or trace diagram as PNG or SVG (multimodal).
+pub const TOOL_EXPORT_SNAPSHOT: &str = "export_snapshot";
 
 /// `lens_find_dead_code` — symbols not reachable from any entry point.
 pub const TOOL_FIND_DEAD_CODE: &str = "lens_find_dead_code";
@@ -454,6 +458,11 @@ impl ExplorerMcpHandler {
         if let Some(ee) = edge_emitter {
             ctx_builder = ctx_builder.with_edge_emitter(ee);
         }
+        #[cfg(feature = "multimodal")]
+        {
+            let snapshot = Arc::new(SnapshotService::new());
+            ctx_builder = ctx_builder.with_snapshot(snapshot);
+        }
         let ctx = ctx_builder.build();
 
         // Build registry and register all handlers.
@@ -474,6 +483,9 @@ impl ExplorerMcpHandler {
         crate::mcp::handler::register_session_handlers(&mut registry);
         crate::mcp::handler::register_view_handlers(&mut registry);
         crate::mcp::handler::register_workspace_handlers(&mut registry);
+
+        #[cfg(feature = "multimodal")]
+        crate::mcp::handler::register_snapshot_handlers(&mut registry);
 
         Self::new(registry, ctx)
     }
@@ -644,6 +656,7 @@ pub const TOOL_NAMES_MULTIMODAL: &[&str] = &[
     TOOL_DOCS_INGEST,
     TOOL_GRAPH_SEARCH,
     TOOL_ISSUES_INGEST,
+    TOOL_EXPORT_SNAPSHOT,
 ];
 
 /// All tool names for the current build variant.

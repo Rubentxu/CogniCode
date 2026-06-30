@@ -17,6 +17,7 @@ use cognicode_core::domain::traits::GraphQueryPort;
 use crate::facades::{
     GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
 };
+use crate::domain::snapshot::SnapshotService;
 use crate::ports::{EdgeEmitter, QualityRepository, QualityWritePort};
 use crate::session::SessionRegistry;
 
@@ -70,6 +71,9 @@ pub struct McpContext {
     /// Used by `ingest_openapi` (cycle e15.5) to persist `Route` nodes
     /// and `HttpCalls` edges into `api_routes` + `api_route_edges`.
     pub edge_emitter: Option<Arc<dyn EdgeEmitter>>,
+    /// Snapshot rendering service (requires mmdc on PATH).
+    /// Used by the snapshot MCP handler to render diagrams as PNG/SVG.
+    pub snapshot: Option<Arc<SnapshotService>>,
 }
 
 impl McpContext {
@@ -90,6 +94,7 @@ impl McpContext {
             quality: None,
             quality_write: None,
             edge_emitter: None,
+            snapshot: None,
         }
     }
 
@@ -152,6 +157,12 @@ impl McpContext {
         self.edge_emitter = Some(edge_emitter);
         self
     }
+
+    /// Wire a `SnapshotService` into the context.
+    pub fn with_snapshot(mut self, snapshot: Arc<SnapshotService>) -> Self {
+        self.snapshot = Some(snapshot);
+        self
+    }
 }
 
 /// Builder for [`McpContext`].
@@ -168,6 +179,7 @@ pub struct McpContextBuilder {
     quality: Option<Arc<dyn QualityRepository>>,
     quality_write: Option<Arc<dyn QualityWritePort>>,
     edge_emitter: Option<Arc<dyn EdgeEmitter>>,
+    snapshot: Option<Arc<SnapshotService>>,
     #[cfg(feature = "multimodal")]
     graph_repo: Option<Option<Arc<dyn crate::ports::graph_repository::GraphRepository>>>,
 }
@@ -187,6 +199,7 @@ impl McpContextBuilder {
             quality: None,
             quality_write: None,
             edge_emitter: None,
+            snapshot: None,
             #[cfg(feature = "multimodal")]
             graph_repo: Some(None),
         }
@@ -264,6 +277,12 @@ impl McpContextBuilder {
         self
     }
 
+    /// Wire a `SnapshotService` into the context.
+    pub fn with_snapshot(mut self, snapshot: Arc<SnapshotService>) -> Self {
+        self.snapshot = Some(snapshot);
+        self
+    }
+
     /// Wire an optional `GraphQueryPort` into the context (Phase 4).
     /// Passes through `None` when `graph_query` is `None`.
     pub fn with_optional_graph_query(
@@ -300,6 +319,7 @@ impl McpContextBuilder {
             quality: self.quality,
             quality_write: self.quality_write,
             edge_emitter: self.edge_emitter,
+            snapshot: self.snapshot,
         }
     }
 }

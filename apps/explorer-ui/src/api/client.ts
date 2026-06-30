@@ -685,3 +685,55 @@ export async function fetchC4Mermaid(
   }
   return response.text();
 }
+
+// ============================================================================
+// Diagram Snapshot Export — E20-4
+// ============================================================================
+
+export type SnapshotFormat = "png" | "svg";
+
+/**
+ * Snapshot options for `fetchSnapshot`.
+ */
+export type SnapshotOptions = {
+  viewKind: string;
+  target?: string;
+  format: SnapshotFormat;
+};
+
+/**
+ * Fetch a rendered diagram snapshot (PNG or SVG) for a workspace.
+ * Returns the raw binary blob — callers handle download/display.
+ *
+ * Backend: `GET /api/workspaces/:workspace_id/snapshot?view_kind=&target=&format=png|svg`
+ * Response: `image/png` or `image/svg+xml` binary blob
+ *
+ * @throws ApiError on non-2xx responses
+ */
+export async function fetchSnapshot(
+  workspaceId: string,
+  viewKind: string,
+  format: SnapshotFormat,
+  target?: string,
+): Promise<Blob> {
+  const query: Record<string, string> = { view_kind: viewKind, format };
+  if (target !== undefined) {
+    query["target"] = target;
+  }
+  const url = buildUrl(
+    getApiBaseUrl(),
+    `/workspaces/${encodeURIComponent(workspaceId)}/snapshot`,
+    query,
+  );
+  const response = await fetch(url);
+  if (!response.ok) {
+    const detail = await extractErrorBody(response);
+    throw new ApiError({
+      message: detail ?? `Snapshot fetch failed: ${response.status} ${response.statusText}`,
+      status: response.status,
+      url,
+      detail,
+    });
+  }
+  return response.blob();
+}

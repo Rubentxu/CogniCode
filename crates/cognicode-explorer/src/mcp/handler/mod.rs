@@ -41,6 +41,9 @@ pub mod quality_mcp;
 mod named_views;
 mod search;
 mod sessions;
+/// Snapshot export handler (multimodal).
+#[cfg(feature = "multimodal")]
+pub mod snapshot;
 mod views;
 mod workspace;
 
@@ -164,6 +167,8 @@ pub use internal_mcp::register_internal_mcp_handlers;
 pub use lens_mcp::register_lens_mcp_handlers;
 pub use quality_mcp::register_quality_mcp_handlers;
 pub use named_views::register_named_views_handlers;
+#[cfg(feature = "multimodal")]
+pub use snapshot::register_snapshot_handlers;
 pub use search::register_search_handlers;
 pub use sessions::register_session_handlers;
 pub use views::register_view_handlers;

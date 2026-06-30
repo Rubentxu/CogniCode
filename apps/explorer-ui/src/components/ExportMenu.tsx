@@ -3,13 +3,18 @@
  *
  * Provides "Open in draw.io" option that extracts Mermaid text from
  * the current view's blocks and opens it in draw.io.
+ * Also provides "Download PNG" and "Download SVG" options that call
+ * the snapshot API and trigger a browser download.
  */
 import { useState, useRef, useEffect } from "react";
 import type { ContextualView } from "../api/types";
+import { fetchSnapshot } from "../api/client";
 import { handleOpenInDrawIo } from "../utils/drawio";
+import { downloadSnapshot } from "../utils/download";
 
 export interface ExportMenuProps {
   view: ContextualView | null;
+  workspaceId: string;
   onShowNotification?: (message: string) => void;
 }
 
@@ -28,7 +33,7 @@ function extractMermaidFromView(view: ContextualView | null): string | null {
   return null;
 }
 
-export function ExportMenu({ view, onShowNotification }: ExportMenuProps) {
+export function ExportMenu({ view, workspaceId, onShowNotification }: ExportMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -56,6 +61,25 @@ export function ExportMenu({ view, onShowNotification }: ExportMenuProps) {
       await handleOpenInDrawIo(mermaidText, { notify: onShowNotification });
     } catch {
       onShowNotification?.("Failed to open diagram in draw.io");
+    }
+  };
+
+  const handleDownloadSnapshot = async (format: "png" | "svg") => {
+    setIsOpen(false);
+    if (!view?.view_kind) {
+      onShowNotification?.("Cannot download: view kind not available");
+      return;
+    }
+    // The object_id is the target for the snapshot API
+    const target = view.object_id;
+    try {
+      const blob = await fetchSnapshot(workspaceId, view.view_kind, format, target);
+      const extension = format === "png" ? ".png" : ".svg";
+      const filename = `diagram${extension}`;
+      await downloadSnapshot(blob, filename);
+      onShowNotification?.(`Downloaded ${format.toUpperCase()}`);
+    } catch {
+      onShowNotification?.(`Failed to download ${format.toUpperCase()}`);
     }
   };
 
@@ -170,6 +194,90 @@ export function ExportMenu({ view, onShowNotification }: ExportMenuProps) {
               <polyline points="14 2 14 8 20 8" />
             </svg>
             Open in draw.io
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            data-testid="export-menu-download-png"
+            onClick={() => handleDownloadSnapshot("png")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              width: "100%",
+              padding: "8px 12px",
+              border: "none",
+              backgroundColor: "transparent",
+              color: "var(--color-text-primary)",
+              fontSize: 13,
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--color-surface-overlay)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "transparent";
+            }}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Download as PNG
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            data-testid="export-menu-download-svg"
+            onClick={() => handleDownloadSnapshot("svg")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              width: "100%",
+              padding: "8px 12px",
+              border: "none",
+              backgroundColor: "transparent",
+              color: "var(--color-text-primary)",
+              fontSize: 13,
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--color-surface-overlay)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "transparent";
+            }}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Download as SVG
           </button>
         </div>
       )}

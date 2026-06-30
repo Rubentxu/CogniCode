@@ -7,11 +7,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useReducer, type ReactNode } from "react";
+import { useReducer } from "react";
 
-// Stub fetchC4Mermaid and handleOpenInDrawIo
+// Stub fetchC4Mermaid, fetchSnapshot, and handleOpenInDrawIo
 vi.mock("../../api/client", () => ({
   fetchC4Mermaid: vi.fn().mockResolvedValue("graph TD\n  A --> B"),
+  fetchSnapshot: vi.fn().mockResolvedValue(new Blob(["fake-png"], { type: "image/png" })),
 }));
 
 vi.mock("../../utils/drawio", () => ({
@@ -26,7 +27,6 @@ import {
   type AppState,
 } from "../../state/context";
 import { NotificationContext } from "../Notifications/NotificationProvider";
-import type { C4Level } from "../../state/c4Levels";
 
 function C4ToolbarWithState({
   perspective = "c4-context" as AppState["perspective"],
@@ -40,7 +40,8 @@ function C4ToolbarWithState({
   const notifValue = notificationContextValue ?? { showNotification: vi.fn() };
 
   const [state, dispatch] = useReducer(
-    (s: AppState, a: Action): AppState => s,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused action param
+    (s: AppState, _action: Action): AppState => s,
     {
       ...initialState,
       perspective,
@@ -132,6 +133,96 @@ describe("C4Toolbar component", () => {
 
       await waitFor(() => {
         expect(showNotificationMock).toHaveBeenCalledWith("Failed to open diagram in draw.io");
+      });
+    });
+  });
+
+  describe("download buttons", () => {
+    it("renders the Download PNG button", () => {
+      render(<C4ToolbarWithState perspective="c4-context" />);
+      expect(screen.getByTestId("c4-toolbar-download-png")).toBeVisible();
+      expect(screen.getByTestId("c4-toolbar-download-png")).toHaveTextContent("Download PNG");
+    });
+
+    it("renders the Download SVG button", () => {
+      render(<C4ToolbarWithState perspective="c4-context" />);
+      expect(screen.getByTestId("c4-toolbar-download-svg")).toBeVisible();
+      expect(screen.getByTestId("c4-toolbar-download-svg")).toHaveTextContent("Download SVG");
+    });
+
+    it("calls fetchSnapshot with png format when Download PNG is clicked", async () => {
+      const user = userEvent.setup();
+      const { fetchSnapshot } = await import("../../api/client");
+
+      render(<C4ToolbarWithState perspective="c4-context" workspaceId="ws-test-001" />);
+
+      await user.click(screen.getByTestId("c4-toolbar-download-png"));
+
+      await waitFor(() => {
+        expect(fetchSnapshot).toHaveBeenCalledWith(
+          "ws-test-001",
+          "c4_context",
+          "png",
+          ".",
+        );
+      });
+    });
+
+    it("calls fetchSnapshot with svg format when Download SVG is clicked", async () => {
+      const user = userEvent.setup();
+      const { fetchSnapshot } = await import("../../api/client");
+
+      render(<C4ToolbarWithState perspective="c4-container" workspaceId="ws-test-002" />);
+
+      await user.click(screen.getByTestId("c4-toolbar-download-svg"));
+
+      await waitFor(() => {
+        expect(fetchSnapshot).toHaveBeenCalledWith(
+          "ws-test-002",
+          "c4_container",
+          "svg",
+          ".",
+        );
+      });
+    });
+
+    it("maps perspective c4-component to c4_component view_kind", async () => {
+      const user = userEvent.setup();
+      const { fetchSnapshot } = await import("../../api/client");
+
+      render(<C4ToolbarWithState perspective="c4-component" workspaceId="ws-test-003" />);
+
+      await user.click(screen.getByTestId("c4-toolbar-download-png"));
+
+      await waitFor(() => {
+        expect(fetchSnapshot).toHaveBeenCalledWith(
+          "ws-test-003",
+          "c4_component",
+          "png",
+          ".",
+        );
+      });
+    });
+
+    it("shows error notification on snapshot fetch failure", async () => {
+      const user = userEvent.setup();
+      const showNotificationMock = vi.fn();
+      const { fetchSnapshot } = await import("../../api/client");
+      (fetchSnapshot as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error("Network error"),
+      );
+
+      render(
+        <C4ToolbarWithState
+          perspective="c4-context"
+          notificationContextValue={{ showNotification: showNotificationMock }}
+        />,
+      );
+
+      await user.click(screen.getByTestId("c4-toolbar-download-png"));
+
+      await waitFor(() => {
+        expect(showNotificationMock).toHaveBeenCalledWith("Failed to download PNG snapshot");
       });
     });
   });

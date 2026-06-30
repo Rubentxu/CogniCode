@@ -54,6 +54,10 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 # Optional dependencies — only pulled in when the `postgres` feature
 # is enabled. Keeps the default build sqlx-free.
 sqlx = { workspace = true, optional = true }
+# Snapshot rendering — mmdc subprocess management
+tempfile.workspace = true
+which.workspace = true
+base64.workspace = true
 # TOML parsing for C4 architecture inference (E6 ADR-039)
 toml.workspace = true
 # Glob pattern matching for boundary rule evaluation (E19)
