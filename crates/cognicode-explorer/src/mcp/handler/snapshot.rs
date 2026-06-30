@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::domain::snapshot::{SnapshotError, SnapshotFormat, SnapshotService};
-use crate::domain::snapshot_dispatch::{emit_c4_mermaid, emit_trace_mermaid, SnapshotViewKind};
+use crate::domain::snapshot_dispatch::SnapshotViewKind;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::McpContext;
@@ -171,6 +171,8 @@ async fn emit_mermaid_for_snapshot(
     view_kind: SnapshotViewKind,
     target: Option<&str>,
 ) -> Result<String, String> {
+    use crate::domain::snapshot::SnapshotError as SE;
+
     let graph_svc = ctx
         .graph_service
         .as_ref()
@@ -180,12 +182,14 @@ async fn emit_mermaid_for_snapshot(
         .as_ref()
         .ok_or_else(|| "workspace service not wired")?;
 
-    if view_kind.is_trace_kind() {
-        let target = target.ok_or_else(|| "target is required for trace view kinds")?;
-        emit_trace_mermaid(&**graph_svc, &**workspace_svc, view_kind, target).await
-    } else {
-        emit_c4_mermaid(&**graph_svc, &**workspace_svc, view_kind).await
-    }
+    crate::domain::snapshot_dispatch::emit_mermaid_for_snapshot(
+        &**graph_svc,
+        &**workspace_svc,
+        view_kind,
+        target,
+    )
+    .await
+    .map_err(|se| se.to_string())
 }
 
 /// Map SnapshotError to (error_code, message) pair.
@@ -202,6 +206,10 @@ fn snapshot_error_to_code_and_msg(err: SnapshotError) -> (&'static str, String) 
         ),
         RenderFailed(msg) => ("render_failed", format!("mmdc render failed: {msg}")),
         Timeout(dur) => ("timeout", format!("render timed out after {dur:?}")),
+        GraphServiceNotWired => ("internal_error", "graph service not wired".to_string()),
+        WorkspaceNotWired => ("internal_error", "workspace service not wired".to_string()),
+        TargetRequiredForTrace => ("invalid_input", "target is required for trace view kinds".to_string()),
+        EmissionFailed(msg) => ("emission_failed", format!("mermaid emission failed: {msg}")),
     }
 }
 

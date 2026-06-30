@@ -82,6 +82,22 @@ pub enum SnapshotError {
     /// Rendering timed out after the configured duration.
     #[error("render timed out after {0:?}")]
     Timeout(Duration),
+
+    /// Graph service is not wired in the current context.
+    #[error("graph service not wired")]
+    GraphServiceNotWired,
+
+    /// Workspace service is not wired in the current context.
+    #[error("workspace service not wired")]
+    WorkspaceNotWired,
+
+    /// Target symbol is required for trace-based view kinds.
+    #[error("target is required for trace view kinds")]
+    TargetRequiredForTrace,
+
+    /// Mermaid text emission failed with a message from the underlying emitter.
+    #[error("mermaid emission failed: {0}")]
+    EmissionFailed(String),
 }
 
 /// Snapshot rendering service.

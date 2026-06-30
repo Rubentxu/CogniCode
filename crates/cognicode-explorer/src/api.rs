@@ -32,9 +32,7 @@ use crate::domain::trace_mermaid::decision_trace_to_mermaid;
 #[cfg(feature = "multimodal")]
 use crate::ports::graph_repository::GraphRepository;
 use crate::domain::snapshot::{SnapshotError as SnapshotRenderError, SnapshotFormat, SnapshotService};
-use crate::domain::snapshot_dispatch::{
-    emit_c4_mermaid, emit_trace_mermaid, SnapshotViewKind, SNAPSHOT_VIEW_KINDS,
-};
+use crate::domain::snapshot_dispatch::{SnapshotViewKind, SNAPSHOT_VIEW_KINDS};
 
 // ============================================================================
 // Style-class taxonomy
@@ -1113,27 +1111,39 @@ async fn snapshot_handler(
     ).into_response())
 }
 
-/// Emit Mermaid text for a given snapshot view kind.
+/// Emit Mermaid text for a given snapshot view kind using the shared dispatch.
 async fn emit_mermaid_for_snapshot(
     state: &ApiState,
     view_kind: &SnapshotViewKind,
     target: Option<&str>,
 ) -> Result<String, ExplorerError> {
+    use crate::domain::snapshot::SnapshotError as SE;
     let graph_svc: &dyn GraphService = &*state.graph;
     let workspace_svc: &dyn WorkspaceService = &*state.workspace;
 
-    if view_kind.is_trace_kind() {
-        let target = target.ok_or_else(|| {
+    crate::domain::snapshot_dispatch::emit_mermaid_for_snapshot(
+        graph_svc,
+        workspace_svc,
+        *view_kind,
+        target,
+    )
+    .await
+    .map_err(|se| match se {
+        SE::TargetRequiredForTrace => {
             ExplorerError::InvalidQuery("target is required for trace view kinds".to_string())
-        })?;
-        emit_trace_mermaid(graph_svc, workspace_svc, *view_kind, target)
-            .await
-            .map_err(ExplorerError::InvalidQuery)
-    } else {
-        emit_c4_mermaid(graph_svc, workspace_svc, *view_kind)
-            .await
-            .map_err(ExplorerError::InvalidQuery)
-    }
+        }
+        SE::EmissionFailed(msg) => ExplorerError::InvalidQuery(msg),
+        SE::MermaidEmpty => ExplorerError::InvalidQuery("mermaid text is empty".to_string()),
+        SE::SizeLimitExceeded { size } => {
+            ExplorerError::InvalidQuery(format!("mermaid text exceeds 1 MB size limit ({size} bytes)"))
+        }
+        SE::Timeout(dur) => {
+            ExplorerError::InvalidQuery(format!("render timed out after {dur:?}"))
+        }
+        SE::GraphServiceNotWired => ExplorerError::InvalidQuery("graph service not wired".to_string()),
+        SE::WorkspaceNotWired => ExplorerError::InvalidQuery("workspace service not wired".to_string()),
+        SE::MmdcNotFound | SE::RenderFailed(_) => ExplorerError::InvalidQuery(se.to_string()),
+    })
 }
 
 /// API error type for snapshot endpoint with richer status mapping.
@@ -1172,6 +1182,10 @@ impl IntoResponse for SnapshotApiError {
                     SnapshotRenderError::MmdcNotFound => StatusCode::SERVICE_UNAVAILABLE,
                     SnapshotRenderError::RenderFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
                     SnapshotRenderError::Timeout(_) => StatusCode::GATEWAY_TIMEOUT,
+                    SnapshotRenderError::GraphServiceNotWired
+                    | SnapshotRenderError::WorkspaceNotWired
+                    | SnapshotRenderError::TargetRequiredForTrace
+                    | SnapshotRenderError::EmissionFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 };
                 (status, err.to_string())
             }

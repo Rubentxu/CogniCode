@@ -15,10 +15,12 @@
 use std::sync::Arc;
 
 use crate::domain::c4_mermaid::{c4_to_mermaid, C4Level};
+use crate::domain::snapshot::SnapshotError;
 use crate::domain::trace_mermaid::{
     call_graph_to_mermaid, impact_radius_to_mermaid, vertical_slice_to_mermaid, TraceEmitContext,
 };
 use crate::dto::InspectionTarget;
+use crate::facades::{GraphService, WorkspaceService};
 
 // ============================================================================
 // SnapshotViewKind
@@ -147,6 +149,33 @@ pub async fn emit_c4_mermaid(
         &architecture.edges,
         level,
     ))
+}
+
+// ============================================================================
+// Shared dispatch
+// ============================================================================
+
+/// Emit Mermaid text for a snapshot view kind, dispatching to the
+/// appropriate trace or C4 emitter.
+///
+/// Shared by both the HTTP API (`api.rs`) and MCP tool handler
+/// (`mcp/handler/snapshot.rs`) to avoid duplicate dispatch logic.
+pub async fn emit_mermaid_for_snapshot(
+    graph_service: &dyn GraphService,
+    workspace: &dyn WorkspaceService,
+    view_kind: SnapshotViewKind,
+    target: Option<&str>,
+) -> Result<String, SnapshotError> {
+    if view_kind.is_trace_kind() {
+        let target = target.ok_or(SnapshotError::TargetRequiredForTrace)?;
+        emit_trace_mermaid(graph_service, workspace, view_kind, target)
+            .await
+            .map_err(SnapshotError::EmissionFailed)
+    } else {
+        emit_c4_mermaid(graph_service, workspace, view_kind)
+            .await
+            .map_err(SnapshotError::EmissionFailed)
+    }
 }
 
 // ============================================================================
