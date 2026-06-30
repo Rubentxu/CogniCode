@@ -653,3 +653,33 @@ export async function fetchQualitySummary(
     ],
   };
 }
+
+// ============================================================================
+// C4 Mermaid Export — E20-3
+// ============================================================================
+
+/**
+ * Fetch C4 Mermaid diagram text for a given target and level.
+ * Returns plain text (not JSON) — the raw Mermaid diagram source.
+ *
+ * Backend: `GET /api/workspaces/:workspace_id/architecture/mermaid?level=c4-context&target=:target`
+ */
+export async function fetchC4Mermaid(
+  workspaceId: string,
+  target: string,
+): Promise<string> {
+  const url = buildUrl(
+    getApiBaseUrl(),
+    `/workspaces/${encodeURIComponent(workspaceId)}/architecture/mermaid`,
+    { level: "c4-context", target },
+  );
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new ApiError({
+      message: `Failed to fetch C4 Mermaid: ${response.status} ${response.statusText}`,
+      status: response.status,
+      url,
+    });
+  }
+  return response.text();
+}
