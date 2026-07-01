@@ -104,7 +104,7 @@ which = "6"
 
 # Time
 chrono = { version = "0.4", features = ["clock"] }
-time = "0.3"
+time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 
 # Logging
 tracing = "0.1"

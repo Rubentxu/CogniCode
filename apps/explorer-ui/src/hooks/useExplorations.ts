@@ -110,6 +110,9 @@ export function useExplorations(
 /**
  * Save an exploration session with pane snapshots including viewport state
  * (ADR-040 Wave 3). Posts to `/api/exploration-sessions`.
+ *
+ * When linked to an active investigation (ADR-005 INV-1), pass the
+ * investigation_id so the session appears in that investigation's context.
  */
 export async function saveExplorationSession(
   workspaceId: string,
@@ -127,6 +130,7 @@ export async function saveExplorationSession(
     viewport?: ViewportState;
     note?: string;
   }>,
+  investigationId?: string | null,
 ): Promise<ExplorationSessionDto> {
   // NOTE: `note` is intentionally omitted — notes are client-only (ADR-005).
   // They are stored in the Redux snapshot (localStorage) but never sent to the server.
@@ -138,12 +142,17 @@ export async function saveExplorationSession(
     viewport: pane.viewport ?? null,
   }));
 
-  const body = {
+  const body: Record<string, unknown> = {
     workspace_id: workspaceId,
     events,
     navigation_mode: "pane-stack",
     panes: panesSnapshot,
   };
+
+  // ADR-005 INV-1: link session to an active investigation when provided
+  if (investigationId != null) {
+    body.investigation_id = investigationId;
+  }
 
   return apiPost(
     "/exploration-sessions",

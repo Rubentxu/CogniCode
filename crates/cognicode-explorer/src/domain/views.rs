@@ -6,16 +6,19 @@
 use serde_json::json;
 
 use crate::dto::{
-    ContextualView, EvidenceBlock, LineRange, RelationDirection, TypedRelation, ViewBlock,
+    ContextualView, EvidenceBlock, LineRange, RelationDirection,
+    TypedRelation, ViewBlock,
 };
 use crate::ports::quality_repository::{QualityIssue, QualityRepository, RuleSummary};
 use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{RelationTarget, ResolvedSymbol, SymbolRepository};
 
 use crate::domain::evidence::build_evidence_blocks;
+use crate::facades::investigation::Investigation;
 use cognicode_core::domain::aggregates::SymbolId;
 use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
 use cognicode_core::domain::value_objects::Provenance;
+use cognicode_core::domain::investigation::Evidence;
 
 /// Build the Overview view: identity + call graph metrics + signature for callables.
 pub fn build_overview<'a>(
@@ -1227,13 +1230,13 @@ fn other_scope(current_scope: &str, other_file: &str) -> String {
 //   ViewDescriptor  — metadata-only, object-safe (no async, no build)
 //   ViewExecutor    — ViewDescriptor + async build()
 
-use crate::dto::{ExplorationSession, InspectableObjectType, RendererKind, ViewKind};
+use crate::dto::{ExplorationSession};
 use crate::error::ExplorerResult;
 use async_trait::async_trait;
 
 // Re-export InspectionTarget and ViewContext so existing code can import them
 // from domain::views rather than dto. These are defined in dto.rs.
-pub use crate::dto::{InspectionTarget, ViewContext};
+pub use crate::dto::{InspectionTarget, ViewContext, InspectableObjectType, RendererKind, ViewKind};
 
 /// Metadata-only trait for listing consumers (e.g., available_views).
 /// All methods resolve through the vtable — no downcast needed.
@@ -1422,7 +1425,8 @@ impl ViewExecutor for OverviewExecutor {
             } => Ok(build_scope_overview(path, files, symbols)),
             InspectionTarget::Issue(_)
             | InspectionTarget::Rule { .. }
-            | InspectionTarget::SavedExploration(_) => {
+            | InspectionTarget::SavedExploration(_)
+            | InspectionTarget::Investigation(_) => {
                 Err(crate::error::ExplorerError::ViewNotAvailable {
                     object_id: format!("{:?}", ctx.target),
                     view_id: "overview".into(),
@@ -2140,7 +2144,8 @@ impl ViewExecutor for QualityExecutor {
             } => Ok(build_scope_quality_view(path, ctx.quality)),
             InspectionTarget::Issue(issue) => Ok(build_issue_detail(issue)),
             InspectionTarget::Rule { rule_id } => Ok(build_rule_detail(rule_id, ctx.quality)),
-            InspectionTarget::SavedExploration(_) => Err(crate::error::ExplorerError::ViewNotAvailable {
+            InspectionTarget::SavedExploration(_)
+            | InspectionTarget::Investigation(_) => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
                 view_id: "quality".into(),
             }),
@@ -2563,6 +2568,87 @@ pub fn build_composed_narrative(session: &ExplorationSession) -> ContextualView 
     }
 }
 
+/// Pure shaper — no I/O, no async. Shapes an Investigation into a
+/// ContextualView with narrative + evidence + artifacts.
+pub fn build_investigation_narrative(investigation: &Investigation) -> ContextualView {
+    let mut blocks = vec![ViewBlock {
+        id: "header".into(),
+        title: "Investigation Header".into(),
+        body: json!({
+            "id": investigation.id,
+            "title": investigation.title,
+            "goal": investigation.goal,
+            "status": investigation.status.to_string(),
+            "entry_point": investigation.entry_point,
+            "created_at": investigation.created_at.to_string(),
+            "updated_at": investigation.updated_at.to_string(),
+        }),
+    }];
+
+    // Narrative block
+    if !investigation.narrative.is_empty() {
+        blocks.push(ViewBlock {
+            id: "narrative".into(),
+            title: "Narrative".into(),
+            body: json!({
+                "content": investigation.narrative,
+                "markdown": true,
+            }),
+        });
+    }
+
+    // Evidence blocks
+    if !investigation.evidence.is_empty() {
+        let evidence_blocks: Vec<ViewBlock> = investigation
+            .evidence
+            .iter()
+            .enumerate()
+            .map(|(i, e)| ViewBlock {
+                id: format!("evidence:{}", i),
+                title: format!("Evidence: {}", e.object_id),
+                body: json!({
+                    "object_id": e.object_id,
+                    "view_id": e.view_id,
+                    "note": e.note,
+                    "pinned_at": e.pinned_at.to_string(),
+                }),
+            })
+            .collect();
+        blocks.extend(evidence_blocks);
+    }
+
+    // Artifacts blocks
+    if !investigation.artifacts.is_empty() {
+        let artifact_blocks: Vec<ViewBlock> = investigation
+            .artifacts
+            .iter()
+            .enumerate()
+            .map(|(i, a)| ViewBlock {
+                id: format!("artifact:{}", i),
+                title: format!("Artifact: {}", a.title),
+                body: json!({
+                    "kind": a.kind,
+                    "content": a.content,
+                    "generated_from": a.generated_from,
+                }),
+            })
+            .collect();
+        blocks.extend(artifact_blocks);
+    }
+
+    ContextualView {
+        object_id: investigation.id.clone(),
+        view_id: "investigation-narrative".into(),
+        title: format!("Investigation Narrative: {}", investigation.title),
+        view_kind: ViewKind::ComposedNarrative,
+        renderer_kind: RendererKind::Composite,
+        blocks,
+        relations: vec![],
+        evidence: vec![],
+        findings: vec![],
+    }
+}
+
 /// Inventory provider for ComposedNarrative — used by list_for().
 pub struct ComposedNarrativeProvider;
 impl ViewDescriptorProvider for ComposedNarrativeProvider {
@@ -2587,8 +2673,111 @@ inventory::submit!(ProviderWrapper {
     provider: &COMPOSED_NARRATIVE_PROVIDER as &dyn ViewDescriptorProvider
 });
 
+// EvidencePack — render collected evidence as structured document
+// ============================================================================
+
+/// Pure shaper — no I/O, no async. Shapes an Investigation's evidence into a
+/// ContextualView with one ViewBlock per evidence item.
+pub fn build_evidence_pack(investigation: &Investigation) -> ContextualView {
+    let blocks = if investigation.evidence.is_empty() {
+        vec![ViewBlock {
+            id: "empty".into(),
+            title: "No evidence".into(),
+            body: json!({ "message": "No evidence pinned to this investigation" }),
+        }]
+    } else {
+        investigation
+            .evidence
+            .iter()
+            .enumerate()
+            .map(|(i, e)| {
+                let view_id_label = e.view_id.as_deref().unwrap_or("default view");
+                ViewBlock {
+                    id: format!("{}:{}", investigation.id, i),
+                    title: format!("Evidence #{}: {}", i + 1, e.object_id),
+                    body: json!({
+                        "object_id": e.object_id,
+                        "view_id": view_id_label,
+                        "note": e.note,
+                        "pinned_at": e.pinned_at.to_string(),
+                    }),
+                }
+            })
+            .collect()
+    };
+
+    ContextualView {
+        object_id: investigation.id.clone(),
+        view_id: "evidence-pack".into(),
+        title: format!("Evidence Pack: {}", investigation.title),
+        view_kind: ViewKind::EvidencePack,
+        renderer_kind: RendererKind::Composite,
+        blocks,
+        relations: vec![],
+        evidence: vec![],
+        findings: vec![],
+    }
+}
+
+/// Inventory provider for EvidencePack — used by list_for().
+pub struct EvidencePackProvider;
+impl ViewDescriptorProvider for EvidencePackProvider {
+    fn id(&self) -> &'static str {
+        "evidence-pack"
+    }
+    fn title(&self) -> &'static str {
+        "Evidence Pack"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Investigation]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::EvidencePack
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Composite
+    }
+}
+static EVIDENCE_PACK_PROVIDER: EvidencePackProvider = EvidencePackProvider;
+inventory::submit!(ProviderWrapper {
+    provider: &EVIDENCE_PACK_PROVIDER as &dyn ViewDescriptorProvider
+});
+
+/// ViewExecutor for EvidencePack — receives the full Investigation
+/// via InspectionTarget::Investigation and delegates to the pure shaper.
+pub struct EvidencePackExecutor;
+impl ViewDescriptor for EvidencePackExecutor {
+    fn id(&self) -> &'static str {
+        "evidence-pack"
+    }
+    fn title(&self) -> &'static str {
+        "Evidence Pack"
+    }
+    fn applies_to(&self) -> &'static [InspectableObjectType] {
+        &[InspectableObjectType::Investigation]
+    }
+    fn view_kind(&self) -> ViewKind {
+        ViewKind::EvidencePack
+    }
+    fn renderer_kind(&self) -> RendererKind {
+        RendererKind::Composite
+    }
+}
+#[async_trait]
+impl ViewExecutor for EvidencePackExecutor {
+    async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
+        match ctx.target {
+            InspectionTarget::Investigation(investigation) => Ok(build_evidence_pack(investigation)),
+            _ => Err(crate::error::ExplorerError::ViewNotAvailable {
+                object_id: format!("{:?}", ctx.target),
+                view_id: "evidence-pack".into(),
+            }),
+        }
+    }
+}
+
 /// ViewExecutor for ComposedNarrative — receives the full ExplorationSession
-/// via InspectionTarget::SavedExploration and delegates to the pure shaper.
+/// or Investigation and delegates to the appropriate pure shaper.
 pub struct ComposedNarrativeExecutor;
 impl ViewDescriptor for ComposedNarrativeExecutor {
     fn id(&self) -> &'static str {
@@ -2598,7 +2787,7 @@ impl ViewDescriptor for ComposedNarrativeExecutor {
         "Composed Narrative"
     }
     fn applies_to(&self) -> &'static [InspectableObjectType] {
-        &[InspectableObjectType::SavedExploration]
+        &[InspectableObjectType::SavedExploration, InspectableObjectType::Investigation]
     }
     fn view_kind(&self) -> ViewKind {
         ViewKind::ComposedNarrative
@@ -2612,6 +2801,7 @@ impl ViewExecutor for ComposedNarrativeExecutor {
     async fn build(&self, ctx: &ViewContext<'_>) -> ExplorerResult<ContextualView> {
         match ctx.target {
             InspectionTarget::SavedExploration(session) => Ok(build_composed_narrative(session)),
+            InspectionTarget::Investigation(investigation) => Ok(build_investigation_narrative(investigation)),
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
                 object_id: format!("{:?}", ctx.target),
                 view_id: "composed-narrative".into(),

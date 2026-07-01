@@ -35,6 +35,7 @@ export const inspectableObjectTypeSchema = z.enum([
   "quality_issue",
   "rule",
   "route",
+  "investigation",
 ]);
 export type InspectableObjectType = z.infer<typeof inspectableObjectTypeSchema>;
 
@@ -44,7 +45,7 @@ export type RelationDirection = z.infer<typeof relationDirectionSchema>;
 export const findingSeveritySchema = z.enum(["info", "warning", "critical"]);
 export type FindingSeverity = z.infer<typeof findingSeveritySchema>;
 
-export const artifactFormatSchema = z.enum(["markdown", "html", "json_replay"]);
+export const artifactFormatSchema = z.enum(["markdown", "html", "json_replay", "mermaid", "svg", "drawio"]);
 export type ArtifactFormat = z.infer<typeof artifactFormatSchema>;
 
 // ============================================================================
@@ -877,6 +878,8 @@ export const explorationSessionSchema = z.object({
   navigation_mode: z.string(),
   panes: z.array(paneSnapshotSchema),
   created_at: z.string(),
+  // ADR-005 INV-1: optional FK to an active investigation
+  investigation_id: z.string().nullable().optional(),
 });
 export type ExplorationSessionDto = z.infer<typeof explorationSessionSchema>;
 
@@ -887,6 +890,8 @@ const saveExplorationSessionRequestSchema = z.object({
   events: z.array(explorationEventSchema),
   navigation_mode: z.string(),
   panes: z.array(paneSnapshotSchema),
+  // ADR-005 INV-1: optional FK to an active investigation
+  investigation_id: z.string().nullable().optional(),
 });
 export type SaveExplorationSessionRequestDto = z.infer<typeof saveExplorationSessionRequestSchema>;
 
@@ -916,6 +921,95 @@ export const decisionArtifactSummarySchema = z.object({
 export type DecisionArtifactSummary = z.infer<
   typeof decisionArtifactSummarySchema
 >;
+
+// ============================================================================
+// Investigation (ADR-005 INV-1)
+// ============================================================================
+
+export const investigationStatusSchema = z.enum([
+  "draft",
+  "active",
+  "completed",
+  "archived",
+]);
+export type InvestigationStatus = z.infer<typeof investigationStatusSchema>;
+
+export const evidenceSchema = z.object({
+  id: z.string(),
+  object_id: z.string(),
+  view_id: z.string().nullable().optional(),
+  note: z.string(),
+  pinned_at: z.string(),
+});
+export type EvidenceDto = z.infer<typeof evidenceSchema>;
+
+export const artifactSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  title: z.string(),
+  content: z.string(),
+  generated_from: z.string().nullable().optional(),
+});
+export type ArtifactDto = z.infer<typeof artifactSchema>;
+
+export const investigationSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  title: z.string(),
+  goal: z.string(),
+  status: investigationStatusSchema,
+  entry_point: z.string().nullable().optional(),
+  panes: z.array(paneSnapshotSchema),
+  evidence: z.array(evidenceSchema),
+  artifacts: z.array(artifactSchema),
+  narrative: z.string(),
+  related_adrs: z.array(z.string()),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type InvestigationDto = z.infer<typeof investigationSchema>;
+
+export const createInvestigationRequestSchema = z.object({
+  workspace_id: z.string(),
+  title: z.string(),
+  goal: z.string(),
+});
+export type CreateInvestigationRequestDto = z.infer<
+  typeof createInvestigationRequestSchema
+>;
+
+export const updateInvestigationRequestSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  title: z.string(),
+  goal: z.string(),
+  status: investigationStatusSchema,
+  entry_point: z.string().nullable().optional(),
+  panes: z.array(paneSnapshotSchema),
+  evidence: z.array(evidenceSchema),
+  artifacts: z.array(artifactSchema),
+  narrative: z.string(),
+  related_adrs: z.array(z.string()),
+});
+export type UpdateInvestigationRequestDto = z.infer<
+  typeof updateInvestigationRequestSchema
+>;
+
+// ADR-005 E21-2: Pin evidence to an investigation
+export const pinEvidenceRequestSchema = z.object({
+  object_id: z.string(),
+  view_id: z.string().nullable(),
+  note: z.string(),
+});
+export type PinEvidenceRequestDto = z.infer<typeof pinEvidenceRequestSchema>;
+
+export const addArtifactRequestSchema = z.object({
+  kind: z.string(),
+  title: z.string(),
+  content: z.string(),
+  generated_from: z.string().optional(),
+});
+export type AddArtifactRequestDto = z.infer<typeof addArtifactRequestSchema>;
 
 // ============================================================================
 // Health

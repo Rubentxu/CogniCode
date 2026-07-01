@@ -20,6 +20,14 @@ import { c4OverlayReducer, type C4OverlayAction } from "./c4OverlaySlice";
 export type RootReducer = (state: AppState, action: import("../context").Action) => AppState;
 
 export function rootReducer(state: AppState, action: import("../context").Action): AppState {
+  // Handle SET_ACTIVE_INVESTIGATION directly in rootReducer since it's a top-level field
+  if (action.type === "SET_ACTIVE_INVESTIGATION") {
+    return {
+      ...state,
+      activeInvestigationId: action.payload.investigationId,
+    };
+  }
+
   const navSlice = navigationReducer(
     {
       navigation: state.navigation,
@@ -42,6 +50,7 @@ export function rootReducer(state: AppState, action: import("../context").Action
     activeObjectId: navSlice.activeObjectId,
     activeViewId: navSlice.activeViewId,
     activeLensId: navSlice.activeLensId,
+    activeInvestigationId: state.activeInvestigationId,
     spotterOpen: spotter.open,
     spotterKind: spotter.kind,
     activeView: navSlice.activeView,

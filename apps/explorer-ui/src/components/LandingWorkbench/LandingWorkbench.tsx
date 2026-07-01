@@ -142,7 +142,7 @@ export function LandingWorkbench({ workspaceId }: LandingWorkbenchProps) {
       >
         {landingWorkbench.activeTab === "start" && <StartFromSection />}
         {landingWorkbench.activeTab === "investigations" && (
-          <InvestigationsSection />
+          <InvestigationsSection workspaceId={workspaceId} />
         )}
         {landingWorkbench.activeTab === "resume" && (
           <ResumeSection workspaceId={workspaceId} />

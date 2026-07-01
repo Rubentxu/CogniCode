@@ -46,6 +46,7 @@ clap.workspace = true
 rmcp.workspace = true
 chrono.workspace = true
 regex.workspace = true
+time.workspace = true
 inventory = "0.1"
 axum = "0.7"
 tower = { workspace = true }
@@ -83,3 +84,5 @@ tokio-test.workspace = true
 async-trait.workspace = true
 tempfile = "3.27"
 tower.workspace = true
+uuid = { version = "1.11", features = ["v4"] }
+regex = "1"

@@ -90,6 +90,9 @@ impl PersistenceService for PersistenceServiceImpl {
                     content: body,
                 })
             }
+            crate::dto::ArtifactFormat::Mermaid | crate::dto::ArtifactFormat::Svg | crate::dto::ArtifactFormat::Drawio => {
+                Err(ExplorerError::UnsupportedFormat(format!("{:?}", request.format)))
+            }
         }
     }
 
@@ -178,6 +181,7 @@ impl PersistenceService for PersistenceServiceImpl {
                     navigation_mode: row.navigation_mode,
                     panes: serde_json::from_str(&row.panes.to_string()).unwrap_or_default(),
                     created_at: row.created_at,
+                    investigation_id: row.investigation_id,
                 })
                 .collect();
             return Ok(sessions);
@@ -207,6 +211,7 @@ impl PersistenceService for PersistenceServiceImpl {
 
         let created_at = Utc::now().to_rfc3339();
         let id = format!("session:{}", Utc::now().timestamp_millis());
+        let investigation_id = request.investigation_id.clone();
         let session = ExplorationSession {
             id: id.clone(),
             workspace_id: request.workspace_id.clone(),
@@ -214,6 +219,7 @@ impl PersistenceService for PersistenceServiceImpl {
             navigation_mode: request.navigation_mode.clone(),
             panes: request.panes.clone(),
             created_at: created_at.clone(),
+            investigation_id: investigation_id.clone(),
         };
 
         #[cfg(feature = "postgres")]
@@ -228,6 +234,7 @@ impl PersistenceService for PersistenceServiceImpl {
                 &events_json,
                 &request.navigation_mode,
                 &panes_json,
+                investigation_id.as_deref(),
             )
             .await
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!("save_exploration_session: {e}")))?;
@@ -265,6 +272,7 @@ impl PersistenceService for PersistenceServiceImpl {
                         navigation_mode: row.navigation_mode,
                         panes: serde_json::from_str(&row.panes.to_string()).unwrap_or_default(),
                         created_at: row.created_at,
+                        investigation_id: row.investigation_id,
                     }));
                 }
             }

@@ -23,6 +23,7 @@ import { PaneBreadcrumb } from "./PaneBreadcrumb";
 import { NoteEditor } from "./NoteEditor";
 import { ExportMenu } from "../ExportMenu";
 import { NotificationContext } from "../Notifications/NotificationProvider";
+import { PinEvidenceModal } from "./PinEvidenceModal";
 
 // Graph-shaped ViewKinds that route to GraphViewRenderer
 function isGraphViewKind(kind: string | undefined): boolean {
@@ -57,7 +58,7 @@ export function PaneInspector({
   onScroll,
 }: PaneInspectorProps) {
   const dispatch = useAppDispatch();
-  const { navigation, viewSpecWizard } = useAppState();
+  const { navigation, viewSpecWizard, activeInvestigationId } = useAppState();
   const { showNotification } = useContext(NotificationContext);
 
   // Active pane from the navigation state (for breadcrumb + note editor).
@@ -65,6 +66,9 @@ export function PaneInspector({
 
   // Note editor open state.
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
+
+  // Pin evidence modal state.
+  const [pinModalOpen, setPinModalOpen] = useState(false);
 
   // 'n' shortcut scoped to the pane header — matches ViewTabs ARIA pattern.
   const handleHeaderKeyDown = useCallback(
@@ -204,7 +208,22 @@ export function PaneInspector({
               )}
             </div>
             <div className="flex items-center gap-2">
-              <ExportMenu view={display} workspaceId={workspaceId ?? ""} onShowNotification={showNotification} />
+              <ExportMenu view={display} workspaceId={workspaceId ?? ""} investigationId={activeInvestigationId} onShowNotification={showNotification} />
+              <button
+                type="button"
+                onClick={() => setPinModalOpen(true)}
+                data-testid="pin-evidence-button"
+                aria-label="Pin as evidence"
+                className="rounded-full px-2 py-0.5 text-xs"
+                style={{
+                  backgroundColor: "var(--color-surface-overlay)",
+                  color: "var(--color-text-muted)",
+                  cursor: "pointer",
+                }}
+                title="Pin as evidence to an investigation"
+              >
+                📌
+              </button>
               <span
                 className="rounded-full px-2 py-0.5 text-xs"
                 style={{
@@ -328,6 +347,14 @@ export function PaneInspector({
           workspaceId={workspaceId}
           owner={wizardOwner}
           onSaved={() => {}}
+        />
+      )}
+      {pinModalOpen && (
+        <PinEvidenceModal
+          objectId={objectId}
+          viewId={viewId}
+          workspaceId={workspaceId}
+          onClose={() => setPinModalOpen(false)}
         />
       )}
     </>

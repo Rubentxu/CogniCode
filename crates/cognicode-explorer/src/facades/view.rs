@@ -64,6 +64,7 @@ impl ViewServiceImpl {
             ObjectIdentity::QualityIssue { .. } => InspectableObjectType::QualityIssue,
             ObjectIdentity::Rule { .. } => InspectableObjectType::Rule,
             ObjectIdentity::SavedExploration { .. } => InspectableObjectType::SavedExploration,
+            ObjectIdentity::Investigation { .. } => InspectableObjectType::Investigation,
         };
         Ok(self.view_registry.list_for(object_type))
     }
@@ -135,6 +136,14 @@ impl ViewServiceImpl {
                     "SavedExploration view resolution requires persistence (not wired)".into(),
                 ))
             }
+            // Investigation requires async investigation facade.
+            // Handled in SearchServiceImpl::inspect_object; this returns a
+            // feature-disabled error since the view service doesn't have it wired.
+            ObjectIdentity::Investigation { .. } => {
+                Err(ExplorerError::FeatureDisabled(
+                    "Investigation view resolution requires investigation facade (not wired)".into(),
+                ))
+            }
         }
     }
 
@@ -147,6 +156,7 @@ impl ViewServiceImpl {
             ObjectIdentity::QualityIssue { .. } => crate::dto::InspectableObjectType::QualityIssue,
             ObjectIdentity::Rule { .. } => crate::dto::InspectableObjectType::Rule,
             ObjectIdentity::SavedExploration { .. } => crate::dto::InspectableObjectType::SavedExploration,
+            ObjectIdentity::Investigation { .. } => crate::dto::InspectableObjectType::Investigation,
         };
         Ok(self.lens_registry.applicable_to(&object_type))
     }

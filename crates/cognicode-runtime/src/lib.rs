@@ -202,6 +202,14 @@ impl Runtime {
             state = state.with_snapshot(snapshot_service);
         }
 
+        // Investigation service — ADR-005 INV-1
+        #[cfg(feature = "postgres")]
+        if let Some(ref pg_repo) = self.pg_repo {
+            use cognicode_explorer::facades::investigation::new_investigation_service_from_postgres;
+            let investigation = new_investigation_service_from_postgres(pg_repo.pool());
+            state = state.with_investigation(investigation);
+        }
+
         state
     }
 
