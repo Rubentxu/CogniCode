@@ -1,6 +1,6 @@
 # CogniCode Roadmap
 
-Last updated: 2026-07-01 (e13-universal-spotter-wave1 merged — PR #92, v0.40.0)
+Last updated: 2026-07-01 (E21 COMPLETE, e13-wave1 PR #92 v0.40.0. Session: PRs #93-97 merged — CI fix, typed-accessors, test fixtures, test mock fixes. Vitest 871 pass. Playwright E2E blocked by service-worker registration in headless CI.)
 
 ## Active
 
@@ -47,16 +47,16 @@ Last updated: 2026-07-01 (e13-universal-spotter-wave1 merged — PR #92, v0.40.0
 | `e20-3-drawio-action` | "Open in draw.io" action in C4 toolbar + pane inspector | ADR-003 | HIGH | DONE | [#88](https://github.com/Rubentxu/CogniCode/pull/88) |
 | `e20-4-svg-snapshot` | SVG/PNG snapshot export for static documentation | ADR-003 | LOW | DONE | [#89](https://github.com/Rubentxu/CogniCode/pull/89) |
 
-#### Milestone E21 — Investigation Mode
+#### Milestone E21 — Investigation Mode ✅ COMPLETE
 
 | Change | Goal | ADR | Priority | Status |
 |--------|------|-----|----------|--------|
 | `e21-1-investigation-entity` | Investigation entity + PostgreSQL tables + API | ADR-005 | HIGH | PR1✅ PR2✅ PR3✅ |
 | `e21-2-pin-evidence` | "Pin as evidence" action on panes + views | ADR-005 | HIGH | ✅ PR #90 |
-| `e21-3-evidence-pack-view` | `ViewKind::EvidencePack` executor | ADR-005 | MEDIUM | 🔄 Branch: feat/e21-3-e21-4-e21-6 |
-| `e21-4-composed-narrative` | `ViewKind::ComposedNarrative` with embedded objects + diagrams | ADR-005 | MEDIUM | 🔄 Branch: feat/e21-3-e21-4-e21-6 |
+| `e21-3-evidence-pack-view` | `ViewKind::EvidencePack` executor | ADR-005 | MEDIUM | ✅ PR #91 |
+| `e21-4-composed-narrative` | `ViewKind::ComposedNarrative` with embedded objects + diagrams | ADR-005 | MEDIUM | ✅ PR #91 |
 | `e21-5-investigation-board` | Investigation board on landing page | ADR-005 | LOW | ✅ PR #88 |
-| `e21-6-artifacts-in-investigation` | Mermaid/draw.io/SVG artifacts embedded in investigations | ADR-003+005 | MEDIUM | 🔄 Branch: feat/e21-3-e21-4-e21-6 |
+| `e21-6-artifacts-in-investigation` | Mermaid/draw.io/SVG artifacts embedded in investigations | ADR-003+005 | MEDIUM | ✅ PR #91 |
 
 **E21-1 PR details** (branch `feat/e21-1-investigation-entity`):
 - PR1 ✅: PostgreSQL schema (m0013) + repo methods (`save_investigation_tx`, `load_investigation`, etc.)
@@ -131,10 +131,10 @@ E18 and E19 can start in parallel. E20 depends on E19 (C4 levels inform diagram 
 - Frontend: `pinEvidence()` hook, PinEvidenceModal, 📌 button in PaneInspector
 - E2E tests: 5 Playwright tests for pinning evidence flow
 
-**E21-3+E21-4+E21-6 in progress** on branch `feat/e21-3-e21-4-e21-6`:
-- Starting: EvidencePack and ComposedNarrative view executors + artifacts integration
-- Branch created from main (after E21-2 merge)
-- Next: Implement ViewKind variants and executors
+**E21-3+E21-4+E21-6** merged via PR #91:
+- E21-3: `ViewKind::EvidencePack` executor + `GET /api/investigations/:id/evidence-pack`
+- E21-4: `ViewKind::ComposedNarrative` executor + `GET /api/investigations/:id/composed-narrative`
+- E21-6: `POST /api/investigations/:id/artifacts` (mermaid/svg/drawio)
 
 **Architecture stack** (ADR-005 INV-1):
 ```
@@ -155,11 +155,7 @@ PostgreSQL tables (m0013)
 - `created_at` preserved on update (fetch-then-patch pattern)
 - `time` crate added to workspace + cognicode-explorer dependencies
 
-**Open debts**:
-- E21-2: "Pin as evidence" action on panes
-- E21-3: `ViewKind::EvidencePack` executor
-- E21-4: `ViewKind::ComposedNarrative`
-- E21-6: Artifacts embedded in investigations
+**Open debts**: None — E21 milestone COMPLETE (PR #90 + PR #91).
 
 **Tests**: 1386 core + 723 explorer lib tests passing. 865 vitest passing.
 
@@ -246,9 +242,20 @@ Follow-ups explicitly queued by cycles closed today. Each will need its own prop
 
 | Candidate | Source cycle | Semver target | Why it exists |
 |-----------|---|---|---|
+| `refactor/e13-followup-typed-accessors` | e13-wave1 | PATCH | ✅ DONE PR #94 — type predicates for discriminated union |
+| `impl/e13-investigation-scope-integration-test` | e13-wave1 | PATCH | ✅ DONE PR #95 — MSW fixtures + E2E coverage |
+| `e13-wave2-universal-spotter` | ADR-002 Phase 2 | MINOR | Add doc/ADR/evidence families to Spotter. Needs new ports: DocRepository, ADR index, evidence store. **Blocked until ports exist.** |
 | `e12f-ownership-map` | ADR-002 Phase 1 | MINOR | OwnershipMap deferred: no ownership/author attribution in graph. Needs git blame or author annotation as node property. |
 | `e12g-risk-map` | ADR-002 Phase 1 | MINOR | RiskMap deferred: needs quality/hotspots data wired to graph. |
 | `e12h-decision-trace` | ADR-002 Phase 1 | MINOR | DecisionTrace deferred: needs ADR/doc infrastructure. |
+
+## Technical Debt
+
+| Item | Severity | Source | Why | Status |
+|------|---------|--------|-----|--------|
+| 3 pre-existing Playwright failures (shell doesn't load in headless Chromium) | HIGH | E18-2 | cmdk `vimBindings` + MSW service worker not registering in headless CI (infra, not code) | Open |
+| Pre-existing GraphLanding cytoscape error (canvas-of-type-2d) | LOW | unknown | unhandled canvas type in headless Chromium | Open |
+| Pre-existing `postgres_quality_write_integration` failure | MEDIUM | unknown | `quality_write_unavailable_when_port_not_wired` assertion fails even with live postgres | Open |
 
 ## Strategic program: moldable exploration parity
 

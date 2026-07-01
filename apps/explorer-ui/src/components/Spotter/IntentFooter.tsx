@@ -46,6 +46,9 @@ export function chipsFromResult(
   if (result.kind === "viewspec") {
     views = [];
   } else {
+    // Safe: the `else` branch narrows away from { kind: "viewspec" }, leaving
+    // only the variants whose `result` is SpotterResult. The cast is therefore
+    // statically safe — no `as unknown as` escape hatch needed.
     const spotterResult = result.result as SpotterResult;
     views = spotterResult.object.available_views ?? [];
   }

@@ -115,7 +115,13 @@ fn err_code(result: &CallToolResult) -> String {
 }
 
 fn extract_env(result: &CallToolResult) -> Value {
-    serde_json::to_value(result).expect("CallToolResult must serialize")
+    let text = result
+        .content
+        .first()
+        .and_then(|c| c.raw.as_text())
+        .map(|t| t.text.as_str())
+        .expect("CallToolResult should contain a text content");
+    serde_json::from_str(text).expect("response text must be JSON")
 }
 
 fn build_registry() -> ToolHandlerRegistry {
@@ -315,6 +321,7 @@ async fn quality_write_unavailable_when_port_not_wired() {
                 "workspace_id": "ws-test",
                 "issues": [
                     {
+                        "workspace_id": "ws-test",
                         "rule_id": "R001",
                         "severity": "info",
                         "category": "style",

@@ -521,7 +521,7 @@ function isViewSpecHit(r: SpotterSearchResult): r is Extract<SpotterSearchResult
   return r.kind === "viewspec";
 }
 
-function isSpotterHit(r: SpotterSearchResult): r is Extract<SpotterSearchResult, { kind: "viewspec" }> extends never ? never : Exclude<SpotterSearchResult, { kind: "viewspec" }> {
+function isSpotterHit(r: SpotterSearchResult): r is Exclude<SpotterSearchResult, { kind: "viewspec" }> {
   return r.kind !== "viewspec";
 }
 
