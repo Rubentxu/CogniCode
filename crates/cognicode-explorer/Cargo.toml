@@ -84,3 +84,5 @@ tokio-test.workspace = true
 async-trait.workspace = true
 tempfile = "3.27"
 tower.workspace = true
+uuid = { version = "1.11", features = ["v4"] }
+regex = "1"
