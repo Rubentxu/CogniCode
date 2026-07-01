@@ -59,6 +59,9 @@ export const inspectableObjectFixture: InspectableObjectSummary = {
     { id: "test-slice", title: "Test Slice", is_builtin: true, source: null },
     { id: "debug-slice", title: "Debug Slice", is_builtin: true, source: null },
     { id: "change-impact-story", title: "Change Impact Story", is_builtin: true, source: null },
+    // Phase 2 executors (was missing — unblocked view-tabs-coverage.spec.ts)
+    { id: "evidence", title: "Evidence", is_builtin: true, source: null },
+    { id: "ownership-map", title: "Ownership Map", is_builtin: true, source: null },
   ],
 };
 
