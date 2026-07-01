@@ -11,9 +11,9 @@
  *                                   focused object
  *   - `explorer_open_workspace`   → open a workspace
  *
- * The map is exhaustive over the 9 `InspectableObjectType` variants —
+ * The map is exhaustive over the 11 `InspectableObjectType` variants —
  * TypeScript enforces this at compile time via `Record<…, …>`. Adding
- * a 10th kind to the schema triggers a compile error here.
+ * a new kind to the schema triggers a compile error here.
  *
  * Prompts may contain `{label}` and `{id}` placeholders. These are
  * substituted at click time by `useAsk` and the strip's
@@ -359,6 +359,33 @@ export const SUGGESTED_QUESTIONS: {
       label: "What does this route trigger downstream?",
       tool: "cognicode_ask",
       params: { question: "what does `{label}` call?" },
+      requiresGraph: true,
+      verb: "trace",
+    },
+  ],
+
+  investigation: [
+    {
+      id: "understand-investigation",
+      label: "What is this investigation about?",
+      tool: "cognicode_ask",
+      params: { question: "summarize the investigation `{label}`" },
+      requiresGraph: false,
+      verb: "understand",
+    },
+    {
+      id: "add-evidence",
+      label: "Add evidence to this investigation",
+      tool: "cognicode_ask",
+      params: { question: "add evidence to investigation `{label}`" },
+      requiresGraph: false,
+      verb: "save",
+    },
+    {
+      id: "trace-evidence",
+      label: "Trace the evidence chain",
+      tool: "cognicode_ask",
+      params: { question: "trace the evidence in `{label}`" },
       requiresGraph: true,
       verb: "trace",
     },

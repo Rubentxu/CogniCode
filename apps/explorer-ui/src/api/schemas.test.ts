@@ -107,16 +107,17 @@ describe("spotterResultSchema", () => {
 
 /**
  * Regression test for e13-wave-1.1: the backend `SpotterSearchResult`
- * enum has 6 families (symbol, file, viewspec, saved_exploration,
- * quality_issue, rule). The frontend schema must accept all of them or
- * Zod silently drops the unrecognised variants from the parsed array.
+ * enum has 8 families (symbol, file, viewspec, saved_exploration,
+ * quality_issue, rule, investigation, scope). The frontend schema must
+ * accept all of them or Zod silently drops the unrecognised variants
+ * from the parsed array.
  *
  * Before the fix: only "symbol" and "viewspec" were in the union.
- * After the fix: all 6 families are accepted.
+ * After the fix: all 8 families are accepted.
  */
 describe("spotterSearchResultSchema", () => {
   // Minimal valid SpotterResult payload shared by symbol/file/saved_exploration/
-  // quality_issue/rule variants.
+  // quality_issue/rule/investigation/scope variants.
   const baseResult = {
     object: inspectableObjectFixture,
     score: 0.9,
@@ -175,6 +176,18 @@ describe("spotterSearchResultSchema", () => {
     ).toMatchObject({ kind: "rule", result: baseResult });
   });
 
+  it("accepts investigation variant", () => {
+    expect(
+      spotterSearchResultSchema.parse({ kind: "investigation", result: baseResult }),
+    ).toMatchObject({ kind: "investigation", result: baseResult });
+  });
+
+  it("accepts scope variant", () => {
+    expect(
+      spotterSearchResultSchema.parse({ kind: "scope", result: baseResult }),
+    ).toMatchObject({ kind: "scope", result: baseResult });
+  });
+
   it("accepts an array of mixed families", () => {
     const wire = [
       { kind: "symbol", result: baseResult },
@@ -183,10 +196,12 @@ describe("spotterSearchResultSchema", () => {
       { kind: "saved_exploration", result: baseResult },
       { kind: "quality_issue", result: baseResult },
       { kind: "rule", result: baseResult },
+      { kind: "investigation", result: baseResult },
+      { kind: "scope", result: baseResult },
     ];
     expect(() => spotterSearchResultSchema.array().parse(wire)).not.toThrow();
     const parsed = spotterSearchResultSchema.array().parse(wire);
-    expect(parsed).toHaveLength(6);
+    expect(parsed).toHaveLength(8);
   });
 
   it("rejects unknown kind", () => {
@@ -197,6 +212,12 @@ describe("spotterSearchResultSchema", () => {
   it("rejects missing kind", () => {
     const broken = { result: baseResult };
     expect(() => spotterSearchResultSchema.parse(broken)).toThrow();
+  });
+
+  // e13-wave-1: the phantom `route` variant must be rejected
+  it("rejects the phantom route variant", () => {
+    const phantom = { kind: "route", result: baseResult };
+    expect(() => spotterSearchResultSchema.parse(phantom)).toThrow();
   });
 });
 

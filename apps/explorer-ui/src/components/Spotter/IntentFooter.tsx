@@ -9,7 +9,7 @@
  * Keyboard shortcuts: Cmd+1..N pick the nth enabled chip. The
  * `spotter-intent-{viewId}` testid enables E2E selection.
  */
-import type { SpotterResult } from "../../api/types";
+import type { SpotterResult, SpotterSearchResult } from "../../api/schemas";
 
 export interface IntentChip {
   viewId: string;
@@ -22,7 +22,7 @@ export interface IntentChip {
 
 export interface IntentFooterProps {
   /** Currently highlighted result, or null if no selection. */
-  result: SpotterResult | null;
+  result: SpotterSearchResult | null;
   /** Called when user picks a chip (click or keyboard). */
   onPick: (viewId: string) => void;
   /** Total chips (for "Cmd+N" hint). Used to show shortcut labels. */
@@ -30,21 +30,32 @@ export interface IntentFooterProps {
 }
 
 /**
- * Map a SpotterResult's available_views into chips.
+ * Map a SpotterSearchResult's available_views into chips.
  * Deduplicates by viewId. Adds the two forward-compat placeholders.
+ * Investigation results also get an "Add Evidence" chip.
  */
 export function chipsFromResult(
-  result: SpotterResult | null
+  result: SpotterSearchResult | null
 ): IntentChip[] {
   if (!result) return [];
   const seen = new Set<string>();
   const chips: IntentChip[] = [];
-  const views = result.object.available_views ?? [];
+
+  // Extract available_views based on result kind
+  let views: Array<{ id: string; title: string | null }> = [];
+  if (result.kind === "viewspec") {
+    views = [];
+  } else {
+    const spotterResult = result.result as SpotterResult;
+    views = spotterResult.object.available_views ?? [];
+  }
+
   for (const v of views) {
     if (!v?.id || seen.has(v.id)) continue;
     seen.add(v.id);
     chips.push({ viewId: v.id, label: v.title ?? v.id });
   }
+
   // Forward-compat placeholders (E19, E21)
   chips.push({
     viewId: "c4-context",
@@ -53,13 +64,25 @@ export function chipsFromResult(
     comingSoon: true,
     title: "Coming in E19",
   });
-  chips.push({
-    viewId: "add-to-investigation",
-    label: "Add to Investigation",
-    disabled: true,
-    comingSoon: true,
-    title: "Coming in E21",
-  });
+
+  // Investigation: enable "Add Evidence" chip when investigation feature is wired
+  if (result.kind === "investigation") {
+    chips.push({
+      viewId: "add-evidence-to-investigation",
+      label: "Add Evidence",
+      disabled: true,
+      comingSoon: true,
+      title: "Coming in E21",
+    });
+  } else {
+    chips.push({
+      viewId: "add-to-investigation",
+      label: "Add to Investigation",
+      disabled: true,
+      comingSoon: true,
+      title: "Coming in E21",
+    });
+  }
   return chips;
 }
 
