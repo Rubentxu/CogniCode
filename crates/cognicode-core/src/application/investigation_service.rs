@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use time::OffsetDateTime;
 
-use crate::domain::investigation::Investigation;
+use crate::domain::investigation::{Evidence, Investigation};
 use crate::domain::investigation_store::{InvestigationStore, StoreError};
 
 /// Errors that can occur during investigation operations.
@@ -90,6 +90,21 @@ impl<S: InvestigationStore> InvestigationService<S> {
     ) -> InvestigationResult<Vec<Investigation>> {
         self.store
             .list(workspace_id)
+            .await
+            .map_err(InvestigationError::from)
+    }
+
+    /// Add a single evidence item to an existing investigation.
+    ///
+    /// Returns `Err(InvestigationError::NotFound)` when the investigation
+    /// does not exist.
+    pub async fn add_evidence(
+        &self,
+        investigation_id: &str,
+        evidence: Evidence,
+    ) -> InvestigationResult<()> {
+        self.store
+            .add_evidence(investigation_id, evidence)
             .await
             .map_err(InvestigationError::from)
     }
@@ -214,6 +229,15 @@ mod tests {
         async fn delete(&self, id: &str) -> Result<(), StoreError> {
             let mut invs = self.investigations.lock().unwrap();
             invs.retain(|i| i.id != id);
+            Ok(())
+        }
+
+        async fn add_evidence(
+            &self,
+            _investigation_id: &str,
+            _evidence: Evidence,
+        ) -> Result<(), StoreError> {
+            // Mock always succeeds — evidence is not stored in the mock.
             Ok(())
         }
     }

@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 
-use super::investigation::Investigation;
+use super::investigation::{Evidence, Investigation};
 
 /// Errors that can occur when operating on investigations.
 #[derive(Debug, thiserror::Error)]
@@ -41,4 +41,12 @@ pub trait InvestigationStore: Send + Sync {
     /// Delete an investigation by ID.
     /// Returns `Ok(())` even if the investigation did not exist.
     async fn delete(&self, id: &str) -> Result<(), StoreError>;
+
+    /// Add a single evidence item to an existing investigation.
+    /// Returns `Err(StoreError::NotFound)` when the investigation does not exist.
+    async fn add_evidence(
+        &self,
+        investigation_id: &str,
+        evidence: Evidence,
+    ) -> Result<(), StoreError>;
 }

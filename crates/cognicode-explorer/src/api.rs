@@ -17,7 +17,8 @@ use crate::dto::{
     OpenWorkspaceRequest, SaveExplorationSessionRequest, SubgraphResponse,
 };
 use crate::facades::investigation::{
-    CreateInvestigationRequest, Investigation, UpdateInvestigationRequest,
+    CreateInvestigationRequest, Evidence, Investigation, PinEvidenceRequest,
+    UpdateInvestigationRequest,
 };
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::facades::{
@@ -562,6 +563,8 @@ pub fn router_with_state(state: ApiState) -> Router {
         .route("/api/investigations/:id", get(get_investigation))
         .route("/api/investigations/:id", put(update_investigation))
         .route("/api/investigations/:id", delete(delete_investigation))
+        // Pin evidence — ADR-005 E21-2
+        .route("/api/investigations/:id/evidence", post(pin_evidence))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -1428,6 +1431,46 @@ async fn delete_investigation(
         .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
         .delete_investigation(&id)
         .await?;
+    Ok(Json(serde_json::json!({ "ok": true })).into_response())
+}
+
+/// POST /api/investigations/:id/evidence — pin evidence to an investigation.
+async fn pin_evidence(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+    Json(request): Json<PinEvidenceRequest>,
+) -> Result<Response, ApiError> {
+    let _ = state
+        .investigation
+        .as_ref()
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
+        .get_investigation(&id)
+        .await?
+        .ok_or_else(|| {
+            ApiError(ExplorerError::NotFound(format!("investigation {} not found", id)))
+        })?;
+
+    let evidence = Evidence {
+        id: format!(
+            "evi_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ),
+        object_id: request.object_id,
+        view_id: request.view_id,
+        note: request.note,
+        pinned_at: time::OffsetDateTime::now_utc(),
+    };
+
+    state
+        .investigation
+        .as_ref()
+        .ok_or_else(|| ApiError(ExplorerError::FeatureDisabled("investigation".into())))?
+        .add_evidence(&id, evidence)
+        .await?;
+
     Ok(Json(serde_json::json!({ "ok": true })).into_response())
 }
 

@@ -2074,6 +2074,51 @@ impl PostgresRepository {
             .collect())
     }
 
+    /// Add a single evidence item to an investigation (ADR-005 E21-2).
+    /// Also updates the investigation's `updated_at` timestamp.
+    pub async fn add_investigation_evidence(
+        &self,
+        investigation_id: &str,
+        evidence: &InvestigationEvidenceRow,
+    ) -> Result<(), RepositoryError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| RepositoryError::Store(format!("add_investigation_evidence begin: {e}")))?;
+
+        // Insert the evidence row.
+        sqlx::query(
+            "INSERT INTO investigation_evidence \
+             (id, investigation_id, object_id, view_id, note, pinned_at) \
+             VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(&evidence.id)
+        .bind(&evidence.investigation_id)
+        .bind(&evidence.object_id)
+        .bind(&evidence.view_id)
+        .bind(&evidence.note)
+        .bind(&evidence.pinned_at)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("add_investigation_evidence insert: {e}")))?;
+
+        // Update the investigation's updated_at timestamp.
+        sqlx::query(
+            "UPDATE investigations \
+             SET updated_at = now() AT TIME ZONE 'UTC' \
+             WHERE id = $1",
+        )
+        .bind(investigation_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| RepositoryError::Store(format!("add_investigation_evidence update ts: {e}")))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| RepositoryError::Store(format!("add_investigation_evidence commit: {e}")))
+    }
+
     /// Load all artifacts for an investigation.
     pub async fn load_investigation_artifacts(
         &self,

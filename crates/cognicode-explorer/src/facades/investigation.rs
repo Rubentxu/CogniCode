@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{ExplorerError, ExplorerResult};
 
+pub use cognicode_core::domain::investigation::Evidence;
+
 // Re-export the domain types from cognicode-core.
 pub use cognicode_core::domain::investigation::Investigation;
 pub use cognicode_core::domain::investigation::Status as InvestigationStatus;
@@ -39,6 +41,18 @@ pub struct UpdateInvestigationRequest {
     pub related_adrs: Vec<String>,
 }
 
+/// Request to pin an evidence item to an investigation (ADR-005 E21-2).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct PinEvidenceRequest {
+    /// The object id this evidence references (e.g. `symbol:path:name:line`).
+    pub object_id: String,
+    /// Optional view id when the evidence was captured from a specific view.
+    pub view_id: Option<String>,
+    /// User-authored note explaining why this evidence is relevant.
+    pub note: String,
+}
+
 /// Investigation facade trait — ISP-segregated port for investigation operations.
 #[async_trait]
 pub trait InvestigationFacade: Send + Sync {
@@ -61,6 +75,13 @@ pub trait InvestigationFacade: Send + Sync {
 
     /// Delete an investigation by ID.
     async fn delete_investigation(&self, id: &str) -> ExplorerResult<()>;
+
+    /// Add a single evidence item to an existing investigation.
+    async fn add_evidence(
+        &self,
+        investigation_id: &str,
+        evidence: Evidence,
+    ) -> ExplorerResult<()>;
 }
 
 /// Wrapper that adapts `InvestigationService<S>` from core to the
@@ -121,6 +142,17 @@ impl<S: cognicode_core::domain::investigation_store::InvestigationStore + 'stati
     async fn delete_investigation(&self, id: &str) -> ExplorerResult<()> {
         self.inner
             .delete_investigation(id)
+            .await
+            .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!(e.to_string())))
+    }
+
+    async fn add_evidence(
+        &self,
+        investigation_id: &str,
+        evidence: Evidence,
+    ) -> ExplorerResult<()> {
+        self.inner
+            .add_evidence(investigation_id, evidence)
             .await
             .map_err(|e| ExplorerError::Anyhow(anyhow::anyhow!(e.to_string())))
     }

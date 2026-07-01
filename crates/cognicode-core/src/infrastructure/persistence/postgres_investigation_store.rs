@@ -14,6 +14,8 @@ use sqlx::PgPool;
 #[cfg(feature = "postgres")]
 use crate::domain::investigation::Investigation;
 #[cfg(feature = "postgres")]
+use crate::domain::investigation::Evidence;
+#[cfg(feature = "postgres")]
 use crate::domain::investigation_store::{InvestigationStore, StoreError};
 #[cfg(feature = "postgres")]
 use crate::infrastructure::persistence::PostgresRepository;
@@ -151,6 +153,37 @@ impl InvestigationStore for PostgresInvestigationStore {
         let repo = PostgresRepository::from_pool(self.pool.clone());
 
         repo.delete_investigation(id)
+            .await
+            .map_err(|e| StoreError::Transaction(e.to_string()))
+    }
+
+    async fn add_evidence(
+        &self,
+        investigation_id: &str,
+        evidence: Evidence,
+    ) -> Result<(), StoreError> {
+        let repo = PostgresRepository::from_pool(self.pool.clone());
+
+        // Verify the investigation exists before adding evidence.
+        repo.load_investigation(investigation_id)
+            .await
+            .map_err(|e| StoreError::Transaction(e.to_string()))?
+            .ok_or_else(|| StoreError::NotFound(investigation_id.to_string()))?;
+
+        let evidence_row = crate::infrastructure::persistence::InvestigationEvidenceRow {
+            id: evidence.id,
+            investigation_id: investigation_id.to_string(),
+            object_id: evidence.object_id,
+            view_id: evidence.view_id,
+            note: evidence.note,
+            pinned_at: evidence
+                .pinned_at
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap()
+                .to_string(),
+        };
+
+        repo.add_investigation_evidence(investigation_id, &evidence_row)
             .await
             .map_err(|e| StoreError::Transaction(e.to_string()))
     }
