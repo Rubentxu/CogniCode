@@ -519,8 +519,6 @@ interface NormalizedHit {
   subtitle: string;
   score: number;
   available_views: Array<{ id: string; title: string | null }>;
-  /** Original SpotterSearchResult for dispatch/selection */
-  _original: SpotterSearchResult;
 }
 
 function normalizeHit(hit: SpotterSearchResult): NormalizedHit {
@@ -533,7 +531,6 @@ function normalizeHit(hit: SpotterSearchResult): NormalizedHit {
       subtitle: spec.view_kind,
       score: 0,
       available_views: [],
-      _original: hit,
     };
   }
   // symbol, file, saved_exploration, quality_issue, rule, investigation, scope
@@ -545,7 +542,6 @@ function normalizeHit(hit: SpotterSearchResult): NormalizedHit {
     subtitle: result.object.subtitle,
     score: result.score,
     available_views: result.object.available_views ?? [],
-    _original: hit,
   };
 }
 

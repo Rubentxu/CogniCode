@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use tracing::warn;
 
 use crate::domain::object_identity::ObjectIdentity;
 use crate::domain::views::scope_contains_file;
@@ -198,7 +199,7 @@ impl SearchService for SearchServiceImpl {
                             }
                         }
                     }
-                    Err(_) => {}
+                    Err(err) => warn!("failed to list saved explorations: {:?}", err),
                 }
             }
             results
@@ -243,7 +244,7 @@ impl SearchService for SearchServiceImpl {
                             }
                         }
                     }
-                    Err(_) => {}
+                    Err(err) => warn!("failed to list quality issues: {:?}", err),
                 }
             }
             results
@@ -289,7 +290,7 @@ impl SearchService for SearchServiceImpl {
                             }
                         }
                     }
-                    Err(_) => {}
+                    Err(err) => warn!("failed to list rules: {:?}", err),
                 }
             }
             results
@@ -320,14 +321,15 @@ impl SearchService for SearchServiceImpl {
                             }
                         }
                     }
-                    Err(_) => {}
+                    Err(err) => warn!("failed to list investigations: {:?}", err),
                 }
             }
             results
         };
 
         // 8) Scope hits — derived by grouping symbols by parent directory
-        let scope_results: Vec<SpotterSearchResult> = {
+        // Short-circuit: skip if kind is set and is not "scope"
+        let scope_results: Vec<SpotterSearchResult> = if kind.map(|k| k.eq_ignore_ascii_case("scope")).unwrap_or(true) {
             let repo_clone = repo.clone();
             let vr_clone = view_registry.clone();
             let q = query_lower.clone();
@@ -339,6 +341,8 @@ impl SearchService for SearchServiceImpl {
                 Ok(Err(e)) => return Err(e),
                 Err(e) => return Err(ExplorerError::Anyhow(anyhow::anyhow!("join error: {}", e))),
             }
+        } else {
+            Vec::new()
         };
 
         // Build symbol SpotterSearchResults
@@ -1106,6 +1110,7 @@ fn derive_scope_results(
     }
 
     let mut results: Vec<SpotterSearchResult> = Vec::new();
+    let scope_available_views = view_registry.list_for(InspectableObjectType::Scope);
     for (dir_path, symbols) in scope_map {
         let symbol_count = symbols.len();
         results.push(SpotterSearchResult::Scope(SpotterResult {
@@ -1120,7 +1125,7 @@ fn derive_scope_results(
                     value_type: "usize".into(),
                     source: "SymbolRepository".into(),
                 }],
-                available_views: view_registry.list_for(InspectableObjectType::Scope),
+                available_views: scope_available_views.clone(),
             },
             score: 0.65,
             match_type: "scope".to_string(),

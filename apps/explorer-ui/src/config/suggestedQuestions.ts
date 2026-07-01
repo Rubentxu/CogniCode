@@ -53,7 +53,6 @@ export function verbLabel(v: InvestigationVerb): string {
 /**
  * Per-verb stub configuration — drives disabled-reason text in the UI.
  * `disabledReason` is shown when `isComingSoon=true`.
- * @ponytail: ceiling=E21-2/INV-2, upgrade=first save prompt added
  */
 export const VERB_STUB_CONFIG: Readonly<Record<InvestigationVerb, { disabledReason?: string }>> = {
   understand: {},
