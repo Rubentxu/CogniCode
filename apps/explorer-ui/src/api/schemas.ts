@@ -994,6 +994,14 @@ export type UpdateInvestigationRequestDto = z.infer<
   typeof updateInvestigationRequestSchema
 >;
 
+// ADR-005 E21-2: Pin evidence to an investigation
+export const pinEvidenceRequestSchema = z.object({
+  object_id: z.string(),
+  view_id: z.string().nullable().optional(),
+  note: z.string(),
+});
+export type PinEvidenceRequestDto = z.infer<typeof pinEvidenceRequestSchema>;
+
 // ============================================================================
 // Health
 // ============================================================================

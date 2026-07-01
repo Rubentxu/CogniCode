@@ -16,6 +16,7 @@ import useSWR, { mutate } from "swr";
 import {
   createInvestigationRequestSchema,
   investigationSchema,
+  pinEvidenceRequestSchema,
   updateInvestigationRequestSchema,
 } from "../api/schemas";
 import {
@@ -28,6 +29,7 @@ import {
 import type {
   CreateInvestigationRequestDto,
   InvestigationDto,
+  PinEvidenceRequestDto,
   UpdateInvestigationRequestDto,
 } from "../api/types";
 
@@ -116,6 +118,29 @@ export async function updateInvestigation(
 export async function deleteInvestigation(investigationId: string): Promise<void> {
   await apiDelete(`/investigations/${encodeURIComponent(investigationId)}`);
   // Invalidate both the list cache and the single-item cache.
+  await mutate(
+    (key: string) =>
+      typeof key === "string" &&
+      (key.startsWith("/investigations") || key.includes(investigationId)),
+    undefined,
+    { revalidate: true },
+  );
+}
+
+/**
+ * Pin evidence to an investigation (ADR-005 E21-2).
+ */
+export async function pinEvidence(
+  investigationId: string,
+  request: PinEvidenceRequestDto,
+): Promise<void> {
+  await apiPost(
+    `/investigations/${encodeURIComponent(investigationId)}/evidence`,
+    pinEvidenceRequestSchema.parse(request),
+    // 204 No Content — no response body to validate.
+    z.object({ ok: z.boolean() }),
+  );
+  // Invalidate the single-item cache so the new evidence appears immediately.
   await mutate(
     (key: string) =>
       typeof key === "string" &&
